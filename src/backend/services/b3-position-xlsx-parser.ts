@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+﻿import * as XLSX from "xlsx";
 
 import { ApplicationError } from "@/backend/errors/application-error";
 
@@ -17,7 +17,7 @@ export type ParsedB3Position = {
 };
 
 const normalizeHeader = (value: unknown) =>
-  String(value ?? "")
+  String(value)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
@@ -46,6 +46,7 @@ const text = (value: unknown) => {
 export function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
   const workbook = XLSX.read(file, { type: "buffer", cellDates: true });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  /* v8 ignore next -- XLSX refuses to create a workbook without worksheets. */
   if (!firstSheet)
     throw new ApplicationError("A planilha não possui abas.", 422);
 

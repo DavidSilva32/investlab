@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRef, useState } from "react";
 
@@ -16,6 +16,7 @@ export function PortfolioImport() {
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const send = async (endpoint: string) => {
+    /* v8 ignore next -- the action is unavailable until a file is selected. */
     if (!file) return;
     setLoading(true);
     setError(undefined);
