@@ -37,7 +37,10 @@ describe("login route", () => {
       message: "Informe um e-mail válido.",
     });
 
-    response = await POST(request(null));`r`n    expect(response.status).toBe(400);`r`n`r`n    response = await POST(request({ email: "invalido", password: "senha" }));
+    response = await POST(request(null));
+    expect(response.status).toBe(400);
+
+    response = await POST(request({ email: "invalido", password: "senha" }));
     expect(response.status).toBe(400);
 
     response = await POST(request({ email: "usuario@exemplo.com" }));

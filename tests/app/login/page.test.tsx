@@ -54,6 +54,37 @@ describe("authentication interface", () => {
     expect(await screen.findByText("E-mail ou senha incorretos.")).toBeTruthy();
   });
 
+  it("handles missing form fields and an error response without a message", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({}),
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<LoginPage />);
+
+    const form = screen
+      .getByRole("button", { name: "Entrar" })
+      .closest("form")!;
+    screen.getByLabelText("E-mail").remove();
+    fireEvent.submit(form);
+
+    expect(await screen.findByText("Informe um e-mail válido.")).toBeTruthy();
+
+    cleanup();
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText("E-mail"), {
+      target: { value: "usuario@exemplo.com" },
+    });
+    screen.getByLabelText("Senha").remove();
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Entrar" }).closest("form")!,
+    );
+
+    expect(
+      await screen.findByText("Não foi possível concluir o login."),
+    ).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("redirects after login and logout", async () => {
     const assign = vi.fn();
     Object.defineProperty(window, "location", {
