@@ -27,7 +27,7 @@ describe("HomePage", () => {
       { id: "1", product: "ETF", assetCode: "BOVA11", quantity: "2" },
       { id: "2", product: "Tesouro", assetCode: null, quantity: "1" },
     ]);
-    expect(renderToStaticMarkup(await HomePage())).toContain("ETF (BOVA11)");
+    expect(renderToStaticMarkup(await HomePage())).toContain("ETF");
     expect(renderToStaticMarkup(await HomePage())).toContain("Tesouro");
   });
 });

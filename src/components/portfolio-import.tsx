@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRef, useState } from "react";
 
@@ -67,8 +67,8 @@ export function PortfolioImport() {
   };
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-lg font-semibold">Importar carteira</h2>
           <p className="text-sm text-slate-600">
@@ -76,7 +76,7 @@ export function PortfolioImport() {
           </p>
         </div>
         <button
-          className="cursor-pointer rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full cursor-pointer rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           disabled={loading}
           onClick={() => input.current?.click()}
         >
@@ -94,8 +94,8 @@ export function PortfolioImport() {
         }}
       />
       {file && !positions && (
-        <div className="mt-4 flex gap-3">
-          <span className="text-sm">{file.name}</span>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <span className="break-all text-sm">{file.name}</span>
           <button
             className="cursor-pointer text-sm font-medium underline transition hover:text-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={loading}
@@ -114,7 +114,7 @@ export function PortfolioImport() {
         <div className="mt-5">
           <h3 className="font-medium">Preview: {positions.length} posições</h3>
           <div className="mt-2 max-h-64 overflow-auto rounded border">
-            <table className="w-full text-left text-sm">
+            <table className="min-w-180 w-full text-left text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="p-2">Produto</th>
@@ -141,16 +141,16 @@ export function PortfolioImport() {
               </tbody>
             </table>
           </div>
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <button
-              className="cursor-pointer rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full cursor-pointer rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               disabled={loading}
               onClick={confirm}
             >
               {loading ? "Salvando..." : "Confirmar importação"}
             </button>
             <button
-              className="cursor-pointer text-sm underline transition hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full cursor-pointer rounded-md px-4 py-2 text-sm underline transition hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={loading}
               onClick={() => setPositions(undefined)}
             >

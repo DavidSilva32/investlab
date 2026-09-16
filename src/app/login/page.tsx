@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
@@ -28,10 +28,10 @@ export default function LoginPage() {
     router.push("/");
   }
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center bg-slate-50 p-6">
+    <main className="mx-auto flex min-h-screen max-w-md items-center bg-slate-50 p-4 sm:p-6">
       <form
         onSubmit={submit}
-        className="w-full rounded-xl border bg-white p-6 shadow-sm"
+        className="w-full rounded-xl border bg-white p-5 shadow-sm sm:p-6"
       >
         <p className="text-sm font-medium text-emerald-700">InvestLab</p>
         <h1 className="mt-1 text-2xl font-bold">Entrar</h1>
