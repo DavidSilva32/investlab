@@ -15,6 +15,13 @@
       "when": 1789581124531,
       "tag": "0001_shiny_orphan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789582508676,
+      "tag": "0002_brainy_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }

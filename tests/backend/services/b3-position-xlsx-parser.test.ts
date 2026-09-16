@@ -56,6 +56,7 @@ describe("B3PositionXlsxParser", () => {
         unavailableQuantity: "234.5",
         unitPrice: "42.15",
         totalValue: "52037.50",
+        valuationSource: "INFORMADO",
       }),
     ]);
   });
@@ -123,5 +124,109 @@ describe("B3PositionXlsxParser", () => {
       ]),
     );
     expect(positions[0].maturityAt).toBeNull();
+  });
+  it("selects CURVA for fixed income when MTM and FECHAMENTO are empty", () => {
+    const [position] = b3PositionXlsxParser.parse(
+      workbookBuffer([
+        [
+          "Produto",
+          "Código",
+          "Quantidade",
+          "Preço Atualizado MTM",
+          "Valor Atualizado MTM",
+          "Preço Atualizado CURVA",
+          "Valor Atualizado CURVA",
+          "Preço Atualizado FECHAMENTO",
+          "Valor Atualizado FECHAMENTO",
+        ],
+        [
+          "CDB",
+          "CDB4265W9HJ",
+          "300000",
+          "",
+          "",
+          "R$ 0,01059225",
+          "R$ 3.177,67",
+          "",
+          "",
+        ],
+      ]),
+    );
+    expect(position).toMatchObject({
+      assetCode: "CDB4265W9HJ",
+      unitPrice: "0.01059225",
+      totalValue: "3177.67",
+      valuationSource: "CURVA",
+      curveUnitPrice: "0.01059225",
+      curveTotalValue: "3177.67",
+      mtmTotalValue: null,
+      closingTotalValue: null,
+    });
+  });
+
+  it("prioritizes MTM when it is available", () => {
+    const [position] = b3PositionXlsxParser.parse(
+      workbookBuffer([
+        [
+          "Produto",
+          "Quantidade",
+          "Preço Atualizado MTM",
+          "Valor Atualizado MTM",
+          "Preço Atualizado CURVA",
+          "Valor Atualizado CURVA",
+        ],
+        ["Ativo", "1", "R$ 2,50", "R$ 10,00", "R$ 3,50", "R$ 11,00"],
+      ]),
+    );
+    expect(position).toMatchObject({
+      unitPrice: "2.50",
+      totalValue: "10.00",
+      valuationSource: "MTM",
+      curveTotalValue: "11.00",
+    });
+  });
+
+  it("uses FECHAMENTO when higher-priority valuations are absent", () => {
+    const [position] = b3PositionXlsxParser.parse(
+      workbookBuffer([
+        [
+          "Produto",
+          "Quantidade",
+          "Preço Atualizado FECHAMENTO",
+          "Valor Atualizado FECHAMENTO",
+        ],
+        ["Ativo", "1", "R$ 4,25", "R$ 17,00"],
+      ]),
+    );
+    expect(position).toMatchObject({
+      unitPrice: "4.25",
+      totalValue: "17.00",
+      valuationSource: "FECHAMENTO",
+      closingUnitPrice: "4.25",
+      closingTotalValue: "17.00",
+    });
+  });
+
+  it("does not invent a valuation when all valuation columns are empty", () => {
+    const [position] = b3PositionXlsxParser.parse(
+      workbookBuffer([
+        [
+          "Produto",
+          "Quantidade",
+          "Preço Atualizado MTM",
+          "Valor Atualizado CURVA",
+          "Valor Atualizado FECHAMENTO",
+        ],
+        ["Ativo", "1", "", "", ""],
+      ]),
+    );
+    expect(position).toMatchObject({
+      unitPrice: null,
+      totalValue: null,
+      valuationSource: null,
+      mtmUnitPrice: null,
+      curveTotalValue: null,
+      closingTotalValue: null,
+    });
   });
 });

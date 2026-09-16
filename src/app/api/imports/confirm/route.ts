@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       {
         message: expected
           ? error.message
-          : "NÃ£o foi possÃ­vel concluir a importaÃ§Ã£o.",
+          : "Não foi possível concluir a importação.",
       },
       {
         status: expected ? error.statusCode : 500,

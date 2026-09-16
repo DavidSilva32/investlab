@@ -16,6 +16,13 @@ export type ParsedB3Position = {
   unavailableQuantity: string | null;
   unitPrice: string | null;
   totalValue: string | null;
+  valuationSource: "MTM" | "CURVA" | "FECHAMENTO" | "INFORMADO" | null;
+  mtmUnitPrice: string | null;
+  mtmTotalValue: string | null;
+  curveUnitPrice: string | null;
+  curveTotalValue: string | null;
+  closingUnitPrice: string | null;
+  closingTotalValue: string | null;
 };
 
 const normalizeHeader = (value: unknown) =>
@@ -28,7 +35,12 @@ const normalizeHeader = (value: unknown) =>
 const parseDecimal = (value: unknown): string | null => {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") return value.toString();
-  const normalized = String(value).trim().replace(/\./g, "").replace(",", ".");
+  const normalized = String(value)
+    .trim()
+    .replace(/^R\$\s*/i, "")
+    .replace(/\s/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
   return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : null;
 };
 
@@ -48,6 +60,20 @@ const text = (value: unknown) => {
   return valueAsText || null;
 };
 
+type Valuation = {
+  source: ParsedB3Position["valuationSource"];
+  unitPrice: string | null;
+  totalValue: string | null;
+};
+
+const selectValuation = (valuations: Valuation[]) =>
+  valuations.find(
+    (valuation) => valuation.unitPrice || valuation.totalValue,
+  ) ?? {
+    source: null,
+    unitPrice: null,
+    totalValue: null,
+  };
 function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
   const workbook = XLSX.read(file, { type: "buffer", cellDates: false });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -85,6 +111,38 @@ function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
     const product = text(value(row, ["produto"]));
     const quantity = parseDecimal(value(row, ["quantidade"]));
     if (!product && !quantity) return [];
+    const directValuation = {
+      source: "INFORMADO" as const,
+      unitPrice: parseDecimal(value(row, ["preco unitario", "preco atual"])),
+      totalValue: parseDecimal(
+        value(row, ["valor atual", "valor atualizado", "valor total"]),
+      ),
+    };
+    const mtmValuation = {
+      source: "MTM" as const,
+      unitPrice: parseDecimal(value(row, ["preco atualizado mtm"])),
+      totalValue: parseDecimal(value(row, ["valor atualizado mtm"])),
+    };
+    const curveValuation = {
+      source: "CURVA" as const,
+      unitPrice: parseDecimal(value(row, ["preco atualizado curva"])),
+      totalValue: parseDecimal(value(row, ["valor atualizado curva"])),
+    };
+    const closingValuation = {
+      source: "FECHAMENTO" as const,
+      unitPrice: parseDecimal(
+        value(row, ["preco atualizado fechamento", "preco de fechamento"]),
+      ),
+      totalValue: parseDecimal(
+        value(row, ["valor atualizado fechamento", "valor de fechamento"]),
+      ),
+    };
+    const selectedValuation = selectValuation([
+      mtmValuation,
+      curveValuation,
+      closingValuation,
+      directValuation,
+    ]);
     if (!product || !quantity)
       throw new ApplicationError(
         "Há uma posição sem produto ou quantidade válida.",
@@ -105,12 +163,15 @@ function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
         unavailableQuantity: parseDecimal(
           value(row, ["quantidade indisponivel"]),
         ),
-        unitPrice: parseDecimal(
-          value(row, ["preco unitario", "preco de fechamento", "preco atual"]),
-        ),
-        totalValue: parseDecimal(
-          value(row, ["valor atual", "valor atualizado", "valor total"]),
-        ),
+        unitPrice: selectedValuation.unitPrice,
+        totalValue: selectedValuation.totalValue,
+        valuationSource: selectedValuation.source,
+        mtmUnitPrice: mtmValuation.unitPrice,
+        mtmTotalValue: mtmValuation.totalValue,
+        curveUnitPrice: curveValuation.unitPrice,
+        curveTotalValue: curveValuation.totalValue,
+        closingUnitPrice: closingValuation.unitPrice,
+        closingTotalValue: closingValuation.totalValue,
       },
     ];
   });

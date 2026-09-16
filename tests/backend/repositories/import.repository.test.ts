@@ -11,7 +11,17 @@ vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
 import { importRepository } from "@/backend/repositories/import.repository";
 
-const positions = [{ product: "Ativo", quantity: "1" }] as never;
+const positions = [
+  {
+    product: "Ativo",
+    quantity: "1",
+    unitPrice: "0.01059225",
+    totalValue: "3177.67",
+    valuationSource: "CURVA",
+    curveUnitPrice: "0.01059225",
+    curveTotalValue: "3177.67",
+  },
+] as never;
 const chain = (result: unknown) => ({
   from: () => ({
     where: () => ({ limit: async () => result, orderBy: async () => result }),
@@ -38,6 +48,7 @@ describe("import repository", () => {
     expect(mocks.logger.error).toHaveBeenCalled();
   });
   it("creates import, snapshot and position items in one transaction", async () => {
+    const persistItems = vi.fn().mockResolvedValue(undefined);
     const transaction = { insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
@@ -48,7 +59,7 @@ describe("import repository", () => {
           returning: async () => [{ id: "snapshot-1", importId: "import-1" }],
         }),
       })
-      .mockReturnValueOnce({ values: async () => undefined });
+      .mockReturnValueOnce({ values: persistItems });
     mocks.client.transaction.mockImplementation(
       (callback: (tx: typeof transaction) => unknown) => callback(transaction),
     );
@@ -59,6 +70,14 @@ describe("import repository", () => {
         positions,
       }),
     ).resolves.toMatchObject({ id: "snapshot-1" });
+    expect(persistItems).toHaveBeenCalledWith([
+      expect.objectContaining({
+        snapshotId: "snapshot-1",
+        valuationSource: "CURVA",
+        curveUnitPrice: "0.01059225",
+        curveTotalValue: "3177.67",
+      }),
+    ]);
   });
   it("returns an empty list without snapshots", async () => {
     mocks.client.select.mockReturnValue(chain([]));

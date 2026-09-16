@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     );
     return Response.json(
       {
-        message: expected ? error.message : "NÃ£o foi possÃ­vel ler o arquivo.",
+        message: expected ? error.message : "Não foi possível ler o arquivo.",
       },
       {
         status: expected ? error.statusCode : 500,
