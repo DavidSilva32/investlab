@@ -18,11 +18,14 @@
     "db:check": "node --env-file=.env scripts/check-database.mjs"
   },
   "dependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.5",
     "pg": "^8.23.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "tailwindcss": "^4.3.3",
+    "xlsx": "^0.18.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
