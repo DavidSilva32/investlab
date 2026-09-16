@@ -1,9 +1,12 @@
-import { renderToStaticMarkup } from "react-dom/server";
+﻿import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: { listLatestPositions: mocks.list },
+}));
+vi.mock("@/components/logout-button", () => ({
+  LogoutButton: () => <button>Sair</button>,
 }));
 vi.mock("@/components/portfolio-import", () => ({
   PortfolioImport: () => <div>import component</div>,

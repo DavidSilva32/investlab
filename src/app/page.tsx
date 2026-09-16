@@ -1,14 +1,18 @@
-export const dynamic = "force-dynamic";
+﻿export const dynamic = "force-dynamic";
 
 import { importRepository } from "@/backend/repositories/import.repository";
 import { PortfolioImport } from "@/components/portfolio-import";
+import { LogoutButton } from "@/components/logout-button";
 
 export default async function HomePage() {
   const positions = await importRepository.listLatestPositions();
   return (
     <main className="mx-auto min-h-screen max-w-5xl bg-slate-50 p-6 text-slate-900">
       <header className="mb-8">
-        <p className="text-sm font-medium text-emerald-700">InvestLab</p>
+        <div className="flex justify-between">
+          <p className="text-sm font-medium text-emerald-700">InvestLab</p>
+          <LogoutButton />
+        </div>
         <h1 className="text-3xl font-bold">Sua carteira</h1>
         <p className="mt-2 text-slate-600">
           Posições informadas pela última importação confirmada.
