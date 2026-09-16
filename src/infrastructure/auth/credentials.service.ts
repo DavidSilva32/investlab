@@ -1,25 +1,21 @@
-﻿import { scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
+
+import { getCredentialsConfiguration } from "@/infrastructure/auth/auth-configuration";
 
 const scrypt = promisify(scryptCallback);
 
 export class CredentialsService {
   async verify(email: string, password: string) {
-    const expectedEmail = process.env.AUTH_EMAIL;
-    const storedHash = process.env.AUTH_PASSWORD_HASH;
+    const configuration = getCredentialsConfiguration();
 
-    if (!expectedEmail || !storedHash || email !== expectedEmail) return false;
+    if (email !== configuration.email) return false;
 
-    const [salt, expected] = storedHash.split(":");
+    const derived = (await scrypt(password, configuration.salt, 64)) as Buffer;
+    const expected = Buffer.from(configuration.hash, "hex");
 
-    if (!salt || !expected) return false;
-    const derived = (await scrypt(password, salt, 64)) as Buffer;
-    const expectedBuffer = Buffer.from(expected, "hex");
-
-    return (
-      expectedBuffer.length === derived.length &&
-      timingSafeEqual(expectedBuffer, derived)
-    );
+    return timingSafeEqual(expected, derived);
   }
 }
+
 export const credentialsService = new CredentialsService();

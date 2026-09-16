@@ -1,9 +1,9 @@
-﻿import { randomBytes, scryptSync } from "node:crypto";
+import { randomBytes, scryptSync } from "node:crypto";
 
 const password = process.argv[2];
 
 if (!password) {
-  throw new Error("Use: node scripts/hash-password.mjs <senha>");
+  throw new Error('Use: node scripts/hash-password.mjs "SUA_SENHA"');
 }
 
 const salt = randomBytes(16).toString("hex");

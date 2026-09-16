@@ -1,28 +1,21 @@
 # InvestLab
 
-Base técnica do InvestLab construída como um monólito Next.js com React, TypeScript, PostgreSQL e Drizzle ORM.
+InvestLab é um monólito Next.js para gestão pessoal de investimentos. Frontend, rotas HTTP e acesso ao banco fazem parte do mesmo deploy.
 
-## Infraestrutura planejada
+## Infraestrutura
 
-- **GitHub**: repositório e validação contínua.
-- **Vercel**: hospedagem padrão da aplicação Next.js.
-- **Neon**: PostgreSQL de produção.
-- **GitHub Actions**: lint, formatação, tipos, testes unitários e build.
-
-Frontend e backend permanecem no mesmo projeto e deploy.
+- GitHub para repositório e CI;
+- Vercel para hospedagem do Next.js;
+- Neon para PostgreSQL de produção;
+- Drizzle ORM para schema e migrations.
 
 ## Arquitetura
 
 ```text
-Route Handler -> Controller -> Service -> Repository -> Database
+Route Handler → Controller → Service → Repository → Database
 ```
 
-- Controllers representam a fronteira HTTP e validam entradas com schemas.
-- Services concentram casos de uso e regras de negócio.
-- Repositories isolam consultas e persistência.
-- `src/infrastructure/database` contém a configuração técnica de PostgreSQL e Drizzle.
-
-Não há uma camada `domain`: regras de negócio ficam inicialmente em `services`. Pastas são criadas apenas quando existir uma necessidade concreta.
+A infraestrutura transversal fica em `src/infrastructure`, incluindo banco, autenticação e logging estruturado. O backend utiliza classes onde há colaboração entre componentes, sem criar um servidor separado.
 
 ## Execução local
 
@@ -31,64 +24,51 @@ pnpm install
 pnpm dev
 ```
 
-A aplicação estará disponível em `http://localhost:3000`.
+A aplicação fica disponível em `http://localhost:3000`.
 
 ## Variáveis de ambiente
 
-Copie `.env.example` para `.env` e preencha os valores somente no ambiente local:
+Copie `.env.example` para `.env`. O arquivo `.env` é local, ignorado pelo Git e nunca deve receber valores reais em commits.
 
 ```bash
 DATABASE_URL=
 DATABASE_URL_POOLED=
+AUTH_EMAIL=usuario@exemplo.com
+AUTH_PASSWORD_HASH=<hash-gerado-pelo-script>
+AUTH_SECRET=<segredo-aleatorio>
 ```
 
-- `DATABASE_URL_POOLED` é usada pela aplicação em runtime, por meio do client Drizzle reutilizável.
-- `DATABASE_URL` é reservada ao Drizzle Kit para migrations e operações administrativas de schema.
+- `DATABASE_URL_POOLED` é usada pelo client Drizzle da aplicação em runtime.
+- `DATABASE_URL` é reservada ao Drizzle Kit para migrations e operações administrativas.
+- `AUTH_EMAIL` é o único e-mail autorizado a entrar.
+- `AUTH_PASSWORD_HASH` recebe somente o hash gerado localmente, nunca a senha normal.
+- `AUTH_SECRET` assina as sessões. Use uma string aleatória com pelo menos 32 caracteres.
 
-Nunca versione `.env` nem uma connection string. Em produção, configure ambas as variáveis nas Environment Variables da Vercel.
+Em produção, configure as mesmas variáveis nas Environment Variables da Vercel. Nunca registre, publique ou compartilhe connection strings, hashes ou secrets.
+
+## Configuração da senha
+
+Escolha uma senha normal e gere o hash localmente:
+
+```bash
+node scripts/hash-password.mjs "MINHA_SENHA"
+```
+
+O comando retorna um valor no formato `salt:hash`. Copie esse valor completo para `AUTH_PASSWORD_HASH` no `.env` e na Vercel.
+
+Na tela de login, você continua digitando a senha normal (`MINHA_SENHA`), não o hash. O backend aplica scrypt com o salt armazenado e compara o resultado de modo seguro. Você não precisa memorizar o hash; se esquecer a senha, escolha uma nova, gere outro hash e substitua `AUTH_PASSWORD_HASH`.
 
 ## Banco de dados
-
-O projeto usa PostgreSQL com Drizzle ORM. Drizzle foi escolhido por ser leve, tipado, oferecer migrations SQL claras e se encaixar na separação Repository -> Database.
-
-Ainda não existem tabelas de negócio. Quando houver schema concreto:
 
 ```bash
 pnpm db:generate
 pnpm db:migrate
-```
-
-Para verificar a conexão pooled local de forma não destrutiva (`SELECT 1`):
-
-```bash
 pnpm db:check
 ```
 
-## Testes
+`pnpm db:check` executa apenas `SELECT 1` usando a conexão pooled local. Não aplica migrations.
 
-Testes que cobrem arquivos de aplicação espelham `src`:
-
-```text
-src/path/file.ts
-tests/path/file.test.ts
-```
-
-Testes de fluxo E2E ficam em `tests/e2e`.
-
-```bash
-pnpm test
-pnpm test:watch
-pnpm test:e2e
-```
-
-O Playwright mantém apenas um smoke test da página inicial. Para executá-lo localmente pela primeira vez:
-
-```bash
-pnpm exec playwright install chromium
-pnpm test:e2e
-```
-
-## Comandos de qualidade
+## Testes e qualidade
 
 ```bash
 pnpm lint
@@ -96,11 +76,19 @@ pnpm format
 pnpm format:check
 pnpm typecheck
 pnpm test
+pnpm test:coverage
 pnpm build
+```
+
+A cobertura unitária possui limite de 100% para statements, branches, functions e lines.
+
+O Playwright mantém somente um smoke test E2E. Para instalar o Chromium localmente:
+
+```bash
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
 ## CI
 
-O workflow em `.github/workflows/ci.yml` usa `pnpm install --frozen-lockfile` e executa lint, format check, typecheck, testes unitários e build.
-
-O E2E não roda no CI nesta etapa: instalar browsers aumenta custo e complexidade, e ainda não há fluxo crítico além do smoke test. Ele permanece disponível para execução local.
+O workflow em `.github/workflows/ci.yml` instala dependências com pnpm e lockfile, então executa lint, format check, typecheck, testes unitários e build. O E2E permanece local neste estágio para evitar a instalação de browsers no pipeline.

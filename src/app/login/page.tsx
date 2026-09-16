@@ -3,30 +3,48 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setError(undefined);
     const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email: form.get("email"),
-        password: form.get("password"),
-      }),
-    });
-    setLoading(false);
-    if (!response.ok) {
-      setError("E-mail ou senha inválidos.");
+    const email = String(form.get("email") ?? "").trim();
+    const password = String(form.get("password") ?? "");
+
+    if (!emailPattern.test(email)) {
+      setError("Informe um e-mail válido.");
       return;
     }
-    router.push("/");
+
+    setLoading(true);
+    setError(undefined);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        setError(body.message ?? "Não foi possível concluir o login.");
+        return;
+      }
+
+      router.push("/");
+    } catch {
+      setError("Não foi possível concluir o login.");
+    } finally {
+      setLoading(false);
+    }
   }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-md items-center bg-slate-50 p-4 sm:p-6">
       <form
