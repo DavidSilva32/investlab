@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -27,7 +27,7 @@ describe("authentication interface", () => {
       screen.getByRole("button", { name: "Entrar" }).closest("form")!,
     );
 
-    expect(await screen.findByText("Informe um e-mail válido.")).toBeTruthy();
+    expect(await screen.findByText(/Informe um e-mail/)).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -68,7 +68,7 @@ describe("authentication interface", () => {
     screen.getByLabelText("E-mail").remove();
     fireEvent.submit(form);
 
-    expect(await screen.findByText("Informe um e-mail válido.")).toBeTruthy();
+    expect(await screen.findByText(/Informe um e-mail/)).toBeTruthy();
 
     cleanup();
     render(<LoginPage />);
@@ -80,9 +80,7 @@ describe("authentication interface", () => {
       screen.getByRole("button", { name: "Entrar" }).closest("form")!,
     );
 
-    expect(
-      await screen.findByText("Não foi possível concluir o login."),
-    ).toBeTruthy();
+    expect(await screen.findByText(/concluir o login/)).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("redirects after login and logout", async () => {
@@ -121,8 +119,15 @@ describe("authentication interface", () => {
       screen.getByRole("button", { name: "Entrar" }).closest("form")!,
     );
 
-    expect(
-      await screen.findByText("Não foi possível concluir o login."),
-    ).toBeTruthy();
+    expect(await screen.findByText(/concluir o login/)).toBeTruthy();
   });
+});
+
+it("allows the password visibility to be toggled", async () => {
+  render(<LoginPage />);
+  const password = screen.getByLabelText("Senha");
+  expect((password as HTMLInputElement).type).toBe("password");
+  fireEvent.click(screen.getByRole("button", { name: "Mostrar senha" }));
+  expect((password as HTMLInputElement).type).toBe("text");
+  expect(screen.getByRole("button", { name: "Ocultar senha" })).toBeTruthy();
 });

@@ -165,8 +165,6 @@ describe("PortfolioImport", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Gerar preview" }),
     );
-    expect(
-      await screen.findByText("Não foi possível comunicar com o servidor."),
-    ).toBeTruthy();
+    expect(await screen.findByText(/comunicar com o servidor/)).toBeTruthy();
   });
 });

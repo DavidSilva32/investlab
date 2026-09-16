@@ -67,16 +67,16 @@ export function PortfolioImport() {
   };
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+    <section className="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:p-6">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-lg font-semibold">Importar carteira</h2>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             Envie sua posição B3 em XLSX para revisar antes de salvar.
           </p>
         </div>
         <button
-          className="w-full cursor-pointer rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          className="w-full cursor-pointer rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           disabled={loading}
           onClick={() => input.current?.click()}
         >
@@ -97,7 +97,7 @@ export function PortfolioImport() {
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <span className="break-all text-sm">{file.name}</span>
           <button
-            className="cursor-pointer text-sm font-medium underline transition hover:text-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="cursor-pointer text-sm font-medium underline transition text-primary hover:text-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
             disabled={loading}
             onClick={preview}
           >
@@ -106,7 +106,7 @@ export function PortfolioImport() {
         </div>
       )}
       {error && (
-        <p aria-live="polite" className="mt-4 text-sm text-red-700">
+        <p aria-live="polite" className="mt-4 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -115,7 +115,7 @@ export function PortfolioImport() {
           <h3 className="font-medium">Preview: {positions.length} posições</h3>
           <div className="mt-2 max-h-64 overflow-auto rounded border">
             <table className="min-w-180 w-full text-left text-sm">
-              <thead className="bg-slate-50">
+              <thead className="bg-muted/50">
                 <tr>
                   <th className="p-2">Produto</th>
                   <th>Código</th>
@@ -143,14 +143,14 @@ export function PortfolioImport() {
           </div>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <button
-              className="w-full cursor-pointer rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              className="w-full cursor-pointer rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               disabled={loading}
               onClick={confirm}
             >
               {loading ? "Salvando..." : "Confirmar importação"}
             </button>
             <button
-              className="w-full cursor-pointer rounded-md px-4 py-2 text-sm underline transition hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full cursor-pointer rounded-md px-4 py-2 text-sm underline transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
               disabled={loading}
               onClick={() => setPositions(undefined)}
             >
