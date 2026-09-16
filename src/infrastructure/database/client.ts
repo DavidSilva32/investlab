@@ -1,10 +1,29 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import { getDatabaseUrl } from "./env";
+import { getDatabasePooledUrl } from "./env";
 
-export function createDatabaseClient(databaseUrl = getDatabaseUrl()) {
-  const pool = new Pool({ connectionString: databaseUrl });
+const globalForDatabase = globalThis as typeof globalThis & {
+  investLabDatabaseClient?: ReturnType<typeof drizzle>;
+  investLabDatabasePool?: Pool;
+};
 
-  return drizzle({ client: pool });
+function getDatabasePool(): Pool {
+  if (!globalForDatabase.investLabDatabasePool) {
+    globalForDatabase.investLabDatabasePool = new Pool({
+      connectionString: getDatabasePooledUrl(),
+    });
+  }
+
+  return globalForDatabase.investLabDatabasePool;
+}
+
+export function getDatabaseClient() {
+  if (!globalForDatabase.investLabDatabaseClient) {
+    globalForDatabase.investLabDatabaseClient = drizzle({
+      client: getDatabasePool(),
+    });
+  }
+
+  return globalForDatabase.investLabDatabaseClient;
 }

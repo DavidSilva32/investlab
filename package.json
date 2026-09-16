@@ -14,7 +14,8 @@
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:check": "node --env-file=.env scripts/check-database.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

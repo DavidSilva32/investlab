@@ -1,4 +1,4 @@
-﻿# InvestLab
+# InvestLab
 
 Base técnica do InvestLab construída como um monólito Next.js com React, TypeScript, PostgreSQL e Drizzle ORM.
 
@@ -35,13 +35,17 @@ A aplicação estará disponível em `http://localhost:3000`.
 
 ## Variáveis de ambiente
 
-Copie `.env.example` para `.env` e preencha apenas no ambiente local:
+Copie `.env.example` para `.env` e preencha os valores somente no ambiente local:
 
 ```bash
 DATABASE_URL=
+DATABASE_URL_POOLED=
 ```
 
-Nunca versione `.env` nem uma connection string. Em produção, configure `DATABASE_URL` nas Environment Variables da Vercel.
+- `DATABASE_URL_POOLED` é usada pela aplicação em runtime, por meio do client Drizzle reutilizável.
+- `DATABASE_URL` é reservada ao Drizzle Kit para migrations e operações administrativas de schema.
+
+Nunca versione `.env` nem uma connection string. Em produção, configure ambas as variáveis nas Environment Variables da Vercel.
 
 ## Banco de dados
 
@@ -52,6 +56,12 @@ Ainda não existem tabelas de negócio. Quando houver schema concreto:
 ```bash
 pnpm db:generate
 pnpm db:migrate
+```
+
+Para verificar a conexão pooled local de forma não destrutiva (`SELECT 1`):
+
+```bash
+pnpm db:check
 ```
 
 ## Testes
