@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+﻿import { desc, eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@/infrastructure/database/schema";
 import type { ParsedB3Position } from "../services/b3-position-xlsx-parser";
 
-export const importRepository = {
+export class ImportRepository {
   async existsByHash(fileHash: string, requestId?: string) {
     try {
       return Boolean(
@@ -27,7 +27,8 @@ export const importRepository = {
       });
       throw error;
     }
-  },
+  }
+
   async create(
     input: {
       fileName: string;
@@ -58,7 +59,8 @@ export const importRepository = {
       logger.error("database_import_persistence_failed", { requestId, error });
       throw error;
     }
-  },
+  }
+
   async listLatestPositions(requestId?: string) {
     try {
       const [snapshot] = await getDatabaseClient()
@@ -76,5 +78,7 @@ export const importRepository = {
       logger.error("database_positions_query_failed", { requestId, error });
       throw error;
     }
-  },
-};
+  }
+}
+
+export const importRepository = new ImportRepository();

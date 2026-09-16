@@ -1,12 +1,12 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import { ApplicationError } from "@/backend/errors/application-error";
-import { previewImportController } from "@/backend/controllers/import.controller";
+import { importController } from "@/backend/controllers/import.controller";
 import { logger } from "@/infrastructure/logging/logger";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   const requestId = request.headers.get("x-request-id") ?? randomUUID();
   try {
-    return await previewImportController(request, requestId);
+    return await importController.preview(request, requestId);
   } catch (error) {
     const expected = error instanceof ApplicationError;
     logger[expected ? "warn" : "error"](
@@ -14,7 +14,9 @@ export async function POST(request: Request) {
       { requestId, error },
     );
     return Response.json(
-      { message: expected ? error.message : "Não foi possível ler o arquivo." },
+      {
+        message: expected ? error.message : "NÃ£o foi possÃ­vel ler o arquivo.",
+      },
       {
         status: expected ? error.statusCode : 500,
         headers: { "x-request-id": requestId },

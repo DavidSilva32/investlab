@@ -20,21 +20,21 @@ describe("PortfolioImport", () => {
   it("selects a file and renders the preview", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: async () => ({
-            positions: [
-              {
-                product: "ETF",
-                assetCode: "BOVA11",
-                quantity: "1",
-                institution: "B3",
-              },
-            ],
-          }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          positions: [
+            {
+              product: "ETF",
+              assetCode: "BOVA11",
+              quantity: "1",
+              institution: "B3",
+              maturityAt: "2030-12-31",
+              totalValue: "52037.50",
+            },
+          ],
         }),
+      }),
     );
     render(<PortfolioImport />);
     const input = document.querySelector(
@@ -45,6 +45,8 @@ describe("PortfolioImport", () => {
       screen.getByRole("button", { name: "Gerar preview" }),
     );
     expect(await screen.findByText("ETF")).toBeTruthy();
+    expect(screen.getByText("31/12/2030")).toBeTruthy();
+    expect(screen.getByText(/R\$\s*52\.037,50/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Confirmar import/ }),
     ).toBeTruthy();
@@ -52,12 +54,10 @@ describe("PortfolioImport", () => {
   it("renders a preview error", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: false,
-          json: async () => ({ message: "Arquivo inválido" }),
-        }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ message: "Arquivo inválido" }),
+      }),
     );
     render(<PortfolioImport />);
     fireEvent.change(
@@ -77,21 +77,19 @@ describe("PortfolioImport", () => {
     });
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: async () => ({
-            positions: [
-              {
-                product: "ETF",
-                assetCode: null,
-                quantity: "1",
-                institution: null,
-              },
-            ],
-          }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          positions: [
+            {
+              product: "ETF",
+              assetCode: null,
+              quantity: "1",
+              institution: null,
+            },
+          ],
         }),
+      }),
     );
     render(<PortfolioImport />);
     fireEvent.change(
@@ -154,5 +152,21 @@ describe("PortfolioImport", () => {
       screen.getByRole("button", { name: /Confirmar import/ }),
     );
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it("shows a safe error when the request fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    render(<PortfolioImport />);
+    fireEvent.change(
+      document.querySelector("input[type=file]") as HTMLInputElement,
+      {
+        target: { files: [file] },
+      },
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Gerar preview" }),
+    );
+    expect(
+      await screen.findByText("Não foi possível comunicar com o servidor."),
+    ).toBeTruthy();
   });
 });

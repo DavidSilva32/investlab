@@ -14,6 +14,8 @@ export type ParsedB3Position = {
   quantity: string;
   availableQuantity: string | null;
   unavailableQuantity: string | null;
+  unitPrice: string | null;
+  totalValue: string | null;
 };
 
 const normalizeHeader = (value: unknown) =>
@@ -31,8 +33,11 @@ const parseDecimal = (value: unknown): string | null => {
 };
 
 const parseDate = (value: unknown): string | null => {
-  if (value instanceof Date && !Number.isNaN(value.valueOf()))
-    return value.toISOString().slice(0, 10);
+  if (typeof value === "number") {
+    const date = XLSX.SSF.parse_date_code(value);
+    if (date)
+      return `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}`;
+  }
   const text = String(value ?? "").trim();
   const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   return match ? `${match[3]}-${match[2]}-${match[1]}` : null;
@@ -43,8 +48,8 @@ const text = (value: unknown) => {
   return valueAsText || null;
 };
 
-export function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
-  const workbook = XLSX.read(file, { type: "buffer", cellDates: true });
+function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
+  const workbook = XLSX.read(file, { type: "buffer", cellDates: false });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   /* v8 ignore next -- XLSX refuses to create a workbook without worksheets. */
   if (!firstSheet)
@@ -71,12 +76,14 @@ export function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
       "A planilha B3 não possui as colunas obrigatórias.",
       422,
     );
-  const column = (name: string) => headers.indexOf(name);
-  const value = (row: unknown[], name: string) => row[column(name)];
+  const column = (names: string[]) =>
+    names.map((name) => headers.indexOf(name)).find((index) => index >= 0) ??
+    -1;
+  const value = (row: unknown[], names: string[]) => row[column(names)];
 
   const positions = rows.slice(headerRowIndex + 1).flatMap((row) => {
-    const product = text(value(row, "produto"));
-    const quantity = parseDecimal(value(row, "quantidade"));
+    const product = text(value(row, ["produto"]));
+    const quantity = parseDecimal(value(row, ["quantidade"]));
     if (!product && !quantity) return [];
     if (!product || !quantity)
       throw new ApplicationError(
@@ -86,17 +93,23 @@ export function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
     return [
       {
         product,
-        institution: text(value(row, "instituicao")),
-        issuer: text(value(row, "emissor")),
-        assetCode: text(value(row, "codigo")),
-        indexer: text(value(row, "indexador")),
-        regimeType: text(value(row, "tipo de regime")),
-        issuedAt: parseDate(value(row, "data de emissao")),
-        maturityAt: parseDate(value(row, "vencimento")),
+        institution: text(value(row, ["instituicao"])),
+        issuer: text(value(row, ["emissor"])),
+        assetCode: text(value(row, ["codigo"])),
+        indexer: text(value(row, ["indexador"])),
+        regimeType: text(value(row, ["tipo de regime"])),
+        issuedAt: parseDate(value(row, ["data de emissao"])),
+        maturityAt: parseDate(value(row, ["vencimento"])),
         quantity,
-        availableQuantity: parseDecimal(value(row, "quantidade disponivel")),
+        availableQuantity: parseDecimal(value(row, ["quantidade disponivel"])),
         unavailableQuantity: parseDecimal(
-          value(row, "quantidade indisponivel"),
+          value(row, ["quantidade indisponivel"]),
+        ),
+        unitPrice: parseDecimal(
+          value(row, ["preco unitario", "preco de fechamento", "preco atual"]),
+        ),
+        totalValue: parseDecimal(
+          value(row, ["valor atual", "valor atualizado", "valor total"]),
         ),
       },
     ];
@@ -109,3 +122,11 @@ export function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
     );
   return positions;
 }
+
+export class B3PositionXlsxParser {
+  parse(file: Buffer): ParsedB3Position[] {
+    return parseB3PositionXlsx(file);
+  }
+}
+
+export const b3PositionXlsxParser = new B3PositionXlsxParser();

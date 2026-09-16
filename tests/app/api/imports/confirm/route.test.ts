@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+﻿import { describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   logger: { warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@/backend/controllers/import.controller", () => ({
-  confirmImportController: mocks.confirm,
+  importController: { confirm: mocks.confirm },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 import { ApplicationError } from "@/backend/errors/application-error";

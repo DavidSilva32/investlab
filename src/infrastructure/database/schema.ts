@@ -1,4 +1,4 @@
-import {
+﻿import {
   date,
   numeric,
   pgTable,
@@ -43,6 +43,8 @@ export const positionItems = pgTable("position_items", {
   quantity: numeric({ precision: 24, scale: 8 }).notNull(),
   availableQuantity: numeric({ precision: 24, scale: 8 }),
   unavailableQuantity: numeric({ precision: 24, scale: 8 }),
+  unitPrice: numeric({ precision: 24, scale: 8 }),
+  totalValue: numeric({ precision: 24, scale: 8 }),
   source: varchar({ length: 40 }).notNull().default("B3"),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

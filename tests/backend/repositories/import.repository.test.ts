@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   client: { select: vi.fn(), transaction: vi.fn() },
@@ -98,6 +98,65 @@ describe("import repository", () => {
     expect(mocks.logger.error).toHaveBeenCalledWith(
       "database_positions_query_failed",
       expect.any(Object),
+    );
+  });
+  it("persists successive complete snapshots and returns only the latest items", async () => {
+    const persisted: unknown[][] = [];
+    let importNumber = 0;
+    mocks.client.transaction.mockImplementation(
+      async (callback: (tx: unknown) => unknown) => {
+        importNumber += 1;
+        const transaction = { insert: vi.fn() };
+        transaction.insert
+          .mockReturnValueOnce({
+            values: () => ({
+              returning: async () => [{ id: `import-${importNumber}` }],
+            }),
+          })
+          .mockReturnValueOnce({
+            values: () => ({
+              returning: async () => [
+                {
+                  id: `snapshot-${importNumber}`,
+                  importId: `import-${importNumber}`,
+                },
+              ],
+            }),
+          })
+          .mockReturnValueOnce({
+            values: async (items: unknown[]) => persisted.push(items),
+          });
+        return callback(transaction);
+      },
+    );
+    const firstSnapshot = Array.from({ length: 24 }, (_, index) => ({
+      product: `Ativo ${index + 1}`,
+      quantity: "1",
+    }));
+    const secondSnapshot = [
+      ...firstSnapshot,
+      { product: "Ativo 25", quantity: "1" },
+    ];
+
+    await importRepository.create({
+      fileName: "dia-1.xlsx",
+      fileHash: "hash-1",
+      positions: firstSnapshot as never,
+    });
+    await importRepository.create({
+      fileName: "dia-2.xlsx",
+      fileHash: "hash-2",
+      positions: secondSnapshot as never,
+    });
+
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0]).toHaveLength(24);
+    expect(persisted[1]).toHaveLength(25);
+    mocks.client.select
+      .mockReturnValueOnce(chain([{ id: "snapshot-2" }]))
+      .mockReturnValueOnce(chain(secondSnapshot));
+    await expect(importRepository.listLatestPositions()).resolves.toEqual(
+      secondSnapshot,
     );
   });
 });

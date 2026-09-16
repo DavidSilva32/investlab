@@ -1,21 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { repository, service } = vi.hoisted(() => ({
   repository: { existsByHash: vi.fn(), create: vi.fn() },
-  service: { previewImport: vi.fn(), assertImportCanBeConfirmed: vi.fn() },
+  service: { preview: vi.fn(), assertCanBeConfirmed: vi.fn() },
 }));
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: repository,
 }));
-vi.mock("@/backend/services/import.service", () => service);
+vi.mock("@/backend/services/import.service", () => ({
+  importService: service,
+}));
 vi.mock("@/infrastructure/logging/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import {
-  confirmImportController,
-  previewImportController,
-} from "@/backend/controllers/import.controller";
+import { importController } from "@/backend/controllers/import.controller";
 
 function requestWithFile() {
   const form = new FormData();
@@ -28,47 +27,51 @@ function requestWithFile() {
   return new Request("http://test/import", { method: "POST", body: form });
 }
 
-describe("import controller", () => {
+describe("ImportController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    service.previewImport.mockReturnValue({
+    service.preview.mockReturnValue({
       hash: "a".repeat(64),
       positions: [{ product: "Ativo", quantity: "1" }],
     });
   });
+
   it("returns a preview without persistence", async () => {
-    const response = await previewImportController(
+    const response = await importController.preview(
       requestWithFile(),
       "request-1",
     );
     expect(await response.json()).toMatchObject({ count: 1 });
     expect(repository.create).not.toHaveBeenCalled();
   });
+
   it("persists a non-duplicate confirmation", async () => {
     repository.existsByHash.mockResolvedValue(false);
     repository.create.mockResolvedValue({
       id: "snapshot-1",
       importId: "import-1",
     });
-    const response = await confirmImportController(
+    const response = await importController.confirm(
       requestWithFile(),
       "request-1",
     );
     expect(response.status).toBe(201);
     expect(repository.create).toHaveBeenCalled();
   });
+
   it("rejects a duplicate confirmation", async () => {
     repository.existsByHash.mockResolvedValue(true);
-    service.assertImportCanBeConfirmed.mockImplementation(() => {
+    service.assertCanBeConfirmed.mockImplementation(() => {
       throw new Error("duplicate");
     });
     await expect(
-      confirmImportController(requestWithFile(), "request-1"),
+      importController.confirm(requestWithFile(), "request-1"),
     ).rejects.toThrow("duplicate");
   });
+
   it("requires a file in the form data", async () => {
     await expect(
-      previewImportController(
+      importController.preview(
         new Request("http://test/import", {
           method: "POST",
           body: new FormData(),
