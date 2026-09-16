@@ -1,18 +1,56 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
+import {
+  BarChart3,
+  Download,
+  LayoutDashboard,
+  Menu,
+  Settings,
+  WalletCards,
+} from "lucide-react";
 import { LogoutButton } from "@/components/logout-button";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const navigation = [
-  { href: "/", label: "Dashboard" },
-  { href: "/portfolio", label: "Carteira" },
-  { href: "/#importacoes", label: "Importações" },
-  { href: "/#analises", label: "Análises" },
-  { href: "/#configuracoes", label: "Configurações" },
+  { href: "/", label: "Dashboard", Icon: LayoutDashboard },
+  { href: "/portfolio", label: "Carteira", Icon: WalletCards },
+  { href: "/imports", label: "Importações", Icon: Download },
+  { href: "/analyses", label: "Análises", Icon: BarChart3 },
+  { href: "/settings", label: "Configurações", Icon: Settings },
 ];
-
+function Brand() {
+  return (
+    <Link
+      href="/"
+      className="flex items-center gap-2.5 font-semibold tracking-tight"
+    >
+      <span className="grid size-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+        I
+      </span>
+      InvestLab
+    </Link>
+  );
+}
+function Navigation({ pathname }: { pathname: string }) {
+  return (
+    <nav className="flex flex-col gap-1" aria-label="Navegação principal">
+      {navigation.map(({ href, label, Icon }) => (
+        <Link
+          key={href}
+          href={href}
+          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${pathname === href ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+        >
+          <Icon className="size-4" />
+          {label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
 export function AppShell({
   title,
   children,
@@ -21,44 +59,57 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 lg:flex">
-      <aside className="border-b border-slate-200 bg-white p-3 sm:p-4 lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-64 lg:shrink-0 lg:flex-col lg:border-r lg:border-b-0">
-        <div className="flex items-center justify-between lg:block">
-          <Link href="/" className="text-lg font-bold text-emerald-700">
-            InvestLab
-          </Link>
-          <div className="lg:hidden">
-            <LogoutButton />
-          </div>
+    <div className="min-h-screen bg-background lg:flex">
+      <aside className="hidden w-64 shrink-0 border-r border-border bg-card p-4 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <Brand />
+        <div className="mt-9">
+          <Navigation pathname={pathname} />
         </div>
-        <nav className="mt-4 flex gap-1 overflow-x-auto pb-1 lg:mt-8 lg:flex-col lg:overflow-visible">
-          {navigation.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-emerald-700 ${pathname === item.href ? "bg-emerald-50 font-medium text-emerald-800" : "text-slate-600"}`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="mt-6 hidden lg:mt-auto lg:block">
+        <div className="mt-auto border-t pt-4">
+          <p className="mb-3 px-3 text-xs font-medium text-muted-foreground">
+            CONTA
+          </p>
           <LogoutButton />
         </div>
       </aside>
       <div className="min-w-0 flex-1">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-6 lg:px-8">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">
-              InvestLab
-            </p>
-            <h1 className="text-xl font-semibold">{title}</h1>
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="lg:hidden"
+                  aria-label="Abrir menu"
+                >
+                  <Menu className="size-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent>
+                <Brand />
+                <div className="mt-9">
+                  <Navigation pathname={pathname} />
+                </div>
+                <div className="mt-8 border-t pt-4">
+                  <LogoutButton />
+                </div>
+              </SheetContent>
+            </Sheet>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">
+                InvestLab
+              </p>
+              <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-medium">Usuário autorizado</p>
-            <p className="text-xs text-slate-500">Área pessoal</p>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-medium">Usuário autorizado</p>
+              <p className="text-xs text-muted-foreground">Área pessoal</p>
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">{children}</main>

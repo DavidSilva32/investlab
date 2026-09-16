@@ -1,20 +1,26 @@
-import type { Metadata } from "next";
-
+﻿import type { Metadata } from "next";
+import { ThemeProvider } from "@/components/theme-provider";
 import { application } from "@/lib/application";
-
 import "./globals.css";
-
 export const metadata: Metadata = {
   title: application.name,
   description: application.description,
 };
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR">
-      <body>{children}</body>
+    <html lang="pt-BR" suppressHydrationWarning>
+      <body>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

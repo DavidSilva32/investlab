@@ -1,59 +1,92 @@
-export const dynamic = "force-dynamic";
+﻿export const dynamic = "force-dynamic";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { AppShell } from "@/components/app-shell";
-const quantity = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 });
-const money = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-});
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatCurrency, formatQuantity } from "@/lib/utils";
 export default async function PortfolioPage() {
   const positions = await importRepository.listLatestPositions();
   return (
     <AppShell title="Carteira">
-      <section className="rounded-xl border border-slate-200 bg-white">
-        <div className="border-b p-4 sm:p-6">
-          <h2 className="font-semibold">Snapshot atual</h2>
-          <p className="text-sm text-slate-500">
-            {positions.length
-              ? `${positions.length} posições disponíveis`
-              : "Nenhuma posição importada"}
-          </p>
-        </div>
-        {positions.length ? (
-          <div className="-mx-4 overflow-x-auto sm:mx-0">
-            <table className="min-w-180 w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr>
-                  <th className="p-4">Produto</th>
-                  <th>Código</th>
-                  <th>Quantidade</th>
-                  <th>Instituição</th>
-                  <th className="p-4">Valor atual</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((position) => (
-                  <tr key={position.id} className="border-t hover:bg-slate-50">
-                    <td className="p-4 font-medium">{position.product}</td>
-                    <td>{position.assetCode ?? "—"}</td>
-                    <td>{quantity.format(Number(position.quantity))}</td>
-                    <td>{position.institution ?? "—"}</td>
-                    <td className="p-4">
-                      {position.totalValue
-                        ? money.format(Number(position.totalValue))
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="mb-7">
+        <p className="text-sm text-muted-foreground">
+          Acompanhe o snapshot mais recente importado da B3.
+        </p>
+      </div>
+      <Card>
+        <CardHeader className="border-b border-border">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Snapshot atual</CardTitle>
+              <CardDescription className="mt-1">
+                {positions.length
+                  ? `${positions.length} posições disponíveis`
+                  : "Nenhuma posição importada"}
+              </CardDescription>
+            </div>
+            {positions.length > 0 && <Badge>{positions.length} ativos</Badge>}
           </div>
-        ) : (
-          <p className="p-6 text-center text-sm text-slate-500 sm:p-10">
-            Importe um arquivo B3 para visualizar sua carteira.
-          </p>
-        )}
-      </section>
+        </CardHeader>
+        <CardContent className="p-0">
+          {positions.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Produto</TableHead>
+                  <TableHead>Código</TableHead>
+                  <TableHead className="text-right">Quantidade</TableHead>
+                  <TableHead>Instituição</TableHead>
+                  <TableHead className="text-right">Valor atual</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {positions.map((position) => (
+                  <TableRow key={position.id}>
+                    <TableCell className="font-medium">
+                      {position.product}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {position.assetCode ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatQuantity(Number(position.quantity))}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {position.institution ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {position.totalValue
+                        ? formatCurrency(Number(position.totalValue))
+                        : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="py-16 text-center">
+              <p className="font-medium">Sua carteira ainda está vazia</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Importe um arquivo B3 para visualizar suas posições.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </AppShell>
   );
 }
