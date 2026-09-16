@@ -3,11 +3,11 @@ import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
   imports,
+  movementItems,
   positionItems,
   positionSnapshots,
 } from "@/infrastructure/database/schema";
-import type { ParsedB3Position } from "../services/b3-position-xlsx-parser";
-
+import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 export class ImportRepository {
   async existsByHash(fileHash: string, requestId?: string) {
     try {
@@ -28,21 +28,29 @@ export class ImportRepository {
       throw error;
     }
   }
-
   async create(
-    input: {
-      fileName: string;
-      fileHash: string;
-      positions: ParsedB3Position[];
-    },
+    input: { fileName: string; fileHash: string } & ParsedB3Import,
     requestId?: string,
   ) {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         const [importRecord] = await transaction
           .insert(imports)
-          .values({ fileName: input.fileName, fileHash: input.fileHash })
+          .values({
+            fileName: input.fileName,
+            fileHash: input.fileHash,
+            documentType: input.documentType,
+          })
           .returning();
+        if (input.documentType === "B3_MOVEMENT_XLSX") {
+          await transaction.insert(movementItems).values(
+            input.movements.map((movement) => ({
+              importId: importRecord.id,
+              ...movement,
+            })),
+          );
+          return { importId: importRecord.id };
+        }
         const [snapshot] = await transaction
           .insert(positionSnapshots)
           .values({ importId: importRecord.id })
@@ -53,14 +61,13 @@ export class ImportRepository {
             ...position,
           })),
         );
-        return snapshot;
+        return { importId: importRecord.id, snapshotId: snapshot.id };
       });
     } catch (error) {
       logger.error("database_import_persistence_failed", { requestId, error });
       throw error;
     }
   }
-
   async listLatestPositions(requestId?: string) {
     try {
       const [snapshot] = await getDatabaseClient()
@@ -79,6 +86,16 @@ export class ImportRepository {
       throw error;
     }
   }
+  async listMovements(requestId?: string) {
+    try {
+      return await getDatabaseClient()
+        .select()
+        .from(movementItems)
+        .orderBy(desc(movementItems.occurredAt), desc(movementItems.createdAt));
+    } catch (error) {
+      logger.error("database_movements_query_failed", { requestId, error });
+      throw error;
+    }
+  }
 }
-
 export const importRepository = new ImportRepository();

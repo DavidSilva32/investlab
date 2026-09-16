@@ -1,7 +1,6 @@
-"use client";
-
+﻿"use client";
 import { useRef, useState } from "react";
-
+import { Button } from "@/components/ui/button";
 type Position = {
   product: string;
   assetCode: string | null;
@@ -10,39 +9,38 @@ type Position = {
   maturityAt: string | null;
   totalValue: string | null;
 };
-
-const quantityFormatter = new Intl.NumberFormat("pt-BR", {
-  maximumFractionDigits: 8,
-});
-const currencyFormatter = new Intl.NumberFormat("pt-BR", {
+type Movement = {
+  direction: string;
+  occurredAt: string;
+  movementType: string;
+  product: string;
+  assetCode: string | null;
+  institution: string | null;
+  quantity: string;
+  unitPrice: string | null;
+  operationValue: string | null;
+};
+type Preview =
+  | { documentType: "B3_POSITION_XLSX"; positions: Position[]; count: number }
+  | { documentType: "B3_MOVEMENT_XLSX"; movements: Movement[]; count: number };
+const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 });
+const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
-const dateFormatter = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
-
-function formatDate(value: string | null) {
-  return value ? dateFormatter.format(new Date(`${value}T00:00:00.000Z`)) : "—";
-}
-
-function formatMoney(value: string | null) {
-  return value ? currencyFormatter.format(Number(value)) : "—";
-}
-
+const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 export function PortfolioImport() {
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File>();
-  const [positions, setPositions] = useState<Position[]>();
+  const [preview, setPreview] = useState<Preview>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
-
   const send = async (endpoint: string) => {
-    /* v8 ignore next -- the action is unavailable until a file is selected. */
-    if (!file) return;
     setLoading(true);
     setError(undefined);
     try {
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", file!);
       const response = await fetch(endpoint, { method: "POST", body: form });
       const body = await response.json();
       if (!response.ok) {
@@ -56,32 +54,43 @@ export function PortfolioImport() {
       setLoading(false);
     }
   };
-
-  const preview = async () => {
+  const previewFile = async () => {
     const body = await send("/api/imports/preview");
-    if (body) setPositions(body.positions);
+    if (body)
+      setPreview(
+        body.documentType
+          ? body
+          : { documentType: "B3_POSITION_XLSX", ...body },
+      );
   };
   const confirm = async () => {
-    const body = await send("/api/imports/confirm");
-    if (body) location.reload();
+    if (await send("/api/imports/confirm")) location.reload();
   };
-
+  const records =
+    preview?.documentType === "B3_POSITION_XLSX"
+      ? preview.positions
+      : preview?.movements;
+  const label =
+    preview?.documentType === "B3_POSITION_XLSX"
+      ? "Posição B3"
+      : "Movimentação B3";
   return (
     <section className="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:p-6">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-lg font-semibold">Importar carteira</h2>
+          <h2 className="text-lg font-semibold">Importar dados B3</h2>
           <p className="text-sm text-muted-foreground">
-            Envie sua posição B3 em XLSX para revisar antes de salvar.
+            Envie um XLSX de posições ou movimentações para revisar antes de
+            salvar.
           </p>
         </div>
-        <button
-          className="w-full cursor-pointer rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+        <Button
+          className="w-full sm:w-auto"
           disabled={loading}
           onClick={() => input.current?.click()}
         >
           Importar carteira
-        </button>
+        </Button>
       </div>
       <input
         ref={input}
@@ -90,19 +99,20 @@ export function PortfolioImport() {
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={(event) => {
           setFile(event.target.files?.[0]);
-          setPositions(undefined);
+          setPreview(undefined);
         }}
       />
-      {file && !positions && (
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+      {file && !preview && (
+        <div className="mt-4 flex gap-3">
           <span className="break-all text-sm">{file.name}</span>
-          <button
-            className="cursor-pointer text-sm font-medium underline transition text-primary hover:text-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
+          <Button
+            variant="link"
+            className="h-auto p-0"
             disabled={loading}
-            onClick={preview}
+            onClick={previewFile}
           >
             {loading ? "Lendo..." : "Gerar preview"}
-          </button>
+          </Button>
         </div>
       )}
       {error && (
@@ -110,52 +120,89 @@ export function PortfolioImport() {
           {error}
         </p>
       )}
-      {positions && (
+      {preview && (
         <div className="mt-5">
-          <h3 className="font-medium">Preview: {positions.length} posições</h3>
-          <div className="mt-2 max-h-64 overflow-auto rounded border">
-            <table className="min-w-180 w-full text-left text-sm">
+          <h3 className="font-medium">
+            {label} — {preview.count}{" "}
+            {preview.documentType === "B3_POSITION_XLSX"
+              ? "posições encontradas"
+              : "movimentações encontradas"}
+          </h3>
+          <div className="mt-3 max-h-64 overflow-auto rounded-md border">
+            <table className="w-full text-left text-sm">
               <thead className="bg-muted/50">
                 <tr>
-                  <th className="p-2">Produto</th>
-                  <th>Código</th>
-                  <th>Quantidade</th>
-                  <th>Instituição</th>
-                  <th>Vencimento</th>
-                  <th>Valor atual</th>
+                  {preview.documentType === "B3_POSITION_XLSX" ? (
+                    <>
+                      <th className="p-2">Produto</th>
+                      <th>Código</th>
+                      <th>Quantidade</th>
+                      <th>Instituição</th>
+                      <th>Valor atual</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="p-2">Data</th>
+                      <th>Tipo</th>
+                      <th>Produto</th>
+                      <th>Quantidade</th>
+                      <th>Valor</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {positions.map((position, index) => (
-                  <tr key={`${position.product}-${index}`} className="border-t">
-                    <td className="p-2">{position.product}</td>
-                    <td>{position.assetCode ?? "—"}</td>
-                    <td>
-                      {quantityFormatter.format(Number(position.quantity))}
-                    </td>
-                    <td>{position.institution ?? "—"}</td>
-                    <td>{formatDate(position.maturityAt)}</td>
-                    <td>{formatMoney(position.totalValue)}</td>
-                  </tr>
-                ))}
+                {records?.map((record, index) =>
+                  preview.documentType === "B3_POSITION_XLSX" ? (
+                    <tr key={index} className="border-t">
+                      <td className="p-2">{record.product}</td>
+                      <td>{record.assetCode ?? "—"}</td>
+                      <td>{number.format(Number(record.quantity))}</td>
+                      <td>{record.institution ?? "—"}</td>
+                      <td>
+                        {(record as Position).totalValue
+                          ? money.format(
+                              Number((record as Position).totalValue),
+                            )
+                          : "—"}
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={index} className="border-t">
+                      <td className="p-2">
+                        {date.format(
+                          new Date(
+                            `${(record as Movement).occurredAt}T00:00:00Z`,
+                          ),
+                        )}
+                      </td>
+                      <td>{(record as Movement).movementType}</td>
+                      <td>{record.product}</td>
+                      <td>{number.format(Number(record.quantity))}</td>
+                      <td>
+                        {(record as Movement).operationValue
+                          ? money.format(
+                              Number((record as Movement).operationValue),
+                            )
+                          : "—"}
+                      </td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </div>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <button
-              className="w-full cursor-pointer rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-              disabled={loading}
-              onClick={confirm}
-            >
+          <div className="mt-4 flex gap-3">
+            <Button disabled={loading} onClick={confirm}>
               {loading ? "Salvando..." : "Confirmar importação"}
-            </button>
-            <button
-              className="w-full cursor-pointer rounded-md px-4 py-2 text-sm underline transition hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
+            </Button>
+            <Button
+              variant="ghost"
               disabled={loading}
-              onClick={() => setPositions(undefined)}
+              onClick={() => setPreview(undefined)}
             >
               Cancelar
-            </button>
+            </Button>
           </div>
         </div>
       )}

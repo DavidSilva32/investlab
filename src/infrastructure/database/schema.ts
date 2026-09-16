@@ -55,3 +55,20 @@ export const positionItems = pgTable("position_items", {
   source: varchar({ length: 40 }).notNull().default("B3"),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+
+export const movementItems = pgTable("movement_items", {
+  id: uuid().defaultRandom().primaryKey(),
+  importId: uuid()
+    .notNull()
+    .references(() => imports.id),
+  direction: varchar({ length: 10 }).notNull(),
+  occurredAt: date().notNull(),
+  movementType: text().notNull(),
+  product: text().notNull(),
+  assetCode: text(),
+  institution: text(),
+  quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+  unitPrice: numeric({ precision: 24, scale: 8 }),
+  operationValue: numeric({ precision: 24, scale: 8 }),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});

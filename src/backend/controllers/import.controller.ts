@@ -2,7 +2,6 @@
 import { importRepository } from "@/backend/repositories/import.repository";
 import { importService } from "@/backend/services/import.service";
 import { logger } from "@/infrastructure/logging/logger";
-
 export class ImportController {
   private async readFile(request: Request) {
     const file = (await request.formData()).get("file");
@@ -15,25 +14,20 @@ export class ImportController {
       buffer: Buffer.from(await file.arrayBuffer()),
     };
   }
-
   async preview(request: Request, requestId: string) {
     logger.info("b3_import_preview_started", { requestId });
     const preview = importService.preview(await this.readFile(request));
+    const count =
+      preview.documentType === "B3_POSITION_XLSX"
+        ? preview.positions.length
+        : preview.movements.length;
     logger.info("b3_import_format_recognized", {
       requestId,
-      documentType: "B3_POSITION_XLSX",
+      documentType: preview.documentType,
     });
-    logger.info("b3_import_records_parsed", {
-      requestId,
-      records: preview.positions.length,
-    });
-    logger.info("b3_import_preview_completed", { requestId });
-    return Response.json({
-      positions: preview.positions,
-      count: preview.positions.length,
-    });
+    logger.info("b3_import_records_parsed", { requestId, records: count });
+    return Response.json({ ...preview, count });
   }
-
   async confirm(request: Request, requestId: string) {
     logger.info("b3_import_confirm_started", { requestId });
     const file = await this.readFile(request);
@@ -48,29 +42,18 @@ export class ImportController {
         fileHashPrefix: preview.hash.slice(0, 12),
       });
     importService.assertCanBeConfirmed(duplicate);
-    logger.info("b3_import_persistence_started", {
-      requestId,
-      records: preview.positions.length,
-    });
-    const snapshot = await importRepository.create(
-      {
-        fileName: file.name,
-        fileHash: preview.hash,
-        positions: preview.positions,
-      },
+    const result = await importRepository.create(
+      { fileName: file.name, fileHash: preview.hash, ...preview },
       requestId,
     );
-    logger.info("b3_import_confirm_completed", {
-      requestId,
-      importId: snapshot.importId,
-      snapshotId: snapshot.id,
-      records: preview.positions.length,
-    });
+    const count =
+      preview.documentType === "B3_POSITION_XLSX"
+        ? preview.positions.length
+        : preview.movements.length;
     return Response.json(
-      { snapshotId: snapshot.id, count: preview.positions.length },
+      { importId: result.importId, count, documentType: preview.documentType },
       { status: 201 },
     );
   }
 }
-
 export const importController = new ImportController();

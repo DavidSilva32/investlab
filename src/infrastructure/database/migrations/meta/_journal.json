@@ -22,6 +22,13 @@
       "when": 1789582508676,
       "tag": "0002_brainy_squadron_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789589142852,
+      "tag": "0003_peaceful_eternals",
+      "breakpoints": true
     }
   ]
 }

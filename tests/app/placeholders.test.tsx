@@ -1,4 +1,4 @@
-import { renderToStaticMarkup } from "react-dom/server";
+﻿import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/app-shell", () => ({
@@ -6,16 +6,19 @@ vi.mock("@/components/app-shell", () => ({
     <main>{children}</main>
   ),
 }));
+vi.mock("@/components/portfolio-import", () => ({
+  PortfolioImport: () => <div>importador</div>,
+}));
 
 import AnalysesPage from "@/app/analyses/page";
 import ImportsPage from "@/app/imports/page";
 import SettingsPage from "@/app/settings/page";
 import { ComingSoonPage } from "@/components/coming-soon-page";
 
-describe("placeholder pages", () => {
+describe("secondary pages", () => {
   it("renders each planned area with its context", () => {
     expect(renderToStaticMarkup(<ImportsPage />)).toContain(
-      "histórico das importações",
+      "Importe posições ou movimentações da B3",
     );
     expect(renderToStaticMarkup(<AnalysesPage />)).toContain(
       "análises da sua carteira",

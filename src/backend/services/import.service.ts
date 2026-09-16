@@ -1,19 +1,15 @@
 ﻿import { createHash } from "node:crypto";
-
-import { ApplicationError } from "@/backend/errors/application-error";
 import { importFileSchema } from "@/backend/schemas/import.schema";
-import { b3PositionXlsxParser } from "@/backend/services/b3-position-xlsx-parser";
-
+import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
+import { ApplicationError } from "@/backend/errors/application-error";
 export class ImportService {
   preview(file: { name: string; size: number; type: string; buffer: Buffer }) {
     importFileSchema.parse(file);
-    const positions = b3PositionXlsxParser.parse(file.buffer);
     return {
       hash: createHash("sha256").update(file.buffer).digest("hex"),
-      positions,
+      ...parseB3Xlsx(file.buffer),
     };
   }
-
   assertCanBeConfirmed(isDuplicate: boolean) {
     if (isDuplicate)
       throw new ApplicationError(
@@ -22,5 +18,4 @@ export class ImportService {
       );
   }
 }
-
 export const importService = new ImportService();

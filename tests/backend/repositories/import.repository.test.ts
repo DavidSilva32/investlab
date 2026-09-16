@@ -69,7 +69,7 @@ describe("import repository", () => {
         fileHash: "hash",
         positions,
       }),
-    ).resolves.toMatchObject({ id: "snapshot-1" });
+    ).resolves.toMatchObject({ snapshotId: "snapshot-1" });
     expect(persistItems).toHaveBeenCalledWith([
       expect.objectContaining({
         snapshotId: "snapshot-1",
@@ -119,6 +119,60 @@ describe("import repository", () => {
       expect.any(Object),
     );
   });
+  it("persists movement items without creating a position snapshot", async () => {
+    const persistMovements = vi.fn().mockResolvedValue(undefined);
+    const transaction = { insert: vi.fn() };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "import-1" }] }),
+      })
+      .mockReturnValueOnce({ values: persistMovements });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    await expect(
+      importRepository.create({
+        fileName: "movements.xlsx",
+        fileHash: "movement-hash",
+        documentType: "B3_MOVEMENT_XLSX",
+        movements: [
+          {
+            direction: "CREDITO",
+            occurredAt: "2026-09-11",
+            movementType: "APLICAÇÃO",
+            product: "CDB",
+            assetCode: null,
+            institution: null,
+            quantity: "1",
+            unitPrice: "0.01",
+            operationValue: "0.01",
+          },
+        ],
+      }),
+    ).resolves.toEqual({ importId: "import-1" });
+    expect(persistMovements).toHaveBeenCalledWith([
+      expect.objectContaining({ importId: "import-1", direction: "CREDITO" }),
+    ]);
+  });
+
+  it("lists movements and logs movement-query failures", async () => {
+    mocks.client.select.mockReturnValue({
+      from: () => ({ orderBy: async () => [{ id: "movement-1" }] }),
+    });
+    await expect(importRepository.listMovements()).resolves.toEqual([
+      { id: "movement-1" },
+    ]);
+    mocks.client.select.mockImplementation(() => {
+      throw new Error("movement read failed");
+    });
+    await expect(importRepository.listMovements("request-1")).rejects.toThrow(
+      "movement read failed",
+    );
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_movements_query_failed",
+      expect.any(Object),
+    );
+  });
   it("persists successive complete snapshots and returns only the latest items", async () => {
     const persisted: unknown[][] = [];
     let importNumber = 0;
@@ -160,11 +214,15 @@ describe("import repository", () => {
     await importRepository.create({
       fileName: "dia-1.xlsx",
       fileHash: "hash-1",
+      documentType: "B3_POSITION_XLSX",
+      documentType: "B3_POSITION_XLSX",
       positions: firstSnapshot as never,
     });
     await importRepository.create({
       fileName: "dia-2.xlsx",
       fileHash: "hash-2",
+      documentType: "B3_POSITION_XLSX",
+      documentType: "B3_POSITION_XLSX",
       positions: secondSnapshot as never,
     });
 

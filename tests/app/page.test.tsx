@@ -8,26 +8,30 @@ vi.mock("@/backend/repositories/import.repository", () => ({
 vi.mock("@/components/logout-button", () => ({
   LogoutButton: () => <button>Sair</button>,
 }));
-vi.mock("@/components/portfolio-import", () => ({
-  PortfolioImport: () => <div>import component</div>,
-}));
 
 import HomePage, { dynamic } from "@/app/page";
 
 describe("HomePage", () => {
-  it("renders the empty portfolio state dynamically", async () => {
+  it("renders the reduced dashboard dynamically", async () => {
     mocks.list.mockResolvedValue([]);
+    const html = renderToStaticMarkup(await HomePage());
     expect(dynamic).toBe("force-dynamic");
-    expect(renderToStaticMarkup(await HomePage())).toContain(
-      "Nenhuma posição importada",
-    );
+    expect(html).toContain("Patrimônio total");
+    expect(html).toContain("Importar dados");
+    expect(html).toContain('href="/imports"');
   });
-  it("renders imported positions", async () => {
-    mocks.list.mockResolvedValue([
-      { id: "1", product: "ETF", assetCode: "BOVA11", quantity: "2" },
-      { id: "2", product: "Tesouro", assetCode: null, quantity: "1" },
-    ]);
-    expect(renderToStaticMarkup(await HomePage())).toContain("ETF");
-    expect(renderToStaticMarkup(await HomePage())).toContain("Tesouro");
+
+  it("renders a dash when positions have no current value", async () => {
+    mocks.list.mockResolvedValue([{ totalValue: null }]);
+    expect(renderToStaticMarkup(await HomePage())).toContain("—");
+  });
+
+  it("does not show unavailable performance cards", async () => {
+    mocks.list.mockResolvedValue([{ totalValue: "1200" }]);
+    const html = renderToStaticMarkup(await HomePage());
+    expect(html).toContain("R$ 1.200,00");
+    expect(html).not.toContain("Valor investido");
+    expect(html).not.toContain("Resultado");
+    expect(html).not.toContain("Rentabilidade");
   });
 });

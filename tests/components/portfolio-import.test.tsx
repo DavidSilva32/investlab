@@ -45,11 +45,56 @@ describe("PortfolioImport", () => {
       screen.getByRole("button", { name: "Gerar preview" }),
     );
     expect(await screen.findByText("ETF")).toBeTruthy();
-    expect(screen.getByText("31/12/2030")).toBeTruthy();
+    expect(screen.getByText(/Posição B3/)).toBeTruthy();
     expect(screen.getByText(/R\$\s*52\.037,50/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Confirmar import/ }),
     ).toBeTruthy();
+  });
+  it("renders a movement preview with its detected format", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          documentType: "B3_MOVEMENT_XLSX",
+          movements: [
+            {
+              direction: "CREDITO",
+              occurredAt: "2026-09-11",
+              movementType: "APLICAÇÃO",
+              product: "CDB - CDB4265W9HJ",
+              assetCode: "CDB4265W9HJ",
+              institution: "BANCO INTER S/A",
+              quantity: "20000",
+              unitPrice: "0.01",
+              operationValue: null,
+            },
+            {
+              direction: "CREDITO",
+              occurredAt: "2026-09-12",
+              movementType: "Juros",
+              product: "Outro produto",
+              assetCode: null,
+              institution: null,
+              quantity: "1",
+              unitPrice: null,
+              operationValue: "200",
+            },
+          ],
+        }),
+      }),
+    );
+    render(<PortfolioImport />);
+    fireEvent.change(
+      document.querySelector("input[type=file]") as HTMLInputElement,
+      { target: { files: [file] } },
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Gerar preview" }),
+    );
+    expect(await screen.findByText(/Movimentação B3/)).toBeTruthy();
+    expect(screen.getByText("CDB - CDB4265W9HJ")).toBeTruthy();
   });
   it("renders a preview error", async () => {
     vi.stubGlobal(
