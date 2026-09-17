@@ -1,4 +1,5 @@
-﻿import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment jsdom
+import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 

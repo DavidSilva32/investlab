@@ -6,15 +6,10 @@ export default defineConfig({
   resolve: { alias: { "@": path.join(rootDirectory, "src") } },
   test: {
     include: ["tests/**/*.test.{ts,tsx}"],
-    environmentMatchGlobs: [
-      ["tests/components/**/*.test.tsx", "jsdom"],
-      ["tests/app/**/*.test.tsx", "jsdom"],
-    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json"],
       reportsDirectory: "coverage",
-      all: true,
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/components/ui/**"],
       thresholds: {

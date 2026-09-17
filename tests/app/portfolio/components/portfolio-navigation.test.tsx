@@ -1,4 +1,5 @@
-﻿import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment jsdom
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PortfolioNavigation } from "@/app/portfolio/_components/portfolio-navigation";
 

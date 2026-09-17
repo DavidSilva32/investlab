@@ -1,4 +1,5 @@
-﻿import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment jsdom
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ list: vi.fn() }));
