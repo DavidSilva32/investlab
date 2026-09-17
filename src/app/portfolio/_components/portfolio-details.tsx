@@ -121,18 +121,27 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
                 ? ` · arquivo de ${date.format(new Date(`${row.estimationBaseDate}T00:00:00Z`))}`
                 : ""}
             </span>
+            {isDiCdb && row.assetCode && (
+              <CdbRateConfiguration
+                assetCode={row.assetCode}
+                currentPercentage={row.cdiPercentage}
+              />
+            )}
           </div>
         );
-      if (isDiCdb && row.assetCode && !row.cdiPercentage)
+      if (isDiCdb && row.assetCode)
         return (
-          <div className="space-y-2">
+          <div className="space-y-1">
             <span className="block font-medium">
               {formatCurrency(Number(row.totalValue))}
             </span>
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3
             </span>
-            <CdbRateConfiguration assetCode={row.assetCode} />
+            <CdbRateConfiguration
+              assetCode={row.assetCode}
+              currentPercentage={row.cdiPercentage}
+            />
           </div>
         );
       return (
@@ -227,7 +236,7 @@ export function PositionDetails({
   return (
     <Card>
       <CardHeader className="border-b">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle>Posições atuais</CardTitle>
             <CardDescription>
@@ -236,16 +245,15 @@ export function PositionDetails({
                 : "Nenhuma posição importada"}
             </CardDescription>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             {positions.length > 0 && <Badge>{positions.length} ativos</Badge>}
             <CdbRateConfiguration
-              missingAssetCodes={positions
+              assetCodes={positions
                 .filter(
                   (position) =>
                     position.assetCode &&
                     /^CDB\b/i.test(position.product) &&
-                    /^(DI|CDI)$/i.test(position.indexer ?? "") &&
-                    !position.cdiPercentage,
+                    /^(DI|CDI)$/i.test(position.indexer ?? ""),
                 )
                 .map((position) => position.assetCode!)}
             />

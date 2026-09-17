@@ -1,8 +1,8 @@
-﻿import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const repository = vi.hoisted(() => ({
   upsert: vi.fn(),
-  configureMissing: vi.fn(),
+  upsertMany: vi.fn(),
 }));
 const logger = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/backend/repositories/cdb-rate.repository", () => ({
@@ -37,7 +37,7 @@ describe("cdb rates route", () => {
   });
 
   it("configures only the supplied distinct CDBs in bulk", async () => {
-    repository.configureMissing.mockResolvedValue(2);
+    repository.upsertMany.mockResolvedValue(2);
     const response = await POST(
       request("POST", {
         assetCodes: ["cdb1", "CDB1", "cdb2"],
@@ -45,7 +45,7 @@ describe("cdb rates route", () => {
       }),
     );
     expect(await response.json()).toEqual({ configured: 2 });
-    expect(repository.configureMissing).toHaveBeenCalledWith(
+    expect(repository.upsertMany).toHaveBeenCalledWith(
       ["CDB1", "CDB2"],
       "110.0000",
     );

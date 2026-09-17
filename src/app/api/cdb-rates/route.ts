@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       )
     )
       throw new ApplicationError("Informe os CDBs a configurar.", 400);
-    const configured = await cdbRateRepository.configureMissing(
+    const configured = await cdbRateRepository.upsertMany(
       [...new Set(body.assetCodes.map(parseAssetCode))],
       parsePercentage(body.cdiPercentage),
     );

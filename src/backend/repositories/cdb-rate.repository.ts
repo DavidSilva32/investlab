@@ -27,13 +27,16 @@ export class CdbRateRepository {
     )[0];
   }
 
-  async configureMissing(assetCodes: string[], cdiPercentage: string) {
+  async upsertMany(assetCodes: string[], cdiPercentage: string) {
     if (!assetCodes.length) return 0;
     return (
       await getDatabaseClient()
         .insert(cdbRateConfigurations)
         .values(assetCodes.map((assetCode) => ({ assetCode, cdiPercentage })))
-        .onConflictDoNothing()
+        .onConflictDoUpdate({
+          target: cdbRateConfigurations.assetCode,
+          set: { cdiPercentage, updatedAt: new Date() },
+        })
         .returning()
     ).length;
   }

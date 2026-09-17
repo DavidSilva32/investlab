@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const client = vi.hoisted(() => ({ insert: vi.fn(), select: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
@@ -14,7 +14,7 @@ describe("CdbRateRepository", () => {
   it("avoids a query when no asset code is provided", async () => {
     await expect(repository.listConfigurations([])).resolves.toEqual([]);
     expect(client.select).not.toHaveBeenCalled();
-    await expect(repository.configureMissing([], "100")).resolves.toBe(0);
+    await expect(repository.upsertMany([], "100")).resolves.toBe(0);
     expect(client.insert).not.toHaveBeenCalled();
   });
 
@@ -48,11 +48,11 @@ describe("CdbRateRepository", () => {
       .mockResolvedValue([{ assetCode: "CDB1" }, { assetCode: "CDB2" }]);
     const conflict = vi.fn().mockReturnValue({ returning });
     client.insert.mockReturnValue({
-      values: () => ({ onConflictDoNothing: conflict }),
+      values: () => ({ onConflictDoUpdate: conflict }),
     });
-    await expect(
-      repository.configureMissing(["CDB1", "CDB2"], "100"),
-    ).resolves.toBe(2);
+    await expect(repository.upsertMany(["CDB1", "CDB2"], "100")).resolves.toBe(
+      2,
+    );
   });
 
   it("caches rates when supplied and skips empty cache writes", async () => {
