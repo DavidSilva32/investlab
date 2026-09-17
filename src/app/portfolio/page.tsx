@@ -1,6 +1,7 @@
 ﻿export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { importRepository } from "@/backend/repositories/import.repository";
+import { DeleteImportedDataButton } from "@/components/delete-imported-data-button";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,15 +12,168 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  PortfolioTable,
+  type PortfolioTableColumn,
+} from "@/components/portfolio-table";
 import { formatCurrency, formatQuantity } from "@/lib/utils";
+
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+type Position = {
+  id: string;
+  product: string;
+  assetCode: string | null;
+  quantity: string;
+  institution: string | null;
+  issuedAt: string | null;
+  maturityAt: string | null;
+  totalValue: string | null;
+};
+type Movement = {
+  id: string;
+  direction: string;
+  occurredAt: string;
+  movementType: string;
+  product: string;
+  assetCode: string | null;
+  institution: string | null;
+  quantity: string;
+  unitPrice: string | null;
+  operationValue: string | null;
+};
+const textValue = (value: string | null) => value ?? "";
+const numberValue = (value: string | null) =>
+  value === null ? null : Number(value);
+const dateValue = (value: string | null) =>
+  value === null ? null : new Date(`${value}T00:00:00Z`).getTime();
+const positionColumns: PortfolioTableColumn<Position>[] = [
+  {
+    id: "product",
+    label: "Produto",
+    width: "22%",
+    value: (row) => row.product,
+    render: (row) => <span className="font-medium">{row.product}</span>,
+  },
+  {
+    id: "assetCode",
+    label: "Código",
+    width: "12%",
+    value: (row) => textValue(row.assetCode),
+    render: (row) => row.assetCode ?? "—",
+  },
+  {
+    id: "quantity",
+    label: "Quantidade",
+    width: "13%",
+    className: "text-right",
+    value: (row) => Number(row.quantity),
+    render: (row) => formatQuantity(Number(row.quantity)),
+  },
+  {
+    id: "institution",
+    label: "Instituição",
+    width: "16%",
+    value: (row) => textValue(row.institution),
+    render: (row) => row.institution ?? "—",
+  },
+  {
+    id: "issuedAt",
+    label: "Emissão",
+    width: "12%",
+    value: (row) => dateValue(row.issuedAt),
+    render: (row) =>
+      row.issuedAt ? date.format(new Date(`${row.issuedAt}T00:00:00Z`)) : "—",
+  },
+  {
+    id: "maturityAt",
+    label: "Vencimento",
+    width: "12%",
+    value: (row) => dateValue(row.maturityAt),
+    render: (row) =>
+      row.maturityAt
+        ? date.format(new Date(`${row.maturityAt}T00:00:00Z`))
+        : "—",
+  },
+  {
+    id: "totalValue",
+    label: "Valor atual",
+    width: "13%",
+    className: "text-right",
+    value: (row) => numberValue(row.totalValue),
+    render: (row) =>
+      row.totalValue ? formatCurrency(Number(row.totalValue)) : "—",
+  },
+];
+const movementColumns: PortfolioTableColumn<Movement>[] = [
+  {
+    id: "occurredAt",
+    label: "Data",
+    width: "12%",
+    value: (row) => new Date(`${row.occurredAt}T00:00:00Z`).getTime(),
+    render: (row) => date.format(new Date(`${row.occurredAt}T00:00:00Z`)),
+  },
+  {
+    id: "movementType",
+    label: "Tipo",
+    width: "17%",
+    value: (row) => row.movementType,
+    render: (row) => (
+      <Badge>
+        {row.direction === "CREDITO" ? "Crédito" : "Débito"} ·{" "}
+        {row.movementType}
+      </Badge>
+    ),
+  },
+  {
+    id: "product",
+    label: "Produto / código",
+    width: "22%",
+    value: (row) => row.product,
+    render: (row) => (
+      <>
+        <span className="font-medium">{row.product}</span>
+        {row.assetCode && (
+          <span className="block text-xs text-muted-foreground">
+            {row.assetCode}
+          </span>
+        )}
+      </>
+    ),
+  },
+  {
+    id: "institution",
+    label: "Instituição",
+    width: "14%",
+    value: (row) => textValue(row.institution),
+    render: (row) => row.institution ?? "—",
+  },
+  {
+    id: "quantity",
+    label: "Quantidade",
+    width: "12%",
+    className: "text-right",
+    value: (row) => Number(row.quantity),
+    render: (row) => formatQuantity(Number(row.quantity)),
+  },
+  {
+    id: "unitPrice",
+    label: "Preço unitário",
+    width: "12%",
+    className: "text-right",
+    value: (row) => numberValue(row.unitPrice),
+    render: (row) =>
+      row.unitPrice ? formatCurrency(Number(row.unitPrice)) : "—",
+  },
+  {
+    id: "operationValue",
+    label: "Valor",
+    width: "11%",
+    className: "text-right",
+    value: (row) => numberValue(row.operationValue),
+    render: (row) =>
+      row.operationValue ? formatCurrency(Number(row.operationValue)) : "—",
+  },
+];
+
 export default async function PortfolioPage({
   searchParams = Promise.resolve({}),
 }: { searchParams?: Promise<{ view?: string }> } = {}) {
@@ -53,74 +207,28 @@ export default async function PortfolioPage({
       {movementsView ? (
         <Card>
           <CardHeader className="border-b">
-            <CardTitle>Movimentações</CardTitle>
-            <CardDescription>
-              {movements.length
-                ? `${movements.length} movimentações importadas`
-                : "Nenhuma movimentação importada"}
-            </CardDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Movimentações</CardTitle>
+                <CardDescription>
+                  {movements.length
+                    ? `${movements.length} movimentações importadas`
+                    : "Nenhuma movimentação importada"}
+                </CardDescription>
+              </div>
+              <DeleteImportedDataButton
+                documentType="B3_MOVEMENT_XLSX"
+                label="movimentações"
+              />
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            {movements.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Produto / código</TableHead>
-                    <TableHead>Instituição</TableHead>
-                    <TableHead className="text-right">Quantidade</TableHead>
-                    <TableHead className="text-right">Preço unitário</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {movements.map((movement) => (
-                    <TableRow key={movement.id}>
-                      <TableCell>
-                        {date.format(
-                          new Date(`${movement.occurredAt}T00:00:00Z`),
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge>
-                          {movement.direction === "CREDITO"
-                            ? "Crédito"
-                            : "Débito"}{" "}
-                          · {movement.movementType}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {movement.product}
-                        {movement.assetCode && (
-                          <span className="block text-xs text-muted-foreground">
-                            {movement.assetCode}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>{movement.institution ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQuantity(Number(movement.quantity))}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {movement.unitPrice
-                          ? formatCurrency(Number(movement.unitPrice))
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {movement.operationValue
-                          ? formatCurrency(Number(movement.operationValue))
-                          : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="p-12 text-center text-sm text-muted-foreground">
-                Importe um arquivo de movimentações da B3 para visualizá-las.
-              </p>
-            )}
+            <PortfolioTable
+              columns={movementColumns}
+              rows={movements}
+              initialSort={{ id: "occurredAt", direction: "desc" }}
+              emptyMessage="Importe um arquivo de movimentações da B3 para visualizá-las."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -135,62 +243,24 @@ export default async function PortfolioPage({
                     : "Nenhuma posição importada"}
                 </CardDescription>
               </div>
-              {positions.length > 0 && <Badge>{positions.length} ativos</Badge>}
+              <div className="flex items-center gap-3">
+                {positions.length > 0 && (
+                  <Badge>{positions.length} ativos</Badge>
+                )}
+                <DeleteImportedDataButton
+                  documentType="B3_POSITION_XLSX"
+                  label="posições"
+                />
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {positions.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Produto</TableHead>
-                    <TableHead>Código</TableHead>
-                    <TableHead className="text-right">Quantidade</TableHead>
-                    <TableHead>Instituição</TableHead>
-                    <TableHead>Emissão</TableHead>
-                    <TableHead>Vencimento</TableHead>
-                    <TableHead className="text-right">Valor atual</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {positions.map((position) => (
-                    <TableRow key={position.id}>
-                      <TableCell className="font-medium">
-                        {position.product}
-                      </TableCell>
-                      <TableCell>{position.assetCode ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQuantity(Number(position.quantity))}
-                      </TableCell>
-                      <TableCell>{position.institution ?? "—"}</TableCell>
-                      <TableCell>
-                        {position.issuedAt
-                          ? date.format(
-                              new Date(`${position.issuedAt}T00:00:00Z`),
-                            )
-                          : "—"}
-                      </TableCell>
-                      <TableCell>
-                        {position.maturityAt
-                          ? date.format(
-                              new Date(`${position.maturityAt}T00:00:00Z`),
-                            )
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {position.totalValue
-                          ? formatCurrency(Number(position.totalValue))
-                          : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="p-12 text-center text-sm text-muted-foreground">
-                Importe um arquivo B3 para visualizar suas posições.
-              </p>
-            )}
+            <PortfolioTable
+              columns={positionColumns}
+              rows={positions}
+              initialSort={{ id: "product", direction: "asc" }}
+              emptyMessage="Importe um arquivo B3 para visualizar suas posições."
+            />
           </CardContent>
         </Card>
       )}

@@ -6,6 +6,32 @@ const listMovements = vi.hoisted(() => vi.fn());
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: { listLatestPositions: listPositions, listMovements },
 }));
+vi.mock("@/components/portfolio-table", () => ({
+  PortfolioTable: ({
+    columns,
+    rows,
+  }: {
+    columns: Array<{
+      value: (row: never) => unknown;
+      render: (row: never) => unknown;
+    }>;
+    rows: never[];
+  }) => (
+    <div>
+      {rows.flatMap((row) =>
+        columns.map((column) => {
+          column.value(row);
+          return column.render(row);
+        }),
+      )}
+    </div>
+  ),
+}));
+vi.mock("@/components/delete-imported-data-button", () => ({
+  DeleteImportedDataButton: ({ label }: { label: string }) => (
+    <button>Excluir {label}</button>
+  ),
+}));
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>

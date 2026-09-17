@@ -1,7 +1,11 @@
 ﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { repository, service } = vi.hoisted(() => ({
-  repository: { existsByHash: vi.fn(), create: vi.fn() },
+  repository: {
+    existsByHash: vi.fn(),
+    create: vi.fn(),
+    deleteByDocumentType: vi.fn(),
+  },
   service: { preview: vi.fn(), assertCanBeConfirmed: vi.fn() },
 }));
 vi.mock("@/backend/repositories/import.repository", () => ({
@@ -37,6 +41,24 @@ describe("ImportController", () => {
     });
   });
 
+  it("clears one supported import type", async () => {
+    repository.deleteByDocumentType.mockResolvedValue(2);
+    const response = await importController.clear(
+      "B3_MOVEMENT_XLSX",
+      "request-1",
+    );
+    await expect(response.json()).resolves.toEqual({ deletedImports: 2 });
+    expect(repository.deleteByDocumentType).toHaveBeenCalledWith(
+      "B3_MOVEMENT_XLSX",
+      "request-1",
+    );
+  });
+
+  it("rejects an unsupported import type", async () => {
+    await expect(
+      importController.clear("other", "request-1"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
   it("returns a position preview without persistence", async () => {
     const response = await importController.preview(
       requestWithFile(),

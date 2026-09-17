@@ -1,4 +1,4 @@
-﻿import { desc, eq } from "drizzle-orm";
+﻿import { inArray, desc, eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
@@ -8,6 +8,9 @@ import {
   positionSnapshots,
 } from "@/infrastructure/database/schema";
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
+
+export type B3DocumentType = ParsedB3Import["documentType"];
+
 export class ImportRepository {
   async existsByHash(fileHash: string, requestId?: string) {
     try {
@@ -28,6 +31,7 @@ export class ImportRepository {
       throw error;
     }
   }
+
   async create(
     input: { fileName: string; fileHash: string } & ParsedB3Import,
     requestId?: string,
@@ -68,6 +72,48 @@ export class ImportRepository {
       throw error;
     }
   }
+
+  async deleteByDocumentType(documentType: B3DocumentType, requestId?: string) {
+    try {
+      return await getDatabaseClient().transaction(async (transaction) => {
+        const records = await transaction
+          .select({ id: imports.id })
+          .from(imports)
+          .where(eq(imports.documentType, documentType));
+        const importIds = records.map((record) => record.id);
+        if (!importIds.length) return 0;
+        if (documentType === "B3_MOVEMENT_XLSX") {
+          await transaction
+            .delete(movementItems)
+            .where(inArray(movementItems.importId, importIds));
+        } else {
+          const snapshots = await transaction
+            .select({ id: positionSnapshots.id })
+            .from(positionSnapshots)
+            .where(inArray(positionSnapshots.importId, importIds));
+          const snapshotIds = snapshots.map((snapshot) => snapshot.id);
+          if (snapshotIds.length) {
+            await transaction
+              .delete(positionItems)
+              .where(inArray(positionItems.snapshotId, snapshotIds));
+            await transaction
+              .delete(positionSnapshots)
+              .where(inArray(positionSnapshots.id, snapshotIds));
+          }
+        }
+        await transaction.delete(imports).where(inArray(imports.id, importIds));
+        return importIds.length;
+      });
+    } catch (error) {
+      logger.error("database_import_deletion_failed", {
+        requestId,
+        error,
+        documentType,
+      });
+      throw error;
+    }
+  }
+
   async listLatestPositions(requestId?: string) {
     try {
       const [snapshot] = await getDatabaseClient()
@@ -86,6 +132,7 @@ export class ImportRepository {
       throw error;
     }
   }
+
   async listMovements(requestId?: string) {
     try {
       return await getDatabaseClient()

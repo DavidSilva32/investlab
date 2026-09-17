@@ -1,7 +1,16 @@
 ﻿import { ApplicationError } from "@/backend/errors/application-error";
-import { importRepository } from "@/backend/repositories/import.repository";
+import {
+  importRepository,
+  type B3DocumentType,
+} from "@/backend/repositories/import.repository";
 import { importService } from "@/backend/services/import.service";
 import { logger } from "@/infrastructure/logging/logger";
+
+const documentTypes = new Set<B3DocumentType>([
+  "B3_POSITION_XLSX",
+  "B3_MOVEMENT_XLSX",
+]);
+
 export class ImportController {
   private async readFile(request: Request) {
     const file = (await request.formData()).get("file");
@@ -14,6 +23,7 @@ export class ImportController {
       buffer: Buffer.from(await file.arrayBuffer()),
     };
   }
+
   async preview(request: Request, requestId: string) {
     logger.info("b3_import_preview_started", { requestId });
     const preview = importService.preview(await this.readFile(request));
@@ -28,6 +38,7 @@ export class ImportController {
     logger.info("b3_import_records_parsed", { requestId, records: count });
     return Response.json({ ...preview, count });
   }
+
   async confirm(request: Request, requestId: string) {
     logger.info("b3_import_confirm_started", { requestId });
     const file = await this.readFile(request);
@@ -54,6 +65,22 @@ export class ImportController {
       { importId: result.importId, count, documentType: preview.documentType },
       { status: 201 },
     );
+  }
+
+  async clear(documentType: string | null, requestId: string) {
+    if (!documentType || !documentTypes.has(documentType as B3DocumentType)) {
+      throw new ApplicationError("Tipo de importação inválido.", 400);
+    }
+    const deletedImports = await importRepository.deleteByDocumentType(
+      documentType as B3DocumentType,
+      requestId,
+    );
+    logger.info("b3_imports_deleted", {
+      requestId,
+      documentType,
+      deletedImports,
+    });
+    return Response.json({ deletedImports });
   }
 }
 export const importController = new ImportController();

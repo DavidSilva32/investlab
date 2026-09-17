@@ -173,6 +173,88 @@ describe("import repository", () => {
       expect.any(Object),
     );
   });
+  it("deletes movement imports and their items", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      select: vi.fn().mockReturnValue({
+        from: () => ({ where: async () => [{ id: "movement-import" }] }),
+      }),
+      delete: vi.fn().mockReturnValue({ where }),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    await expect(
+      importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
+    ).resolves.toBe(1);
+    expect(transaction.delete).toHaveBeenCalledTimes(2);
+  });
+
+  it("deletes position items, snapshots and imports", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "position-import" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "snapshot-1" }] }),
+        }),
+      delete: vi.fn().mockReturnValue({ where }),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    await expect(
+      importRepository.deleteByDocumentType("B3_POSITION_XLSX"),
+    ).resolves.toBe(1);
+    expect(transaction.delete).toHaveBeenCalledTimes(3);
+  });
+
+  it("removes a position import even when its snapshot is absent", async () => {
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "position-import" }] }),
+        })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+      delete: vi
+        .fn()
+        .mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    await expect(
+      importRepository.deleteByDocumentType("B3_POSITION_XLSX"),
+    ).resolves.toBe(1);
+    expect(transaction.delete).toHaveBeenCalledTimes(1);
+  });
+  it("does not delete when no matching import exists and logs deletion failures", async () => {
+    const emptyTransaction = {
+      select: vi
+        .fn()
+        .mockReturnValue({ from: () => ({ where: async () => [] }) }),
+      delete: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof emptyTransaction) => unknown) =>
+        callback(emptyTransaction),
+    );
+    await expect(
+      importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
+    ).resolves.toBe(0);
+    mocks.client.transaction.mockRejectedValueOnce(new Error("delete failed"));
+    await expect(
+      importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX", "request-1"),
+    ).rejects.toThrow("delete failed");
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_import_deletion_failed",
+      expect.any(Object),
+    );
+  });
   it("persists successive complete snapshots and returns only the latest items", async () => {
     const persisted: unknown[][] = [];
     let importNumber = 0;
