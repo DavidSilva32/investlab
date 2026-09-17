@@ -29,6 +29,9 @@ export type PortfolioPosition = {
   maturityAt: string | null;
   quantity: string;
   totalValue: string | null;
+  estimationBaseDate?: string | null;
+  cdiPercentage?: string | null;
+  estimatedValue?: number | null;
 };
 
 export function PortfolioOverview({

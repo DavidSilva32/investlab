@@ -15,6 +15,7 @@ export const imports = pgTable("imports", {
   fileName: text().notNull(),
   fileHash: varchar({ length: 64 }).notNull().unique(),
   referenceDate: date(),
+  estimationBaseDate: date(),
   status: varchar({ length: 20 }).notNull().default("CONFIRMED"),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
@@ -25,6 +26,7 @@ export const positionSnapshots = pgTable("position_snapshots", {
     .unique()
     .references(() => imports.id),
   referenceDate: date(),
+  estimationBaseDate: date(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 export const positionItems = pgTable("position_items", {
@@ -56,6 +58,18 @@ export const positionItems = pgTable("position_items", {
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
+export const cdbRateConfigurations = pgTable("cdb_rate_configurations", {
+  id: uuid().defaultRandom().primaryKey(),
+  assetCode: text().notNull().unique(),
+  cdiPercentage: numeric({ precision: 9, scale: 4 }).notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+export const cdiDailyRates = pgTable("cdi_daily_rates", {
+  rateDate: date().primaryKey(),
+  annualRate: numeric({ precision: 9, scale: 6 }).notNull(),
+  fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 export const movementItems = pgTable("movement_items", {
   id: uuid().defaultRandom().primaryKey(),
   importId: uuid()

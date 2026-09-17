@@ -15,6 +15,7 @@ import {
 } from "@/components/portfolio-table";
 import { formatCurrency, formatQuantity } from "@/lib/utils";
 import type { PortfolioPosition } from "./portfolio-overview";
+import { CdbRateConfiguration } from "./cdb-rate-configuration";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
@@ -97,11 +98,54 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
   {
     id: "totalValue",
     label: "Valor atual",
-    width: "13%",
+    width: "18%",
     className: "text-right",
-    value: (row) => numberValue(row.totalValue),
-    render: (row) =>
-      row.totalValue ? formatCurrency(Number(row.totalValue)) : "—",
+    value: (row) => row.estimatedValue ?? numberValue(row.totalValue),
+    render: (row) => {
+      const isDiCdb =
+        /^CDB\b/i.test(row.product) && /^(DI|CDI)$/i.test(row.indexer ?? "");
+      if (!row.totalValue) return "—";
+      if (row.estimatedValue !== null && row.estimatedValue !== undefined)
+        return (
+          <div className="space-y-1">
+            <span className="font-medium">
+              {formatCurrency(row.estimatedValue)}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              Valor estimado hoje · {row.cdiPercentage}% CDI
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              Último valor informado pela B3:{" "}
+              {formatCurrency(Number(row.totalValue))}
+              {row.estimationBaseDate
+                ? ` · arquivo de ${date.format(new Date(`${row.estimationBaseDate}T00:00:00Z`))}`
+                : ""}
+            </span>
+          </div>
+        );
+      if (isDiCdb && row.assetCode && !row.cdiPercentage)
+        return (
+          <div className="space-y-2">
+            <span className="block font-medium">
+              {formatCurrency(Number(row.totalValue))}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              Último valor informado pela B3
+            </span>
+            <CdbRateConfiguration assetCode={row.assetCode} />
+          </div>
+        );
+      return (
+        <div>
+          <span className="font-medium">
+            {formatCurrency(Number(row.totalValue))}
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            Último valor informado pela B3
+          </span>
+        </div>
+      );
+    },
   },
 ];
 const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
@@ -194,6 +238,17 @@ export function PositionDetails({
           </div>
           <div className="flex items-center gap-3">
             {positions.length > 0 && <Badge>{positions.length} ativos</Badge>}
+            <CdbRateConfiguration
+              missingAssetCodes={positions
+                .filter(
+                  (position) =>
+                    position.assetCode &&
+                    /^CDB\b/i.test(position.product) &&
+                    /^(DI|CDI)$/i.test(position.indexer ?? "") &&
+                    !position.cdiPercentage,
+                )
+                .map((position) => position.assetCode!)}
+            />
             <DeleteImportedDataButton
               documentType="B3_POSITION_XLSX"
               label="posições"

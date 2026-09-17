@@ -7,7 +7,7 @@ export class ImportService {
     importFileSchema.parse(file);
     return {
       hash: createHash("sha256").update(file.buffer).digest("hex"),
-      ...parseB3Xlsx(file.buffer),
+      ...parseB3Xlsx(file.buffer, file.name),
     };
   }
   assertCanBeConfirmed(isDuplicate: boolean) {

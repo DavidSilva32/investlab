@@ -44,6 +44,10 @@ export class ImportRepository {
             fileName: input.fileName,
             fileHash: input.fileHash,
             documentType: input.documentType,
+            estimationBaseDate:
+              input.documentType === "B3_POSITION_XLSX"
+                ? input.estimationBaseDate
+                : null,
           })
           .returning();
         if (input.documentType === "B3_MOVEMENT_XLSX") {
@@ -57,7 +61,10 @@ export class ImportRepository {
         }
         const [snapshot] = await transaction
           .insert(positionSnapshots)
-          .values({ importId: importRecord.id })
+          .values({
+            importId: importRecord.id,
+            estimationBaseDate: input.estimationBaseDate,
+          })
           .returning();
         await transaction.insert(positionItems).values(
           input.positions.map((position) => ({
@@ -122,11 +129,15 @@ export class ImportRepository {
         .orderBy(desc(positionSnapshots.createdAt))
         .limit(1);
       if (!snapshot) return [];
-      return await getDatabaseClient()
+      const positions = await getDatabaseClient()
         .select()
         .from(positionItems)
         .where(eq(positionItems.snapshotId, snapshot.id))
         .orderBy(positionItems.product);
+      return positions.map((position) => ({
+        ...position,
+        estimationBaseDate: snapshot.estimationBaseDate,
+      }));
     } catch (error) {
       logger.error("database_positions_query_failed", { requestId, error });
       throw error;

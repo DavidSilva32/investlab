@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { importRepository } from "@/backend/repositories/import.repository";
+import { enrichCdbEstimates } from "@/backend/services/cdb-estimate.service";
 import { AppShell } from "@/components/app-shell";
 import {
   MovementDetails,
@@ -25,6 +26,7 @@ export default async function PortfolioPage({
     importRepository.listLatestPositions(),
     importRepository.listMovements(),
   ]);
+  const estimatedPositions = await enrichCdbEstimates(positions);
 
   return (
     <AppShell title="Carteira">
@@ -42,9 +44,9 @@ export default async function PortfolioPage({
       </div>
       <PortfolioNavigation activeView={activeView} />
       {activeView === "overview" ? (
-        <PortfolioOverview positions={positions} />
+        <PortfolioOverview positions={estimatedPositions} />
       ) : activeView === "positions" ? (
-        <PositionDetails positions={positions} />
+        <PositionDetails positions={estimatedPositions} />
       ) : (
         <MovementDetails movements={movements} />
       )}

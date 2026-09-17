@@ -2,6 +2,10 @@
 
 import { ApplicationError } from "@/backend/errors/application-error";
 
+export type ParsedB3PositionDocument = {
+  estimationBaseDate: string | null;
+  positions: ParsedB3Position[];
+};
 export type ParsedB3Position = {
   product: string;
   institution: string | null;
@@ -74,7 +78,21 @@ const selectValuation = (valuations: Valuation[]) =>
     unitPrice: null,
     totalValue: null,
   };
-function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
+const estimationBaseDate = (workbook: XLSX.WorkBook, fileName?: string) => {
+  const created = workbook.Props?.CreatedDate;
+  if (created instanceof Date && !Number.isNaN(created.getTime()))
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+    }).format(created);
+  const match = fileName?.match(
+    /^posicao-(\d{4})-(\d{2})-(\d{2})-\d{2}-\d{2}-\d{2}\.xlsx$/i,
+  );
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+};
+function parseB3PositionXlsx(
+  file: Buffer,
+  fileName?: string,
+): ParsedB3PositionDocument {
   const workbook = XLSX.read(file, { type: "buffer", cellDates: false });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   /* v8 ignore next -- XLSX refuses to create a workbook without worksheets. */
@@ -181,13 +199,18 @@ function parseB3PositionXlsx(file: Buffer): ParsedB3Position[] {
       "Nenhuma posição foi encontrada na planilha.",
       422,
     );
-  return positions;
+  return {
+    positions,
+    estimationBaseDate: estimationBaseDate(workbook, fileName),
+  };
 }
 
 export class B3PositionXlsxParser {
-  parse(file: Buffer): ParsedB3Position[] {
-    return parseB3PositionXlsx(file);
+  parse(file: Buffer, fileName?: string): ParsedB3Position[] {
+    return parseB3PositionXlsx(file, fileName).positions;
+  }
+  parseDocument(file: Buffer, fileName?: string): ParsedB3PositionDocument {
+    return parseB3PositionXlsx(file, fileName);
   }
 }
-
 export const b3PositionXlsxParser = new B3PositionXlsxParser();
