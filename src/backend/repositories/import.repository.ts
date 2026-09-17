@@ -1,4 +1,4 @@
-﻿import { inArray, desc, eq } from "drizzle-orm";
+import { inArray, desc, eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
@@ -10,6 +10,12 @@ import {
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 
 export type B3DocumentType = ParsedB3Import["documentType"];
+const baseDateFromPositionFileName = (fileName?: string | null) => {
+  const match = fileName?.match(
+    /^posicao-(\d{4})-(\d{2})-(\d{2})-\d{2}-\d{2}-\d{2}\.xlsx$/i,
+  );
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+};
 
 export class ImportRepository {
   async existsByHash(fileHash: string, requestId?: string) {
@@ -129,6 +135,19 @@ export class ImportRepository {
         .orderBy(desc(positionSnapshots.createdAt))
         .limit(1);
       if (!snapshot) return [];
+      const [importRecord] =
+        snapshot.estimationBaseDate === null
+          ? await getDatabaseClient()
+              .select({ fileName: imports.fileName })
+              .from(imports)
+              .where(eq(imports.id, snapshot.importId))
+              .limit(1)
+          : [];
+      const estimationBaseDate =
+        snapshot.estimationBaseDate ??
+        (importRecord
+          ? baseDateFromPositionFileName(importRecord.fileName)
+          : snapshot.estimationBaseDate);
       const positions = await getDatabaseClient()
         .select()
         .from(positionItems)
@@ -136,7 +155,7 @@ export class ImportRepository {
         .orderBy(positionItems.product);
       return positions.map((position) => ({
         ...position,
-        estimationBaseDate: snapshot.estimationBaseDate,
+        estimationBaseDate,
       }));
     } catch (error) {
       logger.error("database_positions_query_failed", { requestId, error });

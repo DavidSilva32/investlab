@@ -1,15 +1,7 @@
-﻿import { ApplicationError } from "@/backend/errors/application-error";
-import {
-  importRepository,
-  type B3DocumentType,
-} from "@/backend/repositories/import.repository";
+import { ApplicationError } from "@/backend/errors/application-error";
+
 import { importService } from "@/backend/services/import.service";
 import { logger } from "@/infrastructure/logging/logger";
-
-const documentTypes = new Set<B3DocumentType>([
-  "B3_POSITION_XLSX",
-  "B3_MOVEMENT_XLSX",
-]);
 
 export class ImportController {
   private async readFile(request: Request) {
@@ -42,9 +34,8 @@ export class ImportController {
   async confirm(request: Request, requestId: string) {
     logger.info("b3_import_confirm_started", { requestId });
     const file = await this.readFile(request);
-    const preview = importService.preview(file);
-    const duplicate = await importRepository.existsByHash(
-      preview.hash,
+    const { preview, result, duplicate } = await importService.confirm(
+      file,
       requestId,
     );
     if (duplicate)
@@ -52,11 +43,7 @@ export class ImportController {
         requestId,
         fileHashPrefix: preview.hash.slice(0, 12),
       });
-    importService.assertCanBeConfirmed(duplicate);
-    const result = await importRepository.create(
-      { fileName: file.name, fileHash: preview.hash, ...preview },
-      requestId,
-    );
+
     const count =
       preview.documentType === "B3_POSITION_XLSX"
         ? preview.positions.length
@@ -67,14 +54,8 @@ export class ImportController {
     );
   }
 
-  async clear(documentType: string | null, requestId: string) {
-    if (!documentType || !documentTypes.has(documentType as B3DocumentType)) {
-      throw new ApplicationError("Tipo de importação inválido.", 400);
-    }
-    const deletedImports = await importRepository.deleteByDocumentType(
-      documentType as B3DocumentType,
-      requestId,
-    );
+  async delete(documentType: string | null, requestId: string) {
+    const deletedImports = await importService.delete(documentType, requestId);
     logger.info("b3_imports_deleted", {
       requestId,
       documentType,

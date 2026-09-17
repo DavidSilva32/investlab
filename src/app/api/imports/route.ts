@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { importController } from "@/backend/controllers/import.controller";
 import { logger } from "@/infrastructure/logging/logger";
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function DELETE(request: Request) {
   const requestId = request.headers.get("x-request-id") ?? randomUUID();
   try {
-    return await importController.clear(
+    return await importController.delete(
       new URL(request.url).searchParams.get("documentType"),
       requestId,
     );

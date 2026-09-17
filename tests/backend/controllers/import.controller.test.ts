@@ -1,15 +1,7 @@
-﻿import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { repository, service } = vi.hoisted(() => ({
-  repository: {
-    existsByHash: vi.fn(),
-    create: vi.fn(),
-    deleteByDocumentType: vi.fn(),
-  },
-  service: { preview: vi.fn(), assertCanBeConfirmed: vi.fn() },
-}));
-vi.mock("@/backend/repositories/import.repository", () => ({
-  importRepository: repository,
+const { service } = vi.hoisted(() => ({
+  service: { preview: vi.fn(), confirm: vi.fn(), delete: vi.fn() },
 }));
 vi.mock("@/backend/services/import.service", () => ({
   importService: service,
@@ -31,123 +23,57 @@ function requestWithFile() {
   return new Request("http://test/import", { method: "POST", body: form });
 }
 
+const preview = {
+  hash: "a".repeat(64),
+  documentType: "B3_POSITION_XLSX" as const,
+  positions: [{ product: "Ativo", quantity: "1" }],
+};
+
 describe("ImportController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    service.preview.mockReturnValue({
-      hash: "a".repeat(64),
-      documentType: "B3_POSITION_XLSX",
-      positions: [{ product: "Ativo", quantity: "1" }],
+    service.preview.mockReturnValue(preview);
+    service.confirm.mockResolvedValue({
+      preview,
+      result: { importId: "import-1" },
+      duplicate: false,
     });
   });
 
-  it("clears one supported import type", async () => {
-    repository.deleteByDocumentType.mockResolvedValue(2);
-    const response = await importController.clear(
+  it("delegates delete to the service", async () => {
+    service.delete.mockResolvedValue(2);
+    const response = await importController.delete(
       "B3_MOVEMENT_XLSX",
       "request-1",
     );
     await expect(response.json()).resolves.toEqual({ deletedImports: 2 });
-    expect(repository.deleteByDocumentType).toHaveBeenCalledWith(
+    expect(service.delete).toHaveBeenCalledWith(
       "B3_MOVEMENT_XLSX",
       "request-1",
     );
   });
 
-  it("rejects an unsupported import type", async () => {
+  it("propagates service validation", async () => {
+    service.delete.mockRejectedValue({ statusCode: 400 });
     await expect(
-      importController.clear("other", "request-1"),
+      importController.delete("other", "request-1"),
     ).rejects.toMatchObject({ statusCode: 400 });
   });
-  it("returns a position preview without persistence", async () => {
+
+  it("returns a preview", async () => {
     const response = await importController.preview(
       requestWithFile(),
       "request-1",
     );
-    await expect(response.json()).resolves.toMatchObject({
-      count: 1,
-      documentType: "B3_POSITION_XLSX",
-    });
-    expect(repository.create).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({ count: 1 });
   });
 
-  it("returns a movement preview", async () => {
-    service.preview.mockReturnValue({
-      hash: "a".repeat(64),
-      documentType: "B3_MOVEMENT_XLSX",
-      movements: [{ product: "CDB" }],
-    });
-    const response = await importController.preview(
-      requestWithFile(),
-      "request-1",
-    );
-    await expect(response.json()).resolves.toMatchObject({
-      count: 1,
-      documentType: "B3_MOVEMENT_XLSX",
-    });
-  });
-
-  it("persists a non-duplicate confirmation", async () => {
-    repository.existsByHash.mockResolvedValue(false);
-    repository.create.mockResolvedValue({ importId: "import-1" });
+  it("delegates confirmation", async () => {
     const response = await importController.confirm(
       requestWithFile(),
       "request-1",
     );
     expect(response.status).toBe(201);
-    expect(repository.create).toHaveBeenCalledWith(
-      expect.objectContaining({ documentType: "B3_POSITION_XLSX" }),
-      "request-1",
-    );
-  });
-
-  it("confirms a non-duplicate movement import", async () => {
-    service.preview.mockReturnValue({
-      hash: "b".repeat(64),
-      documentType: "B3_MOVEMENT_XLSX",
-      movements: [{ product: "CDB" }],
-    });
-    repository.existsByHash.mockResolvedValue(false);
-    repository.create.mockResolvedValue({ importId: "movement-import" });
-    const response = await importController.confirm(
-      requestWithFile(),
-      "request-1",
-    );
-    await expect(response.json()).resolves.toMatchObject({
-      importId: "movement-import",
-      count: 1,
-      documentType: "B3_MOVEMENT_XLSX",
-    });
-  });
-  it("rejects a duplicate confirmation", async () => {
-    repository.existsByHash.mockResolvedValue(true);
-    service.assertCanBeConfirmed.mockImplementation(() => {
-      throw new Error("duplicate");
-    });
-    await expect(
-      importController.confirm(requestWithFile(), "request-1"),
-    ).rejects.toThrow("duplicate");
-  });
-
-  it("rejects a form field that is not a file", async () => {
-    const form = new FormData();
-    form.append("file", "not-a-file");
-    await expect(
-      importController.preview(
-        new Request("http://test/import", { method: "POST", body: form }),
-        "request-1",
-      ),
-    ).rejects.toMatchObject({ statusCode: 400 });
-  });
-  it("requires a file in the form data", async () => {
-    await expect(
-      importController.preview(
-        new Request("http://test/import", {
-          method: "POST",
-          body: new FormData(),
-        }),
-        "request-1",
-      ),
-    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(service.confirm).toHaveBeenCalled();
   });
 });

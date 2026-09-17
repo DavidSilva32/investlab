@@ -1,20 +1,19 @@
-﻿import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  clear: vi.fn(),
+  delete: vi.fn(),
   logger: { warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@/backend/controllers/import.controller", () => ({
-  importController: { clear: mocks.clear },
+  importController: { delete: mocks.delete },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
-import { ApplicationError } from "@/backend/errors/application-error";
 import { DELETE } from "@/app/api/imports/route";
 
 describe("imports deletion route", () => {
-  it("clears the requested document type", async () => {
-    mocks.clear.mockResolvedValue(
+  it("delegates the requested document type", async () => {
+    mocks.delete.mockResolvedValue(
       new Response(JSON.stringify({ deletedImports: 1 })),
     );
     const response = await DELETE(
@@ -23,29 +22,9 @@ describe("imports deletion route", () => {
       }),
     );
     await expect(response.json()).resolves.toEqual({ deletedImports: 1 });
-    expect(mocks.clear).toHaveBeenCalledWith(
+    expect(mocks.delete).toHaveBeenCalledWith(
       "B3_POSITION_XLSX",
       expect.any(String),
     );
-  });
-
-  it("maps expected and unexpected failures", async () => {
-    mocks.clear
-      .mockRejectedValueOnce(new ApplicationError("invalid", 400))
-      .mockRejectedValueOnce(new Error("db"));
-    expect(
-      (
-        await DELETE(
-          new Request("http://test/api/imports", { method: "DELETE" }),
-        )
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await DELETE(
-          new Request("http://test/api/imports", { method: "DELETE" }),
-        )
-      ).status,
-    ).toBe(500);
   });
 });

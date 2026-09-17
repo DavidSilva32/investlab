@@ -1,7 +1,16 @@
-﻿import { createHash } from "node:crypto";
+import { createHash } from "node:crypto";
 import { importFileSchema } from "@/backend/schemas/import.schema";
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
 import { ApplicationError } from "@/backend/errors/application-error";
+import {
+  importRepository,
+  type B3DocumentType,
+} from "@/backend/repositories/import.repository";
+
+const documentTypes = new Set<B3DocumentType>([
+  "B3_POSITION_XLSX",
+  "B3_MOVEMENT_XLSX",
+]);
 export class ImportService {
   preview(file: { name: string; size: number; type: string; buffer: Buffer }) {
     importFileSchema.parse(file);
@@ -16,6 +25,32 @@ export class ImportService {
         "Este arquivo já foi importado anteriormente.",
         409,
       );
+  }
+  async confirm(
+    file: { name: string; size: number; type: string; buffer: Buffer },
+    requestId: string,
+  ) {
+    const preview = this.preview(file);
+    const duplicate = await importRepository.existsByHash(
+      preview.hash,
+      requestId,
+    );
+    this.assertCanBeConfirmed(duplicate);
+    const result = await importRepository.create(
+      { fileName: file.name, fileHash: preview.hash, ...preview },
+      requestId,
+    );
+    return { preview, result, duplicate };
+  }
+
+  async delete(documentType: string | null, requestId: string) {
+    if (!documentType || !documentTypes.has(documentType as B3DocumentType)) {
+      throw new ApplicationError("Tipo de importação inválido.", 400);
+    }
+    return importRepository.deleteByDocumentType(
+      documentType as B3DocumentType,
+      requestId,
+    );
   }
 }
 export const importService = new ImportService();
