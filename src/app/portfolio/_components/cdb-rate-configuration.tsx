@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+const initialPercentage = (value: string | null | undefined) => {
+  const percentage = Number(value);
+  return Number.isFinite(percentage) ? String(percentage) : "100";
+};
+
 type Props = {
   assetCode?: string;
   currentPercentage?: string | null;
@@ -20,7 +25,9 @@ export function CdbRateConfiguration({
   missingAssetCodes = [],
 }: Props) {
   const router = useRouter();
-  const [percentage, setPercentage] = useState(currentPercentage ?? "100");
+  const [percentage, setPercentage] = useState(() =>
+    initialPercentage(currentPercentage),
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);

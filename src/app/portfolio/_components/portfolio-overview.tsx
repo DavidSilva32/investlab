@@ -54,7 +54,7 @@ export function PortfolioOverview({
           }
           detail={
             insights.valuedPositions
-              ? "Valor da última posição B3"
+              ? "Valor estimado com CDI quando disponível"
               : "Importe uma posição para começar"
           }
         />
@@ -94,7 +94,7 @@ export function PortfolioOverview({
           <CardHeader>
             <CardTitle>Como seu patrimônio está distribuído</CardTitle>
             <CardDescription>
-              Alocação por instituição, usando o valor atual informado pela B3.
+              Alocação por instituição, com estimativa CDI quando disponível.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -43,6 +43,28 @@ describe("getPortfolioInsights", () => {
     ]);
   });
 
+  it("prioritizes CDI estimates in portfolio totals and allocations", () => {
+    expect(
+      getPortfolioInsights(
+        [
+          {
+            product: "CDB",
+            institution: "Banco",
+            maturityAt: "2027-01-01",
+            totalValue: "100",
+            estimatedValue: 100.52,
+          },
+        ],
+        new Date("2026-09-16T00:00:00Z"),
+      ),
+    ).toMatchObject({
+      totalValue: 100.52,
+      allocations: [{ institution: "Banco", value: 100.52 }],
+      largestPosition: { value: 100.52 },
+      upcomingMaturities: [{ value: 100.52 }],
+    });
+  });
+
   it("handles a portfolio without current values or future maturities", () => {
     expect(
       getPortfolioInsights(

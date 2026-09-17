@@ -35,6 +35,8 @@ export type PortfolioMovement = {
 const textValue = (value: string | null) => value ?? "";
 const numberValue = (value: string | null) =>
   value === null ? null : Number(value);
+const cdiPercentage = (value: string | null | undefined) =>
+  value === null || value === undefined ? "" : formatQuantity(Number(value));
 const dateValue = (value: string | null) =>
   value === null ? null : new Date(`${value}T00:00:00Z`).getTime();
 
@@ -112,7 +114,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
               {formatCurrency(row.estimatedValue)}
             </span>
             <span className="block text-xs text-muted-foreground">
-              Valor estimado hoje · {row.cdiPercentage}% CDI
+              Valor estimado hoje · {cdiPercentage(row.cdiPercentage)}% CDI
             </span>
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3:{" "}

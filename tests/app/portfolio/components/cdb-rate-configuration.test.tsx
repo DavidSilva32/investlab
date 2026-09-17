@@ -29,8 +29,13 @@ describe("CdbRateConfiguration", () => {
       .fn()
       .mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
-    render(<CdbRateConfiguration assetCode="CDB1" currentPercentage="102" />);
+    render(
+      <CdbRateConfiguration assetCode="CDB1" currentPercentage="100.0000" />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Ajustar taxa" }));
+    expect(
+      (screen.getByLabelText("% do CDI para CDB1") as HTMLInputElement).value,
+    ).toBe("100");
     fireEvent.change(screen.getByLabelText("% do CDI para CDB1"), {
       target: { value: "110" },
     });

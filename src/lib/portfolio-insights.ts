@@ -3,6 +3,7 @@
   institution: string | null;
   maturityAt: string | null;
   totalValue: string | null;
+  estimatedValue?: number | null;
 };
 
 export type PortfolioInsights = {
@@ -27,14 +28,19 @@ export type PortfolioInsights = {
 };
 
 const utcDate = (value: string) => new Date(`${value}T00:00:00Z`);
+const positionValue = (position: PortfolioInsightPosition) =>
+  position.estimatedValue ??
+  (position.totalValue === null ? null : Number(position.totalValue));
 
 export function getPortfolioInsights(
   positions: PortfolioInsightPosition[],
   now = new Date(),
 ): PortfolioInsights {
-  const valued = positions.filter((position) => position.totalValue !== null);
+  const valued = positions.filter(
+    (position) => positionValue(position) !== null,
+  );
   const totalValue = valued.reduce(
-    (total, position) => total + Number(position.totalValue),
+    (total, position) => total + positionValue(position)!,
     0,
   );
   const byInstitution = new Map<string, number>();
@@ -42,7 +48,7 @@ export function getPortfolioInsights(
     const institution = position.institution ?? "Instituição não informada";
     byInstitution.set(
       institution,
-      (byInstitution.get(institution) ?? 0) + Number(position.totalValue),
+      (byInstitution.get(institution) ?? 0) + positionValue(position)!,
     );
   }
   const allocations = [...byInstitution.entries()]
@@ -54,7 +60,7 @@ export function getPortfolioInsights(
     .sort((left, right) => right.value - left.value);
   const largest = valued.reduce<PortfolioInsightPosition | null>(
     (current, position) =>
-      !current || Number(position.totalValue) > Number(current.totalValue)
+      !current || positionValue(position)! > positionValue(current)!
         ? position
         : current,
     null,
@@ -73,7 +79,7 @@ export function getPortfolioInsights(
     .map((position) => ({
       product: position.product,
       maturityAt: position.maturityAt!,
-      value: position.totalValue === null ? null : Number(position.totalValue),
+      value: positionValue(position),
     }));
 
   return {
@@ -83,9 +89,9 @@ export function getPortfolioInsights(
     largestPosition: largest
       ? {
           product: largest.product,
-          value: Number(largest.totalValue),
+          value: positionValue(largest)!,
           percentage: totalValue
-            ? (Number(largest.totalValue) / totalValue) * 100
+            ? (positionValue(largest)! / totalValue) * 100
             : 0,
         }
       : null,
