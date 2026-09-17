@@ -72,4 +72,41 @@ describe("CdbRateConfiguration", () => {
       }),
     );
   });
+  it("shows API errors and uses fallback bulk codes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ message: "Taxa inválida." }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CdbRateConfiguration missingAssetCodes={["CDB3"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "Taxa inválida.",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/cdb-rates",
+      expect.objectContaining({
+        body: JSON.stringify({ assetCodes: ["CDB3"], cdiPercentage: "100" }),
+      }),
+    );
+  });
+  it("covers default bulk feedback values", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = render(<CdbRateConfiguration assetCodes={["CDB4"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect((await screen.findByRole("status")).textContent).toContain("0 CDB");
+    first.unmount();
+    render(<CdbRateConfiguration assetCodes={["CDB5"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "Não foi possível salvar",
+    );
+  });
 });

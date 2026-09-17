@@ -146,4 +146,20 @@ describe("portfolio detail components", () => {
     expect(movements).toContain("Crédito");
     expect(movements).toContain("Débito");
   });
+  it("formats missing CDI percentages and ignores CDBs without an indexer", () => {
+    const html = renderToStaticMarkup(
+      <PositionDetails
+        positions={[
+          { ...position, estimatedValue: 1001, cdiPercentage: null },
+          {
+            ...position,
+            assetCode: "CDB3",
+            indexer: null,
+            estimatedValue: null,
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain("Valor estimado hoje");
+  });
 });

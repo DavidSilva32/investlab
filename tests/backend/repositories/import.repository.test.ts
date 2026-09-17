@@ -322,4 +322,40 @@ describe("import repository", () => {
       secondSnapshot,
     );
   });
+  it("derives the estimation base date from legacy position filenames", async () => {
+    const latest = (
+      snapshot: {
+        id: string;
+        importId: string;
+        estimationBaseDate: string | null;
+      },
+      imported: Array<{ fileName: string }>,
+      positions: Array<{ product: string }>,
+    ) => {
+      mocks.client.select
+        .mockReturnValueOnce({
+          from: () => ({ orderBy: () => ({ limit: async () => [snapshot] }) }),
+        })
+        .mockReturnValueOnce(chain(imported))
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ orderBy: async () => positions }) }),
+        });
+    };
+    latest(
+      { id: "snapshot-1", importId: "import-1", estimationBaseDate: null },
+      [{ fileName: "posicao-2026-09-16-13-43-00.xlsx" }],
+      [{ product: "CDB" }],
+    );
+    await expect(importRepository.listLatestPositions()).resolves.toEqual([
+      { product: "CDB", estimationBaseDate: "2026-09-16" },
+    ]);
+    latest(
+      { id: "snapshot-2", importId: "import-2", estimationBaseDate: null },
+      [{ fileName: "arquivo.xlsx" }],
+      [{ product: "CDB" }],
+    );
+    await expect(importRepository.listLatestPositions()).resolves.toEqual([
+      { product: "CDB", estimationBaseDate: null },
+    ]);
+  });
 });
