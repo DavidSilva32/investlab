@@ -1,11 +1,11 @@
-﻿import { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { describe, expect, it, vi } from "vitest";
 const verify = vi.hoisted(() => vi.fn());
 vi.mock("@/infrastructure/auth/session", () => ({
   sessionCookieName: "session",
   verifySession: verify,
 }));
-import { proxy } from "../../proxy";
+import { proxy } from "../proxy";
 describe("proxy authentication", () => {
   it("redirects unauthenticated pages and rejects APIs", async () => {
     verify.mockResolvedValue(false);
