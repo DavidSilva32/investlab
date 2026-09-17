@@ -2,7 +2,7 @@
 
 const repository = vi.hoisted(() => ({
   listConfigurations: vi.fn(),
-  listRatesAfter: vi.fn(),
+  listRatesFrom: vi.fn(),
   cacheRates: vi.fn(),
 }));
 const bcb = vi.hoisted(() => ({ fetchRates: vi.fn() }));
@@ -32,21 +32,21 @@ describe("enrichCdbEstimates", () => {
     await expect(enrichCdbEstimates([cdb])).resolves.toEqual([
       { ...cdb, cdiPercentage: null, estimatedValue: null },
     ]);
-    expect(repository.listRatesAfter).not.toHaveBeenCalled();
+    expect(repository.listRatesFrom).not.toHaveBeenCalled();
   });
   it("uses cached rates and preserves the imported official value", async () => {
     repository.listConfigurations.mockResolvedValue([
       { assetCode: "CDB1", cdiPercentage: "110" },
     ]);
-    repository.listRatesAfter.mockResolvedValue([
-      { rateDate: "2026-09-17", annualRate: "14.9" },
+    repository.listRatesFrom.mockResolvedValue([
+      { rateDate: "2026-09-16", annualRate: "14.9" },
     ]);
     bcb.fetchRates.mockResolvedValue([]);
     const [result] = await enrichCdbEstimates([cdb]);
     expect(result.totalValue).toBe("1000");
     expect(result.cdiPercentage).toBe("110");
     expect(result.estimatedValue).toBeGreaterThan(1000);
-    expect(repository.listRatesAfter).toHaveBeenCalledWith(
+    expect(repository.listRatesFrom).toHaveBeenCalledWith(
       "2026-09-16",
       "2026-09-20",
     );
@@ -55,7 +55,7 @@ describe("enrichCdbEstimates", () => {
     repository.listConfigurations.mockResolvedValue([
       { assetCode: "CDB1", cdiPercentage: "100" },
     ]);
-    repository.listRatesAfter.mockResolvedValue([]);
+    repository.listRatesFrom.mockResolvedValue([]);
     bcb.fetchRates.mockResolvedValue([
       { date: "2026-09-18", annualRate: "14.9" },
       { date: "2026-09-17", annualRate: "14.9" },
@@ -80,12 +80,12 @@ describe("enrichCdbEstimates", () => {
     repository.listConfigurations.mockResolvedValue([
       { assetCode: "CDB1", cdiPercentage: "100" },
     ]);
-    repository.listRatesAfter.mockResolvedValue([
+    repository.listRatesFrom.mockResolvedValue([
       { rateDate: "2026-09-20", annualRate: "14.9" },
     ]);
     await enrichCdbEstimates([cdb]);
     expect(bcb.fetchRates).not.toHaveBeenCalled();
-    repository.listRatesAfter.mockResolvedValue([]);
+    repository.listRatesFrom.mockResolvedValue([]);
     bcb.fetchRates.mockResolvedValue([]);
     const [result] = await enrichCdbEstimates([cdb]);
     expect(result.estimatedValue).toBeNull();

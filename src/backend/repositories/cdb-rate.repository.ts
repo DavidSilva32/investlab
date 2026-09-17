@@ -1,4 +1,4 @@
-﻿import { and, eq, gt, inArray, lt } from "drizzle-orm";
+﻿import { and, gte, inArray, lt } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
   cdbRateConfigurations,
@@ -41,13 +41,13 @@ export class CdbRateRepository {
     ).length;
   }
 
-  async listRatesAfter(baseDate: string, today: string) {
+  async listRatesFrom(baseDate: string, today: string) {
     return getDatabaseClient()
       .select()
       .from(cdiDailyRates)
       .where(
         and(
-          gt(cdiDailyRates.rateDate, baseDate),
+          gte(cdiDailyRates.rateDate, baseDate),
           lt(cdiDailyRates.rateDate, today),
         ),
       );

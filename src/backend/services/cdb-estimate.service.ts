@@ -57,7 +57,7 @@ export async function enrichCdbEstimates<
         };
 
       const estimationBaseDate = position.estimationBaseDate;
-      let rates = await cdbRateRepository.listRatesAfter(
+      let rates = await cdbRateRepository.listRatesFrom(
         estimationBaseDate,
         today,
       );
@@ -71,7 +71,7 @@ export async function enrichCdbEstimates<
         rates = [
           ...rates,
           ...fetched
-            .filter((rate) => rate.date > estimationBaseDate)
+            .filter((rate) => rate.date >= estimationBaseDate)
             .map((rate) => ({
               rateDate: rate.date,
               annualRate: rate.annualRate,

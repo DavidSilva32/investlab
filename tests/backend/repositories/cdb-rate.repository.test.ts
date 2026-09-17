@@ -25,7 +25,7 @@ describe("CdbRateRepository", () => {
       { assetCode: "CDB1" },
     ]);
     await expect(
-      repository.listRatesAfter("2026-09-16", "2026-09-20"),
+      repository.listRatesFrom("2026-09-16", "2026-09-20"),
     ).resolves.toEqual([{ assetCode: "CDB1" }]);
     expect(where).toHaveBeenCalledTimes(2);
   });
