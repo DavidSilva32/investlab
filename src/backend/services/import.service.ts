@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { importFileSchema } from "@/backend/schemas/import.schema";
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
+import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   importRepository,
@@ -36,8 +37,15 @@ export class ImportService {
       requestId,
     );
     this.assertCanBeConfirmed(duplicate);
+    const importData =
+      preview.documentType === "B3_MOVEMENT_XLSX"
+        ? {
+            ...preview,
+            movements: preview.movements.map(prepareB3MovementForPersistence),
+          }
+        : preview;
     const result = await importRepository.create(
-      { fileName: file.name, fileHash: preview.hash, ...preview },
+      { fileName: file.name, fileHash: preview.hash, ...importData },
       requestId,
     );
     return { preview, result, duplicate };

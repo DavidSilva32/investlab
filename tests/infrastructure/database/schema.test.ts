@@ -23,5 +23,11 @@ describe("database schema", () => {
       positionSnapshots.id,
     );
     expect(movementForeignKey.reference().foreignColumns).toContain(imports.id);
+    expect(movementItems.eventFingerprint).toMatchObject({
+      name: "eventFingerprint",
+      notNull: true,
+      isUnique: true,
+      uniqueName: "movement_items_eventFingerprint_unique",
+    });
   });
 });

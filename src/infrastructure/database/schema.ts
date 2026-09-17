@@ -75,6 +75,7 @@ export const movementItems = pgTable("movement_items", {
   importId: uuid()
     .notNull()
     .references(() => imports.id),
+  eventFingerprint: varchar({ length: 32 }).notNull().unique(),
   direction: varchar({ length: 10 }).notNull(),
   occurredAt: date().notNull(),
   movementType: text().notNull(),

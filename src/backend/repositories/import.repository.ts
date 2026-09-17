@@ -8,8 +8,20 @@ import {
   positionSnapshots,
 } from "@/infrastructure/database/schema";
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
+import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
 
 export type B3DocumentType = ParsedB3Import["documentType"];
+type ImportCreateInput =
+  | ({ fileName: string; fileHash: string } & Extract<
+      ParsedB3Import,
+      { documentType: "B3_POSITION_XLSX" }
+    >)
+  | {
+      fileName: string;
+      fileHash: string;
+      documentType: "B3_MOVEMENT_XLSX";
+      movements: PersistedB3Movement[];
+    };
 const baseDateFromPositionFileName = (fileName?: string | null) => {
   const match = fileName?.match(
     /^posicao-(\d{4})-(\d{2})-(\d{2})-\d{2}-\d{2}-\d{2}\.xlsx$/i,
@@ -38,10 +50,7 @@ export class ImportRepository {
     }
   }
 
-  async create(
-    input: { fileName: string; fileHash: string } & ParsedB3Import,
-    requestId?: string,
-  ) {
+  async create(input: ImportCreateInput, requestId?: string) {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         const [importRecord] = await transaction
@@ -57,12 +66,15 @@ export class ImportRepository {
           })
           .returning();
         if (input.documentType === "B3_MOVEMENT_XLSX") {
-          await transaction.insert(movementItems).values(
-            input.movements.map((movement) => ({
-              importId: importRecord.id,
-              ...movement,
-            })),
-          );
+          await transaction
+            .insert(movementItems)
+            .values(
+              input.movements.map((movement) => ({
+                importId: importRecord.id,
+                ...movement,
+              })),
+            )
+            .onConflictDoNothing({ target: movementItems.eventFingerprint });
           return { importId: importRecord.id };
         }
         const [snapshot] = await transaction

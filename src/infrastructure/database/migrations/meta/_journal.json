@@ -43,6 +43,13 @@
       "when": 1789617146855,
       "tag": "0005_sad_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789682335299,
+      "tag": "0006_movement-event-fingerprint",
+      "breakpoints": true
     }
   ]
 }

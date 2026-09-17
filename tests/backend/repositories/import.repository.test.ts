@@ -124,7 +124,8 @@ describe("import repository", () => {
     );
   });
   it("persists movement items without creating a position snapshot", async () => {
-    const persistMovements = vi.fn().mockResolvedValue(undefined);
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const persistMovements = vi.fn().mockReturnValue({ onConflictDoNothing });
     const transaction = { insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
@@ -141,6 +142,7 @@ describe("import repository", () => {
         documentType: "B3_MOVEMENT_XLSX",
         movements: [
           {
+            eventFingerprint: "a".repeat(32),
             direction: "CREDITO",
             occurredAt: "2026-09-11",
             movementType: "APLICAÇÃO",
@@ -155,8 +157,15 @@ describe("import repository", () => {
       }),
     ).resolves.toEqual({ importId: "import-1" });
     expect(persistMovements).toHaveBeenCalledWith([
-      expect.objectContaining({ importId: "import-1", direction: "CREDITO" }),
+      expect.objectContaining({
+        importId: "import-1",
+        eventFingerprint: "a".repeat(32),
+        direction: "CREDITO",
+      }),
     ]);
+    expect(onConflictDoNothing).toHaveBeenCalledWith({
+      target: expect.anything(),
+    });
   });
 
   it("lists movements and logs movement-query failures", async () => {

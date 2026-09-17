@@ -99,6 +99,38 @@ describe("ImportService persistence", () => {
     );
   });
 
+  it("adds deterministic event fingerprints only while confirming movements", async () => {
+    const movement = {
+      direction: "CREDITO" as const,
+      occurredAt: "2026-09-11",
+      movementType: "APLICAÇÃO",
+      product: "CDB - BANCO INTER",
+      assetCode: null,
+      institution: "BANCO INTER",
+      quantity: "100",
+      unitPrice: "1",
+      operationValue: "100",
+    };
+    parser.mockReturnValue({
+      documentType: "B3_MOVEMENT_XLSX",
+      movements: [movement],
+    });
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockResolvedValue({ importId: "import-2" });
+
+    await importService.confirm(persistenceFile, "request-2");
+
+    expect(repository.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        documentType: "B3_MOVEMENT_XLSX",
+        movements: [
+          expect.objectContaining({ eventFingerprint: expect.any(String) }),
+        ],
+      }),
+      "request-2",
+    );
+  });
+
   it("rejects duplicate files and invalid deletion types", async () => {
     parser.mockReturnValue({
       documentType: "B3_MOVEMENT_XLSX",
