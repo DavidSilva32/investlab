@@ -1,5 +1,7 @@
 ﻿export const dynamic = "force-dynamic";
+
 import Link from "next/link";
+import { CalendarDays, PieChart, WalletCards } from "lucide-react";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -8,46 +10,135 @@ import {
   CardDescription,
   CardHeader,
 } from "@/components/ui/card";
+import { getPortfolioInsights } from "@/lib/portfolio-insights";
 import { formatCurrency } from "@/lib/utils";
+
+const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+
 export default async function HomePage() {
   const positions = await importRepository.listLatestPositions();
-  const total = positions.reduce(
-    (sum, p) => sum + Number(p.totalValue ?? 0),
-    0,
-  );
-  const hasTotal = positions.some((p) => p.totalValue !== null);
+  const insights = getPortfolioInsights(positions);
+  const nextMaturity = insights.upcomingMaturities[0];
+
   return (
     <AppShell title="Dashboard">
-      <div className="mb-7">
+      <div className="mb-7 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          Uma visão objetiva da sua carteira.
+          O essencial da sua carteira, com base na última posição B3 importada.
         </p>
+        <Link
+          href="/imports"
+          className="text-sm font-medium text-primary hover:underline"
+        >
+          Importar dados
+        </Link>
       </div>
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <SummaryCard
+          icon={WalletCards}
+          label="Patrimônio atual"
+          value={
+            insights.valuedPositions ? formatCurrency(insights.totalValue) : "—"
+          }
+          detail={
+            insights.valuedPositions
+              ? "Valor da última posição B3"
+              : "Importe uma posição para começar"
+          }
+        />
+        <SummaryCard
+          icon={PieChart}
+          label="Maior exposição"
+          value={
+            insights.largestPosition
+              ? `${insights.largestPosition.percentage.toFixed(1)}%`
+              : "—"
+          }
+          detail={
+            insights.largestPosition
+              ? insights.largestPosition.product
+              : "Ainda sem valores atuais"
+          }
+        />
+        <SummaryCard
+          icon={CalendarDays}
+          label="Próximo vencimento"
+          value={
+            nextMaturity
+              ? date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))
+              : "—"
+          }
+          detail={
+            nextMaturity ? nextMaturity.product : "Nenhum vencimento informado"
+          }
+        />
+      </section>
+      <section className="mt-5 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
         <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Patrimônio total</CardDescription>
+          <CardHeader>
+            <CardDescription>Próximo passo</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-semibold tabular-nums">
-              {hasTotal ? formatCurrency(total) : "—"}
+            <p className="text-base font-medium">
+              Entenda sua carteira antes de decidir.
             </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Veja distribuição por instituição, concentração e vencimentos na
+              visão completa da carteira.
+            </p>
+            <Link
+              href="/portfolio"
+              className="mt-4 inline-flex text-sm font-medium text-primary hover:underline"
+            >
+              Abrir visão da carteira
+            </Link>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Dados da carteira</CardDescription>
+          <CardHeader>
+            <CardDescription>Dados importados</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link
-              href="/imports"
-              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-            >
-              Importar dados
-            </Link>
+            <p className="text-2xl font-semibold tabular-nums">
+              {positions.length}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              posições na última importação B3
+            </p>
           </CardContent>
         </Card>
       </section>
     </AppShell>
+  );
+}
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof WalletCards;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm text-muted-foreground">{label}</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
+              {value}
+            </p>
+          </div>
+          <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+            <Icon className="size-4" />
+          </span>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">{detail}</p>
+      </CardContent>
+    </Card>
   );
 }
