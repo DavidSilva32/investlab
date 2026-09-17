@@ -1,4 +1,5 @@
 ﻿import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 const listPositions = vi.hoisted(() => vi.fn());
@@ -13,7 +14,7 @@ vi.mock("@/components/portfolio-table", () => ({
   }: {
     columns: Array<{
       value: (row: never) => unknown;
-      render: (row: never) => unknown;
+      render: (row: never) => ReactNode;
     }>;
     rows: never[];
   }) => (
@@ -31,6 +32,9 @@ vi.mock("@/components/delete-imported-data-button", () => ({
   DeleteImportedDataButton: ({ label }: { label: string }) => (
     <button>Excluir {label}</button>
   ),
+}));
+vi.mock("@/app/portfolio/_components/cdb-rate-configuration", () => ({
+  CdbRateConfiguration: () => <span>Configurar taxa</span>,
 }));
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => (

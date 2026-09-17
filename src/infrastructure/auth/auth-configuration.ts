@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const passwordHashPattern = /^[a-f\d]{32}:[a-f\d]{128}$/i;
 const minimumAuthSecretLength = 32;
+type AuthenticationEnvironment = {
+  AUTH_EMAIL?: string;
+  AUTH_PASSWORD_HASH?: string;
+  AUTH_SECRET?: string;
+};
 
 export class AuthenticationConfigurationError extends Error {
   constructor(message: string) {
@@ -10,7 +15,9 @@ export class AuthenticationConfigurationError extends Error {
   }
 }
 
-export function getCredentialsConfiguration(environment = process.env) {
+export function getCredentialsConfiguration(
+  environment: AuthenticationEnvironment = process.env as AuthenticationEnvironment,
+) {
   const email = z.email().safeParse(environment.AUTH_EMAIL);
 
   if (!email.success) {
@@ -35,7 +42,9 @@ export function getCredentialsConfiguration(environment = process.env) {
   return { email: email.data, salt, hash };
 }
 
-export function getAuthSecret(environment = process.env) {
+export function getAuthSecret(
+  environment: AuthenticationEnvironment = process.env as AuthenticationEnvironment,
+) {
   const secret = environment.AUTH_SECRET;
 
   if (typeof secret !== "string" || secret.length < minimumAuthSecretLength) {

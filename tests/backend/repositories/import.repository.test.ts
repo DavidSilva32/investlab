@@ -67,6 +67,8 @@ describe("import repository", () => {
       importRepository.create({
         fileName: "b3.xlsx",
         fileHash: "hash",
+        documentType: "B3_POSITION_XLSX",
+        estimationBaseDate: null,
         positions,
       }),
     ).resolves.toMatchObject({ snapshotId: "snapshot-1" });
@@ -89,6 +91,8 @@ describe("import repository", () => {
       importRepository.create({
         fileName: "b3.xlsx",
         fileHash: "hash",
+        documentType: "B3_POSITION_XLSX",
+        estimationBaseDate: null,
         positions,
       }),
     ).rejects.toThrow("write failed");
@@ -297,14 +301,14 @@ describe("import repository", () => {
       fileName: "dia-1.xlsx",
       fileHash: "hash-1",
       documentType: "B3_POSITION_XLSX",
-      documentType: "B3_POSITION_XLSX",
+      estimationBaseDate: null,
       positions: firstSnapshot as never,
     });
     await importRepository.create({
       fileName: "dia-2.xlsx",
       fileHash: "hash-2",
       documentType: "B3_POSITION_XLSX",
-      documentType: "B3_POSITION_XLSX",
+      estimationBaseDate: null,
       positions: secondSnapshot as never,
     });
 

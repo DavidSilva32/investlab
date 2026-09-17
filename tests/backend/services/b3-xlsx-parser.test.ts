@@ -46,7 +46,6 @@ describe("parseB3Xlsx", () => {
     positionDocumentParser.mockReturnValue({
       positions: [{ product: "ETF" }],
       estimationBaseDate: null,
-      estimationBaseDate: null,
     });
     const read = vi
       .spyOn(XLSX, "read")
@@ -63,7 +62,6 @@ describe("parseB3Xlsx", () => {
   it("delegates other worksheets to the existing position parser", () => {
     positionDocumentParser.mockReturnValue({
       positions: [{ product: "ETF" }],
-      estimationBaseDate: null,
       estimationBaseDate: null,
     });
     expect(parseB3Xlsx(workbookBuffer(["Produto", "Quantidade"]))).toEqual({

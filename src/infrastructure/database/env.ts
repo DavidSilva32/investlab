@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+type DatabaseEnvironment = {
+  DATABASE_URL?: string;
+  DATABASE_URL_POOLED?: string;
+};
+
 const directDatabaseEnvironmentSchema = z.object({
   DATABASE_URL: z
     .string({ error: "DATABASE_URL is required." })
@@ -18,14 +23,20 @@ const databaseEnvironmentSchema = directDatabaseEnvironmentSchema.extend(
   pooledDatabaseEnvironmentSchema.shape,
 );
 
-export function getDatabaseUrl(environment = process.env): string {
+export function getDatabaseUrl(
+  environment: DatabaseEnvironment = process.env as DatabaseEnvironment,
+): string {
   return directDatabaseEnvironmentSchema.parse(environment).DATABASE_URL;
 }
 
-export function getDatabasePooledUrl(environment = process.env): string {
+export function getDatabasePooledUrl(
+  environment: DatabaseEnvironment = process.env as DatabaseEnvironment,
+): string {
   return pooledDatabaseEnvironmentSchema.parse(environment).DATABASE_URL_POOLED;
 }
 
-export function getDatabaseEnvironment(environment = process.env) {
+export function getDatabaseEnvironment(
+  environment: DatabaseEnvironment = process.env as DatabaseEnvironment,
+) {
   return databaseEnvironmentSchema.parse(environment);
 }
