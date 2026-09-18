@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
-import { AppPageSkeleton } from "@/components/app-page-skeleton";
+import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { ReferenceRates } from "@/components/reference-rates";
 import { MovementDetails, PositionDetails } from "./portfolio-details";
 import {
@@ -36,7 +36,7 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
       </p>
     );
   if (!overview)
-    return <AppPageSkeleton title="Carteira" variant="portfolio" />;
+    return <AppContentSkeleton title="Carteira" variant="portfolio" />;
   return (
     <>
       <div className="my-5">

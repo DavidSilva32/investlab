@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/app-page-skeleton", () => ({
-  AppPageSkeleton: () => <p>Carregando dashboard...</p>,
+  AppContentSkeleton: () => <p>Carregando dashboard...</p>,
 }));
 vi.mock("@/app/_components/dashboard-summary", () => ({
   DashboardSummary: () => <p>Resumo do dashboard</p>,

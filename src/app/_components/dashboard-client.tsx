@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
-import { AppPageSkeleton } from "@/components/app-page-skeleton";
+import { AppContentSkeleton } from "@/components/app-page-skeleton";
 
 type Overview = Parameters<typeof DashboardSummary>[0] & {
   positions: NonNullable<Parameters<typeof DashboardSummary>[0]["positions"]>;
@@ -30,6 +30,6 @@ export function DashboardClient() {
       </p>
     );
   if (!overview)
-    return <AppPageSkeleton title="Dashboard" variant="dashboard" />;
+    return <AppContentSkeleton title="Dashboard" variant="dashboard" />;
   return <DashboardSummary {...overview} />;
 }

@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/app-page-skeleton", () => ({
-  AppPageSkeleton: () => <p>Carregando carteira...</p>,
+  AppContentSkeleton: () => <p>Carregando carteira...</p>,
 }));
 vi.mock("@/components/reference-rates", () => ({
   ReferenceRates: () => <p>Taxas de referência</p>,
