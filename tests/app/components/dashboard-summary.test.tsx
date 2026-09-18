@@ -33,7 +33,7 @@ describe("DashboardSummary", () => {
         }}
       />,
     );
-    expect(html).toContain("Taxas de referência");
+    expect(html).toContain("Indicadores");
   });
   it("renders every empty summary state when no current data is available", () => {
     const html = renderToStaticMarkup(

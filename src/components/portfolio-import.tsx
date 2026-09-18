@@ -13,6 +13,7 @@ type Movement = {
   movementType: string;
   product: string;
   quantity: string;
+  operationValue: string | null;
 };
 type Preview =
   | { documentType: "B3_POSITION_XLSX"; positions: Position[]; count: number }
@@ -203,6 +204,13 @@ function PreviewItem({ item }: { item: Item }) {
                   <td>{record.product}</td>
                   <td>
                     {number.format(Number((record as Movement).quantity))}
+                  </td>
+                  <td className="p-2 text-right tabular-nums">
+                    {(record as Movement).operationValue
+                      ? money.format(
+                          Number((record as Movement).operationValue),
+                        )
+                      : "—"}
                   </td>
                 </tr>
               ),

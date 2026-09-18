@@ -24,6 +24,14 @@ const movementPreview = {
       movementType: "Compra",
       product: "CDB",
       quantity: "2",
+      operationValue: "20",
+    },
+    {
+      occurredAt: "2026-09-17",
+      movementType: "Resgate",
+      product: "CDB sem valor",
+      quantity: "1",
+      operationValue: null,
     },
   ],
 };
@@ -51,6 +59,7 @@ describe("PortfolioImport", () => {
     expect(await screen.findByText("ETF")).toBeTruthy();
     expect(await screen.findByText("Compra")).toBeTruthy();
     expect(screen.getByText("18/09/2026")).toBeTruthy();
+    expect(screen.getByText(/20,00/)).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 

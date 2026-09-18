@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ReferenceRates } from "@/components/reference-rates";
@@ -13,6 +13,7 @@ describe("ReferenceRates", () => {
         }}
       />,
     );
+    expect(html).toContain("Indicadores");
     expect(html).toContain("Selic");
     expect(html).toContain("15%");
     expect(html).toContain("18/09/2026");
