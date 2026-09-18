@@ -75,7 +75,7 @@ describe("portfolio detail components", () => {
             ...position,
             assetCode: "CDB2",
             estimatedValue: null,
-            cdiPercentage: null,
+            cdiPercentage: "110",
             estimationBaseDate: null,
           },
           {
@@ -108,6 +108,7 @@ describe("portfolio detail components", () => {
       />,
     );
     expect(html).toContain("Configurar taxa");
+    expect(html).toContain("110% do CDI");
     expect(html).toContain("Último valor informado pela B3");
     expect(html).not.toContain("Nenhuma posição importada");
   });

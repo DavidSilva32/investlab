@@ -20,14 +20,23 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    fetch("/api/portfolio")
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message);
-        return body;
-      })
-      .then(setOverview)
-      .catch(() => setError("Não foi possível carregar a carteira."));
+    const loadOverview = () => {
+      fetch("/api/portfolio")
+        .then(async (response) => {
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.message);
+          return body;
+        })
+        .then((data) => {
+          setOverview(data);
+          setError(null);
+        })
+        .catch(() => setError("Não foi possível carregar a carteira."));
+    };
+
+    loadOverview();
+    window.addEventListener("portfolio:updated", loadOverview);
+    return () => window.removeEventListener("portfolio:updated", loadOverview);
   }, []);
   if (error)
     return (

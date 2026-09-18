@@ -18,6 +18,7 @@ describe("DashboardSummary", () => {
       <DashboardSummary positions={positions} />,
     );
     expect(html).toContain("Patrimônio atual");
+    expect(html).toContain("Ativos acompanhados");
     expect(html).toContain("Maior exposição");
     expect(html).toContain("01/01/2030");
     expect(html).toContain('href="/portfolio"');
@@ -35,6 +36,11 @@ describe("DashboardSummary", () => {
     );
     expect(html).toContain("Indicadores");
   });
+  it("shows the empty imported-data state", () => {
+    const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
+    expect(html).toContain("Nenhuma posição importada");
+  });
+
   it("renders every empty summary state when no current data is available", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary

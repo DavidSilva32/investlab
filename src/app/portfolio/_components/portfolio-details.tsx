@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CdiRateIndicator } from "./cdi-rate-indicator";
 import { DeleteImportedDataButton } from "@/components/delete-imported-data-button";
 import {
   PortfolioTable,
@@ -114,13 +115,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
             <span className="block text-xs text-muted-foreground">
               Valor estimado hoje
             </span>
-            {isDiCdb &&
-              row.cdiPercentage !== null &&
-              row.cdiPercentage !== undefined && (
-                <span className="block text-xs font-medium text-primary">
-                  {formatQuantity(Number(row.cdiPercentage))}% do CDI
-                </span>
-              )}
+            {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3:{" "}
               {formatCurrency(Number(row.totalValue))}
@@ -145,6 +140,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3
             </span>
+            {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}
             <CdbRateConfiguration
               assetCode={row.assetCode}
               currentPercentage={row.cdiPercentage}

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Settings2 } from "lucide-react";
@@ -60,6 +60,7 @@ export function CdbRateConfiguration({
     );
     if (response.ok) {
       setEditing(false);
+      window.dispatchEvent(new Event("portfolio:updated"));
       router.refresh();
     }
   }

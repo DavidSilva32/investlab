@@ -46,6 +46,21 @@ describe("PortfolioClient", () => {
     expect(fetch).toHaveBeenCalledWith("/api/portfolio");
   });
 
+  it("reloads the portfolio after a CDI rate is updated", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => overview,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<PortfolioClient activeView="positions" />);
+    await screen.findByText("Posições");
+
+    window.dispatchEvent(new Event("portfolio:updated"));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
   it("shows a safe API failure", async () => {
     vi.stubGlobal(
       "fetch",

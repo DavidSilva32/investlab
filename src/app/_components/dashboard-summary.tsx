@@ -1,11 +1,12 @@
-﻿import Link from "next/link";
-import { CalendarDays, PieChart, WalletCards } from "lucide-react";
+﻿
+import Link from "next/link";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
+  CalendarDays,
+  ChartNoAxesCombined,
+  PieChart,
+  WalletCards,
+} from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   getPortfolioInsights,
   type PortfolioInsightPosition,
@@ -41,6 +42,16 @@ export function DashboardSummary({
           }
         />
         <SummaryCard
+          icon={ChartNoAxesCombined}
+          label="Ativos acompanhados"
+          value={String(positions.length)}
+          detail={
+            positions.length
+              ? "Posições da última importação B3"
+              : "Nenhuma posição importada"
+          }
+        />
+        <SummaryCard
           icon={PieChart}
           label="Maior exposição"
           value={
@@ -72,41 +83,14 @@ export function DashboardSummary({
           <ReferenceRates rates={referenceRates} />
         </div>
       )}
-      <section className="mt-5 grid gap-5 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardDescription>Próximo passo</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-base font-medium">
-              Entenda sua carteira antes de decidir.
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Veja distribuição por instituição, concentração e vencimentos na
-              visão completa da carteira.
-            </p>
-            <Link
-              href="/portfolio"
-              className="mt-4 inline-flex text-sm font-medium text-primary hover:underline"
-            >
-              Abrir visão da carteira
-            </Link>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Dados importados</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold tabular-nums">
-              {positions.length}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              posições na última importação B3
-            </p>
-          </CardContent>
-        </Card>
-      </section>
+      <div className="mt-3 flex justify-end">
+        <Link
+          href="/portfolio"
+          className="text-sm font-medium text-primary hover:underline"
+        >
+          Ver carteira completa
+        </Link>
+      </div>
     </>
   );
 }
