@@ -115,4 +115,37 @@ describe("getPortfolioInsights", () => {
       ],
     });
   });
+  it("uses the reported value when an estimate is not available", () => {
+    expect(
+      getPortfolioInsights([
+        {
+          product: "Título",
+          institution: "Banco",
+          maturityAt: null,
+          totalValue: "10",
+          estimatedValue: null,
+        },
+      ]),
+    ).toMatchObject({ totalValue: 10 });
+  });
+  it("groups valued assets without an institution under a clear fallback label", () => {
+    expect(
+      getPortfolioInsights([
+        {
+          product: "Sem instituição",
+          institution: null,
+          maturityAt: null,
+          totalValue: "10",
+        },
+      ]),
+    ).toMatchObject({
+      allocations: [
+        {
+          institution: "Instituição não informada",
+          value: 10,
+          percentage: 100,
+        },
+      ],
+    });
+  });
 });

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,6 @@ export function PortfolioImport() {
     const ready = items.filter((item): item is Item & { preview: Preview } =>
       Boolean(item.preview),
     );
-    if (!ready.length) return;
     setLoading(true);
     const results = await Promise.all(
       ready.map(async (item) => {
@@ -108,7 +107,7 @@ export function PortfolioImport() {
         <Button
           className="w-full sm:w-auto"
           disabled={loading}
-          onClick={() => input.current?.click()}
+          onClick={() => input.current!.click()}
         >
           Importar carteira
         </Button>

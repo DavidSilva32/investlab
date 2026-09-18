@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -162,5 +162,10 @@ describe("portfolio detail components", () => {
       />,
     );
     expect(html).toContain("Valor estimado hoje");
+  });
+  it("renders the empty movement state", () => {
+    expect(renderToStaticMarkup(<MovementDetails movements={[]} />)).toContain(
+      "Nenhuma movimentação importada",
+    );
   });
 });

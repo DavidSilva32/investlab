@@ -1,4 +1,4 @@
-import { Percent } from "lucide-react";
+﻿import { Percent } from "lucide-react";
 import type { BcbReferenceRates } from "@/backend/services/bcb-reference-rates.service";
 import { Card, CardContent } from "@/components/ui/card";
 
