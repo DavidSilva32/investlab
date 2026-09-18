@@ -11,19 +11,23 @@ import {
   type PortfolioInsightPosition,
 } from "@/lib/portfolio-insights";
 import { formatCurrency } from "@/lib/utils";
+import { ReferenceRates } from "@/components/reference-rates";
+import type { BcbReferenceRates } from "@/backend/services/bcb-reference-rates.service";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 export function DashboardSummary({
   positions,
+  referenceRates,
 }: {
   positions: PortfolioInsightPosition[];
+  referenceRates?: BcbReferenceRates;
 }) {
   const insights = getPortfolioInsights(positions);
   const nextMaturity = insights.upcomingMaturities[0];
   return (
     <>
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           icon={WalletCards}
           label="Patrimônio atual"
@@ -64,6 +68,7 @@ export function DashboardSummary({
         />
       </section>
       <section className="mt-5 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
+        {referenceRates && <ReferenceRates rates={referenceRates} />}
         <Card>
           <CardHeader>
             <CardDescription>Próximo passo</CardDescription>

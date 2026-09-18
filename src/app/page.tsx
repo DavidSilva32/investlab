@@ -1,18 +1,15 @@
-﻿export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { importRepository } from "@/backend/repositories/import.repository";
-import { DashboardSummary } from "@/app/_components/dashboard-summary";
+import { DashboardClient } from "@/app/_components/dashboard-client";
 import { AppShell } from "@/components/app-shell";
 
-export default async function HomePage() {
-  const positions = await importRepository.listLatestPositions();
-
+export default function HomePage() {
   return (
     <AppShell title="Dashboard">
       <div className="mb-7 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          O essencial da sua carteira, com base na última posição B3 importada.
+          O essencial da sua carteira, atualizado pela API.
         </p>
         <Link
           href="/imports"
@@ -21,7 +18,7 @@ export default async function HomePage() {
           Importar dados
         </Link>
       </div>
-      <DashboardSummary positions={positions} />
+      <DashboardClient />
     </AppShell>
   );
 }
