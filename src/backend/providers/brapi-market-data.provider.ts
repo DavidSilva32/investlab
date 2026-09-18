@@ -52,10 +52,15 @@ const historySchema = z
   .loose();
 
 export class BrapiMarketDataProvider implements MarketDataProvider {
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(
+    private readonly fetcher: typeof fetch = fetch,
+    private readonly apiToken = process.env.BRAPI_TOKEN,
+  ) {}
 
   private async request(path: string) {
     const response = await this.fetcher(`https://brapi.dev${path}`, {
+      headers: this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : undefined,
+      cache: "force-cache",
       next: { revalidate: 300 },
     });
     if (!response.ok)
