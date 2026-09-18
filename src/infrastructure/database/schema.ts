@@ -1,4 +1,4 @@
-﻿import {
+import {
   date,
   numeric,
   pgTable,
@@ -86,4 +86,22 @@ export const movementItems = pgTable("movement_items", {
   unitPrice: numeric({ precision: 24, scale: 8 }),
   operationValue: numeric({ precision: 24, scale: 8 }),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+export const stockFundamentals = pgTable("stock_fundamentals", {
+  id: uuid().defaultRandom().primaryKey(),
+  ticker: varchar({ length: 16 }).notNull(),
+  cnpj: varchar({ length: 14 }).notNull(),
+  periodType: varchar({ length: 12 }).notNull(),
+  referenceDate: date().notNull(),
+  revenue: numeric({ precision: 24, scale: 2 }),
+  netIncome: numeric({ precision: 24, scale: 2 }),
+  equity: numeric({ precision: 24, scale: 2 }),
+  assets: numeric({ precision: 24, scale: 2 }),
+  liabilities: numeric({ precision: 24, scale: 2 }),
+  cash: numeric({ precision: 24, scale: 2 }),
+  debt: numeric({ precision: 24, scale: 2 }),
+  sourceDocument: varchar({ length: 8 }).notNull(),
+  sourceVersion: varchar({ length: 32 }).notNull(),
+  fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

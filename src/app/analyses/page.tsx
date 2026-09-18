@@ -1,9 +1,4 @@
-﻿import { ComingSoonPage } from "@/components/coming-soon-page";
+﻿import { StockAnalysisProof } from "./_components/stock-analysis-proof";
 export default function AnalysesPage() {
-  return (
-    <ComingSoonPage
-      title="Análises"
-      description="Em breve, análises da sua carteira estarão disponíveis nesta área."
-    />
-  );
+  return <StockAnalysisProof />;
 }

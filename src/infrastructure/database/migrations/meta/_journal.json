@@ -50,6 +50,13 @@
       "when": 1789682335299,
       "tag": "0006_movement-event-fingerprint",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789770126339,
+      "tag": "0007_black_puck",
+      "breakpoints": true
     }
   ]
 }
