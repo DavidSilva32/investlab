@@ -67,8 +67,12 @@ export function DashboardSummary({
           }
         />
       </section>
-      <section className="mt-5 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
-        {referenceRates && <ReferenceRates rates={referenceRates} />}
+      {referenceRates && (
+        <div className="mt-4">
+          <ReferenceRates rates={referenceRates} />
+        </div>
+      )}
+      <section className="mt-5 grid gap-5 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardDescription>Próximo passo</CardDescription>

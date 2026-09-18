@@ -34,10 +34,10 @@ function Rate({
 }) {
   return (
     <span className="inline-flex items-baseline gap-1.5 tabular-nums">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <strong className="font-semibold">
+      <span className="text-sm font-semibold text-foreground">{label}</span>
+      <span className="font-medium text-muted-foreground">
         {rate ? `${Number(rate.annualRate).toLocaleString("pt-BR")}%` : "—"}
-      </strong>
+      </span>
       {rate && (
         <span className="text-xs text-muted-foreground">
           {date.format(new Date(`${rate.date}T00:00:00Z`))}

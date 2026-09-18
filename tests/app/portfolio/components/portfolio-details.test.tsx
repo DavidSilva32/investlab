@@ -62,6 +62,7 @@ describe("portfolio detail components", () => {
     );
     expect(html).toContain("Posições atuais");
     expect(html).toContain("Valor estimado hoje");
+    expect(html).toContain("100% do CDI");
     expect(html).toContain("arquivo de");
     expect(html).toContain("posições");
   });
@@ -152,6 +153,7 @@ describe("portfolio detail components", () => {
       <PositionDetails
         positions={[
           { ...position, estimatedValue: 1001, cdiPercentage: null },
+          { ...position, estimatedValue: 1002, cdiPercentage: undefined },
           {
             ...position,
             assetCode: "CDB3",
@@ -162,6 +164,7 @@ describe("portfolio detail components", () => {
       />,
     );
     expect(html).toContain("Valor estimado hoje");
+    expect(html).not.toContain("% do CDI");
   });
   it("renders the empty movement state", () => {
     expect(renderToStaticMarkup(<MovementDetails movements={[]} />)).toContain(
