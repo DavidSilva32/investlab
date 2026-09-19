@@ -118,3 +118,76 @@ it("does not estimate a CDB without an indexer or value even when configured", a
   ]);
   expect(results.every((result) => result.estimatedValue === null)).toBe(true);
 });
+
+describe("with a deterministic Sao Paulo date", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T15:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("keeps official CDB values when the BCB CDI request is unavailable", async () => {
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+      { assetCode: "CDB2", cdiPercentage: "110" },
+    ]);
+    repository.listRatesFrom.mockResolvedValue([]);
+    bcb.fetchRates.mockRejectedValue(new Error("BCB unavailable"));
+
+    const results = await enrichCdbEstimates([
+      cdb,
+      { ...cdb, assetCode: "CDB2", totalValue: "2000" },
+    ]);
+
+    expect(bcb.fetchRates).toHaveBeenCalledTimes(1);
+    expect(results).toEqual([
+      { ...cdb, cdiPercentage: "100", estimatedValue: null },
+      {
+        ...cdb,
+        assetCode: "CDB2",
+        totalValue: "2000",
+        cdiPercentage: "110",
+        estimatedValue: null,
+      },
+    ]);
+  });
+
+  it("batches a CDI refresh for CDBs with different base dates", async () => {
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+      { assetCode: "CDB2", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom.mockResolvedValue([]);
+    bcb.fetchRates.mockResolvedValue([
+      { date: "2026-09-18", annualRate: "14.9" },
+    ]);
+
+    await enrichCdbEstimates([
+      cdb,
+      {
+        ...cdb,
+        assetCode: "CDB2",
+        estimationBaseDate: "2026-09-17",
+      },
+    ]);
+
+    expect(bcb.fetchRates).toHaveBeenCalledTimes(1);
+    expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-16", "2026-09-20");
+    expect(repository.cacheRates).toHaveBeenCalledTimes(1);
+  });
+
+  it("sorts cached CDI rates before deciding whether a refresh is required", async () => {
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom.mockResolvedValue([
+      { rateDate: "2026-09-20", annualRate: "14.9" },
+      { rateDate: "2026-09-16", annualRate: "14.9" },
+    ]);
+
+    const [result] = await enrichCdbEstimates([cdb]);
+
+    expect(bcb.fetchRates).not.toHaveBeenCalled();
+    expect(result.estimatedValue).toBeGreaterThan(1000);
+  });
+});
