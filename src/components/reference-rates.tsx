@@ -40,7 +40,8 @@ function Rate({
       </span>
       {rate && (
         <span className="text-xs text-muted-foreground">
-          Referência: {date.format(new Date(`${rate.date}T00:00:00Z`))}
+          {label === "Selic" ? "Vigente até" : "Referência"}:{" "}
+          {date.format(new Date(`${rate.date}T00:00:00Z`))}
         </span>
       )}
     </span>

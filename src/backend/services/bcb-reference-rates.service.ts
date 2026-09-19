@@ -1,10 +1,10 @@
-﻿import { logger } from "@/infrastructure/logging/logger";
+import { logger } from "@/infrastructure/logging/logger";
 type BcbRate = { data: string; valor: string };
 export type BcbReferenceRates = {
   selic: { annualRate: string; date: string } | null;
   cdi: { annualRate: string; date: string } | null;
 };
-const parseLatestRate = (values: BcbRate[]) => {
+const parseLatestRate = (values: BcbRate[], series: number) => {
   const todayInSaoPaulo = () =>
     new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
       new Date(),
@@ -15,7 +15,9 @@ const parseLatestRate = (values: BcbRate[]) => {
   const annualRate = rate.valor.replace(",", ".");
   if (!day || !month || !year || !/^\d+(\.\d+)?$/.test(annualRate)) return null;
   const date = `${year}-${month}-${day}`;
-  return date > todayInSaoPaulo() ? null : { date, annualRate };
+  return date > todayInSaoPaulo() && series !== 432
+    ? null
+    : { date, annualRate };
 };
 async function fetchLatestRate(series: number) {
   try {
@@ -31,7 +33,7 @@ async function fetchLatestRate(series: number) {
       });
       return null;
     }
-    const rate = parseLatestRate((await response.json()) as BcbRate[]);
+    const rate = parseLatestRate((await response.json()) as BcbRate[], series);
     logger.info("bcb_reference_rate_received", {
       series,
       available: Boolean(rate),

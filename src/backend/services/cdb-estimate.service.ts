@@ -166,6 +166,37 @@ export async function enrichCdbEstimates<
     }
   }
 
+  missingBaseDates.forEach((baseDate) => {
+    if (unavailableBaseDates.has(baseDate)) return;
+    const confirmedRates = sortRates([
+      ...(cachedRatesByBaseDate.get(baseDate) ?? []),
+      ...fetchedRates
+        .filter((rate) => rate.date >= baseDate)
+        .map((rate) => ({
+          rateDate: rate.date,
+          annualRate: rate.annualRate,
+          fetchedAt: new Date(),
+        })),
+    ]);
+    const lastRate = confirmedRates.at(-1);
+    if (!lastRate) {
+      unavailableBaseDates.add(baseDate);
+      return;
+    }
+    const missingWeekdays = missingWeekdaysAfter(lastRate.rateDate, today);
+    if (missingWeekdays.length === 1) {
+      if (!provisionalRatesByBaseDate.has(baseDate)) {
+        provisionalRatesByBaseDate.set(baseDate, {
+          rateDate: missingWeekdays[0]!,
+          annualRate: lastRate.annualRate,
+          fetchedAt: new Date(),
+        });
+      }
+      return;
+    }
+    if (missingWeekdays.length > 1) unavailableBaseDates.add(baseDate);
+  });
+
   return positions.map((position) => {
     const cdiPercentage = position.assetCode
       ? (percentages.get(position.assetCode) ?? null)

@@ -44,6 +44,17 @@ export function PortfolioOverview({
   const insights = getPortfolioInsights(positions);
   const nextMaturity = insights.upcomingMaturities[0];
   const concentration = insights.largestPosition;
+  const provisional = positions.find(
+    (position) => position.cdbEstimateStatus === "provisional",
+  );
+  const hasUnavailable = positions.some(
+    (position) => position.cdbEstimateStatus === "unavailable",
+  );
+  const portfolioDetail = hasUnavailable
+    ? "Não foi possível atualizar todas as estimativas; exibindo o último valor da B3."
+    : provisional?.estimatedThrough
+      ? `Estimativa provisória até ${date.format(new Date(`${provisional.estimatedThrough}T00:00:00Z`))}; CDI oficial pendente.`
+      : "Atualizado com CDI oficial quando disponível.";
 
   return (
     <div className="space-y-5">
@@ -56,7 +67,7 @@ export function PortfolioOverview({
           }
           detail={
             insights.valuedPositions
-              ? "Valor estimado com CDI quando disponível"
+              ? portfolioDetail
               : "Importe uma posição para começar"
           }
         />

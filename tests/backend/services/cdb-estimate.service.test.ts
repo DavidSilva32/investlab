@@ -41,6 +41,7 @@ describe("enrichCdbEstimates", () => {
     expect(repository.listRatesFrom).not.toHaveBeenCalled();
   });
   it("uses cached rates and preserves the imported official value", async () => {
+    vi.setSystemTime(new Date("2026-09-18T15:00:00Z"));
     repository.listConfigurations.mockResolvedValue([
       { assetCode: "CDB1", cdiPercentage: "110" },
     ]);
@@ -54,7 +55,7 @@ describe("enrichCdbEstimates", () => {
     expect(result.estimatedValue).toBeGreaterThan(1000);
     expect(repository.listRatesFrom).toHaveBeenCalledWith(
       "2026-09-16",
-      "2026-09-20",
+      "2026-09-18",
     );
   });
   it("fetches and caches missing official rates after the operational base date", async () => {

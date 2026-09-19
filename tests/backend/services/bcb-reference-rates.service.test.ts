@@ -35,7 +35,7 @@ describe("getBcbReferenceRates", () => {
     });
   });
 
-  it("rejects future reference dates from the BCB", async () => {
+  it("keeps the Selic validity date and rejects a future CDI date", async () => {
     vi.stubEnv("NODE_ENV", "development");
     fetchMock
       .mockResolvedValueOnce({
@@ -48,7 +48,7 @@ describe("getBcbReferenceRates", () => {
       });
 
     await expect(getBcbReferenceRates()).resolves.toEqual({
-      selic: null,
+      selic: { date: "2099-01-01", annualRate: "15.00" },
       cdi: null,
     });
   });
