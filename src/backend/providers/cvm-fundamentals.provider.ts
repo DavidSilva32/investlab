@@ -81,7 +81,9 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
     const rows = Object.entries(files)
       .flatMap(([name, bytes]) =>
-        name.includes("_con_") ? parseCsv(new TextDecoder("iso-8859-1").decode(bytes)) : [],
+        name.includes("_con_")
+          ? parseCsv(new TextDecoder("iso-8859-1").decode(bytes))
+          : [],
       )
       .filter(
         (row) =>

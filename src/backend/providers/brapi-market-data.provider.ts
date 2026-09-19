@@ -22,9 +22,7 @@ const profileSchema = z
     results: z
       .array(
         z.object({
-          data: z
-            .object({ cnpj: z.string().nullable().optional() })
-            .loose(),
+          data: z.object({ cnpj: z.string().nullable().optional() }).loose(),
         }),
       )
       .optional(),
@@ -59,7 +57,9 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
 
   private async request(path: string) {
     const response = await this.fetcher(`https://brapi.dev${path}`, {
-      headers: this.apiToken ? { Authorization: `Bearer ${this.apiToken}` } : undefined,
+      headers: this.apiToken
+        ? { Authorization: `Bearer ${this.apiToken}` }
+        : undefined,
       cache: "force-cache",
       next: { revalidate: 300 },
     });

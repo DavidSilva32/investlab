@@ -6,3 +6,5 @@ coverage/
 !.env.example
 playwright-report/
 test-results/
+AGENTS.md
+.codex/
