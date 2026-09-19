@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StockAnalysisProof } from "@/app/analyses/_components/stock-analysis-proof";
+import { StockAnalysisDashboard } from "@/app/analyses/_components/stock-analysis-dashboard";
 
 vi.mock("recharts", () => ({
   CartesianGrid: () => null,
@@ -100,10 +100,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("StockAnalysisProof", () => {
+describe("StockAnalysisDashboard", () => {
   it("renders chronological chart data, interval controls, units, and fundamentals", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
-    render(<StockAnalysisProof />);
+    render(<StockAnalysisDashboard />);
 
     const chart = await screen.findByTestId("price-chart");
     expect(chart.dataset.points).toBe("2025-09-20,2026-08-25,2026-09-19");
@@ -124,7 +124,7 @@ describe("StockAnalysisProof", () => {
       "fetch",
       vi.fn().mockReturnValue(new Promise(() => undefined)),
     );
-    render(<StockAnalysisProof />);
+    render(<StockAnalysisDashboard />);
     expect(screen.getByText("Carregando análise...")).toBeTruthy();
     expect(screen.getByRole("generic", { busy: true })).toBeTruthy();
   });
@@ -135,13 +135,13 @@ describe("StockAnalysisProof", () => {
       .mockResolvedValueOnce(jsonResponse({ ...analysis, history: [] }))
       .mockResolvedValueOnce(jsonResponse({ message: "erro" }, 500));
     vi.stubGlobal("fetch", fetcher);
-    const { unmount } = render(<StockAnalysisProof />);
+    const { unmount } = render(<StockAnalysisDashboard />);
     expect(
       await screen.findByText(/não há histórico suficiente/i),
     ).toBeTruthy();
     unmount();
 
-    render(<StockAnalysisProof />);
+    render(<StockAnalysisDashboard />);
     const retry = await screen.findByRole("button", {
       name: "Tentar novamente",
     });
@@ -159,7 +159,7 @@ describe("StockAnalysisProof", () => {
         }),
       ),
     );
-    render(<StockAnalysisProof />);
+    render(<StockAnalysisDashboard />);
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -181,7 +181,7 @@ describe("StockAnalysisProof", () => {
 
   it("opens indicator help by click and closes it with Escape", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
-    render(<StockAnalysisProof />);
+    render(<StockAnalysisDashboard />);
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", { name: /ajuda sobre p\/l/i }),

@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CircleHelp, RefreshCw } from "lucide-react";
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,267 +10,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Skeleton } from "@/components/ui/skeleton";
-
-type Period = {
-  referenceDate: string;
-  sourceDocument: "DFP" | "ITR";
-  revenue: string | null;
-  netIncome: string | null;
-  equity: string | null;
-};
-type Indicator = {
-  key: "pe" | "pb" | "roe" | "netMargin";
-  value: number | null;
-  unavailableReason: string | null;
-  referenceDate: string | null;
-  sourceDocument: "DFP" | "ITR" | null;
-};
-type Analysis = {
-  ticker: string;
-  companyName: string | null;
-  price: number | null;
-  changePercent: number | null;
-  history: { date: string; close: number }[];
-  fundamentals: Period[];
-  indicators: Indicator[];
-};
+import { AnalysisSkeleton } from "./analysis-skeleton";
+import { FundamentalIndicatorCard } from "./fundamental-indicator-card";
+import { FundamentalsGrid } from "./fundamentals-grid";
+import { PriceHistoryChart } from "./price-history-chart";
+import type { StockAnalysis } from "./stock-analysis-types";
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
-const compact = new Intl.NumberFormat("pt-BR", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-const dateLabel = (date: string) =>
-  new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${date}T00:00:00Z`));
-const monthLabel = (date: string) =>
-  new Intl.DateTimeFormat("pt-BR", {
-    month: "short",
-    year: "2-digit",
-    timeZone: "UTC",
-  }).format(new Date(`${date}T00:00:00Z`));
-const chartConfig = {
-  close: { label: "Fechamento", color: "var(--chart-2)" },
-} satisfies ChartConfig;
-const indicatorNames: Record<Indicator["key"], string> = {
-  pe: "P/L",
-  pb: "P/VP",
-  roe: "ROE",
-  netMargin: "Margem líquida",
-};
-const indicatorHelp: Record<Indicator["key"], string> = {
-  pe: "P/L compara o valor de mercado ao lucro líquido do último DFP anual. É exibido em vezes, não em percentual.",
-  pb: "P/VP compara o valor de mercado ao patrimônio líquido do último DFP anual. É exibido em vezes, não em percentual.",
-  roe: "ROE mede o lucro líquido anual sobre o patrimônio líquido médio de dois DFPs anuais consecutivos.",
-  netMargin:
-    "Margem líquida divide o lucro líquido pela receita do mesmo demonstrativo. Itens não recorrentes podem alterar a leitura.",
-};
-
-function AnalysisSkeleton() {
-  return (
-    <div aria-busy="true" aria-live="polite" className="space-y-4">
-      <span className="sr-only">Carregando análise...</span>
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-8 w-56" />
-        </CardHeader>
-        <CardContent className="flex gap-6">
-          <Skeleton className="h-10 w-36" />
-          <Skeleton className="h-6 w-28" />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-44" />
-          <Skeleton className="h-4 w-72" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-64 w-full" />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function PriceChart({ points }: { points: Analysis["history"] }) {
-  if (points.length < 2)
-    return (
-      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-        Não há histórico suficiente para montar o gráfico neste intervalo.
-      </div>
-    );
-
-  return (
-    <ChartContainer
-      config={chartConfig}
-      className="h-64 w-full aspect-auto"
-      aria-label="Gráfico do histórico de preço de fechamento"
-    >
-      <LineChart
-        accessibilityLayer
-        data={points}
-        margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
-      >
-        <CartesianGrid vertical={false} />
-        <XAxis
-          dataKey="date"
-          tickLine={false}
-          axisLine={false}
-          minTickGap={32}
-          tickFormatter={monthLabel}
-        />
-        <YAxis
-          dataKey="close"
-          tickLine={false}
-          axisLine={false}
-          width={68}
-          tickFormatter={(value: number) => money.format(value)}
-        />
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              labelFormatter={(value) =>
-                typeof value === "string" ? dateLabel(value) : ""
-              }
-              formatter={(value) => money.format(Number(value))}
-            />
-          }
-        />
-        <Line
-          type="monotone"
-          dataKey="close"
-          stroke="var(--color-close)"
-          strokeWidth={2}
-          dot={false}
-          activeDot={{ r: 4 }}
-        />
-      </LineChart>
-    </ChartContainer>
-  );
-}
-
-function IndicatorCard({ indicator }: { indicator: Indicator }) {
-  const usesRatio = indicator.key === "pe" || indicator.key === "pb";
-  const value =
-    indicator.value === null
-      ? "Indisponível"
-      : `${indicator.value.toFixed(1)}${usesRatio ? "x" : "%"}`;
-  const reference = indicator.referenceDate
-    ? `${indicator.sourceDocument === "ITR" ? "Acumulado até" : "DFP anual encerrado em"} ${dateLabel(indicator.referenceDate)}`
-    : indicator.unavailableReason;
-
-  return (
-    <article className="rounded-lg border bg-card p-4 shadow-sm transition-shadow motion-safe:hover:shadow-md">
-      <div className="flex items-center gap-1.5">
-        <h3 className="font-medium">{indicatorNames[indicator.key]}</h3>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label={`Ajuda sobre ${indicatorNames[indicator.key]}`}
-            >
-              <CircleHelp className="size-4" aria-hidden="true" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            className="max-w-xs text-sm leading-relaxed"
-            align="start"
-          >
-            {indicatorHelp[indicator.key]}
-          </PopoverContent>
-        </Popover>
-      </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-2 min-h-10 text-xs leading-relaxed text-muted-foreground">
-        {reference}
-      </p>
-    </article>
-  );
-}
-
-function FundamentalsGrid({
-  periods,
-  type,
-}: {
-  periods: Period[];
-  type: "DFP" | "ITR";
-}) {
-  if (!periods.length)
-    return (
-      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-        {type === "DFP" ? "Sem DFP anual disponível." : "Sem ITR disponível."}
-      </div>
-    );
-
-  return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {periods.map((period) => (
-        <article
-          key={`${period.sourceDocument}-${period.referenceDate}`}
-          className="rounded-lg border bg-card p-4 shadow-sm"
-        >
-          <h3 className="font-medium">
-            {type === "ITR" ? "Acumulado até " : ""}
-            {dateLabel(period.referenceDate)}
-          </h3>
-          <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Receita</dt>
-              <dd className="font-medium tabular-nums">
-                {period.revenue === null
-                  ? "—"
-                  : compact.format(Number(period.revenue))}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Lucro líquido</dt>
-              <dd className="font-medium tabular-nums">
-                {period.netIncome === null
-                  ? "—"
-                  : compact.format(Number(period.netIncome))}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">Patrimônio</dt>
-              <dd className="font-medium tabular-nums">
-                {period.equity === null
-                  ? "—"
-                  : compact.format(Number(period.equity))}
-              </dd>
-            </div>
-          </dl>
-        </article>
-      ))}
-    </div>
-  );
-}
 
 export function StockAnalysisDashboard() {
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analysis, setAnalysis] = useState<StockAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retryRemaining, setRetryRemaining] = useState(0);
@@ -292,7 +43,7 @@ export function StockAnalysisDashboard() {
       )
         setRetryRemaining(Math.ceil(retryAfter));
       if (!response.ok) throw new Error();
-      setAnalysis(body as Analysis);
+      setAnalysis(body as StockAnalysis);
     } catch {
       setAnalysis(null);
       setError(
@@ -435,7 +186,7 @@ export function StockAnalysisDashboard() {
               ))}
             </div>
           )}
-          <PriceChart points={points} />
+          <PriceHistoryChart points={points} />
         </CardContent>
       </Card>
       <Card>
@@ -448,7 +199,10 @@ export function StockAnalysisDashboard() {
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {analysis.indicators.map((indicator) => (
-            <IndicatorCard key={indicator.key} indicator={indicator} />
+            <FundamentalIndicatorCard
+              key={indicator.key}
+              indicator={indicator}
+            />
           ))}
         </CardContent>
       </Card>
