@@ -1,7 +1,8 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { BrapiMarketDataProvider } from "@/backend/providers/brapi-market-data.provider";
 import { CvmFundamentalsProvider } from "@/backend/providers/cvm-fundamentals.provider";
+import type { FundamentalPeriod } from "@/backend/providers/fundamentals.provider";
 import type { FundamentalsProvider } from "@/backend/providers/fundamentals.provider";
 import type { MarketDataProvider } from "@/backend/providers/market-data.provider";
 import {
@@ -16,6 +17,104 @@ const tickerSchema = z
   .toUpperCase()
   .regex(/^[A-Z]{4}[0-9]{1,2}$/, "Informe um ticker B3 válido.");
 const cacheDurationMs = 1000 * 60 * 60 * 24;
+
+function numericValue(value: string | null) {
+  const parsed = value === null ? Number.NaN : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function calculateAnalysisIndicators(
+  periods: FundamentalPeriod[],
+): AnalysisIndicator[] {
+  const unavailableMarketValue =
+    "Indisponível: faltam quantidade de ações e valor de mercado confiáveis.";
+  const annual = periods
+    .filter((period) => period.sourceDocument === "DFP")
+    .sort((left, right) =>
+      right.referenceDate.localeCompare(left.referenceDate),
+    );
+  const latest = periods
+    .slice()
+    .sort((left, right) =>
+      right.referenceDate.localeCompare(left.referenceDate),
+    )[0];
+  const latestAnnual = annual[0];
+  const previousAnnual = annual[1];
+  const revenue = latest ? numericValue(latest.revenue) : null;
+  const netIncome = latest ? numericValue(latest.netIncome) : null;
+  const netMargin =
+    revenue !== null && netIncome !== null && revenue !== 0
+      ? (netIncome / revenue) * 100
+      : null;
+  const latestEquity = latestAnnual ? numericValue(latestAnnual.equity) : null;
+  const previousEquity = previousAnnual
+    ? numericValue(previousAnnual.equity)
+    : null;
+  const annualNetIncome = latestAnnual
+    ? numericValue(latestAnnual.netIncome)
+    : null;
+  const consecutiveYears =
+    latestAnnual &&
+    previousAnnual &&
+    Number(latestAnnual.referenceDate.slice(0, 4)) -
+      Number(previousAnnual.referenceDate.slice(0, 4)) ===
+      1;
+  const roe =
+    consecutiveYears &&
+    latestEquity !== null &&
+    previousEquity !== null &&
+    annualNetIncome !== null &&
+    latestEquity + previousEquity !== 0
+      ? (annualNetIncome / ((latestEquity + previousEquity) / 2)) * 100
+      : null;
+
+  return [
+    {
+      key: "pe",
+      value: null,
+      unavailableReason: unavailableMarketValue,
+      referenceDate: null,
+      sourceDocument: null,
+    },
+    {
+      key: "pb",
+      value: null,
+      unavailableReason: unavailableMarketValue,
+      referenceDate: null,
+      sourceDocument: null,
+    },
+    {
+      key: "roe",
+      value: roe,
+      unavailableReason:
+        roe === null
+          ? "Indisponível: são necessários dois DFPs anuais consecutivos, com lucro líquido e patrimônio líquido informados."
+          : null,
+      referenceDate: roe === null ? null : latestAnnual.referenceDate,
+      sourceDocument: roe === null ? null : "DFP",
+    },
+    {
+      key: "netMargin",
+      value: netMargin,
+      unavailableReason:
+        netMargin === null
+          ? "Indisponível: receita e lucro líquido precisam estar informados no mesmo demonstrativo, e a receita não pode ser zero."
+          : null,
+      referenceDate: latest?.referenceDate ?? null,
+      sourceDocument: latest?.sourceDocument ?? null,
+    },
+  ];
+}
+
+export type AnalysisIndicatorKey = "pe" | "pb" | "roe" | "netMargin";
+
+export type AnalysisIndicator = {
+  key: AnalysisIndicatorKey;
+  value: number | null;
+  unavailableReason: string | null;
+  referenceDate: string | null;
+  sourceDocument: "DFP" | "ITR" | null;
+};
 
 export class StockAnalysisService {
   constructor(
@@ -47,15 +146,20 @@ export class StockAnalysisService {
       cacheValid,
       cnpjAvailable: Boolean(market.cnpj),
     });
-    const periods = cacheValid
+    const periods: FundamentalPeriod[] = cacheValid
       ? cached.map(({ sourceDocument, fetchedAt, ...period }) => ({
           ...period,
-          periodType: period.periodType as "annual" | "quarterly",
+          periodType: period.periodType as "annual" | "interim",
           sourceDocument: sourceDocument as "DFP" | "ITR",
         }))
       : await this.refreshFundamentals(market.ticker, market.cnpj, requestId);
 
-    return { ...market, fundamentals: periods };
+    Object.assign(market, { indicators: calculateAnalysisIndicators(periods) });
+    return {
+      ...market,
+      fundamentals: periods,
+      indicators: calculateAnalysisIndicators(periods),
+    };
   }
 
   private async refreshFundamentals(

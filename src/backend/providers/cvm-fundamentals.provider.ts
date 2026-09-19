@@ -277,7 +277,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     return [...periods.entries()].map(([referenceDate, accounts]) => ({
       referenceDate,
       periodType:
-        document === "DFP" ? ("annual" as const) : ("quarterly" as const),
+        document === "DFP" ? ("annual" as const) : ("interim" as const),
       sourceDocument: document,
       revenue: accountValue(accounts, "3.01"),
       netIncome: accountValue(accounts, "3.11"),
@@ -305,6 +305,18 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       issuer.code,
       ticker,
     );
+    const previousAnnual = await Promise.all(
+      [currentYear - 2, currentYear - 3].map((year) =>
+        this.readDocument(
+          "DFP",
+          year,
+          normalizedCnpj,
+          issuer.code,
+          ticker,
+        ).catch(() => []),
+      ),
+    );
+    annual.push(...previousAnnual.flat());
     const quarterly = await this.readDocument(
       "ITR",
       currentYear,

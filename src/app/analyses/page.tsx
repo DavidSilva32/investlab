@@ -1,5 +1,6 @@
-import { AppShell } from "@/components/app-shell";
-import { StockAnalysisProof } from "./_components/stock-analysis-proof";
+﻿import { AppShell } from "@/components/app-shell";
+import { StockAnalysisDashboard } from "./_components/stock-analysis-dashboard";
+
 export default function AnalysesPage() {
   return (
     <AppShell title="Análises">
@@ -9,7 +10,7 @@ export default function AnalysesPage() {
           carteira.
         </p>
       </div>
-      <StockAnalysisProof />
+      <StockAnalysisDashboard />
     </AppShell>
   );
 }

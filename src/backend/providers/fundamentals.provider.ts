@@ -1,6 +1,6 @@
 export type FundamentalPeriod = {
   referenceDate: string;
-  periodType: "annual" | "quarterly";
+  periodType: "annual" | "interim";
   sourceDocument: "DFP" | "ITR";
   revenue: string | null;
   netIncome: string | null;

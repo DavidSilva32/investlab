@@ -48,6 +48,6 @@ describe("CvmFundamentalsProvider", () => {
         equity: "30000.00",
       }),
     );
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenCalledTimes(5);
   });
 });

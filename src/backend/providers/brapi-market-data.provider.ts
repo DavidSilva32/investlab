@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import type { MarketData, MarketDataProvider } from "./market-data.provider";
 

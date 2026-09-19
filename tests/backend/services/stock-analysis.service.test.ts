@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import { StockAnalysisService } from "@/backend/services/stock-analysis.service";
+﻿import { describe, expect, it, vi } from "vitest";
+import {
+  calculateAnalysisIndicators,
+  StockAnalysisService,
+} from "@/backend/services/stock-analysis.service";
 
 describe("StockAnalysisService", () => {
   it("returns market data when fundamentals are absent from the cache", async () => {
@@ -33,4 +36,62 @@ describe("StockAnalysisService", () => {
     });
     expect(repository.listByTicker).toHaveBeenCalledWith("PETR4");
   });
+});
+
+it("calculates only ratios supported by compatible statement periods", () => {
+  const indicators = calculateAnalysisIndicators([
+    {
+      referenceDate: "2025-12-31",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      revenue: "100",
+      netIncome: "20",
+      equity: "80",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    },
+    {
+      referenceDate: "2024-12-31",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      revenue: "90",
+      netIncome: "10",
+      equity: "60",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    },
+    {
+      referenceDate: "2026-06-30",
+      periodType: "interim",
+      sourceDocument: "ITR",
+      revenue: "50",
+      netIncome: "5",
+      equity: "85",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    },
+  ]);
+
+  expect(indicators).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        key: "roe",
+        value: 28.57142857142857,
+        sourceDocument: "DFP",
+      }),
+      expect.objectContaining({
+        key: "netMargin",
+        value: 10,
+        sourceDocument: "ITR",
+      }),
+      expect.objectContaining({ key: "pe", value: null }),
+      expect.objectContaining({ key: "pb", value: null }),
+    ]),
+  );
 });
