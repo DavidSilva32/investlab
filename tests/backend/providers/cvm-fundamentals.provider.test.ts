@@ -19,7 +19,7 @@ const dfp = [
 ].join("\n");
 
 function csvZip(name: string, csv: string) {
-  return zipSync({ [name]: Buffer.from(csv, "utf8") });
+  return zipSync({ [name]: Buffer.from(csv, "latin1") });
 }
 
 describe("CvmFundamentalsProvider", () => {

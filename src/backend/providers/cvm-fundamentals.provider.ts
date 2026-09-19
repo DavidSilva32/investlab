@@ -87,7 +87,7 @@ async function streamResponse(
 ) {
   if (!response.body) throw new Error("CVM response has no body");
   const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
+  const decoder = new TextDecoder("iso-8859-1");
   let pending = "";
   while (true) {
     const { done, value } = await reader.read();
@@ -189,7 +189,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         activeFiles += 1;
         let header: string[] | null = null;
         let pending = "";
-        const decoder = new TextDecoder("utf-8");
+        const decoder = new TextDecoder("iso-8859-1");
         const consume = (line: string) => {
           if (!header) {
             header = splitCsvLine(line);
