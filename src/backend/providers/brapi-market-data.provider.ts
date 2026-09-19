@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import type { MarketData, MarketDataProvider } from "./market-data.provider";
 
@@ -22,6 +22,7 @@ const quoteSchema = z.object({
           longName: z.string().nullable().optional(),
           shortName: z.string().nullable().optional(),
           regularMarketPrice: z.number().nullable().optional(),
+          marketCap: z.number().nullable().optional(),
           regularMarketChangePercent: z.number().nullable().optional(),
           regularMarketTime: z.string().nullable().optional(),
         }),
@@ -110,24 +111,25 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         ? (historySchema.parse(historyResult.value).results?.[0]?.data
             .historicalDataPrice ?? [])
         : [];
+    const history = Array.from(
+      new Map(
+        points.flatMap((point) => {
+          if (point.close === null || point.close === undefined) return [];
+          const date = new Date(point.date * 1000).toISOString().slice(0, 10);
+          return [[date, { date, close: point.close }] as const];
+        }),
+      ).values(),
+    ).sort((left, right) => left.date.localeCompare(right.date));
 
     return {
       ticker: quote.symbol,
       companyName: quote.data.longName ?? quote.data.shortName ?? null,
       cnpj,
       price: quote.data.regularMarketPrice ?? null,
+      marketCap: quote.data.marketCap ?? null,
       changePercent: quote.data.regularMarketChangePercent ?? null,
       priceUpdatedAt: quote.data.regularMarketTime ?? null,
-      history: points.flatMap((point) =>
-        point.close == null
-          ? []
-          : [
-              {
-                date: new Date(point.date * 1000).toISOString().slice(0, 10),
-                close: point.close,
-              },
-            ],
-      ),
+      history,
     };
   }
 }

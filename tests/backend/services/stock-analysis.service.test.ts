@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   calculateAnalysisIndicators,
   StockAnalysisService,
@@ -12,6 +12,7 @@ describe("StockAnalysisService", () => {
         companyName: "Petrobras",
         cnpj: "33000167000101",
         price: 30,
+        marketCap: 300,
         changePercent: 1.2,
         priceUpdatedAt: "2026-09-19T00:00:00.000Z",
         history: [],
@@ -92,6 +93,33 @@ it("calculates only ratios supported by compatible statement periods", () => {
       }),
       expect.objectContaining({ key: "pe", value: null }),
       expect.objectContaining({ key: "pb", value: null }),
+    ]),
+  );
+});
+
+it("calculates P/L and P/VP only from market cap and the latest annual DFP", () => {
+  const indicators = calculateAnalysisIndicators(
+    [
+      {
+        referenceDate: "2025-12-31",
+        periodType: "annual",
+        sourceDocument: "DFP",
+        revenue: "100",
+        netIncome: "20",
+        equity: "80",
+        assets: null,
+        liabilities: null,
+        cash: null,
+        debt: null,
+      },
+    ],
+    400,
+  );
+
+  expect(indicators).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ key: "pe", value: 20, sourceDocument: "DFP" }),
+      expect.objectContaining({ key: "pb", value: 5, sourceDocument: "DFP" }),
     ]),
   );
 });

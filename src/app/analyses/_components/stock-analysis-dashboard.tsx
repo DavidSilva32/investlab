@@ -1,6 +1,8 @@
-﻿"use client";
-import { useEffect, useMemo, useState } from "react";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CircleHelp, RefreshCw } from "lucide-react";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,11 +12,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
+
 type Period = {
   referenceDate: string;
   sourceDocument: "DFP" | "ITR";
@@ -38,300 +47,436 @@ type Analysis = {
   fundamentals: Period[];
   indicators: Indicator[];
 };
+
 const money = new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }),
-  fmt = new Intl.NumberFormat("pt-BR", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }),
-  label = (s: string) =>
-    new Intl.DateTimeFormat("pt-BR", {
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    }).format(new Date(`${s}T00:00:00Z`));
-const help: Record<Indicator["key"], string> = {
-  pe: "P/L: valor de mercado / lucro líquido. Requer ações emitidas ou valor de mercado, não apenas cotação.",
-  pb: "P/VP: valor de mercado / patrimônio líquido. Deve ser interpretado com rentabilidade e qualidade dos ativos.",
-  roe: "ROE: lucro líquido anual / patrimônio líquido médio. Dívida e eventos não recorrentes influenciam a leitura.",
-  netMargin:
-    "Margem líquida: lucro líquido / receita do mesmo período. Itens não recorrentes podem distorcer um período.",
+  style: "currency",
+  currency: "BRL",
+});
+const compact = new Intl.NumberFormat("pt-BR", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+const dateLabel = (date: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00Z`));
+const monthLabel = (date: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00Z`));
+const chartConfig = {
+  close: { label: "Fechamento", color: "var(--chart-2)" },
+} satisfies ChartConfig;
+const indicatorNames: Record<Indicator["key"], string> = {
+  pe: "P/L",
+  pb: "P/VP",
+  roe: "ROE",
+  netMargin: "Margem líquida",
 };
-function Price({ points }: { points: Analysis["history"] }) {
-  if (points.length < 2)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Não há histórico suficiente para o gráfico.
-      </p>
-    );
-  const v = points.map((p) => p.close),
-    min = Math.min(...v),
-    max = Math.max(...v),
-    r = max - min || 1,
-    poly = points
-      .map(
-        (p, i) =>
-          `${(i / (points.length - 1)) * 100},${100 - ((p.close - min) / r) * 100}`,
-      )
-      .join(" ");
+const indicatorHelp: Record<Indicator["key"], string> = {
+  pe: "P/L compara o valor de mercado ao lucro líquido do último DFP anual. É exibido em vezes, não em percentual.",
+  pb: "P/VP compara o valor de mercado ao patrimônio líquido do último DFP anual. É exibido em vezes, não em percentual.",
+  roe: "ROE mede o lucro líquido anual sobre o patrimônio líquido médio de dois DFPs anuais consecutivos.",
+  netMargin:
+    "Margem líquida divide o lucro líquido pela receita do mesmo demonstrativo. Itens não recorrentes podem alterar a leitura.",
+};
+
+function AnalysisSkeleton() {
   return (
-    <div>
-      <svg
-        aria-label="Gráfico do histórico de preço"
-        role="img"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        className="h-52 w-full"
-      >
-        <polyline
-          points={poly}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          vectorEffect="non-scaling-stroke"
-          className="text-primary"
-        />
-      </svg>
-      <p className="flex justify-between text-xs text-muted-foreground">
-        <span>{label(points[0].date)}</span>
-        <span>
-          {money.format(min)} — {money.format(max)}
-        </span>
-        <span>{label(points.at(-1)?.date ?? points[0].date)}</span>
-      </p>
+    <div aria-busy="true" aria-live="polite" className="space-y-4">
+      <span className="sr-only">Carregando análise...</span>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-8 w-56" />
+        </CardHeader>
+        <CardContent className="flex gap-6">
+          <Skeleton className="h-10 w-36" />
+          <Skeleton className="h-6 w-28" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-44" />
+          <Skeleton className="h-4 w-72" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-64 w-full" />
+        </CardContent>
+      </Card>
     </div>
   );
 }
+
+function PriceChart({ points }: { points: Analysis["history"] }) {
+  if (points.length < 2)
+    return (
+      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+        Não há histórico suficiente para montar o gráfico neste intervalo.
+      </div>
+    );
+
+  return (
+    <ChartContainer
+      config={chartConfig}
+      className="h-64 w-full aspect-auto"
+      aria-label="Gráfico do histórico de preço de fechamento"
+    >
+      <LineChart
+        accessibilityLayer
+        data={points}
+        margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
+      >
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="date"
+          tickLine={false}
+          axisLine={false}
+          minTickGap={32}
+          tickFormatter={monthLabel}
+        />
+        <YAxis
+          dataKey="close"
+          tickLine={false}
+          axisLine={false}
+          width={68}
+          tickFormatter={(value: number) => money.format(value)}
+        />
+        <ChartTooltip
+          cursor={false}
+          content={
+            <ChartTooltipContent
+              labelFormatter={(value) =>
+                typeof value === "string" ? dateLabel(value) : ""
+              }
+              formatter={(value) => money.format(Number(value))}
+            />
+          }
+        />
+        <Line
+          type="monotone"
+          dataKey="close"
+          stroke="var(--color-close)"
+          strokeWidth={2}
+          dot={false}
+          activeDot={{ r: 4 }}
+        />
+      </LineChart>
+    </ChartContainer>
+  );
+}
+
+function IndicatorCard({ indicator }: { indicator: Indicator }) {
+  const usesRatio = indicator.key === "pe" || indicator.key === "pb";
+  const value =
+    indicator.value === null
+      ? "Indisponível"
+      : `${indicator.value.toFixed(1)}${usesRatio ? "x" : "%"}`;
+  const reference = indicator.referenceDate
+    ? `${indicator.sourceDocument === "ITR" ? "Acumulado até" : "DFP anual encerrado em"} ${dateLabel(indicator.referenceDate)}`
+    : indicator.unavailableReason;
+
+  return (
+    <article className="rounded-lg border bg-card p-4 shadow-sm transition-shadow motion-safe:hover:shadow-md">
+      <div className="flex items-center gap-1.5">
+        <h3 className="font-medium">{indicatorNames[indicator.key]}</h3>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              aria-label={`Ajuda sobre ${indicatorNames[indicator.key]}`}
+            >
+              <CircleHelp className="size-4" aria-hidden="true" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="max-w-xs text-sm leading-relaxed"
+            align="start"
+          >
+            {indicatorHelp[indicator.key]}
+          </PopoverContent>
+        </Popover>
+      </div>
+      <p className="mt-3 text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-2 min-h-10 text-xs leading-relaxed text-muted-foreground">
+        {reference}
+      </p>
+    </article>
+  );
+}
+
+function FundamentalsGrid({
+  periods,
+  type,
+}: {
+  periods: Period[];
+  type: "DFP" | "ITR";
+}) {
+  if (!periods.length)
+    return (
+      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+        {type === "DFP" ? "Sem DFP anual disponível." : "Sem ITR disponível."}
+      </div>
+    );
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {periods.map((period) => (
+        <article
+          key={`${period.sourceDocument}-${period.referenceDate}`}
+          className="rounded-lg border bg-card p-4 shadow-sm"
+        >
+          <h3 className="font-medium">
+            {type === "ITR" ? "Acumulado até " : ""}
+            {dateLabel(period.referenceDate)}
+          </h3>
+          <dl className="mt-3 space-y-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Receita</dt>
+              <dd className="font-medium tabular-nums">
+                {period.revenue === null
+                  ? "—"
+                  : compact.format(Number(period.revenue))}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Lucro líquido</dt>
+              <dd className="font-medium tabular-nums">
+                {period.netIncome === null
+                  ? "—"
+                  : compact.format(Number(period.netIncome))}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Patrimônio</dt>
+              <dd className="font-medium tabular-nums">
+                {period.equity === null
+                  ? "—"
+                  : compact.format(Number(period.equity))}
+              </dd>
+            </div>
+          </dl>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function StockAnalysisDashboard() {
-  const [a, setA] = useState<Analysis | null>(null),
-    [e, setE] = useState(false),
-    [days, setDays] = useState(365);
-  const load = async () => {
-    setE(false);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [retryRemaining, setRetryRemaining] = useState(0);
+  const [days, setDays] = useState(365);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setRetryRemaining(0);
     try {
-      const r = await fetch("/api/analyses/stocks/PETR4"),
-        b = await r.json();
-      if (!r.ok) throw Error();
-      setA(b as Analysis);
+      const response = await fetch("/api/analyses/stocks/PETR4");
+      const body = await response.json();
+      const retryAfter = Number(response.headers.get("retry-after"));
+      if (
+        response.status === 429 &&
+        Number.isFinite(retryAfter) &&
+        retryAfter > 0
+      )
+        setRetryRemaining(Math.ceil(retryAfter));
+      if (!response.ok) throw new Error();
+      setAnalysis(body as Analysis);
     } catch {
-      setE(true);
+      setAnalysis(null);
+      setError(
+        "Não foi possível consultar a ação agora. Tente novamente em instantes.",
+      );
+    } finally {
+      setLoading(false);
     }
-  };
-  useEffect(() => {
-    void fetch("/api/analyses/stocks/PETR4")
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error();
-        return body as Analysis;
-      })
-      .then(setA)
-      .catch(() => setE(true));
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useEffect(() => {
+    if (retryRemaining <= 0) return;
+    const timer = window.setInterval(
+      () => setRetryRemaining((seconds) => Math.max(0, seconds - 1)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [retryRemaining]);
+
+  const history = useMemo(
+    () =>
+      (analysis?.history ?? [])
+        .slice()
+        .sort((left, right) => left.date.localeCompare(right.date)),
+    [analysis],
+  );
   const points = useMemo(() => {
-    if (!a) return [];
-    const end = new Date(a.history.at(-1)?.date ?? ""),
-      from = new Date(end);
-    from.setDate(from.getDate() - days);
-    return a.history.filter((p) => new Date(p.date) >= from);
-  }, [a, days]);
-  if (e)
+    const latest = history.at(-1);
+    if (!latest) return [];
+    const from = new Date(`${latest.date}T00:00:00Z`);
+    from.setUTCDate(from.getUTCDate() - days);
+    return history.filter(
+      (point) => new Date(`${point.date}T00:00:00Z`) >= from,
+    );
+  }, [days, history]);
+
+  if (loading) return <AnalysisSkeleton />;
+  if (error)
     return (
       <Card>
-        <CardContent className="flex items-center gap-4 p-6">
-          <p role="alert">Não foi possível consultar a ação agora.</p>
-          <Button variant="outline" onClick={() => void load()}>
-            <RefreshCw />
-            Tentar novamente
+        <CardHeader>
+          <CardTitle>Consulta de ação</CardTitle>
+          <CardDescription>
+            Os dados de mercado podem ficar indisponíveis temporariamente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={retryRemaining > 0}
+            onClick={() => void load()}
+          >
+            <RefreshCw className="size-4" aria-hidden="true" />
+            {retryRemaining > 0
+              ? `Tente novamente em ${retryRemaining}s`
+              : "Tentar novamente"}
           </Button>
         </CardContent>
       </Card>
     );
-  if (!a)
+  if (!analysis) return null;
+
+  const annual = analysis.fundamentals.filter(
+    (period) => period.sourceDocument === "DFP",
+  );
+  const interim = analysis.fundamentals.filter(
+    (period) => period.sourceDocument === "ITR",
+  );
+  const intervals = [30, 90, 180, 365].filter((interval) => {
+    if (history.length < 2) return false;
     return (
-      <Card aria-busy="true">
-        <CardContent className="p-6">Carregando análise...</CardContent>
-      </Card>
+      new Date(`${history.at(-1)?.date}T00:00:00Z`).getTime() -
+        new Date(`${history[0].date}T00:00:00Z`).getTime() >=
+      (interval - 1) * 86400000
     );
-  const annual = a.fundamentals.filter((p) => p.sourceDocument === "DFP"),
-    interim = a.fundamentals.filter((p) => p.sourceDocument === "ITR");
+  });
+
   return (
-    <TooltipProvider>
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardDescription>Ativo consultado</CardDescription>
-            <CardTitle className="text-2xl">
-              {a.ticker} · {a.companyName ?? "Empresa não informada"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex gap-8">
-            <p className="text-3xl font-semibold">
-              {a.price === null ? "—" : money.format(a.price)}
-            </p>
-            <p
-              className={
-                a.changePercent !== null && a.changePercent < 0
-                  ? "text-destructive"
-                  : "text-emerald-600"
-              }
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardDescription>Ativo consultado</CardDescription>
+          <CardTitle className="text-2xl">
+            {analysis.ticker} ·{" "}
+            {analysis.companyName ?? "Empresa não informada"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-8">
+          <p className="text-3xl font-semibold tracking-tight">
+            {analysis.price === null ? "—" : money.format(analysis.price)}
+          </p>
+          <p
+            className={
+              analysis.changePercent !== null && analysis.changePercent < 0
+                ? "text-sm font-medium text-destructive"
+                : "text-sm font-medium text-emerald-600 dark:text-emerald-400"
+            }
+          >
+            {analysis.changePercent === null
+              ? "Variação não informada"
+              : `Variação: ${analysis.changePercent.toFixed(2)}%`}
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Histórico de preço</CardTitle>
+          <CardDescription>
+            Cotações diárias em ordem cronológica. Selecione um intervalo
+            disponível.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {intervals.length > 0 && (
+            <div
+              className="flex flex-wrap gap-2"
+              aria-label="Intervalo do histórico"
             >
-              {a.changePercent === null
-                ? "Variação não informada"
-                : `Variação: ${a.changePercent.toFixed(2)}%`}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Histórico de preço</CardTitle>
-            <CardDescription>
-              Cotações diárias; os filtros aparecem somente para intervalos
-              cobertos.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 flex gap-2">
-              {[30, 90, 180, 365]
-                .filter(
-                  (d) =>
-                    a.history.length &&
-                    new Date(a.history.at(-1)?.date ?? "").getTime() -
-                      new Date(a.history[0].date).getTime() >=
-                      (d - 1) * 86400000,
-                )
-                .map((d) => (
-                  <Button
-                    key={d}
-                    size="sm"
-                    variant={d === days ? "default" : "outline"}
-                    onClick={() => setDays(d)}
-                  >
-                    {d === 365 ? "1A" : `${d / 30}M`}
-                  </Button>
-                ))}
+              {intervals.map((interval) => (
+                <Button
+                  key={interval}
+                  type="button"
+                  size="sm"
+                  variant={interval === days ? "default" : "outline"}
+                  onClick={() => setDays(interval)}
+                >
+                  {interval === 365
+                    ? "1 ano"
+                    : interval === 30
+                      ? "1 mês"
+                      : `${Math.round(interval / 30)} meses`}
+                </Button>
+              ))}
             </div>
-            <Price points={points} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Indicadores fundamentalistas</CardTitle>
-            <CardDescription>
-              Mostrados somente quando há base financeiramente compatível.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            {a.indicators.map((i) => (
-              <div key={i.key} className="rounded-lg border p-4">
-                <p className="flex items-center gap-1 font-medium">
-                  {
-                    {
-                      pe: "P/L",
-                      pb: "P/VP",
-                      roe: "ROE",
-                      netMargin: "Margem líquida",
-                    }[i.key]
-                  }
-                  <Tooltip>
-                    <TooltipTrigger aria-label={`Ajuda sobre ${i.key}`}>
-                      <CircleHelp className="size-4" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      {help[i.key]}
-                    </TooltipContent>
-                  </Tooltip>
-                </p>
-                <p className="mt-3 text-xl font-semibold">
-                  {i.value === null ? "Indisponível" : `${i.value.toFixed(1)}%`}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {i.value === null
-                    ? i.unavailableReason
-                    : `${i.sourceDocument === "ITR" ? "Acumulado até" : "DFP anual encerrado em"} ${label(i.referenceDate ?? "")}`}
-                </p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Evolução dos fundamentos anuais</CardTitle>
-            <CardDescription>
-              DFPs anuais comparados entre si: receita, lucro líquido e
-              patrimônio líquido.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            {annual.length ? (
-              annual.map((p) => (
-                <div
-                  key={p.referenceDate}
-                  className="rounded-lg border p-4 text-sm"
-                >
-                  <p className="font-medium">{label(p.referenceDate)}</p>
-                  <p>
-                    Receita:{" "}
-                    {p.revenue === null ? "—" : fmt.format(Number(p.revenue))}
-                  </p>
-                  <p>
-                    Lucro líquido:{" "}
-                    {p.netIncome === null
-                      ? "—"
-                      : fmt.format(Number(p.netIncome))}
-                  </p>
-                  <p>
-                    Patrimônio:{" "}
-                    {p.equity === null ? "—" : fmt.format(Number(p.equity))}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p>Sem DFP anual disponível.</p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Demonstrativos intermediários</CardTitle>
-            <CardDescription>
-              ITRs acumulados no exercício até cada data; não são trimestres
-              isolados nem são comparados a DFPs anuais.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            {interim.length ? (
-              interim.map((p) => (
-                <div
-                  key={p.referenceDate}
-                  className="rounded-lg border p-4 text-sm"
-                >
-                  <p className="font-medium">
-                    Acumulado até {label(p.referenceDate)}
-                  </p>
-                  <p>
-                    Receita:{" "}
-                    {p.revenue === null ? "—" : fmt.format(Number(p.revenue))}
-                  </p>
-                  <p>
-                    Lucro líquido:{" "}
-                    {p.netIncome === null
-                      ? "—"
-                      : fmt.format(Number(p.netIncome))}
-                  </p>
-                  <p>
-                    Patrimônio:{" "}
-                    {p.equity === null ? "—" : fmt.format(Number(p.equity))}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p>Sem ITR disponível.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </TooltipProvider>
+          )}
+          <PriceChart points={points} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Indicadores fundamentalistas</CardTitle>
+          <CardDescription>
+            Os múltiplos usam valor de mercado da BRAPI e o último DFP anual
+            compatível; os demais preservam a base indicada.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {analysis.indicators.map((indicator) => (
+            <IndicatorCard key={indicator.key} indicator={indicator} />
+          ))}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Evolução dos fundamentos anuais</CardTitle>
+          <CardDescription>
+            DFPs anuais comparados entre si: receita, lucro líquido e patrimônio
+            líquido.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FundamentalsGrid periods={annual} type="DFP" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Demonstrativos intermediários</CardTitle>
+          <CardDescription>
+            ITRs acumulados no exercício até cada data; não representam
+            trimestres isolados nem devem ser comparados diretamente aos DFPs
+            anuais.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FundamentalsGrid periods={interim} type="ITR" />
+        </CardContent>
+      </Card>
+    </div>
   );
 }

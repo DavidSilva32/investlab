@@ -3,6 +3,7 @@ export type MarketData = {
   companyName: string | null;
   cnpj: string | null;
   price: number | null;
+  marketCap: number | null;
   changePercent: number | null;
   priceUpdatedAt: string | null;
   history: Array<{ date: string; close: number }>;

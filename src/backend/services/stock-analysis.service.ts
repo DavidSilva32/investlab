@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { BrapiMarketDataProvider } from "@/backend/providers/brapi-market-data.provider";
 import { CvmFundamentalsProvider } from "@/backend/providers/cvm-fundamentals.provider";
@@ -25,9 +25,10 @@ function numericValue(value: string | null) {
 
 export function calculateAnalysisIndicators(
   periods: FundamentalPeriod[],
+  marketCap: number | null = null,
 ): AnalysisIndicator[] {
   const unavailableMarketValue =
-    "Indisponível: faltam quantidade de ações e valor de mercado confiáveis.";
+    "Indisponível: a fonte de mercado não informou o valor de mercado do ativo.";
   const annual = periods
     .filter((period) => period.sourceDocument === "DFP")
     .sort((left, right) =>
@@ -53,6 +54,15 @@ export function calculateAnalysisIndicators(
   const annualNetIncome = latestAnnual
     ? numericValue(latestAnnual.netIncome)
     : null;
+  const hasMarketCap = marketCap !== null && marketCap > 0;
+  const pe =
+    hasMarketCap && annualNetIncome !== null && annualNetIncome > 0
+      ? marketCap / annualNetIncome
+      : null;
+  const pb =
+    hasMarketCap && latestEquity !== null && latestEquity > 0
+      ? marketCap / latestEquity
+      : null;
   const consecutiveYears =
     latestAnnual &&
     previousAnnual &&
@@ -67,21 +77,32 @@ export function calculateAnalysisIndicators(
     latestEquity + previousEquity !== 0
       ? (annualNetIncome / ((latestEquity + previousEquity) / 2)) * 100
       : null;
+  const annualReferenceDate = latestAnnual?.referenceDate ?? null;
 
   return [
     {
       key: "pe",
-      value: null,
-      unavailableReason: unavailableMarketValue,
-      referenceDate: null,
-      sourceDocument: null,
+      value: pe,
+      unavailableReason:
+        pe === null
+          ? hasMarketCap
+            ? "Indisponível: o último DFP anual não informou lucro líquido positivo compatível."
+            : unavailableMarketValue
+          : null,
+      referenceDate: pe === null ? null : annualReferenceDate,
+      sourceDocument: pe === null ? null : "DFP",
     },
     {
       key: "pb",
-      value: null,
-      unavailableReason: unavailableMarketValue,
-      referenceDate: null,
-      sourceDocument: null,
+      value: pb,
+      unavailableReason:
+        pb === null
+          ? hasMarketCap
+            ? "Indisponível: o último DFP anual não informou patrimônio líquido positivo compatível."
+            : unavailableMarketValue
+          : null,
+      referenceDate: pb === null ? null : annualReferenceDate,
+      sourceDocument: pb === null ? null : "DFP",
     },
     {
       key: "roe",
@@ -154,11 +175,10 @@ export class StockAnalysisService {
         }))
       : await this.refreshFundamentals(market.ticker, market.cnpj, requestId);
 
-    Object.assign(market, { indicators: calculateAnalysisIndicators(periods) });
     return {
       ...market,
       fundamentals: periods,
-      indicators: calculateAnalysisIndicators(periods),
+      indicators: calculateAnalysisIndicators(periods, market.marketCap),
     };
   }
 
