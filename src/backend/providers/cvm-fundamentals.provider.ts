@@ -53,6 +53,11 @@ function normalizeCnpj(value: string) {
   return value.replace(/\D/g, "");
 }
 
+function normalizeCvmCode(value: string | undefined) {
+  const numeric = Number(value?.trim());
+  return Number.isFinite(numeric) ? String(numeric) : (value?.trim() ?? "");
+}
+
 function normalizedValue(value: string | undefined, scale: string | undefined) {
   if (!value) return null;
   const normalized = value.includes(",")
@@ -82,7 +87,7 @@ async function streamResponse(
 ) {
   if (!response.body) throw new Error("CVM response has no body");
   const reader = response.body.getReader();
-  const decoder = new TextDecoder("iso-8859-1");
+  const decoder = new TextDecoder("utf-8");
   let pending = "";
   while (true) {
     const { done, value } = await reader.read();
@@ -156,6 +161,10 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
 
     const periods = new Map<string, PeriodAccounts>();
     let matchedRows = 0;
+    let cnpjMatches = 0;
+    let cvmCodeMatches = 0;
+    let latestPeriodMatches = 0;
+    let requiredAccountMatches = 0;
     let completedFiles = 0;
     const unzip = new Unzip();
     unzip.register(UnzipInflate);
@@ -180,20 +189,22 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         activeFiles += 1;
         let header: string[] | null = null;
         let pending = "";
-        const decoder = new TextDecoder("iso-8859-1");
+        const decoder = new TextDecoder("utf-8");
         const consume = (line: string) => {
           if (!header) {
             header = splitCsvLine(line);
             return;
           }
           const row = rowFromLine(header, line);
-          if (
-            normalizeCnpj(row.CNPJ_CIA ?? "") !== cnpj ||
-            row.CD_CVM !== cvmCode ||
-            row.ORDEM_EXERC !== "ÚLTIMO" ||
-            !requiredAccounts.has(row.CD_CONTA ?? "")
-          )
+          if (normalizeCnpj(row.CNPJ_CIA ?? "") !== cnpj) return;
+          cnpjMatches += 1;
+          if (normalizeCvmCode(row.CD_CVM) !== normalizeCvmCode(cvmCode))
             return;
+          cvmCodeMatches += 1;
+          if (row.ORDEM_EXERC !== "ÚLTIMO") return;
+          latestPeriodMatches += 1;
+          if (!requiredAccounts.has(row.CD_CONTA ?? "")) return;
+          requiredAccountMatches += 1;
           const referenceDate = row.DT_REFER;
           if (!referenceDate) return;
           const version = Number(row.VERSAO ?? "0");
@@ -255,6 +266,10 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       document,
       year,
       matchedRows,
+      cnpjMatches,
+      cvmCodeMatches,
+      latestPeriodMatches,
+      requiredAccountMatches,
       completedFiles,
       periods: periods.size,
       durationMs: Date.now() - startedAt,
