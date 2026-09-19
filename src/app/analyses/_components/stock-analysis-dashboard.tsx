@@ -193,8 +193,9 @@ export function StockAnalysisDashboard() {
         <CardHeader>
           <CardTitle>Indicadores fundamentalistas</CardTitle>
           <CardDescription>
-            Os múltiplos usam valor de mercado da BRAPI e o último DFP anual
-            compatível; os demais preservam a base indicada.
+            P/L e P/VP usam o valor de mercado da BRAPI e as demonstrações
+            financeiras anuais mais recentes; os demais preservam a base
+            indicada.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -210,8 +211,8 @@ export function StockAnalysisDashboard() {
         <CardHeader>
           <CardTitle>Evolução dos fundamentos anuais</CardTitle>
           <CardDescription>
-            DFPs anuais comparados entre si: receita, lucro líquido e patrimônio
-            líquido.
+            Demonstrações financeiras anuais comparadas entre si: receita, lucro
+            líquido e patrimônio líquido.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -222,9 +223,9 @@ export function StockAnalysisDashboard() {
         <CardHeader>
           <CardTitle>Demonstrativos intermediários</CardTitle>
           <CardDescription>
-            ITRs acumulados no exercício até cada data; não representam
-            trimestres isolados nem devem ser comparados diretamente aos DFPs
-            anuais.
+            Informações trimestrais acumuladas no exercício até cada data; não
+            representam trimestres isolados nem devem ser comparadas diretamente
+            às demonstrações financeiras anuais.
           </CardDescription>
         </CardHeader>
         <CardContent>

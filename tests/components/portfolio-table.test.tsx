@@ -46,6 +46,9 @@ describe("PortfolioTable", () => {
       />,
     );
     expect(document.querySelector("table")?.className).toContain("table-fixed");
+    expect(screen.getByRole("button", { name: /Nome/ }).className).toContain(
+      "cursor-pointer",
+    );
     expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(
       ["Alfa", "1", "Zeta", "2"],
     );

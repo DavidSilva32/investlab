@@ -86,7 +86,7 @@ export function calculateAnalysisIndicators(
       unavailableReason:
         pe === null
           ? hasMarketCap
-            ? "Indisponível: o último DFP anual não informou lucro líquido positivo compatível."
+            ? "Indisponível: as demonstrações financeiras anuais mais recentes não informam lucro líquido positivo compatível."
             : unavailableMarketValue
           : null,
       referenceDate: pe === null ? null : annualReferenceDate,
@@ -98,7 +98,7 @@ export function calculateAnalysisIndicators(
       unavailableReason:
         pb === null
           ? hasMarketCap
-            ? "Indisponível: o último DFP anual não informou patrimônio líquido positivo compatível."
+            ? "Indisponível: as demonstrações financeiras anuais mais recentes não informam patrimônio líquido positivo compatível."
             : unavailableMarketValue
           : null,
       referenceDate: pb === null ? null : annualReferenceDate,
@@ -109,7 +109,7 @@ export function calculateAnalysisIndicators(
       value: roe,
       unavailableReason:
         roe === null
-          ? "Indisponível: são necessários dois DFPs anuais consecutivos, com lucro líquido e patrimônio líquido informados."
+          ? "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados."
           : null,
       referenceDate: roe === null ? null : latestAnnual.referenceDate,
       sourceDocument: roe === null ? null : "DFP",

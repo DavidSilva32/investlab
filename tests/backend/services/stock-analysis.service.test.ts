@@ -120,6 +120,12 @@ it("calculates P/L and P/VP only from market cap and the latest annual DFP", () 
     expect.arrayContaining([
       expect.objectContaining({ key: "pe", value: 20, sourceDocument: "DFP" }),
       expect.objectContaining({ key: "pb", value: 5, sourceDocument: "DFP" }),
+      expect.objectContaining({
+        key: "roe",
+        value: null,
+        unavailableReason:
+          "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados.",
+      }),
     ]),
   );
 });

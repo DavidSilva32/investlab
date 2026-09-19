@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
@@ -99,7 +99,7 @@ export function PortfolioTable<Row extends { id: string }>({
                   type="button"
                   onClick={() => toggleSort(column.id)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm py-1 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    "inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-sm py-1 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                     column.className?.includes("text-right") && "ml-auto",
                   )}
                 >

@@ -22,7 +22,9 @@ export function FundamentalsGrid({
   if (!periods.length)
     return (
       <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-        {type === "DFP" ? "Sem DFP anual disponível." : "Sem ITR disponível."}
+        {type === "DFP"
+          ? "Sem demonstrações financeiras anuais disponíveis."
+          : "Sem informações trimestrais disponíveis."}
       </div>
     );
 

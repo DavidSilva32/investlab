@@ -21,9 +21,9 @@ const names: Record<AnalysisIndicator["key"], string> = {
   netMargin: "Margem líquida",
 };
 const help: Record<AnalysisIndicator["key"], string> = {
-  pe: "P/L compara o valor de mercado ao lucro líquido do último DFP anual. É exibido em vezes, não em percentual.",
-  pb: "P/VP compara o valor de mercado ao patrimônio líquido do último DFP anual. É exibido em vezes, não em percentual.",
-  roe: "ROE mede o lucro líquido anual sobre o patrimônio líquido médio de dois DFPs anuais consecutivos.",
+  pe: "P/L compara o valor de mercado ao lucro líquido das demonstrações financeiras anuais mais recentes. É exibido em vezes, não em percentual.",
+  pb: "P/VP compara o valor de mercado ao patrimônio líquido das demonstrações financeiras anuais mais recentes. É exibido em vezes, não em percentual.",
+  roe: "ROE mede o lucro líquido anual sobre o patrimônio líquido médio das demonstrações financeiras anuais de dois anos consecutivos.",
   netMargin:
     "Margem líquida divide o lucro líquido pela receita do mesmo demonstrativo. Itens não recorrentes podem alterar a leitura.",
 };
@@ -39,7 +39,7 @@ export function FundamentalIndicatorCard({
       ? "Indisponível"
       : `${indicator.value.toFixed(1)}${usesRatio ? "x" : "%"}`;
   const reference = indicator.referenceDate
-    ? `${indicator.sourceDocument === "ITR" ? "Acumulado até" : "DFP anual encerrado em"} ${dateLabel(indicator.referenceDate)}`
+    ? `${indicator.sourceDocument === "ITR" ? "Informações trimestrais acumuladas até" : "Demonstrações financeiras anuais encerradas em"} ${dateLabel(indicator.referenceDate)}`
     : indicator.unavailableReason;
 
   return (

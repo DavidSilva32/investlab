@@ -25,7 +25,7 @@ const monthLabel = (date: string) =>
     timeZone: "UTC",
   }).format(new Date(`${date}T00:00:00Z`));
 const chartConfig = {
-  close: { label: "Fechamento", color: "var(--chart-2)" },
+  close: { label: "Fechamento", color: "var(--primary)" },
 } satisfies ChartConfig;
 
 export function PriceHistoryChart({

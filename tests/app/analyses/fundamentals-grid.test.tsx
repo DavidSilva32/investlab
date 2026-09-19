@@ -26,6 +26,8 @@ describe("FundamentalsGrid", () => {
 
   it("explains when the requested statement type is unavailable", () => {
     render(<FundamentalsGrid type="ITR" periods={[]} />);
-    expect(screen.getByText("Sem ITR disponível.")).toBeTruthy();
+    expect(
+      screen.getByText("Sem informações trimestrais disponíveis."),
+    ).toBeTruthy();
   });
 });

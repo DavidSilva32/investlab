@@ -5,7 +5,9 @@ import { PriceHistoryChart } from "@/app/analyses/_components/price-history-char
 
 vi.mock("recharts", () => ({
   CartesianGrid: () => null,
-  Line: () => null,
+  Line: ({ stroke }: { stroke: string }) => (
+    <div data-stroke={stroke} data-testid="price-line" />
+  ),
   Legend: () => null,
   LineChart: ({
     children,
@@ -30,7 +32,7 @@ vi.mock("recharts", () => ({
 }));
 
 describe("PriceHistoryChart", () => {
-  it("renders an official chart with the supplied chronological points", () => {
+  it("renders the chronological points with a visible theme color", () => {
     render(
       <PriceHistoryChart
         points={[
@@ -39,11 +41,19 @@ describe("PriceHistoryChart", () => {
         ]}
       />,
     );
-    expect(
-      screen.getByLabelText("Gráfico do histórico de preço de fechamento"),
-    ).toBeTruthy();
+
+    const chart = screen.getByLabelText(
+      "Gráfico do histórico de preço de fechamento",
+    );
+    expect(chart).toBeTruthy();
     expect(screen.getByTestId("price-chart").dataset.points).toBe(
       "2026-01-01,2026-01-02",
+    );
+    expect(chart.querySelector("style")?.textContent).toContain(
+      "--color-close: var(--primary)",
+    );
+    expect(screen.getByTestId("price-line").dataset.stroke).toBe(
+      "var(--color-close)",
     );
   });
 

@@ -33,13 +33,18 @@ describe("FundamentalIndicatorCard", () => {
         indicator={{
           key: "roe",
           value: null,
-          unavailableReason: "São necessários dois DFPs anuais.",
+          unavailableReason:
+            "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados.",
           referenceDate: null,
           sourceDocument: null,
         }}
       />,
     );
     expect(screen.getByText("Indisponível")).toBeTruthy();
-    expect(screen.getByText("São necessários dois DFPs anuais.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados.",
+      ),
+    ).toBeTruthy();
   });
 });
