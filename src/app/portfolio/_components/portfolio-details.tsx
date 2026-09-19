@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -113,8 +113,22 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
               {formatCurrency(row.estimatedValue)}
             </span>
             <span className="block text-xs text-muted-foreground">
-              Valor estimado hoje
+              {row.cdbEstimateStatus === "provisional" &&
+              row.estimatedThrough ? (
+                <>
+                  Estimativa provisória até{" "}
+                  {date.format(new Date(`${row.estimatedThrough}T00:00:00Z`))}
+                </>
+              ) : (
+                "Valor estimado hoje"
+              )}
             </span>
+            {row.cdbEstimateStatus === "provisional" && (
+              <span className="block text-xs text-amber-700 dark:text-amber-400">
+                Não foi possível confirmar o CDI oficial agora. Sujeita a
+                ajuste.
+              </span>
+            )}
             {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3:{" "}
@@ -140,6 +154,11 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3
             </span>
+            {row.cdbEstimateStatus === "unavailable" && (
+              <span className="block text-xs text-amber-700 dark:text-amber-400">
+                Não foi possível atualizar a estimativa com o CDI oficial.
+              </span>
+            )}
             {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}
             <CdbRateConfiguration
               assetCode={row.assetCode}

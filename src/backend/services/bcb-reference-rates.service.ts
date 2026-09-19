@@ -5,12 +5,17 @@ export type BcbReferenceRates = {
   cdi: { annualRate: string; date: string } | null;
 };
 const parseLatestRate = (values: BcbRate[]) => {
+  const todayInSaoPaulo = () =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
+      new Date(),
+    );
   const rate = values.at(0);
   if (!rate) return null;
   const [day, month, year] = rate.data.split("/");
   const annualRate = rate.valor.replace(",", ".");
   if (!day || !month || !year || !/^\d+(\.\d+)?$/.test(annualRate)) return null;
-  return { date: `${year}-${month}-${day}`, annualRate };
+  const date = `${year}-${month}-${day}`;
+  return date > todayInSaoPaulo() ? null : { date, annualRate };
 };
 async function fetchLatestRate(series: number) {
   try {

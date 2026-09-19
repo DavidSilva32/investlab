@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -53,6 +53,8 @@ const position = {
   estimationBaseDate: "2026-09-16",
   cdiPercentage: "100",
   estimatedValue: 1000.55,
+  cdbEstimateStatus: "provisional" as const,
+  estimatedThrough: "2026-09-18",
 };
 
 describe("portfolio detail components", () => {
@@ -61,9 +63,12 @@ describe("portfolio detail components", () => {
       <PositionDetails positions={[position]} />,
     );
     expect(html).toContain("Posições atuais");
-    expect(html).toContain("Valor estimado hoje");
+    expect(html).toContain("Estimativa provis");
     expect(html).toContain("100% do CDI");
     expect(html).toContain("arquivo de");
+    expect(html).toContain("Estimativa provis");
+    expect(html).toContain("18/09/2026");
+    expect(html).toContain("Não foi possível confirmar o CDI oficial agora");
     expect(html).toContain("posições");
   });
 
@@ -77,6 +82,7 @@ describe("portfolio detail components", () => {
             estimatedValue: null,
             cdiPercentage: "110",
             estimationBaseDate: null,
+            cdbEstimateStatus: "unavailable",
           },
           {
             ...position,
@@ -110,6 +116,7 @@ describe("portfolio detail components", () => {
     expect(html).toContain("Configurar taxa");
     expect(html).toContain("110% do CDI");
     expect(html).toContain("Último valor informado pela B3");
+    expect(html).toContain("atualizar a estimativa");
     expect(html).not.toContain("Nenhuma posição importada");
   });
 
@@ -164,7 +171,7 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(html).toContain("Valor estimado hoje");
+    expect(html).toContain("Estimativa provis");
     expect(html).not.toContain("% do CDI");
   });
   it("renders the empty movement state", () => {

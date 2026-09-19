@@ -1,4 +1,4 @@
-﻿import { Percent } from "lucide-react";
+import { Percent } from "lucide-react";
 import type { BcbReferenceRates } from "@/backend/services/bcb-reference-rates.service";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
@@ -40,7 +40,7 @@ function Rate({
       </span>
       {rate && (
         <span className="text-xs text-muted-foreground">
-          {date.format(new Date(`${rate.date}T00:00:00Z`))}
+          Referência: {date.format(new Date(`${rate.date}T00:00:00Z`))}
         </span>
       )}
     </span>

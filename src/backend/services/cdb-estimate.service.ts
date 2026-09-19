@@ -21,6 +21,30 @@ const isDiCdb = (position: {
 const sortRates = <T extends { rateDate: string }>(rates: T[]) =>
   [...rates].sort((left, right) => left.rateDate.localeCompare(right.rateDate));
 
+export type CdbEstimateStatus = "official" | "provisional" | "unavailable";
+
+const addDays = (date: string, days: number) => {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
+
+const isWeekday = (date: string) => {
+  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return day > 0 && day < 6;
+};
+
+const missingWeekdaysAfter = (lastRateDate: string, today: string) => {
+  const missing: string[] = [];
+  for (
+    let date = addDays(lastRateDate, 1);
+    date < today;
+    date = addDays(date, 1)
+  ) {
+    if (isWeekday(date)) missing.push(date);
+  }
+  return missing;
+};
 const logUnavailable = (phase: "configuration" | "rates" | "cache") =>
   logger.warn("cdb_estimates_unavailable", { phase });
 
@@ -97,6 +121,10 @@ export async function enrichCdbEstimates<
   });
   const unavailableBaseDates = new Set<string>();
   let fetchedRates: Array<{ date: string; annualRate: string }> = [];
+  const provisionalRatesByBaseDate = new Map<
+    string,
+    { rateDate: string; annualRate: string; fetchedAt: Date }
+  >();
 
   if (missingBaseDates.length) {
     const from = missingBaseDates
@@ -109,9 +137,24 @@ export async function enrichCdbEstimates<
       fetchedRates = await bcbCdiService.fetchRates(from, today);
     } catch {
       logUnavailable("rates");
-      missingBaseDates.forEach((baseDate) =>
-        unavailableBaseDates.add(baseDate),
-      );
+      missingBaseDates.forEach((baseDate) => {
+        const lastRate = cachedRatesByBaseDate.get(baseDate)?.at(-1);
+        if (!lastRate) {
+          unavailableBaseDates.add(baseDate);
+          return;
+        }
+        const missingWeekdays = missingWeekdaysAfter(lastRate.rateDate, today);
+        if (missingWeekdays.length === 1) {
+          provisionalRatesByBaseDate.set(baseDate, {
+            rateDate: missingWeekdays[0]!,
+            annualRate: lastRate.annualRate,
+            fetchedAt: new Date(),
+          });
+          return;
+        }
+
+        unavailableBaseDates.add(baseDate);
+      });
     }
   }
 
@@ -135,7 +178,15 @@ export async function enrichCdbEstimates<
       position.estimationBaseDate >= today ||
       unavailableBaseDates.has(position.estimationBaseDate)
     )
-      return { ...position, cdiPercentage, estimatedValue: null };
+      return {
+        ...position,
+        cdiPercentage,
+        estimatedValue: null,
+        cdbEstimateStatus:
+          isDiCdb(position) && cdiPercentage && position.totalValue
+            ? ("unavailable" as const)
+            : null,
+      };
 
     const rates = [
       ...(cachedRatesByBaseDate.get(position.estimationBaseDate) ?? []),
@@ -146,6 +197,9 @@ export async function enrichCdbEstimates<
           annualRate: rate.annualRate,
           fetchedAt: new Date(),
         })),
+      ...(provisionalRatesByBaseDate.get(position.estimationBaseDate)
+        ? [provisionalRatesByBaseDate.get(position.estimationBaseDate)!]
+        : []),
     ];
     const uniqueRates = Array.from(
       new Map(sortRates(rates).map((rate) => [rate.rateDate, rate])).values(),
@@ -162,10 +216,22 @@ export async function enrichCdbEstimates<
               rates: uniqueRates,
             })
           : null,
+        estimatedThrough: uniqueRates.at(-1)?.rateDate ?? null,
+        cdbEstimateStatus: uniqueRates.length
+          ? provisionalRatesByBaseDate.has(position.estimationBaseDate) ||
+            missingWeekdaysAfter(uniqueRates.at(-1)!.rateDate, today).length
+            ? ("provisional" as const)
+            : ("official" as const)
+          : ("unavailable" as const),
       };
     } catch {
       logUnavailable("rates");
-      return { ...position, cdiPercentage, estimatedValue: null };
+      return {
+        ...position,
+        cdiPercentage,
+        estimatedValue: null,
+        cdbEstimateStatus: "unavailable" as const,
+      };
     }
   });
 }

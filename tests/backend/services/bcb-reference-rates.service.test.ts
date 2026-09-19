@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -35,6 +35,23 @@ describe("getBcbReferenceRates", () => {
     });
   });
 
+  it("rejects future reference dates from the BCB", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: "01/01/2099", valor: "15,00" }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: "01/01/2099", valor: "14,90" }],
+      });
+
+    await expect(getBcbReferenceRates()).resolves.toEqual({
+      selic: null,
+      cdi: null,
+    });
+  });
   it("rejects invalid official values and network errors without exposing them", async () => {
     vi.stubEnv("NODE_ENV", "development");
     fetchMock

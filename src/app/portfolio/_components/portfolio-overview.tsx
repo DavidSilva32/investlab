@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import {
   ArrowRight,
   CalendarDays,
@@ -32,6 +32,8 @@ export type PortfolioPosition = {
   estimationBaseDate?: string | null;
   cdiPercentage?: string | null;
   estimatedValue?: number | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "official" | "provisional" | "unavailable" | null;
 };
 
 export function PortfolioOverview({
