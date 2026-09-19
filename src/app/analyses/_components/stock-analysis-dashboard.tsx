@@ -304,7 +304,7 @@ export function StockAnalysisDashboard() {
   }, []);
 
   useEffect(() => {
-    void load();
+    void Promise.resolve().then(load);
   }, [load]);
   useEffect(() => {
     if (retryRemaining <= 0) return;

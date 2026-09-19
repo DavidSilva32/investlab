@@ -20,28 +20,54 @@ describe("BrapiMarketDataProvider", () => {
   });
 });
 
-  it("normalizes BRAPI history in chronological order without duplicate dates", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ results: [{ symbol: "PETR4", data: { regularMarketPrice: 30, marketCap: 300 } }] }), { status: 200 }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ results: [{ data: { cnpj: "33.000.167/0001-01" } }] }), { status: 200 }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ results: [{ data: { historicalDataPrice: [
-          { date: 1767225600, close: 31 },
-          { date: 1767139200, close: 30 },
-          { date: 1767225600, close: 32 },
-        ] } }] }), { status: 200 }),
-      );
+it("normalizes BRAPI history in chronological order without duplicate dates", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              symbol: "PETR4",
+              data: { regularMarketPrice: 30, marketCap: 300 },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ results: [{ data: { cnpj: "33.000.167/0001-01" } }] }),
+        { status: 200 },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              data: {
+                historicalDataPrice: [
+                  { date: 1767225600, close: 31 },
+                  { date: 1767139200, close: 30 },
+                  { date: 1767225600, close: 32 },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
 
-    await expect(new BrapiMarketDataProvider(fetcher).getByTicker("PETR4")).resolves.toMatchObject({
-      marketCap: 300,
-      history: [
-        { date: "2025-12-31", close: 30 },
-        { date: "2026-01-01", close: 32 },
-      ],
-    });
+  await expect(
+    new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
+  ).resolves.toMatchObject({
+    marketCap: 300,
+    history: [
+      { date: "2025-12-31", close: 30 },
+      { date: "2026-01-01", close: 32 },
+    ],
   });
+});
