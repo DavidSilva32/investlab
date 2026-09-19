@@ -17,7 +17,19 @@ const spreadsheet = (name: string) => new File(["xlsx"], name);
 const positionPreview = {
   documentType: "B3_POSITION_XLSX",
   count: 1,
-  positions: [{ product: "ETF", quantity: "1", totalValue: "10" }],
+  positions: [
+    {
+      product: "ETF",
+      quantity: "1",
+      totalValue: "10",
+      institution: "Corretora A",
+      assetCode: "ETF1",
+      indexer: null,
+      unitPrice: "10",
+      valuationSource: "FECHAMENTO",
+    },
+  ],
+  estimationBaseDate: "2026-09-18",
 };
 const movementPreview = {
   documentType: "B3_MOVEMENT_XLSX",
@@ -62,11 +74,66 @@ describe("PortfolioImport", () => {
 
     expect(await screen.findByText("ETF")).toBeTruthy();
     expect(await screen.findByText("Compra")).toBeTruthy();
-    expect(screen.getByText("18/09/2026")).toBeTruthy();
+    expect(screen.getAllByText("18/09/2026")).toHaveLength(2);
     expect(screen.getByText(/20,00/)).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("shows complete position details and reconciles the recognized total", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          documentType: "B3_POSITION_XLSX",
+          count: 2,
+          estimationBaseDate: "2026-09-18",
+          positions: [
+            {
+              product: "CDB Banco A",
+              quantity: "1000",
+              totalValue: "1000.5",
+              institution: "Banco A",
+              assetCode: "CDB1",
+              indexer: "CDI",
+              unitPrice: "1.0005",
+              valuationSource: "CURVA",
+            },
+            {
+              product: "Posição sem valor",
+              quantity: "2",
+              totalValue: null,
+              institution: "Banco B",
+              assetCode: "SEMVALOR",
+              indexer: null,
+              unitPrice: null,
+              valuationSource: null,
+            },
+          ],
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+
+    expect(await screen.findByText("Data-base B3")).toBeTruthy();
+    expect(screen.getAllByText("18/09/2026")).toHaveLength(1);
+    expect(screen.getAllByText("R$ 1.000,50")).toHaveLength(3);
+    expect(screen.getByText("Banco A")).toBeTruthy();
+    expect(screen.getByText("CDB1")).toBeTruthy();
+    expect(screen.getByText("CDI")).toBeTruthy();
+    expect(screen.getByText("CURVA")).toBeTruthy();
+    expect(screen.getByText("Total parcial")).toBeTruthy();
+    expect(
+      screen.getByText(/sem valor total não foram incluídas/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("columnheader", { name: "Valor total" }),
+    ).toBeTruthy();
+  });
   it("shows API and communication failures for automatic previews", async () => {
     vi.stubGlobal(
       "fetch",
@@ -176,7 +243,16 @@ describe("PortfolioImport", () => {
         json: async () => ({
           count: 1,
           positions: [
-            { product: "Sem total", quantity: "1", totalValue: null },
+            {
+              product: "Sem total",
+              quantity: "1",
+              totalValue: null,
+              institution: null,
+              assetCode: null,
+              indexer: null,
+              unitPrice: null,
+              valuationSource: null,
+            },
           ],
         }),
       }),
