@@ -1,7 +1,7 @@
 ﻿import { logger } from "@/infrastructure/logging/logger";
 import { importRepository } from "@/backend/repositories/import.repository";
-import { enrichCdbEstimates } from "@/backend/services/cdb-estimate.service";
-import { getBcbReferenceRates } from "@/backend/services/bcb-reference-rates.service";
+import { bcbReferenceRatesService } from "@/backend/services/bcb-reference-rates.service";
+import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
 
 export class PortfolioService {
   async getOverview(requestId?: string) {
@@ -11,8 +11,8 @@ export class PortfolioService {
       importRepository.listMovements(requestId),
     ]);
     const [estimatedPositions, referenceRates] = await Promise.all([
-      enrichCdbEstimates(positions),
-      getBcbReferenceRates(),
+      cdbEstimateService.enrich(positions),
+      bcbReferenceRatesService.getReferenceRates(),
     ]);
     logger.info("portfolio_overview_loaded", {
       requestId,
@@ -25,7 +25,7 @@ export class PortfolioService {
   async listPositions(requestId?: string) {
     logger.info("portfolio_positions_loading", { requestId });
     const positions = await importRepository.listLatestPositions(requestId);
-    const estimatedPositions = await enrichCdbEstimates(positions);
+    const estimatedPositions = await cdbEstimateService.enrich(positions);
     logger.info("portfolio_positions_loaded", {
       requestId,
       positions: estimatedPositions.length,
