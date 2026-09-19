@@ -68,7 +68,7 @@ describe("enrichCdbEstimates", () => {
       { date: "2026-09-17", annualRate: "14.9" },
     ]);
     const [result] = await enrichCdbEstimates([cdb]);
-    expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-16", "2026-09-20");
+    expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-15", "2026-09-20");
     expect(repository.cacheRates).toHaveBeenCalled();
     expect(result.estimatedValue).toBe(
       estimatePostFixedCdb({
@@ -217,6 +217,33 @@ describe("with a deterministic Sao Paulo date", () => {
       estimatedValue: null,
     });
   });
+  it("projects a base-date weekday from the prior confirmed CDI", async () => {
+    vi.setSystemTime(new Date("2026-09-19T15:00:00Z"));
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom.mockResolvedValue([]);
+    bcb.fetchRates.mockResolvedValue([
+      { date: "2026-09-17", annualRate: "13.65" },
+    ]);
+
+    const [result] = await enrichCdbEstimates([
+      { ...cdb, estimationBaseDate: "2026-09-18" },
+    ]);
+
+    expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-17", "2026-09-19");
+    expect(result).toMatchObject({
+      cdbEstimateStatus: "provisional",
+      estimatedThrough: "2026-09-18",
+    });
+    expect(result.estimatedValue).toBe(
+      estimatePostFixedCdb({
+        officialValue: "1000",
+        cdiPercentage: "100",
+        rates: [{ annualRate: "13.65" }],
+      }),
+    );
+  });
   it("batches a CDI refresh for CDBs with different base dates", async () => {
     repository.listConfigurations.mockResolvedValue([
       { assetCode: "CDB1", cdiPercentage: "100" },
@@ -237,7 +264,7 @@ describe("with a deterministic Sao Paulo date", () => {
     ]);
 
     expect(bcb.fetchRates).toHaveBeenCalledTimes(1);
-    expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-16", "2026-09-20");
+    expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-15", "2026-09-20");
     expect(repository.cacheRates).toHaveBeenCalledTimes(1);
   });
 

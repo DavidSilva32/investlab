@@ -34,6 +34,12 @@ const isWeekday = (date: string) => {
   return day > 0 && day < 6;
 };
 
+const previousWeekday = (date: string) => {
+  let previous = addDays(date, -1);
+  while (!isWeekday(previous)) previous = addDays(previous, -1);
+  return previous;
+};
+
 const missingWeekdaysAfter = (lastRateDate: string, today: string) => {
   const missing: string[] = [];
   for (
@@ -130,7 +136,8 @@ export async function enrichCdbEstimates<
     const from = missingBaseDates
       .map(
         (baseDate) =>
-          cachedRatesByBaseDate.get(baseDate)?.at(-1)?.rateDate ?? baseDate,
+          cachedRatesByBaseDate.get(baseDate)?.at(-1)?.rateDate ??
+          previousWeekday(baseDate),
       )
       .sort()[0]!;
     try {
@@ -180,6 +187,17 @@ export async function enrichCdbEstimates<
     ]);
     const lastRate = confirmedRates.at(-1);
     if (!lastRate) {
+      const seedDate = previousWeekday(baseDate);
+      const seedRate = fetchedRates.find((rate) => rate.date === seedDate);
+      const missingWeekdays = missingWeekdaysAfter(seedDate, today);
+      if (seedRate && missingWeekdays.length === 1) {
+        provisionalRatesByBaseDate.set(baseDate, {
+          rateDate: missingWeekdays[0]!,
+          annualRate: seedRate.annualRate,
+          fetchedAt: new Date(),
+        });
+        return;
+      }
       unavailableBaseDates.add(baseDate);
       return;
     }
