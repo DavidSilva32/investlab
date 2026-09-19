@@ -14,8 +14,18 @@ describe("StockAnalysisService", () => {
         history: [],
       }),
     };
-    const repository = { listByTicker: vi.fn().mockResolvedValue([]) };
-    const service = new StockAnalysisService(marketProvider, repository);
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([]),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+    );
 
     await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
       ticker: "PETR4",
