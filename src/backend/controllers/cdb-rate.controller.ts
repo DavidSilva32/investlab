@@ -12,7 +12,10 @@ export class CdbRateController {
       requestId,
       assetCode: configuration.assetCode,
     });
-    return Response.json(configuration);
+    return Response.json({
+      ...configuration,
+      message: "Taxa CDI atualizada com sucesso.",
+    });
   }
 
   async create(
@@ -30,7 +33,10 @@ export class CdbRateController {
       requestId,
       configured: result.configured,
     });
-    return Response.json(result);
+    return Response.json({
+      ...result,
+      message: `Taxas CDI atualizadas com sucesso para ${result.configured} CDB(s).`,
+    });
   }
 }
 

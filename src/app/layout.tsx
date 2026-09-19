@@ -1,11 +1,14 @@
 ﻿import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { application } from "@/lib/application";
 import "./globals.css";
+
 export const metadata: Metadata = {
   title: application.name,
   description: application.description,
 };
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -19,6 +22,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

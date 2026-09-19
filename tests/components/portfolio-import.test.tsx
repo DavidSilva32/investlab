@@ -7,6 +7,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
+
 import { PortfolioImport } from "@/components/portfolio-import";
 
 const spreadsheet = (name: string) => new File(["xlsx"], name);
@@ -111,6 +115,9 @@ describe("PortfolioImport", () => {
     );
 
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(toast.success).toHaveBeenCalledWith(
+      "Arquivo importado com sucesso.",
+    );
   });
 
   it("keeps a preview visible when confirmation fails and can cancel it", async () => {
@@ -134,6 +141,7 @@ describe("PortfolioImport", () => {
     );
 
     expect(await screen.findByText(/Falha ao salvar/)).toBeTruthy();
+    expect(toast.error).toHaveBeenCalledWith("Falha ao salvar");
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(screen.queryByText("ETF")).toBeNull());
   });
@@ -209,6 +217,9 @@ describe("PortfolioImport", () => {
     expect(
       await screen.findByText(/Não foi possível salvar o arquivo/),
     ).toBeTruthy();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível salvar o arquivo.",
+    );
   });
   it("treats a missing file list as an empty chooser", () => {
     const fetch = vi.fn();

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Settings2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -28,7 +29,6 @@ export function CdbRateConfiguration({
   const [percentage, setPercentage] = useState(() =>
     initialPercentage(currentPercentage),
   );
-  const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const isMassAction = !assetCode;
@@ -36,32 +36,30 @@ export function CdbRateConfiguration({
 
   async function save() {
     setSaving(true);
-    setMessage(null);
-    const response = await fetch("/api/cdb-rates", {
-      method: isMassAction ? "POST" : "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(
-        isMassAction
-          ? { assetCodes: targetAssetCodes, cdiPercentage: percentage }
-          : { assetCode, cdiPercentage: percentage },
-      ),
-    });
-    const data = (await response.json()) as {
-      message?: string;
-      configured?: number;
-    };
-    setSaving(false);
-    setMessage(
-      response.ok
-        ? isMassAction
-          ? `${data.configured ?? 0} CDB(s) atualizado(s).`
-          : "Taxa CDI atualizada."
-        : (data.message ?? "Não foi possível salvar a configuração."),
-    );
-    if (response.ok) {
+    try {
+      const response = await fetch("/api/cdb-rates", {
+        method: isMassAction ? "POST" : "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          isMassAction
+            ? { assetCodes: targetAssetCodes, cdiPercentage: percentage }
+            : { assetCode, cdiPercentage: percentage },
+        ),
+      });
+      const data = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        toast.error(data.message ?? "Não foi possível salvar a configuração.");
+        return;
+      }
+
+      toast.success(data.message ?? "Configuração salva com sucesso.");
       setEditing(false);
       window.dispatchEvent(new Event("portfolio:updated"));
       router.refresh();
+    } catch {
+      toast.error("Não foi possível comunicar com o servidor.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -106,11 +104,6 @@ export function CdbRateConfiguration({
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-      )}
-      {message && (
-        <p className="basis-full text-xs text-muted-foreground" role="status">
-          {message}
-        </p>
       )}
     </div>
   );

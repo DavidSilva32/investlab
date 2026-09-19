@@ -18,12 +18,21 @@ describe("CdbRateController", () => {
 
     await expect(
       (await controller.update({ assetCode: "CDB1" }, "request-1")).json(),
-    ).resolves.toEqual({ assetCode: "CDB1" });
+    ).resolves.toEqual({
+      assetCode: "CDB1",
+      message: "Taxa CDI atualizada com sucesso.",
+    });
     await expect(
       (await controller.create({ assetCodes: ["CDB1"] }, "request-1")).json(),
-    ).resolves.toEqual({ configured: 2 });
+    ).resolves.toEqual({
+      configured: 2,
+      message: "Taxas CDI atualizadas com sucesso para 2 CDB(s).",
+    });
     await expect(
       (await controller.create({}, "request-1")).json(),
-    ).resolves.toEqual({ configured: 2 });
+    ).resolves.toEqual({
+      configured: 2,
+      message: "Taxas CDI atualizadas com sucesso para 2 CDB(s).",
+    });
   });
 });

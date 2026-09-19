@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 type Position = {
@@ -19,6 +20,7 @@ type Preview =
   | { documentType: "B3_POSITION_XLSX"; positions: Position[]; count: number }
   | { documentType: "B3_MOVEMENT_XLSX"; movements: Movement[]; count: number };
 type Item = { file: File; preview?: Preview; error?: string };
+type MutationResponse = { message?: string };
 const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 });
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -35,7 +37,7 @@ export function PortfolioImport() {
     const form = new FormData();
     form.append("file", file);
     const response = await fetch(endpoint, { method: "POST", body: form });
-    const body = await response.json();
+    const body = (await response.json()) as MutationResponse & Preview;
     if (!response.ok)
       throw new Error(body.message ?? "Não foi possível ler o arquivo.");
     return body;
@@ -51,8 +53,13 @@ export function PortfolioImport() {
           return {
             file,
             preview: body.documentType
-              ? body
-              : ({ documentType: "B3_POSITION_XLSX", ...body } as Preview),
+              ? (body as Preview)
+              : {
+                  documentType: "B3_POSITION_XLSX" as const,
+                  positions:
+                    (body as { positions?: Position[] }).positions ?? [],
+                  count: (body as Partial<Preview>).count ?? 0,
+                },
           };
         } catch (error) {
           return {
@@ -77,22 +84,28 @@ export function PortfolioImport() {
     const results = await Promise.all(
       ready.map(async (item) => {
         try {
-          await send(item.file, "/api/imports/confirm");
-          return item;
+          const response = await send(item.file, "/api/imports/confirm");
+          return { item, message: response.message };
         } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Não foi possível salvar o arquivo.";
+          toast.error(message);
           return {
-            ...item,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Não foi possível salvar o arquivo.",
+            item: { ...item, error: message },
           };
         }
       }),
     );
     setLoading(false);
-    if (results.every((item) => !item.error)) location.reload();
-    else setItems(results);
+    const confirmedItems = results.map((result) => result.item);
+    if (confirmedItems.every((item) => !item.error)) {
+      results.forEach((result) =>
+        toast.success(result.message ?? "Arquivo importado com sucesso."),
+      );
+      location.reload();
+    } else setItems(confirmedItems);
   }
 
   return (

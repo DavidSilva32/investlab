@@ -1,4 +1,4 @@
-import { ApplicationError } from "@/backend/errors/application-error";
+﻿import { ApplicationError } from "@/backend/errors/application-error";
 
 import { importService } from "@/backend/services/import.service";
 import { logger } from "@/infrastructure/logging/logger";
@@ -49,7 +49,15 @@ export class ImportController {
         ? preview.positions.length
         : preview.movements.length;
     return Response.json(
-      { importId: result.importId, count, documentType: preview.documentType },
+      {
+        importId: result.importId,
+        count,
+        documentType: preview.documentType,
+        message:
+          preview.documentType === "B3_POSITION_XLSX"
+            ? `${count} posição(ões) importada(s) com sucesso.`
+            : `${count} movimentação(ões) importada(s) com sucesso.`,
+      },
       { status: 201 },
     );
   }

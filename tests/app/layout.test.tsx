@@ -1,11 +1,15 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/components/ui/sonner", () => ({
+  Toaster: () => <div data-testid="toaster" />,
+}));
 
 import RootLayout, { metadata } from "@/app/layout";
 
 describe("RootLayout", () => {
-  it("declares application metadata and Portuguese document language", () => {
+  it("declares application metadata, Portuguese document language, and global feedback", () => {
     Object.defineProperty(window, "matchMedia", {
       writable: true,
       value: () => ({
@@ -15,12 +19,12 @@ describe("RootLayout", () => {
       }),
     });
     expect(metadata).toMatchObject({ title: "InvestLab" });
-    expect(
-      renderToStaticMarkup(
-        <RootLayout>
-          <main>content</main>
-        </RootLayout>,
-      ),
-    ).toContain('<html lang="pt-BR">');
+    const markup = renderToStaticMarkup(
+      <RootLayout>
+        <main>content</main>
+      </RootLayout>,
+    );
+    expect(markup).toContain('<html lang="pt-BR">');
+    expect(markup).toContain('data-testid="toaster"');
   });
 });

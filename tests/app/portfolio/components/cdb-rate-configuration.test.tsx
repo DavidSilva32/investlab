@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import {
   cleanup,
   fireEvent,
@@ -10,6 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const router = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
+
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 
 import { CdbRateConfiguration } from "@/app/portfolio/_components/cdb-rate-configuration";
 
@@ -46,6 +49,9 @@ describe("CdbRateConfiguration", () => {
       expect.objectContaining({ method: "PUT" }),
     );
     expect(router.refresh).toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith(
+      "Configuração salva com sucesso.",
+    );
   });
 
   it("updates every selected CDB in bulk", async () => {
@@ -81,8 +87,8 @@ describe("CdbRateConfiguration", () => {
     render(<CdbRateConfiguration missingAssetCodes={["CDB3"]} />);
     fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect((await screen.findByRole("status")).textContent).toContain(
-      "Taxa inválida.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Taxa inválida."),
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/cdb-rates",
@@ -100,13 +106,19 @@ describe("CdbRateConfiguration", () => {
     const first = render(<CdbRateConfiguration assetCodes={["CDB4"]} />);
     fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect((await screen.findByRole("status")).textContent).toContain("0 CDB");
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Configuração salva com sucesso.",
+      ),
+    );
     first.unmount();
     render(<CdbRateConfiguration assetCodes={["CDB5"]} />);
     fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
-    expect((await screen.findByRole("status")).textContent).toContain(
-      "Não foi possível salvar",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar a configuração.",
+      ),
     );
   });
 });
