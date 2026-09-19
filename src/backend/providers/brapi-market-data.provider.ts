@@ -1,5 +1,17 @@
 import { z } from "zod";
+import { ApplicationError } from "@/backend/errors/application-error";
 import type { MarketData, MarketDataProvider } from "./market-data.provider";
+
+function parseRetryAfterSeconds(retryAfter: string | null) {
+  if (!retryAfter) return undefined;
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+
+  const retryAt = Date.parse(retryAfter);
+  if (Number.isNaN(retryAt)) return undefined;
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+}
 
 const quoteSchema = z.object({
   results: z
@@ -63,6 +75,13 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       cache: "force-cache",
       next: { revalidate: 300 },
     });
+    if (response.status === 429) {
+      throw new ApplicationError(
+        "Consulta de mercado temporariamente indisponível. Tente novamente em instantes.",
+        429,
+        parseRetryAfterSeconds(response.headers.get("retry-after")),
+      );
+    }
     if (!response.ok)
       throw new Error(`BRAPI request failed: ${response.status}`);
     return response.json();
@@ -70,8 +89,10 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
 
   async getByTicker(ticker: string): Promise<MarketData> {
     const symbol = encodeURIComponent(ticker);
-    const [quotePayload, profilePayload, historyPayload] = await Promise.all([
-      this.request(`/api/v2/stocks/quote?symbols=${symbol}`),
+    const quotePayload = await this.request(
+      `/api/v2/stocks/quote?symbols=${symbol}`,
+    );
+    const [profileResult, historyResult] = await Promise.allSettled([
       this.request(`/api/v2/stocks/profile?symbols=${symbol}`),
       this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
@@ -79,12 +100,16 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     ]);
     const quote = quoteSchema.parse(quotePayload).results[0];
     const cnpj =
-      profileSchema
-        .parse(profilePayload)
-        .results?.[0]?.data.cnpj?.replace(/\D/g, "") ?? null;
+      profileResult.status === "fulfilled"
+        ? (profileSchema
+            .parse(profileResult.value)
+            .results?.[0]?.data.cnpj?.replace(/\D/g, "") ?? null)
+        : null;
     const points =
-      historySchema.parse(historyPayload).results?.[0]?.data
-        .historicalDataPrice ?? [];
+      historyResult.status === "fulfilled"
+        ? (historySchema.parse(historyResult.value).results?.[0]?.data
+            .historicalDataPrice ?? [])
+        : [];
 
     return {
       ticker: quote.symbol,

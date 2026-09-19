@@ -20,9 +20,9 @@ export async function GET(
       error instanceof ApplicationError
         ? error.message
         : "Não foi possível consultar a análise agora.";
-    return Response.json(
-      { message },
-      { status, headers: { "x-request-id": requestId } },
-    );
+    const headers = new Headers({ "x-request-id": requestId });
+    if (error instanceof ApplicationError && error.retryAfterSeconds != null)
+      headers.set("retry-after", String(error.retryAfterSeconds));
+    return Response.json({ message }, { status, headers });
   }
 }
