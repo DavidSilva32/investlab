@@ -12,7 +12,6 @@ export type ParsedB3Import =
   | {
       documentType: "B3_POSITION_XLSX";
       positions: ParsedB3Position[];
-      estimationBaseDate: string | null;
     }
   | { documentType: "B3_MOVEMENT_XLSX"; movements: ParsedB3Movement[] };
 const normalizeHeader = (value: unknown) =>
@@ -21,7 +20,7 @@ const normalizeHeader = (value: unknown) =>
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
-export function parseB3Xlsx(file: Buffer, fileName?: string): ParsedB3Import {
+export function parseB3Xlsx(file: Buffer): ParsedB3Import {
   const workbook = XLSX.read(file, { type: "buffer", cellDates: false });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = sheet
@@ -42,6 +41,6 @@ export function parseB3Xlsx(file: Buffer, fileName?: string): ParsedB3Import {
     };
   return {
     documentType: "B3_POSITION_XLSX",
-    ...b3PositionXlsxParser.parseDocument(file, fileName),
+    ...b3PositionXlsxParser.parseDocument(file),
   };
 }

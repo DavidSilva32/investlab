@@ -12,7 +12,7 @@ import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerp
 
 export type B3DocumentType = ParsedB3Import["documentType"];
 type ImportCreateInput =
-  | ({ fileName: string; fileHash: string } & Extract<
+  | ({ fileName: string; fileHash: string; referenceDate: string } & Extract<
       ParsedB3Import,
       { documentType: "B3_POSITION_XLSX" }
     >)
@@ -22,13 +22,6 @@ type ImportCreateInput =
       documentType: "B3_MOVEMENT_XLSX";
       movements: PersistedB3Movement[];
     };
-const baseDateFromPositionFileName = (fileName?: string | null) => {
-  const match = fileName?.match(
-    /^posicao-(\d{4})-(\d{2})-(\d{2})-\d{2}-\d{2}-\d{2}\.xlsx$/i,
-  );
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
-};
-
 export class ImportRepository {
   async existsByHash(fileHash: string, requestId?: string) {
     try {
@@ -59,9 +52,9 @@ export class ImportRepository {
             fileName: input.fileName,
             fileHash: input.fileHash,
             documentType: input.documentType,
-            estimationBaseDate:
+            referenceDate:
               input.documentType === "B3_POSITION_XLSX"
-                ? input.estimationBaseDate
+                ? input.referenceDate
                 : null,
           })
           .returning();
@@ -81,7 +74,7 @@ export class ImportRepository {
           .insert(positionSnapshots)
           .values({
             importId: importRecord.id,
-            estimationBaseDate: input.estimationBaseDate,
+            referenceDate: input.referenceDate,
           })
           .returning();
         await transaction.insert(positionItems).values(
@@ -147,19 +140,7 @@ export class ImportRepository {
         .orderBy(desc(positionSnapshots.createdAt))
         .limit(1);
       if (!snapshot) return [];
-      const [importRecord] =
-        snapshot.estimationBaseDate === null
-          ? await getDatabaseClient()
-              .select({ fileName: imports.fileName })
-              .from(imports)
-              .where(eq(imports.id, snapshot.importId))
-              .limit(1)
-          : [];
-      const estimationBaseDate =
-        snapshot.estimationBaseDate ??
-        (importRecord
-          ? baseDateFromPositionFileName(importRecord.fileName)
-          : snapshot.estimationBaseDate);
+      const referenceDate = snapshot.referenceDate;
       const positions = await getDatabaseClient()
         .select()
         .from(positionItems)
@@ -167,7 +148,7 @@ export class ImportRepository {
         .orderBy(positionItems.product);
       return positions.map((position) => ({
         ...position,
-        estimationBaseDate,
+        referenceDate,
       }));
     } catch (error) {
       logger.error("database_positions_query_failed", { requestId, error });

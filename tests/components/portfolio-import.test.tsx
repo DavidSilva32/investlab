@@ -29,7 +29,6 @@ const positionPreview = {
       valuationSource: "FECHAMENTO",
     },
   ],
-  estimationBaseDate: "2026-09-18",
 };
 const movementPreview = {
   documentType: "B3_MOVEMENT_XLSX",
@@ -74,7 +73,7 @@ describe("PortfolioImport", () => {
 
     expect(await screen.findByText("ETF")).toBeTruthy();
     expect(await screen.findByText("Compra")).toBeTruthy();
-    expect(screen.getAllByText("18/09/2026")).toHaveLength(2);
+    expect(screen.getAllByText("18/09/2026")).toHaveLength(1);
     expect(screen.getByText(/20,00/)).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
@@ -87,7 +86,6 @@ describe("PortfolioImport", () => {
         json: async () => ({
           documentType: "B3_POSITION_XLSX",
           count: 2,
-          estimationBaseDate: "2026-09-18",
           positions: [
             {
               product: "CDB Banco A",
@@ -119,8 +117,7 @@ describe("PortfolioImport", () => {
       target: { files: [spreadsheet("posicoes.xlsx")] },
     });
 
-    expect(await screen.findByText("Data-base B3")).toBeTruthy();
-    expect(screen.getAllByText("18/09/2026")).toHaveLength(1);
+    expect(await screen.findByLabelText(/Data de refer/)).toBeTruthy();
     expect(screen.getAllByText("R$ 1.000,50")).toHaveLength(3);
     expect(screen.getByText("Banco A")).toBeTruthy();
     expect(screen.getByText("CDB1")).toBeTruthy();
@@ -177,6 +174,9 @@ describe("PortfolioImport", () => {
     fireEvent.change(container.querySelector("input[type=file]")!, {
       target: { files: [spreadsheet("posicoes.xlsx")] },
     });
+    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
+      target: { value: "2026-09-18" },
+    });
     fireEvent.click(
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
@@ -202,6 +202,9 @@ describe("PortfolioImport", () => {
 
     fireEvent.change(container.querySelector("input[type=file]")!, {
       target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
+      target: { value: "2026-09-18" },
     });
     fireEvent.click(
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
@@ -286,6 +289,9 @@ describe("PortfolioImport", () => {
     const { container } = render(<PortfolioImport />);
     fireEvent.change(container.querySelector("input[type=file]")!, {
       target: { files: [spreadsheet("offline.xlsx")] },
+    });
+    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
+      target: { value: "2026-09-18" },
     });
     fireEvent.click(
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),

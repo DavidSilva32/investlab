@@ -38,10 +38,14 @@ type Preview =
       documentType: "B3_POSITION_XLSX";
       positions: Position[];
       count: number;
-      estimationBaseDate?: string | null;
     }
   | { documentType: "B3_MOVEMENT_XLSX"; movements: Movement[]; count: number };
-type Item = { file: File; preview?: Preview; error?: string };
+type Item = {
+  file: File;
+  preview?: Preview;
+  error?: string;
+  referenceDate?: string;
+};
 type MutationResponse = { message?: string };
 const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 });
 const money = new Intl.NumberFormat("pt-BR", {
@@ -63,9 +67,10 @@ export function PortfolioImport() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function send(file: File, endpoint: string) {
+  async function send(file: File, endpoint: string, referenceDate?: string) {
     const form = new FormData();
     form.append("file", file);
+    if (referenceDate) form.append("referenceDate", referenceDate);
     const response = await fetch(endpoint, { method: "POST", body: form });
     const body = (await response.json()) as MutationResponse & Preview;
     if (!response.ok)
@@ -114,7 +119,13 @@ export function PortfolioImport() {
     const results = await Promise.all(
       ready.map(async (item) => {
         try {
-          const response = await send(item.file, "/api/imports/confirm");
+          const response = await send(
+            item.file,
+            "/api/imports/confirm",
+            item.preview.documentType === "B3_POSITION_XLSX"
+              ? item.referenceDate
+              : undefined,
+          );
           return { item, message: response.message };
         } catch (error) {
           const message =
@@ -134,6 +145,19 @@ export function PortfolioImport() {
       );
       location.reload();
     } else setItems(confirmedItems);
+  }
+
+  const hasMissingPositionReferenceDate = items.some(
+    (item) =>
+      item.preview?.documentType === "B3_POSITION_XLSX" && !item.referenceDate,
+  );
+
+  function updateReferenceDate(file: File, referenceDate: string) {
+    setItems((current) =>
+      current.map((item) =>
+        item.file === file ? { ...item, referenceDate } : item,
+      ),
+    );
   }
 
   return (
@@ -174,12 +198,16 @@ export function PortfolioImport() {
           <PreviewItem
             key={`${item.file.name}-${item.file.lastModified}`}
             item={item}
+            onReferenceDateChange={updateReferenceDate}
           />
         ))}
       </div>
       {items.some((item) => item.preview) && (
         <div className="mt-5 flex gap-3">
-          <Button disabled={loading} onClick={confirm}>
+          <Button
+            disabled={loading || hasMissingPositionReferenceDate}
+            onClick={confirm}
+          >
             {loading
               ? "Salvando..."
               : `Confirmar ${items.filter((item) => item.preview).length} arquivo(s)`}
@@ -197,7 +225,13 @@ export function PortfolioImport() {
   );
 }
 
-function PreviewItem({ item }: { item: Item }) {
+function PreviewItem({
+  item,
+  onReferenceDateChange,
+}: {
+  item: Item;
+  onReferenceDateChange: (file: File, referenceDate: string) => void;
+}) {
   if (item.error)
     return (
       <p aria-live="polite" className="text-sm text-destructive">
@@ -206,7 +240,16 @@ function PreviewItem({ item }: { item: Item }) {
     );
   if (!item.preview) return <p className="text-sm">{item.file.name}</p>;
   if (item.preview.documentType === "B3_POSITION_XLSX")
-    return <PositionPreview fileName={item.file.name} preview={item.preview} />;
+    return (
+      <PositionPreview
+        fileName={item.file.name}
+        preview={item.preview}
+        referenceDate={item.referenceDate ?? ""}
+        onReferenceDateChange={(referenceDate) =>
+          onReferenceDateChange(item.file, referenceDate)
+        }
+      />
+    );
 
   return (
     <div>
@@ -241,9 +284,13 @@ function PreviewItem({ item }: { item: Item }) {
 function PositionPreview({
   fileName,
   preview,
+  referenceDate,
+  onReferenceDateChange,
 }: {
   fileName: string;
   preview: Extract<Preview, { documentType: "B3_POSITION_XLSX" }>;
+  referenceDate: string;
+  onReferenceDateChange: (referenceDate: string) => void;
 }) {
   const valuedPositions = preview.positions.filter(
     (position) => position.totalValue !== null,
@@ -272,11 +319,27 @@ function PositionPreview({
             {preview.count} posição(ões)
           </Badge>
         </div>
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <SummaryItem
-            label="Data-base B3"
-            value={formatDate(preview.estimationBaseDate)}
+        <div className="max-w-xs space-y-2">
+          <label
+            className="text-sm font-medium"
+            htmlFor={`reference-date-${fileName}`}
+          >
+            Data de referência da posi?ço
+          </label>
+          <input
+            id={`reference-date-${fileName}`}
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+            type="date"
+            required
+            value={referenceDate}
+            onChange={(event) => onReferenceDateChange(event.target.value)}
           />
+          <p className="text-xs text-muted-foreground">
+            Informe a data exibida pela B3 para esta posi?ço, nêo a data do nome
+            do arquivo.
+          </p>
+        </div>
+        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <SummaryItem
             label="Total reconhecido"
             value={money.format(totalValue)}

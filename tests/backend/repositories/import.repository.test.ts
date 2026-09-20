@@ -68,7 +68,7 @@ describe("import repository", () => {
         fileName: "b3.xlsx",
         fileHash: "hash",
         documentType: "B3_POSITION_XLSX",
-        estimationBaseDate: null,
+        referenceDate: "2026-09-18",
         positions,
       }),
     ).resolves.toMatchObject({ snapshotId: "snapshot-1" });
@@ -92,7 +92,7 @@ describe("import repository", () => {
         fileName: "b3.xlsx",
         fileHash: "hash",
         documentType: "B3_POSITION_XLSX",
-        estimationBaseDate: null,
+        referenceDate: "2026-09-18",
         positions,
       }),
     ).rejects.toThrow("write failed");
@@ -310,14 +310,14 @@ describe("import repository", () => {
       fileName: "dia-1.xlsx",
       fileHash: "hash-1",
       documentType: "B3_POSITION_XLSX",
-      estimationBaseDate: null,
+      referenceDate: "2026-09-18",
       positions: firstSnapshot as never,
     });
     await importRepository.create({
       fileName: "dia-2.xlsx",
       fileHash: "hash-2",
       documentType: "B3_POSITION_XLSX",
-      estimationBaseDate: null,
+      referenceDate: "2026-09-18",
       positions: secondSnapshot as never,
     });
 
@@ -330,41 +330,5 @@ describe("import repository", () => {
     await expect(importRepository.listLatestPositions()).resolves.toEqual(
       secondSnapshot,
     );
-  });
-  it("derives the estimation base date from legacy position filenames", async () => {
-    const latest = (
-      snapshot: {
-        id: string;
-        importId: string;
-        estimationBaseDate: string | null;
-      },
-      imported: Array<{ fileName: string }>,
-      positions: Array<{ product: string }>,
-    ) => {
-      mocks.client.select
-        .mockReturnValueOnce({
-          from: () => ({ orderBy: () => ({ limit: async () => [snapshot] }) }),
-        })
-        .mockReturnValueOnce(chain(imported))
-        .mockReturnValueOnce({
-          from: () => ({ where: () => ({ orderBy: async () => positions }) }),
-        });
-    };
-    latest(
-      { id: "snapshot-1", importId: "import-1", estimationBaseDate: null },
-      [{ fileName: "posicao-2026-09-16-13-43-00.xlsx" }],
-      [{ product: "CDB" }],
-    );
-    await expect(importRepository.listLatestPositions()).resolves.toEqual([
-      { product: "CDB", estimationBaseDate: "2026-09-16" },
-    ]);
-    latest(
-      { id: "snapshot-2", importId: "import-2", estimationBaseDate: null },
-      [{ fileName: "arquivo.xlsx" }],
-      [{ product: "CDB" }],
-    );
-    await expect(importRepository.listLatestPositions()).resolves.toEqual([
-      { product: "CDB", estimationBaseDate: null },
-    ]);
   });
 });

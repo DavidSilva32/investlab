@@ -5,7 +5,8 @@ import { logger } from "@/infrastructure/logging/logger";
 
 export class ImportController {
   private async readFile(request: Request) {
-    const file = (await request.formData()).get("file");
+    const formData = await request.formData();
+    const file = formData.get("file");
     if (!(file instanceof File))
       throw new ApplicationError("Selecione um arquivo para importar.", 400);
     return {
@@ -13,12 +14,15 @@ export class ImportController {
       size: file.size,
       type: file.type,
       buffer: Buffer.from(await file.arrayBuffer()),
+      referenceDate: formData.get("referenceDate"),
     };
   }
 
   async preview(request: Request, requestId: string) {
     logger.info("b3_import_preview_started", { requestId });
-    const preview = importService.preview(await this.readFile(request));
+    const { referenceDate: _referenceDate, ...file } =
+      await this.readFile(request);
+    const preview = importService.preview(file);
     const count =
       preview.documentType === "B3_POSITION_XLSX"
         ? preview.positions.length
@@ -33,10 +37,11 @@ export class ImportController {
 
   async confirm(request: Request, requestId: string) {
     logger.info("b3_import_confirm_started", { requestId });
-    const file = await this.readFile(request);
+    const { referenceDate, ...file } = await this.readFile(request);
     const { preview, result, duplicate } = await importService.confirm(
       file,
       requestId,
+      typeof referenceDate === "string" ? referenceDate : null,
     );
     if (duplicate)
       logger.warn("b3_import_duplicate_detected", {

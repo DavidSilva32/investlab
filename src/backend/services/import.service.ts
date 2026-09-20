@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { importFileSchema } from "@/backend/schemas/import.schema";
+import {
+  importFileSchema,
+  positionReferenceDateSchema,
+} from "@/backend/schemas/import.schema";
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
 import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
 import { ApplicationError } from "@/backend/errors/application-error";
@@ -17,7 +20,7 @@ export class ImportService {
     importFileSchema.parse(file);
     return {
       hash: createHash("sha256").update(file.buffer).digest("hex"),
-      ...parseB3Xlsx(file.buffer, file.name),
+      ...parseB3Xlsx(file.buffer),
     };
   }
   assertCanBeConfirmed(isDuplicate: boolean) {
@@ -30,6 +33,7 @@ export class ImportService {
   async confirm(
     file: { name: string; size: number; type: string; buffer: Buffer },
     requestId: string,
+    referenceDate?: string | null,
   ) {
     const preview = this.preview(file);
     const duplicate = await importRepository.existsByHash(
@@ -43,7 +47,10 @@ export class ImportService {
             ...preview,
             movements: preview.movements.map(prepareB3MovementForPersistence),
           }
-        : preview;
+        : {
+            ...preview,
+            referenceDate: positionReferenceDateSchema.parse(referenceDate),
+          };
     const result = await importRepository.create(
       { fileName: file.name, fileHash: preview.hash, ...importData },
       requestId,

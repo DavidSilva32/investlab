@@ -85,7 +85,7 @@ describe("ImportService persistence", () => {
     repository.deleteByDocumentType.mockResolvedValue(1);
 
     await expect(
-      importService.confirm(persistenceFile, "request-1"),
+      importService.confirm(persistenceFile, "request-1", "2026-09-18"),
     ).resolves.toMatchObject({
       result: { importId: "import-1" },
       duplicate: false,

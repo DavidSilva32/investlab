@@ -61,7 +61,7 @@ export class CdbEstimateService {
       assetCode: string | null;
       indexer: string | null;
       totalValue: string | null;
-      estimationBaseDate?: string | null;
+      referenceDate?: string | null;
     },
   >(positions: T[]) {
     const cdbs = positions.filter(isDiCdb);
@@ -91,11 +91,11 @@ export class CdbEstimateService {
         isDiCdb(position) &&
         Boolean(percentages.get(position.assetCode!)) &&
         Boolean(position.totalValue) &&
-        Boolean(position.estimationBaseDate) &&
-        position.estimationBaseDate! < today,
+        Boolean(position.referenceDate) &&
+        position.referenceDate! < today,
     );
     const baseDates = [
-      ...new Set(eligible.map((position) => position.estimationBaseDate!)),
+      ...new Set(eligible.map((position) => position.referenceDate!)),
     ];
     const cachedRatesByBaseDate = new Map<
       string,
@@ -227,9 +227,9 @@ export class CdbEstimateService {
         !isDiCdb(position) ||
         !cdiPercentage ||
         !position.totalValue ||
-        !position.estimationBaseDate ||
-        position.estimationBaseDate >= today ||
-        unavailableBaseDates.has(position.estimationBaseDate)
+        !position.referenceDate ||
+        position.referenceDate >= today ||
+        unavailableBaseDates.has(position.referenceDate)
       )
         return {
           ...position,
@@ -242,16 +242,16 @@ export class CdbEstimateService {
         };
 
       const rates = [
-        ...(cachedRatesByBaseDate.get(position.estimationBaseDate) ?? []),
+        ...(cachedRatesByBaseDate.get(position.referenceDate) ?? []),
         ...fetchedRates
-          .filter((rate) => rate.date >= position.estimationBaseDate!)
+          .filter((rate) => rate.date >= position.referenceDate!)
           .map((rate) => ({
             rateDate: rate.date,
             annualRate: rate.annualRate,
             fetchedAt: new Date(),
           })),
-        ...(provisionalRatesByBaseDate.get(position.estimationBaseDate)
-          ? [provisionalRatesByBaseDate.get(position.estimationBaseDate)!]
+        ...(provisionalRatesByBaseDate.get(position.referenceDate)
+          ? [provisionalRatesByBaseDate.get(position.referenceDate)!]
           : []),
       ];
       const uniqueRates = Array.from(
@@ -271,7 +271,7 @@ export class CdbEstimateService {
             : null,
           estimatedThrough: uniqueRates.at(-1)?.rateDate ?? null,
           cdbEstimateStatus: uniqueRates.length
-            ? provisionalRatesByBaseDate.has(position.estimationBaseDate) ||
+            ? provisionalRatesByBaseDate.has(position.referenceDate) ||
               missingWeekdaysAfter(uniqueRates.at(-1)!.rateDate, today).length
               ? ("provisional" as const)
               : ("official" as const)

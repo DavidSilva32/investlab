@@ -18,7 +18,7 @@ const cdb = {
   assetCode: "CDB1",
   indexer: "DI",
   totalValue: "1000",
-  estimationBaseDate: "2026-09-16",
+  referenceDate: "2026-09-16",
 };
 
 describe("CdbEstimateService.enrich", () => {
@@ -82,8 +82,8 @@ describe("CdbEstimateService.enrich", () => {
     repository.listConfigurations.mockResolvedValue([]);
     const results = await new CdbEstimateService().enrich([
       { ...cdb, product: "Tesouro", assetCode: "TES", indexer: "SELIC" },
-      { ...cdb, estimationBaseDate: null },
-      { ...cdb, estimationBaseDate: "2026-09-20" },
+      { ...cdb, referenceDate: null },
+      { ...cdb, referenceDate: "2026-09-20" },
     ]);
     expect(results.every((result) => result.estimatedValue === null)).toBe(
       true,
@@ -129,7 +129,7 @@ it("does not estimate a CDB without an indexer or value even when configured", a
   const results = await new CdbEstimateService().enrich([
     { ...cdb, indexer: null },
     { ...cdb, totalValue: null },
-    { ...cdb, estimationBaseDate: undefined },
+    { ...cdb, referenceDate: undefined },
   ]);
   expect(results.every((result) => result.estimatedValue === null)).toBe(true);
 });
@@ -184,7 +184,7 @@ describe("with a deterministic Sao Paulo date", () => {
     bcb.fetchRates.mockRejectedValue(new Error("BCB unavailable"));
 
     const [result] = await new CdbEstimateService().enrich([
-      { ...cdb, estimationBaseDate: "2026-09-21" },
+      { ...cdb, referenceDate: "2026-09-21" },
     ]);
 
     expect(result).toMatchObject({
@@ -211,7 +211,7 @@ describe("with a deterministic Sao Paulo date", () => {
     bcb.fetchRates.mockRejectedValue(new Error("BCB unavailable"));
 
     const [result] = await new CdbEstimateService().enrich([
-      { ...cdb, estimationBaseDate: "2026-09-21" },
+      { ...cdb, referenceDate: "2026-09-21" },
     ]);
 
     expect(result).toMatchObject({
@@ -230,7 +230,7 @@ describe("with a deterministic Sao Paulo date", () => {
     ]);
 
     const [result] = await new CdbEstimateService().enrich([
-      { ...cdb, estimationBaseDate: "2026-09-18" },
+      { ...cdb, referenceDate: "2026-09-18" },
     ]);
 
     expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-17", "2026-09-19");
@@ -261,7 +261,7 @@ describe("with a deterministic Sao Paulo date", () => {
       {
         ...cdb,
         assetCode: "CDB2",
-        estimationBaseDate: "2026-09-17",
+        referenceDate: "2026-09-17",
       },
     ]);
 

@@ -246,8 +246,8 @@ it("uses workbook CreatedDate as an operational base date in São Paulo", () => 
     type: "buffer",
     bookType: "xlsx",
   }) as Buffer;
-  expect(b3PositionXlsxParser.parseDocument(file).estimationBaseDate).toBe(
-    "2026-09-16",
+  expect(b3PositionXlsxParser.parseDocument(file)).not.toHaveProperty(
+    "referenceDate",
   );
 });
 
@@ -256,11 +256,10 @@ it("uses only the recognized position filename when CreatedDate is absent", () =
     ["Produto", "Quantidade"],
     ["CDB", "1"],
   ]);
-  expect(
-    b3PositionXlsxParser.parseDocument(file, "posicao-2026-09-16-13-43-00.xlsx")
-      .estimationBaseDate,
-  ).toBe("2026-09-16");
-  expect(
-    b3PositionXlsxParser.parseDocument(file, "arquivo.xlsx").estimationBaseDate,
-  ).toBeNull();
+  expect(b3PositionXlsxParser.parseDocument(file)).not.toHaveProperty(
+    "referenceDate",
+  );
+  expect(b3PositionXlsxParser.parseDocument(file)).not.toHaveProperty(
+    "referenceDate",
+  );
 });

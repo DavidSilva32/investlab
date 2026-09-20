@@ -45,7 +45,6 @@ describe("parseB3Xlsx", () => {
   it("uses the existing position parser when the workbook has no first sheet", () => {
     positionDocumentParser.mockReturnValue({
       positions: [{ product: "ETF" }],
-      estimationBaseDate: null,
     });
     const read = vi
       .spyOn(XLSX, "read")
@@ -53,7 +52,6 @@ describe("parseB3Xlsx", () => {
     expect(parseB3Xlsx(Buffer.from("empty"))).toEqual({
       documentType: "B3_POSITION_XLSX",
       positions: [{ product: "ETF" }],
-      estimationBaseDate: null,
     });
     read.mockImplementation(
       (XLSX as unknown as { __actualRead: typeof XLSX.read }).__actualRead,
@@ -62,12 +60,10 @@ describe("parseB3Xlsx", () => {
   it("delegates other worksheets to the existing position parser", () => {
     positionDocumentParser.mockReturnValue({
       positions: [{ product: "ETF" }],
-      estimationBaseDate: null,
     });
     expect(parseB3Xlsx(workbookBuffer(["Produto", "Quantidade"]))).toEqual({
       documentType: "B3_POSITION_XLSX",
       positions: [{ product: "ETF" }],
-      estimationBaseDate: null,
     });
   });
 });
