@@ -114,7 +114,14 @@ describe("AnalysisStockSearch", () => {
     expect(onSelect).not.toHaveBeenCalled();
     expect(screen.queryByRole("option", { name: /PETR3/ })).toBeNull();
     await advanceSearch();
+    input.focus();
+    expect(input.getAttribute("aria-autocomplete")).toBe("list");
     fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(
+      screen
+        .getByRole("option", { name: /VALE3/ })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
     fireEvent.keyDown(input, { key: "ArrowUp" });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith({ ticker: "VALE3", name: "Vale" });

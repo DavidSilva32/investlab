@@ -1,15 +1,14 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useId, useState } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   Command,
   CommandEmpty,
   CommandGroup,
+  CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverAnchor,
@@ -25,7 +24,6 @@ export function AnalysisStockSearch({
   ticker: string;
   onSelect: (option: TickerOption) => void;
 }) {
-  const listId = useId();
   const [query, setQuery] = useState(ticker);
   const canSearch =
     query.trim().length >= 2 && query.trim().toUpperCase() !== ticker;
@@ -85,29 +83,19 @@ export function AnalysisStockSearch({
             Pesquisar ação
           </label>
           <PopoverAnchor asChild>
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
+            <div>
+              <CommandInput
                 id="analysis-stock-search"
-                className="pl-9"
-                type="search"
-                role="combobox"
-                aria-autocomplete="list"
-                aria-expanded={open && canSearch}
-                aria-controls={listId}
                 value={query}
                 placeholder="Busque por ticker ou nome da empresa"
                 onFocus={() => options.length > 0 && setOpen(true)}
-                onChange={(event) => {
-                  setQuery(event.target.value);
+                onValueChange={(value) => {
+                  setQuery(value);
                   setOptions([]);
                   setSearchError(false);
                   setSearching(
-                    event.target.value.trim().length >= 2 &&
-                      event.target.value.trim().toUpperCase() !== ticker,
+                    value.trim().length >= 2 &&
+                      value.trim().toUpperCase() !== ticker,
                   );
                   setOpen(true);
                 }}
@@ -124,7 +112,7 @@ export function AnalysisStockSearch({
           onOpenAutoFocus={(event) => event.preventDefault()}
           className="w-[var(--radix-popover-trigger-width)] p-0"
         >
-          <CommandList id={listId} aria-label="Ações encontradas">
+          <CommandList aria-label="Ações encontradas">
             {searching && (
               <div
                 className="px-3 py-2 text-sm text-muted-foreground"
