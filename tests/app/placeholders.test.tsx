@@ -33,7 +33,9 @@ describe("secondary pages", () => {
 
   it("opens a shared analysis with the ticker from the query string", async () => {
     const markup = renderToStaticMarkup(
-      await AnalysesPage({ searchParams: Promise.resolve({ ticker: "VALE3" }) }),
+      await AnalysesPage({
+        searchParams: Promise.resolve({ ticker: "VALE3" }),
+      }),
     );
     expect(markup).toContain('value="VALE3"');
   });

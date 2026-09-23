@@ -8,8 +8,16 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { StockAnalysisDashboard } from "@/app/analyses/_components/stock-analysis-dashboard";
 
+vi.mock("sonner", () => ({
+  toast: {
+    loading: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
 vi.mock("recharts", () => ({
   CartesianGrid: () => null,
   Bar: () => null,
@@ -164,7 +172,8 @@ describe("StockAnalysisDashboard", () => {
       await Promise.resolve();
     });
     expect(screen.getByText(/VALE3/)).toBeTruthy();
-    window.history.pushState({}, "", "/?ticker=PETR4");
+    vi.clearAllMocks();
+    window.history.pushState({}, "", "/analyses?ticker=PETR4");
     window.dispatchEvent(new PopStateEvent("popstate"));
     await act(async () => {
       await Promise.resolve();
@@ -174,6 +183,21 @@ describe("StockAnalysisDashboard", () => {
       "PETR4",
     );
     expect(fetcher).toHaveBeenCalledWith("/api/analyses/stocks/PETR4");
+    expect(toast.loading).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+
+    const requestsBeforeLeaving = fetcher.mock.calls.length;
+    window.history.pushState({}, "", "/?ticker=VALE3");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(requestsBeforeLeaving);
+    expect(toast.loading).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
     window.history.replaceState({}, "", "/");
   });
 

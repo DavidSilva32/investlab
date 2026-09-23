@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Command,
   CommandEmpty,
@@ -24,6 +24,7 @@ export function AnalysisStockSearch({
   ticker: string;
   onSelect: (option: TickerOption) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(ticker);
   const canSearch =
     query.trim().length >= 2 && query.trim().toUpperCase() !== ticker;
@@ -31,6 +32,10 @@ export function AnalysisStockSearch({
   const [open, setOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(false);
+
+  useEffect(() => {
+    inputRef.current?.setAttribute("aria-expanded", String(open && canSearch));
+  });
 
   useEffect(() => {
     const normalized = query.trim();
@@ -73,19 +78,23 @@ export function AnalysisStockSearch({
   }
 
   return (
-    <Command shouldFilter={false} className="overflow-visible bg-transparent">
+    <Command
+      label="Pesquisar ação"
+      shouldFilter={false}
+      className="overflow-visible bg-transparent"
+    >
       <Popover open={open && canSearch} onOpenChange={setOpen}>
         <div className="relative z-20 max-w-2xl">
-          <label
-            htmlFor="analysis-stock-search"
-            className="mb-1.5 block text-sm font-medium"
-          >
+          <span className="mb-1.5 block text-sm font-medium">
             Pesquisar ação
-          </label>
+          </span>
           <PopoverAnchor asChild>
             <div>
               <CommandInput
+                ref={inputRef}
                 id="analysis-stock-search"
+                aria-label="Pesquisar ação"
+                aria-expanded={open && canSearch}
                 value={query}
                 placeholder="Busque por ticker ou nome da empresa"
                 onFocus={() => options.length > 0 && setOpen(true)}

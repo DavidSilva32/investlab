@@ -38,6 +38,12 @@ async function advanceSearch() {
 }
 
 describe("AnalysisStockSearch", () => {
+  it("exposes a meaningful accessible name for the combobox", () => {
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    expect(
+      screen.getByRole("combobox", { name: "Pesquisar ação" }),
+    ).toBeTruthy();
+  });
   it("searches dynamically and selects a ticker by click", async () => {
     vi.useFakeTimers();
     const fetcher = vi
@@ -46,9 +52,12 @@ describe("AnalysisStockSearch", () => {
     vi.stubGlobal("fetch", fetcher);
     const onSelect = vi.fn();
     render(<AnalysisStockSearch ticker="PETR4" onSelect={onSelect} />);
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "Vale" },
+    const input = screen.getByRole("combobox", {
+      name: "Pesquisar ação",
     });
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.change(input, { target: { value: "Vale" } });
+    expect(input.getAttribute("aria-expanded")).toBe("true");
     await advanceSearch();
     const option = screen.getByRole("option", { name: /VALE3.*Vale S\.A\./ });
     expect(fetcher).toHaveBeenCalledWith(
@@ -60,6 +69,7 @@ describe("AnalysisStockSearch", () => {
       ticker: "VALE3",
       name: "Vale S.A.",
     });
+    expect(input.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("does not search short or currently selected input and supports an empty result", async () => {
@@ -106,6 +116,7 @@ describe("AnalysisStockSearch", () => {
     const onSelect = vi.fn();
     render(<AnalysisStockSearch ticker="PETR4" onSelect={onSelect} />);
     const input = screen.getByRole("combobox");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
     fireEvent.change(input, { target: { value: "Petr" } });
     await advanceSearch();
     expect(screen.getByRole("option", { name: /PETR3/ })).toBeTruthy();
@@ -115,11 +126,12 @@ describe("AnalysisStockSearch", () => {
     expect(screen.queryByRole("option", { name: /PETR3/ })).toBeNull();
     await advanceSearch();
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    const activeOptionId = input.getAttribute("aria-activedescendant");
-    expect(activeOptionId).toBeTruthy();
-    expect(document.getElementById(activeOptionId!)?.getAttribute("role")).toBe(
-      "option",
-    );
+    expect(input.getAttribute("aria-autocomplete")).toBe("list");
+    expect(
+      screen
+        .getByRole("option", { name: /VALE3/ })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
     fireEvent.keyDown(input, { key: "ArrowUp" });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith({ ticker: "VALE3", name: "Vale" });
