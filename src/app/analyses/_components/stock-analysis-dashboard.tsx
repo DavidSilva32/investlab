@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -37,8 +38,11 @@ export function StockAnalysisDashboard({
   const [retryRemaining, setRetryRemaining] = useState(0);
   const [days, setDays] = useState(365);
 
-  const load = useCallback(async (ticker: string) => {
+  const load = useCallback(async (ticker: string, notify = false) => {
     const sequence = ++requestSequence.current;
+    const toastId = "stock-analysis-load";
+    if (notify)
+      toast.loading(`Consultando dados de ${ticker}...`, { id: toastId });
     setLoading(true);
     setError(null);
     setRetryRemaining(0);
@@ -57,9 +61,17 @@ export function StockAnalysisDashboard({
         setRetryRemaining(Math.ceil(retryAfter));
       if (!response.ok) throw new Error();
       setAnalysis(body as StockAnalysis);
+      if (notify)
+        toast.success(`Dados de ${ticker} carregados com sucesso.`, {
+          id: toastId,
+        });
     } catch {
       if (sequence !== requestSequence.current) return;
       setAnalysis(null);
+      if (notify)
+        toast.error("Não foi possível carregar os dados da ação.", {
+          id: toastId,
+        });
       setError(
         "Não foi possível consultar a ação agora. Tente novamente em instantes.",
       );
@@ -75,6 +87,7 @@ export function StockAnalysisDashboard({
 
   useEffect(() => {
     function handlePopState() {
+      if (window.location.pathname !== "/analyses") return;
       const queryTicker = new URLSearchParams(window.location.search).get(
         "ticker",
       );
@@ -107,7 +120,7 @@ export function StockAnalysisDashboard({
       url.searchParams.set("ticker", ticker);
       window.history.pushState({}, "", url);
       setDays(365);
-      void load(ticker);
+      void load(ticker, true);
     },
     [load],
   );
@@ -162,7 +175,7 @@ export function StockAnalysisDashboard({
               type="button"
               variant="outline"
               disabled={retryRemaining > 0}
-              onClick={() => void load(selectedTicker)}
+              onClick={() => void load(selectedTicker, true)}
             >
               <RefreshCw className="size-4" aria-hidden="true" />
               {retryRemaining > 0
