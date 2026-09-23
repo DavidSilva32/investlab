@@ -17,13 +17,15 @@ import SettingsPage from "@/app/settings/page";
 import { ComingSoonPage } from "@/components/coming-soon-page";
 
 describe("secondary pages", () => {
-  it("renders each planned area with its context", () => {
+  it("renders each planned area with its context", async () => {
     expect(renderToStaticMarkup(<ImportsPage />)).toContain(
       "Importe posições ou movimentações da B3",
     );
-    expect(renderToStaticMarkup(<AnalysesPage />)).toContain(
-      "análises da sua carteira",
-    );
+    expect(
+      renderToStaticMarkup(
+        await AnalysesPage({ searchParams: Promise.resolve({}) }),
+      ),
+    ).toContain("análises da sua carteira");
     expect(renderToStaticMarkup(<SettingsPage />)).toContain(
       "configurações da sua conta",
     );

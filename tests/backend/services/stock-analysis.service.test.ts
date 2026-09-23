@@ -4,9 +4,41 @@ import {
   StockAnalysisService,
 } from "@/backend/services/stock-analysis.service";
 
+describe("StockAnalysisService ticker search", () => {
+  it("trims a valid search query and returns provider matches", async () => {
+    const marketProvider = {
+      getByTicker: vi.fn(),
+      searchTickers: vi
+        .fn()
+        .mockResolvedValue([{ ticker: "VALE3", name: "Vale" }]),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+    );
+    await expect(
+      service.searchTickers("  Vale  ", "request-search"),
+    ).resolves.toEqual([{ ticker: "VALE3", name: "Vale" }]);
+    expect(marketProvider.searchTickers).toHaveBeenCalledWith("Vale");
+  });
+
+  it("skips provider calls for queries shorter than the minimum", async () => {
+    const marketProvider = { getByTicker: vi.fn(), searchTickers: vi.fn() };
+    const service = new StockAnalysisService(
+      marketProvider,
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+    );
+    await expect(service.searchTickers("A")).resolves.toEqual([]);
+    expect(marketProvider.searchTickers).not.toHaveBeenCalled();
+  });
+});
+
 describe("StockAnalysisService", () => {
   it("returns market data when fundamentals are absent from the cache", async () => {
     const marketProvider = {
+      searchTickers: vi.fn().mockResolvedValue([]),
       getByTicker: vi.fn().mockResolvedValue({
         ticker: "PETR4",
         companyName: "Petrobras",

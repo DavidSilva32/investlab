@@ -1,11 +1,21 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StockAnalysisDashboard } from "@/app/analyses/_components/stock-analysis-dashboard";
 
 vi.mock("recharts", () => ({
   CartesianGrid: () => null,
+  Bar: () => null,
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="annual-chart">{children}</div>
+  ),
   Line: () => null,
   Legend: () => null,
   LineChart: ({
@@ -94,6 +104,17 @@ const jsonResponse = (body: unknown, status = 200, headers?: HeadersInit) =>
     headers: { "content-type": "application/json", ...headers },
   });
 
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -101,6 +122,61 @@ afterEach(() => {
 });
 
 describe("StockAnalysisDashboard", () => {
+  it("updates the share URL and ignores an older ticker response", async () => {
+    vi.useFakeTimers();
+    let resolveInitial!: (response: Response) => void;
+    const initialResponse = new Promise<Response>((resolve) => {
+      resolveInitial = resolve;
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/search?"))
+        return Promise.resolve(
+          jsonResponse({ results: [{ ticker: "VALE3", name: "Vale" }] }),
+        );
+      if (url.endsWith("/VALE3"))
+        return Promise.resolve(
+          jsonResponse({ ...analysis, ticker: "VALE3", companyName: "Vale" }),
+        );
+      return initialResponse;
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "Vale" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251);
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("option", { name: /VALE3.*Vale/ }));
+    expect(window.location.search).toBe("?ticker=VALE3");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    resolveInitial(jsonResponse(analysis));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/VALE3/)).toBeTruthy();
+    window.history.pushState({}, "", "/?ticker=PETR4");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
+      "PETR4",
+    );
+    expect(fetcher).toHaveBeenCalledWith("/api/analyses/stocks/PETR4");
+    window.history.replaceState({}, "", "/");
+  });
+
   it("renders chronological chart data, interval controls, units, and fundamentals", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
     render(<StockAnalysisDashboard />);
@@ -161,7 +237,7 @@ describe("StockAnalysisDashboard", () => {
     );
     render(<StockAnalysisDashboard />);
     await act(async () => {
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -187,9 +263,11 @@ describe("StockAnalysisDashboard", () => {
       await screen.findByRole("button", { name: /ajuda sobre p\/l/i }),
     );
     expect(
-      await screen.findByText(/valor de mercado ao lucro líquido/i),
+      await screen.findByText(/Compara o valor de mercado da empresa/i),
     ).toBeTruthy();
     await user.keyboard("{Escape}");
-    expect(screen.queryByText(/valor de mercado ao lucro líquido/i)).toBeNull();
+    expect(
+      screen.queryByText(/Compara o valor de mercado da empresa/i),
+    ).toBeNull();
   });
 });

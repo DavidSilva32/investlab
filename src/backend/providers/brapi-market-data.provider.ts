@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
-import type { MarketData, MarketDataProvider } from "./market-data.provider";
+import type {
+  MarketData,
+  MarketDataProvider,
+  MarketTicker,
+} from "./market-data.provider";
 
 function parseRetryAfterSeconds(retryAfter: string | null) {
   if (!retryAfter) return undefined;
@@ -29,6 +33,15 @@ const quoteSchema = z.object({
       }),
     )
     .min(1),
+});
+const tickerSearchSchema = z.object({
+  results: z.array(
+    z.object({
+      symbol: z.string(),
+      name: z.string(),
+      isActive: z.boolean().optional(),
+    }),
+  ),
 });
 const profileSchema = z
   .object({
@@ -86,6 +99,19 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     if (!response.ok)
       throw new Error(`BRAPI request failed: ${response.status}`);
     return response.json();
+  }
+
+  async searchTickers(query: string): Promise<MarketTicker[]> {
+    const params = new URLSearchParams({
+      search: query,
+      type: "stock",
+      limit: "10",
+    });
+    const payload = await this.request("/api/v2/tickers?" + params.toString());
+    return tickerSearchSchema
+      .parse(payload)
+      .results.filter((item) => item.isActive !== false)
+      .map(({ symbol, name }) => ({ ticker: symbol, name }));
   }
 
   async getByTicker(ticker: string): Promise<MarketData> {

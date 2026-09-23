@@ -1,8 +1,9 @@
-import type { AnalysisPeriod } from "./stock-analysis-types";
-
-const compact = new Intl.NumberFormat("pt-BR", {
-  notation: "compact",
-  maximumFractionDigits: 1,
+﻿import type { AnalysisPeriod } from "./stock-analysis-types";
+const exact = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 const dateLabel = (date: string) =>
   new Intl.DateTimeFormat("pt-BR", {
@@ -42,7 +43,10 @@ export function FundamentalsGrid({
           <dl className="mt-3 space-y-2 text-sm">
             <FundamentalValue label="Receita" value={period.revenue} />
             <FundamentalValue label="Lucro líquido" value={period.netIncome} />
-            <FundamentalValue label="Patrimônio" value={period.equity} />
+            <FundamentalValue
+              label="Patrimônio líquido"
+              value={period.equity}
+            />
           </dl>
         </article>
       ))}
@@ -57,11 +61,12 @@ function FundamentalValue({
   label: string;
   value: string | null;
 }) {
+  const parsed = value === null ? Number.NaN : Number(value);
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="font-medium tabular-nums">
-        {value === null ? "—" : compact.format(Number(value))}
+        {Number.isFinite(parsed) ? exact.format(parsed) : "—"}
       </dd>
     </div>
   );

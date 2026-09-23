@@ -71,3 +71,24 @@ it("normalizes BRAPI history in chronological order without duplicate dates", as
     ],
   });
 });
+
+it("searches BRAPI stock tickers by name or symbol and omits inactive entries", async () => {
+  const fetcher = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        results: [
+          { symbol: "PETR4", name: "Petrobras PN", isActive: true },
+          { symbol: "OLD3", name: "Inactive Corp", isActive: false },
+        ],
+      }),
+      { status: 200 },
+    ),
+  );
+  const provider = new BrapiMarketDataProvider(fetcher);
+  await expect(provider.searchTickers("Petrobras")).resolves.toEqual([
+    { ticker: "PETR4", name: "Petrobras PN" },
+  ]);
+  expect(fetcher.mock.calls[0]?.[0]).toBe(
+    "https://brapi.dev/api/v2/tickers?search=Petrobras&type=stock&limit=10",
+  );
+});

@@ -1,7 +1,13 @@
-﻿import { AppShell } from "@/components/app-shell";
+import { AppShell } from "@/components/app-shell";
 import { StockAnalysisDashboard } from "./_components/stock-analysis-dashboard";
 
-export default function AnalysesPage() {
+export default async function AnalysesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ticker?: string }>;
+}) {
+  const { ticker = "PETR4" } = await searchParams;
+  const initialTicker = ticker.toUpperCase();
   return (
     <AppShell title="Análises">
       <div className="mb-7">
@@ -10,7 +16,7 @@ export default function AnalysesPage() {
           carteira.
         </p>
       </div>
-      <StockAnalysisDashboard />
+      <StockAnalysisDashboard initialTicker={initialTicker} />
     </AppShell>
   );
 }

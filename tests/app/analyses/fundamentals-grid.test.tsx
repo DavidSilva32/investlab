@@ -1,10 +1,10 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { FundamentalsGrid } from "@/app/analyses/_components/fundamentals-grid";
 
 describe("FundamentalsGrid", () => {
-  it("renders annual financial values", () => {
+  it("renders annual values without compacting the exact amounts", () => {
     render(
       <FundamentalsGrid
         type="DFP"
@@ -21,9 +21,9 @@ describe("FundamentalsGrid", () => {
     );
     expect(screen.getByText("Receita")).toBeTruthy();
     expect(screen.getByText("Lucro líquido")).toBeTruthy();
-    expect(screen.getByText("Patrimônio")).toBeTruthy();
+    expect(screen.getByText("Patrimônio líquido")).toBeTruthy();
+    expect(screen.getByText(/1\.000\.000,00/)).toBeTruthy();
   });
-
   it("explains when the requested statement type is unavailable", () => {
     render(<FundamentalsGrid type="ITR" periods={[]} />);
     expect(

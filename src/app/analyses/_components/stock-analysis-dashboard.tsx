@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,31 +11,44 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AnalysisSkeleton } from "./analysis-skeleton";
+import { AnalysisStockSearch } from "./analysis-stock-search";
 import { FundamentalIndicatorCard } from "./fundamental-indicator-card";
+import { FundamentalsEvolution } from "./fundamentals-evolution";
 import { FundamentalsGrid } from "./fundamentals-grid";
 import { PriceHistoryChart } from "./price-history-chart";
 import type { StockAnalysis } from "./stock-analysis-types";
 
+type TickerOption = { ticker: string; name: string };
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
 
-export function StockAnalysisDashboard() {
+export function StockAnalysisDashboard({
+  initialTicker = "PETR4",
+}: {
+  initialTicker?: string;
+}) {
   const [analysis, setAnalysis] = useState<StockAnalysis | null>(null);
+  const [selectedTicker, setSelectedTicker] = useState(initialTicker);
+  const requestSequence = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retryRemaining, setRetryRemaining] = useState(0);
   const [days, setDays] = useState(365);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (ticker: string) => {
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError(null);
     setRetryRemaining(0);
     try {
-      const response = await fetch("/api/analyses/stocks/PETR4");
+      const response = await fetch(
+        `/api/analyses/stocks/${encodeURIComponent(ticker)}`,
+      );
       const body = await response.json();
       const retryAfter = Number(response.headers.get("retry-after"));
+      if (sequence !== requestSequence.current) return;
       if (
         response.status === 429 &&
         Number.isFinite(retryAfter) &&
@@ -45,18 +58,38 @@ export function StockAnalysisDashboard() {
       if (!response.ok) throw new Error();
       setAnalysis(body as StockAnalysis);
     } catch {
+      if (sequence !== requestSequence.current) return;
       setAnalysis(null);
       setError(
         "Não foi possível consultar a ação agora. Tente novamente em instantes.",
       );
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void Promise.resolve().then(load);
+    const timer = window.setTimeout(() => void load(initialTicker), 0);
+    return () => window.clearTimeout(timer);
+  }, [initialTicker, load]);
+
+  useEffect(() => {
+    function handlePopState() {
+      const queryTicker = new URLSearchParams(window.location.search).get(
+        "ticker",
+      );
+      const ticker = queryTicker?.match(/^[A-Za-z]{4}[0-9]{1,2}$/)
+        ? queryTicker.toUpperCase()
+        : "PETR4";
+      setSelectedTicker(ticker);
+      setDays(365);
+      void load(ticker);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, [load]);
+
   useEffect(() => {
     if (retryRemaining <= 0) return;
     const timer = window.setInterval(
@@ -65,6 +98,19 @@ export function StockAnalysisDashboard() {
     );
     return () => window.clearInterval(timer);
   }, [retryRemaining]);
+
+  const selectTicker = useCallback(
+    (option: TickerOption) => {
+      const ticker = option.ticker.toUpperCase();
+      setSelectedTicker(ticker);
+      const url = new URL(window.location.href);
+      url.searchParams.set("ticker", ticker);
+      window.history.pushState({}, "", url);
+      setDays(365);
+      void load(ticker);
+    },
+    [load],
+  );
 
   const history = useMemo(
     () =>
@@ -83,35 +129,51 @@ export function StockAnalysisDashboard() {
     );
   }, [days, history]);
 
-  if (loading) return <AnalysisSkeleton />;
+  const search = (
+    <AnalysisStockSearch
+      key={selectedTicker}
+      ticker={selectedTicker}
+      onSelect={selectTicker}
+    />
+  );
+  if (loading)
+    return (
+      <div className="space-y-4">
+        {search}
+        <AnalysisSkeleton />
+      </div>
+    );
   if (error)
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Consulta de ação</CardTitle>
-          <CardDescription>
-            Os dados de mercado podem ficar indisponíveis temporariamente.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={retryRemaining > 0}
-            onClick={() => void load()}
-          >
-            <RefreshCw className="size-4" aria-hidden="true" />
-            {retryRemaining > 0
-              ? `Tente novamente em ${retryRemaining}s`
-              : "Tentar novamente"}
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        {search}
+        <Card>
+          <CardHeader>
+            <CardTitle>Consulta de ação</CardTitle>
+            <CardDescription>
+              Os dados de mercado podem ficar indisponíveis temporariamente.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={retryRemaining > 0}
+              onClick={() => void load(selectedTicker)}
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              {retryRemaining > 0
+                ? `Tente novamente em ${retryRemaining}s`
+                : "Tentar novamente"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
-  if (!analysis) return null;
+  if (!analysis) return search;
 
   const annual = analysis.fundamentals.filter(
     (period) => period.sourceDocument === "DFP",
@@ -130,6 +192,7 @@ export function StockAnalysisDashboard() {
 
   return (
     <div className="space-y-4">
+      {search}
       <Card>
         <CardHeader>
           <CardDescription>Ativo consultado</CardDescription>
@@ -211,11 +274,12 @@ export function StockAnalysisDashboard() {
         <CardHeader>
           <CardTitle>Evolução dos fundamentos anuais</CardTitle>
           <CardDescription>
-            Demonstrações financeiras anuais comparadas entre si: receita, lucro
-            líquido e patrimônio líquido.
+            Comparação entre exercícios encerrados. Os demonstrativos
+            intermediários aparecem separadamente abaixo.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-5">
+          <FundamentalsEvolution periods={annual} />
           <FundamentalsGrid periods={annual} type="DFP" />
         </CardContent>
       </Card>

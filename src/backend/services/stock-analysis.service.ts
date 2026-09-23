@@ -182,6 +182,16 @@ export class StockAnalysisService {
     };
   }
 
+  async searchTickers(rawQuery: unknown, requestId?: string) {
+    const query = z.string().trim().min(2).max(80).safeParse(rawQuery);
+    if (!query.success) return [];
+    logger.info("stock_ticker_search_requested", {
+      requestId,
+      queryLength: query.data.length,
+    });
+    return this.marketProvider.searchTickers(query.data);
+  }
+
   private async refreshFundamentals(
     ticker: string,
     cnpj: string | null,

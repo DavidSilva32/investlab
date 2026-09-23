@@ -8,6 +8,8 @@ export type MarketData = {
   priceUpdatedAt: string | null;
   history: Array<{ date: string; close: number }>;
 };
+export type MarketTicker = { ticker: string; name: string };
 export interface MarketDataProvider {
   getByTicker(ticker: string): Promise<MarketData>;
+  searchTickers(query: string): Promise<MarketTicker[]>;
 }

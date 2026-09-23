@@ -1,4 +1,4 @@
-import { CircleHelp } from "lucide-react";
+﻿import { CircleHelp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -20,12 +20,42 @@ const names: Record<AnalysisIndicator["key"], string> = {
   roe: "ROE",
   netMargin: "Margem líquida",
 };
-const help: Record<AnalysisIndicator["key"], string> = {
-  pe: "P/L compara o valor de mercado ao lucro líquido das demonstrações financeiras anuais mais recentes. É exibido em vezes, não em percentual.",
-  pb: "P/VP compara o valor de mercado ao patrimônio líquido das demonstrações financeiras anuais mais recentes. É exibido em vezes, não em percentual.",
-  roe: "ROE mede o lucro líquido anual sobre o patrimônio líquido médio das demonstrações financeiras anuais de dois anos consecutivos.",
-  netMargin:
-    "Margem líquida divide o lucro líquido pela receita do mesmo demonstrativo. Itens não recorrentes podem alterar a leitura.",
+const help: Record<
+  AnalysisIndicator["key"],
+  { definition: string; reading: string; caution: string }
+> = {
+  pe: {
+    definition:
+      "Compara o valor de mercado da empresa com o lucro líquido anual: quantos anos desse lucro equivalem ao preço atual, em uma simplificação.",
+    reading:
+      "Um P/L maior pode refletir expectativas de crescimento; um menor pode indicar preço mais baixo em relação ao lucro.",
+    caution:
+      "Lucro negativo torna a relação pouco útil. Compare empresas do mesmo setor e considere dívida, ciclo e itens não recorrentes.",
+  },
+  pb: {
+    definition:
+      "Compara o valor de mercado com o patrimônio líquido contábil da empresa.",
+    reading:
+      "Um P/VP maior indica preço mais alto em relação ao patrimônio; um menor pode refletir desconto ou riscos percebidos.",
+    caution:
+      "O patrimônio contábil não mede sozinho o valor dos ativos ou a capacidade de gerar lucro. Setor e composição do balanço importam.",
+  },
+  roe: {
+    definition:
+      "Relaciona o lucro líquido anual ao patrimônio líquido médio entre o início e o fim do exercício.",
+    reading:
+      "Um ROE maior mostra mais lucro em relação ao patrimônio usado; um menor pode indicar retorno mais baixo nesse período.",
+    caution:
+      "Dívida, patrimônio muito pequeno ou negativo e ganhos não recorrentes podem distorcer a taxa. Verifique vários exercícios.",
+  },
+  netMargin: {
+    definition:
+      "É a parcela da receita que resta como lucro líquido no mesmo demonstrativo.",
+    reading:
+      "Uma margem maior indica mais lucro por unidade de receita; uma menor pode refletir custos, despesas ou pressão competitiva.",
+    caution:
+      "Margens variam muito entre setores. Itens não recorrentes e demonstrativos intermediários acumulados afetam a comparação.",
+  },
 };
 
 export function FundamentalIndicatorCard({
@@ -41,6 +71,7 @@ export function FundamentalIndicatorCard({
   const reference = indicator.referenceDate
     ? `${indicator.sourceDocument === "ITR" ? "Informações trimestrais acumuladas até" : "Demonstrações financeiras anuais encerradas em"} ${dateLabel(indicator.referenceDate)}`
     : indicator.unavailableReason;
+  const explanation = help[indicator.key];
 
   return (
     <article className="rounded-lg border bg-card p-4 shadow-sm transition-shadow motion-safe:hover:shadow-md">
@@ -59,10 +90,21 @@ export function FundamentalIndicatorCard({
             </Button>
           </PopoverTrigger>
           <PopoverContent
-            className="max-w-xs text-sm leading-relaxed"
+            className="max-w-sm space-y-2 text-sm leading-relaxed"
             align="start"
           >
-            {help[indicator.key]}
+            <p>
+              <span className="font-medium">O que mede: </span>
+              {explanation.definition}
+            </p>
+            <p>
+              <span className="font-medium">Como ler: </span>
+              {explanation.reading}
+            </p>
+            <p>
+              <span className="font-medium">Cuidado: </span>
+              {explanation.caution}
+            </p>
           </PopoverContent>
         </Popover>
       </div>

@@ -21,10 +21,12 @@ describe("FundamentalIndicatorCard", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
     expect(
-      await screen.findByText(/valor de mercado ao lucro líquido/i),
+      await screen.findByText(/Compara o valor de mercado da empresa/i),
     ).toBeTruthy();
     await user.keyboard("{Escape}");
-    expect(screen.queryByText(/valor de mercado ao lucro líquido/i)).toBeNull();
+    expect(
+      screen.queryByText(/Compara o valor de mercado da empresa/i),
+    ).toBeNull();
   });
 
   it("keeps a precise unavailable reason", () => {
