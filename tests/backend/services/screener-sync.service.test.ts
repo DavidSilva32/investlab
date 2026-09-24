@@ -216,12 +216,118 @@ function setup(
 }
 
 describe("ScreenerSyncService", () => {
+  it("projects the last run with safe duration and error text", async () => {
+    const repository = {
+      getStatus: vi.fn().mockResolvedValue({
+        hasSuccessfulSync: true,
+        latestRun: {
+          status: "FAILED",
+          startedAt: new Date("2026-09-24T10:00:00Z"),
+          completedAt: new Date("2026-09-24T10:02:00Z"),
+          issuerCount: null,
+          securityCount: null,
+          factCount: null,
+          errorCode: "CVM_DFP",
+        },
+      }),
+    };
+    const service = new ScreenerSyncService(
+      undefined,
+      undefined,
+      repository as unknown as ScreenerSyncRepository,
+    );
+    await expect(service.status()).resolves.toMatchObject({
+      hasSuccessfulSync: true,
+      latestRun: {
+        status: "FAILED",
+        durationMs: 120000,
+        errorMessage:
+          "Não foi possível consultar as demonstrações financeiras da CVM.",
+      },
+    });
+  });
+
+  it("omits an error message for a successful run", async () => {
+    const repository = {
+      getStatus: vi.fn().mockResolvedValue({
+        hasSuccessfulSync: true,
+        latestRun: {
+          status: "COMPLETED",
+          startedAt: new Date("2026-09-24T10:00:00Z"),
+          completedAt: new Date("2026-09-24T10:00:08Z"),
+          issuerCount: 1,
+          securityCount: 2,
+          factCount: 3,
+          errorCode: null,
+        },
+      }),
+    };
+    const service = new ScreenerSyncService(
+      undefined,
+      undefined,
+      repository as unknown as ScreenerSyncRepository,
+    );
+    await expect(service.status()).resolves.toMatchObject({
+      latestRun: { durationMs: 8000, errorMessage: null },
+    });
+  });
+  it("handles missing, running, and unknown failed run history safely", async () => {
+    const repository = { getStatus: vi.fn() };
+    const service = new ScreenerSyncService(
+      undefined,
+      undefined,
+      repository as unknown as ScreenerSyncRepository,
+    );
+    repository.getStatus.mockResolvedValueOnce({
+      hasSuccessfulSync: false,
+      latestRun: null,
+    });
+    await expect(service.status()).resolves.toEqual({
+      hasSuccessfulSync: false,
+      latestRun: null,
+    });
+    repository.getStatus.mockResolvedValueOnce({
+      hasSuccessfulSync: false,
+      latestRun: {
+        status: "RUNNING",
+        startedAt: new Date(Date.now() + 1000),
+        completedAt: null,
+        issuerCount: null,
+        securityCount: null,
+        factCount: null,
+        errorCode: "UNEXPECTED_STAGE",
+      },
+    });
+    await expect(service.status()).resolves.toMatchObject({
+      latestRun: {
+        durationMs: 0,
+        errorMessage: "A sincronização foi interrompida.",
+      },
+    });
+    repository.getStatus.mockResolvedValueOnce({
+      hasSuccessfulSync: false,
+      latestRun: null,
+    });
+    const withoutStatusRepository = new ScreenerSyncService(
+      undefined,
+      undefined,
+      {
+        startRun: vi.fn(),
+        saveFullSync: vi.fn(),
+        markFailed: vi.fn(),
+      } as unknown as ScreenerSyncRepository,
+    );
+    await expect(withoutStatusRepository.status()).resolves.toEqual({
+      hasSuccessfulSync: false,
+      latestRun: null,
+    });
+  });
   it("synchronizes exact CNPJ issuers, stock classes, fractional aliases and latest consolidated facts sequentially", async () => {
     const context = setup();
     const result = await context.service.sync();
     expect(result).toEqual({
       issuers: 2,
-      securities: 3,
+      securities: 4,
       fractionalAliases: 1,
       facts: 15,
       eligibleIssuers: 1,

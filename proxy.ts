@@ -4,7 +4,11 @@ import {
   verifySession,
 } from "@/infrastructure/auth/session";
 
-const publicPaths = new Set(["/login", "/api/auth/login"]);
+const publicPaths = new Set([
+  "/login",
+  "/api/auth/login",
+  "/api/screener/sync",
+]);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

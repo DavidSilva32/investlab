@@ -16,6 +16,31 @@ describe("proxy authentication", () => {
       (await proxy(new NextRequest("http://test/api/positions"))).status,
     ).toBe(401);
   });
+  it("allows only the secret-guarded external sync route without a session", async () => {
+    verify.mockResolvedValue(false);
+    expect(
+      (
+        await proxy(
+          new NextRequest("http://test/api/screener/sync", {
+            method: "POST",
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await proxy(new NextRequest("http://test/api/settings/screener")))
+        .status,
+    ).toBe(401);
+    expect(
+      (
+        await proxy(
+          new NextRequest("http://test/api/settings/screener/sync", {
+            method: "POST",
+          }),
+        )
+      ).status,
+    ).toBe(401);
+  });
   it("allows login and authenticated requests", async () => {
     verify.mockResolvedValue(false);
     expect((await proxy(new NextRequest("http://test/login"))).status).toBe(

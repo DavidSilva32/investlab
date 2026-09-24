@@ -18,7 +18,12 @@ describe("ScreenerController", () => {
   });
 
   it("adapts query filters and adds the request id to the JSON response", async () => {
-    const result = { results: [], counts: {}, filters: { maximumPe: 20 } };
+    const result = {
+      results: [],
+      counts: {},
+      filters: { maximumPe: 20 },
+      hasSuccessfulSync: true,
+    };
     mocks.search.mockResolvedValue(result);
     const response = await new ScreenerController().search(
       new URLSearchParams("maximumPe=20"),

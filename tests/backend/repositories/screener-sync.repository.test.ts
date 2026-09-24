@@ -113,6 +113,66 @@ const fact = (row: number): ScreenerFactRecord => ({
 describe("ScreenerSyncRepository", () => {
   beforeEach(() => mocks.getDatabaseClient.mockReset());
 
+  it("reads latest and successful run history for the settings summary", async () => {
+    const latestRun = {
+      status: "FAILED",
+      startedAt: new Date("2026-09-24T10:00:00Z"),
+      completedAt: new Date("2026-09-24T10:02:00Z"),
+      issuerCount: null,
+      securityCount: null,
+      factCount: null,
+      errorCode: "CVM_DFP",
+    };
+    const makeQuery = (rows: unknown[]) => {
+      const query = {
+        from: vi.fn(),
+        orderBy: vi.fn(),
+        where: vi.fn(),
+        limit: vi.fn().mockResolvedValue(rows),
+      };
+      query.from.mockReturnValue(query);
+      query.orderBy.mockReturnValue(query);
+      query.where.mockReturnValue(query);
+      return query;
+    };
+    const database = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce(makeQuery([latestRun]))
+        .mockReturnValueOnce(makeQuery([{ status: "COMPLETED" }])),
+    };
+    mocks.getDatabaseClient.mockReturnValue(database);
+    await expect(new ScreenerSyncRepository().getStatus()).resolves.toEqual({
+      hasSuccessfulSync: true,
+      latestRun,
+    });
+    expect(database.select).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns null latest history when no ingestion has started", async () => {
+    const makeQuery = () => {
+      const query = {
+        from: vi.fn(),
+        orderBy: vi.fn(),
+        where: vi.fn(),
+        limit: vi.fn().mockResolvedValue([]),
+      };
+      query.from.mockReturnValue(query);
+      query.orderBy.mockReturnValue(query);
+      query.where.mockReturnValue(query);
+      return query;
+    };
+    mocks.getDatabaseClient.mockReturnValue({
+      select: vi
+        .fn()
+        .mockReturnValueOnce(makeQuery())
+        .mockReturnValueOnce(makeQuery()),
+    });
+    await expect(new ScreenerSyncRepository().getStatus()).resolves.toEqual({
+      hasSuccessfulSync: false,
+      latestRun: null,
+    });
+  });
   it("creates a run and reports a database error when insert returns no row", async () => {
     const { database } = setup();
     await expect(
@@ -179,7 +239,7 @@ describe("ScreenerSyncRepository", () => {
     ).toMatchObject({
       status: "COMPLETED",
       issuerCount: 2,
-      securityCount: 500,
+      securityCount: 501,
       factCount: 501,
       catalogCount: 1000,
       profileCount: 370,

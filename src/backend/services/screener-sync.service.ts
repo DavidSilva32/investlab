@@ -24,7 +24,8 @@ type CvmProvider = {
 type SyncRepository = Pick<
   ScreenerSyncRepository,
   "startRun" | "saveFullSync" | "markFailed"
->;
+> &
+  Partial<Pick<ScreenerSyncRepository, "getStatus">>;
 
 function chooseFact(
   current: ScreenerFactRecord | undefined,
@@ -51,6 +52,43 @@ export class ScreenerSyncService {
     private readonly currentYear = () => new Date().getUTCFullYear(),
   ) {}
 
+  async status() {
+    const status = await this.repository.getStatus?.();
+    if (!status) return { hasSuccessfulSync: false, latestRun: null };
+    const { hasSuccessfulSync, latestRun } = status;
+    if (!latestRun) return { hasSuccessfulSync, latestRun: null };
+
+    const errorMessages: Record<string, string> = {
+      BRAPI_RATE_LIMIT: "A fonte de cotações atingiu o limite de consultas.",
+      CVM_REGISTRY:
+        "Não foi possível consultar o cadastro de emissores da CVM.",
+      BRAPI_CATALOG: "Não foi possível consultar o catálogo de ativos.",
+      BRAPI_PROFILES: "Não foi possível consultar os perfis dos ativos.",
+      CVM_DFP:
+        "Não foi possível consultar as demonstrações financeiras da CVM.",
+      DATABASE_PERSIST: "Não foi possível salvar os dados sincronizados.",
+    };
+    const finishedAt = latestRun.completedAt ?? new Date();
+    return {
+      hasSuccessfulSync,
+      latestRun: {
+        status: latestRun.status,
+        startedAt: latestRun.startedAt,
+        completedAt: latestRun.completedAt,
+        durationMs: Math.max(
+          0,
+          finishedAt.getTime() - latestRun.startedAt.getTime(),
+        ),
+        issuerCount: latestRun.issuerCount,
+        securityCount: latestRun.securityCount,
+        factCount: latestRun.factCount,
+        errorMessage: latestRun.errorCode
+          ? (errorMessages[latestRun.errorCode] ??
+            "A sincronização foi interrompida.")
+          : null,
+      },
+    };
+  }
   async sync() {
     const runId = await this.repository.startRun(`screener:${randomUUID()}`);
     let stage = "cvm_registry";
@@ -140,9 +178,7 @@ export class ScreenerSyncService {
       });
       const result = {
         issuers: issuers.size,
-        securities: securities.filter(
-          (security) => security.baseTicker === null,
-        ).length,
+        securities: securities.length,
         fractionalAliases: securities.filter(
           (security) => security.baseTicker !== null,
         ).length,

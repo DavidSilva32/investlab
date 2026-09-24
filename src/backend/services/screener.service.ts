@@ -13,7 +13,7 @@ export class ScreenerService {
   constructor(
     private readonly repository: Pick<
       ScreenerRepository,
-      "getUniverse"
+      "getUniverse" | "hasSuccessfulSync"
     > = screenerRepository,
   ) {}
 
@@ -21,7 +21,10 @@ export class ScreenerService {
     const parsed = screenerFilterSchema.safeParse(rawFilters);
     if (!parsed.success)
       throw new ApplicationError("Revise os filtros do screener.", 400);
-    const universe = await this.repository.getUniverse();
+    const [universe, hasSuccessfulSync] = await Promise.all([
+      this.repository.getUniverse(),
+      this.repository.hasSuccessfulSync(),
+    ]);
     const all = filterScreenerCompanies(universe, {});
     const results = filterScreenerCompanies(universe, parsed.data);
     const counts = {
@@ -45,7 +48,7 @@ export class ScreenerService {
       ).length,
       counts,
     });
-    return { results, counts, filters: parsed.data };
+    return { results, counts, filters: parsed.data, hasSuccessfulSync };
   }
 }
 

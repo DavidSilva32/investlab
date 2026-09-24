@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, desc } from "drizzle-orm";
 import {
   screenerFinancialFacts,
+  screenerIngestionRuns,
   screenerIssuers,
   screenerMarketSnapshots,
   screenerSecurities,
@@ -8,6 +9,14 @@ import {
 import { getDatabaseClient } from "@/infrastructure/database/client";
 
 export class ScreenerRepository {
+  async hasSuccessfulSync() {
+    const [run] = await getDatabaseClient()
+      .select({ id: screenerIngestionRuns.id })
+      .from(screenerIngestionRuns)
+      .where(eq(screenerIngestionRuns.status, "COMPLETED"))
+      .limit(1);
+    return Boolean(run);
+  }
   async getUniverse() {
     const database = getDatabaseClient();
     const issuers = await database

@@ -7,12 +7,16 @@ export class ScreenerSyncController {
   constructor(
     private readonly service: Pick<
       ScreenerSyncService,
-      "sync"
+      "sync" | "status"
     > = screenerSyncService,
   ) {}
 
   async sync() {
     return this.service.sync();
+  }
+
+  async status() {
+    return this.service.status();
   }
 }
 

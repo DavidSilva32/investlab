@@ -9,7 +9,7 @@ describe("ScreenerSyncController", () => {
       .mockResolvedValue({ issuers: 1, securities: 2, facts: 15 });
     const controller = new ScreenerSyncController({ sync } as unknown as Pick<
       ScreenerSyncService,
-      "sync"
+      "sync" | "status"
     >);
     await expect(controller.sync()).resolves.toEqual({
       issuers: 1,
@@ -19,12 +19,26 @@ describe("ScreenerSyncController", () => {
     expect(sync).toHaveBeenCalledOnce();
   });
 
+  it("delegates status reads without transport concerns", async () => {
+    const status = vi
+      .fn()
+      .mockResolvedValue({ hasSuccessfulSync: false, latestRun: null });
+    const controller = new ScreenerSyncController({ status } as unknown as Pick<
+      ScreenerSyncService,
+      "sync" | "status"
+    >);
+    await expect(controller.status()).resolves.toEqual({
+      hasSuccessfulSync: false,
+      latestRun: null,
+    });
+    expect(status).toHaveBeenCalledOnce();
+  });
   it("propagates service errors to the route boundary", async () => {
     const failure = new Error("sync failed");
     const sync = vi.fn().mockRejectedValue(failure);
     const controller = new ScreenerSyncController({ sync } as unknown as Pick<
       ScreenerSyncService,
-      "sync"
+      "sync" | "status"
     >);
     await expect(controller.sync()).rejects.toBe(failure);
   });

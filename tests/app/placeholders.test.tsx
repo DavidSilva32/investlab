@@ -27,7 +27,7 @@ describe("secondary pages", () => {
       ),
     ).toContain("análises da sua carteira");
     expect(renderToStaticMarkup(<SettingsPage />)).toContain(
-      "configurações da sua conta",
+      "Dados do Screener",
     );
   });
 

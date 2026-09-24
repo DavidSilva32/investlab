@@ -56,7 +56,10 @@ const company: ScreenerCompany = {
 
 describe("ScreenerService", () => {
   it("returns neutral empty local results and zero coverage counts", async () => {
-    const repository = { getUniverse: vi.fn().mockResolvedValue([]) };
+    const repository = {
+      getUniverse: vi.fn().mockResolvedValue([]),
+      hasSuccessfulSync: vi.fn().mockResolvedValue(false),
+    };
     const service = new ScreenerService(repository);
     await expect(service.search({}, "request-1")).resolves.toEqual({
       results: [],
@@ -70,12 +73,16 @@ describe("ScreenerService", () => {
         withPb: 0,
       },
       filters: {},
+      hasSuccessfulSync: false,
     });
     expect(repository.getUniverse).toHaveBeenCalledOnce();
   });
 
   it("counts all locally available metric families and applies user filters", async () => {
-    const repository = { getUniverse: vi.fn().mockResolvedValue([company]) };
+    const repository = {
+      getUniverse: vi.fn().mockResolvedValue([company]),
+      hasSuccessfulSync: vi.fn().mockResolvedValue(true),
+    };
     const service = new ScreenerService(repository);
     const result = await service.search(
       { maximumPe: 11, maximumPb: 2 },
@@ -92,6 +99,7 @@ describe("ScreenerService", () => {
     });
     expect(result.results).toHaveLength(1);
     expect(result.filters).toEqual({ maximumPe: 11, maximumPb: 2 });
+    expect(result.hasSuccessfulSync).toBe(true);
     expect(repository.getUniverse).toHaveBeenCalledOnce();
   });
 
@@ -114,7 +122,10 @@ describe("ScreenerService", () => {
   });
 
   it("rejects invalid filters before reading the local universe", async () => {
-    const repository = { getUniverse: vi.fn().mockResolvedValue([]) };
+    const repository = {
+      getUniverse: vi.fn().mockResolvedValue([]),
+      hasSuccessfulSync: vi.fn().mockResolvedValue(false),
+    };
     const service = new ScreenerService(repository);
     await expect(service.search({ maximumPe: 0 })).rejects.toThrow(
       "Revise os filtros do screener.",

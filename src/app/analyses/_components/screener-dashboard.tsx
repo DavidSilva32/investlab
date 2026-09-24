@@ -49,7 +49,11 @@ type Counts = {
   withPe: number;
   withPb: number;
 };
-type Payload = { results: Result[]; counts: Counts };
+type Payload = {
+  results: Result[];
+  counts: Counts;
+  hasSuccessfulSync: boolean;
+};
 
 const emptyCounts: Counts = {
   issuers: 0,
@@ -87,7 +91,7 @@ function Metric({
     <div className="rounded-lg border bg-muted/30 px-3 py-2">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1 font-medium tabular-nums">
-        {value === null ? "—" : `${ratio.format(value)}${suffix ?? ""}`}
+        {value === null ? "—" : ratio.format(value) + (suffix ?? "")}
       </dd>
     </div>
   );
@@ -311,7 +315,12 @@ export function ScreenerDashboard() {
         <h2 className="text-lg font-semibold">Empresas encontradas</h2>
         <p className="text-sm text-muted-foreground" aria-live="polite">
           {payload
-            ? `${payload.results.length} de ${payload.counts.issuers} emissores`
+            ? payload.hasSuccessfulSync
+              ? String(payload.results.length) +
+                " de " +
+                String(payload.counts.issuers) +
+                " emissores"
+              : "Aguardando primeira sincronização"
             : "Carregando"}
         </p>
       </div>
@@ -344,12 +353,28 @@ export function ScreenerDashboard() {
       {!loading && !error && payload?.results.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center">
-            <p className="font-medium">
-              Nenhuma empresa corresponde aos filtros.
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Ajuste ou limpe os filtros para ampliar a consulta.
-            </p>
+            {!payload.hasSuccessfulSync ? (
+              <>
+                <p className="font-medium">
+                  Dados do Screener ainda não sincronizados.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Consulte Configurações para iniciar a sincronização dos dados.
+                </p>
+                <Button className="mt-4" variant="outline" asChild>
+                  <Link href="/settings">Ir para Configurações</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="font-medium">
+                  Nenhuma empresa corresponde aos filtros.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Ajuste ou limpe os filtros para ampliar a consulta.
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

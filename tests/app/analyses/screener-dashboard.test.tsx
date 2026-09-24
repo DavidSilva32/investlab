@@ -35,7 +35,17 @@ const counts = {
   withPb: 0,
 };
 const response = (body: unknown, ok = true) =>
-  Promise.resolve({ ok, json: () => Promise.resolve(body) });
+  Promise.resolve({
+    ok,
+    json: () =>
+      Promise.resolve(
+        typeof body === "object" &&
+          body !== null &&
+          !("hasSuccessfulSync" in body)
+          ? { ...body, hasSuccessfulSync: true }
+          : body,
+      ),
+  });
 
 afterEach(() => {
   cleanup();
@@ -289,6 +299,27 @@ describe("ScreenerDashboard", () => {
     expect(screen.getByText(/Ajuste ou limpe/)).toBeTruthy();
   });
 
+  it("distinguishes an empty universe from filters with no matches", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          results: [],
+          counts: { ...counts, issuers: 0 },
+          hasSuccessfulSync: false,
+        }),
+      ),
+    );
+    render(<ScreenerDashboard />);
+    expect(
+      await screen.findByText("Dados do Screener ainda não sincronizados."),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Ir para Configurações" })
+        .getAttribute("href"),
+    ).toBe("/settings");
+  });
   it("omits blank numeric filters, clears the equity toggle, and renders missing sectors", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockResolvedValue(

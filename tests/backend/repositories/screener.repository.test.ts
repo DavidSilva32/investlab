@@ -3,6 +3,7 @@ import { type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
   screenerFinancialFacts,
+  screenerIngestionRuns,
   screenerIssuers,
   screenerMarketSnapshots,
   screenerSecurities,
@@ -57,6 +58,23 @@ const sqlFor = (expression: unknown) =>
 describe("ScreenerRepository", () => {
   beforeEach(() => mocks.getDatabaseClient.mockReset());
 
+  it("reports whether any ingestion run completed successfully", async () => {
+    const makeDatabase = (rows: unknown[]) => ({
+      select: vi.fn(() => ({
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockResolvedValue(rows),
+      })),
+    });
+    mocks.getDatabaseClient.mockReturnValue(makeDatabase([{ id: "run-1" }]));
+    await expect(new ScreenerRepository().hasSuccessfulSync()).resolves.toBe(
+      true,
+    );
+    mocks.getDatabaseClient.mockReturnValue(makeDatabase([]));
+    await expect(new ScreenerRepository().hasSuccessfulSync()).resolves.toBe(
+      false,
+    );
+  });
   it("avoids follow-up reads when no quantitatively eligible issuers exist", async () => {
     const { database } = setup(new Map([[screenerIssuers, []]]));
     await expect(new ScreenerRepository().getUniverse()).resolves.toEqual([]);

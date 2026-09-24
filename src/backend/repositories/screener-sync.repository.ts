@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import {
   screenerFinancialFacts,
   screenerIngestionRuns,
@@ -18,6 +18,32 @@ export type ScreenerSecurityRecord = BrapiStock & {
 };
 
 export class ScreenerSyncRepository {
+  async getStatus() {
+    const database = getDatabaseClient();
+    const [latestRun] = await database
+      .select({
+        status: screenerIngestionRuns.status,
+        startedAt: screenerIngestionRuns.startedAt,
+        completedAt: screenerIngestionRuns.completedAt,
+        issuerCount: screenerIngestionRuns.issuerCount,
+        securityCount: screenerIngestionRuns.securityCount,
+        factCount: screenerIngestionRuns.factCount,
+        errorCode: screenerIngestionRuns.errorCode,
+      })
+      .from(screenerIngestionRuns)
+      .orderBy(desc(screenerIngestionRuns.startedAt))
+      .limit(1);
+    const successfulRuns = await database
+      .select({ status: screenerIngestionRuns.status })
+      .from(screenerIngestionRuns)
+      .where(eq(screenerIngestionRuns.status, "COMPLETED"))
+      .limit(1);
+
+    return {
+      hasSuccessfulSync: successfulRuns.length > 0,
+      latestRun: latestRun ?? null,
+    };
+  }
   async startRun(runKey: string) {
     const [run] = await getDatabaseClient()
       .insert(screenerIngestionRuns)
@@ -154,9 +180,7 @@ export class ScreenerSyncRepository {
           status: "COMPLETED",
           completedAt: new Date(),
           issuerCount: input.issuers.length,
-          securityCount: input.securities.filter(
-            (security) => security.baseTicker === null,
-          ).length,
+          securityCount: input.securities.length,
           factCount: input.facts.length,
           catalogCount: input.catalogCount,
           profileCount: input.profileCount,
