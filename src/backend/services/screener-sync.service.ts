@@ -207,7 +207,20 @@ export class ScreenerSyncService {
         error instanceof ApplicationError && error.statusCode === 429
           ? "BRAPI_RATE_LIMIT"
           : stage.toUpperCase();
-      await this.repository.markFailed(runId, errorCode).catch(() => undefined);
+      await this.repository
+        .markFailed(runId, errorCode)
+        .catch((markFailedError: unknown) => {
+          const errorType =
+            markFailedError instanceof Error &&
+            /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(markFailedError.name)
+              ? markFailedError.name
+              : "unknown";
+          logger.error("screener_sync_failure_recording_failed", {
+            runId,
+            stage: "mark_failed",
+            errorType,
+          });
+        });
       const diagnostic =
         error instanceof BrapiScreenerProviderError
           ? error.diagnostic

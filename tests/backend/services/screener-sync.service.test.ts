@@ -675,20 +675,57 @@ describe("ScreenerSyncService", () => {
     );
   });
 
-  it("marks a persistence failure, tolerates audit-update failure and returns a safe error", async () => {
+  it("marks a persistence failure, logs audit bookkeeping failure safely, and returns a safe error", async () => {
     const context = setup({ repositoryFailure: new Error("database detail") });
     context.repository.markFailed.mockRejectedValue(
-      new Error("audit write failed"),
+      new Error("audit write secret detail"),
     );
-    await expect(context.service.sync()).rejects.toMatchObject({
-      statusCode: 502,
-    });
-    expect(context.repository.markFailed).toHaveBeenCalledWith(
-      "run-1",
-      "DATABASE_PERSIST",
-    );
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).rejects.toMatchObject({
+        statusCode: 502,
+      });
+      expect(context.repository.markFailed).toHaveBeenCalledWith(
+        "run-1",
+        "DATABASE_PERSIST",
+      );
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_failure_recording_failed",
+        expect.objectContaining({
+          runId: "run-1",
+          stage: "mark_failed",
+          errorType: "Error",
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "audit write secret detail",
+      );
+    } finally {
+      log.mockRestore();
+    }
   });
 
+  it("logs an opaque mark-failed rejection without exposing its value", async () => {
+    const context = setup({ repositoryFailure: new Error("database detail") });
+    context.repository.markFailed.mockRejectedValue(
+      "opaque bookkeeping failure",
+    );
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).rejects.toMatchObject({
+        statusCode: 502,
+      });
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_failure_recording_failed",
+        expect.objectContaining({ stage: "mark_failed", errorType: "unknown" }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "opaque bookkeeping failure",
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
   it("supports an empty catalog and persists no inferred issuers", async () => {
     const context = setup({ catalog: [] });
     await expect(context.service.sync()).resolves.toMatchObject({

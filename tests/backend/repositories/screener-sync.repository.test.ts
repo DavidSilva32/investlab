@@ -16,8 +16,12 @@ vi.mock("@/infrastructure/database/client", () => ({
 }));
 
 import { ScreenerSyncRepository } from "@/backend/repositories/screener-sync.repository";
+import { logger } from "@/infrastructure/logging/logger";
 
-function setup(runRows: { id: string }[] = [{ id: "run-1" }]) {
+function setup(
+  runRows: { id: string }[] = [{ id: "run-1" }],
+  failure?: { table: unknown; error: unknown },
+) {
   type Operation = {
     table: unknown;
     values?: unknown;
@@ -34,7 +38,9 @@ function setup(runRows: { id: string }[] = [{ id: "run-1" }]) {
       },
       onConflictDoUpdate(conflict: unknown) {
         record.conflict = conflict;
-        return Promise.resolve();
+        return failure && failure.table === record.table
+          ? Promise.reject(failure.error)
+          : Promise.resolve();
       },
       set(values: unknown) {
         record.values = values;
@@ -42,7 +48,9 @@ function setup(runRows: { id: string }[] = [{ id: "run-1" }]) {
       },
       where() {
         record.where = true;
-        return Promise.resolve();
+        return failure && failure.table === record.table
+          ? Promise.reject(failure.error)
+          : Promise.resolve();
       },
       then(
         resolve: (value: unknown) => unknown,
@@ -272,6 +280,92 @@ describe("ScreenerSyncRepository", () => {
     });
   });
 
+  it("logs safe DB metadata for a failed persistence batch and rethrows the same error", async () => {
+    const databaseError = Object.assign(new Error("sensitive row contents"), {
+      code: "23505",
+      constraint: "valid_constraint",
+      table: "screener_securities",
+      column: "ticker",
+    });
+    setup(undefined, { table: screenerSecurities, error: databaseError });
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(
+        new ScreenerSyncRepository().saveFullSync({
+          runId: "run-1",
+          catalogCount: 1,
+          profileCount: 1,
+          issuers: [],
+          securities: [security("ABC3")],
+          facts: [],
+        }),
+      ).rejects.toBe(databaseError);
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_persistence_failed",
+        expect.objectContaining({
+          stage: "security_upsert",
+          runId: "run-1",
+          batchIndex: 1,
+          batchSize: 1,
+          securityCount: 1,
+          databaseCode: "23505",
+          constraint: "valid_constraint",
+          table: "screener_securities",
+          column: "ticker",
+          durationMs: expect.any(Number),
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "sensitive row contents",
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("omits untrusted database metadata and reports unknown non-object failures", async () => {
+    const unsafeError = Object.assign(new Error("private detail"), {
+      name: "invalid error type",
+      code: "bad-code",
+      constraint: "private detail",
+      table: "bad table",
+      column: "column value",
+    });
+    setup(undefined, { table: screenerIngestionRuns, error: unsafeError });
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(
+        new ScreenerSyncRepository().markFailed("run-1", "CVM_REGISTRY"),
+      ).rejects.toBe(unsafeError);
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_persistence_failed",
+        expect.objectContaining({ stage: "mark_failed", errorType: "unknown" }),
+      );
+      expect(log.mock.calls[0]?.[1]).not.toHaveProperty("databaseCode");
+      expect(log.mock.calls[0]?.[1]).not.toHaveProperty("constraint");
+      expect(log.mock.calls[0]?.[1]).not.toHaveProperty("table");
+      expect(log.mock.calls[0]?.[1]).not.toHaveProperty("column");
+      expect(JSON.stringify(log.mock.calls)).not.toContain("private detail");
+    } finally {
+      log.mockRestore();
+    }
+
+    setup(undefined, { table: screenerIngestionRuns, error: "opaque failure" });
+    const unknownLog = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
+    try {
+      await expect(
+        new ScreenerSyncRepository().markFailed("run-1", "CVM_REGISTRY"),
+      ).rejects.toBe("opaque failure");
+      expect(unknownLog).toHaveBeenCalledWith(
+        "screener_sync_persistence_failed",
+        expect.objectContaining({ stage: "mark_failed", errorType: "unknown" }),
+      );
+    } finally {
+      unknownLog.mockRestore();
+    }
+  });
   it("marks a failed run with its sanitized error code", async () => {
     const { database } = setup();
     await new ScreenerSyncRepository().markFailed("run-1", "CVM_REGISTRY");

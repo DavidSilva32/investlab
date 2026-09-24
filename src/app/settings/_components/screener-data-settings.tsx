@@ -50,6 +50,7 @@ export function ScreenerDataSettings() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncElapsedSeconds, setSyncElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -81,6 +82,14 @@ export function ScreenerDataSettings() {
   }, [getStatus]);
 
   useEffect(() => {
+    if (!syncing) return;
+    const interval = window.setInterval(() => {
+      setSyncElapsedSeconds((elapsed) => elapsed + 1);
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [syncing]);
+
+  useEffect(() => {
     let cancelled = false;
     void getStatus()
       .then((body) => {
@@ -104,6 +113,7 @@ export function ScreenerDataSettings() {
 
   async function synchronize() {
     let syncErrorMessage: string | null = null;
+    setSyncElapsedSeconds(0);
     setSyncing(true);
     setError(null);
     setNotice(null);
@@ -180,6 +190,16 @@ export function ScreenerDataSettings() {
             />
             <span>{error}</span>
           </div>
+        )}
+        {syncing && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-sm text-muted-foreground"
+          >
+            Sincronização em andamento há{" "}
+            {formatDuration(syncElapsedSeconds * 1000)}.
+          </p>
         )}
         {notice && (
           <p
