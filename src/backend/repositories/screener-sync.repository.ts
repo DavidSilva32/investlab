@@ -163,11 +163,11 @@ export class ScreenerSyncRepository {
             .onConflictDoUpdate({
               target: screenerIssuers.cnpj,
               set: {
-                cvmCode: sql`excluded.cvm_code`,
+                cvmCode: sql`excluded."cvmCode"`,
                 name: sql`excluded.name`,
                 sector: sql`excluded.sector`,
-                quantitativeEligible: sql`excluded.quantitative_eligible`,
-                eligibilityReason: sql`excluded.eligibility_reason`,
+                quantitativeEligible: sql`excluded."quantitativeEligible"`,
+                eligibilityReason: sql`excluded."eligibilityReason"`,
                 updatedAt: new Date(),
               },
             });
@@ -203,12 +203,12 @@ export class ScreenerSyncRepository {
             .onConflictDoUpdate({
               target: screenerSecurities.ticker,
               set: {
-                issuerCnpj: sql`excluded.issuer_cnpj`,
+                issuerCnpj: sql`excluded."issuerCnpj"`,
                 name: sql`excluded.name`,
-                subType: sql`excluded.sub_type`,
-                isActive: sql`excluded.is_active`,
-                baseTicker: sql`excluded.base_ticker`,
-                observedAt: sql`excluded.observed_at`,
+                subType: sql`excluded."subType"`,
+                isActive: sql`excluded."isActive"`,
+                baseTicker: sql`excluded."baseTicker"`,
+                observedAt: sql`excluded."observedAt"`,
                 updatedAt: new Date(),
               },
             });
@@ -250,12 +250,12 @@ export class ScreenerSyncRepository {
                 screenerFinancialFacts.exerciseOrder,
               ],
               set: {
-                accountLabel: sql`excluded.account_label`,
+                accountLabel: sql`excluded."accountLabel"`,
                 value: sql`excluded.value`,
                 version: sql`excluded.version`,
-                sourceFile: sql`excluded.source_file`,
-                sourceRow: sql`excluded.source_row`,
-                ingestionRunId: sql`excluded.ingestion_run_id`,
+                sourceFile: sql`excluded."sourceFile"`,
+                sourceRow: sql`excluded."sourceRow"`,
+                ingestionRunId: sql`excluded."ingestionRunId"`,
                 updatedAt: new Date(),
               },
               setWhere: sql`
@@ -263,10 +263,10 @@ export class ScreenerSyncRepository {
             OR (
               excluded.version = ${screenerFinancialFacts.version}
               AND (
-                excluded.source_file < ${screenerFinancialFacts.sourceFile}
+                excluded."sourceFile" < ${screenerFinancialFacts.sourceFile}
                 OR (
-                  excluded.source_file = ${screenerFinancialFacts.sourceFile}
-                  AND excluded.source_row < ${screenerFinancialFacts.sourceRow}
+                  excluded."sourceFile" = ${screenerFinancialFacts.sourceFile}
+                  AND excluded."sourceRow" < ${screenerFinancialFacts.sourceRow}
                 )
               )
             )

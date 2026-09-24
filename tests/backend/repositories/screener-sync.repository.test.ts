@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import {
   screenerFinancialFacts,
   screenerIngestionRuns,
@@ -239,10 +241,44 @@ describe("ScreenerSyncRepository", () => {
     ).toMatchObject({
       eligibilityReason: "EXPLICIT_FINANCIAL_SECTOR_OR_UNCLASSIFIED",
     });
+    const toSql = (fragment: SQL) => new PgDialect().sqlToQuery(fragment).sql;
+    const issuerConflict = inserts.find(
+      (entry) => entry.table === screenerIssuers,
+    )?.conflict as { set: Record<string, SQL> };
+    expect(toSql(issuerConflict.set.cvmCode)).toBe('excluded."cvmCode"');
+    expect(toSql(issuerConflict.set.quantitativeEligible)).toBe(
+      'excluded."quantitativeEligible"',
+    );
+    expect(toSql(issuerConflict.set.eligibilityReason)).toBe(
+      'excluded."eligibilityReason"',
+    );
+    const securityConflict = inserts.find(
+      (entry) => entry.table === screenerSecurities,
+    )?.conflict as { set: Record<string, SQL> };
+    expect(toSql(securityConflict.set.issuerCnpj)).toBe(
+      'excluded."issuerCnpj"',
+    );
+    expect(toSql(securityConflict.set.subType)).toBe('excluded."subType"');
+    expect(toSql(securityConflict.set.isActive)).toBe('excluded."isActive"');
+    expect(toSql(securityConflict.set.baseTicker)).toBe(
+      'excluded."baseTicker"',
+    );
+    expect(toSql(securityConflict.set.observedAt)).toBe(
+      'excluded."observedAt"',
+    );
     const factConflict = inserts.find(
       (entry) => entry.table === screenerFinancialFacts,
-    )?.conflict as { setWhere?: unknown };
-    expect(factConflict.setWhere).toBeDefined();
+    )?.conflict as { set: Record<string, SQL>; setWhere?: SQL };
+    expect(toSql(factConflict.set.accountLabel)).toBe(
+      'excluded."accountLabel"',
+    );
+    expect(toSql(factConflict.set.sourceFile)).toBe('excluded."sourceFile"');
+    expect(toSql(factConflict.set.sourceRow)).toBe('excluded."sourceRow"');
+    expect(toSql(factConflict.set.ingestionRunId)).toBe(
+      'excluded."ingestionRunId"',
+    );
+    expect(toSql(factConflict.setWhere!)).toContain('excluded."sourceFile"');
+    expect(toSql(factConflict.setWhere!)).toContain('excluded."sourceRow"');
     expect(
       updates.find((entry) => entry.table === screenerSecurities)?.values,
     ).toMatchObject({ isActive: false });
