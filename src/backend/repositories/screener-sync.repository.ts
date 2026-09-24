@@ -29,27 +29,51 @@ type PersistenceStage =
   | "transaction";
 
 function safeDatabaseErrorContext(error: unknown) {
-  if (!error || typeof error !== "object") return { errorType: "unknown" };
-  const source = error as Record<string, unknown>;
+  const errorRecord =
+    error && typeof error === "object"
+      ? (error as Record<string, unknown>)
+      : undefined;
   const errorType =
-    typeof source.name === "string" &&
-    /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(source.name)
-      ? source.name
+    errorRecord &&
+    typeof errorRecord.name === "string" &&
+    /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(errorRecord.name)
+      ? errorRecord.name
       : "unknown";
   const context: Record<string, string> = { errorType };
-  if (typeof source.code === "string" && /^[A-Z0-9]{5}$/.test(source.code))
-    context.databaseCode = source.code;
-  for (const field of ["constraint", "table", "column"] as const) {
-    const value = source[field];
+  const visited = new Set<object>();
+  let databaseErrorType: string | undefined;
+  let current: unknown = error;
+
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (!current || typeof current !== "object" || visited.has(current)) break;
+    visited.add(current);
+    const source = current as Record<string, unknown>;
     if (
-      typeof value === "string" &&
-      /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/.test(value)
+      depth > 0 &&
+      typeof source.name === "string" &&
+      /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(source.name)
     )
-      context[field] = value;
+      databaseErrorType = source.name;
+    if (
+      !context.databaseCode &&
+      typeof source.code === "string" &&
+      /^[A-Z0-9]{5}$/.test(source.code)
+    )
+      context.databaseCode = source.code;
+    for (const field of ["constraint", "table", "column"] as const) {
+      const value = source[field];
+      if (
+        !context[field] &&
+        typeof value === "string" &&
+        /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/.test(value)
+      )
+        context[field] = value;
+    }
+    current = source.cause;
   }
+  if (databaseErrorType) context.databaseErrorType = databaseErrorType;
   return context;
 }
-
 async function withPersistenceDiagnostics<T>(
   stage: PersistenceStage,
   context: Record<string, number | string>,

@@ -327,6 +327,57 @@ describe("ScreenerSyncRepository", () => {
     }
   });
 
+  it("extracts allowlisted database metadata from a wrapped cause without logging its details", async () => {
+    const postgresError = Object.assign(
+      new Error("sensitive database message"),
+      {
+        name: "PostgresError",
+        code: "23505",
+        constraint: "safe_constraint",
+        table: "safe_table",
+        column: "safe_column",
+        query: "INSERT INTO user_data VALUES (...) secret-query",
+        params: ["private-param"],
+      },
+    );
+    const drizzleError = Object.assign(new Error("sensitive wrapper message"), {
+      cause: postgresError,
+    });
+    postgresError.cause = postgresError;
+    setup(undefined, { table: screenerSecurities, error: drizzleError });
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(
+        new ScreenerSyncRepository().saveFullSync({
+          runId: "run-1",
+          catalogCount: 1,
+          profileCount: 1,
+          issuers: [],
+          securities: [security("ABC3")],
+          facts: [],
+        }),
+      ).rejects.toBe(drizzleError);
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_persistence_failed",
+        expect.objectContaining({
+          stage: "security_upsert",
+          errorType: "Error",
+          databaseErrorType: "PostgresError",
+          databaseCode: "23505",
+          constraint: "safe_constraint",
+          table: "safe_table",
+          column: "safe_column",
+        }),
+      );
+      const serializedLog = JSON.stringify(log.mock.calls);
+      expect(serializedLog).not.toContain("sensitive database message");
+      expect(serializedLog).not.toContain("sensitive wrapper message");
+      expect(serializedLog).not.toContain("secret-query");
+      expect(serializedLog).not.toContain("private-param");
+    } finally {
+      log.mockRestore();
+    }
+  });
   it("omits untrusted database metadata and reports unknown non-object failures", async () => {
     const unsafeError = Object.assign(new Error("private detail"), {
       name: "invalid error type",
