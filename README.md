@@ -111,7 +111,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 Configure `BRAPI_TOKEN` e `SCREENER_SYNC_SECRET` nas variáveis de ambiente do servidor. Não os envie ao navegador, não os registre em logs e não os versione. Consulte [docs/screener-operations.md](docs/screener-operations.md) para o procedimento de execução.
 
-A sincronização roda na Vercel Function, está configurada para até 300 segundos e ainda não tem checkpoints ou retomada parcial. O POC ficou próximo desse limite; execute manualmente, fora do horário de uso, sem concorrência. Não configure um cron antes de implementar uma estratégia de retomada.
+Em produção, você inicia enviando uma requisição HTTP à URL publicada (por exemplo, https://<seu-projeto>.vercel.app/api/screener/sync); não precisa abrir o painel da Vercel nem executar comandos dentro dela. A Vercel recebe a chamada e roda o processamento em uma Function. Localmente, use http://localhost:3000/api/screener/sync. O limite da Function está configurado em 300 segundos e ainda não há checkpoints nem retomada parcial. O POC ficou próximo do limite; execute manualmente, fora do horário de uso e sem concorrência. Não há cron configurado.
 
 O schema inclui emissores, valores mobiliários, fatos financeiros auditáveis, snapshots de mercado e execuções de ingestão. A migration `0008_luxuriant_bug.sql` foi gerada, mas precisa ser aplicada manualmente com `pnpm db:migrate` antes da primeira sincronização.
 
