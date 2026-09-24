@@ -5,6 +5,7 @@ import {
   BrapiScreenerProviderError,
   CvmDfpProvider,
   type BrapiRequestDiagnostic,
+  type DfpParseDiagnostics,
   readCvmRegistry,
   type ScreenerFactRecord,
 } from "@/backend/providers/screener-data.provider";
@@ -21,6 +22,7 @@ type CvmProvider = {
   getAnnualFacts(
     year: number,
     registry: Map<string, string>,
+    onDiagnostics?: (diagnostics: DfpParseDiagnostics) => void,
   ): Promise<ScreenerFactRecord[]>;
 };
 type SyncRepository = Pick<
@@ -47,8 +49,8 @@ export class ScreenerSyncService {
     private readonly brapi: BrapiProvider = new BrapiScreenerProvider(),
     private readonly cvm: CvmProvider = {
       getRegistry: readCvmRegistry,
-      getAnnualFacts: (year, registry) =>
-        new CvmDfpProvider().getAnnualFacts(year, registry),
+      getAnnualFacts: (year, registry, onDiagnostics) =>
+        new CvmDfpProvider().getAnnualFacts(year, registry, onDiagnostics),
     },
     private readonly repository: SyncRepository = screenerSyncRepository,
     private readonly currentYear = () => new Date().getUTCFullYear(),
@@ -164,8 +166,19 @@ export class ScreenerSyncService {
       const latestCompletedYear = this.currentYear() - 1;
       const firstYear = latestCompletedYear - 4;
       const factMap = new Map<string, ScreenerFactRecord>();
+      let annualDuplicateSuperseded = 0;
       for (let year = firstYear; year <= latestCompletedYear; year += 1) {
-        const facts = await this.cvm.getAnnualFacts(year, registryByCvmCode);
+        const facts = await this.cvm.getAnnualFacts(
+          year,
+          registryByCvmCode,
+          (diagnostics) => {
+            logger.info("screener_dfp_year_diagnostics", {
+              runId,
+              year,
+              ...diagnostics,
+            });
+          },
+        );
         for (const fact of facts) {
           if (!issuers.has(fact.issuerCnpj)) continue;
           const key = [
@@ -176,12 +189,32 @@ export class ScreenerSyncService {
             fact.statementScope,
             fact.exerciseOrder,
           ].join(":");
-          factMap.set(key, chooseFact(factMap.get(key), fact));
+          const current = factMap.get(key);
+          if (current) annualDuplicateSuperseded += 1;
+          factMap.set(key, chooseFact(current, fact));
         }
       }
-      stage = "database_persist";
       const facts = [...factMap.values()];
-      await this.repository.saveFullSync({
+      if (annualDuplicateSuperseded > 0) {
+        logger.info("screener_dfp_dedupe_diagnostics", {
+          runId,
+          discarded: { duplicate_superseded: annualDuplicateSuperseded },
+        });
+      }
+      if (facts.length === 0 && profileTotal > 0) {
+        logger.error("screener_dfp_sanity_check_failed", {
+          runId,
+          stage: "normalized_facts",
+          issuerCount: issuers.size,
+          expectedProfileCount: profileTotal,
+          factCount: 0,
+        });
+        throw new Error(
+          "CVM DFP processing completed without normalized facts",
+        );
+      }
+      stage = "database_persist";
+      const persistence = await this.repository.saveFullSync({
         runId,
         catalogCount: catalog.length,
         profileCount: profilesConsulted,
@@ -189,6 +222,20 @@ export class ScreenerSyncService {
         securities,
         facts,
       });
+      const persistedFacts = persistence.persistedFactCount;
+      if (
+        facts.length > 0 &&
+        (!Number.isFinite(persistedFacts) || persistedFacts !== facts.length)
+      ) {
+        logger.error("screener_dfp_persist_sanity_check_failed", {
+          runId,
+          stage: "persisted_fact_keys",
+          factCount: facts.length,
+          persistedFactCount: persistedFacts,
+          missingFactCount: Math.max(0, facts.length - persistedFacts),
+        });
+        throw new Error("CVM DFP facts were not found after persistence");
+      }
       const result = {
         issuers: issuers.size,
         securities: securities.length,
@@ -196,6 +243,7 @@ export class ScreenerSyncService {
           (security) => security.baseTicker !== null,
         ).length,
         facts: facts.length,
+        persistedFacts,
         eligibleIssuers: [...issuers.values()].filter(
           (issuer) => issuer.quantitativeEligible,
         ).length,

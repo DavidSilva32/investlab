@@ -108,6 +108,22 @@ export type ScreenerFactRecord = {
   sourceRow: number;
 };
 
+export type DfpParseDiagnostics = {
+  consolidatedFiles: number;
+  individualFiles: number;
+  rowsRead: number;
+  uniqueCnpjs: number;
+  localCnpjMatches: number;
+  associatedCnpjs: number;
+  knownCvmCodes: number;
+  unmappedCvmCodes: number;
+  cvmCodeCnpjMismatches: number;
+  exactCnpjCvmMatches: number;
+  candidateFacts: number;
+  normalizedFacts: number;
+  discarded: Record<string, number>;
+};
+
 export type CvmRegistry = Map<string, CvmCompanyRecord>;
 
 const catalogEntrySchema = z
@@ -188,6 +204,10 @@ function parseCsvLine(line: string): string[] {
   return cells;
 }
 
+function normalizeCsvHeader(value: string) {
+  return value.replace(/^(?:\uFEFF|ï»¿)/, "").trim();
+}
+
 function normalizeSector(value: string | null) {
   return (value ?? "")
     .normalize("NFD")
@@ -206,8 +226,16 @@ const validatedNonFinancialSectors = new Set([
   "CONSUMO CICLICO",
 ]);
 
+const validatedSectorAliases: Record<string, string> = {
+  "EXTRACAO MINERAL": "MINERACAO",
+  "PETROLEO E GAS": "PETROLEO",
+};
+
 export function isQuantitativelyEligibleSector(sector: string | null) {
-  return validatedNonFinancialSectors.has(normalizeSector(sector));
+  const normalizedSector = normalizeSector(sector);
+  return validatedNonFinancialSectors.has(
+    validatedSectorAliases[normalizedSector] ?? normalizedSector,
+  );
 }
 
 function isValidatedFinancialAccountLabel(accountCode: string, label: string) {
@@ -330,6 +358,7 @@ export async function parseDfpResponse(
   response: Response,
   year: number,
   registryByCvmCode: Map<string, string>,
+  onDiagnostics?: (diagnostics: DfpParseDiagnostics) => void,
 ): Promise<ScreenerFactRecord[]> {
   if (!response.ok)
     throw new Error(`CVM DFP request failed: ${response.status}`);
@@ -340,6 +369,21 @@ export async function parseDfpResponse(
   let readerDone = false;
   let activeFiles = 0;
   let relevantFiles = 0;
+  let consolidatedFiles = 0;
+  let individualFiles = 0;
+  let rowsRead = 0;
+  const uniqueCnpjs = new Set<string>();
+  const localCnpjs = new Set(registryByCvmCode.values());
+  const localCnpjMatches = new Set<string>();
+  const knownCvmCodes = new Set<string>();
+  const unmappedCvmCodes = new Set<string>();
+  const exactCnpjCvmMatches = new Set<string>();
+  let cvmCodeCnpjMismatches = 0;
+  let candidateFacts = 0;
+  const discarded: Record<string, number> = {};
+  const discard = (reason: string) => {
+    discarded[reason] = (discarded[reason] ?? 0) + 1;
+  };
   let settled = false;
   let rejectPromise: ((error: unknown) => void) | undefined;
   let resolvePromise: (() => void) | undefined;
@@ -354,42 +398,87 @@ export async function parseDfpResponse(
     }
   };
   unzip.onfile = (file) => {
-    if (!file.name.includes("_con_") || !file.name.endsWith(".csv")) {
+    if (!file.name.endsWith(".csv")) {
+      file.ondata = () => undefined;
+      file.start();
+      return;
+    }
+    if (file.name.includes("_ind_")) individualFiles += 1;
+    if (!file.name.includes("_con_")) {
       file.ondata = () => undefined;
       file.start();
       return;
     }
     activeFiles += 1;
     relevantFiles += 1;
+    consolidatedFiles += 1;
     let header: string[] | null = null;
     let sourceRow = 0;
     const decoder = addLineDecoder((line) => {
       if (!header) {
-        header = parseCsvLine(line);
+        header = parseCsvLine(line).map(normalizeCsvHeader);
         return;
       }
       sourceRow += 1;
+      rowsRead += 1;
       const cells = parseCsvLine(line);
       const row = Object.fromEntries(
         cells.map((cell, index) => [header![index] ?? "", cell]),
       );
       const cnpj = normalizeCnpj(row.CNPJ_CIA);
       const issuerCnpj = cnpj.length === 14 ? cnpj : null;
-      const cvmCode = row.CD_CVM?.trim() ?? "";
-      if (!issuerCnpj || registryByCvmCode.get(cvmCode) !== issuerCnpj) return;
-      if (!csvAccounts.has(row.CD_CONTA ?? "")) return;
-      if (!isValidatedFinancialAccountLabel(row.CD_CONTA!, row.DS_CONTA ?? ""))
+      if (issuerCnpj) uniqueCnpjs.add(issuerCnpj);
+      else {
+        discard("invalid_cnpj");
         return;
-      if (normalizedExerciseOrder(row.ORDEM_EXERC ?? "") !== "ULTIMO") return;
+      }
+      const cvmCode = row.CD_CVM?.trim() ?? "";
+      if (!localCnpjs.has(issuerCnpj)) {
+        discard("issuer_cnpj_unmapped");
+        return;
+      }
+      localCnpjMatches.add(issuerCnpj);
+      const mappedCnpj = registryByCvmCode.get(cvmCode);
+      if (mappedCnpj === undefined) {
+        if (cvmCode) unmappedCvmCodes.add(cvmCode);
+      } else {
+        knownCvmCodes.add(cvmCode);
+        if (mappedCnpj === issuerCnpj) exactCnpjCvmMatches.add(issuerCnpj);
+        else cvmCodeCnpjMismatches += 1;
+      }
+      if (!csvAccounts.has(row.CD_CONTA ?? "")) {
+        discard("account_code_unselected");
+        return;
+      }
+      if (
+        !isValidatedFinancialAccountLabel(row.CD_CONTA!, row.DS_CONTA ?? "")
+      ) {
+        discard("account_label_unvalidated");
+        return;
+      }
+      if (normalizedExerciseOrder(row.ORDEM_EXERC ?? "") !== "ULTIMO") {
+        discard("exercise_not_latest");
+        return;
+      }
       const referenceDate = row.DT_REFER?.trim() ?? "";
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
+        discard("invalid_reference_date");
+        return;
+      }
       const referenceYear = Number(referenceDate.slice(0, 4));
-      if (referenceYear < year - 4 || referenceYear > year) return;
+      if (referenceYear < year - 4 || referenceYear > year) {
+        discard("reference_year_out_of_range");
+        return;
+      }
+      candidateFacts += 1;
       const value = parseBrazilianAmount(
         row.VL_CONTA ?? "",
         row.ESCALA_MOEDA ?? "",
       );
-      if (value === null) return;
+      if (value === null) {
+        discard("invalid_or_empty_value");
+        return;
+      }
       const versionValue = Number(row.VERSAO ?? "0");
       const fact: ScreenerFactRecord = {
         issuerCnpj,
@@ -406,7 +495,11 @@ export async function parseDfpResponse(
       };
       const key = [issuerCnpj, referenceDate, fact.accountCode].join(":");
       const current = best.get(key);
-      if (!current || compareFactTie(fact, current)) best.set(key, fact);
+      if (!current) best.set(key, fact);
+      else {
+        discard("duplicate_superseded");
+        if (compareFactTie(fact, current)) best.set(key, fact);
+      }
     });
     file.ondata = (error, data, final) => {
       if (settled) return;
@@ -439,7 +532,42 @@ export async function parseDfpResponse(
       rejectPromise!(error);
     }
   }
-  await complete;
+  try {
+    await complete;
+  } catch (error) {
+    onDiagnostics?.({
+      consolidatedFiles,
+      individualFiles,
+      rowsRead,
+      uniqueCnpjs: uniqueCnpjs.size,
+      localCnpjMatches: localCnpjMatches.size,
+      associatedCnpjs: localCnpjMatches.size,
+      knownCvmCodes: knownCvmCodes.size,
+      unmappedCvmCodes: unmappedCvmCodes.size,
+      cvmCodeCnpjMismatches,
+      exactCnpjCvmMatches: exactCnpjCvmMatches.size,
+      candidateFacts,
+      normalizedFacts: best.size,
+      discarded,
+    });
+    throw error;
+  }
+  const diagnostics: DfpParseDiagnostics = {
+    consolidatedFiles,
+    individualFiles,
+    rowsRead,
+    uniqueCnpjs: uniqueCnpjs.size,
+    localCnpjMatches: localCnpjMatches.size,
+    associatedCnpjs: localCnpjMatches.size,
+    knownCvmCodes: knownCvmCodes.size,
+    unmappedCvmCodes: unmappedCvmCodes.size,
+    cvmCodeCnpjMismatches,
+    exactCnpjCvmMatches: exactCnpjCvmMatches.size,
+    candidateFacts,
+    normalizedFacts: best.size,
+    discarded,
+  };
+  onDiagnostics?.(diagnostics);
   if (relevantFiles === 0)
     throw new Error("CVM DFP archive contained no consolidated CSV");
   return [...best.values()];
@@ -693,9 +821,13 @@ export class BrapiScreenerProvider {
 export class CvmDfpProvider {
   constructor(private readonly fetcher: typeof fetch = fetch) {}
 
-  async getAnnualFacts(year: number, registryByCvmCode: Map<string, string>) {
+  async getAnnualFacts(
+    year: number,
+    registryByCvmCode: Map<string, string>,
+    onDiagnostics?: (diagnostics: DfpParseDiagnostics) => void,
+  ) {
     const url = `${cvmBaseUrl}/DOC/DFP/DADOS/dfp_cia_aberta_${year}.zip`;
     const response = await this.fetcher(url);
-    return parseDfpResponse(response, year, registryByCvmCode);
+    return parseDfpResponse(response, year, registryByCvmCode, onDiagnostics);
   }
 }

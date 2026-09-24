@@ -82,6 +82,7 @@ function setup(
     facts?: (year: number) => Promise<ScreenerFactRecord[]>;
     cvmFailure?: Error;
     repositoryFailure?: Error;
+    persistedFactCount?: number;
   } = {},
 ) {
   const registry = new Map<string, CvmCompanyRecord>([
@@ -205,6 +206,9 @@ function setup(
     saveFullSync: vi.fn(async (input) => {
       if (overrides.repositoryFailure) throw overrides.repositoryFailure;
       saved.push(input);
+      return {
+        persistedFactCount: overrides.persistedFactCount ?? input.facts.length,
+      };
     }),
     markFailed: vi.fn().mockResolvedValue(undefined),
   };
@@ -352,6 +356,7 @@ describe("ScreenerSyncService", () => {
       securities: 4,
       fractionalAliases: 1,
       facts: 15,
+      persistedFacts: 15,
       eligibleIssuers: 1,
     });
     expect(
@@ -726,6 +731,63 @@ describe("ScreenerSyncService", () => {
       log.mockRestore();
     }
   });
+  it("fails when the catalog had profiles but none associated to local issuers", async () => {
+    const context = setup({ catalog: [stock("MISSING3")] });
+    await expect(context.service.sync()).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(context.repository.saveFullSync).not.toHaveBeenCalled();
+    expect(context.repository.markFailed).toHaveBeenCalledWith(
+      "run-1",
+      "CVM_DFP",
+    );
+  });
+
+  it("fails when normalized facts have no matching persisted keys", async () => {
+    const context = setup({ persistedFactCount: 0 });
+    await expect(context.service.sync()).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(context.repository.saveFullSync).toHaveBeenCalledOnce();
+    expect(context.repository.markFailed).toHaveBeenCalledWith(
+      "run-1",
+      "DATABASE_PERSIST",
+    );
+  });
+
+  it("fails when only some normalized fact keys are represented after persistence", async () => {
+    const context = setup({ persistedFactCount: 14 });
+    await expect(context.service.sync()).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(context.repository.saveFullSync).toHaveBeenCalledOnce();
+    expect(context.repository.markFailed).toHaveBeenCalledWith(
+      "run-1",
+      "DATABASE_PERSIST",
+    );
+  });
+
+  it("counts and reports facts superseded across annual archives", async () => {
+    const context = setup({
+      facts: async (year) => [annualFact(2025, "3.11", year)],
+    });
+    const log = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).resolves.toMatchObject({
+        facts: 1,
+        persistedFacts: 1,
+      });
+      expect(log).toHaveBeenCalledWith(
+        "screener_dfp_dedupe_diagnostics",
+        expect.objectContaining({
+          discarded: { duplicate_superseded: 4 },
+        }),
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("supports an empty catalog and persists no inferred issuers", async () => {
     const context = setup({ catalog: [] });
     await expect(context.service.sync()).resolves.toMatchObject({
@@ -734,6 +796,7 @@ describe("ScreenerSyncService", () => {
       fractionalAliases: 0,
       facts: 0,
       eligibleIssuers: 0,
+      persistedFacts: 0,
     });
     expect(context.brapi.getProfile).not.toHaveBeenCalled();
     expect(context.cvm.getAnnualFacts).toHaveBeenCalledTimes(5);
@@ -746,6 +809,7 @@ describe("ScreenerSyncService", () => {
       securities: 0,
       fractionalAliases: 0,
       facts: 0,
+      persistedFacts: 0,
     });
     expect(context.brapi.getProfile).not.toHaveBeenCalled();
   });
@@ -787,7 +851,7 @@ describe("ScreenerSyncService", () => {
       };
       const repository = {
         startRun: vi.fn().mockResolvedValue("default-run"),
-        saveFullSync: vi.fn().mockResolvedValue(undefined),
+        saveFullSync: vi.fn().mockResolvedValue({ persistedFactCount: 0 }),
         markFailed: vi.fn().mockResolvedValue(undefined),
       };
       const service = new ScreenerSyncService(
@@ -799,6 +863,7 @@ describe("ScreenerSyncService", () => {
       await expect(service.sync()).resolves.toMatchObject({
         issuers: 0,
         facts: 0,
+        persistedFacts: 0,
       });
       expect(fetcher).toHaveBeenCalledTimes(6);
       expect(fetcher.mock.calls[1]?.[0]).toMatch(/dfp_cia_aberta_\d{4}\.zip$/);
@@ -808,11 +873,18 @@ describe("ScreenerSyncService", () => {
     }
   });
 
-  it("selects latest CVM annual files with an injectable year for repeatable schedules", async () => {
-    const context = setup({ catalog: [] });
+  it("fails a run before persistence when no annual DFP facts normalize", async () => {
+    const context = setup({ facts: async () => [] });
     const syncService = context.service as unknown as SyncServiceType;
     expect(syncService).toBe(context.service);
-    await context.service.sync();
-    expect(context.cvm.getAnnualFacts).toHaveBeenCalledWith(2021, new Map());
+    await expect(context.service.sync()).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(context.cvm.getAnnualFacts.mock.calls[0]?.[0]).toBe(2021);
+    expect(context.repository.saveFullSync).not.toHaveBeenCalled();
+    expect(context.repository.markFailed).toHaveBeenCalledWith(
+      "run-1",
+      "CVM_DFP",
+    );
   });
 });

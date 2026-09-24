@@ -188,6 +188,9 @@ describe("CVM registry ingestion", () => {
     ["Petroleo", true],
     ["Petróleo, Gás e Biocombustíveis", true],
     ["Mineração", true],
+    ["Extração Mineral", true],
+    ["Petróleo e Gás", true],
+    ["Bancos e Serviços Financeiros", false],
     ["Consumo Cíclico", true],
     ["Bens Industriais", false],
     ["Financeiro e Outros", false],
@@ -500,6 +503,154 @@ describe("DFP streaming normalization", () => {
       registryByCode,
     );
     expect(facts).toEqual([]);
+  });
+
+  it("normalizes a UTF-8 BOM decoded as Latin-1 and reports DFP stage counts", async () => {
+    const row = [
+      validCnpj,
+      "9512",
+      "3.11",
+      "Lucro/Prejuízo do Período",
+      "ÚLTIMO",
+      "2025-12-31",
+      "20",
+      "UNIDADE",
+      "1",
+    ];
+    let diagnostics: unknown;
+    const facts = await parseDfpResponse(
+      zipResponse({
+        "2025_cia_aberta_ind_dfp.csv": csv(dfpHeader, [row]),
+        "2025_cia_aberta_con_dfp.csv":
+          "\u00ef\u00bb\u00bf" + csv(dfpHeader, [row]),
+      }),
+      2025,
+      registryByCode,
+      (value) => {
+        diagnostics = value;
+      },
+    );
+    expect(facts).toHaveLength(1);
+    expect(diagnostics).toEqual({
+      consolidatedFiles: 1,
+      individualFiles: 1,
+      rowsRead: 1,
+      uniqueCnpjs: 1,
+      localCnpjMatches: 1,
+      associatedCnpjs: 1,
+      knownCvmCodes: 1,
+      unmappedCvmCodes: 0,
+      cvmCodeCnpjMismatches: 0,
+      exactCnpjCvmMatches: 1,
+      candidateFacts: 1,
+      normalizedFacts: 1,
+      discarded: {},
+    });
+  });
+
+  it("records facts removed by duplicate selection", async () => {
+    const row = [
+      validCnpj,
+      "9512",
+      "3.11",
+      "Lucro/Prejuízo do Período",
+      "ÚLTIMO",
+      "2025-12-31",
+      "20",
+      "UNIDADE",
+      "1",
+    ];
+    let diagnostics: unknown;
+    const facts = await parseDfpResponse(
+      zipResponse({
+        "2025_cia_aberta_con_dfp.csv": csv(dfpHeader, [row, row]),
+      }),
+      2025,
+      registryByCode,
+      (value) => {
+        diagnostics = value;
+      },
+    );
+    expect(facts).toHaveLength(1);
+    expect(diagnostics).toMatchObject({
+      candidateFacts: 2,
+      normalizedFacts: 1,
+      discarded: { duplicate_superseded: 1 },
+    });
+  });
+
+  it("reports archive counts before failing when no consolidated CSV exists", async () => {
+    let diagnostics: unknown;
+    await expect(
+      parseDfpResponse(
+        zipResponse({
+          "2025_cia_aberta_ind_dfp.csv": csv(dfpHeader, []),
+        }),
+        2025,
+        registryByCode,
+        (value) => {
+          diagnostics = value;
+        },
+      ),
+    ).rejects.toThrow("CVM DFP archive contained no consolidated CSV");
+    expect(diagnostics).toMatchObject({
+      consolidatedFiles: 0,
+      individualFiles: 1,
+      rowsRead: 0,
+      normalizedFacts: 0,
+    });
+  });
+
+  it("associates DFP rows by exact local CNPJ and diagnoses CVM code differences", async () => {
+    const row = [
+      validCnpj,
+      "1234",
+      "3.11",
+      "Lucro/Prejuízo do Período",
+      "ÚLTIMO",
+      "2025-12-31",
+      "20",
+      "UNIDADE",
+      "1",
+    ];
+    const unknownIssuerRow = [...row];
+    unknownIssuerRow[0] = "22.222.333/0001-82";
+    unknownIssuerRow[1] = "9512";
+    let diagnostics: unknown;
+    const facts = await parseDfpResponse(
+      zipResponse({
+        "2025_cia_aberta_con_dfp.csv": csv(dfpHeader, [
+          row,
+          [...row.slice(0, 1), "9876", ...row.slice(2)],
+          unknownIssuerRow,
+        ]),
+      }),
+      2025,
+      new Map([
+        ["1234", "11222333000181"],
+        ["9512", "33000167000101"],
+      ]),
+      (value) => {
+        diagnostics = value;
+      },
+    );
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.issuerCnpj).toBe("33000167000101");
+    expect(diagnostics).toEqual({
+      consolidatedFiles: 1,
+      individualFiles: 0,
+      rowsRead: 3,
+      uniqueCnpjs: 2,
+      localCnpjMatches: 1,
+      associatedCnpjs: 1,
+      knownCvmCodes: 1,
+      unmappedCvmCodes: 1,
+      cvmCodeCnpjMismatches: 1,
+      exactCnpjCvmMatches: 0,
+      candidateFacts: 2,
+      normalizedFacts: 1,
+      discarded: { duplicate_superseded: 1, issuer_cnpj_unmapped: 1 },
+    });
   });
 
   it("ignores non-consolidated zip members and handles an explicit zero as data", async () => {

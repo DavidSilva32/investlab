@@ -24,6 +24,7 @@ function setup(
   runRows: { id: string }[] = [{ id: "run-1" }],
   failure?: { table: unknown; error: unknown },
   commitError?: unknown,
+  factCountRows?: { count: number }[],
 ) {
   type Operation = {
     table: unknown;
@@ -33,6 +34,8 @@ function setup(
   };
   const inserts: Operation[] = [];
   const updates: Operation[] = [];
+  const factCountConditions: SQL[] = [];
+  let factCountQueryIndex = 0;
   const builder = (record: Operation) => {
     const query = {
       values(values: unknown[]) {
@@ -65,6 +68,32 @@ function setup(
     return query;
   };
   const tx = {
+    select() {
+      return {
+        from() {
+          return {
+            where: vi.fn(async (condition: SQL) => {
+              factCountConditions.push(condition);
+              if (factCountRows !== undefined) return factCountRows;
+              const total = inserts
+                .filter((entry) => entry.table === screenerFinancialFacts)
+                .reduce(
+                  (count, entry) =>
+                    count +
+                    ((entry.values as unknown[] | undefined)?.length ?? 0),
+                  0,
+                );
+              const count = Math.max(
+                0,
+                Math.min(500, total - factCountQueryIndex * 500),
+              );
+              factCountQueryIndex += 1;
+              return [{ count }];
+            }),
+          };
+        },
+      };
+    },
     insert(table: unknown) {
       const record: Operation = { table };
       inserts.push(record);
@@ -90,7 +119,7 @@ function setup(
     ),
   };
   mocks.getDatabaseClient.mockReturnValue(database);
-  return { database, inserts, updates };
+  return { database, inserts, updates, factCountConditions };
 }
 
 const issuer: CvmCompanyRecord = {
@@ -187,6 +216,34 @@ describe("ScreenerSyncRepository", () => {
       latestRun: null,
     });
   });
+  it("returns zero when the persistence count query returns no row", async () => {
+    setup(undefined, undefined, undefined, []);
+    await expect(
+      new ScreenerSyncRepository().saveFullSync({
+        runId: "run-1",
+        catalogCount: 0,
+        profileCount: 0,
+        issuers: [],
+        securities: [],
+        facts: [],
+      }),
+    ).resolves.toEqual({ persistedFactCount: 0 });
+  });
+
+  it("returns zero when the post-upsert key check has no rows", async () => {
+    setup(undefined, undefined, undefined, []);
+    await expect(
+      new ScreenerSyncRepository().saveFullSync({
+        runId: "run-1",
+        catalogCount: 0,
+        profileCount: 0,
+        issuers: [],
+        securities: [],
+        facts: [fact(1)],
+      }),
+    ).resolves.toEqual({ persistedFactCount: 0 });
+  });
+
   it("creates a run and reports a database error when insert returns no row", async () => {
     const { database } = setup();
     await expect(
@@ -201,23 +258,25 @@ describe("ScreenerSyncRepository", () => {
   });
 
   it("upserts issuer, securities and fact chunks transactionally and marks the run complete", async () => {
-    const { database, inserts, updates } = setup();
+    const { database, inserts, updates, factCountConditions } = setup();
     const securities = Array.from({ length: 501 }, (_, index) =>
       security(`T${index}`),
     );
     securities[0] = security("T0F", "T0");
     const facts = Array.from({ length: 501 }, (_, index) => fact(index + 1));
-    await new ScreenerSyncRepository().saveFullSync({
-      runId: "run-1",
-      catalogCount: 1000,
-      profileCount: 370,
-      issuers: [
-        issuer,
-        { ...issuer, cnpj: "222", quantitativeEligible: false },
-      ],
-      securities,
-      facts,
-    });
+    await expect(
+      new ScreenerSyncRepository().saveFullSync({
+        runId: "run-1",
+        catalogCount: 1000,
+        profileCount: 370,
+        issuers: [
+          issuer,
+          { ...issuer, cnpj: "222", quantitativeEligible: false },
+        ],
+        securities,
+        facts,
+      }),
+    ).resolves.toEqual({ persistedFactCount: 501 });
 
     expect(database.transaction).toHaveBeenCalledOnce();
     expect(
@@ -242,6 +301,8 @@ describe("ScreenerSyncRepository", () => {
       eligibilityReason: "EXPLICIT_FINANCIAL_SECTOR_OR_UNCLASSIFIED",
     });
     const toSql = (fragment: SQL) => new PgDialect().sqlToQuery(fragment).sql;
+    expect(toSql(factCountConditions[0]!)).toContain('"issuerCnpj"');
+    expect(toSql(factCountConditions[0]!)).not.toContain('"ingestionRunId"');
     const issuerConflict = inserts.find(
       (entry) => entry.table === screenerIssuers,
     )?.conflict as { set: Record<string, SQL> };
@@ -295,6 +356,26 @@ describe("ScreenerSyncRepository", () => {
     expect(
       updates.find((entry) => entry.table === screenerIngestionRuns)?.where,
     ).toBe(true);
+  });
+
+  it("counts matching persisted fact keys on idempotent replay independently of run id", async () => {
+    const { factCountConditions } = setup(undefined, undefined, undefined, [
+      { count: 1 },
+    ]);
+    await expect(
+      new ScreenerSyncRepository().saveFullSync({
+        runId: "replay-run",
+        catalogCount: 0,
+        profileCount: 0,
+        issuers: [],
+        securities: [],
+        facts: [fact(1)],
+      }),
+    ).resolves.toEqual({ persistedFactCount: 1 });
+    const query = new PgDialect().sqlToQuery(factCountConditions[0]!);
+    expect(query.sql).toContain('"referenceDate"');
+    expect(query.sql).toContain('"accountCode"');
+    expect(query.sql).not.toContain('"ingestionRunId"');
   });
 
   it("completes an empty sync without issuer, security or fact inserts", async () => {

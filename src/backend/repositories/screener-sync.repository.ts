@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
   screenerFinancialFacts,
   screenerIngestionRuns,
@@ -23,6 +23,7 @@ type PersistenceStage =
   | "securities_deactivation"
   | "security_upsert"
   | "financial_facts_upsert"
+  | "financial_facts_count"
   | "completion_update"
   | "transaction_commit"
   | "mark_failed"
@@ -140,6 +141,7 @@ export class ScreenerSyncRepository {
     let stage: PersistenceStage = "transaction";
     let operationContext: Record<string, number | string> = {};
     let operationStartedAt = Date.now();
+    let persistedFactCount = 0;
     try {
       await database.transaction(async (tx) => {
         if (input.issuers.length > 0) {
@@ -273,6 +275,47 @@ export class ScreenerSyncRepository {
           `,
             });
         }
+        stage = "financial_facts_count";
+        operationContext = { factCount: input.facts.length };
+        operationStartedAt = Date.now();
+        for (let offset = 0; offset < input.facts.length; offset += 500) {
+          const batch = input.facts.slice(offset, offset + 500);
+          const [representedFacts] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(screenerFinancialFacts)
+            .where(
+              or(
+                ...batch.map((fact) =>
+                  and(
+                    eq(screenerFinancialFacts.issuerCnpj, fact.issuerCnpj),
+                    eq(
+                      screenerFinancialFacts.referenceDate,
+                      fact.referenceDate,
+                    ),
+                    eq(screenerFinancialFacts.accountCode, fact.accountCode),
+                    eq(screenerFinancialFacts.documentType, fact.documentType),
+                    eq(
+                      screenerFinancialFacts.statementScope,
+                      fact.statementScope,
+                    ),
+                    eq(
+                      screenerFinancialFacts.exerciseOrder,
+                      fact.exerciseOrder,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          persistedFactCount += Number(representedFacts?.count ?? 0);
+        }
+        if (input.facts.length === 0) {
+          const [emptyResult] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(screenerFinancialFacts)
+            .where(sql`false`);
+          persistedFactCount = Number(emptyResult?.count ?? 0);
+        }
+
         stage = "completion_update";
         operationContext = {
           issuerCount: input.issuers.length,
@@ -300,6 +343,7 @@ export class ScreenerSyncRepository {
         };
         operationStartedAt = Date.now();
       });
+      return { persistedFactCount };
     } catch (error) {
       logger.error("screener_sync_persistence_failed", {
         stage,
