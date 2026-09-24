@@ -27,7 +27,7 @@ const company = {
 };
 const counts = {
   issuers: 1,
-  withPositiveProfit: 1,
+  withNetIncome: 1,
   withEquity: 1,
   withRoe: 1,
   withNetMargin: 1,

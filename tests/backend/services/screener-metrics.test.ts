@@ -14,6 +14,16 @@ const makeFact = (
   overrides: Partial<ScreenerFact> = {},
 ): ScreenerFact => ({
   accountCode,
+  accountLabel:
+    overrides.accountLabel ??
+    (
+      {
+        "3.01": "Receita de Venda de Bens e/ou Serviços",
+        "3.11": "Lucro/Prejuízo Consolidado do Período",
+        "2.03": "Patrimônio Líquido Consolidado",
+      } as Record<string, string>
+    )[accountCode] ??
+    null,
   referenceDate: `${year}-12-31`,
   value,
   documentType: "DFP",
@@ -145,8 +155,8 @@ describe("calculateScreenerMetrics", () => {
     );
     expect(metrics).toMatchObject({
       latestNetIncome: null,
-      latestRevenue: 500,
-      latestEquity: 100,
+      latestRevenue: null,
+      latestEquity: null,
       roe: null,
       netMargin: null,
       pe: null,
@@ -261,7 +271,10 @@ describe("filterScreenerCompanies", () => {
   });
 
   it("keeps unvalidated sectors browsable with unavailable metrics", () => {
-    const unvalidated = company({ quantitativeEligible: false });
+    const unvalidated = company({
+      sector: "Bancos",
+      quantitativeEligible: true,
+    });
     const result = filterScreenerCompanies([unvalidated], {}, now);
     expect(result).toHaveLength(1);
     expect(result[0]?.metrics).toEqual({
@@ -314,5 +327,136 @@ describe("filterScreenerCompanies", () => {
     expect(() =>
       filterScreenerCompanies([company()], { maximumPe: 0 }, now),
     ).toThrow();
+  });
+  it.each([
+    "Comércio (Atacado e Varejo)",
+    "Construção Civil, Mat. Constr. e Decoração",
+    "Emp. Adm. Part. - Const. Civil, Mat. Const. e Decoração",
+    "Serviços Transporte e Logística",
+    "Emp. Adm. Part. - Máqs., Equip., Veíc. e Peças",
+    "Máquinas, Equipamentos, Veículos e Peças",
+    "Agricultura (Açúcar, Álcool e Cana)",
+    "Metalurgia e Siderurgia",
+    "Têxtil e Vestuário",
+    "Energia Elétrica",
+    "Petróleo e Gás",
+    "Extração Mineral",
+  ])(
+    "enables %s only with a complete labeled consolidated triplet",
+    (sector) => {
+      const result = filterScreenerCompanies(
+        [company({ sector, quantitativeEligible: false })],
+        {},
+        now,
+      );
+      expect(result[0]).toMatchObject({
+        quantitativeEligible: true,
+        metrics: {
+          latestNetIncome: 100,
+          latestRevenue: 500,
+          latestEquity: 400,
+        },
+      });
+    },
+  );
+
+  it.each([
+    "Bancos",
+    "Seguradoras e Corretoras",
+    "Emp. Adm. Part. - Seguradoras e Corretoras",
+    "Emp. Adm. Part. - Intermediação Financeira",
+    "Bolsas de Valores/Mercadorias e Futuros",
+  ])("keeps financial sector %s outside quantitative eligibility", (sector) => {
+    const result = filterScreenerCompanies(
+      [company({ sector, quantitativeEligible: true })],
+      {},
+      now,
+    );
+    expect(result[0]?.quantitativeEligible).toBe(false);
+    expect(result[0]?.metrics.latestNetIncome).toBeNull();
+    expect(result[0]?.metrics.latestEquity).toBeNull();
+    expect(result[0]?.metrics.netMargin).toBeNull();
+  });
+
+  it("does not infer accounting concepts from a familiar account code alone", () => {
+    const mislabeled = company({
+      facts: facts.map((fact) =>
+        fact.accountCode === "3.01"
+          ? { ...fact, accountLabel: "Patrimônio Líquido Consolidado" }
+          : fact,
+      ),
+    });
+    const result = filterScreenerCompanies([mislabeled], {}, now);
+    expect(result[0]?.quantitativeEligible).toBe(false);
+    expect(result[0]?.metrics.latestNetIncome).toBeNull();
+    expect(result[0]?.metrics.latestRevenue).toBeNull();
+    expect(result[0]?.metrics.latestEquity).toBeNull();
+  });
+
+  it("ignores null labels and account codes without a validated concept alias", () => {
+    const invalidFacts = facts.map((fact) =>
+      fact.accountCode === "3.01" ? { ...fact, accountLabel: null } : fact,
+    );
+    invalidFacts.push({
+      ...makeFact("3.02", 2025, 900),
+      accountLabel: null,
+    });
+    const result = filterScreenerCompanies(
+      [company({ facts: invalidFacts })],
+      {},
+      now,
+    );
+    expect(result[0]?.quantitativeEligible).toBe(false);
+    expect(result[0]?.metrics.latestRevenue).toBeNull();
+  });
+  it("accepts the explicit non-consolidated wording alias for net income", () => {
+    const aliasFacts = facts.map((fact) =>
+      fact.accountCode === "3.11"
+        ? { ...fact, accountLabel: "Lucro/Prejuízo do Período" }
+        : fact,
+    );
+    const result = filterScreenerCompanies(
+      [company({ sector: "Energia Elétrica", facts: aliasFacts })],
+      {},
+      now,
+    );
+    expect(result[0]?.quantitativeEligible).toBe(true);
+    expect(result[0]?.metrics.latestNetIncome).toBe(100);
+  });
+  it("does not combine concepts reported in different years", () => {
+    const splitYears = company({
+      facts: [
+        makeFact("3.11", 2025, 100),
+        makeFact("2.03", 2025, 400),
+        makeFact("3.01", 2024, 500),
+        makeFact("2.03", 2024, 300),
+      ],
+    });
+    const result = filterScreenerCompanies([splitYears], {}, now);
+    expect(result[0]?.quantitativeEligible).toBe(false);
+    expect(result[0]?.metrics.latestNetIncome).toBeNull();
+  });
+
+  it("uses the most recent complete year for each sector and issuer", () => {
+    const commerce = company({ sector: "Comércio (Atacado e Varejo)" });
+    const industry = company({
+      cnpj: "22000167000101",
+      name: "Indústria",
+      sector: "Metalurgia e Siderurgia",
+      facts: [
+        makeFact("3.01", 2024, 200),
+        makeFact("3.11", 2024, 20),
+        makeFact("2.03", 2024, 100),
+        makeFact("3.01", 2025, 400),
+        makeFact("3.11", 2025, 80),
+        makeFact("2.03", 2025, 200),
+        makeFact("2.03", 2024, 100),
+      ],
+    });
+    const result = filterScreenerCompanies([commerce, industry], {}, now);
+    expect(result.map(({ metrics }) => metrics.netMargin)).toEqual([20, 20]);
+    expect(result.map(({ metrics }) => metrics.roe)).toEqual([
+      53.333333333333336, 28.57142857142857,
+    ]);
   });
 });

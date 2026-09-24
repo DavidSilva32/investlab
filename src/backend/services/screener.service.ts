@@ -29,9 +29,8 @@ export class ScreenerService {
     const results = filterScreenerCompanies(universe, parsed.data);
     const counts = {
       issuers: all.length,
-      withPositiveProfit: all.filter(
-        (item) => item.metrics.positiveProfitYears > 0,
-      ).length,
+      withNetIncome: all.filter((item) => item.metrics.latestNetIncome !== null)
+        .length,
       withEquity: all.filter((item) => item.metrics.latestEquity !== null)
         .length,
       withRoe: all.filter((item) => item.metrics.roe !== null).length,

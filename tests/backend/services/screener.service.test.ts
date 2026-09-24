@@ -10,13 +10,14 @@ const company: ScreenerCompany = {
   cnpj: "111",
   cvmCode: "1",
   name: "Issuer",
-  sector: "Petroleo",
+  sector: "Petróleo e Gás",
   quantitativeEligible: true,
   securities: [{ ticker: "AAA3", name: "Issuer ON" }],
   facts: [
     {
       referenceDate: "2025-12-31",
       accountCode: "3.01",
+      accountLabel: "Receita de Venda de Bens e/ou Serviços",
       value: "100",
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
@@ -25,6 +26,7 @@ const company: ScreenerCompany = {
     {
       referenceDate: "2025-12-31",
       accountCode: "3.11",
+      accountLabel: "Lucro/Prejuízo Consolidado do Período",
       value: "20",
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
@@ -33,6 +35,7 @@ const company: ScreenerCompany = {
     {
       referenceDate: "2025-12-31",
       accountCode: "2.03",
+      accountLabel: "Patrimônio Líquido Consolidado",
       value: "100",
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
@@ -41,6 +44,7 @@ const company: ScreenerCompany = {
     {
       referenceDate: "2024-12-31",
       accountCode: "2.03",
+      accountLabel: "Patrimônio Líquido Consolidado",
       value: "100",
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
@@ -65,7 +69,7 @@ describe("ScreenerService", () => {
       results: [],
       counts: {
         issuers: 0,
-        withPositiveProfit: 0,
+        withNetIncome: 0,
         withEquity: 0,
         withRoe: 0,
         withNetMargin: 0,
@@ -90,7 +94,7 @@ describe("ScreenerService", () => {
     );
     expect(result.counts).toEqual({
       issuers: 1,
-      withPositiveProfit: 1,
+      withNetIncome: 1,
       withEquity: 1,
       withRoe: 1,
       withNetMargin: 1,

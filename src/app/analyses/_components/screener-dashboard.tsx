@@ -28,7 +28,7 @@ type Filters = {
 };
 type Counts = {
   issuers: number;
-  withPositiveProfit: number;
+  withNetIncome: number;
   withEquity: number;
   withRoe: number;
   withNetMargin: number;

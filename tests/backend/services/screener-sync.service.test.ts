@@ -62,6 +62,14 @@ const annualFact = (
   ...fact(version, sourceFile),
   referenceDate: `${year}-12-31`,
   accountCode,
+  accountLabel:
+    (
+      {
+        "3.01": "Receita de Venda de Bens e/ou Serviços",
+        "3.11": "Lucro/Prejuízo Consolidado do Período",
+        "2.03": "Patrimônio Líquido Consolidado",
+      } as Record<string, string>
+    )[accountCode] ?? "Lucro",
   value: String(value),
 });
 

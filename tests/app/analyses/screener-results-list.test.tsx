@@ -8,7 +8,7 @@ import {
 } from "@/app/analyses/_components/screener-results-list";
 
 const counts = {
-  withPositiveProfit: 20,
+  withNetIncome: 20,
   withEquity: 19,
   withRoe: 18,
   withNetMargin: 17,
@@ -110,13 +110,17 @@ describe("ScreenerResultsList", () => {
     await user.click(screen.getByRole("button", { name: "Próxima página" }));
     expect(screen.getByText("Mostrando 25–25 de 25")).toBeTruthy();
 
-    const newResults = [company(101), company(102), company(103)];
+    const newResults = Array.from({ length: 30 }, (_, index) =>
+      company(101 + index),
+    );
     rerender(<ScreenerResultsList results={newResults} counts={counts} />);
     await waitFor(() =>
-      expect(screen.getByText("Mostrando 1–3 de 3")).toBeTruthy(),
+      expect(screen.getByText("Mostrando 1–12 de 30")).toBeTruthy(),
     );
     expect(screen.getByText("Empresa 101")).toBeTruthy();
-    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(
+      screen.getByRole("navigation", { name: "Paginação dos resultados" }),
+    ).toBeTruthy();
   });
 
   it("keeps coverage visible for an empty result set without creating page controls", () => {

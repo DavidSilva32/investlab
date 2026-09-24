@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ export type ScreenerResult = {
 };
 
 export type ScreenerCoverage = {
-  withPositiveProfit: number;
+  withNetIncome: number;
   withEquity: number;
   withRoe: number;
   withNetMargin: number;
@@ -67,17 +67,16 @@ export function ScreenerResultsList({
   results: ScreenerResult[];
   counts: ScreenerCoverage;
 }) {
-  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ results, page: 1 });
   const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
-  const visiblePage = Math.min(page, totalPages);
+  const visiblePage = Math.min(
+    pagination.results === results ? pagination.page : 1,
+    totalPages,
+  );
   const firstIndex = (visiblePage - 1) * pageSize;
   const pageResults = results.slice(firstIndex, firstIndex + pageSize);
   const firstResult = results.length === 0 ? 0 : firstIndex + 1;
   const lastResult = Math.min(visiblePage * pageSize, results.length);
-
-  useEffect(() => {
-    setPage(1);
-  }, [results]);
 
   return (
     <section aria-label="Resultados do Screener" className="space-y-4">
@@ -91,7 +90,7 @@ export function ScreenerResultsList({
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground">
-            Dados disponíveis: lucro {counts.withPositiveProfit}, patrimônio{" "}
+            Dados disponíveis: lucro {counts.withNetIncome}, patrimônio{" "}
             {counts.withEquity}, ROE {counts.withRoe}, margem{" "}
             {counts.withNetMargin}, P/L {counts.withPe} e P/VP {counts.withPb}.
           </p>
@@ -181,7 +180,9 @@ export function ScreenerResultsList({
                 variant="outline"
                 size="sm"
                 aria-label="Página anterior"
-                onClick={() => setPage(visiblePage - 1)}
+                onClick={() =>
+                  setPagination({ results, page: visiblePage - 1 })
+                }
                 disabled={visiblePage === 1}
               >
                 <ChevronLeft aria-hidden="true" />
@@ -195,7 +196,9 @@ export function ScreenerResultsList({
                 variant="outline"
                 size="sm"
                 aria-label="Próxima página"
-                onClick={() => setPage(visiblePage + 1)}
+                onClick={() =>
+                  setPagination({ results, page: visiblePage + 1 })
+                }
                 disabled={visiblePage === totalPages}
               >
                 Próxima

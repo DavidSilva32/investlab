@@ -14,6 +14,7 @@ export type ScreenerFilters = z.infer<typeof screenerFilterSchema>;
 export type ScreenerFact = {
   referenceDate: string;
   accountCode: string;
+  accountLabel: string | null;
   value: string | number;
   documentType: string;
   statementScope: string;
@@ -56,6 +57,125 @@ export type ScreenerResult = Omit<
 };
 
 const marketFreshnessMs = 7 * 24 * 60 * 60 * 1000;
+function normalizeAccountingLabel(value: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function normalizeSector(value: string | null) {
+  return normalizeAccountingLabel(value);
+}
+
+const validatedNonFinancialSectors = new Set([
+  "PETROLEO",
+  "PETROLEO E GAS",
+  "EXTRACAO MINERAL",
+  "MINERACAO",
+  "COMERCIO ATACADO E VAREJO",
+  "CONSTRUCAO CIVIL MAT CONSTR E DECORACAO",
+  "SERVICOS TRANSPORTE E LOGISTICA",
+  "MAQS EQUIP VEIC E PECAS",
+  "AGRICULTURA ACUCAR ALCOOL E CANA",
+  "METALURGIA E SIDERURGIA",
+  "TEXTIL E VESTUARIO",
+  "ENERGIA ELETRICA",
+]);
+
+const validatedSectorAliases: Record<string, string> = {
+  PETROLEO: "PETROLEO E GAS",
+  MINERACAO: "EXTRACAO MINERAL",
+  "MAQUINAS EQUIPAMENTOS VEICULOS E PECAS": "MAQS EQUIP VEIC E PECAS",
+  "CONST CIVIL MAT CONSTR E DECORACAO":
+    "CONSTRUCAO CIVIL MAT CONSTR E DECORACAO",
+  "EMP ADM PART COMERCIO ATACADO E VAREJO": "COMERCIO ATACADO E VAREJO",
+  "EMP ADM PART CONST CIVIL MAT CONST E DECORACAO":
+    "CONSTRUCAO CIVIL MAT CONSTR E DECORACAO",
+  "EMP ADM PART SERVICOS TRANSPORTE E LOGISTICA":
+    "SERVICOS TRANSPORTE E LOGISTICA",
+  "EMP ADM PART MAQS EQUIP VEIC E PECAS": "MAQS EQUIP VEIC E PECAS",
+  "EMP ADM PART AGRICULTURA ACUCAR ALCOOL E CANA":
+    "AGRICULTURA ACUCAR ALCOOL E CANA",
+  "EMP ADM PART METALURGIA E SIDERURGIA": "METALURGIA E SIDERURGIA",
+  "EMP ADM PART TEXTIL E VESTUARIO": "TEXTIL E VESTUARIO",
+  "EMP ADM PART ENERGIA ELETRICA": "ENERGIA ELETRICA",
+  "EMP ADM PART PETROLEO E GAS": "PETROLEO E GAS",
+  "EMP ADM PART EXTRACAO MINERAL": "EXTRACAO MINERAL",
+};
+const financialSectors = new Set([
+  "BANCOS",
+  "SEGURADORAS E CORRETORAS",
+  "EMP ADM PART SEGURADORAS E CORRETORAS",
+  "EMP ADM PART INTERMEDIACAO FINANCEIRA",
+  "BOLSAS DE VALORES MERCADORIAS E FUTUROS",
+]);
+
+const accountLabelAliases: Record<string, ReadonlySet<string>> = {
+  "3.01": new Set(["RECEITA DE VENDA DE BENS E OU SERVICOS"]),
+  "3.11": new Set([
+    "LUCRO PREJUIZO CONSOLIDADO DO PERIODO",
+    "LUCRO PREJUIZO DO PERIODO",
+  ]),
+  "2.03": new Set(["PATRIMONIO LIQUIDO CONSOLIDADO"]),
+};
+
+function isValidatedFact(fact: ScreenerFact) {
+  return (
+    isSupportedAnnualFact(fact) &&
+    (accountLabelAliases[fact.accountCode]?.has(
+      normalizeAccountingLabel(fact.accountLabel),
+    ) ??
+      false)
+  );
+}
+
+function isValidatedSector(sector: string | null) {
+  const normalizedSector = normalizeSector(sector);
+  if (financialSectors.has(normalizedSector)) return false;
+  return validatedNonFinancialSectors.has(
+    validatedSectorAliases[normalizedSector] ?? normalizedSector,
+  );
+}
+
+function annualConceptValues(facts: ScreenerFact[]) {
+  const byYear = new Map<
+    number,
+    Map<string, { referenceDate: string; value: number }>
+  >();
+  for (const fact of facts) {
+    if (!isValidatedFact(fact)) continue;
+    const value = finiteValue(fact.value);
+    const year = Number(fact.referenceDate.slice(0, 4));
+    if (value === null || !Number.isInteger(year) || year <= 0) continue;
+    const yearValues = byYear.get(year) ?? new Map();
+    const current = yearValues.get(fact.accountCode);
+    if (
+      !current ||
+      fact.referenceDate > current.referenceDate ||
+      (fact.referenceDate === current.referenceDate && value > current.value)
+    )
+      yearValues.set(fact.accountCode, {
+        referenceDate: fact.referenceDate,
+        value,
+      });
+    byYear.set(year, yearValues);
+  }
+  return byYear;
+}
+
+function latestCompleteYear(facts: ScreenerFact[]) {
+  return (
+    [...annualConceptValues(facts)]
+      .filter(([, values]) =>
+        ["3.01", "3.11", "2.03"].every((code) => values.has(code)),
+      )
+      .sort(([left], [right]) => right - left)[0] ?? null
+  );
+}
 
 function finiteValue(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -71,48 +191,16 @@ function isSupportedAnnualFact(fact: ScreenerFact) {
   );
 }
 
-function latestByAccount(facts: ScreenerFact[]) {
-  const latest = new Map<string, { year: number; value: number }>();
-  for (const fact of facts) {
-    if (!isSupportedAnnualFact(fact)) continue;
-    const value = finiteValue(fact.value);
-    const year = Number(fact.referenceDate.slice(0, 4));
-    if (value === null || !Number.isInteger(year) || year <= 0) continue;
-    const current = latest.get(fact.accountCode);
-    if (!current || year > current.year)
-      latest.set(fact.accountCode, { year, value });
-  }
-  return latest;
-}
-
 function profitsByYear(facts: ScreenerFact[]) {
-  const profits = new Map<number, number>();
-  for (const fact of facts) {
-    if (fact.accountCode !== "3.11" || !isSupportedAnnualFact(fact)) continue;
-    const value = finiteValue(fact.value);
-    const year = Number(fact.referenceDate.slice(0, 4));
-    if (value === null || !Number.isInteger(year) || year <= 0) continue;
-    const current = profits.get(year);
-    if (current === undefined || value > current) profits.set(year, value);
-  }
-  return profits;
+  return new Map(
+    [...annualConceptValues(facts)]
+      .filter(([, values]) => values.has("3.11"))
+      .map(([year, values]) => [year, values.get("3.11")!.value]),
+  );
 }
 
 function latestFinancialYear(facts: ScreenerFact[]) {
-  const years = facts.flatMap((fact) => {
-    if (
-      !isSupportedAnnualFact(fact) ||
-      !["3.01", "3.11", "2.03"].includes(fact.accountCode)
-    )
-      return [];
-    const year = Number(fact.referenceDate.slice(0, 4));
-    return Number.isInteger(year) &&
-      year > 0 &&
-      finiteValue(fact.value) !== null
-      ? [year]
-      : [];
-  });
-  return years.length > 0 ? Math.max(...years) : null;
+  return Math.max(...profitsByYear(facts).keys(), 0) || null;
 }
 
 export function calculateScreenerMetrics(
@@ -120,52 +208,27 @@ export function calculateScreenerMetrics(
   marketSnapshot: ScreenerCompany["marketSnapshot"],
   now = new Date(),
 ): ScreenerMetrics {
-  const latest = latestByAccount(facts);
+  const concepts = annualConceptValues(facts);
+  const complete = latestCompleteYear(facts);
   const profits = profitsByYear(facts);
-  const income = latest.get("3.11") ?? null;
-  const revenue = latest.get("3.01") ?? null;
-  const equity = latest.get("2.03") ?? null;
+  const year = complete?.[0] ?? null;
+  const current = complete?.[1] ?? null;
+  const income = current?.get("3.11")?.value ?? null;
+  const revenue = current?.get("3.01")?.value ?? null;
+  const equity = current?.get("2.03")?.value ?? null;
   const previousEquity =
-    [...facts]
-      .filter(
-        (fact) =>
-          fact.accountCode === "2.03" &&
-          isSupportedAnnualFact(fact) &&
-          Number(fact.referenceDate.slice(0, 4)) > 0 &&
-          Number(fact.referenceDate.slice(0, 4)) < (equity?.year ?? Infinity),
-      )
-      .sort((left, right) =>
-        right.referenceDate.localeCompare(left.referenceDate),
-      )
-      .map((fact) => finiteValue(fact.value))
-      .find((value) => value !== null) ?? null;
-
-  const consecutiveEquity =
-    equity !== null &&
-    previousEquity !== null &&
-    [...facts].some(
-      (fact) =>
-        fact.accountCode === "2.03" &&
-        isSupportedAnnualFact(fact) &&
-        Number(fact.referenceDate.slice(0, 4)) === equity.year - 1 &&
-        finiteValue(fact.value) === previousEquity,
-    );
+    year === null ? null : (concepts.get(year - 1)?.get("2.03")?.value ?? null);
   const roe =
-    consecutiveEquity &&
     income !== null &&
     equity !== null &&
-    income.year === equity.year &&
-    equity.value > 0 &&
+    equity > 0 &&
     previousEquity !== null &&
     previousEquity > 0
-      ? (income.value / ((equity.value + previousEquity) / 2)) * 100
+      ? (income / ((equity + previousEquity) / 2)) * 100
       : null;
   const netMargin =
-    revenue !== null &&
-    income !== null &&
-    revenue.year === income.year &&
-    revenue.value > 0
-      ? (income.value / revenue.value) * 100
+    income !== null && revenue !== null && revenue > 0
+      ? (income / revenue) * 100
       : null;
 
   const observedAt = marketSnapshot?.observedAt.getTime() ?? Number.NaN;
@@ -190,23 +253,22 @@ export function calculateScreenerMetrics(
     positiveProfitYears += 1;
 
   return {
-    latestNetIncome: income?.value ?? null,
-    latestRevenue: revenue?.value ?? null,
-    latestEquity: equity?.value ?? null,
+    latestNetIncome: income,
+    latestRevenue: revenue,
+    latestEquity: equity,
     roe,
     netMargin,
     pe:
-      freshMarketCap !== null && income !== null && income.value > 0
-        ? freshMarketCap / income.value
+      freshMarketCap !== null && income !== null && income > 0
+        ? freshMarketCap / income
         : null,
     pb:
-      freshMarketCap !== null && equity !== null && equity.value > 0
-        ? freshMarketCap / equity.value
+      freshMarketCap !== null && equity !== null && equity > 0
+        ? freshMarketCap / equity
         : null,
     positiveProfitYears,
   };
 }
-
 export function filterScreenerCompanies(
   companies: ScreenerCompany[],
   filters: ScreenerFilters,
@@ -215,23 +277,21 @@ export function filterScreenerCompanies(
   const parsedFilters = screenerFilterSchema.parse(filters);
   return companies
     .flatMap((company) => {
-      const metrics =
-        company.quantitativeEligible === false
-          ? {
-              latestNetIncome: null,
-              latestRevenue: null,
-              latestEquity: null,
-              roe: null,
-              netMargin: null,
-              pe: null,
-              pb: null,
-              positiveProfitYears: 0,
-            }
-          : calculateScreenerMetrics(
-              company.facts,
-              company.marketSnapshot,
-              now,
-            );
+      const quantitativeEligible =
+        isValidatedSector(company.sector) &&
+        latestCompleteYear(company.facts) !== null;
+      const metrics = quantitativeEligible
+        ? calculateScreenerMetrics(company.facts, company.marketSnapshot, now)
+        : {
+            latestNetIncome: null,
+            latestRevenue: null,
+            latestEquity: null,
+            roe: null,
+            netMargin: null,
+            pe: null,
+            pb: null,
+            positiveProfitYears: 0,
+          };
       if (
         parsedFilters.positiveProfitYears !== undefined &&
         metrics.positiveProfitYears < parsedFilters.positiveProfitYears
@@ -268,9 +328,10 @@ export function filterScreenerCompanies(
       const {
         facts: _facts,
         marketSnapshot: _marketSnapshot,
+        quantitativeEligible: _previousEligibility,
         ...identity
       } = company;
-      return [{ ...identity, metrics }];
+      return [{ ...identity, quantitativeEligible, metrics }];
     })
     .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 }

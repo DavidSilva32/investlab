@@ -56,6 +56,7 @@ export class ScreenerRepository {
           issuerCnpj: screenerFinancialFacts.issuerCnpj,
           referenceDate: screenerFinancialFacts.referenceDate,
           accountCode: screenerFinancialFacts.accountCode,
+          accountLabel: screenerFinancialFacts.accountLabel,
           value: screenerFinancialFacts.value,
           documentType: screenerFinancialFacts.documentType,
           statementScope: screenerFinancialFacts.statementScope,
@@ -64,7 +65,7 @@ export class ScreenerRepository {
         .from(screenerFinancialFacts)
         .where(
           and(
-            inArray(screenerFinancialFacts.issuerCnpj, quantitativeCnpjs),
+            inArray(screenerFinancialFacts.issuerCnpj, cnpjs),
             gte(screenerFinancialFacts.referenceDate, minimumReferenceDate),
             inArray(screenerFinancialFacts.accountCode, [
               "3.01",

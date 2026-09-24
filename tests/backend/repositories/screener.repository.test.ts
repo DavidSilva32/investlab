@@ -189,7 +189,7 @@ describe("ScreenerRepository", () => {
     expect(factSql.sql).toContain('"referenceDate" >=');
     expect(predicates.has(screenerIssuers)).toBe(false);
     expect(factSql.params).toContain("111");
-    expect(factSql.params).not.toContain("222");
+    expect(factSql.params).toContain("222");
     const snapshotSql = sqlFor(predicates.get(screenerMarketSnapshots));
     expect(snapshotSql.params).toContain(true);
     expect(sqlFor(orderings.get(screenerMarketSnapshots)).sql).toContain(
