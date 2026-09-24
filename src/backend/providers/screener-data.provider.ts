@@ -122,7 +122,7 @@ const catalogEntrySchema = z
     isActive: z.boolean().optional(),
     active: z.boolean().optional(),
   })
-  .passthrough();
+  .loose();
 
 const catalogSchema = z
   .object({
@@ -134,10 +134,10 @@ const catalogSchema = z
         currentPage: z.number().optional(),
         totalPages: z.number().optional(),
       })
-      .passthrough()
+      .loose()
       .optional(),
   })
-  .passthrough();
+  .loose();
 
 const profileSchema = z
   .object({
@@ -152,15 +152,15 @@ const profileSchema = z
                 longName: z.string().nullable().optional(),
                 shortName: z.string().nullable().optional(),
               })
-              .passthrough()
+              .loose()
               .nullable(),
             changed: z.boolean().optional().default(false),
           })
-          .passthrough(),
+          .loose(),
       )
       .min(1),
   })
-  .passthrough();
+  .loose();
 
 function normalizeCnpj(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "");
