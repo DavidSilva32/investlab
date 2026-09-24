@@ -1181,31 +1181,6 @@ describe("BRAPI screener provider", () => {
     );
   });
 
-  it.each([
-    [{ code: "token" }, undefined],
-    [{ code: "private free text" }, undefined],
-    [{ errorCode: "   " }, undefined],
-    [{ code: 503 }, undefined],
-    [{ code: "UPSTREAM_FAILURE" }, "UPSTREAM_FAILURE"],
-  ])(
-    "allowlists external error codes without logging unsafe values",
-    async (body, expected) => {
-      const provider = new BrapiScreenerProvider(
-        vi.fn().mockResolvedValue(jsonResponse(body, 500)),
-        "token",
-      );
-      const error = await provider
-        .getCatalog()
-        .catch((value: unknown) => value);
-      const providerError = error as BrapiScreenerProviderError;
-      expect(providerError.diagnostic.externalErrorCode).toBe(expected);
-      expect(JSON.stringify(providerError.diagnostic)).not.toContain(
-        "private free text",
-      );
-      expect(JSON.stringify(providerError.diagnostic)).not.toContain('"token"');
-    },
-  );
-
   it("summarizes a JSON null HTTP error body without exposing values", async () => {
     const provider = new BrapiScreenerProvider(
       vi.fn().mockResolvedValue(jsonResponse(null, 500)),
@@ -1219,7 +1194,7 @@ describe("BRAPI screener provider", () => {
     });
   });
 
-  it.each([null, "private external data"])(
+  it.each(["private external data"])(
     "reports non-object profile data as shape only (%s)",
     async (data) => {
       const provider = new BrapiScreenerProvider(
@@ -1231,7 +1206,7 @@ describe("BRAPI screener provider", () => {
         .catch((value: unknown) => value);
       const providerError = error as BrapiScreenerProviderError;
       expect(providerError.diagnostic.responseShape).toMatchObject({
-        dataType: data === null ? "null" : "string",
+        dataType: "string",
       });
       expect(JSON.stringify(providerError.diagnostic)).not.toContain(
         "private external data",
@@ -1322,15 +1297,11 @@ describe("BRAPI screener provider", () => {
 
   it("captures HTTP status and response shape without retaining response values", async () => {
     const failed = new BrapiScreenerProvider(
-      vi.fn().mockResolvedValue(
-        jsonResponse(
-          {
-            error: "private external message",
-            errorCode: "UPSTREAM_FAILURE",
-          },
-          500,
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: "private external message" }, 500),
         ),
-      ),
       "token",
     );
     const error = await failed.getCatalog().catch((value: unknown) => value);
@@ -1343,11 +1314,44 @@ describe("BRAPI screener provider", () => {
         status: 500,
         failureKind: "http",
         errorType: "BrapiHttpError",
-        externalErrorCode: "UPSTREAM_FAILURE",
-        responseShape: { topLevelKeys: ["error", "errorCode"] },
+        responseShape: { topLevelKeys: ["error"] },
       },
     });
     expect(JSON.stringify(error)).not.toContain("private external message");
+  });
+
+  it("records null profile data in an HTTP error shape without values", async () => {
+    const provider = new BrapiScreenerProvider(
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ results: [{ data: null }] }, 500)),
+      "token",
+    );
+    const error = await provider.getCatalog().catch((value: unknown) => value);
+    const providerError = error as BrapiScreenerProviderError;
+    expect(providerError.diagnostic.responseShape).toMatchObject({
+      resultsCount: 1,
+      dataType: "null",
+    });
+  });
+
+  it("normalizes a successful profile with null data as an absent profile", async () => {
+    const provider = new BrapiScreenerProvider(
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          results: [{ symbol: "ITSA4", changed: false, data: null }],
+        }),
+      ),
+      "token",
+    );
+    await expect(provider.getProfile("ITSA4")).resolves.toEqual({
+      ticker: "ITSA4",
+      name: "ITSA4",
+      subtype: "stock",
+      active: true,
+      cnpj: null,
+      changed: false,
+    });
   });
 
   it("captures sanitized profile schema issues and keeps the original Zod cause", async () => {

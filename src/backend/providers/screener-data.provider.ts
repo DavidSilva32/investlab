@@ -21,12 +21,9 @@ export type BrapiRequestDiagnostic = {
   validationIssues?: Array<{
     code: string;
     path: (string | number)[];
-    expected?: string;
-    received?: string;
   }>;
   page?: number;
   ticker?: string;
-  externalErrorCode?: string;
 };
 
 export class BrapiScreenerProviderError extends Error {
@@ -67,21 +64,6 @@ function describeResponseShape(payload: unknown, contentType: string | null) {
             : {}),
         }),
   };
-}
-
-function safeExternalErrorCode(payload: unknown, token: string) {
-  if (!payload || typeof payload !== "object") return undefined;
-  const record = payload as Record<string, unknown>;
-  const candidate = record.errorCode ?? record.code;
-  if (typeof candidate !== "string") return undefined;
-  const code = candidate.trim();
-  if (
-    !code ||
-    code.includes(token) ||
-    !/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(code)
-  )
-    return undefined;
-  return code;
 }
 
 function sanitizeValidationIssues(error: z.ZodError) {
@@ -170,7 +152,8 @@ const profileSchema = z
                 longName: z.string().nullable().optional(),
                 shortName: z.string().nullable().optional(),
               })
-              .passthrough(),
+              .passthrough()
+              .nullable(),
             changed: z.boolean().optional().default(false),
           })
           .passthrough(),
@@ -583,19 +566,15 @@ export class BrapiScreenerProvider {
         throw error;
       }
       let responseShape: BrapiRequestDiagnostic["responseShape"];
-      let externalErrorCode: string | undefined;
       try {
         const body = await response.clone().json();
         responseShape = describeResponseShape(body, contentType);
-        externalErrorCode = safeExternalErrorCode(body, this.token);
       } catch {
         responseShape = { contentType };
       }
-      const diagnostic: BrapiRequestDiagnostic = {
-        ...makeDiagnostic("http", "BrapiHttpError", responseShape),
-        ...(externalErrorCode ? { externalErrorCode } : {}),
-      };
-      throw new BrapiScreenerProviderError(diagnostic);
+      throw new BrapiScreenerProviderError(
+        makeDiagnostic("http", "BrapiHttpError", responseShape),
+      );
     }
     try {
       return {
@@ -702,10 +681,10 @@ export class BrapiScreenerProvider {
     const result = payload.results[0]!;
     return {
       ticker: result.symbol ?? ticker,
-      name: result.data.longName ?? result.data.shortName ?? ticker,
+      name: result.data?.longName ?? result.data?.shortName ?? ticker,
       subtype: "stock",
       active: true,
-      cnpj: normalizeCnpj(result.data.cnpj) || null,
+      cnpj: normalizeCnpj(result.data?.cnpj) || null,
       changed: result.changed,
     };
   }

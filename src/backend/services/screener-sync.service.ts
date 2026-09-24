@@ -233,9 +233,6 @@ export class ScreenerSyncService {
               externalStatus: diagnostic.status,
               durationMs: diagnostic.durationMs,
               externalErrorType: diagnostic.errorType,
-              ...(diagnostic.externalErrorCode
-                ? { externalErrorCode: diagnostic.externalErrorCode }
-                : {}),
               failureKind: diagnostic.failureKind,
               ...(diagnostic.page === undefined
                 ? {}

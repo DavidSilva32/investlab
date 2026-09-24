@@ -324,6 +324,26 @@ describe("ScreenerSyncService", () => {
       latestRun: null,
     });
   });
+  it("skips a profile without data and continues to the next ticker", async () => {
+    const context = setup({
+      catalog: [stock("ITSA4"), stock("PETR3")],
+      profile: async (ticker) =>
+        ticker === "ITSA4"
+          ? stock("ITSA4")
+          : { ...stock("PETR3"), cnpj: "33000167000101" },
+    });
+    await expect(context.service.sync()).resolves.toMatchObject({
+      issuers: 1,
+      securities: 1,
+    });
+    expect(
+      context.brapi.getProfile.mock.calls.map(([ticker]) => ticker),
+    ).toEqual(["ITSA4", "PETR3"]);
+    expect(context.saved[0]).toMatchObject({
+      securities: [expect.objectContaining({ ticker: "PETR3" })],
+    });
+  });
+
   it("synchronizes exact CNPJ issuers, stock classes, fractional aliases and latest consolidated facts sequentially", async () => {
     const context = setup();
     const result = await context.service.sync();
@@ -569,7 +589,6 @@ describe("ScreenerSyncService", () => {
       durationMs: 300,
       errorType: "BrapiHttpError",
       failureKind: "http",
-      externalErrorCode: "UPSTREAM_FAILURE",
     });
     const context = setup();
     context.brapi.getCatalog.mockRejectedValue(externalError);
@@ -589,7 +608,6 @@ describe("ScreenerSyncService", () => {
           externalStatus: 503,
           durationMs: 300,
           externalErrorType: "BrapiHttpError",
-          externalErrorCode: "UPSTREAM_FAILURE",
           failureKind: "http",
         }),
       );
