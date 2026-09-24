@@ -31,3 +31,23 @@ describe("FundamentalsGrid", () => {
     ).toBeTruthy();
   });
 });
+it("labels accumulated interim data and marks invalid values as unavailable", () => {
+  render(
+    <FundamentalsGrid
+      type="ITR"
+      periods={[
+        {
+          referenceDate: "2026-06-30",
+          sourceDocument: "ITR",
+          revenue: null,
+          netIncome: "invalid",
+          equity: "0",
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.getByText(/Acumulado at?/)).toBeTruthy();
+  expect(screen.getAllByText("—")).toHaveLength(2);
+  expect(screen.getByText("R$ 0,00")).toBeTruthy();
+});

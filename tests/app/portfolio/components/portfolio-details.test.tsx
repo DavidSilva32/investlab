@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -179,4 +179,20 @@ describe("portfolio detail components", () => {
       "Nenhuma movimentação importada",
     );
   });
+});
+
+it("shows the same-day estimate label when provisional data has no through date", () => {
+  const html = renderToStaticMarkup(
+    <PositionDetails
+      positions={[
+        {
+          ...position,
+          estimatedValue: 1001,
+          cdbEstimateStatus: "provisional",
+          estimatedThrough: null,
+        },
+      ]}
+    />,
+  );
+  expect(html).toContain("Valor estimado hoje");
 });

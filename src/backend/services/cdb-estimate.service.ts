@@ -180,7 +180,7 @@ export class CdbEstimateService {
     missingBaseDates.forEach((baseDate) => {
       if (unavailableBaseDates.has(baseDate)) return;
       const confirmedRates = sortRates([
-        ...(cachedRatesByBaseDate.get(baseDate) ?? []),
+        ...cachedRatesByBaseDate.get(baseDate)!,
         ...fetchedRates
           .filter((rate) => rate.date >= baseDate)
           .map((rate) => ({
@@ -242,7 +242,7 @@ export class CdbEstimateService {
         };
 
       const rates = [
-        ...(cachedRatesByBaseDate.get(position.referenceDate) ?? []),
+        ...cachedRatesByBaseDate.get(position.referenceDate)!,
         ...fetchedRates
           .filter((rate) => rate.date >= position.referenceDate!)
           .map((rate) => ({
@@ -259,23 +259,22 @@ export class CdbEstimateService {
       );
 
       try {
+        // Eligible positions reach this point with confirmed or provisional rates.
+        const lastRate = uniqueRates.at(-1)!;
         return {
           ...position,
           cdiPercentage,
-          estimatedValue: uniqueRates.length
-            ? estimatePostFixedCdb({
-                officialValue: position.totalValue,
-                cdiPercentage,
-                rates: uniqueRates,
-              })
-            : null,
-          estimatedThrough: uniqueRates.at(-1)?.rateDate ?? null,
-          cdbEstimateStatus: uniqueRates.length
-            ? provisionalRatesByBaseDate.has(position.referenceDate) ||
-              missingWeekdaysAfter(uniqueRates.at(-1)!.rateDate, today).length
+          estimatedValue: estimatePostFixedCdb({
+            officialValue: position.totalValue,
+            cdiPercentage,
+            rates: uniqueRates,
+          }),
+          estimatedThrough: lastRate.rateDate,
+          cdbEstimateStatus:
+            provisionalRatesByBaseDate.has(position.referenceDate) ||
+            missingWeekdaysAfter(lastRate.rateDate, today).length
               ? ("provisional" as const)
-              : ("official" as const)
-            : ("unavailable" as const),
+              : ("official" as const),
         };
       } catch {
         logUnavailable("rates");

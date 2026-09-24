@@ -34,3 +34,37 @@ describe("stock analysis route", () => {
     });
   });
 });
+
+it("returns generic errors without exposing internals or requiring a supplied request id", async () => {
+  controller.get.mockRejectedValue(new Error("provider secret"));
+
+  const response = await GET(new Request("http://test"), {
+    params: Promise.resolve({ ticker: "PETR4" }),
+  });
+
+  expect(response.status).toBe(502);
+  expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(response.json()).resolves.toEqual({
+    message: "Não foi possível consultar a análise agora.",
+  });
+  expect(logger.error).toHaveBeenCalledWith(
+    "stock_analysis_failed",
+    expect.objectContaining({ ticker: "PETR4", error: expect.any(Error) }),
+  );
+});
+
+it("returns application errors without a retry delay", async () => {
+  controller.get.mockRejectedValue(
+    new ApplicationError("Ticker inválido.", 400),
+  );
+
+  const response = await GET(new Request("http://test"), {
+    params: Promise.resolve({ ticker: "?" }),
+  });
+
+  expect(response.status).toBe(400);
+  expect(response.headers.get("retry-after")).toBeNull();
+  await expect(response.json()).resolves.toEqual({
+    message: "Ticker inválido.",
+  });
+});

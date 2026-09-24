@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import {
   act,
   cleanup,
@@ -163,5 +163,34 @@ describe("AnalysisStockSearch", () => {
     expect(screen.queryByRole("option", { name: /PETR3/ })).toBeNull();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.focus(input);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+  it("silently ignores a request rejected by its abort signal", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url: string, options: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () =>
+              reject(
+                Object.assign(new Error("Aborted"), { name: "AbortError" }),
+              ),
+            );
+          }),
+      )
+      .mockResolvedValueOnce(response([{ ticker: "VALE3", name: "Vale" }]));
+    vi.stubGlobal("fetch", fetcher);
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    const input = screen.getByRole("combobox");
+
+    fireEvent.change(input, { target: { value: "Petr" } });
+    await advanceSearch();
+    fireEvent.change(input, { target: { value: "Vale" } });
+    await advanceSearch();
+
+    expect(screen.getByRole("option", { name: /VALE3.*Vale/ })).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

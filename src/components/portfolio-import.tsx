@@ -54,10 +54,6 @@ const money = new Intl.NumberFormat("pt-BR", {
 });
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
-function formatDate(value: string | null | undefined) {
-  return value ? date.format(new Date(`${value}T00:00:00Z`)) : "Não informada";
-}
-
 function formatMoney(value: string | null) {
   return value === null ? "—" : money.format(Number(value));
 }

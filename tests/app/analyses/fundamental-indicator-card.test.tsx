@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
@@ -49,4 +49,20 @@ describe("FundamentalIndicatorCard", () => {
       ),
     ).toBeTruthy();
   });
+});
+it("identifies the accumulated interim statement used by the indicator", () => {
+  render(
+    <FundamentalIndicatorCard
+      indicator={{
+        key: "pb",
+        value: 1.2,
+        unavailableReason: null,
+        referenceDate: "2026-06-30",
+        sourceDocument: "ITR",
+      }}
+    />,
+  );
+
+  expect(screen.getByText("1.2x")).toBeTruthy();
+  expect(screen.getByText(/trimestrais acumuladas/)).toBeTruthy();
 });

@@ -93,3 +93,77 @@ describe("PortfolioOverview", () => {
     expect(html).toContain("Valor não informado");
   });
 });
+
+it("shows unavailable estimates and provisional state without a date", () => {
+  const unavailable = renderToStaticMarkup(
+    <PortfolioOverview
+      positions={[
+        {
+          id: "1",
+          product: "CDB",
+          assetCode: "CDB1",
+          quantity: "1",
+          institution: "Banco A",
+          indexer: "DI",
+          issuedAt: null,
+          maturityAt: null,
+          totalValue: "100",
+          cdbEstimateStatus: "unavailable",
+        },
+      ]}
+    />,
+  );
+  expect(unavailable).toContain(
+    "Não foi possível atualizar todas as estimativas",
+  );
+
+  const provisionalWithoutDate = renderToStaticMarkup(
+    <PortfolioOverview
+      positions={[
+        {
+          id: "2",
+          product: "CDB",
+          assetCode: "CDB2",
+          quantity: "1",
+          institution: "Banco B",
+          indexer: "DI",
+          issuedAt: null,
+          maturityAt: null,
+          totalValue: "100",
+          estimatedValue: 101,
+          cdbEstimateStatus: "provisional",
+          estimatedThrough: null,
+        },
+      ]}
+    />,
+  );
+  expect(provisionalWithoutDate).toContain(
+    "Atualizado com CDI oficial quando disponível.",
+  );
+});
+
+it("shows the date through which a provisional estimate is available", () => {
+  const html = renderToStaticMarkup(
+    <PortfolioOverview
+      positions={[
+        {
+          id: "3",
+          product: "CDB",
+          assetCode: "CDB3",
+          quantity: "1",
+          institution: "Banco C",
+          indexer: "DI",
+          issuedAt: null,
+          maturityAt: null,
+          totalValue: "100",
+          estimatedValue: 101,
+          cdbEstimateStatus: "provisional",
+          estimatedThrough: "2026-09-18",
+        },
+      ]}
+    />,
+  );
+
+  expect(html).toContain("Estimativa provisória até");
+  expect(html).toContain("18/09/2026");
+});

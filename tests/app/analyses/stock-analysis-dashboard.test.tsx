@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import {
   act,
   cleanup,
@@ -187,6 +187,16 @@ describe("StockAnalysisDashboard", () => {
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
 
+    window.history.pushState({}, "", "/analyses?ticker=bad");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
+      "PETR4",
+    );
+
     const requestsBeforeLeaving = fetcher.mock.calls.length;
     window.history.pushState({}, "", "/?ticker=VALE3");
     window.dispatchEvent(new PopStateEvent("popstate"));
@@ -294,4 +304,77 @@ describe("StockAnalysisDashboard", () => {
       screen.queryByText(/Compara o valor de mercado da empresa/i),
     ).toBeNull();
   });
+});
+it("handles missing company and price data with no available history interval", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      jsonResponse({
+        ...analysis,
+        companyName: null,
+        price: null,
+        changePercent: null,
+        history: [{ date: "2026-09-19", close: 31 }],
+        fundamentals: [],
+      }),
+    ),
+  );
+  render(<StockAnalysisDashboard />);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(screen.getByText(/Empresa/)).toBeTruthy();
+  expect(screen.getByText(/Varia.*informada/)).toBeTruthy();
+  expect(screen.getByText("—")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "1 ano" })).toBeNull();
+  expect(screen.getAllByText(/Sem demonstra/)).toHaveLength(2);
+  expect(screen.getByText(/Sem informa/)).toBeTruthy();
+});
+
+it("returns to search when a successful response has no analysis body", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(null)));
+  render(<StockAnalysisDashboard />);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(screen.getByLabelText("Pesquisar ação")).toBeTruthy();
+  expect(screen.queryByText("Ativo consultado")).toBeNull();
+});
+
+it("ignores a stale request rejection after a newer ticker has loaded", async () => {
+  vi.useFakeTimers();
+  let rejectInitial!: (reason?: unknown) => void;
+  const staleResponse = new Promise<Response>((_resolve, reject) => {
+    rejectInitial = reject;
+  });
+  const fetcher = vi
+    .fn()
+    .mockImplementationOnce(() => staleResponse)
+    .mockResolvedValueOnce(jsonResponse(analysis));
+  vi.stubGlobal("fetch", fetcher);
+  render(<StockAnalysisDashboard />);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  await act(async () => {
+    window.history.pushState({}, "", "/analyses?ticker=VALE3");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    rejectInitial(new Error("stale request failed"));
+    await Promise.resolve();
+  });
+
+  expect(screen.getByText("Indicadores fundamentalistas")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
 });

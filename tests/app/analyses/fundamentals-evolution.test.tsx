@@ -3,6 +3,17 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FundamentalsEvolution } from "@/app/analyses/_components/fundamentals-evolution";
 
+vi.mock("@/components/ui/chart", () => ({
+  ChartContainer: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  ChartTooltipContent: ({
+    formatter,
+  }: {
+    formatter?: (value: unknown) => React.ReactNode;
+  }) => <span data-testid="exact-tooltip">{formatter?.(1000000)}</span>,
+}));
+
 vi.mock("recharts", () => ({
   Bar: () => null,
   BarChart: ({
@@ -19,9 +30,11 @@ vi.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  Tooltip: () => null,
+  Tooltip: ({ content }: { content: React.ReactNode }) => <>{content}</>,
   XAxis: () => null,
-  YAxis: () => null,
+  YAxis: ({ tickFormatter }: { tickFormatter?: (value: number) => string }) => (
+    <span data-testid="compact-tick">{tickFormatter?.(1000000)}</span>
+  ),
 }));
 
 describe("FundamentalsEvolution", () => {
@@ -67,6 +80,8 @@ describe("FundamentalsEvolution", () => {
     expect(
       document.querySelector("[data-years='2024,2025,2026']"),
     ).toBeTruthy();
+    expect(screen.getAllByTestId("compact-tick").length).toBe(3);
+    expect(screen.getAllByTestId("exact-tooltip").length).toBe(3);
     expect(screen.getAllByText("Não informado").length).toBeGreaterThan(0);
   });
 

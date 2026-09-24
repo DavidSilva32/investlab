@@ -291,3 +291,153 @@ describe("with a deterministic Sao Paulo date", () => {
     );
   });
 });
+
+describe("CdbEstimateService dependency failures", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T15:00:00Z"));
+    vi.clearAllMocks();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("returns positions without an estimate when configuration lookup fails", async () => {
+    repository.listConfigurations.mockRejectedValue(
+      new Error("db unavailable"),
+    );
+
+    await expect(new CdbEstimateService().enrich([cdb])).resolves.toEqual([
+      { ...cdb, cdiPercentage: null, estimatedValue: null },
+    ]);
+    expect(repository.listRatesFrom).not.toHaveBeenCalled();
+  });
+
+  it("keeps the configured percentage when cached rate lookup fails", async () => {
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "105" },
+    ]);
+    repository.listRatesFrom.mockRejectedValue(new Error("db unavailable"));
+
+    const [result] = await new CdbEstimateService().enrich([cdb]);
+
+    expect(result).toMatchObject({
+      cdiPercentage: "105",
+      estimatedValue: null,
+    });
+    expect(result).not.toHaveProperty("cdbEstimateStatus");
+  });
+
+  it("estimates from fetched rates even when caching them fails", async () => {
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom.mockResolvedValue([]);
+    bcb.fetchRates.mockResolvedValue([
+      { date: "2026-09-18", annualRate: "14.9" },
+    ]);
+    repository.cacheRates.mockRejectedValue(new Error("db unavailable"));
+
+    const [result] = await new CdbEstimateService().enrich([cdb]);
+
+    expect(result.estimatedValue).not.toBeNull();
+    expect(result).toMatchObject({ cdbEstimateStatus: "official" });
+  });
+
+  it("backs up to Friday when the base date is Sunday", async () => {
+    vi.setSystemTime(new Date("2026-09-21T15:00:00Z"));
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom.mockResolvedValue([]);
+    bcb.fetchRates.mockResolvedValue([]);
+
+    await new CdbEstimateService().enrich([
+      { ...cdb, referenceDate: "2026-09-20" },
+    ]);
+
+    expect(bcb.fetchRates).toHaveBeenCalledWith("2026-09-18", "2026-09-21");
+  });
+});
+
+it("returns unavailable when the estimator throws", async () => {
+  vi.setSystemTime(new Date("2026-09-18T15:00:00Z"));
+  repository.listConfigurations.mockResolvedValue([
+    { assetCode: "CDB1", cdiPercentage: "100" },
+  ]);
+  repository.listRatesFrom.mockResolvedValue([
+    { rateDate: "2026-09-17", annualRate: "14.9" },
+  ]);
+  const estimatorModule = await import("@/backend/services/cdb-cdi-estimator");
+  const estimate = vi
+    .spyOn(estimatorModule, "estimatePostFixedCdb")
+    .mockImplementation(() => {
+      throw new Error("invalid estimate");
+    });
+
+  const [result] = await new CdbEstimateService().enrich([
+    { ...cdb, referenceDate: "2026-09-16" },
+  ]);
+
+  expect(result).toMatchObject({
+    estimatedValue: null,
+    cdbEstimateStatus: "unavailable",
+  });
+  estimate.mockRestore();
+});
+
+describe("CdbEstimateService defensive branches", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T15:00:00Z"));
+    vi.clearAllMocks();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("keeps a null percentage for positions without asset codes after rate lookup fails", async () => {
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom.mockRejectedValue(new Error("db unavailable"));
+    const withoutCode = {
+      product: "Tesouro",
+      assetCode: null,
+      indexer: null,
+      totalValue: "500",
+      referenceDate: null,
+    };
+
+    const results = await new CdbEstimateService().enrich([
+      cdb,
+      { ...cdb, assetCode: "CDB2" },
+      withoutCode,
+    ]);
+
+    expect(results[1]).toMatchObject({
+      cdiPercentage: null,
+      estimatedValue: null,
+    });
+    expect(results[2]).toMatchObject({
+      cdiPercentage: null,
+      estimatedValue: null,
+    });
+  });
+
+  it("marks estimates unavailable when multiple weekdays remain after fetched rates", async () => {
+    vi.setSystemTime(new Date("2026-09-24T15:00:00Z"));
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom.mockResolvedValue([]);
+    bcb.fetchRates.mockResolvedValue([
+      { date: "2026-09-21", annualRate: "14.9" },
+    ]);
+
+    const [result] = await new CdbEstimateService().enrich([
+      { ...cdb, referenceDate: "2026-09-21" },
+    ]);
+
+    expect(result).toMatchObject({
+      cdbEstimateStatus: "unavailable",
+      estimatedValue: null,
+    });
+  });
+});

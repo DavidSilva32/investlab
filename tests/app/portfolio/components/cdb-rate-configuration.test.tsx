@@ -122,3 +122,16 @@ describe("CdbRateConfiguration", () => {
     );
   });
 });
+
+it("shows a communication error when saving rejects", async () => {
+  const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<CdbRateConfiguration assetCodes={["CDB8"]} />);
+  fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível comunicar com o servidor.",
+    ),
+  );
+});

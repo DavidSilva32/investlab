@@ -94,7 +94,7 @@ async function streamResponse(
     if (done) break;
     pending += decoder.decode(value, { stream: true });
     const lines = pending.split(/\r?\n/);
-    pending = lines.pop() ?? "";
+    pending = lines.pop()!;
     lines.forEach(onLine);
   }
   pending += decoder.decode();
@@ -228,12 +228,10 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
             reject(error);
             return;
           }
-          if (data) {
-            pending += decoder.decode(data, { stream: !final });
-            const lines = pending.split(/\r?\n/);
-            pending = lines.pop() ?? "";
-            lines.forEach(consume);
-          }
+          pending += decoder.decode(data, { stream: !final });
+          const lines = pending.split(/\r?\n/);
+          pending = lines.pop()!;
+          lines.forEach(consume);
           if (final) {
             pending += decoder.decode();
             if (pending) consume(pending);

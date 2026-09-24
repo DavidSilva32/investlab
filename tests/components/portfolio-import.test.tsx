@@ -75,6 +75,9 @@ describe("PortfolioImport", () => {
     expect(await screen.findByText("Compra")).toBeTruthy();
     expect(screen.getAllByText("18/09/2026")).toHaveLength(1);
     expect(screen.getByText(/20,00/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Data de refer/), {
+      target: { value: "2026-09-18" },
+    });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -313,5 +316,47 @@ describe("PortfolioImport", () => {
     });
 
     expect(fetch).not.toHaveBeenCalled();
+  });
+  it("confirms movement previews without a position reference date", async () => {
+    const reload = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { reload },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => movementPreview })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ message: "Movimentacoes importadas." }),
+        }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [spreadsheet("movimentos.xlsx")] },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(toast.success).toHaveBeenCalledWith("Movimentacoes importadas.");
+  });
+  it("renders an empty legacy position preview when positions are omitted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [spreadsheet("vazio.xlsx")] },
+    });
+
+    expect(await screen.findByText(/vazio\.xlsx/)).toBeTruthy();
+    expect(screen.getByText("0 de 0")).toBeTruthy();
   });
 });

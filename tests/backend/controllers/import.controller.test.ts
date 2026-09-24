@@ -117,3 +117,32 @@ describe("ImportController", () => {
     await expect(response.json()).resolves.toMatchObject({ count: 1 });
   });
 });
+
+describe("ImportController reference date handling", () => {
+  it("passes a supplied date to the import service", async () => {
+    const form = new FormData();
+    form.append(
+      "file",
+      new File(["content"], "b3.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    form.append("referenceDate", "2026-09-18");
+    service.confirm.mockResolvedValue({
+      preview,
+      result: { importId: "import-1" },
+      duplicate: false,
+    });
+
+    await importController.confirm(
+      new Request("http://test/import", { method: "POST", body: form }),
+      "request-1",
+    );
+
+    expect(service.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "b3.xlsx" }),
+      "request-1",
+      "2026-09-18",
+    );
+  });
+});

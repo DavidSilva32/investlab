@@ -150,10 +150,7 @@ export class StockAnalysisService {
   async getByTicker(rawTicker: unknown, requestId?: string) {
     const parsed = tickerSchema.safeParse(rawTicker);
     if (!parsed.success)
-      throw new ApplicationError(
-        parsed.error.issues[0]?.message ?? "Informe um ticker B3 válido.",
-        400,
-      );
+      throw new ApplicationError(parsed.error.issues[0]!.message, 400);
 
     const market = await this.marketProvider.getByTicker(parsed.data);
     const cached = await this.repository.listByTicker(market.ticker);
