@@ -12,6 +12,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  ScreenerResultsList,
+  type ScreenerResult,
+  type ScreenerCoverage,
+} from "@/app/analyses/_components/screener-results-list";
 
 type Filters = {
   positiveProfitYears?: number;
@@ -20,25 +25,6 @@ type Filters = {
   minimumNetMargin?: number;
   maximumPe?: number;
   maximumPb?: number;
-};
-type Metrics = {
-  latestNetIncome: number | null;
-  latestRevenue: number | null;
-  latestEquity: number | null;
-  roe: number | null;
-  netMargin: number | null;
-  pe: number | null;
-  pb: number | null;
-  positiveProfitYears: number;
-};
-type Result = {
-  cnpj: string;
-  cvmCode: string;
-  name: string;
-  sector: string | null;
-  quantitativeEligible: boolean;
-  securities: { ticker: string; name: string }[];
-  metrics: Metrics;
 };
 type Counts = {
   issuers: number;
@@ -50,51 +36,16 @@ type Counts = {
   withPb: number;
 };
 type Payload = {
-  results: Result[];
-  counts: Counts;
+  results: ScreenerResult[];
+  counts: Counts & ScreenerCoverage;
   hasSuccessfulSync: boolean;
 };
-
-const emptyCounts: Counts = {
-  issuers: 0,
-  withPositiveProfit: 0,
-  withEquity: 0,
-  withRoe: 0,
-  withNetMargin: 0,
-  withPe: 0,
-  withPb: 0,
-};
-const percent = new Intl.NumberFormat("pt-BR", {
-  maximumFractionDigits: 2,
-});
-const ratio = new Intl.NumberFormat("pt-BR", {
-  maximumFractionDigits: 2,
-});
 
 function buildQuery(filters: Filters) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters))
     if (value !== undefined) params.set(key, String(value));
   return params.toString();
-}
-
-function Metric({
-  label,
-  value,
-  suffix,
-}: {
-  label: string;
-  value: number | null;
-  suffix?: string;
-}) {
-  return (
-    <div className="rounded-lg border bg-muted/30 px-3 py-2">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 font-medium tabular-nums">
-        {value === null ? "—" : ratio.format(value) + (suffix ?? "")}
-      </dd>
-    </div>
-  );
 }
 
 export function ScreenerDashboard() {
@@ -379,69 +330,11 @@ export function ScreenerDashboard() {
         </Card>
       )}
 
-      {!loading &&
-        !error &&
-        payload?.results.map((company) => (
-          <Card key={company.cnpj}>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle className="text-base">{company.name}</CardTitle>
-                  <CardDescription>
-                    CVM {company.cvmCode}
-                    {company.sector ? ` · ${company.sector}` : ""}
-                  </CardDescription>
-                  {company.quantitativeEligible === false && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Fundamentos quantitativos indisponíveis para este setor.
-                    </p>
-                  )}
-                </div>
-                <div
-                  className="flex flex-wrap gap-2"
-                  aria-label={`Tickers de ${company.name}`}
-                >
-                  {company.securities.map(({ ticker }) => (
-                    <Button key={ticker} variant="outline" size="sm" asChild>
-                      <Link
-                        href={`/analyses?ticker=${encodeURIComponent(ticker)}`}
-                      >
-                        {ticker} · Analisar
-                      </Link>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-                <Metric
-                  label="Lucro líquido"
-                  value={company.metrics.latestNetIncome}
-                />
-                <Metric
-                  label="Patrimônio líquido"
-                  value={company.metrics.latestEquity}
-                />
-                <Metric label="ROE" value={company.metrics.roe} suffix="%" />
-                <Metric
-                  label="Margem líquida"
-                  value={company.metrics.netMargin}
-                  suffix="%"
-                />
-                <Metric label="P/L" value={company.metrics.pe} />
-                <Metric label="P/VP" value={company.metrics.pb} />
-              </dl>
-            </CardContent>
-          </Card>
-        ))}
-      {payload && !error && (
-        <p className="text-xs text-muted-foreground">
-          Cobertura disponível: lucro {payload.counts.withPositiveProfit},
-          patrimônio {payload.counts.withEquity}, ROE {payload.counts.withRoe},
-          margem {payload.counts.withNetMargin}, P/L {payload.counts.withPe} e
-          P/VP {payload.counts.withPb}.
-        </p>
+      {!loading && !error && payload && (
+        <ScreenerResultsList
+          results={payload.results}
+          counts={payload.counts}
+        />
       )}
     </div>
   );
