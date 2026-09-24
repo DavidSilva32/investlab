@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -119,7 +119,7 @@ export function AnalysisStockSearch({
         <PopoverContent
           align="start"
           onOpenAutoFocus={(event) => event.preventDefault()}
-          className="w-[var(--radix-popover-trigger-width)] p-0"
+          className="w-(--radix-popover-trigger-width) p-0"
         >
           <CommandList aria-label="Ações encontradas">
             {searching && (
