@@ -24,6 +24,7 @@ type PersistenceStage =
   | "security_upsert"
   | "financial_facts_upsert"
   | "completion_update"
+  | "transaction_commit"
   | "mark_failed"
   | "transaction";
 
@@ -267,6 +268,13 @@ export class ScreenerSyncRepository {
             profileCount: input.profileCount,
           })
           .where(eq(screenerIngestionRuns.id, input.runId));
+        stage = "transaction_commit";
+        operationContext = {
+          issuerCount: input.issuers.length,
+          securityCount: input.securities.length,
+          factCount: input.facts.length,
+        };
+        operationStartedAt = Date.now();
       });
     } catch (error) {
       logger.error("screener_sync_persistence_failed", {
@@ -281,7 +289,7 @@ export class ScreenerSyncRepository {
   }
 
   async markFailed(runId: string, errorCode: string) {
-    await withPersistenceDiagnostics("mark_failed", {}, async () =>
+    await withPersistenceDiagnostics("mark_failed", { runId }, async () =>
       getDatabaseClient()
         .update(screenerIngestionRuns)
         .set({

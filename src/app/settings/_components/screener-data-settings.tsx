@@ -50,7 +50,8 @@ export function ScreenerDataSettings() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [syncElapsedSeconds, setSyncElapsedSeconds] = useState(0);
+  const [syncStartedAt, setSyncStartedAt] = useState(() => Date.now());
+  const [syncCurrentTime, setSyncCurrentTime] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -84,7 +85,7 @@ export function ScreenerDataSettings() {
   useEffect(() => {
     if (!syncing) return;
     const interval = window.setInterval(() => {
-      setSyncElapsedSeconds((elapsed) => elapsed + 1);
+      setSyncCurrentTime(Date.now());
     }, 1000);
     return () => window.clearInterval(interval);
   }, [syncing]);
@@ -113,7 +114,9 @@ export function ScreenerDataSettings() {
 
   async function synchronize() {
     let syncErrorMessage: string | null = null;
-    setSyncElapsedSeconds(0);
+    const startedAt = Date.now();
+    setSyncStartedAt(startedAt);
+    setSyncCurrentTime(startedAt);
     setSyncing(true);
     setError(null);
     setNotice(null);
@@ -192,14 +195,15 @@ export function ScreenerDataSettings() {
           </div>
         )}
         {syncing && (
-          <p
-            role="status"
-            aria-live="polite"
-            className="text-sm text-muted-foreground"
-          >
-            Sincronização em andamento há{" "}
-            {formatDuration(syncElapsedSeconds * 1000)}.
-          </p>
+          <>
+            <p role="status" className="text-sm text-muted-foreground">
+              Sincronização iniciada.
+            </p>
+            <p aria-live="off" className="text-sm text-muted-foreground">
+              Tempo decorrido:{" "}
+              {formatDuration(Math.max(0, syncCurrentTime - syncStartedAt))}.
+            </p>
+          </>
         )}
         {notice && (
           <p

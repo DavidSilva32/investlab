@@ -55,22 +55,30 @@ describe("ScreenerDataSettings", () => {
 
   it("announces elapsed time accessibly while the sync request is pending", async () => {
     const user = userEvent.setup();
+    let currentTime = 1_800_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => currentTime);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response(cleanStatus))
       .mockImplementationOnce(() => new Promise(() => undefined));
     vi.stubGlobal("fetch", fetchMock);
-    render(<ScreenerDataSettings />);
-    await user.click(
-      await screen.findByRole("button", { name: "Sincronizar agora" }),
-    );
-    expect(
-      (
-        await screen.findByText("Sincronização em andamento há 0 s.")
-      ).getAttribute("aria-live"),
-    ).toBe("polite");
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-    expect(screen.getByText("Sincronização em andamento há 1 s.")).toBeTruthy();
+    try {
+      render(<ScreenerDataSettings />);
+      await user.click(
+        await screen.findByRole("button", { name: "Sincronizar agora" }),
+      );
+      expect((await screen.findByRole("status")).textContent).toBe(
+        "Sincronização iniciada.",
+      );
+      expect(
+        screen.getByText("Tempo decorrido: 0 s.").getAttribute("aria-live"),
+      ).toBe("off");
+      currentTime += 5_900;
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(screen.getByText("Tempo decorrido: 5 s.")).toBeTruthy();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
   it("shows running status, short duration, and missing counts", async () => {
     vi.stubGlobal(

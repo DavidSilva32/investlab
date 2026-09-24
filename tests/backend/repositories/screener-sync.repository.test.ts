@@ -21,6 +21,7 @@ import { logger } from "@/infrastructure/logging/logger";
 function setup(
   runRows: { id: string }[] = [{ id: "run-1" }],
   failure?: { table: unknown; error: unknown },
+  commitError?: unknown,
 ) {
   type Operation = {
     table: unknown;
@@ -79,8 +80,11 @@ function setup(
       returning: vi.fn().mockResolvedValue(runRows),
     })),
     update: vi.fn((table: unknown) => builder({ table, where: false })),
-    transaction: vi.fn((callback: (transaction: typeof tx) => Promise<void>) =>
-      callback(tx),
+    transaction: vi.fn(
+      async (callback: (transaction: typeof tx) => Promise<void>) => {
+        await callback(tx);
+        if (commitError) throw commitError;
+      },
     ),
   };
   mocks.getDatabaseClient.mockReturnValue(database);
@@ -339,7 +343,11 @@ describe("ScreenerSyncRepository", () => {
       ).rejects.toBe(unsafeError);
       expect(log).toHaveBeenCalledWith(
         "screener_sync_persistence_failed",
-        expect.objectContaining({ stage: "mark_failed", errorType: "unknown" }),
+        expect.objectContaining({
+          stage: "mark_failed",
+          runId: "run-1",
+          errorType: "unknown",
+        }),
       );
       expect(log.mock.calls[0]?.[1]).not.toHaveProperty("databaseCode");
       expect(log.mock.calls[0]?.[1]).not.toHaveProperty("constraint");
@@ -360,10 +368,47 @@ describe("ScreenerSyncRepository", () => {
       ).rejects.toBe("opaque failure");
       expect(unknownLog).toHaveBeenCalledWith(
         "screener_sync_persistence_failed",
-        expect.objectContaining({ stage: "mark_failed", errorType: "unknown" }),
+        expect.objectContaining({
+          stage: "mark_failed",
+          runId: "run-1",
+          errorType: "unknown",
+        }),
       );
     } finally {
       unknownLog.mockRestore();
+    }
+  });
+  it("attributes failures after the completion update to transaction commit", async () => {
+    const commitError = Object.assign(new Error("commit detail"), {
+      code: "40001",
+    });
+    setup(undefined, undefined, commitError);
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(
+        new ScreenerSyncRepository().saveFullSync({
+          runId: "run-1",
+          catalogCount: 0,
+          profileCount: 0,
+          issuers: [],
+          securities: [],
+          facts: [],
+        }),
+      ).rejects.toBe(commitError);
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_persistence_failed",
+        expect.objectContaining({
+          stage: "transaction_commit",
+          runId: "run-1",
+          issuerCount: 0,
+          securityCount: 0,
+          factCount: 0,
+          databaseCode: "40001",
+          durationMs: expect.any(Number),
+        }),
+      );
+    } finally {
+      log.mockRestore();
     }
   });
   it("marks a failed run with its sanitized error code", async () => {
