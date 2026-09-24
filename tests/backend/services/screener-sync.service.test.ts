@@ -544,7 +544,7 @@ describe("ScreenerSyncService", () => {
         expect.objectContaining({
           stage: "brapi_profiles",
           errorType: "BrapiScreenerProviderError",
-          profilesProcessed: 1,
+          profilesAttempted: 1,
           profilesTotal: 8,
           ticker: "PETR3",
           externalEndpoint: "stocks/profile",
@@ -569,6 +569,7 @@ describe("ScreenerSyncService", () => {
       durationMs: 300,
       errorType: "BrapiHttpError",
       failureKind: "http",
+      externalErrorCode: "UPSTREAM_FAILURE",
     });
     const context = setup();
     context.brapi.getCatalog.mockRejectedValue(externalError);
@@ -588,6 +589,7 @@ describe("ScreenerSyncService", () => {
           externalStatus: 503,
           durationMs: 300,
           externalErrorType: "BrapiHttpError",
+          externalErrorCode: "UPSTREAM_FAILURE",
           failureKind: "http",
         }),
       );

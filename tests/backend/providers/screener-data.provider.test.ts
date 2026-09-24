@@ -1181,6 +1181,31 @@ describe("BRAPI screener provider", () => {
     );
   });
 
+  it.each([
+    [{ code: "token" }, undefined],
+    [{ code: "private free text" }, undefined],
+    [{ errorCode: "   " }, undefined],
+    [{ code: 503 }, undefined],
+    [{ code: "UPSTREAM_FAILURE" }, "UPSTREAM_FAILURE"],
+  ])(
+    "allowlists external error codes without logging unsafe values",
+    async (body, expected) => {
+      const provider = new BrapiScreenerProvider(
+        vi.fn().mockResolvedValue(jsonResponse(body, 500)),
+        "token",
+      );
+      const error = await provider
+        .getCatalog()
+        .catch((value: unknown) => value);
+      const providerError = error as BrapiScreenerProviderError;
+      expect(providerError.diagnostic.externalErrorCode).toBe(expected);
+      expect(JSON.stringify(providerError.diagnostic)).not.toContain(
+        "private free text",
+      );
+      expect(JSON.stringify(providerError.diagnostic)).not.toContain('"token"');
+    },
+  );
+
   it("summarizes a JSON null HTTP error body without exposing values", async () => {
     const provider = new BrapiScreenerProvider(
       vi.fn().mockResolvedValue(jsonResponse(null, 500)),
@@ -1297,11 +1322,15 @@ describe("BRAPI screener provider", () => {
 
   it("captures HTTP status and response shape without retaining response values", async () => {
     const failed = new BrapiScreenerProvider(
-      vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({ error: "private external message" }, 500),
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            error: "private external message",
+            errorCode: "UPSTREAM_FAILURE",
+          },
+          500,
         ),
+      ),
       "token",
     );
     const error = await failed.getCatalog().catch((value: unknown) => value);
@@ -1314,7 +1343,8 @@ describe("BRAPI screener provider", () => {
         status: 500,
         failureKind: "http",
         errorType: "BrapiHttpError",
-        responseShape: { topLevelKeys: ["error"] },
+        externalErrorCode: "UPSTREAM_FAILURE",
+        responseShape: { topLevelKeys: ["error", "errorCode"] },
       },
     });
     expect(JSON.stringify(error)).not.toContain("private external message");

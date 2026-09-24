@@ -222,7 +222,7 @@ export class ScreenerSyncService {
         ...(stage === "brapi_catalog" ? { catalogCount } : {}),
         ...(stage === "brapi_profiles"
           ? {
-              profilesProcessed: profilesConsulted,
+              profilesAttempted: profilesConsulted,
               profilesTotal: profileTotal,
               ticker: profileTicker,
             }
@@ -233,6 +233,9 @@ export class ScreenerSyncService {
               externalStatus: diagnostic.status,
               durationMs: diagnostic.durationMs,
               externalErrorType: diagnostic.errorType,
+              ...(diagnostic.externalErrorCode
+                ? { externalErrorCode: diagnostic.externalErrorCode }
+                : {}),
               failureKind: diagnostic.failureKind,
               ...(diagnostic.page === undefined
                 ? {}
