@@ -1,9 +1,13 @@
 import {
+  boolean,
   date,
+  index,
+  integer,
   numeric,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -105,3 +109,101 @@ export const stockFundamentals = pgTable("stock_fundamentals", {
   sourceVersion: varchar({ length: 32 }).notNull(),
   fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+export const screenerIngestionRuns = pgTable("screener_ingestion_runs", {
+  id: uuid().defaultRandom().primaryKey(),
+  runKey: varchar({ length: 160 }).notNull().unique(),
+  status: varchar({ length: 16 }).notNull(),
+  startedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp({ withTimezone: true }),
+  catalogCount: integer(),
+  profileCount: integer(),
+  issuerCount: integer(),
+  securityCount: integer(),
+  factCount: integer(),
+  errorCode: varchar({ length: 80 }),
+});
+
+export const screenerIssuers = pgTable("screener_issuers", {
+  cnpj: varchar({ length: 14 }).primaryKey(),
+  cvmCode: varchar({ length: 12 }).notNull().unique(),
+  name: text().notNull(),
+  sector: text(),
+  quantitativeEligible: boolean().notNull().default(false),
+  eligibilityReason: varchar({ length: 80 }),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+export const screenerSecurities = pgTable(
+  "screener_securities",
+  {
+    ticker: varchar({ length: 16 }).primaryKey(),
+    issuerCnpj: varchar({ length: 14 })
+      .notNull()
+      .references(() => screenerIssuers.cnpj, { onDelete: "cascade" }),
+    name: text().notNull(),
+    subType: varchar({ length: 16 }).notNull(),
+    isActive: boolean().notNull(),
+    baseTicker: varchar({ length: 16 }),
+    observedAt: timestamp({ withTimezone: true }).notNull(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("screener_securities_issuer_idx").on(table.issuerCnpj)],
+);
+
+export const screenerFinancialFacts = pgTable(
+  "screener_financial_facts",
+  {
+    issuerCnpj: varchar({ length: 14 })
+      .notNull()
+      .references(() => screenerIssuers.cnpj, { onDelete: "cascade" }),
+    referenceDate: date().notNull(),
+    accountCode: varchar({ length: 24 }).notNull(),
+    accountLabel: text(),
+    value: numeric({ precision: 26, scale: 2 }).notNull(),
+    documentType: varchar({ length: 8 }).notNull(),
+    statementScope: varchar({ length: 16 }).notNull(),
+    exerciseOrder: varchar({ length: 16 }).notNull(),
+    version: integer().notNull(),
+    sourceFile: varchar({ length: 160 }).notNull(),
+    sourceRow: integer().notNull(),
+    ingestionRunId: uuid()
+      .notNull()
+      .references(() => screenerIngestionRuns.id),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("screener_facts_identity_uidx").on(
+      table.issuerCnpj,
+      table.referenceDate,
+      table.accountCode,
+      table.documentType,
+      table.statementScope,
+      table.exerciseOrder,
+    ),
+    index("screener_facts_run_idx").on(table.ingestionRunId),
+  ],
+);
+
+export const screenerMarketSnapshots = pgTable(
+  "screener_market_snapshots",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    issuerCnpj: varchar({ length: 14 })
+      .notNull()
+      .references(() => screenerIssuers.cnpj, { onDelete: "cascade" }),
+    observedAt: timestamp({ withTimezone: true }).notNull(),
+    marketCap: numeric({ precision: 26, scale: 2 }),
+    price: numeric({ precision: 24, scale: 8 }),
+    sourceTicker: varchar({ length: 16 }).notNull(),
+    classSemanticsValidated: boolean().notNull().default(false),
+    ingestionRunId: uuid()
+      .notNull()
+      .references(() => screenerIngestionRuns.id),
+  },
+  (table) => [
+    index("screener_market_issuer_observed_idx").on(
+      table.issuerCnpj,
+      table.observedAt,
+    ),
+  ],
+);

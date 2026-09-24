@@ -36,6 +36,10 @@ DATABASE_URL_POOLED=
 AUTH_EMAIL=usuario@exemplo.com
 AUTH_PASSWORD_HASH=<hash-gerado-pelo-script>
 AUTH_SECRET=<segredo-aleatorio>
+
+# Integração do Screener (somente no servidor)
+BRAPI_TOKEN=
+SCREENER_SYNC_SECRET=
 ```
 
 - `DATABASE_URL_POOLED` é usada pelo client Drizzle da aplicação em runtime.
@@ -92,3 +96,23 @@ pnpm test:e2e
 ## CI
 
 O workflow em `.github/workflows/ci.yml` instala dependências com pnpm e lockfile, então executa lint, format check, typecheck, testes unitários e build. O E2E permanece local neste estágio para evitar a instalação de browsers no pipeline.
+
+## Screener de ações
+
+Na tela **Análises**, a opção **Explorar ações** consulta emissores e fundamentos sincronizados no PostgreSQL. A filtragem não consulta BRAPI nem CVM em tempo real.
+
+A V1 inclui somente símbolos ativos `subType=stock` com vínculo por match exato do CNPJ BRAPI com o cadastro CVM. Tickers fracionários terminados em `F` são associados ao ticker-base; units ficam de fora. Empresas sem correspondência exata permanecem fora do universo. Os resultados são agrupados por emissor para que várias classes não dupliquem a empresa.
+
+A sincronização é manual por `POST /api/screener/sync`; não há cron configurado nem botão de sincronização na interface. A rota exige uma sessão autenticada e o header `Authorization: Bearer <SCREENER_SYNC_SECRET>`. Gere o segredo localmente com:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+Configure `BRAPI_TOKEN` e `SCREENER_SYNC_SECRET` nas variáveis de ambiente do servidor. Não os envie ao navegador, não os registre em logs e não os versione. Consulte [docs/screener-operations.md](docs/screener-operations.md) para o procedimento de execução.
+
+A sincronização roda na Vercel Function, está configurada para até 300 segundos e ainda não tem checkpoints ou retomada parcial. O POC ficou próximo desse limite; execute manualmente, fora do horário de uso, sem concorrência. Não configure um cron antes de implementar uma estratégia de retomada.
+
+O schema inclui emissores, valores mobiliários, fatos financeiros auditáveis, snapshots de mercado e execuções de ingestão. A migration `0008_luxuriant_bug.sql` foi gerada, mas precisa ser aplicada manualmente com `pnpm db:migrate` antes da primeira sincronização.
+
+**Limitação atual:** filtros de lucro, patrimônio líquido, ROE e margem líquida usam fundamentos consolidados validados para setores cobertos. Bancos, seguradoras e setores sem validação semântica não entram nesses filtros. A sincronização ainda não produz snapshots de mercado; por isso P/L e P/VP permanecem desabilitados até haver dados de mercado válidos e datados.
