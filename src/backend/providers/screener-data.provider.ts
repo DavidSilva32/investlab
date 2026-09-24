@@ -2,6 +2,79 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 
+export type BrapiRequestDiagnostic = {
+  endpoint: "tickers" | "stocks/profile";
+  status: number | null;
+  durationMs: number;
+  errorType: string;
+  failureKind: "http" | "json_decode" | "schema_validation" | "network";
+  responseShape?: {
+    contentType: string | null;
+    bodyBytes?: number;
+    topLevelKeys?: string[];
+    resultsType?: string;
+    resultsCount?: number;
+    firstResultKeys?: string[];
+    dataType?: string;
+    dataKeys?: string[];
+  };
+  validationIssues?: Array<{
+    code: string;
+    path: (string | number)[];
+    expected?: string;
+    received?: string;
+  }>;
+  page?: number;
+  ticker?: string;
+};
+
+export class BrapiScreenerProviderError extends Error {
+  constructor(
+    readonly diagnostic: BrapiRequestDiagnostic,
+    cause?: unknown,
+  ) {
+    super("BRAPI Screener request failed", { cause });
+    this.name = "BrapiScreenerProviderError";
+  }
+}
+
+function describeResponseShape(payload: unknown, contentType: string | null) {
+  if (!payload || typeof payload !== "object") {
+    return { contentType, topLevelKeys: [], resultsType: typeof payload };
+  }
+  const record = payload as Record<string, unknown>;
+  const results = record.results;
+  const first = Array.isArray(results) ? results[0] : undefined;
+  const firstRecord =
+    first && typeof first === "object"
+      ? (first as Record<string, unknown>)
+      : undefined;
+  const data = firstRecord?.data;
+  return {
+    contentType,
+    bodyBytes: new TextEncoder().encode(JSON.stringify(payload)).byteLength,
+    topLevelKeys: Object.keys(record),
+    resultsType: Array.isArray(results) ? "array" : typeof results,
+    ...(Array.isArray(results) ? { resultsCount: results.length } : {}),
+    ...(firstRecord ? { firstResultKeys: Object.keys(firstRecord) } : {}),
+    ...(data === undefined
+      ? {}
+      : {
+          dataType: data === null ? "null" : typeof data,
+          ...(data && typeof data === "object"
+            ? { dataKeys: Object.keys(data) }
+            : {}),
+        }),
+  };
+}
+
+function sanitizeValidationIssues(error: z.ZodError) {
+  return error.issues.map((issue) => ({
+    code: issue.code,
+    path: issue.path as (string | number)[],
+  }));
+}
+
 const cvmBaseUrl = "https://dados.cvm.gov.br/dados/CIA_ABERTA";
 const brapiBaseUrl = "https://brapi.dev/api/v2";
 const csvAccounts = new Set(["3.01", "3.11", "2.03"]);
@@ -396,54 +469,162 @@ export class BrapiScreenerProvider {
     this.token = token?.trim() || undefined;
   }
 
-  private async request(url: string): Promise<unknown> {
+  private async request(
+    url: string,
+    endpoint: BrapiRequestDiagnostic["endpoint"],
+    context: { ticker?: string; page?: number } = {},
+  ): Promise<{
+    payload: unknown;
+    status: number;
+    durationMs: number;
+    contentType: string | null;
+  }> {
     if (!this.token)
       throw new ApplicationError(
         "BRAPI_TOKEN não está configurado no servidor.",
         503,
       );
-    const response = await this.fetcher(url, {
+    const startedAt = Date.now();
+    const fetchOptions = {
       headers: { Authorization: `Bearer ${this.token}` },
-      cache: "no-store",
-    });
-    const remainingHeader = response.headers.get("ratelimit-remaining");
-    const remaining =
-      remainingHeader === null ? Number.NaN : Number(remainingHeader);
-    if (Number.isFinite(remaining) && remaining <= 0)
-      throw new ApplicationError(
-        "A cota BRAPI terminou. A sincronização foi interrompida.",
-        429,
+      cache: "no-store" as const,
+    };
+    let response: Response;
+    try {
+      response = await this.fetcher(url, fetchOptions);
+    } catch (cause) {
+      throw new BrapiScreenerProviderError(
+        {
+          endpoint,
+          ...context,
+          status: null,
+          durationMs: Date.now() - startedAt,
+          errorType: cause instanceof Error ? cause.name : "unknown",
+          failureKind: "network",
+        },
+        cause,
       );
+    }
+    let remainingHeader = response.headers.get("ratelimit-remaining");
+    let remaining =
+      remainingHeader === null ? Number.NaN : Number(remainingHeader);
+    let retriedRateLimit = false;
     if (response.status === 429) {
       const delay = retryAfterMilliseconds(response.headers.get("retry-after"));
       if (delay !== null && delay > 0) {
+        retriedRateLimit = true;
         await this.wait(delay);
-        const retry = await this.fetcher(url, {
-          headers: { Authorization: `Bearer ${this.token}` },
-          cache: "no-store",
-        });
-        const retryRemaining = retry.headers.get("ratelimit-remaining");
-        if (retryRemaining !== null && Number(retryRemaining) <= 0)
-          throw new ApplicationError(
-            "A cota BRAPI terminou. A sincronização foi interrompida.",
-            429,
+        try {
+          response = await this.fetcher(url, fetchOptions);
+        } catch (cause) {
+          throw new BrapiScreenerProviderError(
+            {
+              endpoint,
+              ...context,
+              status: null,
+              durationMs: Date.now() - startedAt,
+              errorType: cause instanceof Error ? cause.name : "unknown",
+              failureKind: "network",
+            },
+            cause,
           );
-        if (!retry.ok)
-          throw new ApplicationError("A BRAPI limitou a sincronização.", 429);
-        return retry.json();
+        }
+        remainingHeader = response.headers.get("ratelimit-remaining");
+        remaining =
+          remainingHeader === null ? Number.NaN : Number(remainingHeader);
       }
-      throw new ApplicationError("A BRAPI limitou a sincronização.", 429);
     }
-    if (!response.ok)
-      throw new Error(`BRAPI request failed: ${response.status}`);
-    return response.json();
+    const contentType = response.headers.get("content-type");
+    const makeDiagnostic = (
+      failureKind: BrapiRequestDiagnostic["failureKind"],
+      errorType: string,
+      responseShape?: BrapiRequestDiagnostic["responseShape"],
+    ): BrapiRequestDiagnostic => ({
+      endpoint,
+      ...context,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      errorType,
+      failureKind,
+      ...(responseShape ? { responseShape } : {}),
+    });
+    if (Number.isFinite(remaining) && remaining <= 0) {
+      const error = new ApplicationError("A cota BRAPI terminou.", 429);
+      Object.defineProperty(error, "diagnostic", {
+        value: makeDiagnostic("http", "BrapiRateLimitError"),
+      });
+      throw error;
+    }
+    if (!response.ok) {
+      if (response.status === 429 || retriedRateLimit) {
+        const error = new ApplicationError(
+          "A BRAPI limitou as consultas.",
+          429,
+        );
+        Object.defineProperty(error, "diagnostic", {
+          value: makeDiagnostic("http", "BrapiRateLimitError"),
+        });
+        throw error;
+      }
+      let responseShape: BrapiRequestDiagnostic["responseShape"];
+      try {
+        const body = await response.clone().json();
+        responseShape = describeResponseShape(body, contentType);
+      } catch {
+        responseShape = { contentType };
+      }
+      const diagnostic = makeDiagnostic(
+        "http",
+        "BrapiHttpError",
+        responseShape,
+      );
+      throw new BrapiScreenerProviderError(diagnostic);
+    }
+    try {
+      return {
+        payload: await response.json(),
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        contentType,
+      };
+    } catch (cause) {
+      throw new BrapiScreenerProviderError(
+        makeDiagnostic(
+          "json_decode",
+          cause instanceof Error ? cause.name : "unknown",
+        ),
+        cause,
+      );
+    }
   }
 
   async getCatalog(): Promise<BrapiStock[]> {
     const securities = new Map<string, BrapiStock>();
     for (let page = 1; page <= 100; page += 1) {
       const url = brapiBaseUrl + "/tickers?type=stock&limit=2000&page=" + page;
-      const payload = catalogSchema.parse(await this.request(url));
+      const response = await this.request(url, "tickers", { page });
+      let payload: z.infer<typeof catalogSchema>;
+      try {
+        payload = catalogSchema.parse(response.payload);
+      } catch (cause) {
+        const validationError = cause as z.ZodError;
+        throw new BrapiScreenerProviderError(
+          {
+            endpoint: "tickers",
+            page,
+            status: response.status,
+            durationMs: response.durationMs,
+            errorType: validationError.name,
+            failureKind: "schema_validation",
+            responseShape: describeResponseShape(
+              response.payload,
+              response.contentType,
+            ),
+            validationIssues: sanitizeValidationIssues(validationError),
+          },
+          cause,
+        );
+      }
       const entries = payload.results ?? payload.stocks ?? [];
       if (entries.length === 0 && page === 1)
         throw new Error("BRAPI catalog response did not contain results");
@@ -474,9 +655,33 @@ export class BrapiScreenerProvider {
 
   async getProfile(ticker: string): Promise<BrapiStock> {
     const symbol = encodeURIComponent(ticker);
-    const payload = profileSchema.parse(
-      await this.request(`${brapiBaseUrl}/stocks/profile?symbols=${symbol}`),
+    const response = await this.request(
+      `${brapiBaseUrl}/stocks/profile?symbols=${symbol}`,
+      "stocks/profile",
+      { ticker },
     );
+    let payload: z.infer<typeof profileSchema>;
+    try {
+      payload = profileSchema.parse(response.payload);
+    } catch (cause) {
+      const validationError = cause as z.ZodError;
+      throw new BrapiScreenerProviderError(
+        {
+          endpoint: "stocks/profile",
+          ticker,
+          status: response.status,
+          durationMs: response.durationMs,
+          errorType: validationError.name,
+          failureKind: "schema_validation",
+          responseShape: describeResponseShape(
+            response.payload,
+            response.contentType,
+          ),
+          validationIssues: sanitizeValidationIssues(validationError),
+        },
+        cause,
+      );
+    }
     const result = payload.results[0]!;
     return {
       ticker: result.symbol ?? ticker,

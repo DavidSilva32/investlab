@@ -1,8 +1,8 @@
 import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
-import { ApplicationError } from "@/backend/errors/application-error";
 import {
   BrapiScreenerProvider,
+  BrapiScreenerProviderError,
   CvmDfpProvider,
   isQuantitativelyEligibleSector,
   parseDfpResponse,
@@ -1136,18 +1136,274 @@ describe("BRAPI screener provider", () => {
     });
   });
 
-  it("rejects failed and malformed BRAPI responses", async () => {
+  it("captures a catalog validation error with only schema paths and types", async () => {
+    const provider = new BrapiScreenerProvider(
+      vi.fn().mockResolvedValue(jsonResponse({ results: [{ symbol: 42 }] })),
+      "token",
+    );
+    const error = await provider.getCatalog().catch((value: unknown) => value);
+    const providerError = error as BrapiScreenerProviderError;
+    expect(providerError).toMatchObject({
+      diagnostic: {
+        endpoint: "tickers",
+        page: 1,
+        status: 200,
+        failureKind: "schema_validation",
+        validationIssues: [
+          expect.objectContaining({
+            code: "invalid_type",
+            path: ["results", 0, "symbol"],
+          }),
+        ],
+      },
+    });
+    expect(JSON.stringify(providerError.diagnostic)).not.toContain("42");
+  });
+
+  it("summarizes a non-JSON HTTP failure body without retaining it", async () => {
+    const provider = new BrapiScreenerProvider(
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("private response text", { status: 503 }),
+        ),
+      "token",
+    );
+    const error = await provider.getCatalog().catch((value: unknown) => value);
+    const providerError = error as BrapiScreenerProviderError;
+    expect(providerError.diagnostic).toMatchObject({
+      status: 503,
+      failureKind: "http",
+      responseShape: { contentType: "text/plain;charset=UTF-8" },
+    });
+    expect(JSON.stringify(providerError.diagnostic)).not.toContain(
+      "private response text",
+    );
+  });
+
+  it("summarizes a JSON null HTTP error body without exposing values", async () => {
+    const provider = new BrapiScreenerProvider(
+      vi.fn().mockResolvedValue(jsonResponse(null, 500)),
+      "token",
+    );
+    const error = await provider.getCatalog().catch((value: unknown) => value);
+    const providerError = error as BrapiScreenerProviderError;
+    expect(providerError.diagnostic.responseShape).toMatchObject({
+      topLevelKeys: [],
+      resultsType: "object",
+    });
+  });
+
+  it.each([null, "private external data"])(
+    "reports non-object profile data as shape only (%s)",
+    async (data) => {
+      const provider = new BrapiScreenerProvider(
+        vi.fn().mockResolvedValue(jsonResponse({ results: [{ data }] })),
+        "token",
+      );
+      const error = await provider
+        .getProfile("PETR4")
+        .catch((value: unknown) => value);
+      const providerError = error as BrapiScreenerProviderError;
+      expect(providerError.diagnostic.responseShape).toMatchObject({
+        dataType: data === null ? "null" : "string",
+      });
+      expect(JSON.stringify(providerError.diagnostic)).not.toContain(
+        "private external data",
+      );
+    },
+  );
+
+  it("sanitizes non-Error failures from the transport and JSON decoder", async () => {
+    const network = new BrapiScreenerProvider(
+      vi.fn().mockRejectedValue("private transport detail"),
+      "token",
+    );
+    const networkError = await network
+      .getProfile("PETR4")
+      .catch((value: unknown) => value);
+    expect(networkError).toMatchObject({
+      diagnostic: {
+        status: null,
+        errorType: "unknown",
+        failureKind: "network",
+      },
+      cause: "private transport detail",
+    });
+
+    const response = new Response("{}");
+    response.json = vi.fn().mockRejectedValue("private JSON detail");
+    const invalidJson = new BrapiScreenerProvider(
+      vi.fn().mockResolvedValue(response),
+      "token",
+    );
+    const jsonError = await invalidJson
+      .getProfile("PETR4")
+      .catch((value: unknown) => value);
+    expect(jsonError).toMatchObject({
+      diagnostic: {
+        status: 200,
+        errorType: "unknown",
+        failureKind: "json_decode",
+      },
+      cause: "private JSON detail",
+    });
+  });
+
+  it("keeps retry network failure diagnostics", async () => {
+    const provider = new BrapiScreenerProvider(
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({}, 429, { "retry-after": "0.01" }))
+        .mockRejectedValueOnce("private retry failure"),
+      "token",
+      vi.fn().mockResolvedValue(undefined),
+    );
+    const error = await provider
+      .getProfile("PETR4")
+      .catch((value: unknown) => value);
+    const rateLimitError = error as Error & {
+      statusCode: number;
+      diagnostic: unknown;
+    };
+    expect(rateLimitError).toMatchObject({
+      diagnostic: {
+        endpoint: "stocks/profile",
+        ticker: "PETR4",
+        status: null,
+        failureKind: "network",
+        errorType: "unknown",
+      },
+    });
+    expect(JSON.stringify(rateLimitError.diagnostic)).not.toContain(
+      "private retry failure",
+    );
+
+    const retryError = new BrapiScreenerProvider(
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({}, 429, { "retry-after": "0.01" }))
+        .mockRejectedValueOnce(new TypeError("private retry error object")),
+      "token",
+      vi.fn().mockResolvedValue(undefined),
+    );
+    const retryFailure = await retryError
+      .getProfile("PETR4")
+      .catch((value: unknown) => value);
+    expect(retryFailure).toMatchObject({
+      diagnostic: { errorType: "TypeError", failureKind: "network" },
+    });
+  });
+
+  it("captures HTTP status and response shape without retaining response values", async () => {
     const failed = new BrapiScreenerProvider(
-      vi.fn().mockResolvedValue(jsonResponse({}, 500)),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: "private external message" }, 500),
+        ),
       "token",
     );
-    await expect(failed.getCatalog()).rejects.toThrow(
-      "BRAPI request failed: 500",
+    const error = await failed.getCatalog().catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(BrapiScreenerProviderError);
+    const providerError = error as BrapiScreenerProviderError;
+    expect(providerError).toMatchObject({
+      diagnostic: {
+        endpoint: "tickers",
+        page: 1,
+        status: 500,
+        failureKind: "http",
+        errorType: "BrapiHttpError",
+        responseShape: { topLevelKeys: ["error"] },
+      },
+    });
+    expect(JSON.stringify(error)).not.toContain("private external message");
+  });
+
+  it("captures sanitized profile schema issues and keeps the original Zod cause", async () => {
+    const privateValue = "12345678901234";
+    const provider = new BrapiScreenerProvider(
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          results: [{ symbol: "PETR4", data: { cnpj: 12345678901234 } }],
+        }),
+      ),
+      "secret-token",
     );
-    const malformed = new BrapiScreenerProvider(
-      vi.fn().mockResolvedValue(jsonResponse({ results: [{}] })),
+    const error = await provider
+      .getProfile("PETR4")
+      .catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(BrapiScreenerProviderError);
+    const providerError = error as BrapiScreenerProviderError;
+    expect(providerError).toMatchObject({
+      diagnostic: {
+        endpoint: "stocks/profile",
+        ticker: "PETR4",
+        status: 200,
+        failureKind: "schema_validation",
+        errorType: "ZodError",
+        responseShape: {
+          resultsCount: 1,
+          firstResultKeys: ["symbol", "data"],
+          dataKeys: ["cnpj"],
+        },
+        validationIssues: [
+          expect.objectContaining({
+            code: "invalid_type",
+            path: ["results", 0, "data", "cnpj"],
+          }),
+        ],
+      },
+    });
+    expect(JSON.stringify(providerError.diagnostic)).not.toContain(
+      privateValue,
+    );
+    expect(JSON.stringify(providerError.diagnostic)).not.toContain(
+      "secret-token",
+    );
+    expect(providerError.cause).toBeInstanceOf(Error);
+  });
+
+  it("retains network and JSON decode causes with safe request metadata", async () => {
+    const networkFailure = new TypeError(
+      "secret-token in private transport detail",
+    );
+    const network = new BrapiScreenerProvider(
+      vi.fn().mockRejectedValue(networkFailure),
+      "secret-token",
+    );
+    const networkError = await network
+      .getProfile("PETR4")
+      .catch((value: unknown) => value);
+    const networkProviderError = networkError as BrapiScreenerProviderError;
+    expect(networkProviderError).toMatchObject({
+      diagnostic: {
+        ticker: "PETR4",
+        status: null,
+        failureKind: "network",
+        errorType: "TypeError",
+      },
+      cause: networkFailure,
+    });
+    expect(JSON.stringify(networkProviderError.diagnostic)).not.toContain(
+      "secret-token",
+    );
+
+    const invalidJson = new BrapiScreenerProvider(
+      vi.fn().mockResolvedValue(new Response("{")),
       "token",
     );
-    await expect(malformed.getProfile("PETR4")).rejects.toBeTruthy();
+    const jsonError = await invalidJson
+      .getProfile("PETR4")
+      .catch((value: unknown) => value);
+    const jsonProviderError = jsonError as BrapiScreenerProviderError;
+    expect(jsonProviderError).toMatchObject({
+      diagnostic: {
+        status: 200,
+        failureKind: "json_decode",
+        errorType: "SyntaxError",
+      },
+    });
+    expect(jsonProviderError.cause).toBeInstanceOf(Error);
   });
 });

@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { zipSync } from "fflate";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { calculateScreenerMetrics } from "@/backend/services/screener-metrics";
-import type {
-  BrapiScreenerProvider,
-  CvmCompanyRecord,
+import {
+  BrapiScreenerProviderError,
+  type BrapiScreenerProvider,
+  type CvmCompanyRecord,
   ScreenerFactRecord,
 } from "@/backend/providers/screener-data.provider";
 import {
@@ -12,6 +13,7 @@ import {
   type ScreenerSyncService as SyncServiceType,
 } from "@/backend/services/screener-sync.service";
 import type { ScreenerSyncRepository } from "@/backend/repositories/screener-sync.repository";
+import { logger } from "@/infrastructure/logging/logger";
 
 const company = (
   cnpj: string,
@@ -506,6 +508,121 @@ describe("ScreenerSyncService", () => {
       sourceFile: "a_con.csv",
       sourceRow: 9,
     });
+  });
+
+  it("logs safe BRAPI profile progress and preserves the underlying failure cause", async () => {
+    const externalError = new BrapiScreenerProviderError({
+      endpoint: "stocks/profile",
+      ticker: "PETR3",
+      status: 200,
+      durationMs: 125,
+      errorType: "ZodError",
+      failureKind: "schema_validation",
+      responseShape: {
+        contentType: "application/json",
+        bodyBytes: 34,
+        topLevelKeys: ["results"],
+        resultsType: "array",
+        resultsCount: 0,
+      },
+      validationIssues: [{ code: "too_small", path: ["results"] }],
+    });
+    const context = setup({
+      profile: async () => Promise.reject(externalError),
+    });
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      const failure = await context.service
+        .sync()
+        .catch((error: unknown) => error);
+      expect(failure).toMatchObject({ statusCode: 502 });
+      expect((failure as Error & { cause?: unknown }).cause).toBe(
+        externalError,
+      );
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_failed",
+        expect.objectContaining({
+          stage: "brapi_profiles",
+          errorType: "BrapiScreenerProviderError",
+          profilesProcessed: 1,
+          profilesTotal: 8,
+          ticker: "PETR3",
+          externalEndpoint: "stocks/profile",
+          externalStatus: 200,
+          durationMs: 125,
+          externalErrorType: "ZodError",
+          failureKind: "schema_validation",
+          validationIssues: [{ code: "too_small", path: ["results"] }],
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain("secret-token");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("logs catalog stage context when the catalog response is invalid", async () => {
+    const externalError = new BrapiScreenerProviderError({
+      endpoint: "tickers",
+      page: 1,
+      status: 503,
+      durationMs: 300,
+      errorType: "BrapiHttpError",
+      failureKind: "http",
+    });
+    const context = setup();
+    context.brapi.getCatalog.mockRejectedValue(externalError);
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).rejects.toMatchObject({
+        statusCode: 502,
+        cause: externalError,
+      });
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_failed",
+        expect.objectContaining({
+          stage: "brapi_catalog",
+          catalogCount: 0,
+          externalEndpoint: "tickers",
+          externalPage: 1,
+          externalStatus: 503,
+          durationMs: 300,
+          externalErrorType: "BrapiHttpError",
+          failureKind: "http",
+        }),
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("logs sanitized diagnostic metadata attached to an application error", async () => {
+    const rateLimit = new ApplicationError("safe", 429);
+    Object.defineProperty(rateLimit, "diagnostic", {
+      value: {
+        endpoint: "stocks/profile",
+        ticker: "PETR3",
+        status: 429,
+        durationMs: 90,
+        errorType: "BrapiRateLimitError",
+        failureKind: "http",
+      },
+    });
+    const context = setup({ profile: async () => Promise.reject(rateLimit) });
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).rejects.toBe(rateLimit);
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_failed",
+        expect.objectContaining({
+          externalEndpoint: "stocks/profile",
+          externalStatus: 429,
+          externalErrorType: "BrapiRateLimitError",
+        }),
+      );
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("marks a failed BRAPI rate limit and preserves the safe application error", async () => {

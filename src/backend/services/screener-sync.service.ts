@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   BrapiScreenerProvider,
+  BrapiScreenerProviderError,
   CvmDfpProvider,
+  type BrapiRequestDiagnostic,
   readCvmRegistry,
   type ScreenerFactRecord,
 } from "@/backend/providers/screener-data.provider";
@@ -92,11 +94,21 @@ export class ScreenerSyncService {
   async sync() {
     const runId = await this.repository.startRun(`screener:${randomUUID()}`);
     let stage = "cvm_registry";
+    let profilesConsulted = 0;
+    let profileTotal = 0;
+    let profileTicker: string | undefined;
+    let catalogCount = 0;
     try {
       const registry = await this.cvm.getRegistry();
       stage = "brapi_catalog";
       const catalog = await this.brapi.getCatalog();
-      let profilesConsulted = 0;
+      catalogCount = catalog.length;
+      profileTotal = catalog.filter(
+        (stock) =>
+          stock.active &&
+          stock.subtype === "stock" &&
+          !stock.ticker.endsWith("F"),
+      ).length;
       const issuers = new Map<
         string,
         typeof registry extends Map<string, infer V> ? V : never
@@ -113,6 +125,7 @@ export class ScreenerSyncService {
         }
         stage = "brapi_profiles";
         profilesConsulted += 1;
+        profileTicker = stock.ticker;
         const profile = await this.brapi.getProfile(stock.ticker);
         if (
           profile.changed ||
@@ -195,16 +208,54 @@ export class ScreenerSyncService {
           ? "BRAPI_RATE_LIMIT"
           : stage.toUpperCase();
       await this.repository.markFailed(runId, errorCode).catch(() => undefined);
+      const diagnostic =
+        error instanceof BrapiScreenerProviderError
+          ? error.diagnostic
+          : error instanceof Error && "diagnostic" in error
+            ? (error as Error & { diagnostic?: BrapiRequestDiagnostic })
+                .diagnostic
+            : undefined;
       logger.error("screener_sync_failed", {
         runId,
         stage,
         errorType: error instanceof Error ? error.name : "unknown",
+        ...(stage === "brapi_catalog" ? { catalogCount } : {}),
+        ...(stage === "brapi_profiles"
+          ? {
+              profilesProcessed: profilesConsulted,
+              profilesTotal: profileTotal,
+              ticker: profileTicker,
+            }
+          : {}),
+        ...(diagnostic
+          ? {
+              externalEndpoint: diagnostic.endpoint,
+              externalStatus: diagnostic.status,
+              durationMs: diagnostic.durationMs,
+              externalErrorType: diagnostic.errorType,
+              failureKind: diagnostic.failureKind,
+              ...(diagnostic.page === undefined
+                ? {}
+                : { externalPage: diagnostic.page }),
+              ...(diagnostic.responseShape
+                ? { responseShape: diagnostic.responseShape }
+                : {}),
+              ...(diagnostic.validationIssues
+                ? { validationIssues: diagnostic.validationIssues }
+                : {}),
+            }
+          : {}),
       });
       if (error instanceof ApplicationError) throw error;
-      throw new ApplicationError(
+      const friendlyError = new ApplicationError(
         "A sincronização do screener falhou. Uma nova execução completa pode ser iniciada manualmente.",
         502,
       );
+      Object.defineProperty(friendlyError, "cause", {
+        value: error,
+        enumerable: false,
+      });
+      throw friendlyError;
     }
   }
 }
