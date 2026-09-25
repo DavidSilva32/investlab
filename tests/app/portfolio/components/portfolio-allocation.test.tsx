@@ -249,12 +249,15 @@ describe("PortfolioAllocation", () => {
       "fetch",
       vi.fn().mockResolvedValue(response({ positions: [] })),
     );
+    const user = userEvent.setup();
     render(<PortfolioAllocation />);
     expect(
       await screen.findByText(
         "Importe posições para visualizar a classificação e a alocação.",
       ),
     ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Definir metas" }));
+    expect(screen.getByRole("button", { name: "Salvar metas" })).toBeTruthy();
   });
 
   it("shows a load error and allows retry", async () => {
@@ -316,6 +319,75 @@ describe("PortfolioAllocation", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   });
 
+  it("saves allocation targets with PUT and reloads the empty portfolio", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ positions: [], targetPercentages: {} }))
+      .mockResolvedValueOnce(response({ message: "Metas salvas." }))
+      .mockResolvedValueOnce(
+        response({ positions: [], targetPercentages: { "Renda fixa": 100 } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Definir metas" }),
+    );
+    await user.clear(
+      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
+    );
+    await user.type(
+      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
+      "100",
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar metas" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({
+        targetPercentages: {
+          "Renda fixa": 100,
+          "Renda variável": 0,
+          Fundos: 0,
+          Criptoativos: 0,
+          Imóveis: 0,
+          Outros: 0,
+        },
+      }),
+    });
+    expect(toast.success).toHaveBeenCalledWith("Metas de alocação salvas.");
+  });
+
+  it("reports failed target saves without closing the editor", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ positions: [], targetPercentages: {} }))
+      .mockResolvedValueOnce(response({ message: "failed" }, false));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Definir metas" }),
+    );
+    await user.clear(
+      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
+    );
+    await user.type(
+      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
+      "100",
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar metas" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar as metas de alocação.",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Salvar metas" })).toBeTruthy();
+  });
   it("allows confirming a fully unknown classification", async () => {
     let finishSave:
       | ((value: { ok: boolean; json: () => Promise<unknown> }) => void)

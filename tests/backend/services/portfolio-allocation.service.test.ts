@@ -6,12 +6,19 @@ const classifications = vi.hoisted(() => ({
   upsertMany: vi.fn(),
 }));
 const estimates = vi.hoisted(() => ({ enrich: vi.fn() }));
+const targets = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: repository,
 }));
 vi.mock("@/backend/repositories/portfolio-classification.repository", () => ({
   portfolioClassificationRepository: classifications,
 }));
+vi.mock(
+  "@/backend/repositories/portfolio-allocation-target.repository",
+  () => ({
+    portfolioAllocationTargetRepository: targets,
+  }),
+);
 vi.mock("@/backend/services/cdb-estimate.service", () => ({
   cdbEstimateService: estimates,
 }));
@@ -37,6 +44,70 @@ const secondPosition = {
 describe("PortfolioAllocationService", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("loads and persists user allocation targets totaling 100%", async () => {
+    const percentages = {
+      "Renda fixa": 60,
+      "Renda variável": 20,
+      Fundos: 10,
+      Criptoativos: 5,
+      Imóveis: 0,
+      Outros: 5,
+    };
+    targets.get.mockResolvedValue(percentages);
+    targets.save.mockResolvedValue(percentages);
+    const service = new PortfolioAllocationService();
+    await expect(service.getAllocationTargets("req-1")).resolves.toEqual(
+      percentages,
+    );
+    await expect(
+      service.updateAllocationTargets(percentages, "req-1"),
+    ).resolves.toEqual(percentages);
+    expect(targets.save).toHaveBeenCalledWith(percentages, "req-1");
+  });
+
+  it("rejects totals, missing classes, and percentages with more than two decimals", async () => {
+    const invalidTargets: Array<Record<string, number>> = [
+      { "Renda fixa": 99 },
+      {
+        "Renda fixa": 60,
+        "Renda variável": 20,
+        Fundos: 10,
+        Criptoativos: 5,
+        Imóveis: 0,
+        Extra: 5,
+      },
+      {
+        "Renda fixa": 60.001,
+        "Renda variável": 20,
+        Fundos: 10,
+        Criptoativos: 5,
+        Imóveis: 0,
+        Outros: 4.999,
+      },
+      {
+        "Renda fixa": -1,
+        "Renda variável": 21,
+        Fundos: 10,
+        Criptoativos: 5,
+        Imóveis: 0,
+        Outros: 65,
+      },
+      {
+        "Renda fixa": 101,
+        "Renda variável": 0,
+        Fundos: 0,
+        Criptoativos: 0,
+        Imóveis: 0,
+        Outros: -1,
+      },
+    ];
+    for (const percentages of invalidTargets) {
+      await expect(
+        new PortfolioAllocationService().updateAllocationTargets(percentages),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+    expect(targets.save).not.toHaveBeenCalled();
+  });
   it("applies persisted adjustments before conservative import suggestions", async () => {
     repository.listLatestPositions.mockResolvedValue([position]);
     estimates.enrich.mockResolvedValue([{ ...position, estimatedValue: 100 }]);

@@ -49,3 +49,20 @@ export async function PATCH(request: Request) {
     );
   }
 }
+
+export async function PUT(request: Request) {
+  const requestId = request.headers.get("x-request-id") ?? randomUUID();
+  try {
+    return await portfolioAllocationController.updateTargets(
+      request,
+      requestId,
+    );
+  } catch (error) {
+    return errorResponse(
+      error,
+      requestId,
+      "portfolio_allocation_targets_update_failed",
+      "Não foi possível salvar as metas de alocação.",
+    );
+  }
+}

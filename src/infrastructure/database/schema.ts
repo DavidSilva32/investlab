@@ -78,6 +78,14 @@ export const emergencyReserveSettings = pgTable("emergency_reserve_settings", {
   selectedAssetKeys: jsonb().$type<string[]>().notNull().default([]),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+export const portfolioAllocationTargets = pgTable(
+  "portfolio_allocation_targets",
+  {
+    id: varchar({ length: 20 }).primaryKey().default("default"),
+    percentages: jsonb().$type<Record<string, number>>().notNull().default({}),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+);
 export const cdiDailyRates = pgTable("cdi_daily_rates", {
   rateDate: date().primaryKey(),
   annualRate: numeric({ precision: 9, scale: 6 }).notNull(),

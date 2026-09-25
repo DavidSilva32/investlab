@@ -4,8 +4,9 @@ import { portfolioAllocationService } from "@/backend/services/portfolio-allocat
 import {
   portfolioAssetClassOptions,
   portfolioAssetGeographyOptions,
-} from "@/backend/services/portfolio-classification";
+} from "@/lib/portfolio-classification-options";
 import { logger } from "@/infrastructure/logging/logger";
+import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-target-values";
 
 const classificationSchema = z
   .object({
@@ -35,13 +36,38 @@ const classificationSchema = z
 export class PortfolioAllocationController {
   async get(requestId: string) {
     const positions = await portfolioAllocationService.getAllocation(requestId);
+    const targetPercentages =
+      await portfolioAllocationService.getAllocationTargets(requestId);
     logger.info("portfolio_allocation_responded", {
       requestId,
       positions: positions.length,
     });
-    return Response.json({ positions });
+    return Response.json({ positions, targetPercentages });
   }
 
+  async updateTargets(request: Request, requestId: string) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      throw new ApplicationError("O corpo da solicitação é inválido.", 400);
+    }
+    const targets =
+      typeof body === "object" && body !== null && "targetPercentages" in body
+        ? (body as { targetPercentages?: unknown }).targetPercentages
+        : undefined;
+    if (!isValidPortfolioAllocationTargets(targets)) {
+      throw new ApplicationError("Revise as metas de alocação.", 400);
+    }
+    const saved = await portfolioAllocationService.updateAllocationTargets(
+      targets as Record<string, number>,
+      requestId,
+    );
+    return Response.json({
+      message: "Metas de alocação salvas.",
+      targetPercentages: saved,
+    });
+  }
   async update(request: Request, requestId: string) {
     let body: unknown;
     try {
