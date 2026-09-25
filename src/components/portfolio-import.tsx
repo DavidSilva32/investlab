@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -320,18 +321,17 @@ function PositionPreview({
             className="text-sm font-medium"
             htmlFor={`reference-date-${fileName}`}
           >
-            Data de referência da posi?ço
+            Data de referência da posição
           </label>
-          <input
+          <Input
             id={`reference-date-${fileName}`}
-            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
             type="date"
             required
             value={referenceDate}
             onChange={(event) => onReferenceDateChange(event.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Informe a data exibida pela B3 para esta posi?ço, nêo a data do nome
+            Informe a data exibida pela B3 para esta posição, não a data do nome
             do arquivo.
           </p>
         </div>

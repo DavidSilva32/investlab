@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type PortfolioTableColumn<Row> = {
@@ -95,17 +96,19 @@ export function PortfolioTable<Row extends { id: string }>({
                 key={column.id}
                 className={cn(column.className, "px-3")}
               >
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => toggleSort(column.id)}
                   className={cn(
-                    "inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-sm py-1 text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    "h-auto rounded-sm px-0 py-1 text-left font-normal hover:bg-transparent hover:text-foreground focus-visible:ring-1",
                     column.className?.includes("text-right") && "ml-auto",
                   )}
                 >
                   {column.label}
                   <Icon className="size-3.5" aria-hidden="true" />
-                </button>
+                </Button>
               </TableHead>
             );
           })}

@@ -254,3 +254,14 @@ export const screenerMarketSnapshotQuotes = pgTable(
     index("screener_market_snapshot_quotes_snapshot_idx").on(table.snapshotId),
   ],
 );
+
+export const portfolioAssetClassifications = pgTable(
+  "portfolio_asset_classifications",
+  {
+    assetKey: varchar({ length: 64 }).primaryKey(),
+    assetClass: varchar({ length: 80 }),
+    subClass: varchar({ length: 120 }),
+    geography: varchar({ length: 40 }),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+);
