@@ -10,46 +10,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  PortfolioClassificationList,
+  type BulkClassification,
+  type PortfolioPosition,
+} from "@/app/portfolio/_components/portfolio-classification-list";
 import { formatCurrency } from "@/lib/utils";
 
-type Classification = {
-  assetClass: string | null;
-  subClass: string | null;
-  geography: string | null;
-};
-type Position = {
-  id: string;
-  product: string;
-  institution: string | null;
-  estimatedValue?: number | null;
-  totalValue: string | null;
-  classification: Classification;
-  classificationSource: "manual" | "inferred" | "unclassified";
-};
 type Grouping = "assetClass" | "subClass" | "geography";
-
-const classOptions = [
-  "Renda fixa",
-  "Renda variável",
-  "Fundos",
-  "Criptoativos",
-  "Imóveis",
-  "Outros",
-];
-const geographyOptions = ["Brasil", "Exterior", "Global"];
 const unknownLabel = "Não informado";
 
-const unknownValue = "__not_informed__";
-function positionValue(position: Position) {
+function positionValue(position: PortfolioPosition) {
   if (
     position.estimatedValue !== undefined &&
     position.estimatedValue !== null &&
@@ -62,16 +33,10 @@ function positionValue(position: Position) {
   return Number.isFinite(value) ? value : null;
 }
 
-function formatPositionValue(position: Position) {
-  const value = positionValue(position);
-  return value === null ? "Sem valor atual" : formatCurrency(value);
-}
-
 export function PortfolioAllocation() {
-  const [positions, setPositions] = useState<Position[] | null>(null);
+  const [positions, setPositions] = useState<PortfolioPosition[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [grouping, setGrouping] = useState<Grouping>("assetClass");
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
@@ -116,31 +81,51 @@ export function PortfolioAllocation() {
       .sort((left, right) => right.value - left.value);
   }, [grouping, positions, totalValue]);
 
-  async function save(position: Position, formData: FormData) {
+  async function patchClassification(
+    body: unknown,
+    successMessage: (result: { count?: number; message?: string }) => string,
+  ) {
     setSaving(true);
     try {
-      const assetClass = formData.get("assetClass") as string | null;
-      const geography = formData.get("geography") as string | null;
       const response = await fetch("/api/portfolio/allocation", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          positionId: position.id,
-          assetClass: assetClass === unknownValue ? null : assetClass,
-          subClass: String(formData.get("subClass") || "").trim() || null,
-          geography: geography === unknownValue ? null : geography,
-        }),
+        body: JSON.stringify(body),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      setEditingId(null);
-      toast.success("Classificação salva.");
+      const result: { count?: number; message?: string } =
+        await response.json();
+      if (!response.ok) throw new Error(result.message);
+      toast.success(successMessage(result));
       load();
+      return true;
     } catch {
       toast.error("Não foi possível salvar a classificação.");
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveSingle(position: PortfolioPosition, formData: FormData) {
+    const assetClass = formData.get("assetClass") as string | null;
+    const geography = formData.get("geography") as string | null;
+    return patchClassification(
+      {
+        positionId: position.id,
+        assetClass: assetClass === "__not_informed__" ? null : assetClass,
+        subClass: String(formData.get("subClass") || "").trim() || null,
+        geography: geography === "__not_informed__" ? null : geography,
+      },
+      () => "Classificação salva.",
+    );
+  }
+
+  async function saveBulk(input: BulkClassification) {
+    return patchClassification(
+      input,
+      (result) =>
+        `Classificação aplicada a ${result.count} ${result.count === 1 ? "posição" : "posições"}.`,
+    );
   }
 
   return (
@@ -150,8 +135,8 @@ export function PortfolioAllocation() {
         <CardDescription>
           Distribuição por classe, subclasse ou geografia. Produto e indexador
           podem sugerir a classificação; geografia fica sem informação até
-          ajuste. Valores usam a estimativa atual quando disponível, ou o valor
-          importado.
+          ajuste, pois a importação não identifica esse dado. Valores usam a
+          estimativa atual quando disponível, ou o valor importado.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -245,134 +230,12 @@ export function PortfolioAllocation() {
                 Não há valores atuais para calcular a distribuição.
               </p>
             )}
-            <div className="space-y-3 border-t pt-5">
-              <h3 className="text-sm font-semibold">
-                Posições e classificação
-              </h3>
-              {positions.map((position) => (
-                <div key={position.id} className="rounded-lg border p-4">
-                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {position.product}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {[
-                          position.institution,
-                          position.classification.assetClass ?? unknownLabel,
-                          position.classification.subClass ?? unknownLabel,
-                          position.classification.geography ?? unknownLabel,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                        {position.classificationSource === "inferred"
-                          ? " · sugestão baseada no produto ou indexador B3"
-                          : position.classificationSource === "manual"
-                            ? " · ajuste manual"
-                            : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 sm:justify-end">
-                      <span className="text-sm tabular-nums">
-                        {formatPositionValue(position)}
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        aria-expanded={editingId === position.id}
-                        onClick={() =>
-                          setEditingId(
-                            editingId === position.id ? null : position.id,
-                          )
-                        }
-                      >
-                        {editingId === position.id
-                          ? "Fechar"
-                          : "Editar classificação"}
-                      </Button>
-                    </div>
-                  </div>
-                  {editingId === position.id && (
-                    <form
-                      className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void save(position, new FormData(event.currentTarget));
-                      }}
-                    >
-                      <div className="grid gap-1.5 text-sm">
-                        <Label htmlFor={`asset-class-${position.id}`}>
-                          Classe
-                        </Label>
-                        <Select
-                          name="assetClass"
-                          defaultValue={
-                            position.classification.assetClass ?? unknownValue
-                          }
-                        >
-                          <SelectTrigger id={`asset-class-${position.id}`}>
-                            <SelectValue placeholder="Selecione uma classe" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={unknownValue}>
-                              {"Não informado"}
-                            </SelectItem>
-                            {classOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-1.5 text-sm">
-                        <Label htmlFor={`sub-class-${position.id}`}>
-                          Subclasse
-                        </Label>
-                        <Input
-                          id={`sub-class-${position.id}`}
-                          name="subClass"
-                          maxLength={120}
-                          defaultValue={position.classification.subClass ?? ""}
-                          placeholder="Ex.: Tesouro IPCA+"
-                        />
-                      </div>
-                      <div className="grid gap-1.5 text-sm sm:col-span-2">
-                        <Label htmlFor={`geography-${position.id}`}>
-                          Geografia
-                        </Label>
-                        <Select
-                          name="geography"
-                          defaultValue={
-                            position.classification.geography ?? unknownValue
-                          }
-                        >
-                          <SelectTrigger id={`geography-${position.id}`}>
-                            <SelectValue placeholder="Selecione uma geografia" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={unknownValue}>
-                              {"Não informado"}
-                            </SelectItem>
-                            {geographyOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex justify-end sm:col-span-2">
-                        <Button type="submit" disabled={saving}>
-                          {saving ? "Salvando…" : "Salvar classificação"}
-                        </Button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              ))}
-            </div>
+            <PortfolioClassificationList
+              positions={positions}
+              saving={saving}
+              onSave={saveSingle}
+              onSaveBulk={saveBulk}
+            />
           </>
         )}
       </CardContent>

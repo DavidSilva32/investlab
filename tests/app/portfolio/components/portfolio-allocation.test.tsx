@@ -380,4 +380,114 @@ describe("PortfolioAllocation", () => {
     );
     expect(screen.getByLabelText("Subclasse")).toBeTruthy();
   });
+
+  it("searches, selects visible positions, and applies only checked bulk fields", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ positions }))
+      .mockResolvedValueOnce(
+        response({ count: 3, message: "Classificação salva." }),
+      )
+      .mockResolvedValueOnce(response({ positions }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+
+    const list = await screen.findByRole("group", {
+      name: "Lista de posições",
+    });
+    expect(list.className).toContain("max-h-[55vh]");
+    expect(list.className).toContain("overflow-y-auto");
+    await user.click(
+      screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
+    );
+    expect(screen.getByText("4 selecionado(s)")).toBeTruthy();
+
+    await user.type(
+      screen.getByLabelText("Buscar por produto ou instituição"),
+      "Corretora Exemplo",
+    );
+    expect(screen.getByText("Selecionar resultados (1)")).toBeTruthy();
+    expect(screen.getByText("4 selecionado(s)")).toBeTruthy();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
+    );
+    expect(screen.getByText("3 selecionado(s)")).toBeTruthy();
+    expect(screen.queryByText("CDB pós-fixado")).toBeNull();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Aplicar geografia" }),
+    );
+    await user.click(
+      screen.getByRole("combobox", { name: "Geografia em lote" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Não informado" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Aplicar aos selecionados" }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: "PATCH",
+      body: JSON.stringify({
+        positionIds: [positions[0].id, positions[2].id, positions[3].id],
+        geography: null,
+      }),
+    });
+    expect(toast.success).toHaveBeenCalledWith(
+      "Classificação aplicada a 3 posições.",
+    );
+  });
+
+  it("explains when a search has no matching positions", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ positions })));
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+    await user.type(
+      await screen.findByLabelText("Buscar por produto ou instituição"),
+      "inexistente",
+    );
+    expect(
+      screen.getByText("Nenhuma posição corresponde à busca."),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("checkbox", { name: "Selecionar resultados visíveis" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("uses singular wording when a bulk edit applies to one position", async () => {
+    const singlePosition = positions[0];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ positions: [singlePosition] }))
+      .mockResolvedValueOnce(
+        response({ count: 1, message: "Classificação salva." }),
+      )
+      .mockResolvedValueOnce(response({ positions: [singlePosition] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+
+    await user.click(
+      await screen.findByRole("checkbox", {
+        name: "Selecionar resultados visíveis",
+      }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Aplicar subclasse" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Aplicar aos selecionados" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Classificação aplicada a 1 posição.",
+      ),
+    );
+  });
 });

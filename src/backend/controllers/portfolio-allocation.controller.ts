@@ -7,12 +7,30 @@ import {
 } from "@/backend/services/portfolio-classification";
 import { logger } from "@/infrastructure/logging/logger";
 
-const classificationSchema = z.object({
-  positionId: z.string().uuid(),
-  assetClass: z.enum(portfolioAssetClassOptions).nullable(),
-  subClass: z.string().trim().max(120).nullable(),
-  geography: z.enum(portfolioAssetGeographyOptions).nullable(),
-});
+const classificationSchema = z
+  .object({
+    positionId: z.string().uuid().optional(),
+    positionIds: z.array(z.string().uuid()).min(1).optional(),
+    assetClass: z.enum(portfolioAssetClassOptions).nullable().optional(),
+    subClass: z.string().trim().max(120).nullable().optional(),
+    geography: z.enum(portfolioAssetGeographyOptions).nullable().optional(),
+  })
+  .refine((input) => Boolean(input.positionId) !== Boolean(input.positionIds), {
+    message: "Informe uma posição ou uma lista de posições.",
+  })
+  .refine(
+    (input) =>
+      input.assetClass !== undefined ||
+      input.subClass !== undefined ||
+      input.geography !== undefined,
+    { message: "Informe ao menos um campo para atualizar." },
+  )
+  .refine(
+    (input) =>
+      input.positionIds === undefined ||
+      new Set(input.positionIds).size === input.positionIds.length,
+    { message: "A lista de posições não pode conter itens repetidos." },
+  );
 
 export class PortfolioAllocationController {
   async get(requestId: string) {
@@ -35,11 +53,22 @@ export class PortfolioAllocationController {
     if (!parsed.success) {
       throw new ApplicationError("Revise os campos da classificação.", 400);
     }
-    await portfolioAllocationService.updateClassification(
-      parsed.data,
+    const result = await portfolioAllocationService.updateClassifications(
+      {
+        positionIds: parsed.data.positionIds ?? [parsed.data.positionId!],
+        ...(parsed.data.assetClass !== undefined && {
+          assetClass: parsed.data.assetClass,
+        }),
+        ...(parsed.data.subClass !== undefined && {
+          subClass: parsed.data.subClass,
+        }),
+        ...(parsed.data.geography !== undefined && {
+          geography: parsed.data.geography,
+        }),
+      },
       requestId,
     );
-    return Response.json({ message: "Classificação salva." });
+    return Response.json({ message: "Classificação salva.", ...result });
   }
 }
 

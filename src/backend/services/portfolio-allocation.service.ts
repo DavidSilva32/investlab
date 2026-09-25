@@ -42,35 +42,67 @@ export class PortfolioAllocationService {
     });
   }
 
-  async updateClassification(
+  async updateClassifications(
     input: {
-      positionId: string;
-      assetClass: string | null;
-      subClass: string | null;
-      geography: string | null;
+      positionIds: string[];
+      assetClass?: string | null;
+      subClass?: string | null;
+      geography?: string | null;
     },
     requestId?: string,
   ) {
     const positions = await importRepository.listLatestPositions(requestId);
-    const position = positions.find((item) => item.id === input.positionId);
-    if (!position) {
+    const requestedIds = [...new Set(input.positionIds)];
+    const requested = new Set(requestedIds);
+    const selectedPositions = positions.filter((position) =>
+      requested.has(position.id),
+    );
+    if (selectedPositions.length !== requestedIds.length) {
       throw new ApplicationError(
-        "A posição não está mais na carteira atual.",
+        "Uma ou mais posições não estão mais na carteira atual.",
         404,
       );
     }
-    const assetKey = getPortfolioAssetKey(position);
-    const classification = await portfolioClassificationRepository.upsert(
-      {
-        assetKey,
-        assetClass: input.assetClass,
-        subClass: input.subClass,
-        geography: input.geography,
-      },
+
+    const uniquePositions = [
+      ...new Map(
+        selectedPositions.map((position) => [
+          getPortfolioAssetKey(position),
+          position,
+        ]),
+      ).values(),
+    ];
+    const assetKeys = uniquePositions.map(getPortfolioAssetKey);
+    const saved = await portfolioClassificationRepository.listByAssetKeys(
+      assetKeys,
       requestId,
     );
-    logger.info("portfolio_classification_updated", { requestId });
-    return classification;
+    const savedByKey = new Map(saved.map((item) => [item.assetKey, item]));
+    const classifications = uniquePositions.map((position) => {
+      const assetKey = getPortfolioAssetKey(position);
+      const current =
+        savedByKey.get(assetKey) ?? inferPortfolioAssetClassification(position);
+      return {
+        assetKey,
+        assetClass:
+          input.assetClass === undefined
+            ? current.assetClass
+            : input.assetClass,
+        subClass:
+          input.subClass === undefined ? current.subClass : input.subClass,
+        geography:
+          input.geography === undefined ? current.geography : input.geography,
+      };
+    });
+    await portfolioClassificationRepository.upsertMany(
+      classifications,
+      requestId,
+    );
+    logger.info("portfolio_classifications_updated", {
+      requestId,
+      count: selectedPositions.length,
+    });
+    return { count: selectedPositions.length };
   }
 }
 

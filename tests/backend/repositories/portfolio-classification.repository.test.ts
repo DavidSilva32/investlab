@@ -1,12 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const db = vi.hoisted(() => ({ select: vi.fn(), insert: vi.fn() }));
+const db = vi.hoisted(() => ({
+  select: vi.fn(),
+  insert: vi.fn(),
+  transaction: vi.fn(),
+}));
 const logger = vi.hoisted(() => ({ error: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => db,
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger }));
 import { PortfolioClassificationRepository } from "@/backend/repositories/portfolio-classification.repository";
+
+const record = (assetKey: string) => ({
+  assetKey,
+  assetClass: "Fundos",
+  subClass: "FII",
+  geography: "Brasil",
+});
 
 describe("PortfolioClassificationRepository", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -60,21 +71,11 @@ describe("PortfolioClassificationRepository", () => {
 
     await expect(
       new PortfolioClassificationRepository().upsert(
-        {
-          assetKey: "key-1",
-          assetClass: "Fundos",
-          subClass: "FII",
-          geography: "Brasil",
-        },
+        { ...record("key-1"), subClass: "FII" },
         "req-3",
       ),
     ).resolves.toBe(row);
-    expect(values).toHaveBeenCalledWith({
-      assetKey: "key-1",
-      assetClass: "Fundos",
-      subClass: "FII",
-      geography: "Brasil",
-    });
+    expect(values).toHaveBeenCalledWith(record("key-1"));
     expect(onConflictDoUpdate).toHaveBeenCalledOnce();
   });
 
@@ -99,6 +100,55 @@ describe("PortfolioClassificationRepository", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "portfolio_classification_update_failed",
       { requestId: "req-4", error },
+    );
+  });
+
+  it("upserts each deduplicated classification in one transaction", async () => {
+    const rows = [record("key-1"), record("key-2")];
+    const returning = vi.fn().mockResolvedValue(rows);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    const transaction = { insert: vi.fn().mockReturnValue({ values }) };
+    db.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      new PortfolioClassificationRepository().upsertMany(
+        [record("key-1"), record("key-1"), record("key-2")],
+        "req-5",
+      ),
+    ).resolves.toBe(rows);
+    expect(db.transaction).toHaveBeenCalledOnce();
+    expect(values).toHaveBeenCalledWith([record("key-1"), record("key-2")]);
+  });
+
+  it("does not open a transaction for an empty batch", async () => {
+    await expect(
+      new PortfolioClassificationRepository().upsertMany([]),
+    ).resolves.toEqual([]);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rolls back a failed batch and logs the failure", async () => {
+    const error = new Error("database failure");
+    const returning = vi.fn().mockRejectedValue(error);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    const transaction = { insert: vi.fn().mockReturnValue({ values }) };
+    db.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      new PortfolioClassificationRepository().upsertMany(
+        [record("key-1")],
+        "req-6",
+      ),
+    ).rejects.toBe(error);
+    expect(logger.error).toHaveBeenCalledWith(
+      "portfolio_classification_update_failed",
+      { requestId: "req-6", error },
     );
   });
 });

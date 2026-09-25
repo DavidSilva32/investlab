@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const repository = vi.hoisted(() => ({ listLatestPositions: vi.fn() }));
 const classifications = vi.hoisted(() => ({
   listByAssetKeys: vi.fn(),
-  upsert: vi.fn(),
+  upsertMany: vi.fn(),
 }));
 const estimates = vi.hoisted(() => ({ enrich: vi.fn() }));
 vi.mock("@/backend/repositories/import.repository", () => ({
@@ -26,6 +26,12 @@ const position = {
   issuer: "Banco Emissor",
   indexer: "CDI",
   regimeType: null,
+};
+const secondPosition = {
+  ...position,
+  id: "a98bde34-1730-42ab-8c9c-97a88b52a7df",
+  product: "Fundo imobiliário",
+  assetCode: "FII-456",
 };
 
 describe("PortfolioAllocationService", () => {
@@ -78,12 +84,9 @@ describe("PortfolioAllocationService", () => {
   });
 
   it("marks unsupported imported data as unclassified", async () => {
-    repository.listLatestPositions.mockResolvedValue([
-      { ...position, product: "Produto externo", indexer: null },
-    ]);
-    estimates.enrich.mockResolvedValue([
-      { ...position, product: "Produto externo", indexer: null },
-    ]);
+    const unknown = { ...position, product: "Produto externo", indexer: null };
+    repository.listLatestPositions.mockResolvedValue([unknown]);
+    estimates.enrich.mockResolvedValue([unknown]);
     classifications.listByAssetKeys.mockResolvedValue([]);
 
     await expect(
@@ -95,32 +98,109 @@ describe("PortfolioAllocationService", () => {
       },
     ]);
   });
-  it("persists edits only for positions in the latest snapshot", async () => {
-    repository.listLatestPositions.mockResolvedValue([position]);
-    classifications.upsert.mockResolvedValue({ assetClass: "Fundos" });
-    const service = new PortfolioAllocationService();
-    await service.updateClassification({
-      positionId: position.id,
-      assetClass: "Fundos",
-      subClass: "FII",
-      geography: "Brasil",
-    });
-    expect(classifications.upsert).toHaveBeenCalledWith(
+
+  it("merges selected fields, clears explicit nulls, and deduplicates identical assets", async () => {
+    const duplicatePosition = {
+      ...position,
+      id: "e05c0a4d-ace8-49ae-a670-74723a9ff983",
+    };
+    repository.listLatestPositions.mockResolvedValue([
+      position,
+      duplicatePosition,
+      secondPosition,
+    ]);
+    classifications.listByAssetKeys.mockResolvedValue([
       {
         assetKey: getPortfolioAssetKey(position),
-        assetClass: "Fundos",
-        subClass: "FII",
+        assetClass: "Renda fixa",
+        subClass: "CDB CDI",
         geography: "Brasil",
       },
-      undefined,
-    );
+    ]);
+    classifications.upsertMany.mockImplementation(async (records) => records);
+
     await expect(
-      service.updateClassification({
-        positionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        assetClass: null,
-        subClass: null,
+      new PortfolioAllocationService().updateClassifications({
+        positionIds: [position.id, duplicatePosition.id, secondPosition.id],
         geography: null,
       }),
-    ).rejects.toThrow("A posição não está mais na carteira atual.");
+    ).resolves.toEqual({ count: 3 });
+    expect(classifications.upsertMany).toHaveBeenCalledWith(
+      [
+        {
+          assetKey: getPortfolioAssetKey(position),
+          assetClass: "Renda fixa",
+          subClass: "CDB CDI",
+          geography: null,
+        },
+        {
+          assetKey: getPortfolioAssetKey(secondPosition),
+          assetClass: "Fundos",
+          subClass: "Fundo imobiliário",
+          geography: null,
+        },
+      ],
+      undefined,
+    );
+  });
+
+  it("rejects stale or partially missing position IDs before writing", async () => {
+    repository.listLatestPositions.mockResolvedValue([position]);
+    const service = new PortfolioAllocationService();
+    await expect(
+      service.updateClassifications({
+        positionIds: [position.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+        assetClass: null,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(classifications.upsertMany).not.toHaveBeenCalled();
+  });
+
+  it("uses explicit values, including nulls, for every selected field", async () => {
+    repository.listLatestPositions.mockResolvedValue([position]);
+    classifications.listByAssetKeys.mockResolvedValue([]);
+    classifications.upsertMany.mockImplementation(async (records) => records);
+
+    await expect(
+      new PortfolioAllocationService().updateClassifications({
+        positionIds: [position.id],
+        assetClass: null,
+        subClass: null,
+        geography: "Exterior",
+      }),
+    ).resolves.toEqual({ count: 1 });
+    expect(classifications.upsertMany).toHaveBeenCalledWith(
+      [
+        {
+          assetKey: getPortfolioAssetKey(position),
+          assetClass: null,
+          subClass: null,
+          geography: "Exterior",
+        },
+      ],
+      undefined,
+    );
+  });
+
+  it("keeps the inferred geography when the update omits geography", async () => {
+    repository.listLatestPositions.mockResolvedValue([position]);
+    classifications.listByAssetKeys.mockResolvedValue([]);
+    classifications.upsertMany.mockImplementation(async (records) => records);
+
+    await new PortfolioAllocationService().updateClassifications({
+      positionIds: [position.id],
+      assetClass: "Renda fixa",
+    });
+    expect(classifications.upsertMany).toHaveBeenCalledWith(
+      [
+        {
+          assetKey: getPortfolioAssetKey(position),
+          assetClass: "Renda fixa",
+          subClass: "CDB",
+          geography: null,
+        },
+      ],
+      undefined,
+    );
   });
 });
