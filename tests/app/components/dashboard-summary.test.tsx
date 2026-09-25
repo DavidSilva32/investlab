@@ -62,4 +62,17 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Ainda sem valores atuais");
     expect(html).toContain("Nenhum vencimento informado");
   });
+  it("renders the contribution guidance supplied by the overview", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        nextContributionGuidance={{
+          status: "target_gap",
+          title: "Class gap for next contribution",
+          explanation: "Based on your saved allocation targets.",
+        }}
+      />,
+    );
+    expect(html).toContain("Class gap for next contribution");
+  });
 });

@@ -15,6 +15,8 @@ import { ReferenceRates } from "@/components/reference-rates";
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import type { BcbReferenceRates } from "@/backend/services/bcb-reference-rates.service";
+import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
+import { NextContributionGuidanceCard } from "@/app/_components/next-contribution-guidance-card";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
@@ -22,10 +24,12 @@ export function DashboardSummary({
   positions,
   referenceRates,
   emergencyReserve,
+  nextContributionGuidance,
 }: {
   positions: PortfolioInsightPosition[];
   referenceRates?: BcbReferenceRates;
   emergencyReserve?: EmergencyReserveCalculation;
+  nextContributionGuidance?: ContributionGuidance;
 }) {
   const insights = getPortfolioInsights(positions);
   const nextMaturity = insights.upcomingMaturities[0];
@@ -83,6 +87,9 @@ export function DashboardSummary({
       </section>
       <section className="mt-4">
         <EmergencyReserveSummary calculation={emergencyReserve} />
+      </section>
+      <section className="mt-4">
+        <NextContributionGuidanceCard guidance={nextContributionGuidance} />
       </section>
       {referenceRates && (
         <div className="mt-4">

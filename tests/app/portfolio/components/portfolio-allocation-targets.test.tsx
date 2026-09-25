@@ -76,12 +76,10 @@ describe("PortfolioAllocationTargets", () => {
     expect(screen.getByText("Metas da sua estratégia")).toBeTruthy();
     expect(screen.getByText("60.0%")).toBeTruthy();
     expect(screen.getByText("50.0%")).toBeTruthy();
-    expect(screen.getAllByText("-10.0 p.p.")).toHaveLength(2);
-    expect(screen.getByText("Meta − atual")).toBeTruthy();
+    expect(screen.getAllByText("-10.0%")).toHaveLength(2);
+    expect(screen.getByText("Diferença (%)", { exact: true })).toBeTruthy();
     expect(
-      screen.getByText(
-        /valor positivo significa que a alocação está abaixo da meta/,
-      ),
+      screen.getByText(/valor positivo significa abaixo da meta/),
     ).toBeTruthy();
     expect(
       screen.getByText(/sem classe não entram nas linhas acima/),
@@ -230,7 +228,7 @@ describe("PortfolioAllocationTargets", () => {
 
     await user.click(screen.getByRole("button", { name: /Mostrar.*metas/i }));
 
-    expect(screen.getAllByText("0.0%")).toHaveLength(9);
+    expect(screen.getAllByText("0.0%")).toHaveLength(13);
   });
 
   it("keeps the editor open when the save callback rejects the update", async () => {

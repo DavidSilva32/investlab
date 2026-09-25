@@ -241,11 +241,11 @@ export function PortfolioAllocationTargets({
                 <span>Classe</span>
                 <span className="text-right">Atual</span>
                 <span className="text-right">Meta</span>
-                <span className="text-right">Meta − atual</span>
+                <span className="text-right">Diferença (%)</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Diferença = meta − atual; valor positivo significa que a
-                alocação está abaixo da meta.
+                A diferença indica quanto da carteira está abaixo ou acima da
+                meta; valor positivo significa abaixo da meta.
               </p>
               <ul className="space-y-2">
                 {portfolioAssetClassOptions.map((assetClass) => {
@@ -274,7 +274,7 @@ export function PortfolioAllocationTargets({
                           ? "—"
                           : (difference > 0 ? "+" : "") +
                             difference.toFixed(1) +
-                            " p.p."}
+                            "%"}
                       </span>
                     </li>
                   );
