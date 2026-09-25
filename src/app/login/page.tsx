@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 import { Eye, EyeOff, LockKeyhole } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { type SyntheticEvent, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +18,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "").trim();

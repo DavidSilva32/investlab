@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type SyntheticEvent } from "react";
 import Link from "next/link";
 import { AlertCircle, Filter, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -181,7 +181,7 @@ export function ScreenerDashboard() {
     });
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     void load(draft);
   }
