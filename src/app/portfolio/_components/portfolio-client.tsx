@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
 import { ReferenceRates } from "@/components/reference-rates";
 import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
+import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
 import { MovementDetails, PositionDetails } from "./portfolio-details";
 import {
   PortfolioOverview,
@@ -70,7 +71,10 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
       </div>
       <EmergencyReserveEditor />
       {activeView === "overview" ? (
-        <PortfolioOverview positions={overview.positions} />
+        <div className="space-y-5">
+          <PortfolioOverview positions={overview.positions} />
+          <PortfolioAllocation />
+        </div>
       ) : activeView === "positions" ? (
         <PositionDetails positions={overview.positions} />
       ) : (

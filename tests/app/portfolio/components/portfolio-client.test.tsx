@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +15,9 @@ vi.mock("@/components/reference-rates", () => ({
 }));
 vi.mock("@/app/portfolio/_components/emergency-reserve-editor", () => ({
   EmergencyReserveEditor: () => null,
+}));
+vi.mock("@/app/portfolio/_components/portfolio-allocation", () => ({
+  PortfolioAllocation: () => null,
 }));
 vi.mock("@/app/portfolio/_components/portfolio-overview", () => ({
   PortfolioOverview: () => <p>Visão geral</p>,

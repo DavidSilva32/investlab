@@ -85,6 +85,13 @@
       "when": 1790310014932,
       "tag": "0011_fixed_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790314964262,
+      "tag": "0012_melted_namora",
+      "breakpoints": true
     }
   ]
 }
