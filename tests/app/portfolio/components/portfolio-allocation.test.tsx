@@ -130,6 +130,9 @@ describe("PortfolioAllocation", () => {
     expect(
       await screen.findByText(/Patrimônio com valor informado/),
     ).toBeTruthy();
+    await user.click(
+      await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+    );
     expect(
       screen.getByRole("progressbar", { name: "Renda fixa: 72.2%" }),
     ).toBeTruthy();
@@ -208,6 +211,11 @@ describe("PortfolioAllocation", () => {
       vi.fn().mockResolvedValue(response({ positions: [position] })),
     );
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
 
     expect(await screen.findByRole("progressbar")).toBeTruthy();
     expect(screen.getAllByText(/700,00/)).toHaveLength(3);
@@ -223,11 +231,23 @@ describe("PortfolioAllocation", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         response({
-          positions: [invalid, { ...positions[3], totalValue: "invalid" }],
+          positions: [
+            invalid,
+            {
+              ...positions[3],
+              id: "f67b4ad9-b053-422f-bb05-22f7a9fdb8e8",
+              totalValue: "invalid",
+            },
+          ],
         }),
       ),
     );
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
     expect(await screen.findAllByText("Sem valor atual")).toHaveLength(2);
     expect(
       screen.getByText("Não há valores atuais para calcular a distribuição."),
@@ -294,6 +314,11 @@ describe("PortfolioAllocation", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
 
     await user.click(
       await screen.findByRole("button", { name: "Editar classificação" }),
@@ -407,6 +432,11 @@ describe("PortfolioAllocation", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
 
     await user.click(
       await screen.findByRole("button", { name: "Editar classificação" }),
@@ -438,6 +468,11 @@ describe("PortfolioAllocation", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
 
     await user.click(
       await screen.findByRole("button", { name: "Editar classificação" }),
@@ -464,6 +499,11 @@ describe("PortfolioAllocation", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
 
     const list = await screen.findByRole("group", {
       name: "Lista de posições",
@@ -517,6 +557,11 @@ describe("PortfolioAllocation", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ positions })));
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
     await user.type(
       await screen.findByLabelText("Buscar por produto ou instituição"),
       "inexistente",
@@ -543,6 +588,11 @@ describe("PortfolioAllocation", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
+    await userEvent
+      .setup()
+      .click(
+        await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
 
     await user.click(
       await screen.findByRole("checkbox", {

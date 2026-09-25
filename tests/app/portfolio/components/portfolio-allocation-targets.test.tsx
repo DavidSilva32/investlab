@@ -59,7 +59,8 @@ const savedTargets = {
 describe("PortfolioAllocationTargets", () => {
   afterEach(cleanup);
 
-  it("compares user targets with current values and explains missing coverage", () => {
+  it("compares user targets with current values and explains missing coverage", async () => {
+    const user = userEvent.setup();
     render(
       <PortfolioAllocationTargets
         positions={positions}
@@ -68,6 +69,9 @@ describe("PortfolioAllocationTargets", () => {
         onSave={vi.fn()}
       />,
     );
+
+    expect(screen.queryByText("60.0%")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /Mostrar.*metas/i }));
 
     expect(screen.getByText("Metas da sua estratégia")).toBeTruthy();
     expect(screen.getByText("60.0%")).toBeTruthy();
@@ -86,6 +90,8 @@ describe("PortfolioAllocationTargets", () => {
       screen.getByText(/sem valor atual não entram no cálculo/),
     ).toBeTruthy();
     expect(screen.getByText(/não são recomendações universais/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /Recolher.*metas/i }));
+    expect(screen.queryByText("60.0%")).toBeNull();
   });
 
   it("requires the edited target percentages to total exactly 100%", async () => {
@@ -156,7 +162,8 @@ describe("PortfolioAllocationTargets", () => {
     expect(screen.queryByRole("button", { name: "Salvar metas" })).toBeNull();
   });
 
-  it("shows unavailable current values for saved targets without portfolio positions", () => {
+  it("shows unavailable current values for saved targets without portfolio positions", async () => {
+    const user = userEvent.setup();
     render(
       <PortfolioAllocationTargets
         positions={[]}
@@ -165,6 +172,8 @@ describe("PortfolioAllocationTargets", () => {
         onSave={vi.fn()}
       />,
     );
+
+    await user.click(screen.getByRole("button", { name: /Mostrar.*metas/i }));
 
     expect(screen.getAllByText("—")).toHaveLength(12);
     expect(
@@ -208,7 +217,8 @@ describe("PortfolioAllocationTargets", () => {
     await user.click(screen.getByRole("button", { name: "Salvar metas" }));
     expect(onSave).not.toHaveBeenCalled();
   });
-  it("shows zero for classes omitted from a saved partial target object", () => {
+  it("shows zero for classes omitted from a saved partial target object", async () => {
+    const user = userEvent.setup();
     render(
       <PortfolioAllocationTargets
         positions={positions}
@@ -217,6 +227,8 @@ describe("PortfolioAllocationTargets", () => {
         onSave={vi.fn()}
       />,
     );
+
+    await user.click(screen.getByRole("button", { name: /Mostrar.*metas/i }));
 
     expect(screen.getAllByText("0.0%")).toHaveLength(9);
   });

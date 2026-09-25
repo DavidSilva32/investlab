@@ -112,6 +112,16 @@ describe("PortfolioClassificationList", () => {
         onSaveBulk={onSaveBulk}
       />,
     );
+    const disclosure = screen.getByRole("button", {
+      name: /Mostrar.*classifica/i,
+    });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    await user.click(disclosure);
+    expect(
+      screen
+        .getByRole("button", { name: /Recolher.*classifica/i })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
 
     const list = screen.getByRole("group", { name: "Lista de posições" });
     expect(list.className).toContain("max-h-[55vh]");
@@ -179,6 +189,9 @@ describe("PortfolioClassificationList", () => {
       />,
     );
     await user.click(
+      screen.getByRole("button", { name: /Mostrar.*classifica/i }),
+    );
+    await user.click(
       screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
     );
     await user.type(
@@ -232,6 +245,9 @@ describe("PortfolioClassificationList", () => {
         onSaveBulk={vi.fn().mockResolvedValue(true)}
       />,
     );
+    await user.click(
+      screen.getByRole("button", { name: /Mostrar.*classifica/i }),
+    );
     await user.type(
       screen.getByLabelText("Buscar por produto ou instituição"),
       "inexistente",
@@ -261,6 +277,9 @@ describe("PortfolioClassificationList", () => {
       />,
     );
     await user.click(
+      screen.getByRole("button", { name: /Mostrar.*classifica/i }),
+    );
+    await user.click(
       screen.getByRole("button", { name: "Editar classificação" }),
     );
     await user.click(
@@ -288,6 +307,9 @@ describe("PortfolioClassificationList", () => {
         onSaveBulk={vi.fn().mockResolvedValue(true)}
       />,
     );
+    await user.click(
+      screen.getByRole("button", { name: /Mostrar.*classifica/i }),
+    );
     const checkbox = screen.getByRole("checkbox", {
       name: "Selecionar posição CDB",
     });
@@ -307,6 +329,9 @@ describe("PortfolioClassificationList", () => {
         onSave={vi.fn().mockResolvedValue(true)}
         onSaveBulk={onSaveBulk}
       />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Mostrar.*classifica/i }),
     );
     await user.click(
       screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
