@@ -13,6 +13,9 @@ vi.mock("@/components/app-page-skeleton", () => ({
 vi.mock("@/components/reference-rates", () => ({
   ReferenceRates: () => <p>Taxas de referência</p>,
 }));
+vi.mock("@/app/portfolio/_components/emergency-reserve-editor", () => ({
+  EmergencyReserveEditor: () => null,
+}));
 vi.mock("@/app/portfolio/_components/portfolio-overview", () => ({
   PortfolioOverview: () => <p>Visão geral</p>,
 }));

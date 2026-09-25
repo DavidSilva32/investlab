@@ -12,6 +12,8 @@ import {
 } from "@/lib/portfolio-insights";
 import { formatCurrency } from "@/lib/utils";
 import { ReferenceRates } from "@/components/reference-rates";
+import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
+import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import type { BcbReferenceRates } from "@/backend/services/bcb-reference-rates.service";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
@@ -19,9 +21,11 @@ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 export function DashboardSummary({
   positions,
   referenceRates,
+  emergencyReserve,
 }: {
   positions: PortfolioInsightPosition[];
   referenceRates?: BcbReferenceRates;
+  emergencyReserve?: EmergencyReserveCalculation;
 }) {
   const insights = getPortfolioInsights(positions);
   const nextMaturity = insights.upcomingMaturities[0];
@@ -77,6 +81,9 @@ export function DashboardSummary({
           }
         />
       </section>
+      <section className="mt-4">
+        <EmergencyReserveSummary calculation={emergencyReserve} />
+      </section>
       {referenceRates && (
         <div className="mt-4">
           <ReferenceRates rates={referenceRates} />
@@ -131,12 +138,6 @@ export function DashboardSummary({
             </CardContent>
           </Card>
         </div>
-        <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          <strong>Em desenvolvimento:</strong> distribuição por classe e
-          geografia, reserva de emergência, metas e orientação de próximo
-          aporte. O sistema ainda não tem os dados e valores de meta necessários
-          para calculá-los.
-        </p>
       </section>
       <div className="mt-4 flex justify-end">
         <Link

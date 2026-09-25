@@ -4,6 +4,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
@@ -68,6 +69,13 @@ export const cdbRateConfigurations = pgTable("cdb_rate_configurations", {
   assetCode: text().notNull().unique(),
   cdiPercentage: numeric({ precision: 9, scale: 4 }).notNull(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+export const emergencyReserveSettings = pgTable("emergency_reserve_settings", {
+  id: varchar({ length: 20 }).primaryKey().default("default"),
+  monthlyExpenses: numeric({ precision: 18, scale: 2 }),
+  targetMonths: integer(),
+  selectedAssetKeys: jsonb().$type<string[]>().notNull().default([]),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 export const cdiDailyRates = pgTable("cdi_daily_rates", {

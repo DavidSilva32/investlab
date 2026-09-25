@@ -2,6 +2,7 @@
 import { importRepository } from "@/backend/repositories/import.repository";
 import { bcbReferenceRatesService } from "@/backend/services/bcb-reference-rates.service";
 import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
+import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 
 export class PortfolioService {
   async getOverview(requestId?: string) {
@@ -14,12 +15,21 @@ export class PortfolioService {
       cdbEstimateService.enrich(positions),
       bcbReferenceRatesService.getReferenceRates(),
     ]);
+    const emergencyReserve = await emergencyReserveService.getSummary(
+      estimatedPositions,
+      requestId,
+    );
     logger.info("portfolio_overview_loaded", {
       requestId,
       positions: estimatedPositions.length,
       movements: movements.length,
     });
-    return { positions: estimatedPositions, movements, referenceRates };
+    return {
+      positions: estimatedPositions,
+      movements,
+      referenceRates,
+      emergencyReserve,
+    };
   }
 
   async listPositions(requestId?: string) {

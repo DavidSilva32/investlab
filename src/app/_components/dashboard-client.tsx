@@ -23,8 +23,8 @@ export function DashboardClient() {
         if (!response.ok) throw new Error(body.message);
         return body;
       })
-      .then(({ positions, referenceRates }) => {
-        setOverview({ positions, referenceRates });
+      .then(({ positions, referenceRates, emergencyReserve }) => {
+        setOverview({ positions, referenceRates, emergencyReserve });
         setError(null);
       })
       .catch(() => {

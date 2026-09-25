@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
 import { ReferenceRates } from "@/components/reference-rates";
+import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
 import { MovementDetails, PositionDetails } from "./portfolio-details";
 import {
   PortfolioOverview,
@@ -67,6 +68,7 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
       <div className="my-5">
         <ReferenceRates rates={overview.referenceRates} />
       </div>
+      <EmergencyReserveEditor />
       {activeView === "overview" ? (
         <PortfolioOverview positions={overview.positions} />
       ) : activeView === "positions" ? (

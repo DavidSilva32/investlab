@@ -23,7 +23,7 @@ describe("DashboardSummary", () => {
     expect(html).toContain("01/01/2030");
     expect(html).toContain('href="/portfolio"');
     expect(html).toContain("Próximos passos");
-    expect(html).toContain("Em desenvolvimento:");
+    expect(html).toContain("Reserva de emergência");
     expect(html).toContain('href="/analyses"');
   });
 
