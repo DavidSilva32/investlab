@@ -14,15 +14,28 @@ import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-ta
 export class PortfolioAllocationService {
   async getAllocation(requestId?: string) {
     const positions = await importRepository.listLatestPositions(requestId);
-    const [estimatedPositions, saved] = await Promise.all([
-      cdbEstimateService.enrich(positions),
-      portfolioClassificationRepository.listByAssetKeys(
-        positions.map(getPortfolioAssetKey),
-        requestId,
-      ),
-    ]);
+    const estimatedPositions = [
+      ...(await cdbEstimateService.enrich(positions)),
+    ];
+    return this.classifyPositions(estimatedPositions, requestId);
+  }
+
+  async classifyPositions<
+    T extends {
+      assetCode: string | null;
+      product: string;
+      issuer: string | null;
+      institution: string | null;
+      indexer: string | null;
+      regimeType: string | null;
+    },
+  >(positions: T[], requestId?: string) {
+    const saved = await portfolioClassificationRepository.listByAssetKeys(
+      positions.map((position) => getPortfolioAssetKey(position)),
+      requestId,
+    );
     const savedByKey = new Map(saved.map((item) => [item.assetKey, item]));
-    return estimatedPositions.map((position) => {
+    return positions.map((position) => {
       const assetKey = getPortfolioAssetKey(position);
       const manual = savedByKey.get(assetKey);
       const classification: PortfolioAssetClassification = manual

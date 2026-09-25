@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -23,10 +23,22 @@ export function DashboardClient() {
         if (!response.ok) throw new Error(body.message);
         return body;
       })
-      .then(({ positions, referenceRates, emergencyReserve }) => {
-        setOverview({ positions, referenceRates, emergencyReserve });
-        setError(null);
-      })
+      .then(
+        ({
+          positions,
+          referenceRates,
+          emergencyReserve,
+          nextContributionGuidance,
+        }) => {
+          setOverview({
+            positions,
+            referenceRates,
+            emergencyReserve,
+            nextContributionGuidance,
+          });
+          setError(null);
+        },
+      )
       .catch(() => {
         setError(loadErrorMessage);
         toast.error(loadErrorMessage);
