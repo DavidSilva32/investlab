@@ -1,4 +1,13 @@
-import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+} from "drizzle-orm";
 import {
   screenerFinancialFacts,
   screenerIngestionRuns,
@@ -117,6 +126,38 @@ export class ScreenerRepository {
     return [...byIssuer.values()].filter(
       (issuer) => issuer.securities.length > 0,
     );
+  }
+
+  async getMarketDataStatus() {
+    const database = getDatabaseClient();
+    const [runs, quotes] = await Promise.all([
+      database
+        .select({
+          status: screenerMarketRefreshRuns.status,
+          startedAt: screenerMarketRefreshRuns.startedAt,
+          completedAt: screenerMarketRefreshRuns.completedAt,
+          attemptedIssuers: screenerMarketRefreshRuns.attemptedIssuers,
+          updatedIssuers: screenerMarketRefreshRuns.updatedIssuers,
+          unavailableIssuers: screenerMarketRefreshRuns.unavailableIssuers,
+          skippedFreshIssuers: screenerMarketRefreshRuns.skippedFreshIssuers,
+        })
+        .from(screenerMarketRefreshRuns)
+        .orderBy(desc(screenerMarketRefreshRuns.startedAt))
+        .limit(1),
+      database
+        .select({
+          quoteObservedAt: screenerMarketSnapshots.quoteObservedAt,
+          sourceTicker: screenerMarketSnapshots.sourceTicker,
+        })
+        .from(screenerMarketSnapshots)
+        .where(isNotNull(screenerMarketSnapshots.quoteObservedAt))
+        .orderBy(desc(screenerMarketSnapshots.quoteObservedAt))
+        .limit(1),
+    ]);
+    return {
+      latestRun: runs[0] ?? null,
+      latestQuote: quotes[0] ?? null,
+    };
   }
 
   async startMarketRefreshRun(startedAt: Date) {

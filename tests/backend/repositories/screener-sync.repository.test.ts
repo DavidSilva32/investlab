@@ -182,11 +182,14 @@ describe("ScreenerSyncRepository", () => {
       select: vi
         .fn()
         .mockReturnValueOnce(makeQuery([latestRun]))
-        .mockReturnValueOnce(makeQuery([{ status: "COMPLETED" }])),
+        .mockReturnValueOnce(
+          makeQuery([{ completedAt: new Date("2026-09-22T10:00:00Z") }]),
+        ),
     };
     mocks.getDatabaseClient.mockReturnValue(database);
     await expect(new ScreenerSyncRepository().getStatus()).resolves.toEqual({
       hasSuccessfulSync: true,
+      lastSuccessfulCompletedAt: new Date("2026-09-22T10:00:00Z"),
       latestRun,
     });
     expect(database.select).toHaveBeenCalledTimes(2);
@@ -213,6 +216,7 @@ describe("ScreenerSyncRepository", () => {
     });
     await expect(new ScreenerSyncRepository().getStatus()).resolves.toEqual({
       hasSuccessfulSync: false,
+      lastSuccessfulCompletedAt: null,
       latestRun: null,
     });
   });

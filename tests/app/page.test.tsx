@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/logout-button", () => ({
@@ -9,7 +9,7 @@ describe("HomePage", () => {
   it("renders only the API-backed dashboard shell", () => {
     const html = renderToStaticMarkup(<HomePage />);
     expect(dynamic).toBe("force-dynamic");
-    expect(html).toContain("atualizado pela API");
+    expect(html).toContain("Patrimônio importado");
     expect(html).toContain("Carregando dashboard");
     expect(html).toContain('href="/imports"');
   });

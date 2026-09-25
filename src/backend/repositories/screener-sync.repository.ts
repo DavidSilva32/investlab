@@ -110,13 +110,15 @@ export class ScreenerSyncRepository {
       .orderBy(desc(screenerIngestionRuns.startedAt))
       .limit(1);
     const successfulRuns = await database
-      .select({ status: screenerIngestionRuns.status })
+      .select({ completedAt: screenerIngestionRuns.completedAt })
       .from(screenerIngestionRuns)
       .where(eq(screenerIngestionRuns.status, "COMPLETED"))
+      .orderBy(desc(screenerIngestionRuns.completedAt))
       .limit(1);
 
     return {
       hasSuccessfulSync: successfulRuns.length > 0,
+      lastSuccessfulCompletedAt: successfulRuns[0]?.completedAt ?? null,
       latestRun: latestRun ?? null,
     };
   }

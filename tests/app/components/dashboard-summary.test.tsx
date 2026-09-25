@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
@@ -22,6 +22,9 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Maior exposição");
     expect(html).toContain("01/01/2030");
     expect(html).toContain('href="/portfolio"');
+    expect(html).toContain("Próximos passos");
+    expect(html).toContain("Em desenvolvimento:");
+    expect(html).toContain('href="/analyses"');
   });
 
   it("includes the reference rates when the API has supplied them", () => {
@@ -39,6 +42,7 @@ describe("DashboardSummary", () => {
   it("shows the empty imported-data state", () => {
     const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
     expect(html).toContain("Nenhuma posição importada");
+    expect(html).toContain('href="/imports"');
   });
 
   it("renders every empty summary state when no current data is available", () => {

@@ -7,9 +7,13 @@ export class ScreenerMarketController {
   constructor(
     private readonly service: Pick<
       ScreenerMarketService,
-      "refreshBatch"
+      "refreshBatch" | "status"
     > = screenerMarketService,
   ) {}
+
+  async status() {
+    return this.service.status();
+  }
 
   async refresh(requestId: string) {
     return {

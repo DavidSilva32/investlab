@@ -7,6 +7,7 @@ const response = (body: unknown, ok = true) =>
   Promise.resolve({ ok, json: () => Promise.resolve(body) });
 const cleanStatus = {
   hasSuccessfulSync: true,
+  lastSuccessfulCompletedAt: "2026-09-24T10:02:30.000Z",
   latestRun: {
     status: "COMPLETED" as const,
     startedAt: "2026-09-24T10:00:00.000Z",
@@ -237,5 +238,48 @@ describe("ScreenerDataSettings", () => {
     expect(
       await screen.findByText("A sincronização não foi concluída."),
     ).toBeTruthy();
+  });
+  it("shows an elapsed age for an older successful CVM sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...cleanStatus,
+          lastSuccessfulCompletedAt: new Date(
+            Date.now() - 3 * 86_400_000,
+          ).toISOString(),
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText(/há 3 dias/)).toBeTruthy();
+  });
+  it("shows a one-day age for the latest successful CVM sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...cleanStatus,
+          lastSuccessfulCompletedAt: new Date(
+            Date.now() - 86_400_000,
+          ).toISOString(),
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText(/1 dia/)).toBeTruthy();
+  });
+  it("shows today's age for the latest successful CVM sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...cleanStatus,
+          lastSuccessfulCompletedAt: new Date().toISOString(),
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText(/hoje/)).toBeTruthy();
   });
 });

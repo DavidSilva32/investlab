@@ -41,6 +41,7 @@ type MarketRepository = Pick<
   | "startMarketRefreshRun"
   | "saveMarketSnapshot"
   | "completeMarketRefreshRun"
+  | "getMarketDataStatus"
 >;
 
 export function validateIssuerMarketQuotes(
@@ -194,6 +195,10 @@ export class ScreenerMarketService {
     private readonly repository: MarketRepository = screenerRepository,
     private readonly clock = () => new Date(),
   ) {}
+
+  async status() {
+    return this.repository.getMarketDataStatus();
+  }
 
   async refreshBatch(requestId?: string) {
     const now = this.clock();

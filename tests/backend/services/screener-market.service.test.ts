@@ -71,6 +71,9 @@ function repositoryFor(universe: ScreenerCompany[]) {
     startMarketRefreshRun: vi.fn().mockResolvedValue("market-run-1"),
     saveMarketSnapshot: vi.fn().mockResolvedValue(undefined),
     completeMarketRefreshRun: vi.fn().mockResolvedValue(undefined),
+    getMarketDataStatus: vi
+      .fn()
+      .mockResolvedValue({ latestRun: null, latestQuote: null }),
   };
 }
 
@@ -527,5 +530,19 @@ describe("ScreenerMarketService", () => {
     expect(repository.completeMarketRefreshRun).toHaveBeenCalledWith(
       expect.objectContaining({ attemptedIssuers: 1, status: "PARTIAL" }),
     );
+  });
+
+  it("returns the persisted market update and quote timestamps", async () => {
+    const marketStatus = {
+      latestRun: { status: "COMPLETED", startedAt: now },
+      latestQuote: { quoteObservedAt: quoteTime, sourceTicker: "SLCE3" },
+    };
+    const repository = {
+      ...repositoryFor([]),
+      getMarketDataStatus: vi.fn().mockResolvedValue(marketStatus),
+    };
+    await expect(
+      new ScreenerMarketService(undefined, repository).status(),
+    ).resolves.toBe(marketStatus);
   });
 });

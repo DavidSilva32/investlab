@@ -25,9 +25,9 @@ describe("secondary pages", () => {
       renderToStaticMarkup(
         await AnalysesPage({ searchParams: Promise.resolve({}) }),
       ),
-    ).toContain("análises da sua carteira");
+    ).toContain("Descobrir");
     expect(renderToStaticMarkup(<SettingsPage />)).toContain(
-      "Dados do Screener",
+      "Fundamentos e cadastro",
     );
   });
 

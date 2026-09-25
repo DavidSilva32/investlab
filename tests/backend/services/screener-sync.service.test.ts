@@ -298,6 +298,7 @@ describe("ScreenerSyncService", () => {
     });
     await expect(service.status()).resolves.toEqual({
       hasSuccessfulSync: false,
+      lastSuccessfulCompletedAt: null,
       latestRun: null,
     });
     repository.getStatus.mockResolvedValueOnce({
@@ -333,6 +334,7 @@ describe("ScreenerSyncService", () => {
     );
     await expect(withoutStatusRepository.status()).resolves.toEqual({
       hasSuccessfulSync: false,
+      lastSuccessfulCompletedAt: null,
       latestRun: null,
     });
   });

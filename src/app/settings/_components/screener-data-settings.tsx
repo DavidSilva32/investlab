@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card";
 
 type SyncStatus = {
+  lastSuccessfulCompletedAt: string | null;
   hasSuccessfulSync: boolean;
   latestRun: null | {
     status: "RUNNING" | "COMPLETED" | "FAILED";
@@ -36,7 +37,13 @@ const dateTime = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
 });
 const number = new Intl.NumberFormat("pt-BR");
-
+function ageLabel(value: string) {
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000),
+  );
+  return days === 0 ? "hoje" : days === 1 ? "há 1 dia" : `há ${days} dias`;
+}
 function formatDuration(durationMs: number) {
   const seconds = Math.floor(durationMs / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -163,10 +170,10 @@ export function ScreenerDataSettings() {
       <CardHeader>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle>Dados do Screener</CardTitle>
+            <CardTitle>Fundamentos e cadastro</CardTitle>
             <CardDescription className="mt-1 max-w-2xl">
-              Acompanhe a carga local de emissores, tickers e fatos financeiros.
-              A sincronização pode levar alguns minutos.
+              Atualiza cadastro de emissores, tickers e demonstrações anuais DFP
+              consolidadas da CVM. A sincronização pode levar alguns minutos.
             </CardDescription>
           </div>
           <Button
@@ -213,6 +220,21 @@ export function ScreenerDataSettings() {
             {notice}
           </p>
         )}
+        <p className="text-xs text-muted-foreground">
+          A CVM prevê prazo de até três meses após o encerramento do exercício
+          para a entrega da DFP. Revise esta base depois da janela anual de
+          divulgação; essa recomendação não garante que toda empresa já tenha
+          publicado.{" "}
+          <a
+            className="underline underline-offset-4"
+            href="https://www.gov.br/cvm/pt-br/assuntos/regulados/envio-de-informacoes-a-cvm-calendario"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Calendário de entrega da CVM
+          </a>
+        </p>
+
         {loading && !status ? (
           <p role="status" className="text-sm text-muted-foreground">
             Consultando a última sincronização…
@@ -229,6 +251,16 @@ export function ScreenerDataSettings() {
             {run ? (
               <>
                 <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">
+                      Última atualização bem-sucedida
+                    </dt>
+                    <dd className="mt-1 text-sm font-medium">
+                      {status?.lastSuccessfulCompletedAt
+                        ? `${dateTime.format(new Date(status.lastSuccessfulCompletedAt))} (${ageLabel(status.lastSuccessfulCompletedAt)})`
+                        : "Sem sincronização concluída"}
+                    </dd>
+                  </div>
                   <div>
                     <dt className="text-xs text-muted-foreground">
                       Iniciada em

@@ -138,4 +138,33 @@ describe("ScreenerService", () => {
     );
     expect(repository.getUniverse).not.toHaveBeenCalled();
   });
+
+  it("returns discovery criteria for the local universe without ranking", async () => {
+    const second = { ...company, cnpj: "222", name: "Another issuer" };
+    const repository = {
+      getUniverse: vi.fn().mockResolvedValue([company, second]),
+      hasSuccessfulSync: vi.fn().mockResolvedValue(true),
+    };
+    const service = new ScreenerService(repository);
+    const result = await service.discover("discover-request");
+    expect(result.hasSuccessfulSync).toBe(true);
+    expect(result.results.map(({ name }) => name)).toEqual([
+      "Another issuer",
+      "Issuer",
+    ]);
+    expect(result.results[1]?.assessment.period).toBe("2025-12-31");
+    expect(result.results[1]).not.toHaveProperty("metrics");
+    expect(result.results[1]?.assessment.criteria[0]?.status).toBe("met");
+  });
+
+  it("returns an empty discovery collection before any sync", async () => {
+    const repository = {
+      getUniverse: vi.fn().mockResolvedValue([]),
+      hasSuccessfulSync: vi.fn().mockResolvedValue(false),
+    };
+    await expect(new ScreenerService(repository).discover()).resolves.toEqual({
+      results: [],
+      hasSuccessfulSync: false,
+    });
+  });
 });

@@ -24,13 +24,9 @@ vi.mock("@/app/analyses/_components/screener-dashboard", () => ({
 describe("ScreenerPage", () => {
   it("composes the exploration title, experience switcher and screener panel", () => {
     render(<ScreenerPage />);
-    expect(
-      screen.getByRole("heading", { name: "Explorar ações" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Explorar" })).toBeTruthy();
     expect(screen.getByText("explore")).toBeTruthy();
-    expect(
-      screen.getByText(/fundamentos sincronizados para a base local/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Ajuste filtros financeiros/)).toBeTruthy();
     expect(screen.getByText("Local screener panel")).toBeTruthy();
   });
 });

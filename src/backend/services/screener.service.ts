@@ -1,5 +1,6 @@
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
+  assessCompanyForDiscovery,
   filterScreenerCompanies,
   screenerFilterSchema,
 } from "@/backend/services/screener-metrics";
@@ -48,6 +49,27 @@ export class ScreenerService {
       counts,
     });
     return { results, counts, filters: parsed.data, hasSuccessfulSync };
+  }
+
+  async discover(requestId?: string) {
+    const [universe, hasSuccessfulSync] = await Promise.all([
+      this.repository.getUniverse(),
+      this.repository.hasSuccessfulSync(),
+    ]);
+    const sourceByCnpj = new Map(
+      universe.map((company) => [company.cnpj, company]),
+    );
+    const results = filterScreenerCompanies(universe, {}).map((company) => {
+      const { metrics: _metrics, ...identity } = company;
+      const source = sourceByCnpj.get(company.cnpj)!;
+      return { ...identity, assessment: assessCompanyForDiscovery(source) };
+    });
+    logger.info("screener_discovery_completed", {
+      requestId,
+      resultCount: results.length,
+      hasSuccessfulSync,
+    });
+    return { results, hasSuccessfulSync };
   }
 }
 

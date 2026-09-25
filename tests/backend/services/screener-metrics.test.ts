@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assessCompanyForDiscovery,
   calculateScreenerMetrics,
   filterScreenerCompanies,
   screenerFilterSchema,
@@ -536,5 +537,83 @@ describe("filterScreenerCompanies", () => {
     expect(result.map(({ metrics }) => metrics.roe)).toEqual([
       53.333333333333336, 28.57142857142857,
     ]);
+  });
+});
+
+describe("assessCompanyForDiscovery", () => {
+  it("explains available annual evidence and the explicit five-year window", () => {
+    const assessment = assessCompanyForDiscovery(company());
+    expect(assessment.period).toBe("2025-12-31");
+    expect(assessment.source).toBe("CVM DFP consolidada anual");
+    expect(assessment.criteria.map(({ status }) => status)).toEqual([
+      "met",
+      "met",
+      "met",
+      "not_met",
+    ]);
+    expect(assessment.criteria[3]?.explanation).toContain(
+      "2 exercícios consecutivos",
+    );
+  });
+
+  it("marks sustained positive profit when the five available exercises are positive", () => {
+    const fiveYearFacts = Array.from({ length: 5 }, (_, index) => {
+      const year = 2025 - index;
+      return [
+        makeFact("3.01", year, 500),
+        makeFact("3.11", year, 100),
+        makeFact("2.03", year, 400),
+      ];
+    }).flat();
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: fiveYearFacts }),
+    );
+    expect(assessment.criteria[3]).toMatchObject({ status: "met" });
+  });
+
+  it("distinguishes unavailable sector coverage and missing annual facts", () => {
+    const unsupported = assessCompanyForDiscovery(
+      company({ sector: "Tecnologia" }),
+    );
+    expect(unsupported.period).toBe("2025-12-31");
+    expect(unsupported.criteria.map(({ status }) => status)).toEqual([
+      "unavailable",
+      "unavailable",
+      "unavailable",
+      "unavailable",
+    ]);
+    const missing = assessCompanyForDiscovery(company({ facts: [] }));
+    expect(missing.period).toBeNull();
+    expect(missing.criteria.map(({ status }) => status)).toEqual([
+      "met",
+      "unavailable",
+      "unavailable",
+      "unavailable",
+    ]);
+  });
+
+  it("marks nonpositive latest profit and equity as not met", () => {
+    const negativeFacts = facts.map((fact) =>
+      fact.referenceDate === "2025-12-31" && fact.accountCode === "3.11"
+        ? { ...fact, value: 0 }
+        : fact.referenceDate === "2025-12-31" && fact.accountCode === "2.03"
+          ? { ...fact, value: -400 }
+          : fact,
+    );
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: negativeFacts }),
+    );
+    expect(assessment.criteria[1]?.status).toBe("not_met");
+    expect(assessment.criteria[2]?.status).toBe("not_met");
+  });
+  it("anchors consecutive profits to the latest complete annual period", () => {
+    const newerPartial = [...facts, makeFact("3.11", 2026, 200)];
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: newerPartial }),
+    );
+    expect(assessment.period).toBe("2025-12-31");
+    expect(assessment.criteria[3]?.explanation).toContain(
+      "2 exercícios consecutivos",
+    );
   });
 });

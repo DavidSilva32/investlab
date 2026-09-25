@@ -380,3 +380,84 @@ export function filterScreenerCompanies(
     })
     .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 }
+
+export type DiscoveryCriterionStatus = "met" | "not_met" | "unavailable";
+export type DiscoveryCriterion = {
+  id:
+    "sector_coverage" | "latest_profit" | "positive_equity" | "profit_history";
+  label: string;
+  status: DiscoveryCriterionStatus;
+  explanation: string;
+};
+export type DiscoveryAssessment = {
+  period: string | null;
+  source: "CVM DFP consolidada anual";
+  criteria: DiscoveryCriterion[];
+};
+
+export function assessCompanyForDiscovery(
+  company: ScreenerCompany,
+): DiscoveryAssessment {
+  const latest = latestCompleteYear(company.facts);
+  const eligible = isValidatedSector(company.sector) && latest !== null;
+  const metrics = eligible
+    ? calculateScreenerMetrics(company.facts, null)
+    : null;
+  const statusForPositive = (value: number) => (value > 0 ? "met" : "not_met");
+  const profits = profitsByYear(company.facts);
+  let positiveProfitYears = 0;
+  while (
+    latest !== null &&
+    profits.get(latest[0] - positiveProfitYears) !== undefined &&
+    profits.get(latest[0] - positiveProfitYears)! > 0
+  )
+    positiveProfitYears += 1;
+  const profitHistoryStatus =
+    metrics === null || metrics.latestNetIncome === null
+      ? "unavailable"
+      : positiveProfitYears >= 5
+        ? "met"
+        : "not_met";
+
+  return {
+    period: latest?.[1].get("3.11")?.referenceDate ?? null,
+    source: "CVM DFP consolidada anual",
+    criteria: [
+      {
+        id: "sector_coverage",
+        label: "Setor com conceitos contábeis validados",
+        status: isValidatedSector(company.sector) ? "met" : "unavailable",
+        explanation: isValidatedSector(company.sector)
+          ? "Os conceitos anuais usados nesta metodologia foram validados para este setor."
+          : "A comparabilidade contábil deste setor ainda não foi validada.",
+      },
+      {
+        id: "latest_profit",
+        label: "Lucro líquido positivo no último exercício completo",
+        status: eligible
+          ? statusForPositive(metrics!.latestNetIncome!)
+          : "unavailable",
+        explanation:
+          "Usa o lucro consolidado anual da DFP mais recente com receita, lucro e patrimônio do mesmo período.",
+      },
+      {
+        id: "positive_equity",
+        label: "Patrimônio líquido positivo no último exercício completo",
+        status: eligible
+          ? statusForPositive(metrics!.latestEquity!)
+          : "unavailable",
+        explanation:
+          "Usa o patrimônio líquido consolidado informado na mesma DFP anual.",
+      },
+      {
+        id: "profit_history",
+        label: "Lucro positivo em cinco exercícios consecutivos",
+        status: profitHistoryStatus,
+        explanation:
+          metrics === null
+            ? "Indisponível sem setor coberto e demonstrações anuais comparáveis."
+            : `${positiveProfitYears} ${positiveProfitYears === 1 ? "exercício consecutivo" : "exercícios consecutivos"} com lucro positivo até o exercício de referência. Cinco anos são uma janela de observação da metodologia, não uma previsão de desempenho.`,
+      },
+    ],
+  };
+}

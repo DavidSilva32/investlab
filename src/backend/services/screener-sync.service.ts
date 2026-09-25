@@ -58,9 +58,20 @@ export class ScreenerSyncService {
 
   async status() {
     const status = await this.repository.getStatus?.();
-    if (!status) return { hasSuccessfulSync: false, latestRun: null };
+    if (!status)
+      return {
+        hasSuccessfulSync: false,
+        latestRun: null,
+        lastSuccessfulCompletedAt: null,
+      };
     const { hasSuccessfulSync, latestRun } = status;
-    if (!latestRun) return { hasSuccessfulSync, latestRun: null };
+    if (!latestRun)
+      return {
+        hasSuccessfulSync,
+        latestRun: null,
+        lastSuccessfulCompletedAt:
+          status.lastSuccessfulCompletedAt?.toISOString() ?? null,
+      };
 
     const errorMessages: Record<string, string> = {
       BRAPI_RATE_LIMIT: "A fonte de cotações atingiu o limite de consultas.",
@@ -75,6 +86,8 @@ export class ScreenerSyncService {
     const finishedAt = latestRun.completedAt ?? new Date();
     return {
       hasSuccessfulSync,
+      lastSuccessfulCompletedAt:
+        status.lastSuccessfulCompletedAt?.toISOString() ?? null,
       latestRun: {
         status: latestRun.status,
         startedAt: latestRun.startedAt,

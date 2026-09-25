@@ -5,6 +5,7 @@ import {
   screenerFinancialFacts,
   screenerIngestionRuns,
   screenerIssuers,
+  screenerMarketRefreshRuns,
   screenerMarketSnapshots,
   screenerSecurities,
 } from "@/infrastructure/database/schema";
@@ -29,6 +30,9 @@ function setup(results: Map<unknown, unknown[]>) {
         },
         where(condition: unknown) {
           predicates.set(table, condition);
+          return builder;
+        },
+        limit() {
           return builder;
         },
         orderBy(condition: unknown) {
@@ -472,5 +476,36 @@ describe("ScreenerRepository", () => {
     expect(sqlFor(orderings.get(screenerMarketSnapshots)).sql).toContain(
       '"observedAt" desc',
     );
+  });
+
+  it("returns latest quote and refresh history, or nulls when no market data exists", async () => {
+    const run = {
+      status: "PARTIAL",
+      startedAt: new Date("2026-09-24T10:00:00Z"),
+      completedAt: null,
+      attemptedIssuers: 4,
+      updatedIssuers: 2,
+      unavailableIssuers: 2,
+      skippedFreshIssuers: 0,
+    };
+    const quote = {
+      quoteObservedAt: new Date("2026-09-24T09:55:00Z"),
+      sourceTicker: "AAA3",
+    };
+    const { orderings } = setup(
+      new Map<unknown, unknown[]>([
+        [screenerMarketRefreshRuns, [run]],
+        [screenerMarketSnapshots, [quote]],
+      ]),
+    );
+    await expect(
+      new ScreenerRepository().getMarketDataStatus(),
+    ).resolves.toEqual({ latestRun: run, latestQuote: quote });
+    expect(orderings.size).toBe(2);
+
+    setup(new Map());
+    await expect(
+      new ScreenerRepository().getMarketDataStatus(),
+    ).resolves.toEqual({ latestRun: null, latestQuote: null });
   });
 });

@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import {
   CalendarDays,
   ChartNoAxesCombined,
@@ -82,7 +82,63 @@ export function DashboardSummary({
           <ReferenceRates rates={referenceRates} />
         </div>
       )}
-      <div className="mt-3 flex justify-end">
+      <section
+        aria-labelledby="dashboard-next-steps"
+        className="mt-8 space-y-4"
+      >
+        <div>
+          <h2 id="dashboard-next-steps" className="text-lg font-semibold">
+            Próximos passos
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Atalhos para revisar os dados importados e seguir seu estudo.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardContent className="space-y-2 p-5">
+              <h3 className="font-medium">
+                {positions.length
+                  ? "Revise sua carteira"
+                  : "Importe sua carteira"}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {positions.length
+                  ? "Confira posições, concentração e vencimentos da última importação."
+                  : "Os indicadores do resumo dependem de uma posição importada da B3."}
+              </p>
+              <Link
+                href={positions.length ? "/portfolio" : "/imports"}
+                className="inline-block text-sm font-medium text-primary hover:underline"
+              >
+                {positions.length ? "Abrir carteira" : "Ir para Importações"}
+              </Link>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="space-y-2 p-5">
+              <h3 className="font-medium">Empresas em estudo</h3>
+              <p className="text-sm text-muted-foreground">
+                Consulte critérios e fontes antes de decidir se quer aprofundar
+                uma análise.
+              </p>
+              <Link
+                href="/analyses"
+                className="inline-block text-sm font-medium text-primary hover:underline"
+              >
+                Abrir Descobrir
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+        <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <strong>Em desenvolvimento:</strong> distribuição por classe e
+          geografia, reserva de emergência, metas e orientação de próximo
+          aporte. O sistema ainda não tem os dados e valores de meta necessários
+          para calculá-los.
+        </p>
+      </section>
+      <div className="mt-4 flex justify-end">
         <Link
           href="/portfolio"
           className="text-sm font-medium text-primary hover:underline"
