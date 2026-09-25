@@ -1,6 +1,7 @@
 import { ApplicationError } from "@/backend/errors/application-error";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { portfolioClassificationRepository } from "@/backend/repositories/portfolio-classification.repository";
+import { portfolioAllocationTargetRepository } from "@/backend/repositories/portfolio-allocation-target.repository";
 import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
 import {
   getPortfolioAssetKey,
@@ -8,6 +9,7 @@ import {
   type PortfolioAssetClassification,
 } from "@/backend/services/portfolio-classification";
 import { logger } from "@/infrastructure/logging/logger";
+import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-target-values";
 
 export class PortfolioAllocationService {
   async getAllocation(requestId?: string) {
@@ -42,6 +44,30 @@ export class PortfolioAllocationService {
     });
   }
 
+  async getAllocationTargets(requestId?: string) {
+    return portfolioAllocationTargetRepository.get(requestId);
+  }
+
+  async updateAllocationTargets(
+    percentages: Record<string, number>,
+    requestId?: string,
+  ) {
+    if (!isValidPortfolioAllocationTargets(percentages)) {
+      throw new ApplicationError(
+        "Use metas completas entre 0 e 100%, com até duas casas decimais, totalizando exatamente 100%.",
+        400,
+      );
+    }
+    const saved = await portfolioAllocationTargetRepository.save(
+      percentages,
+      requestId,
+    );
+    logger.info("portfolio_allocation_targets_updated", {
+      requestId,
+      assetClasses: Object.keys(saved).length,
+    });
+    return saved;
+  }
   async updateClassifications(
     input: {
       positionIds: string[];

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const service = vi.hoisted(() => ({
   getAllocation: vi.fn(),
+  getAllocationTargets: vi.fn(),
+  updateAllocationTargets: vi.fn(),
   updateClassifications: vi.fn(),
 }));
 vi.mock("@/backend/services/portfolio-allocation.service", () => ({
@@ -12,9 +14,9 @@ vi.mock("@/infrastructure/logging/logger", () => ({
 }));
 import { PortfolioAllocationController } from "@/backend/controllers/portfolio-allocation.controller";
 
-const request = (body: string) =>
+const request = (body: string, method = "PATCH") =>
   new Request("http://test/api/portfolio/allocation", {
-    method: "PATCH",
+    method,
     headers: { "content-type": "application/json" },
     body,
   });
@@ -27,13 +29,93 @@ describe("PortfolioAllocationController", () => {
 
   it("returns allocation positions", async () => {
     service.getAllocation.mockResolvedValue([{ id: "position-1" }]);
+    service.getAllocationTargets.mockResolvedValue({ "Renda fixa": 100 });
     const response = await new PortfolioAllocationController().get("req-1");
     expect(await response.json()).toEqual({
       positions: [{ id: "position-1" }],
+      targetPercentages: { "Renda fixa": 100 },
     });
     expect(service.getAllocation).toHaveBeenCalledWith("req-1");
   });
 
+  it("accepts and forwards a complete user target allocation", async () => {
+    const targetPercentages = {
+      "Renda fixa": 60,
+      "Renda variável": 20,
+      Fundos: 10,
+      Criptoativos: 5,
+      Imóveis: 0,
+      Outros: 5,
+    };
+    service.updateAllocationTargets.mockResolvedValue(targetPercentages);
+    const response = await new PortfolioAllocationController().updateTargets(
+      request(JSON.stringify({ targetPercentages }), "PUT"),
+      "req-targets",
+    );
+    expect(await response.json()).toMatchObject({ targetPercentages });
+    expect(service.updateAllocationTargets).toHaveBeenCalledWith(
+      targetPercentages,
+      "req-targets",
+    );
+  });
+
+  it("rejects a valid object without target percentages", async () => {
+    await expect(
+      new PortfolioAllocationController().updateTargets(
+        request(JSON.stringify({ unused: true })),
+        "req-missing-targets",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(service.updateAllocationTargets).not.toHaveBeenCalled();
+  });
+  it("rejects a malformed JSON body before service calls", async () => {
+    await expect(
+      new PortfolioAllocationController().updateTargets(
+        request("{"),
+        "req-json",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(service.updateAllocationTargets).not.toHaveBeenCalled();
+  });
+  it("rejects incomplete, out-of-range, or extra target classes", async () => {
+    const invalid = [
+      { "Renda fixa": 100 },
+      {
+        "Renda fixa": 60.001,
+        "Renda variável": 20,
+        Fundos: 10,
+        Criptoativos: 5,
+        Imóveis: 0,
+        Outros: 4.999,
+      },
+      {
+        "Renda fixa": 101,
+        "Renda variável": 0,
+        Fundos: 0,
+        Criptoativos: 0,
+        Imóveis: 0,
+        Outros: 0,
+      },
+      {
+        "Renda fixa": 100,
+        "Renda variável": 0,
+        Fundos: 0,
+        Criptoativos: 0,
+        Imóveis: 0,
+        Outros: 0,
+        "Classe extra": 0,
+      },
+    ];
+    for (const body of invalid) {
+      await expect(
+        new PortfolioAllocationController().updateTargets(
+          request(JSON.stringify({ targetPercentages: body }), "PUT"),
+          "req-invalid-targets",
+        ),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+    expect(service.updateAllocationTargets).not.toHaveBeenCalled();
+  });
   it("keeps single-position updates and allows partial field updates", async () => {
     service.updateClassifications.mockResolvedValue({ count: 1 });
     const controller = new PortfolioAllocationController();

@@ -15,9 +15,12 @@ import {
   type BulkClassification,
   type PortfolioPosition,
 } from "@/app/portfolio/_components/portfolio-classification-list";
+import { PortfolioAllocationTargets } from "@/app/portfolio/_components/portfolio-allocation-targets";
+import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import { formatCurrency } from "@/lib/utils";
 
 type Grouping = "assetClass" | "subClass" | "geography";
+type AssetClass = (typeof portfolioAssetClassOptions)[number];
 const unknownLabel = "Não informado";
 
 function positionValue(position: PortfolioPosition) {
@@ -35,6 +38,9 @@ function positionValue(position: PortfolioPosition) {
 
 export function PortfolioAllocation() {
   const [positions, setPositions] = useState<PortfolioPosition[] | null>(null);
+  const [targetPercentages, setTargetPercentages] = useState<
+    Partial<Record<AssetClass, number>>
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [grouping, setGrouping] = useState<Grouping>("assetClass");
   const [saving, setSaving] = useState(false);
@@ -45,6 +51,7 @@ export function PortfolioAllocation() {
         const body = await response.json();
         if (!response.ok) throw new Error(body.message);
         setPositions(body.positions);
+        setTargetPercentages(body.targetPercentages ?? {});
         setError(null);
       })
       .catch(() => setError("Não foi possível carregar a alocação."));
@@ -106,6 +113,26 @@ export function PortfolioAllocation() {
     }
   }
 
+  async function saveTargets(targets: Record<AssetClass, number>) {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/portfolio/allocation", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ targetPercentages: targets }),
+      });
+      const result: { message?: string } = await response.json();
+      if (!response.ok) throw new Error(result.message);
+      toast.success("Metas de alocação salvas.");
+      load();
+      return true;
+    } catch {
+      toast.error("Não foi possível salvar as metas de alocação.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
   async function saveSingle(position: PortfolioPosition, formData: FormData) {
     const assetClass = formData.get("assetClass") as string | null;
     const geography = formData.get("geography") as string | null;
@@ -152,9 +179,17 @@ export function PortfolioAllocation() {
             Carregando distribuição…
           </p>
         ) : positions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Importe posições para visualizar a classificação e a alocação.
-          </p>
+          <>
+            <p className="text-sm text-muted-foreground">
+              Importe posições para visualizar a classificação e a alocação.
+            </p>
+            <PortfolioAllocationTargets
+              positions={positions}
+              targetPercentages={targetPercentages}
+              saving={saving}
+              onSave={saveTargets}
+            />
+          </>
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -230,6 +265,12 @@ export function PortfolioAllocation() {
                 Não há valores atuais para calcular a distribuição.
               </p>
             )}
+            <PortfolioAllocationTargets
+              positions={positions}
+              targetPercentages={targetPercentages}
+              saving={saving}
+              onSave={saveTargets}
+            />
             <PortfolioClassificationList
               positions={positions}
               saving={saving}
