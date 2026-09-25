@@ -1,3 +1,4 @@
+import { and, eq, lt, sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -109,6 +110,25 @@ export const stockFundamentals = pgTable("stock_fundamentals", {
   sourceVersion: varchar({ length: 32 }).notNull(),
   fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+export const screenerMarketRefreshRuns = pgTable(
+  "screener_market_refresh_runs",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    startedAt: timestamp({ withTimezone: true }).notNull(),
+    completedAt: timestamp({ withTimezone: true }),
+    attemptedIssuers: integer().notNull().default(0),
+    updatedIssuers: integer().notNull().default(0),
+    unavailableIssuers: integer().notNull().default(0),
+    skippedFreshIssuers: integer().notNull().default(0),
+    status: varchar({ length: 20 }).notNull().default("RUNNING"),
+  },
+  (table) => [
+    uniqueIndex("screener_market_refresh_running_uidx")
+      .on(table.status)
+      .where(sql`${table.status} = 'RUNNING'`),
+  ],
+);
+
 export const screenerIngestionRuns = pgTable("screener_ingestion_runs", {
   id: uuid().defaultRandom().primaryKey(),
   runKey: varchar({ length: 160 }).notNull().unique(),
@@ -192,18 +212,37 @@ export const screenerMarketSnapshots = pgTable(
       .notNull()
       .references(() => screenerIssuers.cnpj, { onDelete: "cascade" }),
     observedAt: timestamp({ withTimezone: true }).notNull(),
+    quoteObservedAt: timestamp({ withTimezone: true }),
     marketCap: numeric({ precision: 26, scale: 2 }),
     price: numeric({ precision: 24, scale: 8 }),
     sourceTicker: varchar({ length: 16 }).notNull(),
     classSemanticsValidated: boolean().notNull().default(false),
-    ingestionRunId: uuid()
-      .notNull()
-      .references(() => screenerIngestionRuns.id),
+    ingestionRunId: uuid().references(() => screenerIngestionRuns.id),
+    marketRefreshRunId: uuid().references(() => screenerMarketRefreshRuns.id),
   },
   (table) => [
     index("screener_market_issuer_observed_idx").on(
       table.issuerCnpj,
       table.observedAt,
     ),
+  ],
+);
+
+export const screenerMarketSnapshotQuotes = pgTable(
+  "screener_market_snapshot_quotes",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    snapshotId: uuid()
+      .notNull()
+      .references(() => screenerMarketSnapshots.id, { onDelete: "cascade" }),
+    requestedTicker: varchar({ length: 16 }).notNull(),
+    returnedTicker: varchar({ length: 16 }).notNull(),
+    price: numeric({ precision: 24, scale: 8 }),
+    marketCap: numeric({ precision: 26, scale: 2 }),
+    quoteObservedAt: timestamp({ withTimezone: true }),
+    validationResult: varchar({ length: 40 }).notNull(),
+  },
+  (table) => [
+    index("screener_market_snapshot_quotes_snapshot_idx").on(table.snapshotId),
   ],
 );

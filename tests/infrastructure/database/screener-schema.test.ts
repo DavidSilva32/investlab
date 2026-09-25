@@ -5,6 +5,8 @@ import {
   screenerIngestionRuns,
   screenerIssuers,
   screenerMarketSnapshots,
+  screenerMarketRefreshRuns,
+  screenerMarketSnapshotQuotes,
   screenerSecurities,
 } from "@/infrastructure/database/schema";
 
@@ -90,10 +92,12 @@ describe("Screener persistence schema", () => {
         "issuerCnpj",
         "observedAt",
         "marketCap",
+        "quoteObservedAt",
         "price",
         "sourceTicker",
         "classSemanticsValidated",
         "ingestionRunId",
+        "marketRefreshRunId",
       ]),
     );
     expect(market.indexes.map(({ config }) => config.name)).toContain(
@@ -103,6 +107,41 @@ describe("Screener persistence schema", () => {
       market.foreignKeys.map(
         (foreignKey) => foreignKey.reference().columns[0]?.name,
       ),
-    ).toEqual(["issuerCnpj", "ingestionRunId"]);
+    ).toEqual(["issuerCnpj", "ingestionRunId", "marketRefreshRunId"]);
+  });
+
+  it("records a market refresh run separately from DFP ingestion", () => {
+    const refresh = getTableConfig(screenerMarketRefreshRuns);
+    expect(refresh.name).toBe("screener_market_refresh_runs");
+    expect(refresh.indexes.map(({ config }) => config.name)).toContain(
+      "screener_market_refresh_running_uidx",
+    );
+    expect(refresh.columns.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "startedAt",
+        "completedAt",
+        "attemptedIssuers",
+        "status",
+      ]),
+    );
+  });
+
+  it("persists sanitized per-class quote evidence linked to a snapshot", () => {
+    const evidence = getTableConfig(screenerMarketSnapshotQuotes);
+    expect(evidence.name).toBe("screener_market_snapshot_quotes");
+    expect(evidence.columns.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "snapshotId",
+        "requestedTicker",
+        "returnedTicker",
+        "price",
+        "marketCap",
+        "quoteObservedAt",
+        "validationResult",
+      ]),
+    );
+    expect(
+      evidence.foreignKeys[0]?.reference().columns.map(({ name }) => name),
+    ).toEqual(["snapshotId"]);
   });
 });

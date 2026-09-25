@@ -26,6 +26,9 @@ export type ScreenerResult = {
     netMargin: number | null;
     pe: number | null;
     pb: number | null;
+    valuationMarketDate: string | null;
+    valuationFinancialDate: string | null;
+    valuationSourceTicker: string | null;
   };
 };
 
@@ -166,6 +169,26 @@ export function ScreenerResultsList({
                     <Metric label="P/L" value={company.metrics.pe} />
                     <Metric label="P/VP" value={company.metrics.pb} />
                   </dl>
+                  {company.metrics.valuationMarketDate &&
+                    company.metrics.valuationFinancialDate && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Base das múltiplas: BRAPI{" "}
+                        {new Intl.DateTimeFormat("pt-BR", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(
+                          new Date(company.metrics.valuationMarketDate),
+                        )}
+                        {` (${company.metrics.valuationSourceTicker})`}
+                        {" · DFP "}
+                        {new Intl.DateTimeFormat("pt-BR", {
+                          dateStyle: "medium",
+                          timeZone: "UTC",
+                        }).format(
+                          new Date(company.metrics.valuationFinancialDate),
+                        )}
+                      </p>
+                    )}
                 </CardContent>
               </Card>
             ))}

@@ -9,6 +9,13 @@ export type MarketData = {
   history: Array<{ date: string; close: number }>;
 };
 export type MarketTicker = { ticker: string; name: string };
+export type MarketQuote = {
+  ticker: string;
+  companyName: string | null;
+  price: number | null;
+  marketCap: number | null;
+  observedAt: Date | null;
+};
 export interface MarketDataProvider {
   getByTicker(ticker: string): Promise<MarketData>;
   searchTickers(query: string): Promise<MarketTicker[]>;

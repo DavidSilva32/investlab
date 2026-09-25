@@ -75,6 +75,283 @@ describe("ScreenerRepository", () => {
       false,
     );
   });
+  it("persists quote evidence atomically with its issuer snapshot and run provenance", async () => {
+    const runReturning = vi.fn().mockResolvedValue([{ id: "market-run" }]);
+    const snapshotReturning = vi.fn().mockResolvedValue([{ id: "snapshot-1" }]);
+    const insertValues = vi
+      .fn()
+      .mockReturnValueOnce({ returning: runReturning })
+      .mockReturnValueOnce({ returning: snapshotReturning })
+      .mockResolvedValueOnce(undefined);
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    const transactionClient = {
+      insert: vi.fn(() => ({ values: insertValues })),
+      update: vi.fn(() => ({ set })),
+    };
+    const database = {
+      transaction: vi.fn(
+        (operation: (client: typeof transactionClient) => Promise<unknown>) =>
+          operation(transactionClient),
+      ),
+      update: vi.fn(() => ({ set })),
+    };
+    mocks.getDatabaseClient.mockReturnValue(database);
+    const repository = new ScreenerRepository();
+    const startedAt = new Date("2026-09-24T22:00:00Z");
+    const quoteTime = new Date("2026-09-24T21:31:30Z");
+    await expect(repository.startMarketRefreshRun(startedAt)).resolves.toBe(
+      "market-run",
+    );
+    await repository.saveMarketSnapshot({
+      issuerCnpj: "111",
+      observedAt: startedAt,
+      quoteObservedAt: quoteTime,
+      marketCap: 1000,
+      price: 49.26,
+      sourceTicker: "PETR3",
+      classSemanticsValidated: true,
+      marketRefreshRunId: "market-run",
+      quoteEvidence: [
+        {
+          requestedTicker: "PETR3",
+          returnedTicker: "PETR3",
+          price: 54.12,
+          marketCap: 1000,
+          quoteObservedAt: quoteTime,
+          validationResult: "VALIDATED",
+        },
+        {
+          requestedTicker: "PETR4",
+          returnedTicker: "PETR4",
+          price: 49.26,
+          marketCap: 1000,
+          quoteObservedAt: quoteTime,
+          validationResult: "VALIDATED",
+        },
+      ],
+    });
+    expect(database.transaction).toHaveBeenCalledTimes(2);
+    expect(insertValues).toHaveBeenNthCalledWith(1, { startedAt });
+    expect(insertValues).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        issuerCnpj: "111",
+        marketCap: "1000",
+        price: "49.26",
+        marketRefreshRunId: "market-run",
+      }),
+    );
+    expect(insertValues).toHaveBeenNthCalledWith(3, [
+      {
+        requestedTicker: "PETR3",
+        returnedTicker: "PETR3",
+        price: "54.12",
+        marketCap: "1000",
+        quoteObservedAt: quoteTime,
+        validationResult: "VALIDATED",
+        snapshotId: "snapshot-1",
+      },
+      {
+        requestedTicker: "PETR4",
+        returnedTicker: "PETR4",
+        price: "49.26",
+        marketCap: "1000",
+        quoteObservedAt: quoteTime,
+        validationResult: "VALIDATED",
+        snapshotId: "snapshot-1",
+      },
+    ]);
+    await repository.completeMarketRefreshRun({
+      id: "market-run",
+      completedAt: startedAt,
+      attemptedIssuers: 1,
+      updatedIssuers: 1,
+      unavailableIssuers: 0,
+      skippedFreshIssuers: 0,
+      status: "COMPLETED",
+    });
+    expect(database.update).toHaveBeenCalledOnce();
+  });
+
+  it("returns a null lease when the insert does not return a run row", async () => {
+    const transactionClient = {
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })),
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([]) })),
+      })),
+    };
+    mocks.getDatabaseClient.mockReturnValue({
+      transaction: (
+        operation: (client: typeof transactionClient) => Promise<unknown>,
+      ) => operation(transactionClient),
+    });
+
+    await expect(
+      new ScreenerRepository().startMarketRefreshRun(
+        new Date("2026-09-24T22:00:00Z"),
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("stores null quote values as nulls in the evidence rows", async () => {
+    const values = vi
+      .fn()
+      .mockReturnValueOnce({
+        returning: vi.fn().mockResolvedValue([{ id: "snapshot-1" }]),
+      })
+      .mockResolvedValueOnce(undefined);
+    const transactionClient = {
+      insert: vi.fn(() => ({ values })),
+    };
+    const database = {
+      transaction: vi.fn(
+        (operation: (client: typeof transactionClient) => Promise<unknown>) =>
+          operation(transactionClient),
+      ),
+    };
+    mocks.getDatabaseClient.mockReturnValue(database);
+
+    await expect(
+      new ScreenerRepository().saveMarketSnapshot({
+        issuerCnpj: "111",
+        observedAt: new Date("2026-09-24T22:00:00Z"),
+        quoteObservedAt: null,
+        marketCap: null,
+        price: null,
+        sourceTicker: "PETR3",
+        classSemanticsValidated: false,
+        marketRefreshRunId: "market-run",
+        quoteEvidence: [
+          {
+            requestedTicker: "PETR3",
+            returnedTicker: "PETR3",
+            price: null,
+            marketCap: null,
+            quoteObservedAt: null,
+            validationResult: "MARKET_CAP_MISSING",
+          },
+        ],
+      }),
+    ).resolves.toBeUndefined();
+    expect(values).toHaveBeenNthCalledWith(2, [
+      expect.objectContaining({
+        price: null,
+        marketCap: null,
+        snapshotId: "snapshot-1",
+      }),
+    ]);
+  });
+  it("propagates non-conflict errors when acquiring the refresh lease", async () => {
+    const databaseError = { code: "08006", message: "database unavailable" };
+    const insert = vi.fn(() => ({
+      values: vi.fn(() => ({
+        returning: vi.fn().mockRejectedValue(databaseError),
+      })),
+    }));
+    const transactionClient = {
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })),
+      insert,
+    };
+    mocks.getDatabaseClient.mockReturnValue({
+      transaction: (
+        operation: (client: typeof transactionClient) => Promise<unknown>,
+      ) => operation(transactionClient),
+    });
+
+    await expect(
+      new ScreenerRepository().startMarketRefreshRun(
+        new Date("2026-09-24T22:00:00Z"),
+      ),
+    ).rejects.toBe(databaseError);
+  });
+
+  it("propagates a missing snapshot insert result instead of persisting evidence", async () => {
+    const values = vi.fn(() => ({
+      returning: vi.fn().mockResolvedValue([]),
+    }));
+    const transactionClient = {
+      insert: vi.fn(() => ({ values })),
+    };
+    const database = {
+      transaction: vi.fn(
+        (operation: (client: typeof transactionClient) => Promise<unknown>) =>
+          operation(transactionClient),
+      ),
+    };
+    mocks.getDatabaseClient.mockReturnValue(database);
+
+    await expect(
+      new ScreenerRepository().saveMarketSnapshot({
+        issuerCnpj: "111",
+        observedAt: new Date("2026-09-24T22:00:00Z"),
+        quoteObservedAt: null,
+        marketCap: null,
+        price: null,
+        sourceTicker: "PETR3",
+        classSemanticsValidated: false,
+        marketRefreshRunId: "market-run",
+        quoteEvidence: [],
+      }),
+    ).rejects.toThrow("Market snapshot was not saved");
+    expect(database.transaction).toHaveBeenCalledOnce();
+    expect(values).toHaveBeenCalledOnce();
+  });
+
+  it("does not insert quote evidence when a saved snapshot has no quote rows", async () => {
+    const values = vi.fn().mockReturnValueOnce({
+      returning: vi.fn().mockResolvedValue([{ id: "snapshot-1" }]),
+    });
+    const transactionClient = {
+      insert: vi.fn(() => ({ values })),
+    };
+    const database = {
+      transaction: vi.fn(
+        (operation: (client: typeof transactionClient) => Promise<unknown>) =>
+          operation(transactionClient),
+      ),
+    };
+    mocks.getDatabaseClient.mockReturnValue(database);
+
+    await expect(
+      new ScreenerRepository().saveMarketSnapshot({
+        issuerCnpj: "111",
+        observedAt: new Date("2026-09-24T22:00:00Z"),
+        quoteObservedAt: null,
+        marketCap: null,
+        price: null,
+        sourceTicker: "PETR3",
+        classSemanticsValidated: false,
+        marketRefreshRunId: "market-run",
+        quoteEvidence: [],
+      }),
+    ).resolves.toBeUndefined();
+    expect(transactionClient.insert).toHaveBeenCalledOnce();
+    expect(values).toHaveBeenCalledOnce();
+  });
+  it("recovers expired market leases and declines a concurrent run", async () => {
+    const startedAt = new Date("2026-09-24T22:00:00Z");
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockReturnValue({ where });
+    const insert = vi.fn(() => ({
+      values: vi.fn(() => ({
+        returning: vi.fn().mockRejectedValue({ code: "23505" }),
+      })),
+    }));
+    const transactionClient = { update: vi.fn(() => ({ set })), insert };
+    mocks.getDatabaseClient.mockReturnValue({
+      transaction: (
+        operation: (client: typeof transactionClient) => Promise<unknown>,
+      ) => operation(transactionClient),
+    });
+    await expect(
+      new ScreenerRepository().startMarketRefreshRun(startedAt),
+    ).resolves.toBeNull();
+    expect(set).toHaveBeenCalledWith({
+      status: "PARTIAL",
+      completedAt: startedAt,
+    });
+  });
   it("avoids follow-up reads when no quantitatively eligible issuers exist", async () => {
     const { database } = setup(new Map([[screenerIssuers, []]]));
     await expect(new ScreenerRepository().getUniverse()).resolves.toEqual([]);
@@ -191,7 +468,7 @@ describe("ScreenerRepository", () => {
     expect(factSql.params).toContain("111");
     expect(factSql.params).toContain("222");
     const snapshotSql = sqlFor(predicates.get(screenerMarketSnapshots));
-    expect(snapshotSql.params).toContain(true);
+    expect(snapshotSql.params).toEqual(expect.arrayContaining(["111", "222"]));
     expect(sqlFor(orderings.get(screenerMarketSnapshots)).sql).toContain(
       '"observedAt" desc',
     );

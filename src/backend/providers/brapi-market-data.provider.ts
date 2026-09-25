@@ -3,6 +3,7 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import type {
   MarketData,
   MarketDataProvider,
+  MarketQuote,
   MarketTicker,
 } from "./market-data.provider";
 
@@ -81,12 +82,13 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     private readonly apiToken = process.env.BRAPI_TOKEN,
   ) {}
 
-  private async request(path: string) {
+  private async request(path: string, signal?: AbortSignal) {
     const response = await this.fetcher(`https://brapi.dev${path}`, {
       headers: this.apiToken
         ? { Authorization: `Bearer ${this.apiToken}` }
         : undefined,
       cache: "force-cache",
+      ...(signal ? { signal } : {}),
       next: { revalidate: 300 },
     });
     if (response.status === 429) {
@@ -114,6 +116,26 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       .map(({ symbol, name }) => ({ ticker: symbol, name }));
   }
 
+  async getQuoteByTicker(ticker: string): Promise<MarketQuote> {
+    const symbol = encodeURIComponent(ticker);
+    const payload = await this.request(
+      `/api/v2/stocks/quote?symbols=${symbol}`,
+      AbortSignal.timeout(15_000),
+    );
+    const quote = quoteSchema.parse(payload).results[0]!;
+    const observedAt = quote.data.regularMarketTime
+      ? new Date(quote.data.regularMarketTime)
+      : null;
+
+    return {
+      ticker: quote.symbol,
+      companyName: quote.data.longName ?? quote.data.shortName ?? null,
+      price: quote.data.regularMarketPrice ?? null,
+      marketCap: quote.data.marketCap ?? null,
+      observedAt:
+        observedAt && Number.isFinite(observedAt.getTime()) ? observedAt : null,
+    };
+  }
   async getByTicker(ticker: string): Promise<MarketData> {
     const symbol = encodeURIComponent(ticker);
     const quotePayload = await this.request(

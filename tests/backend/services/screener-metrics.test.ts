@@ -56,6 +56,8 @@ const company = (
   marketSnapshot: {
     marketCap: 2000,
     observedAt: new Date("2026-09-20T00:00:00Z"),
+    quoteObservedAt: new Date("2026-09-20T00:00:00Z"),
+    sourceTicker: "PETR3",
     classSemanticsValidated: true,
   },
   ...overrides,
@@ -74,6 +76,9 @@ describe("calculateScreenerMetrics", () => {
       netMargin: 20,
       pe: 20,
       pb: 5,
+      valuationMarketDate: "2026-09-20T00:00:00.000Z",
+      valuationFinancialDate: "2025-12-31",
+      valuationSourceTicker: "PETR3",
       positiveProfitYears: 2,
     });
   });
@@ -84,6 +89,8 @@ describe("calculateScreenerMetrics", () => {
       {
         marketCap: 2000,
         observedAt: new Date("2026-09-20T00:00:00Z"),
+        quoteObservedAt: new Date("2026-09-20T00:00:00Z"),
+        sourceTicker: "PETR3",
         classSemanticsValidated: false,
       },
       "unvalidated",
@@ -92,6 +99,8 @@ describe("calculateScreenerMetrics", () => {
       {
         marketCap: null,
         observedAt: new Date("2026-09-20T00:00:00Z"),
+        quoteObservedAt: new Date("2026-09-20T00:00:00Z"),
+        sourceTicker: "PETR3",
         classSemanticsValidated: true,
       },
       "missing market cap",
@@ -100,6 +109,8 @@ describe("calculateScreenerMetrics", () => {
       {
         marketCap: -1,
         observedAt: new Date("2026-09-20T00:00:00Z"),
+        quoteObservedAt: new Date("2026-09-20T00:00:00Z"),
+        sourceTicker: "PETR3",
         classSemanticsValidated: true,
       },
       "nonpositive market cap",
@@ -108,6 +119,8 @@ describe("calculateScreenerMetrics", () => {
       {
         marketCap: 2000,
         observedAt: new Date("2026-09-01T00:00:00Z"),
+        quoteObservedAt: new Date("2026-09-01T00:00:00Z"),
+        sourceTicker: "PETR3",
         classSemanticsValidated: true,
       },
       "stale",
@@ -116,6 +129,8 @@ describe("calculateScreenerMetrics", () => {
       {
         marketCap: 2000,
         observedAt: new Date("2026-09-24T00:00:00Z"),
+        quoteObservedAt: new Date("2026-09-24T00:00:00Z"),
+        sourceTicker: "PETR3",
         classSemanticsValidated: true,
       },
       "future",
@@ -127,6 +142,63 @@ describe("calculateScreenerMetrics", () => {
     expect(metrics.pb).toBeNull();
   });
 
+  it("requires positive annual earnings and equity for valuation multiples", () => {
+    const lossFacts = facts.map((fact) =>
+      fact.accountCode === "3.11" && fact.referenceDate === "2025-12-31"
+        ? { ...fact, value: -100 }
+        : fact,
+    );
+    const negativeEquityFacts = facts.map((fact) =>
+      fact.accountCode === "2.03" && fact.referenceDate === "2025-12-31"
+        ? { ...fact, value: -400 }
+        : fact,
+    );
+    expect(
+      calculateScreenerMetrics(lossFacts, company().marketSnapshot, now),
+    ).toMatchObject({
+      pe: null,
+      pb: 5,
+    });
+    expect(
+      calculateScreenerMetrics(
+        negativeEquityFacts,
+        company().marketSnapshot,
+        now,
+      ),
+    ).toMatchObject({ pe: 20, pb: null });
+  });
+
+  it("requires matching year-end dates to calculate ROE", () => {
+    const shiftedPreviousPeriod = facts.map((fact) =>
+      fact.accountCode === "2.03" && fact.referenceDate === "2024-12-31"
+        ? { ...fact, referenceDate: "2024-09-30" }
+        : fact,
+    );
+    expect(
+      calculateScreenerMetrics(
+        shiftedPreviousPeriod,
+        company().marketSnapshot,
+        now,
+      ),
+    ).toMatchObject({ roe: null, pe: 20, pb: 5 });
+  });
+  it("rejects annual values that have different reference dates", () => {
+    const differentDates = facts
+      .filter((fact) => fact.referenceDate === "2025-12-31")
+      .map((fact) =>
+        fact.accountCode === "2.03"
+          ? { ...fact, referenceDate: "2025-09-30" }
+          : fact,
+      );
+    expect(
+      calculateScreenerMetrics(differentDates, company().marketSnapshot, now),
+    ).toMatchObject({
+      latestNetIncome: null,
+      latestEquity: null,
+      pe: null,
+      pb: null,
+    });
+  });
   it("uses the greatest annual profit when duplicate facts exist for one exercise", () => {
     const metrics = calculateScreenerMetrics(
       [
@@ -161,6 +233,9 @@ describe("calculateScreenerMetrics", () => {
       netMargin: null,
       pe: null,
       pb: null,
+      valuationMarketDate: null,
+      valuationFinancialDate: null,
+      valuationSourceTicker: null,
       positiveProfitYears: 0,
     });
   });
@@ -285,6 +360,9 @@ describe("filterScreenerCompanies", () => {
       netMargin: null,
       pe: null,
       pb: null,
+      valuationMarketDate: null,
+      valuationFinancialDate: null,
+      valuationSourceTicker: null,
       positiveProfitYears: 0,
     });
     expect(

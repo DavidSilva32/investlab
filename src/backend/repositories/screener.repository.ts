@@ -1,9 +1,11 @@
-import { and, eq, gte, inArray, isNull, desc } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import {
   screenerFinancialFacts,
   screenerIngestionRuns,
+  screenerMarketRefreshRuns,
   screenerIssuers,
   screenerMarketSnapshots,
+  screenerMarketSnapshotQuotes,
   screenerSecurities,
 } from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
@@ -31,9 +33,6 @@ export class ScreenerRepository {
     if (issuers.length === 0) return [];
 
     const cnpjs = issuers.map((issuer) => issuer.cnpj);
-    const quantitativeCnpjs = issuers
-      .filter((issuer) => issuer.quantitativeEligible)
-      .map((issuer) => issuer.cnpj);
     const minimumReferenceDate = `${new Date().getUTCFullYear() - 6}-01-01`;
     const [securities, facts, snapshots] = await Promise.all([
       database
@@ -82,16 +81,14 @@ export class ScreenerRepository {
           issuerCnpj: screenerMarketSnapshots.issuerCnpj,
           marketCap: screenerMarketSnapshots.marketCap,
           observedAt: screenerMarketSnapshots.observedAt,
+          quoteObservedAt: screenerMarketSnapshots.quoteObservedAt,
+          sourceTicker: screenerMarketSnapshots.sourceTicker,
+          marketRefreshRunId: screenerMarketSnapshots.marketRefreshRunId,
           classSemanticsValidated:
             screenerMarketSnapshots.classSemanticsValidated,
         })
         .from(screenerMarketSnapshots)
-        .where(
-          and(
-            inArray(screenerMarketSnapshots.issuerCnpj, quantitativeCnpjs),
-            eq(screenerMarketSnapshots.classSemanticsValidated, true),
-          ),
-        )
+        .where(inArray(screenerMarketSnapshots.issuerCnpj, cnpjs))
         .orderBy(desc(screenerMarketSnapshots.observedAt)),
     ]);
 
@@ -120,6 +117,99 @@ export class ScreenerRepository {
     return [...byIssuer.values()].filter(
       (issuer) => issuer.securities.length > 0,
     );
+  }
+
+  async startMarketRefreshRun(startedAt: Date) {
+    try {
+      return await getDatabaseClient().transaction(async (transaction) => {
+        const expiredAt = new Date(startedAt.getTime() - 3 * 60 * 1000);
+        await transaction
+          .update(screenerMarketRefreshRuns)
+          .set({ status: "PARTIAL", completedAt: startedAt })
+          .where(
+            and(
+              eq(screenerMarketRefreshRuns.status, "RUNNING"),
+              lt(screenerMarketRefreshRuns.startedAt, expiredAt),
+            ),
+          );
+        const [run] = await transaction
+          .insert(screenerMarketRefreshRuns)
+          .values({ startedAt })
+          .returning({ id: screenerMarketRefreshRuns.id });
+        return run?.id ?? null;
+      });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "23505"
+      )
+        return null;
+      throw error;
+    }
+  }
+
+  async saveMarketSnapshot(snapshot: {
+    issuerCnpj: string;
+    observedAt: Date;
+    quoteObservedAt: Date | null;
+    marketCap: number | null;
+    price: number | null;
+    sourceTicker: string;
+    classSemanticsValidated: boolean;
+    marketRefreshRunId: string;
+    quoteEvidence: {
+      requestedTicker: string;
+      returnedTicker: string;
+      price: number | null;
+      marketCap: number | null;
+      quoteObservedAt: Date | null;
+      validationResult: string;
+    }[];
+  }) {
+    await getDatabaseClient().transaction(async (transaction) => {
+      const { quoteEvidence, ...snapshotValues } = snapshot;
+      const [saved] = await transaction
+        .insert(screenerMarketSnapshots)
+        .values({
+          ...snapshotValues,
+          marketCap: snapshot.marketCap?.toString() ?? null,
+          price: snapshot.price?.toString() ?? null,
+        })
+        .returning({ id: screenerMarketSnapshots.id });
+      if (!saved) throw new Error("Market snapshot was not saved");
+      if (quoteEvidence.length > 0)
+        await transaction.insert(screenerMarketSnapshotQuotes).values(
+          quoteEvidence.map((quote) => ({
+            ...quote,
+            snapshotId: saved.id,
+            price: quote.price?.toString() ?? null,
+            marketCap: quote.marketCap?.toString() ?? null,
+          })),
+        );
+    });
+  }
+  async completeMarketRefreshRun(run: {
+    id: string;
+    completedAt: Date;
+    attemptedIssuers: number;
+    updatedIssuers: number;
+    unavailableIssuers: number;
+    skippedFreshIssuers: number;
+    status: "COMPLETED" | "PARTIAL";
+  }) {
+    await getDatabaseClient()
+      .update(screenerMarketRefreshRuns)
+      .set({
+        completedAt: run.completedAt,
+        attemptedIssuers: run.attemptedIssuers,
+        updatedIssuers: run.updatedIssuers,
+        unavailableIssuers: run.unavailableIssuers,
+        skippedFreshIssuers: run.skippedFreshIssuers,
+        status: run.status,
+      })
+      .where(eq(screenerMarketRefreshRuns.id, run.id));
   }
 }
 

@@ -54,6 +54,8 @@ const company: ScreenerCompany = {
   marketSnapshot: {
     marketCap: "200",
     observedAt: new Date("2026-09-23T00:00:00Z"),
+    quoteObservedAt: new Date("2026-09-23T00:00:00Z"),
+    sourceTicker: "PETR3",
     classSemanticsValidated: true,
   },
 };

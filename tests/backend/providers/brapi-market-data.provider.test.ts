@@ -10,6 +10,56 @@ const quote = (data: Record<string, unknown> = {}) => ({
 });
 
 describe("BrapiMarketDataProvider", () => {
+  it("loads only a quote and parses issuer market capitalization and quote time", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse(
+        quote({
+          longName: "Petrobras PN",
+          regularMarketPrice: 49.26,
+          marketCap: 669710376952,
+          regularMarketTime: "2026-09-24T21:31:30.000Z",
+        }),
+      ),
+    );
+    const result = await new BrapiMarketDataProvider(fetcher).getQuoteByTicker(
+      "PETR4",
+    );
+    expect(result).toEqual({
+      ticker: "PETR4",
+      companyName: "Petrobras PN",
+      price: 49.26,
+      marketCap: 669710376952,
+      observedAt: new Date("2026-09-24T21:31:30.000Z"),
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]?.[0]).toContain("/stocks/quote?symbols=PETR4");
+  });
+
+  it("keeps a missing quote timestamp unavailable", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(quote({ marketCap: 100 })));
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getQuoteByTicker("PETR4"),
+    ).resolves.toMatchObject({ observedAt: null, marketCap: 100 });
+  });
+  it("keeps absent, invalid, and unnamed quote fields null", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(quote({ regularMarketTime: "not-a-time" })),
+      );
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getQuoteByTicker("PETR4"),
+    ).resolves.toEqual({
+      ticker: "PETR4",
+      companyName: null,
+      price: null,
+      marketCap: null,
+      observedAt: null,
+    });
+  });
+
   it("exposes BRAPI rate limiting and parses numeric Retry-After", async () => {
     const fetcher = vi
       .fn()

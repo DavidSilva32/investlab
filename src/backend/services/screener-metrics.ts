@@ -34,7 +34,10 @@ export type ScreenerCompany = {
   marketSnapshot: {
     marketCap: string | number | null;
     observedAt: Date;
+    quoteObservedAt: Date | null;
+    sourceTicker: string;
     classSemanticsValidated: boolean;
+    marketRefreshRunId?: string | null;
   } | null;
 };
 
@@ -46,6 +49,9 @@ export type ScreenerMetrics = {
   netMargin: number | null;
   pe: number | null;
   pb: number | null;
+  valuationMarketDate: string | null;
+  valuationFinancialDate: string | null;
+  valuationSourceTicker: string | null;
   positiveProfitYears: number;
 };
 
@@ -167,12 +173,30 @@ function annualConceptValues(facts: ScreenerFact[]) {
   return byYear;
 }
 
+function sameAnnualPeriod(
+  currentDate: string | undefined,
+  previousDate: string | undefined,
+) {
+  return (
+    currentDate !== undefined &&
+    previousDate !== undefined &&
+    currentDate.slice(4) === previousDate.slice(4) &&
+    Number(currentDate.slice(0, 4)) - Number(previousDate.slice(0, 4)) === 1
+  );
+}
+
 function latestCompleteYear(facts: ScreenerFact[]) {
   return (
     [...annualConceptValues(facts)]
-      .filter(([, values]) =>
-        ["3.01", "3.11", "2.03"].every((code) => values.has(code)),
-      )
+      .filter(([, values]) => {
+        if (!["3.01", "3.11", "2.03"].every((code) => values.has(code)))
+          return false;
+        return (
+          new Set(
+            [...values.values()].map(({ referenceDate }) => referenceDate),
+          ).size === 1
+        );
+      })
       .sort(([left], [right]) => right - left)[0] ?? null
   );
 }
@@ -216,14 +240,19 @@ export function calculateScreenerMetrics(
   const income = current?.get("3.11")?.value ?? null;
   const revenue = current?.get("3.01")?.value ?? null;
   const equity = current?.get("2.03")?.value ?? null;
-  const previousEquity =
-    year === null ? null : (concepts.get(year - 1)?.get("2.03")?.value ?? null);
+  const previousEquityFact =
+    year === null ? undefined : concepts.get(year - 1)?.get("2.03");
+  const previousEquity = previousEquityFact?.value ?? null;
   const roe =
     income !== null &&
     equity !== null &&
     equity > 0 &&
     previousEquity !== null &&
-    previousEquity > 0
+    previousEquity > 0 &&
+    sameAnnualPeriod(
+      current?.get("2.03")?.referenceDate,
+      previousEquityFact?.referenceDate,
+    )
       ? (income / ((equity + previousEquity) / 2)) * 100
       : null;
   const netMargin =
@@ -231,7 +260,7 @@ export function calculateScreenerMetrics(
       ? (income / revenue) * 100
       : null;
 
-  const observedAt = marketSnapshot?.observedAt.getTime() ?? Number.NaN;
+  const observedAt = marketSnapshot?.quoteObservedAt?.getTime() ?? Number.NaN;
   const marketCap = marketSnapshot?.classSemanticsValidated
     ? finiteValue(marketSnapshot.marketCap)
     : null;
@@ -243,6 +272,18 @@ export function calculateScreenerMetrics(
       ? marketCap
       : null;
 
+  const pe =
+    freshMarketCap !== null && income !== null && income > 0
+      ? freshMarketCap / income
+      : null;
+  const pb =
+    freshMarketCap !== null && equity !== null && equity > 0
+      ? freshMarketCap / equity
+      : null;
+  const valuationAvailable = pe !== null || pb !== null;
+  const valuationFinancialDate = valuationAvailable
+    ? current!.get("3.11")!.referenceDate
+    : null;
   const latestProfitYear = latestFinancialYear(facts);
   let positiveProfitYears = 0;
   while (
@@ -258,14 +299,15 @@ export function calculateScreenerMetrics(
     latestEquity: equity,
     roe,
     netMargin,
-    pe:
-      freshMarketCap !== null && income !== null && income > 0
-        ? freshMarketCap / income
-        : null,
-    pb:
-      freshMarketCap !== null && equity !== null && equity > 0
-        ? freshMarketCap / equity
-        : null,
+    pe,
+    pb,
+    valuationMarketDate: valuationAvailable
+      ? marketSnapshot!.quoteObservedAt!.toISOString()
+      : null,
+    valuationFinancialDate,
+    valuationSourceTicker: valuationAvailable
+      ? marketSnapshot!.sourceTicker
+      : null,
     positiveProfitYears,
   };
 }
@@ -290,6 +332,9 @@ export function filterScreenerCompanies(
             netMargin: null,
             pe: null,
             pb: null,
+            valuationMarketDate: null,
+            valuationFinancialDate: null,
+            valuationSourceTicker: null,
             positiveProfitYears: 0,
           };
       if (

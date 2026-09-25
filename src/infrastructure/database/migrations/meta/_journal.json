@@ -64,6 +64,20 @@
       "when": 1790215502897,
       "tag": "0008_luxuriant_bug",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790289056487,
+      "tag": "0009_lonely_starfox",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790290930313,
+      "tag": "0010_lame_human_torch",
+      "breakpoints": true
     }
   ]
 }

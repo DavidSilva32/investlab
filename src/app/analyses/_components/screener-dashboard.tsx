@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { AlertCircle, Filter, Search } from "lucide-react";
+import { AlertCircle, Filter, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -53,6 +53,10 @@ export function ScreenerDashboard() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingMarket, setRefreshingMarket] = useState(false);
+  const [marketRefreshMessage, setMarketRefreshMessage] = useState<
+    string | null
+  >(null);
 
   const load = useCallback(async (filters: Filters) => {
     setLoading(true);
@@ -96,6 +100,66 @@ export function ScreenerDashboard() {
     };
   }, []);
 
+  async function refreshMarket() {
+    setRefreshingMarket(true);
+    setError(null);
+    setMarketRefreshMessage("Preparando atualização dos dados de mercado.");
+    let remaining = 1;
+    let initialTotal: number | null = null;
+    let updated = 0;
+    let unavailable = 0;
+    try {
+      while (remaining > 0) {
+        const response = await fetch("/api/screener/market/refresh", {
+          method: "POST",
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as {
+          message?: string;
+          remainingIssuers?: number;
+          totalStaleIssuers?: number;
+          updatedIssuers?: number;
+          unavailableIssuers?: number;
+          attemptedIssuers?: number;
+        };
+        if (!response.ok)
+          throw new Error(
+            payload.message ?? "A atualização de mercado não foi concluída.",
+          );
+        initialTotal ??= payload.totalStaleIssuers ?? 0;
+        updated += payload.updatedIssuers ?? 0;
+        unavailable += payload.unavailableIssuers ?? 0;
+        remaining = payload.remainingIssuers ?? 0;
+        const processed = initialTotal - remaining;
+        setMarketRefreshMessage(
+          `Atualizando dados de mercado: ${processed} de ${initialTotal} emissores.`,
+        );
+        if (remaining > 0 && (payload.attemptedIssuers ?? 0) === 0)
+          throw new Error(
+            "A atualização não avançou. Tente novamente mais tarde.",
+          );
+      }
+      const unavailableSummary =
+        unavailable === 1
+          ? "; 1 emissor indisponível"
+          : unavailable > 1
+            ? `; ${unavailable} emissores indisponíveis`
+            : "";
+      setMarketRefreshMessage(
+        `Mercado atualizado: ${updated} emissores válidos${unavailableSummary}.`,
+      );
+      await load(draft);
+    } catch (refreshError) {
+      await load(draft);
+      setError(
+        refreshError instanceof Error
+          ? refreshError.message
+          : "Não foi possível atualizar os dados de mercado agora.",
+      );
+    } finally {
+      setRefreshingMarket(false);
+    }
+  }
   function updateNumber(
     key:
       | "positiveProfitYears"
@@ -129,6 +193,35 @@ export function ScreenerDashboard() {
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+        <div>
+          <p className="text-sm font-medium">Dados de mercado</p>
+          <p className="text-xs text-muted-foreground">
+            Atualização separada dos filtros; cotações válidas ficam em cache
+            por até 7 dias.
+          </p>
+          {marketRefreshMessage && (
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              aria-live="polite"
+            >
+              {marketRefreshMessage}
+            </p>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void refreshMarket()}
+          disabled={refreshingMarket || loading}
+        >
+          <RefreshCw
+            className={`size-4 ${refreshingMarket ? "animate-spin" : ""}`}
+            aria-hidden="true"
+          />
+          {refreshingMarket ? "Atualizando mercado" : "Atualizar mercado"}
+        </Button>
+      </div>
       <Card>
         <CardHeader>
           <div className="flex items-start gap-3">
@@ -209,7 +302,6 @@ export function ScreenerDashboard() {
                   aria-label="P/L máximo"
                   type="number"
                   step="any"
-                  disabled={(payload?.counts.withPe ?? 0) === 0}
                   value={draft.maximumPe ?? ""}
                   onChange={(event) =>
                     updateNumber("maximumPe", event.target.value)
@@ -218,8 +310,7 @@ export function ScreenerDashboard() {
                 />
                 {(payload?.counts.withPe ?? 0) === 0 && (
                   <span className="block text-xs font-normal text-muted-foreground">
-                    Indisponível até validar valor de mercado por emissor e
-                    classe.
+                    Atualize os dados de mercado para aplicar o filtro.
                   </span>
                 )}
               </label>
@@ -229,7 +320,6 @@ export function ScreenerDashboard() {
                   aria-label="P/VP máximo"
                   type="number"
                   step="any"
-                  disabled={(payload?.counts.withPb ?? 0) === 0}
                   value={draft.maximumPb ?? ""}
                   onChange={(event) =>
                     updateNumber("maximumPb", event.target.value)
@@ -238,8 +328,7 @@ export function ScreenerDashboard() {
                 />
                 {(payload?.counts.withPb ?? 0) === 0 && (
                   <span className="block text-xs font-normal text-muted-foreground">
-                    Indisponível até validar valor de mercado por emissor e
-                    classe.
+                    Atualize os dados de mercado para aplicar o filtro.
                   </span>
                 )}
               </label>

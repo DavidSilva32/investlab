@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 describe("ScreenerDashboard", () => {
-  it("loads the local universe, shows issuer metrics, links all classes, and disables unsafe valuation filters", async () => {
+  it("loads the local universe, shows issuer metrics, links all classes, and leaves valuation filters available", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(response({ results: [company], counts }));
@@ -80,15 +80,174 @@ describe("ScreenerDashboard", () => {
       screen
         .getByRole("spinbutton", { name: "P/L máximo" })
         .hasAttribute("disabled"),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       screen
         .getByRole("spinbutton", { name: "P/VP máximo" })
         .hasAttribute("disabled"),
-    ).toBe(true);
+    ).toBe(false);
     expect(screen.getByText(/1 de 1 emissores/)).toBeTruthy();
   });
 
+  it("refreshes market data in separate bounded requests and reloads only local results", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ results: [company], counts }))
+      .mockResolvedValueOnce(
+        response({
+          attemptedIssuers: 20,
+          updatedIssuers: 19,
+          unavailableIssuers: 2,
+          totalStaleIssuers: 21,
+          remainingIssuers: 1,
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          attemptedIssuers: 1,
+          updatedIssuers: 1,
+          unavailableIssuers: 0,
+          totalStaleIssuers: 1,
+          remainingIssuers: 0,
+        }),
+      )
+      .mockResolvedValueOnce(response({ results: [company], counts }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDashboard />);
+    await screen.findByText("Petrobras");
+    await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
+
+    expect(
+      await screen.findByText(
+        "Mercado atualizado: 20 emissores válidos; 2 emissores indisponíveis.",
+      ),
+    ).toBeTruthy();
+    expect(fetchMock.mock.calls[1]).toEqual([
+      "/api/screener/market/refresh",
+      { method: "POST", cache: "no-store" },
+    ]);
+    expect(fetchMock.mock.calls[2]).toEqual([
+      "/api/screener/market/refresh",
+      { method: "POST", cache: "no-store" },
+    ]);
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/screener");
+  });
+  it("surfaces a safe market API error and reloads local results", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ results: [company], counts }))
+      .mockResolvedValueOnce(
+        response({ message: "BRAPI temporariamente indisponível." }, false),
+      )
+      .mockResolvedValueOnce(response({ results: [company], counts }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDashboard />);
+    await screen.findByText("Petrobras");
+    await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "BRAPI temporariamente indisponível.",
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/screener");
+  });
+
+  it("uses generic copy when a non-Error refresh fails", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ results: [company], counts }))
+      .mockRejectedValueOnce("private network detail")
+      .mockResolvedValueOnce(response({ results: [company], counts }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDashboard />);
+    await screen.findByText("Petrobras");
+    await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível atualizar os dados de mercado agora.",
+    );
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
+      "private network detail",
+    );
+  });
+
+  it("reports one unavailable issuer with singular Portuguese copy", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ results: [company], counts }))
+      .mockResolvedValueOnce(
+        response({
+          attemptedIssuers: 1,
+          updatedIssuers: 0,
+          unavailableIssuers: 1,
+          totalStaleIssuers: 1,
+          remainingIssuers: 0,
+        }),
+      )
+      .mockResolvedValueOnce(response({ results: [company], counts }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDashboard />);
+    await screen.findByText("Petrobras");
+    await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
+    expect(
+      await screen.findByText(
+        "Mercado atualizado: 0 emissores válidos; 1 emissor indisponível.",
+      ),
+    ).toBeTruthy();
+  });
+  it("uses a safe fallback when the refresh route returns no message", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ results: [company], counts }))
+      .mockResolvedValueOnce(response({}, false))
+      .mockResolvedValueOnce(response({ results: [company], counts }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDashboard />);
+    await screen.findByText("Petrobras");
+    await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "A atualização de mercado não foi concluída.",
+    );
+  });
+  it("stops refresh when a batch reports no progress", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ results: [company], counts }))
+      .mockResolvedValueOnce(
+        response({
+          totalStaleIssuers: 1,
+          remainingIssuers: 1,
+        }),
+      )
+      .mockResolvedValueOnce(response({ results: [company], counts }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDashboard />);
+    await screen.findByText("Petrobras");
+    await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "A atualização não avançou. Tente novamente mais tarde.",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("handles an empty refresh response as an empty pending market set", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ results: [company], counts }))
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(response({ results: [company], counts }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDashboard />);
+    await screen.findByText("Petrobras");
+    await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
+    expect(
+      await screen.findByText("Mercado atualizado: 0 emissores válidos."),
+    ).toBeTruthy();
+  });
   it("combines entered filters and submits them to the local API", async () => {
     const user = userEvent.setup();
     const fetchMock = vi

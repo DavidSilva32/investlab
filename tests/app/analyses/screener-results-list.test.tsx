@@ -36,6 +36,9 @@ function company(index: number): ScreenerResult {
       netMargin: index === 1 ? 12.5 : null,
       pe: index === 1 ? 8.4 : null,
       pb: index === 1 ? 1.6 : null,
+      valuationMarketDate: index === 1 ? "2026-09-24T21:31:30.000Z" : null,
+      valuationFinancialDate: index === 1 ? "2025-12-31" : null,
+      valuationSourceTicker: index === 1 ? "PETR3" : null,
     },
   };
 }
@@ -61,6 +64,9 @@ describe("ScreenerResultsList", () => {
     expect(screen.queryByText("Empresa 13")).toBeNull();
     expect(screen.getByText("1.250")).toBeTruthy();
     expect(screen.getByText("25%")).toBeTruthy();
+    expect(
+      screen.getByText(/Base das múltiplas: BRAPI .*PETR3.*DFP/),
+    ).toBeTruthy();
     expect(
       screen
         .getByRole("link", { name: "TICK13 · Analisar" })
