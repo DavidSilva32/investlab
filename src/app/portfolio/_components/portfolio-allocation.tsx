@@ -10,6 +10,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 
 type Classification = {
@@ -39,14 +48,14 @@ const classOptions = [
 const geographyOptions = ["Brasil", "Exterior", "Global"];
 const unknownLabel = "Não informado";
 
+const unknownValue = "__not_informed__";
 function positionValue(position: Position) {
   if (
     position.estimatedValue !== undefined &&
-    position.estimatedValue !== null
+    position.estimatedValue !== null &&
+    Number.isFinite(position.estimatedValue)
   ) {
-    return Number.isFinite(position.estimatedValue)
-      ? position.estimatedValue
-      : null;
+    return position.estimatedValue;
   }
   if (position.totalValue === null) return null;
   const value = Number(position.totalValue);
@@ -110,14 +119,16 @@ export function PortfolioAllocation() {
   async function save(position: Position, formData: FormData) {
     setSaving(true);
     try {
+      const assetClass = formData.get("assetClass") as string | null;
+      const geography = formData.get("geography") as string | null;
       const response = await fetch("/api/portfolio/allocation", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           positionId: position.id,
-          assetClass: formData.get("assetClass") || null,
+          assetClass: assetClass === unknownValue ? null : assetClass,
           subClass: String(formData.get("subClass") || "").trim() || null,
-          geography: formData.get("geography") || null,
+          geography: geography === unknownValue ? null : geography,
         }),
       });
       const body = await response.json();
@@ -290,44 +301,68 @@ export function PortfolioAllocation() {
                         void save(position, new FormData(event.currentTarget));
                       }}
                     >
-                      <label className="grid gap-1.5 text-sm">
-                        Classe
-                        <select
+                      <div className="grid gap-1.5 text-sm">
+                        <Label htmlFor={`asset-class-${position.id}`}>
+                          Classe
+                        </Label>
+                        <Select
                           name="assetClass"
                           defaultValue={
-                            position.classification.assetClass ?? ""
+                            position.classification.assetClass ?? unknownValue
                           }
-                          className="h-10 rounded-md border bg-background px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <option value="">Não informado</option>
-                          {classOptions.map((option) => (
-                            <option key={option}>{option}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-1.5 text-sm">
-                        Subclasse
-                        <input
+                          <SelectTrigger id={`asset-class-${position.id}`}>
+                            <SelectValue placeholder="Selecione uma classe" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={unknownValue}>
+                              {"Não informado"}
+                            </SelectItem>
+                            {classOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1.5 text-sm">
+                        <Label htmlFor={`sub-class-${position.id}`}>
+                          Subclasse
+                        </Label>
+                        <Input
+                          id={`sub-class-${position.id}`}
                           name="subClass"
                           maxLength={120}
                           defaultValue={position.classification.subClass ?? ""}
                           placeholder="Ex.: Tesouro IPCA+"
-                          className="h-10 rounded-md border bg-background px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         />
-                      </label>
-                      <label className="grid gap-1.5 text-sm sm:col-span-2">
-                        Geografia
-                        <select
+                      </div>
+                      <div className="grid gap-1.5 text-sm sm:col-span-2">
+                        <Label htmlFor={`geography-${position.id}`}>
+                          Geografia
+                        </Label>
+                        <Select
                           name="geography"
-                          defaultValue={position.classification.geography ?? ""}
-                          className="h-10 rounded-md border bg-background px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          defaultValue={
+                            position.classification.geography ?? unknownValue
+                          }
                         >
-                          <option value="">Não informado</option>
-                          {geographyOptions.map((option) => (
-                            <option key={option}>{option}</option>
-                          ))}
-                        </select>
-                      </label>
+                          <SelectTrigger id={`geography-${position.id}`}>
+                            <SelectValue placeholder="Selecione uma geografia" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={unknownValue}>
+                              {"Não informado"}
+                            </SelectItem>
+                            {geographyOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="flex justify-end sm:col-span-2">
                         <Button type="submit" disabled={saving}>
                           {saving ? "Salvando…" : "Salvar classificação"}

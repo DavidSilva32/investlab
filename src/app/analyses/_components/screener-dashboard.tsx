@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ScreenerResultsList,
   type ScreenerResult,
@@ -255,21 +256,22 @@ export function ScreenerDashboard() {
                   placeholder="Sem filtro"
                 />
               </label>
-              <label className="flex items-center gap-2 self-end pb-2 text-sm font-medium">
-                <input
+              <div className="flex items-center gap-2 self-end pb-2 text-sm font-medium">
+                <Checkbox
+                  id="equity-positive"
                   aria-label="Patrimônio líquido positivo"
-                  type="checkbox"
                   checked={draft.equityPositive === true}
-                  onChange={(event) =>
+                  onCheckedChange={(checked) =>
                     setDraft((current) => ({
                       ...current,
-                      equityPositive: event.target.checked || undefined,
+                      equityPositive: checked === true || undefined,
                     }))
                   }
-                  className="size-4 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
-                Patrimônio líquido positivo
-              </label>
+                <label htmlFor="equity-positive" className="cursor-pointer">
+                  Patrimônio líquido positivo
+                </label>
+              </div>
               <label className="space-y-2 text-sm font-medium">
                 ROE mínimo (%)
                 <Input

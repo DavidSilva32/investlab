@@ -1,12 +1,52 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
+
+const pointerCaptureMethods = [
+  "hasPointerCapture",
+  "setPointerCapture",
+  "releasePointerCapture",
+  "scrollIntoView",
+] as const;
+const originalPointerCaptureMethods = new Map(
+  pointerCaptureMethods.map((method) => [
+    method,
+    Object.getOwnPropertyDescriptor(Element.prototype, method),
+  ]),
+);
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  Object.defineProperty(Element.prototype, "hasPointerCapture", {
+    configurable: true,
+    value: () => false,
+  });
+  Object.defineProperty(Element.prototype, "setPointerCapture", {
+    configurable: true,
+    value: () => {},
+  });
+  Object.defineProperty(Element.prototype, "releasePointerCapture", {
+    configurable: true,
+    value: () => {},
+  });
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: () => {},
+  });
+});
 
 const positions = [
   {
@@ -66,6 +106,17 @@ describe("PortfolioAllocation", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    for (const [method, descriptor] of originalPointerCaptureMethods) {
+      if (descriptor)
+        Object.defineProperty(Element.prototype, method, descriptor);
+      else
+        delete (
+          Element.prototype as Partial<
+            Record<(typeof pointerCaptureMethods)[number], unknown>
+          >
+        )[method];
+    }
     toast.success.mockReset();
     toast.error.mockReset();
   });
@@ -144,6 +195,22 @@ describe("PortfolioAllocation", () => {
     expect(
       await screen.findByRole("progressbar", { name: "Não informado: 0.0%" }),
     ).toBeTruthy();
+  });
+
+  it("falls back to the imported value when the estimate is invalid", async () => {
+    const position = {
+      ...positions[3],
+      estimatedValue: Number.NaN,
+      totalValue: "700",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ positions: [position] })),
+    );
+    render(<PortfolioAllocation />);
+
+    expect(await screen.findByRole("progressbar")).toBeTruthy();
+    expect(screen.getAllByText(/700,00/)).toHaveLength(3);
   });
 
   it("treats invalid imported values as unavailable", async () => {
@@ -228,7 +295,8 @@ describe("PortfolioAllocation", () => {
     await user.click(
       await screen.findByRole("button", { name: "Editar classificação" }),
     );
-    await user.selectOptions(screen.getByLabelText("Geografia"), "Brasil");
+    await user.click(screen.getByRole("combobox", { name: "Geografia" }));
+    await user.click(await screen.findByRole("option", { name: "Brasil" }));
     await user.click(
       screen.getByRole("button", { name: "Salvar classificação" }),
     );

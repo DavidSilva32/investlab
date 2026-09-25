@@ -43,13 +43,14 @@ export function DashboardClient() {
     return (
       <div role="alert" className="space-y-3 text-sm text-destructive">
         <p>{error}</p>
-        <button
+        <Button
           type="button"
-          className="text-foreground underline underline-offset-4"
+          variant="link"
+          className="h-auto p-0 text-foreground"
           onClick={loadOverview}
         >
           Tentar novamente
-        </button>
+        </Button>
       </div>
     );
   if (!overview)
