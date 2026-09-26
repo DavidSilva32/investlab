@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -80,7 +81,26 @@ describe("PortfolioImport", () => {
     });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+  it("renders movement previews with the shared table component", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue({ ok: true, json: async () => movementPreview }),
+    );
+    const { container } = render(<PortfolioImport />);
 
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [spreadsheet("movimentos.xlsx")] },
+    });
+
+    const table = await screen.findByRole("table", {
+      name: "Prévia de movimentações",
+    });
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(within(table).getByText("Compra")).toBeTruthy();
+    expect(within(table).getByText("—")).toBeTruthy();
+  });
   it("shows complete position details and reconciles the recognized total", async () => {
     vi.stubGlobal(
       "fetch",
