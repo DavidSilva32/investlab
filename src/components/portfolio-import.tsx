@@ -254,25 +254,25 @@ function PreviewItem({
         {item.file.name} — {item.preview.count} movimentações encontradas
       </h3>
       <div className="mt-3 max-h-64 overflow-auto rounded-md border">
-        <table className="w-full text-left text-sm">
-          <tbody>
+        <Table aria-label="Prévia de movimentações">
+          <TableBody>
             {item.preview.movements.map((record, index) => (
-              <tr key={index} className="border-t">
-                <td className="p-2">
+              <TableRow key={index}>
+                <TableCell className="p-2">
                   {date.format(new Date(`${record.occurredAt}T00:00:00Z`))}
-                </td>
-                <td>{record.movementType}</td>
-                <td>{record.product}</td>
-                <td>{number.format(Number(record.quantity))}</td>
-                <td className="p-2 text-right tabular-nums">
+                </TableCell>
+                <TableCell>{record.movementType}</TableCell>
+                <TableCell>{record.product}</TableCell>
+                <TableCell>{number.format(Number(record.quantity))}</TableCell>
+                <TableCell className="p-2 text-right tabular-nums">
                   {record.operationValue
                     ? money.format(Number(record.operationValue))
                     : "—"}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
