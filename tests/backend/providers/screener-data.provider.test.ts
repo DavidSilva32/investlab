@@ -459,6 +459,34 @@ describe("DFP streaming normalization", () => {
     expect(facts).toHaveLength(1);
   });
 
+  it("imports operational cash flow only from the validated indirect-method DFP file", async () => {
+    const cashFlow = [
+      validCnpj,
+      "9512",
+      "6.01",
+      "Caixa Liquido das Atividades Operacionais",
+      "ULTIMO",
+      "2025-12-31",
+      "125",
+      "UNIDADE",
+      "1",
+    ];
+    const facts = await parseDfpResponse(
+      zipResponse({
+        "dfp_cia_aberta_DFC_MI_con_2025.csv": csv(dfpHeader, [cashFlow]),
+        "dfp_cia_aberta_DFC_MD_con_2025.csv": csv(dfpHeader, [cashFlow]),
+      }),
+      2025,
+      registryByCode,
+    );
+    expect(facts).toEqual([
+      expect.objectContaining({
+        accountCode: "6.01",
+        sourceFile: "dfp_cia_aberta_DFC_MI_con_2025.csv",
+        value: "125.00",
+      }),
+    ]);
+  });
   it("rejects codes whose labels do not prove the expected financial meaning", async () => {
     const body = csv(dfpHeader, [
       [

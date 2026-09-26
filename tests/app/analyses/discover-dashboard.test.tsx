@@ -20,48 +20,57 @@ const payload = {
       name: "Empresa Exemplo",
       sector: "Petróleo e Gás",
       securities: [{ ticker: "AAA3", name: "Empresa ON" }],
-      quantitativeEligible: true,
-      metrics: {
-        latestNetIncome: 20,
-        latestRevenue: 100,
-        latestEquity: 50,
-        roe: null,
-        netMargin: null,
-        pe: null,
-        pb: null,
-        valuationMarketDate: null,
-        valuationFinancialDate: null,
-        valuationSourceTicker: null,
-        positiveProfitYears: 2,
-      },
       assessment: {
         period: "2025-12-31",
         source: "CVM DFP consolidada anual",
-        criteria: [
+        dimensions: [
           {
-            id: "latest_profit",
-            label: "Lucro líquido positivo no último exercício completo",
-            status: "met",
-            explanation: "Usa DFP anual.",
+            id: "results",
+            label: "Resultados",
+            status: "available",
+            explanation: "Histórico anual.",
           },
           {
-            id: "positive_equity",
-            label: "Patrimônio líquido positivo",
-            status: "not_met",
-            explanation: "Período atual.",
+            id: "profitability",
+            label: "Rentabilidade",
+            status: "available",
+            explanation: "ROE por exercício.",
           },
           {
-            id: "profit_history",
-            label: "Histórico consecutivo",
+            id: "cash",
+            label: "Caixa",
             status: "unavailable",
-            explanation: "Faltam dados.",
+            explanation: "DFC-MI indisponível.",
+          },
+          {
+            id: "financial_structure",
+            label: "Estrutura financeira",
+            status: "unavailable",
+            explanation: "Contas em validação.",
+          },
+          {
+            id: "capital",
+            label: "Capital",
+            status: "available",
+            explanation: "Patrimônio anual.",
+          },
+        ],
+        evidence: [
+          {
+            year: 2025,
+            period: "2025-12-31",
+            revenue: 100,
+            netIncome: 20,
+            equity: 50,
+            netMargin: 20,
+            roe: null,
+            operatingCashFlow: null,
           },
         ],
       },
     },
   ],
 };
-
 describe("DiscoverDashboard", () => {
   it("keeps evidence visible and puts methodology details behind an accessible disclosure", async () => {
     const user = userEvent.setup();
@@ -69,23 +78,28 @@ describe("DiscoverDashboard", () => {
     render(<DiscoverDashboard />);
     expect(await screen.findByText("Empresa Exemplo")).toBeTruthy();
     expect(screen.getByText(/CVM DFP consolidada anual/)).toBeTruthy();
-    expect(screen.getByText("Atendido")).toBeTruthy();
-    expect(screen.getByText("Não atendido")).toBeTruthy();
-    expect(screen.getByText("Indisponível")).toBeTruthy();
+    expect(screen.getAllByText("Evidências disponíveis")).toHaveLength(3);
+    expect(screen.getAllByText("Indisponível")).toHaveLength(2);
     const methodology = screen.getByRole("button", {
-      name: "Sobre a metodologia",
+      name: "Ver evidências anuais e metodologia",
       expanded: false,
     });
     methodology.focus();
     await user.keyboard("{Enter}");
     expect(
       screen.getByRole("button", {
-        name: "Sobre a metodologia",
+        name: "Ver evidências anuais e metodologia",
         expanded: true,
       }),
     ).toBeTruthy();
-    expect(await screen.findByText(/A janela de cinco exerc/)).toBeTruthy();
-    expect(screen.getByText(/CNPJ e cadastro da CVM/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Janela inicial de até cinco exercícios/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /ROIC, diluição e estrutura financeira não integram esta versão/,
+      ),
+    ).toBeTruthy();
     expect(
       screen
         .getByRole("link", { name: "AAA3 · Analisar" })
@@ -100,7 +114,9 @@ describe("DiscoverDashboard", () => {
       vi.fn(() => new Promise(() => undefined)),
     );
     render(<DiscoverDashboard />);
-    expect(screen.getByText(/Carregando empresas e critérios/)).toBeTruthy();
+    expect(
+      screen.getByText(/Carregando empresas e evidências anuais/),
+    ).toBeTruthy();
   });
 
   it("links to data settings when the local screener has not been synchronized", async () => {
@@ -161,7 +177,8 @@ describe("DiscoverDashboard", () => {
               assessment: {
                 ...payload.results[0].assessment,
                 period: null,
-                criteria: [],
+                dimensions: [],
+                evidence: [],
               },
             },
           ],

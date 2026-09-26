@@ -365,8 +365,8 @@ describe("ScreenerSyncService", () => {
       issuers: 2,
       securities: 4,
       fractionalAliases: 1,
-      facts: 15,
-      persistedFacts: 15,
+      facts: 18,
+      persistedFacts: 18,
       eligibleIssuers: 1,
     });
     expect(
@@ -382,7 +382,7 @@ describe("ScreenerSyncService", () => {
       "MISSING3",
     ]);
     expect(context.cvm.getAnnualFacts.mock.calls.map(([year]) => year)).toEqual(
-      [2021, 2022, 2023, 2024, 2025],
+      [2020, 2021, 2022, 2023, 2024, 2025],
     );
     const saved = context.saved[0] as {
       issuers: CvmCompanyRecord[];
@@ -790,7 +790,7 @@ describe("ScreenerSyncService", () => {
       expect(log).toHaveBeenCalledWith(
         "screener_dfp_dedupe_diagnostics",
         expect.objectContaining({
-          discarded: { duplicate_superseded: 4 },
+          discarded: { duplicate_superseded: 5 },
         }),
       );
     } finally {
@@ -809,7 +809,7 @@ describe("ScreenerSyncService", () => {
       persistedFacts: 0,
     });
     expect(context.brapi.getProfile).not.toHaveBeenCalled();
-    expect(context.cvm.getAnnualFacts).toHaveBeenCalledTimes(5);
+    expect(context.cvm.getAnnualFacts).toHaveBeenCalledTimes(6);
   });
 
   it("does not infer the issuer for an unmatched fractional alias", async () => {
@@ -875,7 +875,7 @@ describe("ScreenerSyncService", () => {
         facts: 0,
         persistedFacts: 0,
       });
-      expect(fetcher).toHaveBeenCalledTimes(6);
+      expect(fetcher).toHaveBeenCalledTimes(7);
       expect(fetcher.mock.calls[1]?.[0]).toMatch(/dfp_cia_aberta_\d{4}\.zip$/);
       expect(repository.saveFullSync).toHaveBeenCalledOnce();
     } finally {
@@ -890,7 +890,7 @@ describe("ScreenerSyncService", () => {
     await expect(context.service.sync()).rejects.toMatchObject({
       statusCode: 502,
     });
-    expect(context.cvm.getAnnualFacts.mock.calls[0]?.[0]).toBe(2021);
+    expect(context.cvm.getAnnualFacts.mock.calls[0]?.[0]).toBe(2020);
     expect(context.repository.saveFullSync).not.toHaveBeenCalled();
     expect(context.repository.markFailed).toHaveBeenCalledWith(
       "run-1",

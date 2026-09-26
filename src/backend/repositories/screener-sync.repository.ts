@@ -265,7 +265,17 @@ export class ScreenerSyncRepository {
               setWhere: sql`
             excluded.version > ${screenerFinancialFacts.version}
             OR (
+              excluded."accountCode" = '6.01'
+              AND excluded."sourceFile" LIKE '%DFC_MI_con_%'
+              AND ${screenerFinancialFacts.sourceFile} LIKE '%DFC_MD_con_%'
+            )
+            OR (
               excluded.version = ${screenerFinancialFacts.version}
+              AND NOT (
+                excluded."accountCode" = '6.01'
+                AND excluded."sourceFile" LIKE '%DFC_MD_con_%'
+                AND ${screenerFinancialFacts.sourceFile} LIKE '%DFC_MI_con_%'
+              )
               AND (
                 excluded."sourceFile" < ${screenerFinancialFacts.sourceFile}
                 OR (

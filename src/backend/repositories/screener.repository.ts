@@ -69,6 +69,7 @@ export class ScreenerRepository {
           documentType: screenerFinancialFacts.documentType,
           statementScope: screenerFinancialFacts.statementScope,
           exerciseOrder: screenerFinancialFacts.exerciseOrder,
+          sourceFile: screenerFinancialFacts.sourceFile,
         })
         .from(screenerFinancialFacts)
         .where(
@@ -79,6 +80,7 @@ export class ScreenerRepository {
               "3.01",
               "3.11",
               "2.03",
+              "6.01",
             ]),
             eq(screenerFinancialFacts.documentType, "DFP"),
             eq(screenerFinancialFacts.statementScope, "CONSOLIDATED"),

@@ -75,7 +75,7 @@ function sanitizeValidationIssues(error: z.ZodError) {
 
 const cvmBaseUrl = "https://dados.cvm.gov.br/dados/CIA_ABERTA";
 const brapiBaseUrl = "https://brapi.dev/api/v2";
-const csvAccounts = new Set(["3.01", "3.11", "2.03"]);
+const csvAccounts = new Set(["3.01", "3.11", "2.03", "6.01"]);
 
 export type CvmCompanyRecord = {
   cnpj: string;
@@ -249,7 +249,13 @@ function isValidatedFinancialAccountLabel(accountCode: string, label: string) {
       "LUCRO PREJUIZO DO PERIODO",
       "LUCRO PREJUIZO CONSOLIDADO DO PERIODO",
     ]).has(normalized);
-  return accountCode === "2.03" && normalized.startsWith("PATRIMONIO LIQUIDO");
+  if (accountCode === "2.03")
+    return normalized.startsWith("PATRIMONIO LIQUIDO");
+  return (
+    accountCode === "6.01" &&
+    (normalized.startsWith("CAIXA LIQUIDO DAS ATIVIDADES OPERACIONAIS") ||
+      normalized.startsWith("CAIXA LIQUIDO ATIVIDADES OPERACIONAIS"))
+  );
 }
 
 export async function readCvmRegistry(
@@ -446,6 +452,10 @@ export async function parseDfpResponse(
         if (mappedCnpj === issuerCnpj) exactCnpjCvmMatches.add(issuerCnpj);
         else cvmCodeCnpjMismatches += 1;
       }
+      if (row.CD_CONTA === "6.01" && !/DFC_MI_con_/i.test(file.name)) {
+        discard("cash_flow_method_not_validated");
+        return;
+      }
       if (!csvAccounts.has(row.CD_CONTA ?? "")) {
         discard("account_code_unselected");
         return;
@@ -466,7 +476,7 @@ export async function parseDfpResponse(
         return;
       }
       const referenceYear = Number(referenceDate.slice(0, 4));
-      if (referenceYear < year - 4 || referenceYear > year) {
+      if (referenceYear < year - 5 || referenceYear > year) {
         discard("reference_year_out_of_range");
         return;
       }
