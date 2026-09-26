@@ -31,17 +31,30 @@ const date = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "medium",
   timeZone: "UTC",
 });
-const criterionLabels = {
-  met: "Atendido",
-  not_met: "Não atendido",
+const currency = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  maximumFractionDigits: 0,
+});
+const percentage = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 1,
+});
+const availability = {
+  available: "Evidências disponíveis",
   unavailable: "Indisponível",
 } as const;
-const badgeVariants = {
-  met: "default",
-  not_met: "secondary",
-  unavailable: "outline",
-} as const;
 
+function money(value: number | null) {
+  return value === null ? "Indisponível" : currency.format(value);
+}
+function percent(value: number | null) {
+  return value === null ? "Indisponível" : `${percentage.format(value)}%`;
+}
+function periodLabel(value: string | null) {
+  return value
+    ? date.format(new Date(`${value}T00:00:00Z`))
+    : "período indisponível";
+}
 export function DiscoverDashboard() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +99,7 @@ export function DiscoverDashboard() {
     return (
       <Card aria-busy="true">
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Carregando empresas e critérios da metodologia…
+          Carregando empresas e evidências anuais…
         </CardContent>
       </Card>
     );
@@ -95,45 +108,18 @@ export function DiscoverDashboard() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Como interpretar</CardTitle>
+          <CardTitle>Empresas para estudo</CardTitle>
           <CardDescription>
-            Os critérios organizam evidências anuais da CVM; não são uma
-            recomendação de investimento.
+            Consulte primeiro o que merece atenção e aprofunde nas evidências e
+            na metodologia. A análise organiza dados históricos; não classifica
+            empresas como boas ou ruins nem recomenda investimentos.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Collapsible className="group text-sm text-muted-foreground">
-            <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-              Sobre a metodologia
-              <ChevronDown
-                aria-hidden="true"
-                className="size-4 transition-transform group-data-[state=open]:rotate-180"
-              />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-3 space-y-2 leading-relaxed">
-                <p>
-                  A janela de cinco exercícios observa o histórico e não prevê
-                  desempenho. Setores sem conceitos contábeis validados aparecem
-                  como indisponíveis.
-                </p>
-                <p>
-                  A empresa entra no universo pelo vínculo exato entre CNPJ e
-                  cadastro da CVM. A fonte é a DFP anual consolidada; cada
-                  critério abaixo mostra o período e o que os dados sustentam.
-                </p>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </CardContent>
       </Card>
 
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold">Empresas para estudo</h2>
-        <p className="text-sm text-muted-foreground" aria-live="polite">
-          {payload.results.length} empresas · ordem alfabética
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground" aria-live="polite">
+        {payload.results.length} empresas · ordem alfabética
+      </p>
 
       {!payload.hasSuccessfulSync ? (
         <Card>
@@ -191,20 +177,82 @@ export function DiscoverDashboard() {
                     : " · Período comparável indisponível"}
                 </p>
                 <ul className="grid gap-3 sm:grid-cols-2">
-                  {company.assessment.criteria.map((criterion) => (
-                    <li key={criterion.id} className="rounded-lg border p-3">
+                  {company.assessment.dimensions.map((dimension) => (
+                    <li key={dimension.id} className="rounded-lg border p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-medium">{criterion.label}</p>
-                        <Badge variant={badgeVariants[criterion.status]}>
-                          {criterionLabels[criterion.status]}
+                        <p className="text-sm font-medium">{dimension.label}</p>
+                        <Badge
+                          variant={
+                            dimension.status === "available"
+                              ? "default"
+                              : "outline"
+                          }
+                        >
+                          {availability[dimension.status]}
                         </Badge>
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {criterion.explanation}
+                        {dimension.explanation}
                       </p>
                     </li>
                   ))}
                 </ul>
+                <Collapsible className="group text-sm">
+                  <CollapsibleTrigger className="flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                    Ver evidências anuais e metodologia
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                    />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-3 space-y-3">
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Janela inicial de até cinco exercícios completos.
+                        Valores ausentes ou períodos incompatíveis aparecem como
+                        indisponíveis. ROIC, diluição e estrutura financeira não
+                        integram esta versão; instituições financeiras ficam
+                        fora da metodologia.
+                      </p>
+                      {company.assessment.evidence.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Não há exercícios completos comparáveis disponíveis.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {company.assessment.evidence.map((point) => (
+                            <li
+                              key={point.year}
+                              className="rounded-md bg-muted/40 p-3 text-xs"
+                            >
+                              <p className="font-medium">
+                                Exercício {point.year}
+                              </p>
+                              <p className="mt-1 text-muted-foreground">
+                                Receita {money(point.revenue)} ·{" "}
+                                {periodLabel(point.revenuePeriod)}
+                                <br />
+                                Lucro {money(point.netIncome)} ·{" "}
+                                {periodLabel(point.netIncomePeriod)}
+                                <br />
+                                Margem {percent(point.netMargin)} · ROE{" "}
+                                {percent(point.roe)}
+                              </p>
+                              <p className="mt-1 text-muted-foreground">
+                                Patrimônio {money(point.equity)} ·{" "}
+                                {periodLabel(point.equityPeriod)}
+                                <br />
+                                Caixa operacional{" "}
+                                {money(point.operatingCashFlow)} ·{" "}
+                                {periodLabel(point.operatingCashFlowPeriod)}
+                              </p>{" "}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </CardContent>
             </Card>
           ))}

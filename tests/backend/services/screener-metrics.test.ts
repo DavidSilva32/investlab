@@ -541,79 +541,188 @@ describe("filterScreenerCompanies", () => {
 });
 
 describe("assessCompanyForDiscovery", () => {
-  it("explains available annual evidence and the explicit five-year window", () => {
-    const assessment = assessCompanyForDiscovery(company());
-    expect(assessment.period).toBe("2025-12-31");
-    expect(assessment.source).toBe("CVM DFP consolidada anual");
-    expect(assessment.criteria.map(({ status }) => status)).toEqual([
-      "met",
-      "met",
-      "met",
-      "not_met",
-    ]);
-    expect(assessment.criteria[3]?.explanation).toContain(
-      "2 exercícios consecutivos",
-    );
-  });
-
-  it("marks sustained positive profit when the five available exercises are positive", () => {
-    const fiveYearFacts = Array.from({ length: 5 }, (_, index) => {
+  it("returns five historical dimensions and up to five comparable annual evidence points", () => {
+    const fiveYearFacts = Array.from({ length: 6 }, (_, index) => {
       const year = 2025 - index;
       return [
         makeFact("3.01", year, 500),
         makeFact("3.11", year, 100),
-        makeFact("2.03", year, 400),
+        makeFact("2.03", year, (6 - index) * 100),
+        makeFact("6.01", year, 120, {
+          accountLabel: "Caixa Líquido das Atividades Operacionais",
+          sourceFile: `DFP_cia_aberta_DFC_MI_con_${year}.csv`,
+        }),
       ];
     }).flat();
     const assessment = assessCompanyForDiscovery(
       company({ facts: fiveYearFacts }),
     );
-    expect(assessment.criteria[3]).toMatchObject({ status: "met" });
+    expect(assessment.period).toBe("2025-12-31");
+    expect(assessment.source).toBe("CVM DFP consolidada anual");
+    expect(assessment.dimensions.map(({ id }) => id)).toEqual([
+      "results",
+      "profitability",
+      "cash",
+      "financial_structure",
+      "capital",
+    ]);
+    expect(assessment.evidence).toHaveLength(5);
+    expect(assessment.evidence.every((point) => point.roe !== null)).toBe(true);
+    expect(assessment.evidence.at(-1)).toMatchObject({
+      year: 2025,
+      revenue: 500,
+      netIncome: 100,
+      equity: 600,
+      netMargin: 20,
+      roe: 18.181818181818183,
+      operatingCashFlow: 120,
+    });
+    expect(assessment.dimensions[3]?.status).toBe("unavailable");
   });
 
-  it("distinguishes unavailable sector coverage and missing annual facts", () => {
+  it("keeps results visible when equity is missing for an exercise", () => {
+    const withoutCurrentEquity = facts.filter(
+      (fact) =>
+        !(fact.accountCode === "2.03" && fact.referenceDate === "2025-12-31"),
+    );
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: withoutCurrentEquity }),
+    );
+    expect(assessment.period).toBe("2025-12-31");
+    expect(assessment.evidence.at(-1)).toMatchObject({
+      year: 2025,
+      revenue: 500,
+      netIncome: 100,
+      equity: null,
+      netMargin: 20,
+      roe: null,
+    });
+    expect(assessment.dimensions[0]?.status).toBe("available");
+    expect(assessment.dimensions[4]?.status).toBe("available");
+  });
+  it("does not classify shorter histories as failed and keeps unavailable facts distinct", () => {
+    const assessment = assessCompanyForDiscovery(company());
+    expect(assessment.evidence).toHaveLength(5);
+    expect(assessment.dimensions[0]?.status).toBe("available");
+    expect(assessment.dimensions[1]?.status).toBe("available");
+    expect(assessment.dimensions[2]?.status).toBe("unavailable");
+    expect(assessment.dimensions[3]?.status).toBe("unavailable");
+    expect(assessment.dimensions[4]?.status).toBe("available");
+  });
+
+  it("keeps a fixed five-exercise window and represents missing years as unavailable", () => {
+    const sparseFacts = [
+      makeFact("3.01", 2025, 500),
+      makeFact("3.11", 2025, 100),
+      makeFact("2.03", 2025, 300),
+      makeFact("3.01", 2023, 400),
+      makeFact("3.11", 2023, 80),
+      makeFact("2.03", 2023, 250),
+    ];
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: sparseFacts }),
+    );
+    expect(assessment.evidence.map(({ year }) => year)).toEqual([
+      2021, 2022, 2023, 2024, 2025,
+    ]);
+    expect(assessment.evidence[1]).toMatchObject({
+      revenue: null,
+      netIncome: null,
+      equity: null,
+      netMargin: null,
+      roe: null,
+    });
+    expect(assessment.evidence[2]).toMatchObject({
+      revenue: 400,
+      netIncome: 80,
+      equity: 250,
+    });
+  });
+
+  it("keeps incompatible statement dates explicit and does not derive cross-period metrics", () => {
+    const incompatibleFacts = [
+      makeFact("3.01", 2025, 500, { referenceDate: "2025-12-31" }),
+      makeFact("3.11", 2025, 100, { referenceDate: "2025-09-30" }),
+      makeFact("2.03", 2025, 300, { referenceDate: "2025-12-31" }),
+      makeFact("2.03", 2024, 250, { referenceDate: "2024-12-31" }),
+      makeFact("6.01", 2025, 125, {
+        accountLabel: "Caixa Líquido das Atividades Operacionais",
+        sourceFile: "DFP_cia_aberta_DFC_MI_con_2025.csv",
+        referenceDate: "2025-12-31",
+      }),
+    ];
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: incompatibleFacts }),
+    );
+    expect(assessment.period).toBeNull();
+    expect(assessment.evidence.at(-1)).toMatchObject({
+      revenue: 500,
+      revenuePeriod: "2025-12-31",
+      netIncome: 100,
+      netIncomePeriod: "2025-09-30",
+      equity: 300,
+      equityPeriod: "2025-12-31",
+      netMargin: null,
+      roe: null,
+      operatingCashFlow: null,
+      operatingCashFlowPeriod: null,
+    });
+  });
+  it("uses only indirect-method cash flow and same-period observations", () => {
+    const mi = makeFact("6.01", 2025, 125, {
+      accountLabel: "Caixa Líquido das Atividades Operacionais",
+      sourceFile: "DFP_cia_aberta_DFC_MI_con_2025.csv",
+    });
+    const md = {
+      ...mi,
+      value: 900,
+      sourceFile: "DFP_cia_aberta_DFC_MD_con_2025.csv",
+    };
+    const mismatchedPeriod = {
+      ...mi,
+      referenceDate: "2025-09-30",
+      sourceFile: "DFP_cia_aberta_DFC_MI_con_2025.csv",
+    };
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: [...facts, mi, md, mismatchedPeriod] }),
+    );
+    expect(assessment.evidence.at(-1)?.operatingCashFlow).toBe(125);
+  });
+
+  it("leaves ROE unavailable when the prior annual equity balance is missing or incompatible", () => {
+    const assessment = assessCompanyForDiscovery(
+      company({
+        facts: facts.filter(
+          (fact) =>
+            !(
+              fact.accountCode === "2.03" && fact.referenceDate === "2024-12-31"
+            ),
+        ),
+      }),
+    );
+    expect(assessment.evidence.at(-1)?.roe).toBeNull();
+  });
+
+  it("marks every dimension unavailable for unsupported sectors or missing complete annual data", () => {
     const unsupported = assessCompanyForDiscovery(
       company({ sector: "Tecnologia" }),
     );
-    expect(unsupported.period).toBe("2025-12-31");
-    expect(unsupported.criteria.map(({ status }) => status)).toEqual([
-      "unavailable",
-      "unavailable",
-      "unavailable",
-      "unavailable",
-    ]);
+    expect(unsupported.dimensions.map(({ status }) => status)).toEqual(
+      Array(5).fill("unavailable"),
+    );
     const missing = assessCompanyForDiscovery(company({ facts: [] }));
     expect(missing.period).toBeNull();
-    expect(missing.criteria.map(({ status }) => status)).toEqual([
-      "met",
-      "unavailable",
-      "unavailable",
-      "unavailable",
-    ]);
+    expect(missing.evidence).toEqual([]);
+    expect(missing.dimensions.map(({ status }) => status)).toEqual(
+      Array(5).fill("unavailable"),
+    );
   });
 
-  it("marks nonpositive latest profit and equity as not met", () => {
-    const negativeFacts = facts.map((fact) =>
-      fact.referenceDate === "2025-12-31" && fact.accountCode === "3.11"
-        ? { ...fact, value: 0 }
-        : fact.referenceDate === "2025-12-31" && fact.accountCode === "2.03"
-          ? { ...fact, value: -400 }
-          : fact,
-    );
-    const assessment = assessCompanyForDiscovery(
-      company({ facts: negativeFacts }),
-    );
-    expect(assessment.criteria[1]?.status).toBe("not_met");
-    expect(assessment.criteria[2]?.status).toBe("not_met");
-  });
-  it("anchors consecutive profits to the latest complete annual period", () => {
+  it("does not anchor the period to a newer partial annual report", () => {
     const newerPartial = [...facts, makeFact("3.11", 2026, 200)];
     const assessment = assessCompanyForDiscovery(
       company({ facts: newerPartial }),
     );
     expect(assessment.period).toBe("2025-12-31");
-    expect(assessment.criteria[3]?.explanation).toContain(
-      "2 exercícios consecutivos",
-    );
   });
 });

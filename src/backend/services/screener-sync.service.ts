@@ -177,7 +177,7 @@ export class ScreenerSyncService {
         [...issuers.values()].map((issuer) => [issuer.cvmCode, issuer.cnpj]),
       );
       const latestCompletedYear = this.currentYear() - 1;
-      const firstYear = latestCompletedYear - 4;
+      const firstYear = latestCompletedYear - 5;
       const factMap = new Map<string, ScreenerFactRecord>();
       let annualDuplicateSuperseded = 0;
       for (let year = firstYear; year <= latestCompletedYear; year += 1) {

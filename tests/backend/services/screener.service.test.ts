@@ -139,7 +139,7 @@ describe("ScreenerService", () => {
     expect(repository.getUniverse).not.toHaveBeenCalled();
   });
 
-  it("returns discovery criteria for the local universe without ranking", async () => {
+  it("returns discovery dimensions for the local universe without ranking", async () => {
     const second = { ...company, cnpj: "222", name: "Another issuer" };
     const repository = {
       getUniverse: vi.fn().mockResolvedValue([company, second]),
@@ -154,7 +154,9 @@ describe("ScreenerService", () => {
     ]);
     expect(result.results[1]?.assessment.period).toBe("2025-12-31");
     expect(result.results[1]).not.toHaveProperty("metrics");
-    expect(result.results[1]?.assessment.criteria[0]?.status).toBe("met");
+    expect(result.results[1]?.assessment.dimensions[0]?.status).toBe(
+      "available",
+    );
   });
 
   it("returns an empty discovery collection before any sync", async () => {

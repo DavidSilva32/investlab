@@ -19,6 +19,7 @@ export type ScreenerFact = {
   documentType: string;
   statementScope: string;
   exerciseOrder: string;
+  sourceFile?: string;
 };
 
 export type ScreenerSecurity = { ticker: string; name: string };
@@ -127,11 +128,17 @@ const accountLabelAliases: Record<string, ReadonlySet<string>> = {
     "LUCRO PREJUIZO DO PERIODO",
   ]),
   "2.03": new Set(["PATRIMONIO LIQUIDO CONSOLIDADO"]),
+  "6.01": new Set([
+    "CAIXA LIQUIDO DAS ATIVIDADES OPERACIONAIS",
+    "CAIXA LIQUIDO ATIVIDADES OPERACIONAIS",
+  ]),
 };
 
 function isValidatedFact(fact: ScreenerFact) {
   return (
     isSupportedAnnualFact(fact) &&
+    (fact.accountCode !== "6.01" ||
+      /DFC_MI_con_/i.test(fact.sourceFile ?? "")) &&
     (accountLabelAliases[fact.accountCode]?.has(
       normalizeAccountingLabel(fact.accountLabel),
     ) ??
@@ -288,6 +295,7 @@ export function calculateScreenerMetrics(
   let positiveProfitYears = 0;
   while (
     latestProfitYear !== null &&
+    positiveProfitYears < 5 &&
     profits.get(latestProfitYear - positiveProfitYears) !== undefined &&
     profits.get(latestProfitYear - positiveProfitYears)! > 0
   )
@@ -381,83 +389,148 @@ export function filterScreenerCompanies(
     .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 }
 
-export type DiscoveryCriterionStatus = "met" | "not_met" | "unavailable";
-export type DiscoveryCriterion = {
-  id:
-    "sector_coverage" | "latest_profit" | "positive_equity" | "profit_history";
+export type DiscoveryDimensionStatus = "available" | "unavailable";
+export type DiscoveryEvidencePoint = {
+  year: number;
+  revenue: number | null;
+  revenuePeriod: string | null;
+  netIncome: number | null;
+  netIncomePeriod: string | null;
+  equity: number | null;
+  equityPeriod: string | null;
+  netMargin: number | null;
+  roe: number | null;
+  operatingCashFlow: number | null;
+  operatingCashFlowPeriod: string | null;
+};
+export type DiscoveryDimension = {
+  id: "results" | "profitability" | "cash" | "financial_structure" | "capital";
   label: string;
-  status: DiscoveryCriterionStatus;
+  status: DiscoveryDimensionStatus;
   explanation: string;
 };
 export type DiscoveryAssessment = {
   period: string | null;
   source: "CVM DFP consolidada anual";
-  criteria: DiscoveryCriterion[];
+  dimensions: DiscoveryDimension[];
+  evidence: DiscoveryEvidencePoint[];
 };
 
 export function assessCompanyForDiscovery(
   company: ScreenerCompany,
 ): DiscoveryAssessment {
-  const latest = latestCompleteYear(company.facts);
-  const eligible = isValidatedSector(company.sector) && latest !== null;
-  const metrics = eligible
-    ? calculateScreenerMetrics(company.facts, null)
-    : null;
-  const statusForPositive = (value: number) => (value > 0 ? "met" : "not_met");
-  const profits = profitsByYear(company.facts);
-  let positiveProfitYears = 0;
-  while (
-    latest !== null &&
-    profits.get(latest[0] - positiveProfitYears) !== undefined &&
-    profits.get(latest[0] - positiveProfitYears)! > 0
-  )
-    positiveProfitYears += 1;
-  const profitHistoryStatus =
-    metrics === null || metrics.latestNetIncome === null
-      ? "unavailable"
-      : positiveProfitYears >= 5
-        ? "met"
-        : "not_met";
-
+  const coveredSector = isValidatedSector(company.sector);
+  const annual = annualConceptValues(company.facts);
+  const alignedResults = [...annual.entries()]
+    .flatMap(([year, values]) => {
+      const revenue = values.get("3.01");
+      const income = values.get("3.11");
+      return revenue && income && revenue.referenceDate === income.referenceDate
+        ? [{ year, period: income.referenceDate }]
+        : [];
+    })
+    .sort((left, right) => right.year - left.year);
+  const anchorYear = alignedResults[0]?.year ?? Math.max(...annual.keys(), 0);
+  const windowYears =
+    anchorYear > 0
+      ? Array.from({ length: 5 }, (_, index) => anchorYear - 4 + index)
+      : [];
+  const evidence: DiscoveryEvidencePoint[] = windowYears.map((year) => {
+    const values = annual.get(year) ?? new Map();
+    const revenue = values.get("3.01");
+    const income = values.get("3.11");
+    const equity = values.get("2.03");
+    const previousEquity = annual.get(year - 1)?.get("2.03");
+    const resultPeriodMatches =
+      revenue !== undefined &&
+      income !== undefined &&
+      revenue.referenceDate === income.referenceDate;
+    const equityPeriodMatches =
+      income !== undefined &&
+      equity !== undefined &&
+      income.referenceDate === equity.referenceDate;
+    const roe =
+      equityPeriodMatches &&
+      previousEquity &&
+      previousEquity.value > 0 &&
+      equity.value > 0 &&
+      sameAnnualPeriod(equity.referenceDate, previousEquity.referenceDate)
+        ? (income!.value / ((equity.value + previousEquity.value) / 2)) * 100
+        : null;
+    const cashFlow = values.get("6.01");
+    return {
+      year,
+      revenue: revenue?.value ?? null,
+      revenuePeriod: revenue?.referenceDate ?? null,
+      netIncome: income?.value ?? null,
+      netIncomePeriod: income?.referenceDate ?? null,
+      equity: equity?.value ?? null,
+      equityPeriod: equity?.referenceDate ?? null,
+      netMargin:
+        resultPeriodMatches && revenue!.value > 0
+          ? (income!.value / revenue!.value) * 100
+          : null,
+      roe,
+      operatingCashFlow:
+        cashFlow && income && cashFlow.referenceDate === income.referenceDate
+          ? cashFlow.value
+          : null,
+      operatingCashFlowPeriod:
+        cashFlow && income && cashFlow.referenceDate === income.referenceDate
+          ? cashFlow.referenceDate
+          : null,
+    };
+  });
+  const dimension = (
+    id: DiscoveryDimension["id"],
+    label: string,
+    available: boolean,
+    explanation: string,
+  ): DiscoveryDimension => ({
+    id,
+    label,
+    status: coveredSector && available ? "available" : "unavailable",
+    explanation: !coveredSector
+      ? "A comparabilidade desta metodologia ainda não foi validada para o setor."
+      : explanation,
+  });
   return {
-    period: latest?.[1].get("3.11")?.referenceDate ?? null,
+    period: alignedResults[0]?.period ?? null,
     source: "CVM DFP consolidada anual",
-    criteria: [
-      {
-        id: "sector_coverage",
-        label: "Setor com conceitos contábeis validados",
-        status: isValidatedSector(company.sector) ? "met" : "unavailable",
-        explanation: isValidatedSector(company.sector)
-          ? "Os conceitos anuais usados nesta metodologia foram validados para este setor."
-          : "A comparabilidade contábil deste setor ainda não foi validada.",
-      },
-      {
-        id: "latest_profit",
-        label: "Lucro líquido positivo no último exercício completo",
-        status: eligible
-          ? statusForPositive(metrics!.latestNetIncome!)
-          : "unavailable",
-        explanation:
-          "Usa o lucro consolidado anual da DFP mais recente com receita, lucro e patrimônio do mesmo período.",
-      },
-      {
-        id: "positive_equity",
-        label: "Patrimônio líquido positivo no último exercício completo",
-        status: eligible
-          ? statusForPositive(metrics!.latestEquity!)
-          : "unavailable",
-        explanation:
-          "Usa o patrimônio líquido consolidado informado na mesma DFP anual.",
-      },
-      {
-        id: "profit_history",
-        label: "Lucro positivo em cinco exercícios consecutivos",
-        status: profitHistoryStatus,
-        explanation:
-          metrics === null
-            ? "Indisponível sem setor coberto e demonstrações anuais comparáveis."
-            : `${positiveProfitYears} ${positiveProfitYears === 1 ? "exercício consecutivo" : "exercícios consecutivos"} com lucro positivo até o exercício de referência. Cinco anos são uma janela de observação da metodologia, não uma previsão de desempenho.`,
-      },
+    dimensions: [
+      dimension(
+        "results",
+        "Resultados",
+        evidence.some(
+          (item) => item.revenue !== null || item.netIncome !== null,
+        ),
+        "Receita, lucro e margem são apresentados por exercício para observar a evolução histórica; não geram aprovação ou reprovação automáticas.",
+      ),
+      dimension(
+        "profitability",
+        "Rentabilidade",
+        evidence.some((item) => item.roe !== null),
+        "ROE usa lucro do exercício e a média do patrimônio líquido entre saldos anuais compatíveis. Períodos sem os dois saldos ficam indisponíveis.",
+      ),
+      dimension(
+        "cash",
+        "Caixa",
+        evidence.some((item) => item.operatingCashFlow !== null),
+        "Fluxo operacional usa a conta 6.01 da DFC pelo método indireto (DFC-MI), comparada ao lucro do mesmo exercício. Sem essa fonte, o dado fica indisponível.",
+      ),
+      dimension(
+        "financial_structure",
+        "Estrutura financeira",
+        false,
+        "Dívida e caixa permanecem indisponíveis até validar as contas e conceitos CVM aplicáveis, incluindo diferenças setoriais.",
+      ),
+      dimension(
+        "capital",
+        "Capital",
+        evidence.some((item) => item.equity !== null),
+        "A evolução do patrimônio líquido é apresentada no histórico. Quantidade de ações e diluição não fazem parte desta versão.",
+      ),
     ],
+    evidence,
   };
 }

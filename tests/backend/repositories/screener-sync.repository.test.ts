@@ -344,6 +344,15 @@ describe("ScreenerSyncRepository", () => {
     );
     expect(toSql(factConflict.setWhere!)).toContain('excluded."sourceFile"');
     expect(toSql(factConflict.setWhere!)).toContain('excluded."sourceRow"');
+    const factConflictCondition = new PgDialect().sqlToQuery(
+      factConflict.setWhere!,
+    );
+    expect(factConflictCondition.sql).toContain(
+      "excluded.\"accountCode\" = '6.01'",
+    );
+    expect(factConflictCondition.sql).toContain("NOT (");
+    expect(factConflictCondition.sql).toContain("LIKE '%DFC_MI_con_%'");
+    expect(factConflictCondition.sql).toContain("LIKE '%DFC_MD_con_%'");
     expect(
       updates.find((entry) => entry.table === screenerSecurities)?.values,
     ).toMatchObject({ isActive: false });
