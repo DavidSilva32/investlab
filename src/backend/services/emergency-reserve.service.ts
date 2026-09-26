@@ -4,8 +4,15 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
+import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
+import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
+import { suggestEmergencyReservePositions } from "@/backend/services/emergency-reserve-position-suggestions";
 import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 import { logger } from "@/infrastructure/logging/logger";
+
+const suggestionSchema = z.object({
+  targetAmount: z.number().finite().positive().max(1_000_000_000_000),
+});
 
 const settingsSchema = z.object({
   monthlyExpenses: z.number().finite().positive().max(1_000_000_000_000),
@@ -13,12 +20,24 @@ const settingsSchema = z.object({
   selectedAssetKeys: z.array(z.string().regex(/^v1:[a-f0-9]{64}$/)).max(500),
 });
 
-type Position = Awaited<
-  ReturnType<typeof importRepository.listLatestPositions>
->[number] & {
+type Position = {
+  product: string;
+  assetCode: string | null;
+  institution: string | null;
+  issuer: string | null;
+  indexer: string | null;
+  regimeType: string | null;
+  issuedAt: string | null;
+  maturityAt: string | null;
+  totalValue: string | null;
+  referenceDate?: string | null;
   estimatedValue?: number | null;
+  classification?: { assetClass: string | null };
 };
 
+type ClassifiedPosition = Position & {
+  classification: { assetClass: string | null };
+};
 type ReserveSettings = {
   monthlyExpenses: string | null;
   targetMonths: number | null;
@@ -45,6 +64,15 @@ export function getEmergencyReserveAssetKey(position: Position) {
   return `v1:${fingerprint}`;
 }
 
+function isReserveFixedIncomePosition(position: Position) {
+  const inferredClass = inferPortfolioAssetClassification(position).assetClass;
+  return (
+    position.classification?.assetClass === "Renda fixa" &&
+    inferredClass !== "Renda variável" &&
+    inferredClass !== "Fundos"
+  );
+}
+
 function getPositionValue(position: Position) {
   const value =
     position.estimatedValue ??
@@ -59,7 +87,17 @@ export class EmergencyReserveService {
       importRepository.listLatestPositions(requestId),
       emergencyReserveRepository.getSettings(),
     ]);
-    const positions = await cdbEstimateService.enrich(rawPositions);
+    const estimatedPositions = await cdbEstimateService.enrich(rawPositions);
+    const normalizedPositions: Position[] = estimatedPositions.map(
+      (position): Position => ({
+        ...position,
+        estimatedValue: position.estimatedValue ?? null,
+      }),
+    );
+    const positions = await portfolioAllocationService.classifyPositions(
+      normalizedPositions,
+      requestId,
+    );
     const data = this.buildData(positions, {
       monthlyExpenses: settings?.monthlyExpenses ?? null,
       targetMonths: settings?.targetMonths ?? null,
@@ -73,7 +111,7 @@ export class EmergencyReserveService {
     return data;
   }
 
-  async getSummary(positions: Position[], requestId?: string) {
+  async getSummary(positions: ClassifiedPosition[], requestId?: string) {
     const settings = await emergencyReserveRepository.getSettings();
     const data = this.buildData(positions, {
       monthlyExpenses: settings?.monthlyExpenses ?? null,
@@ -91,6 +129,46 @@ export class EmergencyReserveService {
     };
   }
 
+  async suggestPositions(body: unknown, requestId?: string) {
+    const parsed = suggestionSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApplicationError(
+        "Informe um valor maior que zero para comparar as posições.",
+        400,
+      );
+    }
+
+    const rawPositions = await importRepository.listLatestPositions(requestId);
+    const estimatedPositions = await cdbEstimateService.enrich(rawPositions);
+    const normalizedPositions: Position[] = estimatedPositions.map(
+      (position): Position => ({
+        ...position,
+        estimatedValue: position.estimatedValue ?? null,
+      }),
+    );
+    const positions = await portfolioAllocationService.classifyPositions(
+      normalizedPositions,
+      requestId,
+    );
+    const holdings = this.buildData(positions, {
+      monthlyExpenses: null,
+      targetMonths: null,
+      selectedAssetKeys: [],
+    }).holdings;
+    const result = suggestEmergencyReservePositions(
+      parsed.data.targetAmount,
+      holdings,
+    );
+    logger.info("emergency_reserve_suggestions_generated", {
+      requestId,
+      groups: holdings.length,
+      status: result.status,
+      candidates:
+        result.status === "suggestions" ? result.candidates.length : 0,
+    });
+    return result;
+  }
+
   async saveSettings(body: unknown, requestId?: string) {
     const parsed = settingsSchema.safeParse(body);
     if (!parsed.success)
@@ -100,6 +178,34 @@ export class EmergencyReserveService {
       );
 
     const selectedAssetKeys = [...new Set(parsed.data.selectedAssetKeys)];
+    const currentPositions =
+      await importRepository.listLatestPositions(requestId);
+    const classifiedPositions =
+      await portfolioAllocationService.classifyPositions(
+        currentPositions,
+        requestId,
+      );
+    const currentAssetClasses = new Map(
+      classifiedPositions.map(
+        (position) =>
+          [
+            getEmergencyReserveAssetKey(position),
+            isReserveFixedIncomePosition(position) ? "Renda fixa" : null,
+          ] as const,
+      ),
+    );
+    if (
+      selectedAssetKeys.some(
+        (key) =>
+          currentAssetClasses.has(key) &&
+          currentAssetClasses.get(key) !== "Renda fixa",
+      )
+    ) {
+      throw new ApplicationError(
+        "A reserva só pode incluir posições classificadas como renda fixa. Revise a seleção antes de salvar.",
+        400,
+      );
+    }
     await emergencyReserveRepository.saveSettings({
       monthlyExpenses: parsed.data.monthlyExpenses.toFixed(2),
       targetMonths: parsed.data.targetMonths,
@@ -130,7 +236,8 @@ export class EmergencyReserveService {
       }
     >();
 
-    for (const position of positions) {
+    const fixedIncomePositions = positions.filter(isReserveFixedIncomePosition);
+    for (const position of fixedIncomePositions) {
       const assetKey = getEmergencyReserveAssetKey(position);
       const value = getPositionValue(position);
       const existing = groups.get(assetKey);
@@ -180,7 +287,7 @@ export class EmergencyReserveService {
     const unvaluedGroups = selectedHoldings.filter(
       (holding) => holding.unvaluedPositions > 0,
     ).length;
-    const referenceDate = positions[0]?.referenceDate ?? null;
+    const referenceDate = fixedIncomePositions[0]?.referenceDate ?? null;
     const monthlyExpenses =
       settings.monthlyExpenses === null
         ? null

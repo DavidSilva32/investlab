@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { EmergencyReservePositionSuggestionsCard } from "@/app/portfolio/_components/emergency-reserve-position-suggestions";
 import {
   Collapsible,
   CollapsibleContent,
@@ -260,14 +261,18 @@ export function EmergencyReserveEditor() {
                   </div>
                 </div>
 
+                <EmergencyReservePositionSuggestionsCard
+                  holdings={data.holdings}
+                  onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
+                />
+
                 <fieldset className="space-y-3">
                   <legend className="font-medium">
                     Investimentos que você quer considerar na reserva
                   </legend>
                   <p className="text-sm text-muted-foreground">
-                    Selecione os grupos que deseja acompanhar. A seleção usa os
-                    atributos disponíveis na importação e não confirma prazo ou
-                    condições de resgate.
+                    Somente grupos classificados como renda fixa aparecem aqui.
+                    A classe não confirma prazo nem condições de resgate.
                   </p>
                   {data.missingSelectionCount > 0 && (
                     <div
@@ -308,10 +313,13 @@ export function EmergencyReserveEditor() {
                       investimentos da reserva.
                     </p>
                   ) : (
-                    <ul className="max-h-80 space-y-2 overflow-y-auto rounded-lg border p-3">
+                    <ul className="grid max-h-96 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
                       {data.holdings.map((holding) => (
-                        <li key={holding.assetKey}>
-                          <div className="flex items-start gap-3 rounded-md p-2 hover:bg-muted/60">
+                        <li
+                          key={holding.assetKey}
+                          className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
+                        >
+                          <div className="flex items-start gap-3">
                             <Checkbox
                               id={`reserve-holding-${holding.assetKey}`}
                               className="mt-1"

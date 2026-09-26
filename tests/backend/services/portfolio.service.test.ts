@@ -69,13 +69,13 @@ describe("PortfolioService", () => {
       "request-1",
     );
     expect(allocation.getAllocationTargets).toHaveBeenCalledWith("request-1");
-    expect(reserve.getSummary).toHaveBeenCalledWith(estimated, "request-1");
+    expect(reserve.getSummary).toHaveBeenCalledWith(classified, "request-1");
     await expect(service.listPositions("request-2")).resolves.toEqual(
       estimated,
     );
     expect(repository.listLatestPositions).toHaveBeenCalledWith("request-2");
   });
-  it.each(["classification", "targets"] as const)(
+  it.each(["classification", "targets", "emergency_reserve"] as const)(
     "keeps the dashboard available when the %s lookup fails",
     async (failedLookup) => {
       const estimated = [{ id: "p1", estimatedValue: 100, totalValue: "100" }];
@@ -98,11 +98,14 @@ describe("PortfolioService", () => {
         allocation.classifyPositions.mockRejectedValue(
           new Error("private classification failure"),
         );
-      else
+      else if (failedLookup === "targets")
         allocation.getAllocationTargets.mockRejectedValue(
           new Error("private target failure"),
         );
-
+      else
+        reserve.getSummary.mockRejectedValue(
+          new Error("private emergency reserve failure"),
+        );
       const result = await new PortfolioService().getOverview("request-2");
       expect(result.nextContributionGuidance).toMatchObject({
         status: "unavailable",
@@ -110,6 +113,11 @@ describe("PortfolioService", () => {
       expect(result.positions).toEqual(
         failedLookup === "classification" ? estimated : classified,
       );
+      if (failedLookup === "targets")
+        expect(result.emergencyReserve).toBeDefined();
+      else expect(result.emergencyReserve).toBeUndefined();
+      if (failedLookup === "classification")
+        expect(reserve.getSummary).not.toHaveBeenCalled();
       expect(estimates.enrich).toHaveBeenCalledWith([{ id: "p1" }]);
     },
   );

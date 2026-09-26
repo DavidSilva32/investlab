@@ -61,7 +61,7 @@ const editorData = {
 };
 
 function expandReserveEditor() {
-  fireEvent.click(screen.getByRole("button", { name: "Configurar reserva" }));
+  fireEvent.click(screen.getByRole("button", { name: /Configurar reserva/ }));
 }
 
 describe("EmergencyReserveEditor", () => {
@@ -91,7 +91,6 @@ describe("EmergencyReserveEditor", () => {
     );
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
-
     expect(await screen.findByText(/Meta de 6 meses/)).toBeTruthy();
     expect(
       screen
@@ -99,13 +98,13 @@ describe("EmergencyReserveEditor", () => {
         .getAttribute("aria-expanded"),
     ).toBe("false");
     await user.click(
-      screen.getByRole("button", { name: "Configurar reserva" }),
+      screen.getByRole("button", { name: /Configurar reserva/ }),
     );
     expect(await screen.findByLabelText("Custo mensal")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Recolher/ }));
     expect(screen.queryByLabelText("Custo mensal")).toBeNull();
     await user.click(
-      screen.getByRole("button", { name: "Configurar reserva" }),
+      screen.getByRole("button", { name: /Configurar reserva/ }),
     );
     expect(await screen.findByLabelText("Custo mensal")).toBeTruthy();
   });
@@ -153,9 +152,7 @@ describe("EmergencyReserveEditor", () => {
     await user.click(first);
     const second = await screen.findByLabelText(/Tesouro Selic/);
     await user.click(second);
-    await user.click(
-      screen.getByRole("button", { name: "Salvar configuração" }),
-    );
+    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
 
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
     const saveCall = fetchMock.mock.calls.find(
@@ -167,7 +164,7 @@ describe("EmergencyReserveEditor", () => {
       selectedAssetKeys: [keyA, keyB],
     });
     expect(
-      screen.getByText(/não confirma prazo ou condições de resgate/),
+      screen.getByText(/Somente grupos classificados como renda fixa/),
     ).toBeTruthy();
   });
 
@@ -249,9 +246,7 @@ describe("EmergencyReserveEditor", () => {
         name: "Remover grupos sem correspondência",
       }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Salvar configuração" }),
-    );
+    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
 
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
     const saveCall = fetchMock.mock.calls.find(
@@ -281,9 +276,7 @@ describe("EmergencyReserveEditor", () => {
     expect(
       await screen.findByText(/Importe uma posição da carteira/),
     ).toBeTruthy();
-    await user.click(
-      screen.getByRole("button", { name: "Salvar configuração" }),
-    );
+    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível salvar a configuração. Tente novamente.",
     );
@@ -305,9 +298,95 @@ describe("EmergencyReserveEditor", () => {
       "Não foi possível carregar a configuração da reserva.",
     );
     expect(screen.getByRole("button", { name: /Recolher/ })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await user.click(screen.getByRole("button", { name: /Tentar novamente/ }));
 
     expect(await screen.findByLabelText(/Tesouro Selic/)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("EmergencyReserveEditor suggestion application", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("applies a suggestion to the unsaved selection and saves only on submit", async () => {
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () => {
+        if (options?.method === "POST") {
+          return {
+            status: "suggestions",
+            kind: "exact",
+            candidates: [{ assetKeys: [keyB], total: 1000, difference: 0 }],
+            searchLimited: false,
+            alternativesLimited: false,
+          };
+        }
+        if (options?.method === "PUT") {
+          return { ...editorData, selectedAssetKeys: [keyB] };
+        }
+        return editorData;
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+    await user.click(
+      screen.getByRole("button", { name: /^Configurar reserva/ }),
+    );
+    await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
+
+    await user.type(
+      screen.getByLabelText("Valor conhecido da reserva"),
+      "100000",
+    );
+    await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Revisar 1 grupo" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Usar esta combinação" }),
+    );
+
+    expect(
+      screen
+        .getByRole("checkbox", { name: /Tesouro Selic/ })
+        .getAttribute("data-state"),
+    ).toBe("checked");
+    expect(
+      screen
+        .getByRole("checkbox", { name: /CDB liquidez/ })
+        .getAttribute("data-state"),
+    ).toBe("unchecked");
+    expect(
+      fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+    ).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+      ).toBe(true),
+    );
+    const saveCall = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(saveCall?.[1]?.body as string).selectedAssetKeys).toEqual(
+      [keyB],
+    );
   });
 });
