@@ -6,10 +6,6 @@ export default function SettingsPage() {
   return (
     <AppShell title="Configurações">
       <div className="mx-auto w-full max-w-5xl space-y-6">
-        <p className="text-sm text-muted-foreground">
-          Veja quais fontes alimentam as análises, quando foram atualizadas e
-          quando revisar os dados.
-        </p>
         <ScreenerDataSettings />
         <MarketDataSettings />
       </div>

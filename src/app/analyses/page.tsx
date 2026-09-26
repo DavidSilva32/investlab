@@ -16,15 +16,7 @@ export default async function AnalysesPage({
         active={isIndividualAnalysis ? "analysis" : "discover"}
       />
       {isIndividualAnalysis ? (
-        <>
-          <div className="mb-7">
-            <p className="text-sm text-muted-foreground">
-              Consulte dados e fundamentos de uma empresa para apoiar seu
-              estudo.
-            </p>
-          </div>
-          <StockAnalysisDashboard initialTicker={ticker!.toUpperCase()} />
-        </>
+        <StockAnalysisDashboard initialTicker={ticker!.toUpperCase()} />
       ) : (
         <DiscoverDashboard />
       )}

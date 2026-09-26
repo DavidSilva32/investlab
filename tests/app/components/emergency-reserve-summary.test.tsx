@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 
@@ -19,11 +21,12 @@ const calculation: EmergencyReserveCalculation = {
 };
 
 describe("EmergencyReserveSummary", () => {
+  afterEach(cleanup);
   it("explains setup when the personal goal is not configured", () => {
     const html = renderToStaticMarkup(<EmergencyReserveSummary />);
 
     expect(html).toContain("custo mensal");
-    expect(html).toContain("meta pessoal");
+    expect(html).toContain("sua meta em meses");
     expect(html).toContain('href="/portfolio"');
   });
 
@@ -36,9 +39,22 @@ describe("EmergencyReserveSummary", () => {
     expect(html).toContain("Meta pessoal · 6 meses");
     expect(html).toContain("valor selecionado ÷ custo mensal");
     expect(html).toContain("01/09/2026");
-    expect(html).toContain("não representa uma recomendação universal");
-    expect(html).toContain("prazo nem condições de resgate");
+    expect(html).toContain("Posição registrada");
+    expect(html).toContain("não uma recomendação universal");
+    expect(html).toContain("Prazo e resgate não verificados.");
     expect(html).toContain("<progress");
+  });
+
+  it("shows the calculation method only when requested", async () => {
+    const user = userEvent.setup();
+    render(<EmergencyReserveSummary calculation={calculation} />);
+    const summary = screen.getByText("Como é calculado");
+    const disclosure = summary.closest("details");
+
+    expect(disclosure?.open).toBe(false);
+    await user.click(summary);
+    expect(disclosure?.open).toBe(true);
+    expect(screen.getByText(/Meses cobertos = valor selecionado/)).toBeTruthy();
   });
 
   it("reports the excess and groups whose positions have no value", () => {

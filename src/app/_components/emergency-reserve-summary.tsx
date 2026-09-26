@@ -19,9 +19,8 @@ export function EmergencyReserveSummary({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-semibold">Reserva de emergência</h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Acompanha os investimentos que você selecionou. O valor não
-              confirma prazo nem condições de resgate.
+            <p className="mt-1 text-xs text-muted-foreground">
+              Prazo e resgate não verificados.
             </p>
           </div>
           <Link
@@ -34,8 +33,7 @@ export function EmergencyReserveSummary({
 
         {!configured ? (
           <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            Informe seu custo mensal, uma meta pessoal em meses e os
-            investimentos que deseja acompanhar.
+            Defina seu custo mensal, sua meta em meses e os ativos acompanhados.
           </p>
         ) : calculation.status === "expenses_required" ? (
           <p role="status" className="rounded-md border p-4 text-sm">
@@ -72,13 +70,9 @@ export function EmergencyReserveSummary({
             />
             <div className="space-y-2 sm:col-span-2 xl:col-span-4">
               <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span>
-                  Cálculo: valor selecionado ÷ custo mensal. A meta é custo
-                  mensal × meses que você definiu.
-                </span>
+                <span>Posição registrada</span>
                 {calculation.referenceDate && (
                   <span className="shrink-0">
-                    Posição de{" "}
                     {new Intl.DateTimeFormat("pt-BR", {
                       timeZone: "UTC",
                     }).format(
@@ -109,10 +103,16 @@ export function EmergencyReserveSummary({
                   no cálculo. Revise a seleção na carteira.
                 </p>
               ) : null}{" "}
-              <p className="text-xs text-muted-foreground">
-                A meta reflete sua configuração pessoal; não representa uma
-                recomendação universal.
-              </p>
+              <details className="text-xs text-muted-foreground">
+                <summary className="w-fit cursor-pointer underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Como é calculado
+                </summary>
+                <p className="mt-2 max-w-2xl">
+                  Meses cobertos = valor selecionado ÷ custo mensal. A meta =
+                  custo mensal × meses definidos por você; é uma referência
+                  pessoal, não uma recomendação universal.
+                </p>
+              </details>
             </div>
           </div>
         )}

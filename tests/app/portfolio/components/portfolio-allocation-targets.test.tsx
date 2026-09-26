@@ -79,7 +79,14 @@ describe("PortfolioAllocationTargets", () => {
     expect(screen.getAllByText("-10.0%")).toHaveLength(2);
     expect(screen.getByText("Diferença (%)", { exact: true })).toBeTruthy();
     expect(
-      screen.getByText(/valor positivo significa abaixo da meta/),
+      screen.queryByText(/valor positivo significa abaixo da meta/),
+    ).toBeNull();
+    const comparisonHelp = screen.getByText(/Como ler a compara/);
+    expect(comparisonHelp.closest("details")?.open).toBe(false);
+    await user.click(comparisonHelp);
+    expect(comparisonHelp.closest("details")?.open).toBe(true);
+    expect(
+      screen.getByText(/Positivo indica que a classe está abaixo da meta/),
     ).toBeTruthy();
     expect(
       screen.getByText(/sem classe não entram nas linhas acima/),
@@ -87,7 +94,7 @@ describe("PortfolioAllocationTargets", () => {
     expect(
       screen.getByText(/sem valor atual não entram no cálculo/),
     ).toBeTruthy();
-    expect(screen.getByText(/não são recomendações universais/)).toBeTruthy();
+    expect(screen.getByText(/não uma recomendação universal/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Recolher.*metas/i }));
     expect(screen.queryByText("60.0%")).toBeNull();
   });
@@ -105,6 +112,9 @@ describe("PortfolioAllocationTargets", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Definir metas" }));
+    expect(
+      screen.getByText(/Metas pessoais são uma estratégia sua/),
+    ).toBeTruthy();
     await user.clear(
       screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
     );

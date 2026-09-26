@@ -75,7 +75,8 @@ describe("MarketDataSettings", () => {
     });
   });
 
-  it("renders empty history and the recommendation for seven-day quote age", async () => {
+  it("discloses the seven-day quote rule while keeping quote status visible", async () => {
+    const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
       vi
@@ -86,8 +87,12 @@ describe("MarketDataSettings", () => {
     expect(
       await screen.findByText("Status da última execução: Ainda não executada"),
     ).toBeTruthy();
-    expect(screen.getByText("Sem cotação registrada")).toBeTruthy();
-    expect(screen.getByText(/até sete dias/)).toBeTruthy();
+    expect(screen.getByText(/Sem cota/)).toBeTruthy();
+    const criteria = screen.getByText(/Crit.rio e limite das cota/);
+    expect(criteria.closest("details")?.hasAttribute("open")).toBe(false);
+    await user.click(criteria);
+    expect(criteria.closest("details")?.hasAttribute("open")).toBe(true);
+    expect(await screen.findByText(/sete dias/)).toBeTruthy();
   });
 
   it("reports failed fetch and refresh with safe feedback", async () => {

@@ -42,5 +42,6 @@ describe("AnalysesPage", () => {
     expect(screen.getByRole("heading", { name: "Analisar" })).toBeTruthy();
     expect(screen.getByText("analysis")).toBeTruthy();
     expect(screen.getByText("Analysis PETR4")).toBeTruthy();
+    expect(screen.queryByText(/Consulte dados e fundamentos/)).toBeNull();
   });
 });

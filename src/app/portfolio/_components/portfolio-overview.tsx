@@ -7,13 +7,7 @@ import {
   ShieldAlert,
   WalletCards,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getPortfolioInsights } from "@/lib/portfolio-insights";
 import { formatCurrency } from "@/lib/utils";
 
@@ -75,17 +69,11 @@ export function PortfolioOverview({
           icon={PieChart}
           label="Ativos acompanhados"
           value={String(positions.length)}
-          detail={`${insights.valuedPositions} com valor atual`}
         />
         <Metric
           icon={Landmark}
           label="Instituições"
           value={String(insights.institutions)}
-          detail={
-            insights.institutions
-              ? "Com valor alocado"
-              : "Sem valor alocado ainda"
-          }
         />
         <Metric
           icon={CalendarDays}
@@ -95,22 +83,14 @@ export function PortfolioOverview({
               ? date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))
               : "—"
           }
-          detail={
-            nextMaturity
-              ? nextMaturity.product
-              : "Nenhum vencimento futuro informado"
-          }
         />
       </section>
       <section className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Como seu patrimônio está distribuído</CardTitle>
-            <CardDescription>
-              Alocação por instituição, com estimativa CDI quando disponível.
-            </CardDescription>
+            <CardTitle>Alocação por instituição</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {insights.allocations.length ? (
               <div className="space-y-5">
                 {insights.allocations.map((allocation) => (
@@ -136,14 +116,14 @@ export function PortfolioOverview({
             ) : (
               <EmptyInsight message="Ainda não há valores atuais para mostrar a alocação." />
             )}
+            <p className="text-xs text-muted-foreground">
+              A alocação pode incluir estimativas de CDB calculadas pelo CDI.
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>O que merece sua atenção</CardTitle>
-            <CardDescription>
-              Sinais objetivos a partir da posição importada.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {concentration ? (
@@ -180,9 +160,6 @@ export function PortfolioOverview({
         <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
           <div>
             <CardTitle>Próximos vencimentos</CardTitle>
-            <CardDescription>
-              Planeje liquidez e reinvestimento antes da data.
-            </CardDescription>
           </div>
           <Link
             href="/portfolio?view=positions"
@@ -230,7 +207,7 @@ function Metric({
   icon: typeof WalletCards;
   label: string;
   value: string;
-  detail: string;
+  detail?: string;
 }) {
   return (
     <Card>
@@ -246,7 +223,9 @@ function Metric({
             <Icon className="size-4" />
           </span>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">{detail}</p>
+        {detail && (
+          <p className="mt-3 text-xs text-muted-foreground">{detail}</p>
+        )}
       </CardContent>
     </Card>
   );
