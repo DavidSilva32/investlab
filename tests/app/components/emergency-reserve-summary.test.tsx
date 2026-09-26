@@ -37,10 +37,8 @@ describe("EmergencyReserveSummary", () => {
 
     expect(html).toContain("2.5 meses");
     expect(html).toContain("Meta pessoal · 6 meses");
-    expect(html).toContain("valor selecionado ÷ custo mensal");
     expect(html).toContain("01/09/2026");
     expect(html).toContain("Posição registrada");
-    expect(html).toContain("não uma recomendação universal");
     expect(html).toContain("Prazo e resgate não verificados.");
     expect(html).toContain("<progress");
   });
@@ -48,13 +46,14 @@ describe("EmergencyReserveSummary", () => {
   it("shows the calculation method only when requested", async () => {
     const user = userEvent.setup();
     render(<EmergencyReserveSummary calculation={calculation} />);
-    const summary = screen.getByText("Como é calculado");
-    const disclosure = summary.closest("details");
+    const trigger = screen.getByRole("button", { name: /Como .* calculado/ });
 
-    expect(disclosure?.open).toBe(false);
-    await user.click(summary);
-    expect(disclosure?.open).toBe(true);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    await user.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText(/Meses cobertos = valor selecionado/)).toBeTruthy();
+    expect(screen.getByText(/valor selecionado/)).toBeTruthy();
+    expect(screen.getByText(/universal/)).toBeTruthy();
   });
 
   it("reports the excess and groups whose positions have no value", () => {

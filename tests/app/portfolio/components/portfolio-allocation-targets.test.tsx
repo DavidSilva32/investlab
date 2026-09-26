@@ -81,10 +81,17 @@ describe("PortfolioAllocationTargets", () => {
     expect(
       screen.queryByText(/valor positivo significa abaixo da meta/),
     ).toBeNull();
-    const comparisonHelp = screen.getByText(/Como ler a compara/);
-    expect(comparisonHelp.closest("details")?.open).toBe(false);
+    const comparisonHelp = screen.getByRole("button", {
+      name: /Como ler a compara/,
+      expanded: false,
+    });
     await user.click(comparisonHelp);
-    expect(comparisonHelp.closest("details")?.open).toBe(true);
+    expect(
+      screen.getByRole("button", {
+        name: /Como ler a compara/,
+        expanded: true,
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByText(/Positivo indica que a classe está abaixo da meta/),
     ).toBeTruthy();

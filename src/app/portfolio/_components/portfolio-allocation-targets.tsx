@@ -243,16 +243,22 @@ export function PortfolioAllocationTargets({
                 <span className="text-right">Meta</span>
                 <span className="text-right">Diferença (%)</span>
               </div>
-              <details className="text-xs text-muted-foreground">
-                <summary className="w-fit cursor-pointer underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Collapsible className="text-xs text-muted-foreground">
+                <CollapsibleTrigger className="flex w-fit cursor-pointer items-center gap-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group">
                   Como ler a comparação
-                </summary>
-                <p className="mt-2 max-w-2xl">
-                  Diferença = meta menos percentual atual. Positivo indica que a
-                  classe está abaixo da meta. As metas refletem sua estratégia
-                  pessoal, não uma recomendação universal.
-                </p>
-              </details>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                  />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <p className="mt-2 max-w-2xl">
+                    Diferença = meta menos percentual atual. Positivo indica que
+                    a classe está abaixo da meta. As metas refletem sua
+                    estratégia pessoal, não uma recomendação universal.
+                  </p>
+                </CollapsibleContent>
+              </Collapsible>
               <ul className="space-y-2">
                 {portfolioAssetClassOptions.map((assetClass) => {
                   const actual =

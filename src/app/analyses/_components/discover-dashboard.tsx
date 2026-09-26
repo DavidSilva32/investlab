@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +12,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import type {
   DiscoveryAssessment,
   ScreenerResult,
@@ -96,23 +102,29 @@ export function DiscoverDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <details className="group text-sm text-muted-foreground">
-            <summary className="w-fit cursor-pointer rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+          <Collapsible className="group text-sm text-muted-foreground">
+            <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
               Sobre a metodologia
-            </summary>
-            <div className="mt-3 space-y-2 leading-relaxed">
-              <p>
-                A janela de cinco exercícios observa o histórico e não prevê
-                desempenho. Setores sem conceitos contábeis validados aparecem
-                como indisponíveis.
-              </p>
-              <p>
-                A empresa entra no universo pelo vínculo exato entre CNPJ e
-                cadastro da CVM. A fonte é a DFP anual consolidada; cada
-                critério abaixo mostra o período e o que os dados sustentam.
-              </p>
-            </div>
-          </details>
+              <ChevronDown
+                aria-hidden="true"
+                className="size-4 transition-transform group-data-[state=open]:rotate-180"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-3 space-y-2 leading-relaxed">
+                <p>
+                  A janela de cinco exercícios observa o histórico e não prevê
+                  desempenho. Setores sem conceitos contábeis validados aparecem
+                  como indisponíveis.
+                </p>
+                <p>
+                  A empresa entra no universo pelo vínculo exato entre CNPJ e
+                  cadastro da CVM. A fonte é a DFP anual consolidada; cada
+                  critério abaixo mostra o período e o que os dados sustentam.
+                </p>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </CardContent>
       </Card>
 
