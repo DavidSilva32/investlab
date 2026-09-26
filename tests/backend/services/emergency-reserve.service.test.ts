@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
   enrich: vi.fn(),
+  classifyPositions: vi.fn(),
 }));
 
 vi.mock("@/backend/repositories/import.repository", () => ({
@@ -19,8 +20,12 @@ vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
 vi.mock("@/backend/services/cdb-estimate.service", () => ({
   cdbEstimateService: { enrich: mocks.enrich },
 }));
+vi.mock("@/backend/services/portfolio-allocation.service", () => ({
+  portfolioAllocationService: { classifyPositions: mocks.classifyPositions },
+}));
 
 import { ApplicationError } from "@/backend/errors/application-error";
+import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
 import {
   EmergencyReserveService,
   getEmergencyReserveAssetKey,
@@ -60,6 +65,31 @@ describe("EmergencyReserveService", () => {
     vi.clearAllMocks();
     mocks.listLatestPositions.mockResolvedValue([]);
     mocks.enrich.mockImplementation(async (positions) => positions);
+    mocks.classifyPositions.mockImplementation(
+      async (
+        positions: Array<{
+          product: string;
+          assetCode: string | null;
+          issuer: string | null;
+          institution: string | null;
+          indexer: string | null;
+          regimeType: string | null;
+        }>,
+      ) =>
+        positions.map(
+          (item: {
+            product: string;
+            assetCode: string | null;
+            issuer: string | null;
+            institution: string | null;
+            indexer: string | null;
+            regimeType: string | null;
+          }) => ({
+            ...item,
+            classification: inferPortfolioAssetClassification(item),
+          }),
+        ),
+    );
     mocks.getSettings.mockResolvedValue(null);
     mocks.saveSettings.mockResolvedValue(undefined);
   });
@@ -193,11 +223,16 @@ describe("EmergencyReserveService", () => {
   });
 
   it("excludes selected positions without a finite valuation and reports them", async () => {
-    const valued = position({ estimatedValue: null, totalValue: "150" });
+    const valued = position({
+      estimatedValue: null,
+      totalValue: "150",
+      classification: { assetClass: "Renda fixa" },
+    });
     const noValue = position({
       assetCode: "CDB999",
       estimatedValue: null,
       totalValue: "not-a-number",
+      classification: { assetClass: "Renda fixa" },
     });
     mocks.getSettings.mockResolvedValue({
       monthlyExpenses: "100",
@@ -209,8 +244,8 @@ describe("EmergencyReserveService", () => {
     });
 
     const calculation = await new EmergencyReserveService().getSummary([
-      valued,
-      noValue,
+      { ...valued, classification: { assetClass: "Renda fixa" } },
+      { ...noValue, classification: { assetClass: "Renda fixa" } },
     ]);
 
     expect(calculation).toMatchObject({
@@ -230,13 +265,154 @@ describe("EmergencyReserveService", () => {
     expect(mocks.saveSettings).not.toHaveBeenCalled();
   });
 
+  it("suggests only fixed-income groups using estimates with imported-value fallback", async () => {
+    const estimated = position({
+      product: "CDB DI",
+      assetCode: "CDBEST",
+      totalValue: "50",
+      estimatedValue: 60,
+    });
+    const imported = position({
+      product: "CDB 115% CDI",
+      assetCode: "CDBFALLBACK",
+      totalValue: "40",
+      estimatedValue: null,
+    });
+    const stock = position({
+      product: "Ação XPTO",
+      assetCode: "STOCK1",
+      totalValue: "10000",
+    });
+    mocks.listLatestPositions.mockResolvedValue([estimated, imported, stock]);
+    mocks.enrich.mockResolvedValue([estimated, imported, stock]);
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 100,
+    });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      kind: "exact",
+      candidates: [
+        {
+          assetKeys: [
+            getEmergencyReserveAssetKey(estimated),
+            getEmergencyReserveAssetKey(imported),
+          ],
+          total: 100,
+          difference: 0,
+        },
+      ],
+    });
+  });
+
+  it("rejects an invalid suggestion target before loading positions", async () => {
+    await expect(
+      new EmergencyReserveService().suggestPositions({ targetAmount: 0 }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.listLatestPositions).not.toHaveBeenCalled();
+  });
+
+  it("returns no suggestions when current positions are not fixed income", async () => {
+    const stock = position({ product: "Ação XPTO", assetCode: "STOCK1" });
+    mocks.listLatestPositions.mockResolvedValue([stock]);
+
+    await expect(
+      new EmergencyReserveService().suggestPositions({ targetAmount: 100 }),
+    ).resolves.toEqual({ status: "no_valued_positions" });
+  });
+
+  it("limits reserve holdings and its calculation to fixed-income classifications", async () => {
+    const cdb = position({ totalValue: "100" });
+    const stock = position({
+      product: "Ação XPTO",
+      assetCode: "STOCK1",
+      totalValue: "200",
+    });
+    const fii = position({
+      product: "FII XPTO",
+      assetCode: "FII1",
+      totalValue: "300",
+    });
+    mocks.listLatestPositions.mockResolvedValue([cdb, stock, fii]);
+    mocks.enrich.mockResolvedValue([cdb, stock, fii]);
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "100",
+      targetMonths: 10,
+      selectedAssetKeys: [
+        getEmergencyReserveAssetKey(cdb),
+        getEmergencyReserveAssetKey(stock),
+        getEmergencyReserveAssetKey(fii),
+      ],
+    });
+
+    const data = await new EmergencyReserveService().getEditorData();
+
+    expect(data.holdings.map((holding) => holding.product)).toEqual(["CDB DI"]);
+    expect(data.selectedPositionCount).toBe(1);
+    expect(data.calculation.selectedValue).toBe(100);
+    expect(data.missingSelectionCount).toBe(2);
+  });
+
+  it("rejects current stock and fund selections before persisting reserve settings", async () => {
+    const stock = position({ product: "Ação XPTO", assetCode: "STOCK1" });
+    const fii = position({ product: "FII XPTO", assetCode: "FII1" });
+    mocks.listLatestPositions.mockResolvedValue([stock, fii]);
+    mocks.classifyPositions.mockImplementation(
+      async (
+        positions: Array<{
+          product: string;
+          assetCode: string | null;
+          issuer: string | null;
+          institution: string | null;
+          indexer: string | null;
+          regimeType: string | null;
+        }>,
+      ) =>
+        positions.map(
+          (item: {
+            product: string;
+            assetCode: string | null;
+            issuer: string | null;
+            institution: string | null;
+            indexer: string | null;
+            regimeType: string | null;
+          }) => ({
+            ...item,
+            classification: { assetClass: "Renda fixa" },
+          }),
+        ),
+    );
+
+    await expect(
+      new EmergencyReserveService().saveSettings({
+        monthlyExpenses: 2000,
+        targetMonths: 6,
+        selectedAssetKeys: [
+          getEmergencyReserveAssetKey(stock),
+          getEmergencyReserveAssetKey(fii),
+        ],
+      }),
+    ).rejects.toMatchObject({
+      message:
+        "A reserva só pode incluir posições classificadas como renda fixa. Revise a seleção antes de salvar.",
+      statusCode: 400,
+    });
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+  });
+
   it("deduplicates selected asset keys when saving and returns refreshed data", async () => {
+    const cdb = position();
+    mocks.listLatestPositions.mockResolvedValue([cdb]);
     const service = new EmergencyReserveService();
     await service.saveSettings(
       {
         monthlyExpenses: 2000,
         targetMonths: 6,
-        selectedAssetKeys: [`v1:${"b".repeat(64)}`, `v1:${"b".repeat(64)}`],
+        selectedAssetKeys: [
+          getEmergencyReserveAssetKey(cdb),
+          getEmergencyReserveAssetKey(cdb),
+        ],
       },
       "request-3",
     );
@@ -244,7 +420,7 @@ describe("EmergencyReserveService", () => {
     expect(mocks.saveSettings).toHaveBeenCalledWith({
       monthlyExpenses: "2000.00",
       targetMonths: 6,
-      selectedAssetKeys: [`v1:${"b".repeat(64)}`],
+      selectedAssetKeys: [getEmergencyReserveAssetKey(cdb)],
     });
     expect(mocks.listLatestPositions).toHaveBeenCalledWith("request-3");
   });

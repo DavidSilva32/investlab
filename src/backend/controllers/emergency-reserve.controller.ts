@@ -12,6 +12,20 @@ export class EmergencyReserveController {
     return Response.json(data);
   }
 
+  async suggest(body: unknown, requestId: string) {
+    logger.info("emergency_reserve_suggestions_requested", { requestId });
+    const data = await emergencyReserveService.suggestPositions(
+      body,
+      requestId,
+    );
+    logger.info("emergency_reserve_suggestions_responded", {
+      requestId,
+      status: data.status,
+      candidates: data.status === "suggestions" ? data.candidates.length : 0,
+    });
+    return Response.json(data);
+  }
+
   async update(body: unknown, requestId: string) {
     logger.info("emergency_reserve_update_requested", { requestId });
     const data = await emergencyReserveService.saveSettings(body, requestId);
