@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DiscoverDashboard } from "@/app/analyses/_components/discover-dashboard";
 
@@ -62,7 +63,8 @@ const payload = {
 };
 
 describe("DiscoverDashboard", () => {
-  it("shows source, period, criteria states and a path to individual analysis", async () => {
+  it("keeps evidence visible and puts methodology details behind an accessible disclosure", async () => {
+    const user = userEvent.setup();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(payload)));
     render(<DiscoverDashboard />);
     expect(await screen.findByText("Empresa Exemplo")).toBeTruthy();
@@ -70,6 +72,12 @@ describe("DiscoverDashboard", () => {
     expect(screen.getByText("Atendido")).toBeTruthy();
     expect(screen.getByText("Não atendido")).toBeTruthy();
     expect(screen.getByText("Indisponível")).toBeTruthy();
+    const methodology = screen.getByText("Sobre a metodologia");
+    expect(methodology.closest("details")?.hasAttribute("open")).toBe(false);
+    await user.click(methodology);
+    expect(methodology.closest("details")?.hasAttribute("open")).toBe(true);
+    expect(await screen.findByText(/A janela de cinco exerc/)).toBeTruthy();
+    expect(screen.getByText(/CNPJ e cadastro da CVM/)).toBeTruthy();
     expect(
       screen
         .getByRole("link", { name: "AAA3 · Analisar" })

@@ -24,6 +24,9 @@ describe("PortfolioOverview", () => {
     );
     expect(html).toContain("Patrimônio atual");
     expect(html).toContain("Banco A");
+    expect(html).toContain(
+      "A alocação pode incluir estimativas de CDB calculadas pelo CDI.",
+    );
     expect(html).toContain("Concentração relevante");
     expect(html).toContain("01/01/2030");
   });

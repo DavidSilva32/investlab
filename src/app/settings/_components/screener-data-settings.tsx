@@ -220,20 +220,24 @@ export function ScreenerDataSettings() {
             {notice}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
-          A CVM prevê prazo de até três meses após o encerramento do exercício
-          para a entrega da DFP. Revise esta base depois da janela anual de
-          divulgação; essa recomendação não garante que toda empresa já tenha
-          publicado.{" "}
-          <a
-            className="underline underline-offset-4"
-            href="https://www.gov.br/cvm/pt-br/assuntos/regulados/envio-de-informacoes-a-cvm-calendario"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Calendário de entrega da CVM
-          </a>
-        </p>
+        <details className="text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+            Prazo e limite da fonte CVM
+          </summary>
+          <p className="mt-2 leading-relaxed">
+            A CVM prevê prazo de até três meses após o encerramento do exercício
+            para a entrega da DFP. Revise esta base depois da janela anual de
+            divulgação; isso não garante que toda empresa já tenha publicado.{" "}
+            <a
+              className="underline underline-offset-4"
+              href="https://www.gov.br/cvm/pt-br/assuntos-regulados/envio-de-informacoes-a-cvm-calendario"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Calendário de entrega da CVM
+            </a>
+          </p>
+        </details>
 
         {loading && !status ? (
           <p role="status" className="text-sm text-muted-foreground">

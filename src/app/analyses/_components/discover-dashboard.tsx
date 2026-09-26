@@ -89,23 +89,30 @@ export function DiscoverDashboard() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Empresas para estudar</CardTitle>
+          <CardTitle>Como interpretar</CardTitle>
           <CardDescription>
-            Esta metodologia observa lucro anual, patrimônio e continuidade em
-            demonstrações consolidadas da CVM. Ela organiza evidências para
-            análise; não classifica empresas como boas ou ruins.
+            Os critérios organizam evidências anuais da CVM; não são uma
+            recomendação de investimento.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>
-            A janela de cinco exercícios é uma regra explícita de observação de
-            histórico, não uma previsão de desempenho. Setores sem conceitos
-            contábeis validados aparecem como indisponíveis.
-          </p>
-          <p>
-            A empresa entra no universo por vínculo exato entre CNPJ e cadastro
-            da CVM. Os critérios abaixo mostram o que os dados anuais sustentam.
-          </p>
+        <CardContent>
+          <details className="group text-sm text-muted-foreground">
+            <summary className="w-fit cursor-pointer rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              Sobre a metodologia
+            </summary>
+            <div className="mt-3 space-y-2 leading-relaxed">
+              <p>
+                A janela de cinco exercícios observa o histórico e não prevê
+                desempenho. Setores sem conceitos contábeis validados aparecem
+                como indisponíveis.
+              </p>
+              <p>
+                A empresa entra no universo pelo vínculo exato entre CNPJ e
+                cadastro da CVM. A fonte é a DFP anual consolidada; cada
+                critério abaixo mostra o período e o que os dados sustentam.
+              </p>
+            </div>
+          </details>
         </CardContent>
       </Card>
 

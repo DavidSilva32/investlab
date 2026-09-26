@@ -136,10 +136,6 @@ export function PortfolioAllocationTargets({
             >
               Metas da sua estratégia
             </h3>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Compare a carteira à sua estratégia pessoal. Metas não são
-              recomendações universais.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!editing && (
@@ -181,6 +177,10 @@ export function PortfolioAllocationTargets({
           {" "}
           {editing ? (
             <form onSubmit={submit} className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Metas pessoais são uma estratégia sua, não uma recomendação
+                universal.
+              </p>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {portfolioAssetClassOptions.map((assetClass) => (
                   <label
@@ -243,10 +243,16 @@ export function PortfolioAllocationTargets({
                 <span className="text-right">Meta</span>
                 <span className="text-right">Diferença (%)</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                A diferença indica quanto da carteira está abaixo ou acima da
-                meta; valor positivo significa abaixo da meta.
-              </p>
+              <details className="text-xs text-muted-foreground">
+                <summary className="w-fit cursor-pointer underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Como ler a comparação
+                </summary>
+                <p className="mt-2 max-w-2xl">
+                  Diferença = meta menos percentual atual. Positivo indica que a
+                  classe está abaixo da meta. As metas refletem sua estratégia
+                  pessoal, não uma recomendação universal.
+                </p>
+              </details>
               <ul className="space-y-2">
                 {portfolioAssetClassOptions.map((assetClass) => {
                   const actual =

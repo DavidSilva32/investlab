@@ -281,12 +281,17 @@ export function MarketDataSettings() {
                 </>
               )}
             </dl>
-            <p className="text-xs text-muted-foreground">
-              As múltiplas do Screener só usam cotações verificadas com até sete
-              dias. Atualize quando a observação ultrapassar essa janela; isso é
-              uma regra do cálculo atual, não uma garantia de cobertura de todos
-              os ativos.
-            </p>
+            <details className="text-xs text-muted-foreground">
+              <summary className="w-fit cursor-pointer rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                Critério e limite das cotações
+              </summary>
+              <p className="mt-2 leading-relaxed">
+                As múltiplas do Screener só usam cotações verificadas com até
+                sete dias. Atualize quando a observação ultrapassar essa janela;
+                essa é uma regra do cálculo atual e não garante cobertura de
+                todos os ativos.
+              </p>
+            </details>
           </>
         )}
       </CardContent>

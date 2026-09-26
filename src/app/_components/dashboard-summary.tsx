@@ -104,9 +104,6 @@ export function DashboardSummary({
           <h2 id="dashboard-next-steps" className="text-lg font-semibold">
             Próximos passos
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Atalhos para revisar os dados importados e seguir seu estudo.
-          </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
@@ -116,11 +113,6 @@ export function DashboardSummary({
                   ? "Revise sua carteira"
                   : "Importe sua carteira"}
               </h3>
-              <p className="text-sm text-muted-foreground">
-                {positions.length
-                  ? "Confira posições, concentração e vencimentos da última importação."
-                  : "Os indicadores do resumo dependem de uma posição importada da B3."}
-              </p>
               <Link
                 href={positions.length ? "/portfolio" : "/imports"}
                 className="inline-block text-sm font-medium text-primary hover:underline"
@@ -132,10 +124,6 @@ export function DashboardSummary({
           <Card>
             <CardContent className="space-y-2 p-5">
               <h3 className="font-medium">Empresas em estudo</h3>
-              <p className="text-sm text-muted-foreground">
-                Consulte critérios e fontes antes de decidir se quer aprofundar
-                uma análise.
-              </p>
               <Link
                 href="/analyses"
                 className="inline-block text-sm font-medium text-primary hover:underline"
