@@ -38,10 +38,17 @@ describe("ScreenerDataSettings", () => {
     expect(screen.getByText("520")).toBeTruthy();
     expect(screen.getByText("8.000")).toBeTruthy();
     expect(screen.getByText("2 min 30 s")).toBeTruthy();
-    const sourceDetails = screen.getByText("Prazo e limite da fonte CVM");
-    expect(sourceDetails.closest("details")?.hasAttribute("open")).toBe(false);
+    const sourceDetails = screen.getByRole("button", {
+      name: "Prazo e limite da fonte CVM",
+      expanded: false,
+    });
     await user.click(sourceDetails);
-    expect(sourceDetails.closest("details")?.hasAttribute("open")).toBe(true);
+    expect(
+      screen.getByRole("button", {
+        name: "Prazo e limite da fonte CVM",
+        expanded: true,
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /Calend.rio de entrega da CVM/ }),
     ).toBeTruthy();

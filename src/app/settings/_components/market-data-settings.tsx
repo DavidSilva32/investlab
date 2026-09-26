@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   RefreshCw,
@@ -16,6 +17,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 type MarketDataStatus = {
   latestQuote: { quoteObservedAt: string; sourceTicker: string } | null;
@@ -281,17 +287,23 @@ export function MarketDataSettings() {
                 </>
               )}
             </dl>
-            <details className="text-xs text-muted-foreground">
-              <summary className="w-fit cursor-pointer rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+            <Collapsible className="text-xs text-muted-foreground">
+              <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                 Critério e limite das cotações
-              </summary>
-              <p className="mt-2 leading-relaxed">
-                As múltiplas do Screener só usam cotações verificadas com até
-                sete dias. Atualize quando a observação ultrapassar essa janela;
-                essa é uma regra do cálculo atual e não garante cobertura de
-                todos os ativos.
-              </p>
-            </details>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                />
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <p className="mt-2 leading-relaxed">
+                  As múltiplas do Screener só usam cotações verificadas com até
+                  sete dias. Atualize quando a observação ultrapassar essa
+                  janela; essa é uma regra do cálculo atual e não garante
+                  cobertura de todos os ativos.
+                </p>
+              </CollapsibleContent>
+            </Collapsible>
           </>
         )}
       </CardContent>

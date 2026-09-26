@@ -1,4 +1,10 @@
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Card, CardContent } from "@/components/ui/card";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
@@ -103,16 +109,22 @@ export function EmergencyReserveSummary({
                   no cálculo. Revise a seleção na carteira.
                 </p>
               ) : null}{" "}
-              <details className="text-xs text-muted-foreground">
-                <summary className="w-fit cursor-pointer underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Collapsible className="text-xs text-muted-foreground">
+                <CollapsibleTrigger className="flex w-fit cursor-pointer items-center gap-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group">
                   Como é calculado
-                </summary>
-                <p className="mt-2 max-w-2xl">
-                  Meses cobertos = valor selecionado ÷ custo mensal. A meta =
-                  custo mensal × meses definidos por você; é uma referência
-                  pessoal, não uma recomendação universal.
-                </p>
-              </details>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                  />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <p className="mt-2 max-w-2xl">
+                    Meses cobertos = valor selecionado ÷ custo mensal. A meta =
+                    custo mensal × meses definidos por você; é uma referência
+                    pessoal, não uma recomendação universal.
+                  </p>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
           </div>
         )}

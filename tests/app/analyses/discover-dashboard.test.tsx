@@ -72,10 +72,18 @@ describe("DiscoverDashboard", () => {
     expect(screen.getByText("Atendido")).toBeTruthy();
     expect(screen.getByText("Não atendido")).toBeTruthy();
     expect(screen.getByText("Indisponível")).toBeTruthy();
-    const methodology = screen.getByText("Sobre a metodologia");
-    expect(methodology.closest("details")?.hasAttribute("open")).toBe(false);
-    await user.click(methodology);
-    expect(methodology.closest("details")?.hasAttribute("open")).toBe(true);
+    const methodology = screen.getByRole("button", {
+      name: "Sobre a metodologia",
+      expanded: false,
+    });
+    methodology.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByRole("button", {
+        name: "Sobre a metodologia",
+        expanded: true,
+      }),
+    ).toBeTruthy();
     expect(await screen.findByText(/A janela de cinco exerc/)).toBeTruthy();
     expect(screen.getByText(/CNPJ e cadastro da CVM/)).toBeTruthy();
     expect(

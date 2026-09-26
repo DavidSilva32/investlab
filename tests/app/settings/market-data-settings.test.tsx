@@ -88,10 +88,17 @@ describe("MarketDataSettings", () => {
       await screen.findByText("Status da última execução: Ainda não executada"),
     ).toBeTruthy();
     expect(screen.getByText(/Sem cota/)).toBeTruthy();
-    const criteria = screen.getByText(/Crit.rio e limite das cota/);
-    expect(criteria.closest("details")?.hasAttribute("open")).toBe(false);
+    const criteria = screen.getByRole("button", {
+      name: /Crit.rio e limite das cota/,
+      expanded: false,
+    });
     await user.click(criteria);
-    expect(criteria.closest("details")?.hasAttribute("open")).toBe(true);
+    expect(
+      screen.getByRole("button", {
+        name: /Crit.rio e limite das cota/,
+        expanded: true,
+      }),
+    ).toBeTruthy();
     expect(await screen.findByText(/sete dias/)).toBeTruthy();
   });
 
