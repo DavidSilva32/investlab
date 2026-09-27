@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MonthYearPicker } from "@/app/settings/_components/month-year-picker";
 
 type InvestorContext = {
   objective: string | null;
@@ -126,14 +127,14 @@ export function InvestorContextSettings() {
     <Card>
       <CardHeader>
         <CardTitle>Seu objetivo de investimento</CardTitle>
-        <CardDescription className="max-w-2xl">
+        <CardDescription className="max-w-3xl">
           Seu objetivo e quando pretende usar o dinheiro ajudam a contextualizar
           futuras comparações. Você pode deixar as respostas em branco e voltar
           para atualizá-las quando quiser.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-5" onSubmit={saveContext}>
+        <form className="space-y-6" onSubmit={saveContext}>
           {loading && <p role="status">Carregando seu contexto...</p>}
           {error && (
             <p
@@ -156,88 +157,97 @@ export function InvestorContextSettings() {
               Tentar carregar novamente
             </Button>
           )}
-          <div className="space-y-2">
-            <label htmlFor="investor-objective" className="text-sm font-medium">
-              O que você quer alcançar com seus investimentos?
-            </label>
-            <Input
-              id="investor-objective"
-              value={context.objective ?? ""}
-              maxLength={160}
-              placeholder="Seu objetivo, com suas palavras"
-              disabled={!loaded || loading || saving}
-              onChange={(event) => {
-                setContext((current) => ({
-                  ...current,
-                  objective: event.target.value || null,
-                }));
-                setNotice(null);
-              }}
-              aria-describedby="investor-objective-help"
-            />
-            <p
-              id="investor-objective-help"
-              className="text-sm text-muted-foreground"
-            >
-              {context.objective
-                ? "Objetivo informado."
-                : "Ainda não informado. Essa resposta é opcional."}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <label
-              htmlFor="investor-target-month"
-              className="text-sm font-medium"
-            >
-              Quando pretende usar esse dinheiro?
-            </label>
-            <Input
-              id="investor-target-month"
-              type="month"
-              value={context.targetMonth ?? ""}
-              disabled={!loaded || loading || saving}
-              onChange={(event) => {
-                setContext((current) => ({
-                  ...current,
-                  targetMonth: event.target.value || null,
-                }));
-                setNotice(null);
-              }}
-              aria-describedby="investor-target-month-help"
-            />
-            <p
-              id="investor-target-month-help"
-              className="text-sm text-muted-foreground"
-            >
-              {context.targetMonth
-                ? "Mês informado: " + formatMonth(context.targetMonth) + "."
-                : "Ainda não informado. Essa resposta é opcional."}
-            </p>
-            {targetMonthPassed && (
-              <p
-                role="status"
-                className="text-sm text-amber-700 dark:text-amber-400"
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+            <div className="space-y-2">
+              <label
+                htmlFor="investor-objective"
+                className="text-sm font-medium"
               >
-                Esse mês já passou. Revise o prazo se seus planos mudaram.
+                O que você quer alcançar com seus investimentos?
+              </label>
+              <Input
+                id="investor-objective"
+                value={context.objective ?? ""}
+                maxLength={160}
+                placeholder="Seu objetivo, com suas palavras"
+                disabled={!loaded || loading || saving}
+                onChange={(event) => {
+                  setContext((current) => ({
+                    ...current,
+                    objective: event.target.value || null,
+                  }));
+                  setNotice(null);
+                }}
+                aria-describedby="investor-objective-help"
+              />
+              <p
+                id="investor-objective-help"
+                className="text-sm text-muted-foreground"
+              >
+                {context.objective
+                  ? "Objetivo informado."
+                  : "Ainda não informado. Essa resposta é opcional."}
               </p>
-            )}
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="investor-target-month"
+                className="text-sm font-medium"
+              >
+                Quando pretende usar esse dinheiro?
+              </label>
+              <MonthYearPicker
+                id="investor-target-month"
+                value={context.targetMonth}
+                disabled={!loaded || loading || saving}
+                ariaDescribedBy="investor-target-month-help"
+                onChange={(targetMonth) => {
+                  setContext((current) => ({ ...current, targetMonth }));
+                  setNotice(null);
+                }}
+              />
+              <p
+                id="investor-target-month-help"
+                className="text-sm text-muted-foreground"
+              >
+                {context.targetMonth
+                  ? "Mês informado: " + formatMonth(context.targetMonth) + "."
+                  : "Ainda não informado. Essa resposta é opcional."}
+              </p>
+              {targetMonthPassed && (
+                <p
+                  role="status"
+                  className="text-sm text-amber-700 dark:text-amber-400"
+                >
+                  Esse mês já passou. Revise o prazo se seus planos mudaram.
+                </p>
+              )}
+            </div>
           </div>
-          {context.updatedAt && (
-            <p className="text-xs text-muted-foreground">
-              Atualizado em {formatUpdatedAt(context.updatedAt)}.
-            </p>
-          )}
-          {notice && (
-            <p
-              role="status"
-              className="text-sm text-emerald-700 dark:text-emerald-400"
+          <div className="flex flex-col gap-4 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              {context.updatedAt && (
+                <p className="text-xs text-muted-foreground">
+                  Atualizado em {formatUpdatedAt(context.updatedAt)}.
+                </p>
+              )}
+              {notice && (
+                <p
+                  role="status"
+                  className="text-sm text-emerald-700 dark:text-emerald-400"
+                >
+                  {notice}
+                </p>
+              )}
+            </div>
+            <Button
+              type="submit"
+              disabled={!loaded || loading || saving}
+              className="sm:min-w-40"
             >
-              {notice}
-            </p>
-          )}
-          <Button type="submit" disabled={!loaded || loading || saving}>
-            {saving ? "Salvando…" : "Salvar contexto"}
-          </Button>
+              {saving ? "Salvando…" : "Salvar contexto"}
+            </Button>
+          </div>
         </form>
       </CardContent>
     </Card>

@@ -6,7 +6,7 @@ import { InvestorContextSettings } from "@/app/settings/_components/investor-con
 export default function SettingsPage() {
   return (
     <AppShell title="Configurações">
-      <div className="mx-auto w-full max-w-5xl space-y-6">
+      <div className="w-full space-y-6">
         <InvestorContextSettings />
         <ScreenerDataSettings />
         <MarketDataSettings />

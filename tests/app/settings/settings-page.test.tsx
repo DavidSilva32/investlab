@@ -24,8 +24,11 @@ vi.mock("@/app/settings/_components/market-data-settings", () => ({
 
 describe("SettingsPage", () => {
   it("uses the page title and data sections without a repeated generic introduction", () => {
-    render(<SettingsPage />);
+    const { container } = render(<SettingsPage />);
     expect(screen.getByRole("heading", { name: /Configura/ })).toBeTruthy();
+    expect(container.querySelector("main > div")?.className).toBe(
+      "w-full space-y-6",
+    );
     expect(screen.getByText("Objetivo de investimento")).toBeTruthy();
     expect(screen.getByText("Dados da CVM")).toBeTruthy();
     expect(screen.getByText("Dados de mercado")).toBeTruthy();
