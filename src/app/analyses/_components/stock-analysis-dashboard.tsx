@@ -25,6 +25,42 @@ const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
+const historyIntervals = [
+  { days: 30, label: "1 mês" },
+  { days: 90, label: "3 meses" },
+  { days: 180, label: "6 meses" },
+  { days: 365, label: "1 ano" },
+  { days: 1825, label: "5 anos" },
+];
+const marketClosureToleranceDays = 7;
+
+function periodStart(latestDate: string, days: number) {
+  const start = new Date(`${latestDate}T00:00:00Z`);
+  const years = days === 365 ? 1 : days === 1825 ? 5 : null;
+  if (years) {
+    const targetYear = start.getUTCFullYear() - years;
+    const month = start.getUTCMonth();
+    const lastDay = new Date(Date.UTC(targetYear, month + 1, 0)).getUTCDate();
+    start.setUTCFullYear(
+      targetYear,
+      month,
+      Math.min(start.getUTCDate(), lastDay),
+    );
+  } else {
+    start.setUTCDate(start.getUTCDate() - days);
+  }
+  return start;
+}
+
+function hasPeriodCoverage(history: StockAnalysis["history"], days: number) {
+  if (history.length < 2) return false;
+  const oldest = new Date(`${history[0].date}T00:00:00Z`).getTime();
+  const coverageDeadline = periodStart(history.at(-1)!.date, days);
+  coverageDeadline.setUTCDate(
+    coverageDeadline.getUTCDate() + marketClosureToleranceDays,
+  );
+  return oldest <= coverageDeadline.getTime();
+}
 
 export function StockAnalysisDashboard({
   initialTicker = "PETR4",
@@ -136,8 +172,7 @@ export function StockAnalysisDashboard({
   const points = useMemo(() => {
     const latest = history.at(-1);
     if (!latest) return [];
-    const from = new Date(`${latest.date}T00:00:00Z`);
-    from.setUTCDate(from.getUTCDate() - days);
+    const from = periodStart(latest.date, days);
     return history.filter(
       (point) => new Date(`${point.date}T00:00:00Z`) >= from,
     );
@@ -195,14 +230,9 @@ export function StockAnalysisDashboard({
   const interim = analysis.fundamentals.filter(
     (period) => period.sourceDocument === "ITR",
   );
-  const intervals = [30, 90, 180, 365].filter((interval) => {
-    if (history.length < 2) return false;
-    return (
-      new Date(`${history.at(-1)?.date}T00:00:00Z`).getTime() -
-        new Date(`${history[0].date}T00:00:00Z`).getTime() >=
-      (interval - 1) * 86400000
-    );
-  });
+  const intervals = historyIntervals.filter(({ days }) =>
+    hasPeriodCoverage(history, days),
+  );
 
   return (
     <div className="space-y-4">
@@ -227,8 +257,8 @@ export function StockAnalysisDashboard({
             }
           >
             {analysis.changePercent === null
-              ? "Variação não informada"
-              : `Variação: ${analysis.changePercent.toFixed(2)}%`}
+              ? "Variação do dia não informada"
+              : `Variação do dia: ${analysis.changePercent.toFixed(2)}%`}
           </p>
           <div className="sm:ml-auto">
             <AddStudyListButton
@@ -251,21 +281,19 @@ export function StockAnalysisDashboard({
           {intervals.length > 0 && (
             <div
               className="flex flex-wrap gap-2"
+              role="group"
               aria-label="Intervalo do histórico"
             >
               {intervals.map((interval) => (
                 <Button
-                  key={interval}
+                  key={interval.days}
                   type="button"
                   size="sm"
-                  variant={interval === days ? "default" : "outline"}
-                  onClick={() => setDays(interval)}
+                  variant={interval.days === days ? "default" : "outline"}
+                  aria-pressed={interval.days === days}
+                  onClick={() => setDays(interval.days)}
                 >
-                  {interval === 365
-                    ? "1 ano"
-                    : interval === 30
-                      ? "1 mês"
-                      : `${Math.round(interval / 30)} meses`}
+                  {interval.label}
                 </Button>
               ))}
             </div>

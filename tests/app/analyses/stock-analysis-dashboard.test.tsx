@@ -219,6 +219,11 @@ describe("StockAnalysisDashboard", () => {
     const chart = await screen.findByTestId("price-chart");
     expect(chart.dataset.points).toBe("2025-09-20,2026-08-25,2026-09-19");
     expect(screen.getByRole("button", { name: "1 ano" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "1 ano" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(screen.getByRole("button", { name: "6 meses" })).toBeTruthy();
     expect(screen.getByText("8.4x")).toBeTruthy();
     expect(screen.getByText("18.4%")).toBeTruthy();
@@ -228,6 +233,60 @@ describe("StockAnalysisDashboard", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "1 mês" }));
     expect(chart.dataset.points).toBe("2026-08-25,2026-09-19");
+    expect(
+      screen
+        .getByRole("button", { name: "1 mês" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen
+        .getByRole("button", { name: "1 ano" })
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(screen.getByText("Variação do dia: -1.25%")).toBeTruthy();
+    expect(
+      screen.getByRole("group", { name: "Intervalo do histórico" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "5 anos" })).toBeNull();
+  });
+
+  it("shows a one-year interval when the trading history is within a week of the calendar window", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          history: [
+            { date: "2025-10-01", close: 25 },
+            { date: "2026-09-24", close: 31 },
+          ],
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard />);
+
+    expect(await screen.findByRole("button", { name: "1 ano" })).toBeTruthy();
+  });
+
+  it("offers five years only when the history covers that period", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          history: [
+            { date: "2019-02-28", close: 25 },
+            { date: "2024-02-29", close: 31 },
+          ],
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard />);
+
+    const fiveYears = await screen.findByRole("button", { name: "5 anos" });
+    await userEvent.setup().click(fiveYears);
+    const chart = await screen.findByTestId("price-chart");
+    expect(chart.dataset.points).toBe("2019-02-28,2024-02-29");
   });
 
   it("adds an analyzed issuer to the study list using the CNPJ from analysis", async () => {
