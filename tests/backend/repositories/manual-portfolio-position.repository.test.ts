@@ -1,0 +1,121 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const database = vi.hoisted(() => ({
+  getDatabaseClient: vi.fn(),
+  query: {
+    select: vi.fn(),
+    from: vi.fn(),
+    orderBy: vi.fn(),
+    insert: vi.fn(),
+    values: vi.fn(),
+    returning: vi.fn(),
+    update: vi.fn(),
+    set: vi.fn(),
+    where: vi.fn(),
+    delete: vi.fn(),
+  },
+  logger: { error: vi.fn() },
+}));
+vi.mock("@/infrastructure/database/client", () => ({
+  getDatabaseClient: database.getDatabaseClient,
+}));
+vi.mock("@/infrastructure/logging/logger", () => ({ logger: database.logger }));
+
+import { ManualPortfolioPositionRepository } from "@/backend/repositories/manual-portfolio-position.repository";
+import { manualPortfolioPositions } from "@/infrastructure/database/schema";
+
+const id = "0fefb48f-b6d9-4b8e-890d-95fe4fe7b305";
+const row = {
+  id,
+  assetKey: "manual:" + id,
+  product: "ETF",
+  assetCode: "VT",
+  institution: null,
+  quantity: "2",
+  currency: "USD",
+  unitPrice: "10",
+  totalValue: "20",
+  valueBasis: "unit_price",
+  positionDate: "2026-09-20",
+  convertedValueBrl: null,
+  conversionDate: null,
+};
+
+describe("ManualPortfolioPositionRepository", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    database.getDatabaseClient.mockReturnValue(database.query);
+    database.query.select.mockReturnValue(database.query);
+    database.query.from.mockReturnValue(database.query);
+    database.query.orderBy.mockResolvedValue([row]);
+    database.query.insert.mockReturnValue(database.query);
+    database.query.values.mockReturnValue(database.query);
+    database.query.update.mockReturnValue(database.query);
+    database.query.set.mockReturnValue(database.query);
+    database.query.where.mockReturnValue(database.query);
+    database.query.delete.mockReturnValue(database.query);
+    database.query.returning.mockImplementation((selection) =>
+      Promise.resolve(selection ? [{ id }] : [row]),
+    );
+  });
+
+  it("lists positions in the repository-defined order", async () => {
+    await expect(
+      new ManualPortfolioPositionRepository().list("req"),
+    ).resolves.toEqual([row]);
+    expect(database.query.from).toHaveBeenCalledWith(manualPortfolioPositions);
+    expect(database.query.orderBy).toHaveBeenCalledWith(
+      manualPortfolioPositions.product,
+      expect.anything(),
+    );
+  });
+
+  it("creates a position and returns the inserted row", async () => {
+    await expect(
+      new ManualPortfolioPositionRepository().create({ ...row }, "req"),
+    ).resolves.toEqual(row);
+    expect(database.query.values).toHaveBeenCalledWith(row);
+  });
+
+  it("updates a position and reports a missing row as null", async () => {
+    const repository = new ManualPortfolioPositionRepository();
+    await expect(repository.update(id, { ...row }, "req")).resolves.toEqual(
+      row,
+    );
+    expect(database.query.where).toHaveBeenCalled();
+    database.query.returning.mockResolvedValueOnce([]);
+    await expect(repository.update(id, { ...row })).resolves.toBeNull();
+  });
+
+  it("deletes a position and reports a missing row as null", async () => {
+    const repository = new ManualPortfolioPositionRepository();
+    await expect(repository.delete(id, "req")).resolves.toEqual({ id });
+    database.query.returning.mockResolvedValueOnce([]);
+    await expect(repository.delete(id)).resolves.toBeNull();
+  });
+
+  it.each(["list", "create", "update", "delete"] as const)(
+    "logs and rethrows database errors from %s",
+    async (operation) => {
+      const failure = new Error("database unavailable");
+      if (operation === "list")
+        database.query.orderBy.mockRejectedValueOnce(failure);
+      else database.query.returning.mockRejectedValueOnce(failure);
+      const repository = new ManualPortfolioPositionRepository();
+      const input = { ...row };
+      const call =
+        operation === "list"
+          ? repository.list("req")
+          : operation === "create"
+            ? repository.create(input, "req")
+            : operation === "update"
+              ? repository.update(id, input, "req")
+              : repository.delete(id, "req");
+      await expect(call).rejects.toBe(failure);
+      expect(database.logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("manual_portfolio_position"),
+        expect.objectContaining({ requestId: "req", error: failure }),
+      );
+    },
+  );
+});

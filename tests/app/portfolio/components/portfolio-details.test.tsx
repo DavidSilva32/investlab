@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -195,4 +195,64 @@ it("shows the same-day estimate label when provisional data has no through date"
     />,
   );
   expect(html).toContain("Valor estimado hoje");
+});
+
+it("shows the manual valuation source, dates, and missing BRL conversion", () => {
+  const html = renderToStaticMarkup(
+    <PositionDetails
+      positions={[
+        {
+          ...position,
+          id: "manual-brl",
+          source: "MANUAL",
+          currency: "BRL",
+          totalValue: "500",
+          reportedTotalValue: "500",
+          valueBasis: "total_value",
+          positionDate: "2026-09-20",
+          convertedValueBrl: null,
+          conversionDate: null,
+        },
+        {
+          ...position,
+          id: "manual-usd-converted",
+          source: "MANUAL",
+          currency: "USD",
+          totalValue: "120",
+          reportedTotalValue: "100",
+          positionDate: undefined,
+          convertedValueBrl: "120",
+          conversionDate: "2026-09-19",
+        },
+        {
+          ...position,
+          id: "manual-no-currency",
+          source: "MANUAL",
+          currency: undefined,
+          totalValue: "50",
+          reportedTotalValue: "50",
+          positionDate: undefined,
+          convertedValueBrl: "50",
+          conversionDate: "2026-09-19",
+        },
+        {
+          ...position,
+          id: "manual-usd-unconverted",
+          source: "MANUAL",
+          currency: "USD",
+          totalValue: null,
+          reportedTotalValue: null,
+          positionDate: undefined,
+          convertedValueBrl: null,
+          conversionDate: null,
+        },
+      ]}
+    />,
+  );
+  expect(html).toContain("Manual");
+  expect(html).toContain("Informado manualmente");
+  expect(html).toContain("Valor observado em");
+  expect(html).toContain("Conversão informada em");
+  expect(html).toContain("100 USD");
+  expect(html).toContain("Sem conversão para reais");
 });

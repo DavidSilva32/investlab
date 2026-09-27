@@ -207,8 +207,8 @@ function normalizeCsvHeader(value: string) {
   return value.replace(/^(?:\uFEFF|ï»¿)/, "").trim();
 }
 
-function normalizeAccountingLabel(value: string | null) {
-  return (value ?? "")
+function normalizeAccountingLabel(value: string) {
+  return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()

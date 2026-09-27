@@ -324,3 +324,33 @@ describe("PortfolioAllocationService", () => {
     );
   });
 });
+
+it("uses the manual asset key while updating selected classifications", async () => {
+  const positionId = "0fefb48f-b6d9-4b8e-890d-95fe4fe7b305";
+  const assetKey = `manual:${positionId}`;
+  portfolioPositions.listCurrent.mockResolvedValue([
+    { ...position, id: positionId, assetKey, source: "MANUAL" },
+  ]);
+  classifications.listByAssetKeys.mockResolvedValue([]);
+  classifications.upsertMany.mockResolvedValue([]);
+
+  await expect(
+    new PortfolioAllocationService().updateClassifications({
+      positionIds: [positionId],
+      assetClass: "Renda variável",
+    }),
+  ).resolves.toEqual({ count: 1 });
+  expect(classifications.listByAssetKeys).toHaveBeenCalledWith(
+    [assetKey],
+    undefined,
+  );
+  expect(classifications.upsertMany).toHaveBeenCalledWith(
+    [
+      expect.objectContaining({
+        assetKey,
+        assetClass: "Renda variável",
+      }),
+    ],
+    undefined,
+  );
+});

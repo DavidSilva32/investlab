@@ -1597,4 +1597,17 @@ describe("BRAPI screener provider", () => {
     });
     expect(jsonProviderError.cause).toBeInstanceOf(Error);
   });
+  it("keeps sectors null when the CAD header omits SETOR_ATIV across streamed and final rows", async () => {
+    const header = ["CNPJ_CIA", "CD_CVM", "DENOM_SOCIAL"];
+    const body = [
+      header.join(";"),
+      ["11.222.333/0001-81", "1234", "Streamed"].join(";"),
+      ["22.222.333/0001-82", "1235", "Final"].join(";"),
+    ].join("\n");
+    const registry = await readCvmRegistry(
+      vi.fn().mockResolvedValue(responseWithBody(body)),
+    );
+    expect(registry.get("11222333000181")?.sector).toBeNull();
+    expect(registry.get("22222333000182")?.sector).toBeNull();
+  });
 });

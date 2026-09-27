@@ -141,4 +141,18 @@ describe("ScreenerResultsList", () => {
     expect(screen.queryByText(/Mostrando/)).toBeNull();
     expect(screen.queryByRole("navigation")).toBeNull();
   });
+  it("keeps filters without enough data visible and explains the state", () => {
+    const result = { ...company(1), filterStatus: "not_assessed" as const };
+    render(
+      <ScreenerResultsList
+        results={[result]}
+        counts={{ ...counts, notAssessedByFilters: 1 }}
+      />,
+    );
+    expect(screen.getByText(/1 resultados permanecem visíveis/)).toBeTruthy();
+    expect(screen.getByText("Filtro não avaliado")).toBeTruthy();
+    expect(
+      screen.getByText(/Os dados necessários estão indisponíveis/),
+    ).toBeTruthy();
+  });
 });

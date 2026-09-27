@@ -55,3 +55,23 @@ describe("PortfolioPositionService", () => {
     ]);
   });
 });
+
+it("uses listCurrentEnriched to combine and enrich the current snapshot", async () => {
+  const imported = {
+    id: "current-imported",
+    product: "CDB",
+    assetCode: "CDB1",
+    indexer: "CDI",
+    totalValue: "100",
+  };
+  imports.listLatestPositions.mockResolvedValue([imported]);
+  manualPositions.list.mockResolvedValue([]);
+  estimates.enrich.mockResolvedValue([{ ...imported, estimatedValue: 101 }]);
+
+  await expect(
+    new PortfolioPositionService().listCurrentEnriched("request-1"),
+  ).resolves.toEqual([{ ...imported, estimatedValue: 101 }]);
+  expect(imports.listLatestPositions).toHaveBeenCalledWith("request-1");
+  expect(manualPositions.list).toHaveBeenCalledWith("request-1");
+  expect(estimates.enrich).toHaveBeenCalledWith([imported]);
+});

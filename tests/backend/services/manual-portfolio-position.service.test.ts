@@ -107,6 +107,143 @@ describe("ManualPortfolioPositionService", () => {
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(repository.create).not.toHaveBeenCalled();
   });
+  it("creates a BRL total-value position with optional identity fields omitted", async () => {
+    repository.create.mockImplementation(async (value) => ({
+      ...saved(),
+      ...value,
+      currency: "BRL",
+      assetCode: null,
+      institution: null,
+      valueBasis: "total_value",
+      totalValue: "400.00000000",
+    }));
+    const result = await new ManualPortfolioPositionService().create({
+      product: "Tesouro Direto",
+      quantity: 1,
+      currency: "BRL",
+      valueBasis: "total_value",
+      totalValue: 400,
+      positionDate: "2026-09-20",
+    });
+    expect(result.totalValue).toBe("400.00000000");
+    expect(result.assetCode).toBeNull();
+    expect(result.institution).toBeNull();
+  });
+
+  it("validates total-value inputs and rejects conversion for BRL", async () => {
+    const service = new ManualPortfolioPositionService();
+    await expect(
+      service.create({ ...input, valueBasis: "total_value", totalValue: null }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    await expect(
+      service.create({ ...input, unitPrice: null }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    await expect(
+      service.create({
+        ...input,
+        currency: "BRL",
+        convertedValueBrl: 200,
+        conversionDate: "2026-09-20",
+      }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    await expect(
+      service.create({ ...input, conversionDate: "2026-09-20" }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("updates positions, validates update input, and reports a missing position", async () => {
+    repository.update.mockResolvedValue(
+      saved({
+        currency: "BRL",
+        convertedValueBrl: null,
+        totalValue: "400.00000000",
+        valueBasis: "total_value",
+      }),
+    );
+    const service = new ManualPortfolioPositionService();
+    const result = await service.update(
+      "position-id",
+      {
+        ...input,
+        currency: "BRL",
+        valueBasis: "total_value",
+        unitPrice: null,
+        totalValue: 400,
+      },
+      "req",
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      "position-id",
+      expect.objectContaining({ totalValue: "400.00000000", unitPrice: null }),
+      "req",
+    );
+    expect(result.totalValue).toBe("400.00000000");
+    await expect(
+      service.update("position-id", { ...input, quantity: -1 }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    await expect(
+      service.update("position-id", {
+        ...input,
+        quantity: 1_000_000_000_000,
+        unitPrice: 1_000_000_000_000,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    repository.update.mockResolvedValue(
+      saved({
+        assetCode: null,
+        institution: null,
+        currency: "USD",
+        convertedValueBrl: "980.00000000",
+        conversionDate: "2026-09-19",
+      }),
+    );
+    await service.update("position-id", {
+      ...input,
+      assetCode: null,
+      institution: null,
+      convertedValueBrl: 980,
+      conversionDate: "2026-09-19",
+    });
+    expect(repository.update).toHaveBeenLastCalledWith(
+      "position-id",
+      expect.objectContaining({
+        assetCode: null,
+        institution: null,
+        convertedValueBrl: "980.00000000",
+        conversionDate: "2026-09-19",
+      }),
+      undefined,
+    );
+    repository.update.mockResolvedValue(null);
+    await expect(service.update("missing", { ...input })).rejects.toMatchObject(
+      { statusCode: 404 },
+    );
+  });
+
+  it("deletes positions and reports missing identifiers", async () => {
+    repository.delete.mockResolvedValue({ id: "position-id" });
+    const service = new ManualPortfolioPositionService();
+    await expect(service.delete("position-id", "req")).resolves.toEqual({
+      id: "position-id",
+    });
+    repository.delete.mockResolvedValue(null);
+    await expect(service.delete("missing")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+  });
+
+  it("marks unrecognized or missing asset codes as not duplicated", async () => {
+    repository.list.mockResolvedValue([
+      saved({ id: "first", assetCode: null }),
+      saved({ id: "second", assetCode: "VX" }),
+    ]);
+    const result = await new ManualPortfolioPositionService().list();
+    expect(result.map((position) => position.duplicateAssetCode)).toEqual([
+      false,
+      false,
+    ]);
+  });
   it("marks repeated manual asset codes so the interface can surface ambiguity", async () => {
     repository.list.mockResolvedValue([
       saved(),

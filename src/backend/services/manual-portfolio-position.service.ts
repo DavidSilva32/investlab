@@ -138,7 +138,7 @@ export class ManualPortfolioPositionService {
       ...toPortfolioPosition(position),
       duplicateAssetCode:
         position.assetCode !== null &&
-        (counts.get(position.assetCode.toLocaleUpperCase("pt-BR")) ?? 0) > 1,
+        counts.get(position.assetCode.toLocaleUpperCase("pt-BR"))! > 1,
       lastUpdatedAt: position.updatedAt.toISOString(),
     }));
   }

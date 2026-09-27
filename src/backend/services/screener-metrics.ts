@@ -379,7 +379,7 @@ export function filterScreenerCompanies(
             positiveProfitYears: 0,
           };
       const positiveProfitAssessment =
-        parsedFilters.positiveProfitYears !== undefined && hasCompleteData
+        parsedFilters.positiveProfitYears !== undefined
           ? assessPositiveProfitYears(
               company.facts,
               parsedFilters.positiveProfitYears,
