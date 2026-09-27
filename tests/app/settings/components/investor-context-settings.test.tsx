@@ -49,7 +49,9 @@ describe("InvestorContextSettings", () => {
       screen.getByRole("textbox", { name: /O que você quer alcançar/ }),
     ).toBeTruthy();
     expect(
-      screen.getByLabelText("Quando pretende usar esse dinheiro?"),
+      screen.getByRole("button", {
+        name: "Quando pretende usar esse dinheiro?",
+      }),
     ).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/investor-context", {
       cache: "no-store",
@@ -69,9 +71,9 @@ describe("InvestorContextSettings", () => {
     );
     expect(
       (
-        screen.getByLabelText(
-          "Quando pretende usar esse dinheiro?",
-        ) as HTMLInputElement
+        screen.getByRole("button", {
+          name: "Quando pretende usar esse dinheiro?",
+        }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
 
@@ -96,7 +98,7 @@ describe("InvestorContextSettings", () => {
         jsonResponse({
           context: {
             objective: "Comprar uma casa",
-            targetMonth: "2099-03",
+            targetMonth: "2030-02",
             updatedAt: "2026-09-20T12:00:00.000Z",
           },
         }),
@@ -114,11 +116,14 @@ describe("InvestorContextSettings", () => {
     const objective = await screen.findByRole("textbox", {
       name: /O que você quer alcançar/,
     });
-    const targetMonth = screen.getByLabelText(
-      "Quando pretende usar esse dinheiro?",
-    );
+    const targetMonth = screen.getByRole("button", {
+      name: "Quando pretende usar esse dinheiro?",
+    });
     fireEvent.change(objective, { target: { value: "Comprar uma casa" } });
-    fireEvent.change(targetMonth, { target: { value: "2030-03" } });
+    fireEvent.click(targetMonth);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Selecionar março de 2030" }),
+    );
     const saveButton = screen.getByRole("button", { name: "Salvar contexto" });
     await waitFor(() =>
       expect((saveButton as HTMLButtonElement).disabled).toBe(false),
@@ -143,26 +148,28 @@ describe("InvestorContextSettings", () => {
 
   it("clears optional values when the API omits the context", async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          context: {
+            objective: "Plano temporário",
+            targetMonth: "2032-06",
+            updatedAt: null,
+          },
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse({}));
     render(<InvestorContextSettings />);
     const objective = await screen.findByRole("textbox", {
       name: /O que você quer alcançar/,
     });
     fireEvent.change(objective, { target: { value: "Plano temporário" } });
-    fireEvent.change(
-      screen.getByLabelText("Quando pretende usar esse dinheiro?"),
-      {
-        target: { value: "2032-06" },
-      },
-    );
     fireEvent.change(objective, { target: { value: "" } });
-    fireEvent.change(
-      screen.getByLabelText("Quando pretende usar esse dinheiro?"),
-      {
-        target: { value: "" },
-      },
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Quando pretende usar esse dinheiro?",
+      }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Limpar prazo" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar contexto" }));
     expect(
       await screen.findByText("Seu objetivo e prazo foram salvos."),
