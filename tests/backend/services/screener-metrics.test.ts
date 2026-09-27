@@ -30,6 +30,8 @@ const makeFact = (
   documentType: "DFP",
   statementScope: "CONSOLIDATED",
   exerciseOrder: "ULTIMO",
+  version: 1,
+  sourceFile: `DFP_con_${year}.csv`,
   ...overrides,
 });
 
@@ -39,7 +41,7 @@ const facts = [
   makeFact("2.03", 2025, 400),
   makeFact("3.11", 2024, 50),
   makeFact("3.01", 2024, 300),
-  makeFact("2.03", 2024, 300),
+  makeFact("2.03", 2024, 300, { sourceFile: "DFP_con_2025.csv" }),
   makeFact("3.11", 2023, -10),
 ];
 const company = (
@@ -293,6 +295,95 @@ describe("calculateScreenerMetrics", () => {
   });
 });
 
+describe("calculateScreenerMetrics", () => {
+  it("leaves derived metrics unavailable across source packages and retains the issuer", () => {
+    const mismatchedPackageFacts = facts.map((fact) =>
+      fact.accountCode === "3.01" && fact.referenceDate === "2025-12-31"
+        ? { ...fact, sourceFile: "DFP_con_2024.csv" }
+        : fact,
+    );
+    const metrics = calculateScreenerMetrics(
+      mismatchedPackageFacts,
+      company().marketSnapshot,
+      now,
+    );
+    expect(metrics).toMatchObject({
+      latestNetIncome: null,
+      latestRevenue: null,
+      netMargin: null,
+      roe: null,
+      valuationFinancialDate: null,
+    });
+
+    const result = filterScreenerCompanies(
+      [company({ facts: mismatchedPackageFacts })],
+      {},
+      now,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].metrics).toMatchObject({
+      latestNetIncome: null,
+      latestRevenue: null,
+      netMargin: null,
+      roe: null,
+    });
+  });
+});
+
+describe("calculateScreenerMetrics package boundaries", () => {
+  it("keeps core metrics when operating cash flow is from another package", () => {
+    const factsWithMismatchedCash = [
+      ...facts,
+      makeFact("6.01", 2025, 125, {
+        accountLabel: "Caixa Líquido das Atividades Operacionais",
+        sourceFile: "DFP_cia_aberta_DFC_MI_con_2024.csv",
+      }),
+    ];
+    expect(
+      calculateScreenerMetrics(
+        factsWithMismatchedCash,
+        company().marketSnapshot,
+        now,
+      ),
+    ).toMatchObject({
+      latestNetIncome: 100,
+      latestRevenue: 500,
+      latestEquity: 400,
+      roe: 28.57142857142857,
+      netMargin: 20,
+    });
+
+    expect(
+      assessCompanyForDiscovery(
+        company({ facts: factsWithMismatchedCash }),
+      ).evidence.at(-1),
+    ).toMatchObject({
+      operatingCashFlow: 125,
+      operatingCashFlowPackageYear: 2024,
+      operatingCashFlowComparableToNetIncome: false,
+    });
+  });
+
+  it("accepts an adjacent opening equity balance from its own annual package", () => {
+    const priorPackageOpeningEquity = facts.map((fact) =>
+      fact.accountCode === "2.03" && fact.referenceDate === "2024-12-31"
+        ? { ...fact, sourceFile: "DFP_con_2024.csv" }
+        : fact,
+    );
+    expect(
+      calculateScreenerMetrics(
+        priorPackageOpeningEquity,
+        company().marketSnapshot,
+        now,
+      ),
+    ).toMatchObject({
+      latestNetIncome: 100,
+      latestEquity: 400,
+      roe: 28.57142857142857,
+    });
+  });
+});
+
 describe("filterScreenerCompanies", () => {
   it("combines all supported filters and returns issuer groups without facts", () => {
     const result = filterScreenerCompanies(
@@ -525,11 +616,11 @@ describe("filterScreenerCompanies", () => {
       facts: [
         makeFact("3.01", 2024, 200),
         makeFact("3.11", 2024, 20),
-        makeFact("2.03", 2024, 100),
+        makeFact("2.03", 2024, 100, { sourceFile: "DFP_con_2025.csv" }),
         makeFact("3.01", 2025, 400),
         makeFact("3.11", 2025, 80),
         makeFact("2.03", 2025, 200),
-        makeFact("2.03", 2024, 100),
+        makeFact("2.03", 2024, 100, { sourceFile: "DFP_con_2025.csv" }),
       ],
     });
     const result = filterScreenerCompanies([commerce, industry], {}, now);
@@ -545,12 +636,14 @@ describe("assessCompanyForDiscovery", () => {
     const fiveYearFacts = Array.from({ length: 6 }, (_, index) => {
       const year = 2025 - index;
       return [
-        makeFact("3.01", year, 500),
-        makeFact("3.11", year, 100),
-        makeFact("2.03", year, (6 - index) * 100),
+        makeFact("3.01", year, 500, { sourceFile: "DFP_con_2025.csv" }),
+        makeFact("3.11", year, 100, { sourceFile: "DFP_con_2025.csv" }),
+        makeFact("2.03", year, (6 - index) * 100, {
+          sourceFile: "DFP_con_2025.csv",
+        }),
         makeFact("6.01", year, 120, {
           accountLabel: "Caixa Líquido das Atividades Operacionais",
-          sourceFile: `DFP_cia_aberta_DFC_MI_con_${year}.csv`,
+          sourceFile: "DFP_cia_aberta_DFC_MI_con_2025.csv",
         }),
       ];
     }).flat();
@@ -573,11 +666,181 @@ describe("assessCompanyForDiscovery", () => {
       revenue: 500,
       netIncome: 100,
       equity: 600,
+      equityPeriod: "2025-12-31",
+      equityPackageYear: 2025,
+      equityOpeningPeriod: "2024-12-31",
+      equityOpeningPackageYear: 2025,
       netMargin: 20,
       roe: 18.181818181818183,
       operatingCashFlow: 120,
     });
     expect(assessment.dimensions[3]?.status).toBe("unavailable");
+    expect(assessment.dimensions[1]?.explanation).toContain(
+      "disponibilidade do ROE",
+    );
+    expect(assessment.dimensions[1]?.explanation).toContain(
+      "margem líquida aparece em Resultados",
+    );
+    expect(assessment.dimensions[2]?.explanation).toContain(
+      "fluxo de caixa operacional bruto",
+    );
+    expect(assessment.dimensions[2]?.explanation).toContain(
+      "data, versão e pacote coincidem",
+    );
+  });
+
+  it("requires matching report versions for derived metrics and retains raw facts", () => {
+    const versionedFacts = [
+      makeFact("3.01", 2025, 500, { version: 2 }),
+      makeFact("3.11", 2025, 100, { version: 1 }),
+      makeFact("2.03", 2025, 300, { version: 1 }),
+      makeFact("2.03", 2024, 250, {
+        version: 7,
+        sourceFile: "DFP_con_2025.csv",
+      }),
+      makeFact("6.01", 2025, 125, {
+        accountLabel: "Caixa Líquido das Atividades Operacionais",
+        sourceFile: "DFP_cia_aberta_DFC_MI_con_2025.csv",
+        version: 2,
+      }),
+    ];
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: versionedFacts }),
+    );
+    expect(assessment.evidence.at(-1)).toMatchObject({
+      revenue: 500,
+      revenueVersion: 2,
+      netIncome: 100,
+      netIncomeVersion: 1,
+      equity: 300,
+      equityVersion: 1,
+      netMargin: null,
+      roe: 36.36363636363637,
+      equityOpeningPeriod: "2024-12-31",
+      equityOpeningVersion: 7,
+      operatingCashFlow: 125,
+      operatingCashFlowVersion: 2,
+      operatingCashFlowComparableToNetIncome: false,
+    });
+  });
+
+  it("requires a shared source package year for derived values while retaining raw facts", () => {
+    const mismatchedPackageFacts = [
+      makeFact("3.01", 2025, 500, { sourceFile: "DFP_con_2024.csv" }),
+      makeFact("3.11", 2025, 100, { sourceFile: "DFP_con_2025.csv" }),
+      makeFact("2.03", 2025, 300, { sourceFile: "DFP_con_2025.csv" }),
+      makeFact("2.03", 2024, 250, { sourceFile: "DFP_con_2025.csv" }),
+      makeFact("6.01", 2025, 125, {
+        accountLabel: "Caixa Líquido das Atividades Operacionais",
+        sourceFile: "DFP_cia_aberta_DFC_MI_con_2024.csv",
+      }),
+    ];
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: mismatchedPackageFacts }),
+    );
+    expect(assessment.evidence.at(-1)).toMatchObject({
+      revenue: 500,
+      revenuePackageYear: 2024,
+      netIncome: 100,
+      netIncomePackageYear: 2025,
+      equity: 300,
+      equityPackageYear: 2025,
+      netMargin: null,
+      roe: 36.36363636363637,
+      equityOpeningPackageYear: 2025,
+      operatingCashFlow: 125,
+      operatingCashFlowPackageYear: 2024,
+      operatingCashFlowComparableToNetIncome: false,
+    });
+
+    const openingEquityFromPriorFiling = mismatchedPackageFacts.map((fact) =>
+      fact.accountCode === "2.03" && fact.referenceDate === "2024-12-31"
+        ? { ...fact, sourceFile: "DFP_con_2024.csv" }
+        : fact,
+    );
+    expect(
+      assessCompanyForDiscovery(
+        company({ facts: openingEquityFromPriorFiling }),
+      ).evidence.at(-1),
+    ).toMatchObject({
+      roe: 36.36363636363637,
+      equityOpeningPeriod: "2024-12-31",
+      equityOpeningPackageYear: 2024,
+    });
+  });
+
+  it("rejects a source package year of zero", () => {
+    const factsWithInvalidPackageYear = facts.map((fact) => ({
+      ...fact,
+      sourceFile: "DFP_con_0000.csv",
+    }));
+    expect(
+      calculateScreenerMetrics(
+        factsWithInvalidPackageYear,
+        company().marketSnapshot,
+        now,
+      ),
+    ).toMatchObject({
+      latestNetIncome: null,
+      latestRevenue: null,
+      latestEquity: null,
+      netMargin: null,
+      roe: null,
+    });
+    expect(
+      assessCompanyForDiscovery(
+        company({ facts: factsWithInvalidPackageYear }),
+      ).evidence.at(-1),
+    ).toMatchObject({
+      revenue: 500,
+      netIncome: 100,
+      equity: 400,
+      revenuePackageYear: null,
+      netIncomePackageYear: null,
+      equityPackageYear: null,
+      netMargin: null,
+      roe: null,
+    });
+  });
+
+  it("does not derive metrics when source package provenance is missing", () => {
+    const factsWithoutProvenance = facts.map((fact) => ({
+      ...fact,
+      sourceFile: undefined,
+    }));
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: factsWithoutProvenance }),
+    );
+    expect(assessment.evidence.at(-1)).toMatchObject({
+      revenue: 500,
+      netIncome: 100,
+      equity: 400,
+      netMargin: null,
+      roe: null,
+      revenuePackageYear: null,
+      netIncomePackageYear: null,
+      equityPackageYear: null,
+    });
+  });
+
+  it("leaves ROE and margin unavailable when same-date facts use incompatible versions", () => {
+    const incompatibleFacts = [
+      makeFact("3.01", 2025, 500, { version: 2 }),
+      makeFact("3.11", 2025, 100, { version: 1 }),
+      makeFact("2.03", 2025, 300, { version: 2 }),
+      makeFact("2.03", 2024, 250, { version: 1 }),
+    ];
+    const assessment = assessCompanyForDiscovery(
+      company({ facts: incompatibleFacts }),
+    );
+    expect(assessment.evidence.at(-1)).toMatchObject({
+      revenue: 500,
+      netIncome: 100,
+      equity: 300,
+      netMargin: null,
+      roe: null,
+      equityOpeningPeriod: null,
+    });
   });
 
   it("keeps results visible when equity is missing for an exercise", () => {
@@ -594,6 +857,7 @@ describe("assessCompanyForDiscovery", () => {
       revenue: 500,
       netIncome: 100,
       equity: null,
+      equityOpeningPeriod: null,
       netMargin: 20,
       roe: null,
     });
@@ -607,6 +871,18 @@ describe("assessCompanyForDiscovery", () => {
     expect(assessment.dimensions[1]?.status).toBe("available");
     expect(assessment.dimensions[2]?.status).toBe("unavailable");
     expect(assessment.dimensions[3]?.status).toBe("unavailable");
+    expect(assessment.dimensions[1]?.explanation).toContain(
+      "disponibilidade do ROE",
+    );
+    expect(assessment.dimensions[1]?.explanation).toContain(
+      "margem líquida aparece em Resultados",
+    );
+    expect(assessment.dimensions[2]?.explanation).toContain(
+      "fluxo de caixa operacional bruto",
+    );
+    expect(assessment.dimensions[2]?.explanation).toContain(
+      "data, versão e pacote coincidem",
+    );
     expect(assessment.dimensions[4]?.status).toBe("available");
   });
 
@@ -662,10 +938,12 @@ describe("assessCompanyForDiscovery", () => {
       netIncomePeriod: "2025-09-30",
       equity: 300,
       equityPeriod: "2025-12-31",
+      equityOpeningPeriod: null,
       netMargin: null,
       roe: null,
-      operatingCashFlow: null,
-      operatingCashFlowPeriod: null,
+      operatingCashFlow: 125,
+      operatingCashFlowPeriod: "2025-12-31",
+      operatingCashFlowComparableToNetIncome: false,
     });
   });
   it("uses only indirect-method cash flow and same-period observations", () => {
@@ -703,13 +981,18 @@ describe("assessCompanyForDiscovery", () => {
     expect(assessment.evidence.at(-1)?.roe).toBeNull();
   });
 
-  it("marks every dimension unavailable for unsupported sectors or missing complete annual data", () => {
+  it("keeps dimension availability independent of sector and distinguishes missing annual data", () => {
     const unsupported = assessCompanyForDiscovery(
       company({ sector: "Tecnologia" }),
     );
-    expect(unsupported.dimensions.map(({ status }) => status)).toEqual(
-      Array(5).fill("unavailable"),
-    );
+    expect(unsupported.dimensions.map(({ status }) => status)).toEqual([
+      "available",
+      "available",
+      "unavailable",
+      "unavailable",
+      "available",
+    ]);
+    expect(unsupported.sectorComparability).toBe("not_validated");
     const missing = assessCompanyForDiscovery(company({ facts: [] }));
     expect(missing.period).toBeNull();
     expect(missing.evidence).toEqual([]);

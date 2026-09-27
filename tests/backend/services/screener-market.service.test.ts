@@ -43,6 +43,8 @@ const company = (
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
       exerciseOrder: "ULTIMO",
+      version: 1,
+      sourceFile: "DFP_con_2025.csv",
     },
     {
       referenceDate: "2025-12-31",
@@ -52,6 +54,8 @@ const company = (
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
       exerciseOrder: "ULTIMO",
+      version: 1,
+      sourceFile: "DFP_con_2025.csv",
     },
     {
       referenceDate: "2025-12-31",
@@ -61,6 +65,8 @@ const company = (
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
       exerciseOrder: "ULTIMO",
+      version: 1,
+      sourceFile: "DFP_con_2025.csv",
     },
   ],
   marketSnapshot,

@@ -19,6 +19,7 @@ export type ScreenerFact = {
   documentType: string;
   statementScope: string;
   exerciseOrder: string;
+  version: number;
   sourceFile?: string;
 };
 
@@ -154,11 +155,22 @@ function isValidatedSector(sector: string | null) {
   );
 }
 
+type AnnualConceptValue = {
+  referenceDate: string;
+  value: number;
+  version: number;
+  packageYear: number | null;
+};
+
+function sourcePackageYear(sourceFile: string | undefined) {
+  const match = sourceFile?.match(/_(\d{4})\.csv$/i);
+  if (!match) return null;
+  const year = Number(match[1]);
+  return Number.isInteger(year) && year > 0 ? year : null;
+}
+
 function annualConceptValues(facts: ScreenerFact[]) {
-  const byYear = new Map<
-    number,
-    Map<string, { referenceDate: string; value: number }>
-  >();
+  const byYear = new Map<number, Map<string, AnnualConceptValue>>();
   for (const fact of facts) {
     if (!isValidatedFact(fact)) continue;
     const value = finiteValue(fact.value);
@@ -166,20 +178,27 @@ function annualConceptValues(facts: ScreenerFact[]) {
     if (value === null || !Number.isInteger(year) || year <= 0) continue;
     const yearValues = byYear.get(year) ?? new Map();
     const current = yearValues.get(fact.accountCode);
+    const packageYear = sourcePackageYear(fact.sourceFile);
     if (
       !current ||
-      fact.referenceDate > current.referenceDate ||
-      (fact.referenceDate === current.referenceDate && value > current.value)
+      (packageYear ?? 0) > (current.packageYear ?? 0) ||
+      (packageYear === current.packageYear &&
+        (fact.version > current.version ||
+          (fact.version === current.version &&
+            (fact.referenceDate > current.referenceDate ||
+              (fact.referenceDate === current.referenceDate &&
+                value > current.value)))))
     )
       yearValues.set(fact.accountCode, {
         referenceDate: fact.referenceDate,
         value,
+        version: fact.version,
+        packageYear,
       });
     byYear.set(year, yearValues);
   }
   return byYear;
 }
-
 function sameAnnualPeriod(
   currentDate: string | undefined,
   previousDate: string | undefined,
@@ -192,16 +211,47 @@ function sameAnnualPeriod(
   );
 }
 
+function sameAnnualPackage(
+  left: AnnualConceptValue | undefined,
+  right: AnnualConceptValue | undefined,
+) {
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    left.packageYear !== null &&
+    left.packageYear === right.packageYear
+  );
+}
+
+function sameAnnualObservation(
+  left: AnnualConceptValue | undefined,
+  right: AnnualConceptValue | undefined,
+) {
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    sameAnnualPackage(left, right) &&
+    left.referenceDate === right.referenceDate &&
+    left.version === right.version
+  );
+}
+
 function latestCompleteYear(facts: ScreenerFact[]) {
   return (
     [...annualConceptValues(facts)]
       .filter(([, values]) => {
         if (!["3.01", "3.11", "2.03"].every((code) => values.has(code)))
           return false;
+        const coreValues = ["3.01", "3.11", "2.03"].map((code) =>
+          values.get(code)!,
+        );
         return (
-          new Set(
-            [...values.values()].map(({ referenceDate }) => referenceDate),
-          ).size === 1
+          new Set(coreValues.map(({ referenceDate }) => referenceDate)).size ===
+            1 &&
+          new Set(coreValues.map(({ version }) => version)).size === 1 &&
+          new Set(coreValues.map(({ packageYear }) => packageYear)).size ===
+            1 &&
+          coreValues.every(({ packageYear }) => packageYear !== null)
         );
       })
       .sort(([left], [right]) => right - left)[0] ?? null
@@ -250,20 +300,29 @@ export function calculateScreenerMetrics(
   const previousEquityFact =
     year === null ? undefined : concepts.get(year - 1)?.get("2.03");
   const previousEquity = previousEquityFact?.value ?? null;
+  const currentIncomeFact = current?.get("3.11");
+  const currentRevenueFact = current?.get("3.01");
+  const currentEquityFact = current?.get("2.03");
   const roe =
     income !== null &&
     equity !== null &&
     equity > 0 &&
     previousEquity !== null &&
     previousEquity > 0 &&
+    sameAnnualObservation(currentIncomeFact, currentEquityFact) &&
+    previousEquityFact?.packageYear !== null &&
+    previousEquityFact !== undefined &&
     sameAnnualPeriod(
-      current?.get("2.03")?.referenceDate,
+      currentEquityFact?.referenceDate,
       previousEquityFact?.referenceDate,
     )
       ? (income / ((equity + previousEquity) / 2)) * 100
       : null;
   const netMargin =
-    income !== null && revenue !== null && revenue > 0
+    sameAnnualObservation(currentIncomeFact, currentRevenueFact) &&
+    income !== null &&
+    revenue !== null &&
+    revenue > 0
       ? (income / revenue) * 100
       : null;
 
@@ -398,10 +457,22 @@ export type DiscoveryEvidencePoint = {
   netIncomePeriod: string | null;
   equity: number | null;
   equityPeriod: string | null;
+  equityVersion: number | null;
+  equityPackageYear: number | null;
+  equityOpeningPeriod: string | null;
+  equityOpeningVersion: number | null;
+  equityOpeningPackageYear: number | null;
+  revenueVersion: number | null;
+  revenuePackageYear: number | null;
+  netIncomeVersion: number | null;
+  netIncomePackageYear: number | null;
   netMargin: number | null;
   roe: number | null;
   operatingCashFlow: number | null;
   operatingCashFlowPeriod: string | null;
+  operatingCashFlowVersion: number | null;
+  operatingCashFlowPackageYear: number | null;
+  operatingCashFlowComparableToNetIncome: boolean | null;
 };
 export type DiscoveryDimension = {
   id: "results" | "profitability" | "cash" | "financial_structure" | "capital";
@@ -412,6 +483,7 @@ export type DiscoveryDimension = {
 export type DiscoveryAssessment = {
   period: string | null;
   source: "CVM DFP consolidada anual";
+  sectorComparability: "not_validated";
   dimensions: DiscoveryDimension[];
   evidence: DiscoveryEvidencePoint[];
 };
@@ -419,13 +491,12 @@ export type DiscoveryAssessment = {
 export function assessCompanyForDiscovery(
   company: ScreenerCompany,
 ): DiscoveryAssessment {
-  const coveredSector = isValidatedSector(company.sector);
   const annual = annualConceptValues(company.facts);
   const alignedResults = [...annual.entries()]
     .flatMap(([year, values]) => {
       const revenue = values.get("3.01");
       const income = values.get("3.11");
-      return revenue && income && revenue.referenceDate === income.referenceDate
+      return sameAnnualObservation(revenue, income) && income
         ? [{ year, period: income.referenceDate }]
         : [];
     })
@@ -441,19 +512,14 @@ export function assessCompanyForDiscovery(
     const income = values.get("3.11");
     const equity = values.get("2.03");
     const previousEquity = annual.get(year - 1)?.get("2.03");
-    const resultPeriodMatches =
-      revenue !== undefined &&
-      income !== undefined &&
-      revenue.referenceDate === income.referenceDate;
-    const equityPeriodMatches =
-      income !== undefined &&
-      equity !== undefined &&
-      income.referenceDate === equity.referenceDate;
+    const resultPeriodMatches = sameAnnualObservation(revenue, income);
+    const equityPeriodMatches = sameAnnualObservation(income, equity);
     const roe =
       equityPeriodMatches &&
       previousEquity &&
       previousEquity.value > 0 &&
       equity.value > 0 &&
+      previousEquity.packageYear !== null &&
       sameAnnualPeriod(equity.referenceDate, previousEquity.referenceDate)
         ? (income!.value / ((equity.value + previousEquity.value) / 2)) * 100
         : null;
@@ -466,19 +532,27 @@ export function assessCompanyForDiscovery(
       netIncomePeriod: income?.referenceDate ?? null,
       equity: equity?.value ?? null,
       equityPeriod: equity?.referenceDate ?? null,
+      equityVersion: equity?.version ?? null,
+      equityPackageYear: equity?.packageYear ?? null,
+      equityOpeningPeriod: roe !== null ? previousEquity!.referenceDate : null,
+      equityOpeningVersion: roe !== null ? previousEquity!.version : null,
+      equityOpeningPackageYear:
+        roe !== null ? previousEquity!.packageYear : null,
+      revenueVersion: revenue?.version ?? null,
+      revenuePackageYear: revenue?.packageYear ?? null,
+      netIncomeVersion: income?.version ?? null,
+      netIncomePackageYear: income?.packageYear ?? null,
       netMargin:
         resultPeriodMatches && revenue!.value > 0
           ? (income!.value / revenue!.value) * 100
           : null,
       roe,
-      operatingCashFlow:
-        cashFlow && income && cashFlow.referenceDate === income.referenceDate
-          ? cashFlow.value
-          : null,
-      operatingCashFlowPeriod:
-        cashFlow && income && cashFlow.referenceDate === income.referenceDate
-          ? cashFlow.referenceDate
-          : null,
+      operatingCashFlow: cashFlow?.value ?? null,
+      operatingCashFlowPeriod: cashFlow?.referenceDate ?? null,
+      operatingCashFlowVersion: cashFlow?.version ?? null,
+      operatingCashFlowPackageYear: cashFlow?.packageYear ?? null,
+      operatingCashFlowComparableToNetIncome:
+        cashFlow && income ? sameAnnualObservation(cashFlow, income) : null,
     };
   });
   const dimension = (
@@ -489,14 +563,13 @@ export function assessCompanyForDiscovery(
   ): DiscoveryDimension => ({
     id,
     label,
-    status: coveredSector && available ? "available" : "unavailable",
-    explanation: !coveredSector
-      ? "A comparabilidade desta metodologia ainda não foi validada para o setor."
-      : explanation,
+    status: available ? "available" : "unavailable",
+    explanation,
   });
   return {
     period: alignedResults[0]?.period ?? null,
     source: "CVM DFP consolidada anual",
+    sectorComparability: "not_validated",
     dimensions: [
       dimension(
         "results",
@@ -510,13 +583,13 @@ export function assessCompanyForDiscovery(
         "profitability",
         "Rentabilidade",
         evidence.some((item) => item.roe !== null),
-        "ROE usa lucro do exercício e a média do patrimônio líquido entre saldos anuais compatíveis. Períodos sem os dois saldos ficam indisponíveis.",
+        "O status desta dimensão indica apenas a disponibilidade do ROE, calculado com lucro e PL médio entre saldos anuais adjacentes compatíveis. A margem líquida aparece em Resultados.",
       ),
       dimension(
         "cash",
         "Caixa",
         evidence.some((item) => item.operatingCashFlow !== null),
-        "Fluxo operacional usa a conta 6.01 da DFC pelo método indireto (DFC-MI), comparada ao lucro do mesmo exercício. Sem essa fonte, o dado fica indisponível.",
+        "Esta dimensão indica a disponibilidade do fluxo de caixa operacional bruto da conta 6.01 da DFC-MI. A comparação com o lucro só fica disponível quando data, versão e pacote coincidem; nos demais casos, permanece indisponível.",
       ),
       dimension(
         "financial_structure",

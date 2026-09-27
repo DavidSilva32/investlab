@@ -398,6 +398,7 @@ describe("ScreenerRepository", () => {
             documentType: "DFP",
             statementScope: "CONSOLIDATED",
             exerciseOrder: "ULTIMO",
+            version: 2,
           },
           {
             issuerCnpj: "missing",
@@ -407,6 +408,7 @@ describe("ScreenerRepository", () => {
             documentType: "DFP",
             statementScope: "CONSOLIDATED",
             exerciseOrder: "ULTIMO",
+            version: 2,
           },
         ],
       ],
@@ -440,7 +442,9 @@ describe("ScreenerRepository", () => {
     expect(result[0]).toMatchObject({
       ...issuerA,
       securities: [{ ticker: "AAA3", name: "Class A" }],
-      facts: [{ issuerCnpj: "111", accountCode: "3.11", value: "20" }],
+      facts: [
+        { issuerCnpj: "111", accountCode: "3.11", value: "20", version: 2 },
+      ],
       marketSnapshot: { marketCap: "500", classSemanticsValidated: true },
     });
     expect(result[1]).toMatchObject({

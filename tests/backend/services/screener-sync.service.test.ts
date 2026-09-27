@@ -57,7 +57,7 @@ const annualFact = (
   accountCode: string,
   value: number,
   version = 1,
-  sourceFile?: string,
+  sourceFile = `dfp.zip#dfp_con_${year}.csv`,
 ): ScreenerFactRecord => ({
   ...fact(version, sourceFile),
   referenceDate: `${year}-12-31`,
@@ -202,9 +202,10 @@ function setup(
           annualFact(year, "2.03", 100),
         ];
       return [
-        annualFact(2025, "3.11", 20, 2, "a_con.csv"),
-        annualFact(2025, "3.01", 100),
-        annualFact(2025, "2.03", 100),
+        annualFact(2025, "3.11", 20, 2, "a_con_2025.csv"),
+        annualFact(2025, "3.01", 100, 2),
+        annualFact(2025, "2.03", 100, 2),
+        annualFact(2024, "2.03", 100, 1, "a_con_2025.csv"),
       ];
     }),
   };
@@ -415,7 +416,7 @@ describe("ScreenerSyncService", () => {
       ),
     ).toMatchObject({
       version: 2,
-      sourceFile: "a_con.csv",
+      sourceFile: "a_con_2025.csv",
       sourceRow: 1,
       value: "20",
       accountCode: "3.11",

@@ -56,14 +56,20 @@ export class ScreenerService {
       this.repository.getUniverse(),
       this.repository.hasSuccessfulSync(),
     ]);
-    const sourceByCnpj = new Map(
-      universe.map((company) => [company.cnpj, company]),
-    );
-    const results = filterScreenerCompanies(universe, {}).map((company) => {
-      const { metrics: _metrics, ...identity } = company;
-      const source = sourceByCnpj.get(company.cnpj)!;
-      return { ...identity, assessment: assessCompanyForDiscovery(source) };
-    });
+    const results = [...universe]
+      .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"))
+      .map((source) => {
+        const {
+          facts: _facts,
+          marketSnapshot: _marketSnapshot,
+          quantitativeEligible: _quantitativeEligible,
+          ...identity
+        } = source;
+        return {
+          ...identity,
+          assessment: assessCompanyForDiscovery(source),
+        };
+      });
     logger.info("screener_discovery_completed", {
       requestId,
       resultCount: results.length,
