@@ -108,6 +108,59 @@ const payloadWithCashComparison = (comparable: boolean | null) => ({
   })),
 });
 describe("DiscoverDashboard", () => {
+  it("marks saved issuers and adds a new issuer by CNPJ", async () => {
+    const user = userEvent.setup();
+    const savedCompanyPayload = {
+      ...payload,
+      results: payload.results.map((company) => ({
+        ...company,
+        cnpj: "12345678000199",
+      })),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(savedCompanyPayload))
+      .mockResolvedValueOnce(
+        response({ entries: [{ issuerCnpj: "99999999000199" }] }),
+      )
+      .mockResolvedValueOnce(response({ added: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoverDashboard />);
+    expect(await screen.findByText("Empresa Exemplo")).toBeTruthy();
+
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar à Lista de estudo" }),
+    );
+    await user.type(
+      screen.getByLabelText("Motivo da inclusão"),
+      "Revisar o negócio",
+    );
+    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Na Lista de estudo" }),
+    ).toBeTruthy();
+    expect(JSON.parse(fetchMock.mock.calls[2]![1].body as string)).toEqual({
+      issuerCnpj: "12345678000199",
+      companyName: "Empresa Exemplo",
+      ticker: "AAA3",
+      reason: "Revisar o negócio",
+    });
+  });
+  it("leaves discovery usable when the saved-list lookup fails", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(payload))
+      .mockResolvedValueOnce(
+        response({ message: "Lista indisponível." }, false),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DiscoverDashboard />);
+    expect(await screen.findByText("Empresa Exemplo")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Adicionar à Lista de estudo" }),
+    ).toBeTruthy();
+  });
   it("keeps evidence visible and puts methodology details behind an accessible disclosure", async () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(payload)));

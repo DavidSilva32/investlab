@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { AddStudyListButton } from "@/components/study-list-add-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +30,7 @@ type DiscoveryCompany = Omit<
   assessment: DiscoveryAssessment;
 };
 type Payload = { results: DiscoveryCompany[]; hasSuccessfulSync: boolean };
+type StudyListPayload = { entries: { issuerCnpj: string }[] };
 
 const date = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "medium",
@@ -73,6 +75,7 @@ function cashComparisonLabel(value: boolean | null) {
 export function DiscoverDashboard() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [studyListCnpjs, setStudyListCnpjs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +87,15 @@ export function DiscoverDashboard() {
       })
       .then((body) => {
         if (!cancelled) setPayload(body);
+        void fetch("/api/study-list", { cache: "no-store" })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((list: StudyListPayload | null) => {
+            if (!cancelled && list)
+              setStudyListCnpjs(
+                new Set(list.entries.map(({ issuerCnpj }) => issuerCnpj)),
+              );
+          })
+          .catch(() => undefined);
       })
       .catch((loadError: unknown) => {
         if (!cancelled)
@@ -189,6 +201,17 @@ export function DiscoverDashboard() {
                         </Link>
                       </Button>
                     ))}
+                    <AddStudyListButton
+                      issuerCnpj={company.cnpj}
+                      companyName={company.name}
+                      ticker={company.securities[0]?.ticker ?? null}
+                      alreadyAdded={studyListCnpjs.has(company.cnpj)}
+                      onAdded={(cnpj) =>
+                        setStudyListCnpjs((previous) =>
+                          new Set(previous).add(cnpj),
+                        )
+                      }
+                    />
                   </div>
                 </div>
               </CardHeader>

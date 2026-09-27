@@ -16,6 +16,7 @@ export type AnalysisIndicator = {
 
 export type StockAnalysis = {
   ticker: string;
+  cnpj: string | null;
   companyName: string | null;
   price: number | null;
   changePercent: number | null;
