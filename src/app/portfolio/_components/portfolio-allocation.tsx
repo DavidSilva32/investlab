@@ -16,6 +16,7 @@ import {
   type PortfolioPosition,
 } from "@/app/portfolio/_components/portfolio-classification-list";
 import { PortfolioAllocationTargets } from "@/app/portfolio/_components/portfolio-allocation-targets";
+import { StrategyGuidance } from "@/app/portfolio/_components/strategy-guidance";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import { formatCurrency } from "@/lib/utils";
 
@@ -44,6 +45,10 @@ export function PortfolioAllocation() {
   const [error, setError] = useState<string | null>(null);
   const [grouping, setGrouping] = useState<Grouping>("assetClass");
   const [saving, setSaving] = useState(false);
+  const [editTargetsRequest, setEditTargetsRequest] = useState(0);
+  const [classesForReview, setClassesForReview] = useState<
+    (typeof portfolioAssetClassOptions)[number][]
+  >([]);
 
   const load = useCallback(() => {
     fetch("/api/portfolio/allocation")
@@ -183,11 +188,20 @@ export function PortfolioAllocation() {
             <p className="text-sm text-muted-foreground">
               Importe posições para visualizar a classificação e a alocação.
             </p>
+            <StrategyGuidance
+              onOpenTargets={(classes) => {
+                setClassesForReview(classes);
+                setEditTargetsRequest((current) => current + 1);
+              }}
+            />
             <PortfolioAllocationTargets
+              key={editTargetsRequest}
               positions={positions}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}
+              editingRequested={editTargetsRequest > 0}
+              classesForReview={classesForReview}
             />
           </>
         ) : (
@@ -265,11 +279,20 @@ export function PortfolioAllocation() {
                 Não há valores atuais para calcular a distribuição.
               </p>
             )}
+            <StrategyGuidance
+              onOpenTargets={(classes) => {
+                setClassesForReview(classes);
+                setEditTargetsRequest((current) => current + 1);
+              }}
+            />
             <PortfolioAllocationTargets
+              key={editTargetsRequest}
               positions={positions}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}
+              editingRequested={editTargetsRequest > 0}
+              classesForReview={classesForReview}
             />
             <PortfolioClassificationList
               positions={positions}

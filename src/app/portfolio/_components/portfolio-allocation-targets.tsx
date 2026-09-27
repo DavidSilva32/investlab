@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { ChevronDown } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -22,6 +23,8 @@ type Props = {
   targetPercentages: Targets;
   saving: boolean;
   onSave: (targets: Record<AssetClass, number>) => Promise<boolean>;
+  editingRequested?: boolean;
+  classesForReview?: AssetClass[];
 };
 
 function positionValue(position: PortfolioPosition) {
@@ -51,9 +54,11 @@ export function PortfolioAllocationTargets({
   targetPercentages,
   saving,
   onSave,
+  editingRequested = false,
+  classesForReview = [],
 }: Props) {
-  const [editing, setEditing] = useState(false);
-  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [editing, setEditing] = useState(editingRequested);
+  const [comparisonOpen, setComparisonOpen] = useState(editingRequested);
   const [draft, setDraft] = useState(() => initialDraft(targetPercentages));
   const [message, setMessage] = useState<string | null>(null);
   const current = useMemo(() => {
@@ -181,6 +186,25 @@ export function PortfolioAllocationTargets({
                 Metas pessoais são uma estratégia sua, não uma recomendação
                 universal.
               </p>
+              {classesForReview.length > 0 && (
+                <aside className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                  <p className="text-sm font-medium">
+                    Classes escolhidas como referência manual
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {classesForReview.map((assetClass) => (
+                      <Badge key={assetClass} variant="secondary">
+                        {assetClass}
+                      </Badge>
+                    ))}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Os percentuais abaixo são suas metas atuais. A seleção não
+                    altera nem preenche metas; revise manualmente se quiser
+                    fazer mudanças.
+                  </p>
+                </aside>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {portfolioAssetClassOptions.map((assetClass) => (
                   <label
