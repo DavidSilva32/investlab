@@ -5,6 +5,7 @@ const experiences = [
   { id: "discover", href: "/analyses", label: "Descobrir" },
   { id: "explore", href: "/analyses/screener", label: "Explorar" },
   { id: "analysis", href: "/analyses?ticker=PETR4", label: "Analisar" },
+  { id: "study-list", href: "/study-list", label: "Lista de estudo" },
 ] as const;
 
 export function AnalysisExperienceNav({

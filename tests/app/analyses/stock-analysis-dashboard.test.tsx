@@ -50,6 +50,7 @@ vi.mock("recharts", () => ({
 
 const analysis = {
   ticker: "PETR4",
+  cnpj: "33000167000101",
   companyName: "Petrobras",
   price: 30,
   changePercent: -1.25,
@@ -227,6 +228,56 @@ describe("StockAnalysisDashboard", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "1 mês" }));
     expect(chart.dataset.points).toBe("2026-08-25,2026-09-19");
+  });
+
+  it("adds an analyzed issuer to the study list using the CNPJ from analysis", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(analysis))
+      .mockResolvedValueOnce(jsonResponse({ added: true }));
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Adicionar.*Lista de estudo/,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText(/Motivo da inclus/), {
+      target: { value: "Estudar os demonstrativos." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Na Lista de estudo" }),
+    ).toBeTruthy();
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/api/study-list",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(JSON.parse(fetcher.mock.calls[1]![1].body as string)).toMatchObject({
+      issuerCnpj: "33000167000101",
+      companyName: "Petrobras",
+      ticker: "PETR4",
+      reason: "Estudar os demonstrativos.",
+    });
+  });
+
+  it("keeps the analysis available when its CNPJ is unresolved", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(jsonResponse({ ...analysis, cnpj: null })),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    expect(await screen.findByText("Ativo consultado")).toBeTruthy();
+    expect(screen.getByText(/CNPJ/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: /Adicionar.*Lista de estudo/ })
+        .hasAttribute("disabled"),
+    ).toBe(true);
   });
 
   it("shows a loading state before the request resolves", () => {

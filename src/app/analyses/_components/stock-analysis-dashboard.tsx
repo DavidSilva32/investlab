@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { AddStudyListButton } from "@/components/study-list-add-button";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -214,7 +215,7 @@ export function StockAnalysisDashboard({
             {analysis.companyName ?? "Empresa não informada"}
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-8">
+        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-8">
           <p className="text-3xl font-semibold tracking-tight">
             {analysis.price === null ? "—" : money.format(analysis.price)}
           </p>
@@ -229,6 +230,13 @@ export function StockAnalysisDashboard({
               ? "Variação não informada"
               : `Variação: ${analysis.changePercent.toFixed(2)}%`}
           </p>
+          <div className="sm:ml-auto">
+            <AddStudyListButton
+              issuerCnpj={analysis.cnpj}
+              companyName={analysis.companyName ?? analysis.ticker}
+              ticker={analysis.ticker}
+            />
+          </div>
         </CardContent>
       </Card>
       <Card>

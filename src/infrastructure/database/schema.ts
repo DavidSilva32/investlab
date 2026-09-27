@@ -263,6 +263,32 @@ export const screenerMarketSnapshotQuotes = pgTable(
   ],
 );
 
+export const studyListEntries = pgTable("study_list_entries", {
+  issuerCnpj: varchar({ length: 14 }).primaryKey(),
+  companyName: text().notNull(),
+  ticker: varchar({ length: 16 }),
+  reason: text().notNull(),
+  addedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+export const studyListObservations = pgTable(
+  "study_list_observations",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    issuerCnpj: varchar({ length: 14 })
+      .notNull()
+      .references(() => studyListEntries.issuerCnpj, { onDelete: "cascade" }),
+    text: text().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("study_list_observations_entry_created_idx").on(
+      table.issuerCnpj,
+      table.createdAt,
+    ),
+  ],
+);
 export const portfolioAssetClassifications = pgTable(
   "portfolio_asset_classifications",
   {
