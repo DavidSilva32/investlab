@@ -127,7 +127,6 @@ const issuer: CvmCompanyRecord = {
   cvmCode: "1",
   name: "Issuer",
   sector: "Industrial",
-  quantitativeEligible: true,
 };
 const security = (ticker: string, baseTicker: string | null = null) => ({
   ticker,
@@ -273,10 +272,7 @@ describe("ScreenerSyncRepository", () => {
         runId: "run-1",
         catalogCount: 1000,
         profileCount: 370,
-        issuers: [
-          issuer,
-          { ...issuer, cnpj: "222", quantitativeEligible: false },
-        ],
+        issuers: [issuer, { ...issuer, cnpj: "222", sector: "Bancos" }],
         securities,
         facts,
       }),
@@ -296,14 +292,6 @@ describe("ScreenerSyncRepository", () => {
         .filter((entry) => entry.table === screenerFinancialFacts)
         .map((entry) => (entry.values as unknown[] | undefined)?.length),
     ).toEqual([500, 1]);
-    expect(
-      (
-        inserts.find((entry) => entry.table === screenerIssuers)?.values as
-          unknown[] | undefined
-      )?.[1],
-    ).toMatchObject({
-      eligibilityReason: "EXPLICIT_FINANCIAL_SECTOR_OR_UNCLASSIFIED",
-    });
     const toSql = (fragment: SQL) => new PgDialect().sqlToQuery(fragment).sql;
     expect(toSql(factCountConditions[0]!)).toContain('"issuerCnpj"');
     expect(toSql(factCountConditions[0]!)).not.toContain('"ingestionRunId"');
@@ -311,12 +299,6 @@ describe("ScreenerSyncRepository", () => {
       (entry) => entry.table === screenerIssuers,
     )?.conflict as { set: Record<string, SQL> };
     expect(toSql(issuerConflict.set.cvmCode)).toBe('excluded."cvmCode"');
-    expect(toSql(issuerConflict.set.quantitativeEligible)).toBe(
-      'excluded."quantitativeEligible"',
-    );
-    expect(toSql(issuerConflict.set.eligibilityReason)).toBe(
-      'excluded."eligibilityReason"',
-    );
     const securityConflict = inserts.find(
       (entry) => entry.table === screenerSecurities,
     )?.conflict as { set: Record<string, SQL> };

@@ -39,6 +39,9 @@ export class ScreenerService {
         .length,
       withPe: all.filter((item) => item.metrics.pe !== null).length,
       withPb: all.filter((item) => item.metrics.pb !== null).length,
+      notAssessedByFilters: results.filter(
+        (item) => item.filterStatus === "not_assessed",
+      ).length,
     };
     logger.info("screener_query_completed", {
       requestId,
@@ -62,7 +65,6 @@ export class ScreenerService {
         const {
           facts: _facts,
           marketSnapshot: _marketSnapshot,
-          quantitativeEligible: _quantitativeEligible,
           ...identity
         } = source;
         return {

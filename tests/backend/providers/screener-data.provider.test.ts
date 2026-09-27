@@ -4,7 +4,6 @@ import {
   BrapiScreenerProvider,
   BrapiScreenerProviderError,
   CvmDfpProvider,
-  isQuantitativelyEligibleSector,
   parseDfpResponse,
   readCvmRegistry,
 } from "@/backend/providers/screener-data.provider";
@@ -80,10 +79,7 @@ describe("CVM registry ingestion", () => {
       cvmCode: "9512",
       name: 'Companhia "A"; Petróleo',
       sector: "Petróleo",
-      quantitativeEligible: true,
     });
-    expect(registry.get("11222333000181")?.quantitativeEligible).toBe(false);
-    expect(registry.get("22222333000182")?.quantitativeEligible).toBe(false);
     expect(registry.has("invalid")).toBe(false);
     expect(registry.size).toBe(3);
   });
@@ -103,7 +99,7 @@ describe("CVM registry ingestion", () => {
     expect(registry.has("22222333000182")).toBe(false);
     expect(registry.get("33222333000183")).toMatchObject({
       name: "",
-      sector: null,
+      sector: "",
     });
     expect(registry.get("44222333000184")).toMatchObject({
       name: "Extra",
@@ -129,7 +125,6 @@ describe("CVM registry ingestion", () => {
     );
     expect(registry.get("33000167000101")).toMatchObject({
       name: "Petróleo S.A.",
-      quantitativeEligible: true,
     });
   });
 
@@ -143,8 +138,7 @@ describe("CVM registry ingestion", () => {
     );
     expect(registry.get("33000167000101")).toMatchObject({
       name: "",
-      sector: null,
-      quantitativeEligible: false,
+      sector: "",
     });
   });
 
@@ -180,25 +174,6 @@ describe("CVM registry ingestion", () => {
         vi.fn().mockResolvedValue(new Response("", { status: 503 })),
       ),
     ).rejects.toThrow("CVM CAD request failed: 503");
-  });
-
-  it.each([
-    ["Bancos", false],
-    ["Seguradoras e Resseguradoras", false],
-    ["Petroleo", true],
-    ["Petróleo, Gás e Biocombustíveis", true],
-    ["Mineração", true],
-    ["Extração Mineral", true],
-    ["Petróleo e Gás", true],
-    ["Bancos e Serviços Financeiros", false],
-    ["Consumo Cíclico", true],
-    ["Bens Industriais", false],
-    ["Financeiro e Outros", false],
-    ["Setor ainda não mapeado", false],
-    [null, false],
-    ["", false],
-  ] as const)("classifies CVM sector %s explicitly", (sector, eligible) => {
-    expect(isQuantitativelyEligibleSector(sector)).toBe(eligible);
   });
 });
 

@@ -368,14 +368,12 @@ describe("ScreenerRepository", () => {
       cvmCode: "1",
       name: "Issuer A",
       sector: "Industrial",
-      quantitativeEligible: true,
     };
     const issuerB = {
       cnpj: "222",
       cvmCode: "2",
       name: "Issuer B",
       sector: "Bancos",
-      quantitativeEligible: false,
     };
     const data = new Map<unknown, unknown[]>([
       [screenerIssuers, [issuerA, issuerB]],

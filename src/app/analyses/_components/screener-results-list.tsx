@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,12 +13,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+const sectorClassificationLabels = {
+  financial: "Fora do escopo",
+  non_financial: "Não financeira",
+  ambiguous: "Ambígua · holding",
+  unknown: "Não classificada",
+} as const;
+
 export type ScreenerResult = {
   cnpj: string;
   cvmCode: string;
   name: string;
   sector: string | null;
-  quantitativeEligible: boolean;
+  sectorClassification: "financial" | "non_financial" | "ambiguous" | "unknown";
+  methodologyStatus: "evaluated" | "out_of_scope" | "not_assessed";
+  methodologyMessage: string;
+  filterStatus: "matches" | "not_assessed";
   securities: { ticker: string; name: string }[];
   metrics: {
     latestNetIncome: number | null;
@@ -39,6 +50,7 @@ export type ScreenerCoverage = {
   withNetMargin: number;
   withPe: number;
   withPb: number;
+  notAssessedByFilters: number;
 };
 
 const pageSize = 12;
@@ -88,7 +100,9 @@ export function ScreenerResultsList({
           <CardTitle className="text-base">Cobertura dos fundamentos</CardTitle>
           <CardDescription>
             Os fundamentos dependem de setor validado e fatos financeiros
-            compatíveis. P/L e P/VP também exigem preço recente validado.
+            compatíveis. P/L e P/VP também exigem preço recente validado. Quando
+            um dado necessário estiver indisponível, a empresa permanece visível
+            como não avaliada.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -97,6 +111,13 @@ export function ScreenerResultsList({
             {counts.withEquity}, ROE {counts.withRoe}, margem{" "}
             {counts.withNetMargin}, P/L {counts.withPe} e P/VP {counts.withPb}.
           </p>
+          {counts.notAssessedByFilters > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground" role="status">
+              {counts.notAssessedByFilters} resultados permanecem visíveis sem
+              avaliação porque faltam dados ou a classificação não permite
+              aplicar os filtros.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -118,10 +139,37 @@ export function ScreenerResultsList({
                         CVM {company.cvmCode}
                         {company.sector ? ` · ${company.sector}` : ""}
                       </CardDescription>
-                      {company.quantitativeEligible === false && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Fundamentos quantitativos indisponíveis para este
-                          setor.
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant={
+                            company.sectorClassification === "non_financial"
+                              ? "default"
+                              : "outline"
+                          }
+                        >
+                          {
+                            sectorClassificationLabels[
+                              company.sectorClassification
+                            ]
+                          }
+                        </Badge>
+                        {company.filterStatus === "not_assessed" && (
+                          <Badge variant="outline">Filtro não avaliado</Badge>
+                        )}
+                      </div>
+                      <p
+                        className="mt-1 text-xs text-muted-foreground"
+                        role="status"
+                      >
+                        {company.methodologyMessage}
+                      </p>
+                      {company.filterStatus === "not_assessed" && (
+                        <p
+                          className="mt-1 text-xs text-muted-foreground"
+                          role="status"
+                        >
+                          Os dados necessários estão indisponíveis; a empresa
+                          continua nos resultados.
                         </p>
                       )}
                     </div>

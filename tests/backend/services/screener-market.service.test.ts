@@ -32,7 +32,6 @@ const company = (
   cvmCode: cnpj,
   name: cnpj,
   sector: "Petróleo e Gás",
-  quantitativeEligible: false,
   securities: tickers.map(security),
   facts: [
     {

@@ -36,7 +36,6 @@ export class ScreenerRepository {
         cvmCode: screenerIssuers.cvmCode,
         name: screenerIssuers.name,
         sector: screenerIssuers.sector,
-        quantitativeEligible: screenerIssuers.quantitativeEligible,
       })
       .from(screenerIssuers);
     if (issuers.length === 0) return [];

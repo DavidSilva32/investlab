@@ -50,7 +50,7 @@ const company = (
   cnpj: "33000167000101",
   cvmCode: "9512",
   name: "Petrobras",
-  sector: "Petróleo",
+  sector: "Petróleo e Gás",
   securities: [
     { ticker: "PETR3", name: "Petrobras ON" },
     { ticker: "PETR4", name: "Petrobras PN" },
@@ -424,7 +424,7 @@ describe("filterScreenerCompanies", () => {
     },
   );
 
-  it("anchors the profit window to the latest year present in the consolidated DFP", () => {
+  it("keeps companies visible when a selected filter cannot be assessed", () => {
     const missingRecentProfit = company({
       facts: [makeFact("2.03", 2025, 100), makeFact("3.11", 2024, 20)],
     });
@@ -433,14 +433,35 @@ describe("filterScreenerCompanies", () => {
         [missingRecentProfit],
         { positiveProfitYears: 1 },
         now,
-      ),
-    ).toHaveLength(0);
+      )[0],
+    ).toMatchObject({ filterStatus: "not_assessed" });
+  });
+
+  it("keeps the issuer visible when a required historical profit year is missing", () => {
+    const issuerWithMissingYear = company({
+      facts: [
+        makeFact("3.11", 2025, 100),
+        makeFact("3.01", 2025, 500),
+        makeFact("2.03", 2025, 400),
+      ],
+    });
+    const results = filterScreenerCompanies(
+      [issuerWithMissingYear],
+      { positiveProfitYears: 2 },
+      now,
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      cnpj: issuerWithMissingYear.cnpj,
+      filterStatus: "not_assessed",
+      metrics: { positiveProfitYears: 1 },
+    });
   });
 
   it("keeps unvalidated sectors browsable with unavailable metrics", () => {
     const unvalidated = company({
       sector: "Bancos",
-      quantitativeEligible: true,
     });
     const result = filterScreenerCompanies([unvalidated], {}, now);
     expect(result).toHaveLength(1);
@@ -459,7 +480,9 @@ describe("filterScreenerCompanies", () => {
     });
     expect(
       filterScreenerCompanies([unvalidated], { minimumRoe: 1 }, now),
-    ).toEqual([]);
+    ).toMatchObject([
+      { filterStatus: "not_assessed", sectorClassification: "financial" },
+    ]);
   });
 
   it("does not filter when profit history or data is absent and no filter was selected", () => {
@@ -480,14 +503,14 @@ describe("filterScreenerCompanies", () => {
     ).toEqual(["Açúcar", "Vale"]);
   });
 
-  it("excludes a company when positive equity was requested but is unavailable", () => {
+  it("keeps a company visible as unassessed when positive equity data is unavailable", () => {
     expect(
       filterScreenerCompanies(
         [company({ facts: [] })],
         { equityPositive: true },
         now,
       ),
-    ).toEqual([]);
+    ).toMatchObject([{ filterStatus: "not_assessed" }]);
   });
 
   it("rejects out-of-range filter values", () => {
@@ -501,9 +524,7 @@ describe("filterScreenerCompanies", () => {
   it.each([
     "Comércio (Atacado e Varejo)",
     "Construção Civil, Mat. Constr. e Decoração",
-    "Emp. Adm. Part. - Const. Civil, Mat. Const. e Decoração",
     "Serviços Transporte e Logística",
-    "Emp. Adm. Part. - Máqs., Equip., Veíc. e Peças",
     "Máquinas, Equipamentos, Veículos e Peças",
     "Agricultura (Açúcar, Álcool e Cana)",
     "Metalurgia e Siderurgia",
@@ -514,13 +535,8 @@ describe("filterScreenerCompanies", () => {
   ])(
     "enables %s only with a complete labeled consolidated triplet",
     (sector) => {
-      const result = filterScreenerCompanies(
-        [company({ sector, quantitativeEligible: false })],
-        {},
-        now,
-      );
+      const result = filterScreenerCompanies([company({ sector })], {}, now);
       expect(result[0]).toMatchObject({
-        quantitativeEligible: true,
         metrics: {
           latestNetIncome: 100,
           latestRevenue: 500,
@@ -533,21 +549,35 @@ describe("filterScreenerCompanies", () => {
   it.each([
     "Bancos",
     "Seguradoras e Corretoras",
-    "Emp. Adm. Part. - Seguradoras e Corretoras",
-    "Emp. Adm. Part. - Intermediação Financeira",
     "Bolsas de Valores/Mercadorias e Futuros",
   ])("keeps financial sector %s outside quantitative eligibility", (sector) => {
-    const result = filterScreenerCompanies(
-      [company({ sector, quantitativeEligible: true })],
-      {},
-      now,
-    );
-    expect(result[0]?.quantitativeEligible).toBe(false);
+    const result = filterScreenerCompanies([company({ sector })], {}, now);
     expect(result[0]?.metrics.latestNetIncome).toBeNull();
     expect(result[0]?.metrics.latestEquity).toBeNull();
     expect(result[0]?.metrics.netMargin).toBeNull();
   });
 
+  it.each([
+    ["Bancos", "financial", "out_of_scope"],
+    ["Emp. Adm. Part. - Bancos", "ambiguous", "not_assessed"],
+    ["Setor CVM novo", "unknown", "not_assessed"],
+    [null, "unknown", "not_assessed"],
+  ] as const)(
+    "keeps %s visible without applying nonfinancial filters",
+    (sector, classification, status) => {
+      const result = filterScreenerCompanies(
+        [company({ sector })],
+        { minimumRoe: 10 },
+        now,
+      );
+      expect(result[0]).toMatchObject({
+        sectorClassification: classification,
+        methodologyStatus: status,
+        filterStatus: "not_assessed",
+        metrics: { latestNetIncome: null, roe: null },
+      });
+    },
+  );
   it("does not infer accounting concepts from a familiar account code alone", () => {
     const mislabeled = company({
       facts: facts.map((fact) =>
@@ -557,7 +587,6 @@ describe("filterScreenerCompanies", () => {
       ),
     });
     const result = filterScreenerCompanies([mislabeled], {}, now);
-    expect(result[0]?.quantitativeEligible).toBe(false);
     expect(result[0]?.metrics.latestNetIncome).toBeNull();
     expect(result[0]?.metrics.latestRevenue).toBeNull();
     expect(result[0]?.metrics.latestEquity).toBeNull();
@@ -576,7 +605,6 @@ describe("filterScreenerCompanies", () => {
       {},
       now,
     );
-    expect(result[0]?.quantitativeEligible).toBe(false);
     expect(result[0]?.metrics.latestRevenue).toBeNull();
   });
   it("accepts the explicit non-consolidated wording alias for net income", () => {
@@ -590,7 +618,7 @@ describe("filterScreenerCompanies", () => {
       {},
       now,
     );
-    expect(result[0]?.quantitativeEligible).toBe(true);
+    expect(result[0]?.sectorClassification).toBe("non_financial");
     expect(result[0]?.metrics.latestNetIncome).toBe(100);
   });
   it("does not combine concepts reported in different years", () => {
@@ -603,7 +631,6 @@ describe("filterScreenerCompanies", () => {
       ],
     });
     const result = filterScreenerCompanies([splitYears], {}, now);
-    expect(result[0]?.quantitativeEligible).toBe(false);
     expect(result[0]?.metrics.latestNetIncome).toBeNull();
   });
 
@@ -983,7 +1010,7 @@ describe("assessCompanyForDiscovery", () => {
 
   it("keeps dimension availability independent of sector and distinguishes missing annual data", () => {
     const unsupported = assessCompanyForDiscovery(
-      company({ sector: "Tecnologia" }),
+      company({ sector: "Energia Elétrica" }),
     );
     expect(unsupported.dimensions.map(({ status }) => status)).toEqual([
       "available",
@@ -995,6 +1022,8 @@ describe("assessCompanyForDiscovery", () => {
     expect(unsupported.sectorComparability).toBe("not_validated");
     const missing = assessCompanyForDiscovery(company({ facts: [] }));
     expect(missing.period).toBeNull();
+    expect(missing.methodologyStatus).toBe("not_assessed");
+    expect(missing.methodologyMessage).toContain("avaliar.");
     expect(missing.evidence).toEqual([]);
     expect(missing.dimensions.map(({ status }) => status)).toEqual(
       Array(5).fill("unavailable"),

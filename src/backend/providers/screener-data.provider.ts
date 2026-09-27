@@ -1,4 +1,4 @@
-﻿import { Unzip, UnzipInflate } from "fflate";
+import { Unzip, UnzipInflate } from "fflate";
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 
@@ -82,7 +82,6 @@ export type CvmCompanyRecord = {
   cvmCode: string;
   name: string;
   sector: string | null;
-  quantitativeEligible: boolean;
 };
 
 export type BrapiStock = {
@@ -208,38 +207,16 @@ function normalizeCsvHeader(value: string) {
   return value.replace(/^(?:\uFEFF|ï»¿)/, "").trim();
 }
 
-function normalizeSector(value: string | null) {
+function normalizeAccountingLabel(value: string | null) {
   return (value ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-const validatedNonFinancialSectors = new Set([
-  "PETROLEO",
-  "PETROLEO GAS E BIOCOMBUSTIVEIS",
-  "MINERACAO",
-  "CONSUMO CICLICO",
-]);
-
-const validatedSectorAliases: Record<string, string> = {
-  "EXTRACAO MINERAL": "MINERACAO",
-  "PETROLEO E GAS": "PETROLEO",
-};
-
-export function isQuantitativelyEligibleSector(sector: string | null) {
-  const normalizedSector = normalizeSector(sector);
-  return validatedNonFinancialSectors.has(
-    validatedSectorAliases[normalizedSector] ?? normalizedSector,
-  );
+    .toUpperCase();
 }
 
 function isValidatedFinancialAccountLabel(accountCode: string, label: string) {
-  const normalized = normalizeSector(label)
+  const normalized = normalizeAccountingLabel(label)
     .replace(/[^A-Z0-9]+/g, " ")
     .trim();
   if (accountCode === "3.01")
@@ -287,13 +264,12 @@ export async function readCvmRegistry(
       const cnpj = normalizeCnpj(row.CNPJ_CIA);
       const cvmCode = row.CD_CVM?.trim() ?? "";
       if (cnpj.length !== 14 || !cvmCode) continue;
-      const sector = row.SETOR_ATIV?.trim() || null;
+      const sector = row.SETOR_ATIV ?? null;
       registry.set(cnpj, {
         cnpj,
         cvmCode,
         name: row.DENOM_SOCIAL?.trim() || "",
         sector,
-        quantitativeEligible: isQuantitativelyEligibleSector(sector),
       });
     }
   }
@@ -305,13 +281,12 @@ export async function readCvmRegistry(
     const cnpj = normalizeCnpj(row.CNPJ_CIA);
     const cvmCode = row.CD_CVM?.trim() ?? "";
     if (cnpj.length === 14 && cvmCode) {
-      const sector = row.SETOR_ATIV?.trim() || null;
+      const sector = row.SETOR_ATIV ?? null;
       registry.set(cnpj, {
         cnpj,
         cvmCode,
         name: row.DENOM_SOCIAL?.trim() || "",
         sector,
-        quantitativeEligible: isQuantitativelyEligibleSector(sector),
       });
     }
   }

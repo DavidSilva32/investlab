@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  classifyCvmSector,
+  cvmSectorClassificationMessage,
+  type CvmSectorClassification,
+} from "@/lib/cvm-sector-classification";
 
 export const screenerFilterSchema = z.object({
   positiveProfitYears: z.number().int().min(1).max(5).optional(),
@@ -30,7 +35,7 @@ export type ScreenerCompany = {
   cvmCode: string;
   name: string;
   sector: string | null;
-  quantitativeEligible?: boolean;
+
   securities: ScreenerSecurity[];
   facts: ScreenerFact[];
   marketSnapshot: {
@@ -61,6 +66,10 @@ export type ScreenerResult = Omit<
   ScreenerCompany,
   "facts" | "marketSnapshot"
 > & {
+  sectorClassification: CvmSectorClassification;
+  methodologyStatus: "evaluated" | "out_of_scope" | "not_assessed";
+  methodologyMessage: string;
+  filterStatus: "matches" | "not_assessed";
   metrics: ScreenerMetrics;
 };
 
@@ -74,53 +83,6 @@ function normalizeAccountingLabel(value: string | null) {
     .trim()
     .replace(/\s+/g, " ");
 }
-
-function normalizeSector(value: string | null) {
-  return normalizeAccountingLabel(value);
-}
-
-const validatedNonFinancialSectors = new Set([
-  "PETROLEO",
-  "PETROLEO E GAS",
-  "EXTRACAO MINERAL",
-  "MINERACAO",
-  "COMERCIO ATACADO E VAREJO",
-  "CONSTRUCAO CIVIL MAT CONSTR E DECORACAO",
-  "SERVICOS TRANSPORTE E LOGISTICA",
-  "MAQS EQUIP VEIC E PECAS",
-  "AGRICULTURA ACUCAR ALCOOL E CANA",
-  "METALURGIA E SIDERURGIA",
-  "TEXTIL E VESTUARIO",
-  "ENERGIA ELETRICA",
-]);
-
-const validatedSectorAliases: Record<string, string> = {
-  PETROLEO: "PETROLEO E GAS",
-  MINERACAO: "EXTRACAO MINERAL",
-  "MAQUINAS EQUIPAMENTOS VEICULOS E PECAS": "MAQS EQUIP VEIC E PECAS",
-  "CONST CIVIL MAT CONSTR E DECORACAO":
-    "CONSTRUCAO CIVIL MAT CONSTR E DECORACAO",
-  "EMP ADM PART COMERCIO ATACADO E VAREJO": "COMERCIO ATACADO E VAREJO",
-  "EMP ADM PART CONST CIVIL MAT CONST E DECORACAO":
-    "CONSTRUCAO CIVIL MAT CONSTR E DECORACAO",
-  "EMP ADM PART SERVICOS TRANSPORTE E LOGISTICA":
-    "SERVICOS TRANSPORTE E LOGISTICA",
-  "EMP ADM PART MAQS EQUIP VEIC E PECAS": "MAQS EQUIP VEIC E PECAS",
-  "EMP ADM PART AGRICULTURA ACUCAR ALCOOL E CANA":
-    "AGRICULTURA ACUCAR ALCOOL E CANA",
-  "EMP ADM PART METALURGIA E SIDERURGIA": "METALURGIA E SIDERURGIA",
-  "EMP ADM PART TEXTIL E VESTUARIO": "TEXTIL E VESTUARIO",
-  "EMP ADM PART ENERGIA ELETRICA": "ENERGIA ELETRICA",
-  "EMP ADM PART PETROLEO E GAS": "PETROLEO E GAS",
-  "EMP ADM PART EXTRACAO MINERAL": "EXTRACAO MINERAL",
-};
-const financialSectors = new Set([
-  "BANCOS",
-  "SEGURADORAS E CORRETORAS",
-  "EMP ADM PART SEGURADORAS E CORRETORAS",
-  "EMP ADM PART INTERMEDIACAO FINANCEIRA",
-  "BOLSAS DE VALORES MERCADORIAS E FUTUROS",
-]);
 
 const accountLabelAliases: Record<string, ReadonlySet<string>> = {
   "3.01": new Set(["RECEITA DE VENDA DE BENS E OU SERVICOS"]),
@@ -144,14 +106,6 @@ function isValidatedFact(fact: ScreenerFact) {
       normalizeAccountingLabel(fact.accountLabel),
     ) ??
       false)
-  );
-}
-
-function isValidatedSector(sector: string | null) {
-  const normalizedSector = normalizeSector(sector);
-  if (financialSectors.has(normalizedSector)) return false;
-  return validatedNonFinancialSectors.has(
-    validatedSectorAliases[normalizedSector] ?? normalizedSector,
   );
 }
 
@@ -284,6 +238,22 @@ function latestFinancialYear(facts: ScreenerFact[]) {
   return Math.max(...profitsByYear(facts).keys(), 0) || null;
 }
 
+function assessPositiveProfitYears(
+  facts: ScreenerFact[],
+  requiredYears: number,
+): "matches" | "fails" | "not_assessed" {
+  const latestYear = latestFinancialYear(facts);
+  if (latestYear === null) return "not_assessed";
+
+  const profits = profitsByYear(facts);
+  for (let offset = 0; offset < requiredYears; offset += 1) {
+    const profit = profits.get(latestYear - offset);
+    if (profit === undefined) return "not_assessed";
+    if (profit <= 0) return "fails";
+  }
+  return "matches";
+}
+
 export function calculateScreenerMetrics(
   facts: ScreenerFact[],
   marketSnapshot: ScreenerCompany["marketSnapshot"],
@@ -384,12 +354,16 @@ export function filterScreenerCompanies(
   now = new Date(),
 ): ScreenerResult[] {
   const parsedFilters = screenerFilterSchema.parse(filters);
+  const hasFilters = Object.values(parsedFilters).some(
+    (value) => value !== undefined,
+  );
   return companies
     .flatMap((company) => {
-      const quantitativeEligible =
-        isValidatedSector(company.sector) &&
-        latestCompleteYear(company.facts) !== null;
-      const metrics = quantitativeEligible
+      const sectorClassification = classifyCvmSector(company.sector);
+      const isNonFinancial = sectorClassification === "non_financial";
+      const hasCompleteData =
+        isNonFinancial && latestCompleteYear(company.facts) !== null;
+      const metrics: ScreenerMetrics = hasCompleteData
         ? calculateScreenerMetrics(company.facts, company.marketSnapshot, now)
         : {
             latestNetIncome: null,
@@ -404,46 +378,69 @@ export function filterScreenerCompanies(
             valuationSourceTicker: null,
             positiveProfitYears: 0,
           };
-      if (
-        parsedFilters.positiveProfitYears !== undefined &&
-        metrics.positiveProfitYears < parsedFilters.positiveProfitYears
-      )
-        return [];
-      if (
-        parsedFilters.equityPositive &&
-        !(metrics.latestEquity !== null && metrics.latestEquity > 0)
-      )
-        return [];
-      if (
-        parsedFilters.minimumRoe !== undefined &&
-        !(metrics.roe !== null && metrics.roe >= parsedFilters.minimumRoe)
-      )
-        return [];
-      if (
-        parsedFilters.minimumNetMargin !== undefined &&
-        !(
+      const positiveProfitAssessment =
+        parsedFilters.positiveProfitYears !== undefined && hasCompleteData
+          ? assessPositiveProfitYears(
+              company.facts,
+              parsedFilters.positiveProfitYears,
+            )
+          : "not_assessed";
+      const failed =
+        (parsedFilters.positiveProfitYears !== undefined &&
+          positiveProfitAssessment === "fails") ||
+        (parsedFilters.equityPositive !== undefined &&
+          metrics.latestEquity !== null &&
+          metrics.latestEquity > 0 !== parsedFilters.equityPositive) ||
+        (parsedFilters.minimumRoe !== undefined &&
+          metrics.roe !== null &&
+          metrics.roe < parsedFilters.minimumRoe) ||
+        (parsedFilters.minimumNetMargin !== undefined &&
           metrics.netMargin !== null &&
-          metrics.netMargin >= parsedFilters.minimumNetMargin
-        )
-      )
-        return [];
-      if (
-        parsedFilters.maximumPe !== undefined &&
-        !(metrics.pe !== null && metrics.pe <= parsedFilters.maximumPe)
-      )
-        return [];
-      if (
-        parsedFilters.maximumPb !== undefined &&
-        !(metrics.pb !== null && metrics.pb <= parsedFilters.maximumPb)
-      )
-        return [];
-      const {
-        facts: _facts,
-        marketSnapshot: _marketSnapshot,
-        quantitativeEligible: _previousEligibility,
-        ...identity
-      } = company;
-      return [{ ...identity, quantitativeEligible, metrics }];
+          metrics.netMargin < parsedFilters.minimumNetMargin) ||
+        (parsedFilters.maximumPe !== undefined &&
+          metrics.pe !== null &&
+          metrics.pe > parsedFilters.maximumPe) ||
+        (parsedFilters.maximumPb !== undefined &&
+          metrics.pb !== null &&
+          metrics.pb > parsedFilters.maximumPb);
+      if (failed) return [];
+      const unavailable =
+        !hasCompleteData ||
+        (parsedFilters.positiveProfitYears !== undefined &&
+          positiveProfitAssessment === "not_assessed") ||
+        (parsedFilters.equityPositive !== undefined &&
+          metrics.latestEquity === null) ||
+        (parsedFilters.minimumRoe !== undefined && metrics.roe === null) ||
+        (parsedFilters.minimumNetMargin !== undefined &&
+          metrics.netMargin === null) ||
+        (parsedFilters.maximumPe !== undefined && metrics.pe === null) ||
+        (parsedFilters.maximumPb !== undefined && metrics.pb === null);
+      const methodologyStatus: ScreenerResult["methodologyStatus"] =
+        sectorClassification === "financial"
+          ? "out_of_scope"
+          : hasCompleteData
+            ? "evaluated"
+            : "not_assessed";
+      const methodologyMessage =
+        sectorClassification === "non_financial" && !hasCompleteData
+          ? "Setor não financeiro validado, mas faltam demonstrações anuais completas para avaliar."
+          : cvmSectorClassificationMessage(sectorClassification);
+      return [
+        {
+          cnpj: company.cnpj,
+          cvmCode: company.cvmCode,
+          name: company.name,
+          sector: company.sector,
+          securities: company.securities,
+          sectorClassification,
+          methodologyStatus,
+          methodologyMessage,
+          filterStatus: (hasFilters && unavailable
+            ? "not_assessed"
+            : "matches") as ScreenerResult["filterStatus"],
+          metrics,
+        },
+      ];
     })
     .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 }
@@ -481,6 +478,9 @@ export type DiscoveryDimension = {
   explanation: string;
 };
 export type DiscoveryAssessment = {
+  sectorClassification: CvmSectorClassification;
+  methodologyStatus: "evaluated" | "out_of_scope" | "not_assessed";
+  methodologyMessage: string;
   period: string | null;
   source: "CVM DFP consolidada anual";
   sectorComparability: "not_validated";
@@ -491,6 +491,20 @@ export type DiscoveryAssessment = {
 export function assessCompanyForDiscovery(
   company: ScreenerCompany,
 ): DiscoveryAssessment {
+  const sectorClassification = classifyCvmSector(company.sector);
+  if (sectorClassification !== "non_financial") {
+    return {
+      sectorClassification,
+      methodologyStatus:
+        sectorClassification === "financial" ? "out_of_scope" : "not_assessed",
+      methodologyMessage: cvmSectorClassificationMessage(sectorClassification),
+      period: null,
+      source: "CVM DFP consolidada anual",
+      sectorComparability: "not_validated",
+      dimensions: [],
+      evidence: [],
+    };
+  }
   const annual = annualConceptValues(company.facts);
   const alignedResults = [...annual.entries()]
     .flatMap(([year, values]) => {
@@ -567,6 +581,12 @@ export function assessCompanyForDiscovery(
     explanation,
   });
   return {
+    sectorClassification,
+    methodologyStatus: alignedResults.length > 0 ? "evaluated" : "not_assessed",
+    methodologyMessage:
+      alignedResults.length > 0
+        ? cvmSectorClassificationMessage(sectorClassification)
+        : "Setor não financeiro validado, mas não há demonstrações anuais comparáveis para avaliar.",
     period: alignedResults[0]?.period ?? null,
     source: "CVM DFP consolidada anual",
     sectorComparability: "not_validated",

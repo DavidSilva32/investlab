@@ -11,7 +11,6 @@ const company: ScreenerCompany = {
   cvmCode: "1",
   name: "Issuer",
   sector: "Petróleo e Gás",
-  quantitativeEligible: true,
   securities: [{ ticker: "AAA3", name: "Issuer ON" }],
   facts: [
     {
@@ -85,6 +84,7 @@ describe("ScreenerService", () => {
         withNetMargin: 0,
         withPe: 0,
         withPb: 0,
+        notAssessedByFilters: 0,
       },
       filters: {},
       hasSuccessfulSync: false,
@@ -110,6 +110,7 @@ describe("ScreenerService", () => {
       withNetMargin: 1,
       withPe: 1,
       withPb: 1,
+      notAssessedByFilters: 0,
     });
     expect(result.results).toHaveLength(1);
     expect(result.filters).toEqual({ maximumPe: 11, maximumPb: 2 });
@@ -147,42 +148,65 @@ describe("ScreenerService", () => {
     expect(repository.getUniverse).not.toHaveBeenCalled();
   });
 
-  it("returns discovery dimensions for the local universe without ranking", async () => {
-    const second = {
+  it("returns discovery dimensions only for validated nonfinancial issuers", async () => {
+    const financial = {
       ...company,
       cnpj: "222",
-      name: "Another issuer",
+      name: "Financial issuer",
       sector: "Bancos",
-      quantitativeEligible: false,
+    };
+    const holding = {
+      ...company,
+      cnpj: "333",
+      name: "Holding issuer",
+      sector: "Emp. Adm. Part. - Bancos",
+    };
+    const unknown = {
+      ...company,
+      cnpj: "444",
+      name: "Unknown issuer",
+      sector: "Setor CVM novo",
     };
     const repository = {
-      getUniverse: vi.fn().mockResolvedValue([company, second]),
+      getUniverse: vi
+        .fn()
+        .mockResolvedValue([company, financial, holding, unknown]),
       hasSuccessfulSync: vi.fn().mockResolvedValue(true),
     };
-    const service = new ScreenerService(repository);
-    const result = await service.discover("discover-request");
+    const result = await new ScreenerService(repository).discover(
+      "discover-request",
+    );
     expect(result.hasSuccessfulSync).toBe(true);
     expect(result.results.map(({ name }) => name)).toEqual([
-      "Another issuer",
+      "Financial issuer",
+      "Holding issuer",
       "Issuer",
+      "Unknown issuer",
     ]);
-    expect(result.results[1]?.assessment.period).toBe("2025-12-31");
-    expect(result.results[0]?.assessment.sectorComparability).toBe(
-      "not_validated",
-    );
-    expect(result.results[0]?.assessment.dimensions[0]?.status).toBe(
-      "available",
-    );
-    expect(result.results[0]?.assessment.dimensions[1]?.status).toBe(
-      "available",
-    );
-    expect(result.results[0]).not.toHaveProperty("quantitativeEligible");
-    expect(result.results[1]).not.toHaveProperty("metrics");
-    expect(result.results[1]?.assessment.dimensions[0]?.status).toBe(
-      "available",
-    );
+    expect(result.results[0]?.assessment).toMatchObject({
+      sectorClassification: "financial",
+      methodologyStatus: "out_of_scope",
+      dimensions: [],
+      evidence: [],
+    });
+    expect(result.results[1]?.assessment).toMatchObject({
+      sectorClassification: "ambiguous",
+      methodologyStatus: "not_assessed",
+      dimensions: [],
+      evidence: [],
+    });
+    expect(result.results[2]?.assessment).toMatchObject({
+      sectorClassification: "non_financial",
+      methodologyStatus: "evaluated",
+    });
+    expect(result.results[3]?.assessment).toMatchObject({
+      sectorClassification: "unknown",
+      methodologyStatus: "not_assessed",
+      dimensions: [],
+      evidence: [],
+    });
+    expect(result.results[2]).not.toHaveProperty("metrics");
   });
-
   it("returns an empty discovery collection before any sync", async () => {
     const repository = {
       getUniverse: vi.fn().mockResolvedValue([]),

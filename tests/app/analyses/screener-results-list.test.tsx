@@ -14,6 +14,7 @@ const counts = {
   withNetMargin: 17,
   withPe: 15,
   withPb: 14,
+  notAssessedByFilters: 0,
 };
 
 function company(index: number): ScreenerResult {
@@ -21,8 +22,14 @@ function company(index: number): ScreenerResult {
     cnpj: String(index).padStart(14, "0"),
     cvmCode: String(index),
     name: `Empresa ${String(index).padStart(2, "0")}`,
-    sector: index === 1 ? "Indústria" : null,
-    quantitativeEligible: index !== 2,
+    sector: index === 1 ? "Energia Elétrica" : null,
+    sectorClassification: index === 1 ? "non_financial" : "unknown",
+    methodologyStatus: index === 1 ? "evaluated" : "not_assessed",
+    methodologyMessage:
+      index === 1
+        ? "Validated nonfinancial sector."
+        : "Sector missing or unmapped.",
+    filterStatus: "matches",
     securities: [
       { ticker: `TICK${index}3`, name: `Ação ${index}` },
       ...(index === 1
@@ -73,10 +80,8 @@ describe("ScreenerResultsList", () => {
         .getAttribute("href"),
     ).toBe("/analyses?ticker=TICK13");
     expect(
-      screen.getByText(
-        "Fundamentos quantitativos indisponíveis para este setor.",
-      ),
-    ).toBeTruthy();
+      screen.getAllByText("Sector missing or unmapped.").length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getByRole("navigation", { name: "Paginação dos resultados" }),
     ).toBeTruthy();

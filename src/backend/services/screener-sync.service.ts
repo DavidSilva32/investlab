@@ -14,6 +14,7 @@ import {
   type ScreenerSecurityRecord,
   type ScreenerSyncRepository,
 } from "@/backend/repositories/screener-sync.repository";
+import { classifyCvmSector } from "@/lib/cvm-sector-classification";
 import { logger } from "@/infrastructure/logging/logger";
 
 type BrapiProvider = Pick<BrapiScreenerProvider, "getCatalog" | "getProfile">;
@@ -257,8 +258,8 @@ export class ScreenerSyncService {
         ).length,
         facts: facts.length,
         persistedFacts,
-        eligibleIssuers: [...issuers.values()].filter(
-          (issuer) => issuer.quantitativeEligible,
+        nonFinancialIssuers: [...issuers.values()].filter(
+          (issuer) => classifyCvmSector(issuer.sector) === "non_financial",
         ).length,
       };
       logger.info("screener_sync_completed", { runId, ...result });

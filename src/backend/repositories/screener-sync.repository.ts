@@ -158,10 +158,6 @@ export class ScreenerSyncRepository {
                 cvmCode: issuer.cvmCode,
                 name: issuer.name,
                 sector: issuer.sector,
-                quantitativeEligible: issuer.quantitativeEligible,
-                eligibilityReason: issuer.quantitativeEligible
-                  ? null
-                  : "EXPLICIT_FINANCIAL_SECTOR_OR_UNCLASSIFIED",
               })),
             )
             .onConflictDoUpdate({
@@ -170,8 +166,6 @@ export class ScreenerSyncRepository {
                 cvmCode: sql`excluded."cvmCode"`,
                 name: sql`excluded.name`,
                 sector: sql`excluded.sector`,
-                quantitativeEligible: sql`excluded."quantitativeEligible"`,
-                eligibilityReason: sql`excluded."eligibilityReason"`,
                 updatedAt: new Date(),
               },
             });
