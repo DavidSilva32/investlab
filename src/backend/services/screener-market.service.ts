@@ -204,7 +204,7 @@ export class ScreenerMarketService {
     const now = this.clock();
     const universe = await this.repository.getUniverse();
     const eligible = filterScreenerCompanies(universe, {}).filter(
-      ({ quantitativeEligible }) => quantitativeEligible,
+      ({ sectorClassification }) => sectorClassification === "non_financial",
     );
     const companyByCnpj = new Map(
       universe.map((company) => [company.cnpj, company]),

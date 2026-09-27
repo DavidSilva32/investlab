@@ -17,8 +17,12 @@ describe("Screener persistence schema", () => {
     const run = getTableConfig(screenerIngestionRuns);
 
     expect(issuer.name).toBe("screener_issuers");
-    expect(issuer.columns.map(({ name }) => name)).toContain(
+    expect(issuer.columns.map(({ name }) => name)).toContain("sector");
+    expect(issuer.columns.map(({ name }) => name)).not.toContain(
       "quantitativeEligible",
+    );
+    expect(issuer.columns.map(({ name }) => name)).not.toContain(
+      "eligibilityReason",
     );
     expect(issuer.columns.find(({ name }) => name === "cnpj")?.primary).toBe(
       true,

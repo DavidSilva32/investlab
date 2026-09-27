@@ -19,13 +19,11 @@ const company = (
   cnpj: string,
   cvmCode: string,
   sector: string,
-  quantitativeEligible: boolean,
 ): CvmCompanyRecord => ({
   cnpj,
   cvmCode,
   name: `Issuer ${cvmCode}`,
   sector,
-  quantitativeEligible,
 });
 const stock = (ticker: string, subtype = "stock", active = true) => ({
   ticker,
@@ -94,9 +92,9 @@ function setup(
   } = {},
 ) {
   const registry = new Map<string, CvmCompanyRecord>([
-    ["33000167000101", company("33000167000101", "9512", "Petróleo", true)],
-    ["11222333000181", company("11222333000181", "1234", "Bancos", false)],
-    ["22222333000182", company("22222333000182", "5678", "Industria", true)],
+    ["33000167000101", company("33000167000101", "9512", "Petróleo e Gás")],
+    ["11222333000181", company("11222333000181", "1234", "Bancos")],
+    ["22222333000182", company("22222333000182", "5678", "Energia Elétrica")],
   ]);
   const catalog = overrides.catalog ?? [
     stock("PETR3"),
@@ -368,7 +366,7 @@ describe("ScreenerSyncService", () => {
       fractionalAliases: 1,
       facts: 18,
       persistedFacts: 18,
-      eligibleIssuers: 1,
+      nonFinancialIssuers: 1,
     });
     expect(
       context.brapi.getProfile.mock.calls.map(([ticker]) => ticker),
@@ -806,7 +804,7 @@ describe("ScreenerSyncService", () => {
       securities: 0,
       fractionalAliases: 0,
       facts: 0,
-      eligibleIssuers: 0,
+      nonFinancialIssuers: 0,
       persistedFacts: 0,
     });
     expect(context.brapi.getProfile).not.toHaveBeenCalled();

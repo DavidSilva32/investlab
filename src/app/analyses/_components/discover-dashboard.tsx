@@ -23,10 +23,7 @@ import type {
   ScreenerResult,
 } from "@/backend/services/screener-metrics";
 
-type DiscoveryCompany = Omit<
-  ScreenerResult,
-  "metrics" | "quantitativeEligible"
-> & {
+type DiscoveryCompany = Omit<ScreenerResult, "metrics"> & {
   assessment: DiscoveryAssessment;
 };
 type Payload = { results: DiscoveryCompany[]; hasSuccessfulSync: boolean };
@@ -216,117 +213,145 @@ export function DiscoverDashboard() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-xs text-muted-foreground">
-                  Fonte: {company.assessment.source}
-                  {company.assessment.period
-                    ? ` · Exercício encerrado em ${date.format(new Date(`${company.assessment.period}T00:00:00Z`))}`
-                    : " · Período comparável indisponível"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Comparabilidade setorial não validada. As dimensões indicam
-                  disponibilidade e compatibilidade dos dados; setor é contexto,
-                  sem aprovação nem reprovação.
-                </p>
-                <ul className="grid gap-3 sm:grid-cols-2">
-                  {company.assessment.dimensions.map((dimension) => (
-                    <li key={dimension.id} className="rounded-lg border p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-medium">{dimension.label}</p>
-                        <Badge
-                          variant={
-                            dimension.status === "available"
-                              ? "default"
-                              : "outline"
-                          }
+                {company.assessment.sectorClassification !== "non_financial" ? (
+                  <p className="text-sm text-muted-foreground" role="status">
+                    <Badge variant="outline">
+                      {company.assessment.sectorClassification === "financial"
+                        ? "Fora do escopo"
+                        : company.assessment.sectorClassification ===
+                            "ambiguous"
+                          ? "Não avaliada · holding"
+                          : "Não classificada"}
+                    </Badge>
+                    <span>{company.assessment.methodologyMessage}</span>
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Fonte: {company.assessment.source}
+                      {company.assessment.period
+                        ? ` · Exercício encerrado em ${date.format(new Date(`${company.assessment.period}T00:00:00Z`))}`
+                        : " · Período comparável indisponível"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Comparabilidade setorial não validada. As dimensões
+                      indicam disponibilidade e compatibilidade dos dados; setor
+                      é contexto, sem aprovação nem reprovação.
+                    </p>
+                    <ul className="grid gap-3 sm:grid-cols-2">
+                      {company.assessment.dimensions.map((dimension) => (
+                        <li
+                          key={dimension.id}
+                          className="rounded-lg border p-3"
                         >
-                          {availability[dimension.status]}
-                        </Badge>
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {dimension.explanation}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-                <Collapsible className="group text-sm">
-                  <CollapsibleTrigger className="flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                    Ver evidências anuais e metodologia
-                    <ChevronDown
-                      aria-hidden="true"
-                      className="size-4 transition-transform group-data-[state=open]:rotate-180"
-                    />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="mt-3 space-y-3">
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Janela inicial de até cinco exercícios completos.
-                        Valores ausentes ou períodos e versões incompatíveis
-                        aparecem como indisponíveis para o cálculo derivado;
-                        fatos brutos permanecem visíveis. A comparabilidade ou
-                        interpretação por setor ainda não foi validada; isso não
-                        exclui empresas nem representa aprovação ou reprovação.
-                        ROIC, diluição e estrutura financeira não integram esta
-                        versão.
-                      </p>
-                      {company.assessment.evidence.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          Não há exercícios completos comparáveis disponíveis.
-                        </p>
-                      ) : (
-                        <ul className="space-y-2">
-                          {company.assessment.evidence.map((point) => (
-                            <li
-                              key={point.year}
-                              className="rounded-md bg-muted/40 p-3 text-xs"
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium">
+                              {dimension.label}
+                            </p>
+                            <Badge
+                              variant={
+                                dimension.status === "available"
+                                  ? "default"
+                                  : "outline"
+                              }
                             >
-                              <p className="font-medium">
-                                Exercício {point.year}
-                              </p>
-                              <p className="mt-1 text-muted-foreground">
-                                Receita {money(point.revenue)} · período{" "}
-                                {periodLabel(point.revenuePeriod)} ·{" "}
-                                {versionLabel(point.revenueVersion)} ·{" "}
-                                {packageLabel(point.revenuePackageYear)}
-                                <br />
-                                Lucro {money(point.netIncome)} · período{" "}
-                                {periodLabel(point.netIncomePeriod)} ·{" "}
-                                {versionLabel(point.netIncomeVersion)} ·{" "}
-                                {packageLabel(point.netIncomePackageYear)}
-                                <br />
-                                Margem líquida {percent(point.netMargin)} · ROE{" "}
-                                {percent(point.roe)} · PL médio:{" "}
-                                {periodLabel(point.equityOpeningPeriod)}{" "}
-                                {versionLabel(point.equityOpeningVersion)}{" "}
-                                {packageLabel(point.equityOpeningPackageYear)} a{" "}
-                                {periodLabel(point.equityPeriod)}{" "}
-                                {versionLabel(point.equityVersion)}{" "}
-                                {packageLabel(point.equityPackageYear)}
-                              </p>
-                              <p className="mt-1 text-muted-foreground">
-                                Patrimônio {money(point.equity)} · período{" "}
-                                {periodLabel(point.equityPeriod)} ·{" "}
-                                {versionLabel(point.equityVersion)} ·{" "}
-                                {packageLabel(point.equityPackageYear)}
-                                <br />
-                                Caixa operacional{" "}
-                                {money(point.operatingCashFlow)} · período{" "}
-                                {periodLabel(point.operatingCashFlowPeriod)} ·{" "}
-                                {versionLabel(point.operatingCashFlowVersion)} ·{" "}
-                                {packageLabel(
-                                  point.operatingCashFlowPackageYear,
-                                )}{" "}
-                                ·{" "}
-                                {cashComparisonLabel(
-                                  point.operatingCashFlowComparableToNetIncome,
-                                )}
-                              </p>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
+                              {availability[dimension.status]}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {dimension.explanation}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                    <Collapsible className="group text-sm">
+                      <CollapsibleTrigger className="flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                        Ver evidências anuais e metodologia
+                        <ChevronDown
+                          aria-hidden="true"
+                          className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                        />
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-3 space-y-3">
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            Janela inicial de até cinco exercícios completos.
+                            Valores ausentes ou períodos e versões incompatíveis
+                            aparecem como indisponíveis para o cálculo derivado;
+                            fatos brutos permanecem visíveis. A comparabilidade
+                            ou interpretação por setor ainda não foi validada;
+                            isso não exclui empresas nem representa aprovação ou
+                            reprovação. ROIC, diluição e estrutura financeira
+                            não integram esta versão.
+                          </p>
+                          {company.assessment.evidence.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              Não há exercícios completos comparáveis
+                              disponíveis.
+                            </p>
+                          ) : (
+                            <ul className="space-y-2">
+                              {company.assessment.evidence.map((point) => (
+                                <li
+                                  key={point.year}
+                                  className="rounded-md bg-muted/40 p-3 text-xs"
+                                >
+                                  <p className="font-medium">
+                                    Exercício {point.year}
+                                  </p>
+                                  <p className="mt-1 text-muted-foreground">
+                                    Receita {money(point.revenue)} · período{" "}
+                                    {periodLabel(point.revenuePeriod)} ·{" "}
+                                    {versionLabel(point.revenueVersion)} ·{" "}
+                                    {packageLabel(point.revenuePackageYear)}
+                                    <br />
+                                    Lucro {money(point.netIncome)} · período{" "}
+                                    {periodLabel(point.netIncomePeriod)} ·{" "}
+                                    {versionLabel(point.netIncomeVersion)} ·{" "}
+                                    {packageLabel(point.netIncomePackageYear)}
+                                    <br />
+                                    Margem líquida {percent(point.netMargin)} ·
+                                    ROE {percent(point.roe)} · PL médio:{" "}
+                                    {periodLabel(point.equityOpeningPeriod)}{" "}
+                                    {versionLabel(point.equityOpeningVersion)}{" "}
+                                    {packageLabel(
+                                      point.equityOpeningPackageYear,
+                                    )}{" "}
+                                    a {periodLabel(point.equityPeriod)}{" "}
+                                    {versionLabel(point.equityVersion)}{" "}
+                                    {packageLabel(point.equityPackageYear)}
+                                  </p>
+                                  <p className="mt-1 text-muted-foreground">
+                                    Patrimônio {money(point.equity)} · período{" "}
+                                    {periodLabel(point.equityPeriod)} ·{" "}
+                                    {versionLabel(point.equityVersion)} ·{" "}
+                                    {packageLabel(point.equityPackageYear)}
+                                    <br />
+                                    Caixa operacional{" "}
+                                    {money(point.operatingCashFlow)} · período{" "}
+                                    {periodLabel(point.operatingCashFlowPeriod)}{" "}
+                                    ·{" "}
+                                    {versionLabel(
+                                      point.operatingCashFlowVersion,
+                                    )}{" "}
+                                    ·{" "}
+                                    {packageLabel(
+                                      point.operatingCashFlowPackageYear,
+                                    )}{" "}
+                                    ·{" "}
+                                    {cashComparisonLabel(
+                                      point.operatingCashFlowComparableToNetIncome,
+                                    )}
+                                  </p>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </>
+                )}
               </CardContent>
             </Card>
           ))}

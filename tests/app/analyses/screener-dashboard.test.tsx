@@ -8,8 +8,12 @@ const company = {
   cnpj: "33000167000101",
   cvmCode: "9512",
   name: "Petrobras",
-  sector: "Petróleo",
-  quantitativeEligible: true,
+  sector: "Petróleo e Gás",
+  sectorClassification: "non_financial",
+  methodologyStatus: "evaluated",
+  methodologyMessage:
+    "Classificação não financeira validada pela CVM para a metodologia atual.",
+  filterStatus: "matches",
   securities: [
     { ticker: "PETR3", name: "Petrobras ON" },
     { ticker: "PETR4", name: "Petrobras PN" },
@@ -33,6 +37,7 @@ const counts = {
   withNetMargin: 1,
   withPe: 0,
   withPb: 0,
+  notAssessedByFilters: 0,
 };
 const response = (body: unknown, ok = true) =>
   Promise.resolve({
@@ -358,7 +363,10 @@ describe("ScreenerDashboard", () => {
       ...company,
       name: "Banco Teste",
       sector: "Bancos",
-      quantitativeEligible: false,
+      sectorClassification: "financial",
+      methodologyStatus: "out_of_scope",
+      methodologyMessage:
+        "Fora do escopo da metodologia para empresas não financeiras.",
       metrics: {
         latestNetIncome: null,
         latestRevenue: null,
@@ -383,7 +391,7 @@ describe("ScreenerDashboard", () => {
     expect(await screen.findByText("Banco Teste")).toBeTruthy();
     expect(
       screen.getByText(
-        "Fundamentos quantitativos indisponíveis para este setor.",
+        "Fora do escopo da metodologia para empresas não financeiras.",
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(5);

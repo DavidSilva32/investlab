@@ -21,6 +21,10 @@ const payload = {
       sector: "Petróleo e Gás",
       securities: [{ ticker: "AAA3", name: "Empresa ON" }],
       assessment: {
+        sectorClassification: "non_financial",
+        methodologyStatus: "evaluated",
+        methodologyMessage:
+          "Setor classificado como não financeiro para a metodologia atual.",
         period: "2025-12-31",
         source: "CVM DFP consolidada anual",
         sectorComparability: "not_validated",
@@ -77,6 +81,10 @@ const payload = {
             operatingCashFlowVersion: null,
             operatingCashFlowPackageYear: null,
             operatingCashFlowComparableToNetIncome: null,
+            sectorClassification: "non_financial",
+            methodologyStatus: "evaluated",
+            methodologyMessage:
+              "Setor classificado como não financeiro para a metodologia atual.",
             period: "2025-12-31",
             revenue: 100,
             netIncome: 20,
@@ -322,6 +330,10 @@ describe("DiscoverDashboard", () => {
               securities: [],
               assessment: {
                 ...payload.results[0].assessment,
+                sectorClassification: "unknown",
+                methodologyStatus: "not_assessed",
+                methodologyMessage:
+                  "Setor ausente ou não mapeado; a metodologia não foi aplicada.",
                 period: null,
                 dimensions: [],
                 evidence: [],
@@ -333,7 +345,7 @@ describe("DiscoverDashboard", () => {
     );
     render(<DiscoverDashboard />);
     expect(await screen.findByText(/Setor não informado/)).toBeTruthy();
-    expect(screen.getByText(/Período comparável indisponível/)).toBeTruthy();
+    expect(screen.getByText(/Setor ausente ou não mapeado/)).toBeTruthy();
     expect(screen.queryByRole("link", { name: /Analisar/ })).toBeNull();
   });
 

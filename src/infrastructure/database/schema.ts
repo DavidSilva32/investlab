@@ -170,8 +170,6 @@ export const screenerIssuers = pgTable("screener_issuers", {
   cvmCode: varchar({ length: 12 }).notNull().unique(),
   name: text().notNull(),
   sector: text(),
-  quantitativeEligible: boolean().notNull().default(false),
-  eligibilityReason: varchar({ length: 80 }),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
