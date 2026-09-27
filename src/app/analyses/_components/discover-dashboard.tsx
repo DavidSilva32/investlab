@@ -22,7 +22,10 @@ import type {
   ScreenerResult,
 } from "@/backend/services/screener-metrics";
 
-type DiscoveryCompany = Omit<ScreenerResult, "metrics"> & {
+type DiscoveryCompany = Omit<
+  ScreenerResult,
+  "metrics" | "quantitativeEligible"
+> & {
   assessment: DiscoveryAssessment;
 };
 type Payload = { results: DiscoveryCompany[]; hasSuccessfulSync: boolean };
@@ -54,6 +57,18 @@ function periodLabel(value: string | null) {
   return value
     ? date.format(new Date(`${value}T00:00:00Z`))
     : "período indisponível";
+}
+function versionLabel(value: number | null) {
+  return value === null ? "versão indisponível" : `versão ${value}`;
+}
+function packageLabel(value: number | null) {
+  return value === null ? "pacote indisponível" : `pacote ${value}`;
+}
+function cashComparisonLabel(value: boolean | null) {
+  if (value === null) return "comparação com lucro indisponível";
+  return value
+    ? "mesma data, versão e pacote do lucro"
+    : "data, versão ou pacote incompatível com o lucro";
 }
 export function DiscoverDashboard() {
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -110,15 +125,23 @@ export function DiscoverDashboard() {
         <CardHeader>
           <CardTitle>Empresas para estudo</CardTitle>
           <CardDescription>
-            Consulte primeiro o que merece atenção e aprofunde nas evidências e
-            na metodologia. A análise organiza dados históricos; não classifica
-            empresas como boas ou ruins nem recomenda investimentos.
+            Os dados anuais são apresentados conforme a disponibilidade para
+            cada empresa. Consulte as fontes e a metodologia. A cobertura é
+            parcial e depende da comparabilidade dos dados; indisponibilidade
+            não é um sinal positivo ou negativo. Esta tela não cria notas nem
+            recomendações.
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <Button variant="outline" asChild>
+            <Link href="/analyses/screener">Buscar empresas em Explorar</Link>
+          </Button>
+        </CardContent>
       </Card>
 
       <p className="text-sm text-muted-foreground" aria-live="polite">
-        {payload.results.length} empresas · ordem alfabética
+        {payload.results.length} empresas na base · cobertura parcial · ordem
+        alfabética
       </p>
 
       {!payload.hasSuccessfulSync ? (
@@ -176,6 +199,11 @@ export function DiscoverDashboard() {
                     ? ` · Exercício encerrado em ${date.format(new Date(`${company.assessment.period}T00:00:00Z`))}`
                     : " · Período comparável indisponível"}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Comparabilidade setorial não validada. As dimensões indicam
+                  disponibilidade e compatibilidade dos dados; setor é contexto,
+                  sem aprovação nem reprovação.
+                </p>
                 <ul className="grid gap-3 sm:grid-cols-2">
                   {company.assessment.dimensions.map((dimension) => (
                     <li key={dimension.id} className="rounded-lg border p-3">
@@ -209,10 +237,13 @@ export function DiscoverDashboard() {
                     <div className="mt-3 space-y-3">
                       <p className="text-xs leading-relaxed text-muted-foreground">
                         Janela inicial de até cinco exercícios completos.
-                        Valores ausentes ou períodos incompatíveis aparecem como
-                        indisponíveis. ROIC, diluição e estrutura financeira não
-                        integram esta versão; instituições financeiras ficam
-                        fora da metodologia.
+                        Valores ausentes ou períodos e versões incompatíveis
+                        aparecem como indisponíveis para o cálculo derivado;
+                        fatos brutos permanecem visíveis. A comparabilidade ou
+                        interpretação por setor ainda não foi validada; isso não
+                        exclui empresas nem representa aprovação ou reprovação.
+                        ROIC, diluição e estrutura financeira não integram esta
+                        versão.
                       </p>
                       {company.assessment.evidence.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
@@ -229,23 +260,43 @@ export function DiscoverDashboard() {
                                 Exercício {point.year}
                               </p>
                               <p className="mt-1 text-muted-foreground">
-                                Receita {money(point.revenue)} ·{" "}
-                                {periodLabel(point.revenuePeriod)}
+                                Receita {money(point.revenue)} · período{" "}
+                                {periodLabel(point.revenuePeriod)} ·{" "}
+                                {versionLabel(point.revenueVersion)} ·{" "}
+                                {packageLabel(point.revenuePackageYear)}
                                 <br />
-                                Lucro {money(point.netIncome)} ·{" "}
-                                {periodLabel(point.netIncomePeriod)}
+                                Lucro {money(point.netIncome)} · período{" "}
+                                {periodLabel(point.netIncomePeriod)} ·{" "}
+                                {versionLabel(point.netIncomeVersion)} ·{" "}
+                                {packageLabel(point.netIncomePackageYear)}
                                 <br />
-                                Margem {percent(point.netMargin)} · ROE{" "}
-                                {percent(point.roe)}
+                                Margem líquida {percent(point.netMargin)} · ROE{" "}
+                                {percent(point.roe)} · PL médio:{" "}
+                                {periodLabel(point.equityOpeningPeriod)}{" "}
+                                {versionLabel(point.equityOpeningVersion)}{" "}
+                                {packageLabel(point.equityOpeningPackageYear)} a{" "}
+                                {periodLabel(point.equityPeriod)}{" "}
+                                {versionLabel(point.equityVersion)}{" "}
+                                {packageLabel(point.equityPackageYear)}
                               </p>
                               <p className="mt-1 text-muted-foreground">
-                                Patrimônio {money(point.equity)} ·{" "}
-                                {periodLabel(point.equityPeriod)}
+                                Patrimônio {money(point.equity)} · período{" "}
+                                {periodLabel(point.equityPeriod)} ·{" "}
+                                {versionLabel(point.equityVersion)} ·{" "}
+                                {packageLabel(point.equityPackageYear)}
                                 <br />
                                 Caixa operacional{" "}
-                                {money(point.operatingCashFlow)} ·{" "}
-                                {periodLabel(point.operatingCashFlowPeriod)}
-                              </p>{" "}
+                                {money(point.operatingCashFlow)} · período{" "}
+                                {periodLabel(point.operatingCashFlowPeriod)} ·{" "}
+                                {versionLabel(point.operatingCashFlowVersion)} ·{" "}
+                                {packageLabel(
+                                  point.operatingCashFlowPackageYear,
+                                )}{" "}
+                                ·{" "}
+                                {cashComparisonLabel(
+                                  point.operatingCashFlowComparableToNetIncome,
+                                )}
+                              </p>
                             </li>
                           ))}
                         </ul>

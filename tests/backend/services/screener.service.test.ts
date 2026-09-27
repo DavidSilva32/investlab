@@ -22,6 +22,8 @@ const company: ScreenerCompany = {
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
       exerciseOrder: "ULTIMO",
+      version: 1,
+      sourceFile: "DFP_con_2025.csv",
     },
     {
       referenceDate: "2025-12-31",
@@ -31,6 +33,8 @@ const company: ScreenerCompany = {
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
       exerciseOrder: "ULTIMO",
+      version: 1,
+      sourceFile: "DFP_con_2025.csv",
     },
     {
       referenceDate: "2025-12-31",
@@ -40,6 +44,8 @@ const company: ScreenerCompany = {
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
       exerciseOrder: "ULTIMO",
+      version: 1,
+      sourceFile: "DFP_con_2025.csv",
     },
     {
       referenceDate: "2024-12-31",
@@ -49,6 +55,8 @@ const company: ScreenerCompany = {
       documentType: "DFP",
       statementScope: "CONSOLIDATED",
       exerciseOrder: "ULTIMO",
+      version: 1,
+      sourceFile: "DFP_con_2025.csv",
     },
   ],
   marketSnapshot: {
@@ -140,7 +148,13 @@ describe("ScreenerService", () => {
   });
 
   it("returns discovery dimensions for the local universe without ranking", async () => {
-    const second = { ...company, cnpj: "222", name: "Another issuer" };
+    const second = {
+      ...company,
+      cnpj: "222",
+      name: "Another issuer",
+      sector: "Bancos",
+      quantitativeEligible: false,
+    };
     const repository = {
       getUniverse: vi.fn().mockResolvedValue([company, second]),
       hasSuccessfulSync: vi.fn().mockResolvedValue(true),
@@ -153,6 +167,16 @@ describe("ScreenerService", () => {
       "Issuer",
     ]);
     expect(result.results[1]?.assessment.period).toBe("2025-12-31");
+    expect(result.results[0]?.assessment.sectorComparability).toBe(
+      "not_validated",
+    );
+    expect(result.results[0]?.assessment.dimensions[0]?.status).toBe(
+      "available",
+    );
+    expect(result.results[0]?.assessment.dimensions[1]?.status).toBe(
+      "available",
+    );
+    expect(result.results[0]).not.toHaveProperty("quantitativeEligible");
     expect(result.results[1]).not.toHaveProperty("metrics");
     expect(result.results[1]?.assessment.dimensions[0]?.status).toBe(
       "available",

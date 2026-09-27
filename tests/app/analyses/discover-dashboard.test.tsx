@@ -23,6 +23,7 @@ const payload = {
       assessment: {
         period: "2025-12-31",
         source: "CVM DFP consolidada anual",
+        sectorComparability: "not_validated",
         dimensions: [
           {
             id: "results",
@@ -34,13 +35,15 @@ const payload = {
             id: "profitability",
             label: "Rentabilidade",
             status: "available",
-            explanation: "ROE por exercício.",
+            explanation:
+              "O status desta dimensão indica apenas a disponibilidade do ROE. A margem líquida aparece em Resultados.",
           },
           {
             id: "cash",
             label: "Caixa",
             status: "unavailable",
-            explanation: "DFC-MI indisponível.",
+            explanation:
+              "Esta dimensão indica a disponibilidade do fluxo de caixa operacional bruto da conta 6.01 da DFC-MI. A comparação com o lucro só fica disponível quando data, versão e pacote coincidem; nos demais casos, permanece indisponível.",
           },
           {
             id: "financial_structure",
@@ -58,12 +61,28 @@ const payload = {
         evidence: [
           {
             year: 2025,
+            revenuePeriod: "2025-12-31",
+            netIncomePeriod: "2025-12-31",
+            equityPeriod: "2025-12-31",
+            equityVersion: 2,
+            equityPackageYear: 2025,
+            equityOpeningPeriod: "2024-12-31",
+            equityOpeningVersion: 4,
+            equityOpeningPackageYear: 2025,
+            revenueVersion: 2,
+            revenuePackageYear: null,
+            netIncomeVersion: 2,
+            netIncomePackageYear: 2025,
+            operatingCashFlowPeriod: null,
+            operatingCashFlowVersion: null,
+            operatingCashFlowPackageYear: null,
+            operatingCashFlowComparableToNetIncome: null,
             period: "2025-12-31",
             revenue: 100,
             netIncome: 20,
             equity: 50,
-            netMargin: 20,
-            roe: null,
+            netMargin: null,
+            roe: 40,
             operatingCashFlow: null,
           },
         ],
@@ -71,24 +90,64 @@ const payload = {
     },
   ],
 };
+const payloadWithCashComparison = (comparable: boolean | null) => ({
+  ...payload,
+  results: payload.results.map((result) => ({
+    ...result,
+    assessment: {
+      ...result.assessment,
+      evidence: result.assessment.evidence.map((point) => ({
+        ...point,
+        operatingCashFlow: 125,
+        operatingCashFlowPeriod: "2025-12-31",
+        operatingCashFlowPackageYear: 2025,
+        operatingCashFlowVersion: 2,
+        operatingCashFlowComparableToNetIncome: comparable,
+      })),
+    },
+  })),
+});
 describe("DiscoverDashboard", () => {
   it("keeps evidence visible and puts methodology details behind an accessible disclosure", async () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(payload)));
     render(<DiscoverDashboard />);
     expect(await screen.findByText("Empresa Exemplo")).toBeTruthy();
+    expect(screen.getByText(/A cobertura é parcial/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /dados anuais são apresentados conforme a disponibilidade para cada empresa/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Buscar empresas em Explorar" })
+        .getAttribute("href"),
+    ).toBe("/analyses/screener");
+    expect(screen.getByText(/Comparabilidade setorial/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /disponibilidade do ROE.*margem l.quida aparece em Resultados/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /fluxo de caixa operacional bruto.*data, vers.o e pacote coincidem/,
+      ),
+    ).toBeTruthy();
     expect(screen.getByText(/CVM DFP consolidada anual/)).toBeTruthy();
     expect(screen.getAllByText("Evidências disponíveis")).toHaveLength(3);
     expect(screen.getAllByText("Indisponível")).toHaveLength(2);
+
     const methodology = screen.getByRole("button", {
-      name: "Ver evidências anuais e metodologia",
+      name: /Ver evid/,
       expanded: false,
     });
     methodology.focus();
     await user.keyboard("{Enter}");
     expect(
       screen.getByRole("button", {
-        name: "Ver evidências anuais e metodologia",
+        name: /Ver evid/,
         expanded: true,
       }),
     ).toBeTruthy();
@@ -105,7 +164,41 @@ describe("DiscoverDashboard", () => {
         .getByRole("link", { name: "AAA3 · Analisar" })
         .getAttribute("href"),
     ).toBe("/analyses?ticker=AAA3");
-    expect(screen.getByText(/empresas · ordem alfabética/)).toBeTruthy();
+    const equityEvidence = screen.getByText(/PL m/).parentElement;
+    expect(equityEvidence?.textContent).toContain("pacote indisponível");
+    expect(equityEvidence?.textContent).toContain("pacote 2025");
+    expect(equityEvidence?.textContent).toContain(
+      "Margem líquida Indisponível",
+    );
+    expect(screen.getByText(/Caixa operacional/).textContent).toContain(
+      "Caixa operacional Indisponível",
+    );
+    expect(
+      screen.getByText(
+        /empresas na base · cobertura parcial · ordem alfabética/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    [null, /comparação com lucro indisponível/],
+    [true, /mesma data, versão e pacote do lucro/],
+    [false, /data, versão ou pacote incompatível com o lucro/],
+  ])("explains cash comparison state %s", async (compatible, message) => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(response(payloadWithCashComparison(compatible))),
+    );
+    render(<DiscoverDashboard />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Ver evid/,
+      }),
+    );
+    expect(await screen.findByText(message)).toBeTruthy();
   });
 
   it("shows an explicit loading state", () => {

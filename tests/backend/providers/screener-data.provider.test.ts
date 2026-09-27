@@ -459,12 +459,15 @@ describe("DFP streaming normalization", () => {
     expect(facts).toHaveLength(1);
   });
 
-  it("imports operational cash flow only from the validated indirect-method DFP file", async () => {
+  it.each([
+    "Caixa Liquido das Atividades Operacionais",
+    "Caixa Liquido Atividades Operacionais",
+  ])("imports operational cash flow for the CVM label %s", async (label) => {
     const cashFlow = [
       validCnpj,
       "9512",
       "6.01",
-      "Caixa Liquido das Atividades Operacionais",
+      label,
       "ULTIMO",
       "2025-12-31",
       "125",

@@ -69,6 +69,7 @@ export class ScreenerRepository {
           documentType: screenerFinancialFacts.documentType,
           statementScope: screenerFinancialFacts.statementScope,
           exerciseOrder: screenerFinancialFacts.exerciseOrder,
+          version: screenerFinancialFacts.version,
           sourceFile: screenerFinancialFacts.sourceFile,
         })
         .from(screenerFinancialFacts)
