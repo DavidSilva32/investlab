@@ -4,6 +4,10 @@ const repository = vi.hoisted(() => ({
   listMovements: vi.fn(),
 }));
 const estimates = vi.hoisted(() => ({ enrich: vi.fn() }));
+const portfolioPositions = vi.hoisted(() => ({
+  listCurrent: vi.fn(),
+  enrichImportedPositions: vi.fn(),
+}));
 const rates = vi.hoisted(() => ({ getReferenceRates: vi.fn() }));
 const reserve = vi.hoisted(() => ({ getSummary: vi.fn() }));
 const allocation = vi.hoisted(() => ({
@@ -25,11 +29,22 @@ vi.mock("@/backend/services/emergency-reserve.service", () => ({
 vi.mock("@/backend/services/portfolio-allocation.service", () => ({
   portfolioAllocationService: allocation,
 }));
+vi.mock("@/backend/services/portfolio-position.service", () => ({
+  portfolioPositionService: portfolioPositions,
+}));
 import { PortfolioService } from "@/backend/services/portfolio.service";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 
 describe("PortfolioService", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    portfolioPositions.listCurrent.mockImplementation((requestId) =>
+      repository.listLatestPositions(requestId),
+    );
+    portfolioPositions.enrichImportedPositions.mockImplementation((positions) =>
+      estimates.enrich(positions),
+    );
+  });
   it("loads positions and estimates once, then shares them for allocation, reserve and guidance", async () => {
     const rawPositions = [{ id: "p1" }];
     const estimated = [{ id: "p1", estimatedValue: 100, totalValue: "100" }];

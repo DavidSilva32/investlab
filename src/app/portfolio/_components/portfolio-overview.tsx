@@ -15,6 +15,7 @@ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 export type PortfolioPosition = {
   id: string;
+  source?: string;
   product: string;
   assetCode: string | null;
   institution: string | null;
@@ -22,7 +23,14 @@ export type PortfolioPosition = {
   issuedAt: string | null;
   maturityAt: string | null;
   quantity: string;
+  unitPrice?: string | null;
   totalValue: string | null;
+  reportedTotalValue?: string | null;
+  currency?: string;
+  valueBasis?: "unit_price" | "total_value";
+  positionDate?: string;
+  convertedValueBrl?: string | null;
+  conversionDate?: string | null;
   estimationBaseDate?: string | null;
   cdiPercentage?: string | null;
   estimatedValue?: number | null;

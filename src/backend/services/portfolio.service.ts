@@ -1,9 +1,9 @@
 import { logger } from "@/infrastructure/logging/logger";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { bcbReferenceRatesService } from "@/backend/services/bcb-reference-rates.service";
-import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
 import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
+import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import {
   getNextContributionGuidance,
@@ -21,11 +21,11 @@ export class PortfolioService {
   async getOverview(requestId?: string) {
     logger.info("portfolio_overview_loading", { requestId });
     const [positions, movements] = await Promise.all([
-      importRepository.listLatestPositions(requestId),
+      portfolioPositionService.listCurrent(requestId),
       importRepository.listMovements(requestId),
     ]);
     const [estimatedPositions, referenceRates] = await Promise.all([
-      cdbEstimateService.enrich(positions).then((result) => [...result]),
+      portfolioPositionService.enrichImportedPositions(positions),
       bcbReferenceRatesService.getReferenceRates(),
     ]);
     const [classificationResult, targetsResult] = await Promise.all([
@@ -92,8 +92,9 @@ export class PortfolioService {
 
   async listPositions(requestId?: string) {
     logger.info("portfolio_positions_loading", { requestId });
-    const positions = await importRepository.listLatestPositions(requestId);
-    const estimatedPositions = await cdbEstimateService.enrich(positions);
+    const positions = await portfolioPositionService.listCurrent(requestId);
+    const estimatedPositions =
+      await portfolioPositionService.enrichImportedPositions(positions);
     logger.info("portfolio_positions_loaded", {
       requestId,
       positions: estimatedPositions.length,

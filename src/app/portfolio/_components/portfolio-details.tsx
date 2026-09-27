@@ -17,6 +17,7 @@ import {
 import { formatCurrency, formatQuantity } from "@/lib/utils";
 import type { PortfolioPosition } from "./portfolio-overview";
 import { CdbRateConfiguration } from "./cdb-rate-configuration";
+import { ManualPositionManager } from "./manual-position-manager";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
@@ -48,6 +49,11 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
     render: (row) => (
       <div>
         <span className="font-medium">{row.product}</span>
+        {row.source === "MANUAL" && (
+          <Badge variant="outline" className="ml-2">
+            Manual
+          </Badge>
+        )}
         {row.indexer && (
           <span className="block text-xs text-muted-foreground">
             {row.indexer}
@@ -103,6 +109,35 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
     className: "text-right",
     value: (row) => row.estimatedValue ?? numberValue(row.totalValue),
     render: (row) => {
+      if (row.source === "MANUAL") {
+        const reportedValue = row.reportedTotalValue ?? row.totalValue;
+        return (
+          <div className="space-y-1">
+            <span className="font-medium">
+              {row.totalValue ? formatCurrency(Number(row.totalValue)) : "—"}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {row.currency === "BRL"
+                ? "Informado manualmente"
+                : reportedValue
+                  ? `${Number(reportedValue).toLocaleString("pt-BR")} ${row.currency ?? ""} · informado manualmente`
+                  : "Sem conversão para reais"}
+            </span>
+            {row.positionDate && (
+              <span className="block text-xs text-muted-foreground">
+                Valor observado em{" "}
+                {date.format(new Date(`${row.positionDate}T00:00:00Z`))}
+              </span>
+            )}
+            {row.conversionDate && (
+              <span className="block text-xs text-muted-foreground">
+                Conversão informada em{" "}
+                {date.format(new Date(`${row.conversionDate}T00:00:00Z`))}
+              </span>
+            )}
+          </div>
+        );
+      }
       const isDiCdb =
         /^CDB\b/i.test(row.product) && /^(DI|CDI)$/i.test(row.indexer ?? "");
       if (!row.totalValue) return "—";
@@ -281,17 +316,18 @@ export function PositionDetails({
             />
             <DeleteImportedDataButton
               documentType="B3_POSITION_XLSX"
-              label="posições"
+              label="posições importadas"
             />
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="space-y-4 p-4 sm:p-5">
+        <ManualPositionManager positions={positions} />
         <PortfolioTable
           columns={positionColumns}
           rows={positions}
           initialSort={{ id: "product", direction: "asc" }}
-          emptyMessage="Importe um arquivo B3 para visualizar suas posições."
+          emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."
         />
       </CardContent>
     </Card>
