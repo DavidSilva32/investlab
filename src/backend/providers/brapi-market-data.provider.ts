@@ -103,6 +103,21 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     return response.json();
   }
 
+  private async getHistoricalPrices(symbol: string) {
+    try {
+      return await this.request(
+        `/api/v2/stocks/historical?symbols=${symbol}&range=5y&interval=1d`,
+      );
+    } catch (error) {
+      if (error instanceof ApplicationError && error.statusCode === 429) {
+        throw error;
+      }
+
+      return this.request(
+        `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
+      );
+    }
+  }
   async searchTickers(query: string): Promise<MarketTicker[]> {
     const params = new URLSearchParams({
       search: query,
@@ -143,9 +158,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     );
     const [profileResult, historyResult] = await Promise.allSettled([
       this.request(`/api/v2/stocks/profile?symbols=${symbol}`),
-      this.request(
-        `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
-      ),
+      this.getHistoricalPrices(symbol),
     ]);
     const quote = quoteSchema.parse(quotePayload).results[0];
     const cnpj =

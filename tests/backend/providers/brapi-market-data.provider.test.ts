@@ -218,6 +218,9 @@ describe("BrapiMarketDataProvider", () => {
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       "https://brapi.dev/api/v2/stocks/quote?symbols=PETR4%2FSA",
     );
+    expect(fetcher.mock.calls[2]?.[0]).toBe(
+      "https://brapi.dev/api/v2/stocks/historical?symbols=PETR4%2FSA&range=5y&interval=1d",
+    );
   });
 
   it("falls back to optional quote fields and returns empty optional profile and history", async () => {
