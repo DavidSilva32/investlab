@@ -291,4 +291,31 @@ describe("BrapiMarketDataProvider", () => {
       new BrapiMarketDataProvider(invalidHistoryFetcher).getByTicker("PETR4"),
     ).rejects.toThrow();
   });
+  it("does not retry a historical rate limit but falls back to one year on other failures", async () => {
+    const rateLimited = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        new Response(null, { status: 429, headers: { "retry-after": "30" } }),
+      );
+    await expect(
+      new BrapiMarketDataProvider(rateLimited).getByTicker("PETR4"),
+    ).resolves.toMatchObject({ history: [] });
+    expect(rateLimited).toHaveBeenCalledTimes(3);
+
+    const unavailable = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({}, 503))
+      .mockResolvedValueOnce(
+        jsonResponse({ results: [{ data: { historicalDataPrice: [] } }] }),
+      );
+    await expect(
+      new BrapiMarketDataProvider(unavailable).getByTicker("PETR4"),
+    ).resolves.toMatchObject({ history: [] });
+    expect(unavailable.mock.calls[2]?.[0]).toContain("range=5y");
+    expect(unavailable.mock.calls[3]?.[0]).toContain("range=1y");
+  });
 });

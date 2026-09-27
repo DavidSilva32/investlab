@@ -1,22 +1,19 @@
 import { ApplicationError } from "@/backend/errors/application-error";
-import { importRepository } from "@/backend/repositories/import.repository";
 import { portfolioClassificationRepository } from "@/backend/repositories/portfolio-classification.repository";
 import { portfolioAllocationTargetRepository } from "@/backend/repositories/portfolio-allocation-target.repository";
-import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
 import {
   getPortfolioAssetKey,
   inferPortfolioAssetClassification,
   type PortfolioAssetClassification,
 } from "@/backend/services/portfolio-classification";
 import { logger } from "@/infrastructure/logging/logger";
+import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-target-values";
 
 export class PortfolioAllocationService {
   async getAllocation(requestId?: string) {
-    const positions = await importRepository.listLatestPositions(requestId);
-    const estimatedPositions = [
-      ...(await cdbEstimateService.enrich(positions)),
-    ];
+    const estimatedPositions =
+      await portfolioPositionService.listCurrentEnriched(requestId);
     return this.classifyPositions(estimatedPositions, requestId);
   }
 
@@ -28,15 +25,20 @@ export class PortfolioAllocationService {
       institution: string | null;
       indexer: string | null;
       regimeType: string | null;
+      assetKey?: string;
     },
   >(positions: T[], requestId?: string) {
+    const assetKeyFor = (position: T) =>
+      ("assetKey" in position ? position.assetKey : undefined) ??
+      getPortfolioAssetKey(position);
+
     const saved = await portfolioClassificationRepository.listByAssetKeys(
-      positions.map((position) => getPortfolioAssetKey(position)),
+      positions.map(assetKeyFor),
       requestId,
     );
     const savedByKey = new Map(saved.map((item) => [item.assetKey, item]));
     return positions.map((position) => {
-      const assetKey = getPortfolioAssetKey(position);
+      const assetKey = assetKeyFor(position);
       const manual = savedByKey.get(assetKey);
       const classification: PortfolioAssetClassification = manual
         ? {
@@ -90,7 +92,7 @@ export class PortfolioAllocationService {
     },
     requestId?: string,
   ) {
-    const positions = await importRepository.listLatestPositions(requestId);
+    const positions = await portfolioPositionService.listCurrent(requestId);
     const requestedIds = [...new Set(input.positionIds)];
     const requested = new Set(requestedIds);
     const selectedPositions = positions.filter((position) =>
@@ -106,19 +108,24 @@ export class PortfolioAllocationService {
     const uniquePositions = [
       ...new Map(
         selectedPositions.map((position) => [
-          getPortfolioAssetKey(position),
+          ("assetKey" in position ? position.assetKey : undefined) ??
+            getPortfolioAssetKey(position),
           position,
         ]),
       ).values(),
     ];
-    const assetKeys = uniquePositions.map(getPortfolioAssetKey);
+    const assetKeyFor = (position: (typeof uniquePositions)[number]) =>
+      ("assetKey" in position ? position.assetKey : undefined) ??
+      getPortfolioAssetKey(position);
+    const assetKeys = uniquePositions.map(assetKeyFor);
+
     const saved = await portfolioClassificationRepository.listByAssetKeys(
       assetKeys,
       requestId,
     );
     const savedByKey = new Map(saved.map((item) => [item.assetKey, item]));
     const classifications = uniquePositions.map((position) => {
-      const assetKey = getPortfolioAssetKey(position);
+      const assetKey = assetKeyFor(position);
       const current =
         savedByKey.get(assetKey) ?? inferPortfolioAssetClassification(position);
       return {

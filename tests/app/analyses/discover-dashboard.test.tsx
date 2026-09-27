@@ -395,4 +395,64 @@ describe("DiscoverDashboard", () => {
     await Promise.resolve();
     expect(document.body.textContent).toBe("");
   });
+  it("distinguishes financial, holding, and missing-evidence states", async () => {
+    const financial = {
+      ...payload.results[0],
+      cnpj: "222",
+      name: "Banco Exemplo",
+      assessment: {
+        ...payload.results[0].assessment,
+        sectorClassification: "financial",
+        methodologyStatus: "out_of_scope",
+        methodologyMessage: "Setor financeiro fora do escopo.",
+      },
+    };
+    const holding = {
+      ...payload.results[0],
+      cnpj: "333",
+      name: "Holding Exemplo",
+      assessment: {
+        ...payload.results[0].assessment,
+        sectorClassification: "ambiguous",
+        methodologyStatus: "not_assessed",
+        methodologyMessage: "Holding não avaliada.",
+      },
+    };
+    const noEvidence = {
+      ...payload.results[0],
+      cnpj: "444",
+      name: "Empresa sem período",
+      assessment: {
+        ...payload.results[0].assessment,
+        sectorClassification: "non_financial",
+        methodologyStatus: "evaluated",
+        period: null,
+        dimensions: [],
+        evidence: [],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          hasSuccessfulSync: true,
+          results: [financial, holding, noEvidence],
+        }),
+      ),
+    );
+    render(<DiscoverDashboard />);
+    expect(await screen.findByText("Banco Exemplo")).toBeTruthy();
+    expect(screen.getByText("Fora do escopo")).toBeTruthy();
+    expect(screen.getByText("Não avaliada · holding")).toBeTruthy();
+    expect(screen.getByText(/Período comparável indisponível/)).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /Ver evidências anuais/ }),
+    );
+    expect(
+      await screen.findByText(
+        /Não há exercícios completos comparáveis disponíveis/,
+      ),
+    ).toBeTruthy();
+  });
 });

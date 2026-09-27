@@ -1037,4 +1037,14 @@ describe("assessCompanyForDiscovery", () => {
     );
     expect(assessment.period).toBe("2025-12-31");
   });
+  it("keeps companies visible when positive-profit history is unavailable", () => {
+    const results = filterScreenerCompanies(
+      [company({ facts: [] })],
+      { positiveProfitYears: 2 },
+      now,
+    );
+    expect(results).toMatchObject([
+      { filterStatus: "not_assessed", metrics: { positiveProfitYears: 0 } },
+    ]);
+  });
 });

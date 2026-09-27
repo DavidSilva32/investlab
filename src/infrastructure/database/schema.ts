@@ -64,6 +64,23 @@ export const positionItems = pgTable("position_items", {
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
+export const manualPortfolioPositions = pgTable("manual_portfolio_positions", {
+  id: uuid().defaultRandom().primaryKey(),
+  assetKey: varchar({ length: 64 }).notNull().unique(),
+  product: text().notNull(),
+  assetCode: varchar({ length: 24 }),
+  institution: text(),
+  quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+  currency: varchar({ length: 3 }).notNull(),
+  unitPrice: numeric({ precision: 24, scale: 8 }),
+  totalValue: numeric({ precision: 24, scale: 8 }).notNull(),
+  valueBasis: varchar({ length: 16 }).notNull(),
+  positionDate: date().notNull(),
+  convertedValueBrl: numeric({ precision: 24, scale: 8 }),
+  conversionDate: date(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 export const cdbRateConfigurations = pgTable("cdb_rate_configurations", {
   id: uuid().defaultRandom().primaryKey(),
   assetCode: text().notNull().unique(),

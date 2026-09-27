@@ -7,6 +7,10 @@ const classifications = vi.hoisted(() => ({
 }));
 const estimates = vi.hoisted(() => ({ enrich: vi.fn() }));
 const targets = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
+const portfolioPositions = vi.hoisted(() => ({
+  listCurrent: vi.fn(),
+  listCurrentEnriched: vi.fn(),
+}));
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: repository,
 }));
@@ -21,6 +25,9 @@ vi.mock(
 );
 vi.mock("@/backend/services/cdb-estimate.service", () => ({
   cdbEstimateService: estimates,
+}));
+vi.mock("@/backend/services/portfolio-position.service", () => ({
+  portfolioPositionService: portfolioPositions,
 }));
 import { PortfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { getPortfolioAssetKey } from "@/backend/services/portfolio-classification";
@@ -42,7 +49,15 @@ const secondPosition = {
 };
 
 describe("PortfolioAllocationService", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    portfolioPositions.listCurrent.mockImplementation(() =>
+      repository.listLatestPositions(),
+    );
+    portfolioPositions.listCurrentEnriched.mockImplementation(async () =>
+      estimates.enrich(await repository.listLatestPositions()),
+    );
+  });
 
   it("loads and persists user allocation targets totaling 100%", async () => {
     const percentages = {
@@ -108,6 +123,40 @@ describe("PortfolioAllocationService", () => {
     }
     expect(targets.save).not.toHaveBeenCalled();
   });
+  it("uses a manual position stable key for saved classification", async () => {
+    const assetKey = "manual:0fefb48f-b6d9-4b8e-890d-95fe4fe7b305";
+    const manualPosition = {
+      ...position,
+      id: "0fefb48f-b6d9-4b8e-890d-95fe4fe7b305",
+      assetKey,
+      source: "MANUAL",
+      product: "ETF internacional",
+    };
+    portfolioPositions.listCurrentEnriched.mockResolvedValue([manualPosition]);
+    classifications.listByAssetKeys.mockResolvedValue([
+      {
+        assetKey,
+        assetClass: "Renda variável",
+        subClass: "ETF",
+        geography: "Exterior",
+      },
+    ]);
+
+    await expect(
+      new PortfolioAllocationService().getAllocation(),
+    ).resolves.toMatchObject([
+      {
+        assetKey,
+        classification: { assetClass: "Renda variável", geography: "Exterior" },
+        classificationSource: "manual",
+      },
+    ]);
+    expect(classifications.listByAssetKeys).toHaveBeenCalledWith(
+      [assetKey],
+      undefined,
+    );
+  });
+
   it("applies persisted adjustments before conservative import suggestions", async () => {
     repository.listLatestPositions.mockResolvedValue([position]);
     estimates.enrich.mockResolvedValue([{ ...position, estimatedValue: 100 }]);
@@ -274,4 +323,34 @@ describe("PortfolioAllocationService", () => {
       undefined,
     );
   });
+});
+
+it("uses the manual asset key while updating selected classifications", async () => {
+  const positionId = "0fefb48f-b6d9-4b8e-890d-95fe4fe7b305";
+  const assetKey = `manual:${positionId}`;
+  portfolioPositions.listCurrent.mockResolvedValue([
+    { ...position, id: positionId, assetKey, source: "MANUAL" },
+  ]);
+  classifications.listByAssetKeys.mockResolvedValue([]);
+  classifications.upsertMany.mockResolvedValue([]);
+
+  await expect(
+    new PortfolioAllocationService().updateClassifications({
+      positionIds: [positionId],
+      assetClass: "Renda variável",
+    }),
+  ).resolves.toEqual({ count: 1 });
+  expect(classifications.listByAssetKeys).toHaveBeenCalledWith(
+    [assetKey],
+    undefined,
+  );
+  expect(classifications.upsertMany).toHaveBeenCalledWith(
+    [
+      expect.objectContaining({
+        assetKey,
+        assetClass: "Renda variável",
+      }),
+    ],
+    undefined,
+  );
 });
