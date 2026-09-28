@@ -6,11 +6,13 @@ import {
   screenerIngestionRuns,
   screenerIssuers,
   screenerSecurities,
+  valuationAccountingFacts,
 } from "@/infrastructure/database/schema";
 import type {
   CvmCompanyRecord,
   ScreenerFactRecord,
 } from "@/backend/providers/screener-data.provider";
+import type { ValuationAccountingFactRecord } from "@/backend/providers/cvm-valuation-input.provider";
 
 const mocks = vi.hoisted(() => ({ getDatabaseClient: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
@@ -152,9 +154,101 @@ const fact = (row: number): ScreenerFactRecord => ({
   sourceRow: row,
 });
 
+const valuationFact: ValuationAccountingFactRecord = {
+  factKey: "valuation-fact-key",
+  issuerCnpj: "111",
+  documentType: "DFP",
+  documentId: "doc-1",
+  documentCategory: "DFP",
+  documentReceivedDate: "2026-03-20",
+  metadataMatch: "MATCHED",
+  referenceDate: "2025-12-31",
+  periodStart: "2025-01-01",
+  periodEnd: "2025-12-31",
+  statement: "DRE",
+  accountCode: "3.05",
+  accountLabel: "Resultado antes do resultado financeiro e dos tributos",
+  candidateKind: "EBIT_CANDIDATE",
+  rawValue: "1200",
+  currency: "REAL",
+  scale: "MIL",
+  statementGroup: "DF Consolidado - DRE",
+  exerciseOrder: "ÚLTIMO",
+  version: "1",
+  sourceFile: "dfp.zip#dre.csv",
+  sourceRow: 12,
+  archiveFetchedAt: new Date("2026-09-28T00:00:00.000Z"),
+  recordType: "REPORTED",
+  calculatedValue: null,
+  derivationMethod: null,
+  derivationCurrentFactKey: null,
+  derivationPreviousFactKey: null,
+};
 describe("ScreenerSyncRepository", () => {
   beforeEach(() => mocks.getDatabaseClient.mockReset());
 
+  it("does not open a database transaction for an empty valuation fact set", async () => {
+    setup();
+    const repository = new ScreenerSyncRepository();
+    await expect(
+      repository.saveValuationFacts({ runId: "valuation-run", facts: [] }),
+    ).resolves.toBeUndefined();
+    expect(mocks.getDatabaseClient).not.toHaveBeenCalled();
+  });
+  it("upserts valuation facts by source identity so CVM republications refresh values", async () => {
+    const { inserts } = setup();
+    await new ScreenerSyncRepository().saveValuationFacts({
+      runId: "valuation-run",
+      facts: [valuationFact],
+    });
+
+    const insert = inserts.find(
+      (entry) => entry.table === valuationAccountingFacts,
+    );
+    expect(insert?.values).toMatchObject([
+      {
+        factKey: valuationFact.factKey,
+        ingestionRunId: "valuation-run",
+        rawValue: "1200",
+        documentReceivedDate: "2026-03-20",
+        sourceFile: valuationFact.sourceFile,
+        sourceRow: 12,
+      },
+    ]);
+    const conflict = insert?.conflict as { set: Record<string, SQL> };
+    const toSql = (fragment: SQL) => new PgDialect().sqlToQuery(fragment).sql;
+    expect(toSql(conflict.set.rawValue!)).toContain("excluded.raw_value");
+    expect(toSql(conflict.set.documentReceivedDate!)).toContain(
+      "excluded.document_received_date",
+    );
+    expect(toSql(conflict.set.sourceRow!)).toContain("excluded.source_row");
+  });
+  it("reports valuation persistence errors without logging account contents", async () => {
+    const failure = new Error("sensitive accounting row");
+    setup(undefined, { table: valuationAccountingFacts, error: failure });
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(
+        new ScreenerSyncRepository().saveValuationFacts({
+          runId: "valuation-run",
+          facts: [valuationFact],
+        }),
+      ).rejects.toBe(failure);
+      expect(log).toHaveBeenCalledWith(
+        "screener_sync_persistence_failed",
+        expect.objectContaining({
+          stage: "valuation_accounting_facts_upsert",
+          runId: "valuation-run",
+          factCount: 1,
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "sensitive accounting row",
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
   it("reads latest and successful run history for the settings summary", async () => {
     const latestRun = {
       status: "FAILED",

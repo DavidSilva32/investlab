@@ -4,6 +4,7 @@ import {
   screenerIngestionRuns,
   screenerIssuers,
   screenerSecurities,
+  valuationAccountingFacts,
 } from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -12,6 +13,7 @@ import type {
   ScreenerFactRecord,
   BrapiStock,
 } from "@/backend/providers/screener-data.provider";
+import type { ValuationAccountingFactRecord } from "@/backend/providers/cvm-valuation-input.provider";
 
 export type ScreenerSecurityRecord = BrapiStock & {
   issuerCnpj: string;
@@ -24,6 +26,7 @@ type PersistenceStage =
   | "security_upsert"
   | "financial_facts_upsert"
   | "financial_facts_count"
+  | "valuation_accounting_facts_upsert"
   | "completion_update"
   | "transaction_commit"
   | "mark_failed"
@@ -373,6 +376,94 @@ export class ScreenerSyncRepository {
         })
         .where(eq(screenerIngestionRuns.id, runId)),
     );
+  }
+  async saveValuationFacts(input: {
+    runId: string;
+    facts: ValuationAccountingFactRecord[];
+  }) {
+    if (input.facts.length === 0) return;
+    const database = getDatabaseClient();
+    try {
+      await database.transaction(async (tx) => {
+        for (let offset = 0; offset < input.facts.length; offset += 500) {
+          const batch = input.facts.slice(offset, offset + 500);
+          await tx
+            .insert(valuationAccountingFacts)
+            .values(
+              batch.map((fact) => ({
+                factKey: fact.factKey,
+                issuerCnpj: fact.issuerCnpj,
+                ingestionRunId: input.runId,
+                documentType: fact.documentType,
+                documentId: fact.documentId,
+                documentCategory: fact.documentCategory,
+                documentReceivedDate: fact.documentReceivedDate,
+                metadataMatch: fact.metadataMatch,
+                referenceDate: fact.referenceDate,
+                periodStart: fact.periodStart,
+                periodEnd: fact.periodEnd,
+                statement: fact.statement,
+                accountCode: fact.accountCode,
+                accountLabel: fact.accountLabel,
+                candidateKind: fact.candidateKind,
+                rawValue: fact.rawValue,
+                currency: fact.currency,
+                scale: fact.scale,
+                statementGroup: fact.statementGroup,
+                exerciseOrder: fact.exerciseOrder,
+                version: fact.version,
+                sourceFile: fact.sourceFile,
+                sourceRow: fact.sourceRow,
+                archiveFetchedAt: fact.archiveFetchedAt,
+                recordType: fact.recordType,
+                calculatedValue: fact.calculatedValue,
+                derivationMethod: fact.derivationMethod,
+                derivationCurrentFactKey: fact.derivationCurrentFactKey,
+                derivationPreviousFactKey: fact.derivationPreviousFactKey,
+              })),
+            )
+            .onConflictDoUpdate({
+              target: valuationAccountingFacts.factKey,
+              set: {
+                ingestionRunId: sql`excluded.ingestion_run_id`,
+                documentId: sql`excluded.document_id`,
+                documentCategory: sql`excluded.document_category`,
+                documentReceivedDate: sql`excluded.document_received_date`,
+                metadataMatch: sql`excluded.metadata_match`,
+                referenceDate: sql`excluded.reference_date`,
+                periodStart: sql`excluded.period_start`,
+                periodEnd: sql`excluded.period_end`,
+                statement: sql`excluded.statement`,
+                accountCode: sql`excluded.account_code`,
+                accountLabel: sql`excluded.account_label`,
+                candidateKind: sql`excluded.candidate_kind`,
+                rawValue: sql`excluded.raw_value`,
+                currency: sql`excluded.currency`,
+                scale: sql`excluded.scale`,
+                statementGroup: sql`excluded.statement_group`,
+                exerciseOrder: sql`excluded.exercise_order`,
+                version: sql`excluded.version`,
+                sourceFile: sql`excluded.source_file`,
+                sourceRow: sql`excluded.source_row`,
+                archiveFetchedAt: sql`excluded.archive_fetched_at`,
+                recordType: sql`excluded.record_type`,
+                calculatedValue: sql`excluded.calculated_value`,
+                derivationMethod: sql`excluded.derivation_method`,
+                derivationCurrentFactKey: sql`excluded.derivation_current_fact_key`,
+                derivationPreviousFactKey: sql`excluded.derivation_previous_fact_key`,
+              },
+            });
+        }
+      });
+    } catch (error) {
+      logger.error("screener_sync_persistence_failed", {
+        stage: "valuation_accounting_facts_upsert",
+        runId: input.runId,
+        factCount: input.facts.length,
+        ...safeDatabaseErrorContext(error),
+      });
+      throw error;
+    }
   }
 }
 

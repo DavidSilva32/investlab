@@ -320,3 +320,56 @@ export const portfolioAssetClassifications = pgTable(
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
 );
+
+/* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
+export const valuationAccountingFacts = pgTable(
+  "valuation_accounting_facts",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    factKey: varchar({ length: 64 }).notNull().unique(),
+    issuerCnpj: varchar({ length: 14 })
+      .notNull()
+      .references(() => screenerIssuers.cnpj, { onDelete: "cascade" }),
+    ingestionRunId: uuid()
+      .notNull()
+      .references(() => screenerIngestionRuns.id),
+    documentType: varchar({ length: 8 }).notNull(),
+    documentId: text(),
+    documentCategory: varchar({ length: 8 }),
+    documentReceivedDate: date(),
+    metadataMatch: varchar({ length: 12 }).notNull(),
+    referenceDate: date().notNull(),
+    periodStart: date(),
+    periodEnd: date(),
+    statement: varchar({ length: 12 }).notNull(),
+    accountCode: varchar({ length: 24 }).notNull(),
+    accountLabel: text().notNull(),
+    candidateKind: varchar({ length: 48 }),
+    rawValue: text(),
+    currency: varchar({ length: 8 }),
+    scale: varchar({ length: 8 }),
+    statementGroup: text(),
+    exerciseOrder: varchar({ length: 16 }),
+    version: varchar({ length: 16 }).notNull(),
+    sourceFile: varchar({ length: 256 }).notNull(),
+    sourceRow: integer().notNull(),
+    archiveFetchedAt: timestamp({ withTimezone: true }).notNull(),
+    recordType: varchar({ length: 10 }).notNull(),
+    calculatedValue: text(),
+    derivationMethod: varchar({ length: 32 }),
+    derivationCurrentFactKey: varchar({ length: 64 }),
+    derivationPreviousFactKey: varchar({ length: 64 }),
+  },
+  (table) => [
+    index("valuation_accounting_issuer_reference_idx").on(
+      table.issuerCnpj,
+      table.referenceDate,
+    ),
+    index("valuation_accounting_received_idx").on(
+      table.issuerCnpj,
+      table.documentReceivedDate,
+    ),
+  ],
+);
+
+/* v8 ignore stop */

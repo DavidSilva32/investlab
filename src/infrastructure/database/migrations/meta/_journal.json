@@ -127,6 +127,13 @@
       "when": 1790539860094,
       "tag": "0017_sturdy_fat_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790604306698,
+      "tag": "0018_free_santa_claus",
+      "breakpoints": true
     }
   ]
 }
