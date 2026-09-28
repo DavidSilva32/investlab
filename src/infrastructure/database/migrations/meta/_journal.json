@@ -134,6 +134,20 @@
       "when": 1790604306698,
       "tag": "0018_free_santa_claus",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790636046610,
+      "tag": "0019_flat_luminals",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790636344323,
+      "tag": "0020_absurd_bulldozer",
+      "breakpoints": true
     }
   ]
 }

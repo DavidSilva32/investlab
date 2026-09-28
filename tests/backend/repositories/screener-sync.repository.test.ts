@@ -6,6 +6,7 @@ import {
   screenerIngestionRuns,
   screenerIssuers,
   screenerSecurities,
+  cvmShareCapitalFacts,
   valuationAccountingFacts,
 } from "@/infrastructure/database/schema";
 import type {
@@ -13,6 +14,7 @@ import type {
   ScreenerFactRecord,
 } from "@/backend/providers/screener-data.provider";
 import type { ValuationAccountingFactRecord } from "@/backend/providers/cvm-valuation-input.provider";
+import type { CvmShareCapitalRecord } from "@/backend/providers/cvm-share-capital.provider";
 
 const mocks = vi.hoisted(() => ({ getDatabaseClient: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
@@ -184,6 +186,26 @@ const valuationFact: ValuationAccountingFactRecord = {
   derivationCurrentFactKey: null,
   derivationPreviousFactKey: null,
 };
+
+const shareCapitalFact: CvmShareCapitalRecord = {
+  factKey: "cvm-share-capital-fact-key",
+  issuerCnpj: "111",
+  referenceDate: "2026-12-31",
+  documentVersion: 1,
+  documentId: "doc-fre-1",
+  documentReceivedDate: "2026-06-01",
+  metadataStatus: "MATCHED",
+  recordKind: "CAPITAL_SOCIAL_CLASS",
+  capitalId: "capital-1",
+  shareholderId: null,
+  sourceArchive: "fre_cia_aberta_2026.zip",
+  sourceFile: "fre_cia_aberta_capital_social_classe_acao_2026.csv",
+  sourceRow: 7,
+  rawFields: { Tipo_Classe_Acao_Preferencial: "Preferencial Classe A" },
+  tickerClassStatus: "UNAVAILABLE",
+  quantitySemantics: "REPORTED_CAPITAL_NOT_CURRENT_OUTSTANDING",
+  fetchedAt: "2026-09-28T12:00:00.000Z",
+};
 describe("ScreenerSyncRepository", () => {
   beforeEach(() => mocks.getDatabaseClient.mockReset());
 
@@ -222,6 +244,37 @@ describe("ScreenerSyncRepository", () => {
       "excluded.document_received_date",
     );
     expect(toSql(conflict.set.sourceRow!)).toContain("excluded.source_row");
+  });
+
+  it("persists FRE rows with report and source-lineage evidence in the sync transaction", async () => {
+    const { inserts } = setup();
+    await new ScreenerSyncRepository().saveFullSync({
+      runId: "run-1",
+      catalogCount: 1,
+      profileCount: 1,
+      issuers: [issuer],
+      securities: [],
+      facts: [],
+      shareCapitalFacts: [shareCapitalFact],
+    });
+
+    const insert = inserts.find(
+      (entry) => entry.table === cvmShareCapitalFacts,
+    );
+    expect(insert?.values).toMatchObject([
+      {
+        factKey: shareCapitalFact.factKey,
+        issuerCnpj: "111",
+        ingestionRunId: "run-1",
+        documentId: "doc-fre-1",
+        documentVersion: 1,
+        documentReceivedDate: "2026-06-01",
+        sourceArchive: "fre_cia_aberta_2026.zip",
+        sourceFile: shareCapitalFact.sourceFile,
+        sourceRow: 7,
+        rawFields: shareCapitalFact.rawFields,
+      },
+    ]);
   });
   it("reports valuation persistence errors without logging account contents", async () => {
     const failure = new Error("sensitive accounting row");

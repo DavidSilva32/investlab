@@ -4,6 +4,8 @@ import {
   screenerIngestionRuns,
   screenerIssuers,
   screenerSecurities,
+  cvmShareCapitalFacts,
+  cvmShareClassReconciliations,
   valuationAccountingFacts,
 } from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
@@ -14,6 +16,8 @@ import type {
   BrapiStock,
 } from "@/backend/providers/screener-data.provider";
 import type { ValuationAccountingFactRecord } from "@/backend/providers/cvm-valuation-input.provider";
+import type { CvmShareCapitalRecord } from "@/backend/providers/cvm-share-capital.provider";
+import type { ShareClassReconciliationRecord } from "@/backend/services/screener-share-class-reconciliation";
 
 export type ScreenerSecurityRecord = BrapiStock & {
   issuerCnpj: string;
@@ -26,6 +30,7 @@ type PersistenceStage =
   | "security_upsert"
   | "financial_facts_upsert"
   | "financial_facts_count"
+  | "share_capital_facts_upsert"
   | "valuation_accounting_facts_upsert"
   | "completion_update"
   | "transaction_commit"
@@ -141,6 +146,7 @@ export class ScreenerSyncRepository {
     issuers: CvmCompanyRecord[];
     securities: ScreenerSecurityRecord[];
     facts: ScreenerFactRecord[];
+    shareCapitalFacts?: CvmShareCapitalRecord[];
   }) {
     const database = getDatabaseClient();
     let stage: PersistenceStage = "transaction";
@@ -325,6 +331,55 @@ export class ScreenerSyncRepository {
           persistedFactCount = Number(emptyResult?.count ?? 0);
         }
 
+        for (
+          let offset = 0;
+          offset < (input.shareCapitalFacts?.length ?? 0);
+          offset += 500
+        ) {
+          const batch = input.shareCapitalFacts!.slice(offset, offset + 500);
+          stage = "share_capital_facts_upsert";
+          operationContext = {
+            batchIndex: Math.floor(offset / 500) + 1,
+            batchSize: batch.length,
+            shareCapitalFactCount: input.shareCapitalFacts!.length,
+          };
+          operationStartedAt = Date.now();
+          await tx
+            .insert(cvmShareCapitalFacts)
+            .values(
+              batch.map((fact) => ({
+                factKey: fact.factKey,
+                issuerCnpj: fact.issuerCnpj,
+                ingestionRunId: input.runId,
+                referenceDate: fact.referenceDate,
+                documentVersion: fact.documentVersion,
+                documentId: fact.documentId,
+                documentReceivedDate: fact.documentReceivedDate,
+                metadataStatus: fact.metadataStatus,
+                recordKind: fact.recordKind,
+                capitalId: fact.capitalId,
+                shareholderId: fact.shareholderId,
+                sourceArchive: fact.sourceArchive,
+                sourceFile: fact.sourceFile,
+                sourceRow: fact.sourceRow,
+                rawFields: fact.rawFields,
+                tickerClassStatus: fact.tickerClassStatus,
+                quantitySemantics: fact.quantitySemantics,
+                fetchedAt: new Date(fact.fetchedAt),
+              })),
+            )
+            .onConflictDoUpdate({
+              target: cvmShareCapitalFacts.factKey,
+              set: {
+                ingestionRunId: sql`excluded."ingestionRunId"`,
+                documentReceivedDate: sql`excluded."documentReceivedDate"`,
+                metadataStatus: sql`excluded."metadataStatus"`,
+                rawFields: sql`excluded."rawFields"`,
+                fetchedAt: sql`excluded."fetchedAt"`,
+              },
+            });
+        }
+
         stage = "completion_update";
         operationContext = {
           issuerCount: input.issuers.length,
@@ -463,6 +518,84 @@ export class ScreenerSyncRepository {
         ...safeDatabaseErrorContext(error),
       });
       throw error;
+    }
+  }
+
+  async getShareCapitalFacts(runId: string): Promise<CvmShareCapitalRecord[]> {
+    const facts = await getDatabaseClient()
+      .select()
+      .from(cvmShareCapitalFacts)
+      .where(eq(cvmShareCapitalFacts.ingestionRunId, runId));
+    return facts.map((fact) => ({
+      factKey: fact.factKey,
+      issuerCnpj: fact.issuerCnpj,
+      referenceDate: fact.referenceDate,
+      documentVersion: fact.documentVersion,
+      documentId: fact.documentId,
+      documentReceivedDate: fact.documentReceivedDate,
+      metadataStatus:
+        fact.metadataStatus as CvmShareCapitalRecord["metadataStatus"],
+      recordKind: fact.recordKind as CvmShareCapitalRecord["recordKind"],
+      capitalId: fact.capitalId,
+      shareholderId: fact.shareholderId,
+      sourceArchive: fact.sourceArchive,
+      sourceFile: fact.sourceFile,
+      sourceRow: fact.sourceRow,
+      rawFields: fact.rawFields,
+      tickerClassStatus: fact.tickerClassStatus as "UNAVAILABLE",
+      quantitySemantics: fact.quantitySemantics,
+      fetchedAt: fact.fetchedAt.toISOString(),
+    }));
+  }
+
+  async saveShareClassReconciliations(
+    runId: string,
+    records: ShareClassReconciliationRecord[],
+  ) {
+    if (records.length === 0) return;
+    const reconciledAt = new Date();
+    const database = getDatabaseClient();
+    for (let offset = 0; offset < records.length; offset += 500) {
+      const batch = records.slice(offset, offset + 500);
+      await database
+        .insert(cvmShareClassReconciliations)
+        .values(
+          batch.map((record) => ({
+            ingestionRunId: runId,
+            issuerCnpj: record.issuerCnpj,
+            ticker: record.ticker,
+            instrumentSubtype: record.instrumentSubtype,
+            issuerIdentityStatus: record.issuerIdentityStatus,
+            tickerClassStatus: record.tickerClassStatus,
+            unitCompositionStatus: record.unitCompositionStatus,
+            freDocumentAlignmentStatus: record.freDocumentAlignmentStatus,
+            crossSourceAlignmentStatus: record.crossSourceAlignmentStatus,
+            effectiveDateStatus: record.effectiveDateStatus,
+            eventHistoryStatus: record.eventHistoryStatus,
+            treasuryStatus: record.treasuryStatus,
+            reasons: record.reasons,
+            evidence: record.evidence,
+            reconciledAt,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [
+            cvmShareClassReconciliations.ingestionRunId,
+            cvmShareClassReconciliations.ticker,
+          ],
+          set: {
+            tickerClassStatus: sql`excluded."tickerClassStatus"`,
+            unitCompositionStatus: sql`excluded."unitCompositionStatus"`,
+            freDocumentAlignmentStatus: sql`excluded."freDocumentAlignmentStatus"`,
+            crossSourceAlignmentStatus: sql`excluded."crossSourceAlignmentStatus"`,
+            effectiveDateStatus: sql`excluded."effectiveDateStatus"`,
+            eventHistoryStatus: sql`excluded."eventHistoryStatus"`,
+            treasuryStatus: sql`excluded."treasuryStatus"`,
+            reasons: sql`excluded.reasons`,
+            evidence: sql`excluded.evidence`,
+            reconciledAt: sql`excluded."reconciledAt"`,
+          },
+        });
     }
   }
 }
