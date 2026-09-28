@@ -487,6 +487,30 @@ describe("ScreenerSyncService", () => {
     expect(context.repository.saveFullSync).toHaveBeenCalledOnce();
     expect(context.repository.markFailed).not.toHaveBeenCalled();
   });
+  it("logs an opaque valuation archive failure without exposing its value", async () => {
+    const context = setup({
+      catalog: [stock("PETR3")],
+      valuationProvider: {
+        getArchive: vi.fn().mockRejectedValue("opaque source failure"),
+      },
+    });
+    const log = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).resolves.toMatchObject({
+        valuationAccountingStatus: "FAILED",
+        valuationAccountingFacts: 0,
+      });
+      expect(log).toHaveBeenCalledWith(
+        "screener_valuation_accounting_ingestion_failed",
+        expect.objectContaining({ errorType: "unknown" }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "opaque source failure",
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
   it("synchronizes exact CNPJ issuers, stock classes, fractional aliases and latest consolidated facts sequentially", async () => {
     const context = setup();
     const result = await context.service.sync();

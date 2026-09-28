@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { Unzip, UnzipInflate } from "fflate";
 
 const cvmBaseUrl = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC";
-const statementNames = new Set(["BPA", "BPP", "DRE", "DFC_MI"]);
 
 export type ValuationDocumentType = "DFP" | "ITR";
 export type ValuationStatement = "BPA" | "BPP" | "DRE" | "DFC_MI";
@@ -108,8 +107,8 @@ function normalizeCnpj(value: string | undefined) {
   return (value ?? "").replace(/\D/g, "");
 }
 
-function normalizeVersion(value: string | undefined) {
-  const normalized = value?.trim() ?? "";
+function normalizeVersion(value: string) {
+  const normalized = value.trim();
   const parsed = Number(normalized.replace(",", "."));
   return Number.isFinite(parsed) ? String(parsed) : normalized;
 }
@@ -130,11 +129,7 @@ function normalizeLabel(value: string) {
 
 function statementFromFile(name: string): ValuationStatement | null {
   const match = name.match(/_(BPA|BPP|DRE|DFC_MI)_con_/i);
-  if (!match) return null;
-  const statement = match[1]!.toUpperCase();
-  return statementNames.has(statement)
-    ? (statement as ValuationStatement)
-    : null;
+  return match ? (match[1]!.toUpperCase() as ValuationStatement) : null;
 }
 
 function documentSummaryType(
@@ -144,7 +139,7 @@ function documentSummaryType(
   return new RegExp(
     `^${documentType.toLowerCase()}_cia_aberta_\\d{4}\\.csv$`,
     "i",
-  ).test(name.split("/").at(-1) ?? name);
+  ).test(name.split("/").at(-1)!);
 }
 
 function candidateKind(
@@ -187,7 +182,6 @@ function candidateKind(
       ? "BALANCE_CURRENT_LIABILITY_CANDIDATE"
       : "BALANCE_NON_CURRENT_LIABILITY_CANDIDATE";
   }
-  if (statement !== "DFC_MI") return null;
   if (/^6\.01(?:\.|$)/.test(accountCode)) {
     if (
       /\b(CONTAS A RECEBER|ESTOQUES|FORNECEDORES|OBRIGACOES TRIBUTARIAS|SALARIOS E ENCARGOS|OUTROS ATIVOS|OUTROS PASSIVOS)\b/.test(
@@ -199,18 +193,15 @@ function candidateKind(
       return "DEPRECIATION_AMORTIZATION_CANDIDATE";
     return "OPERATING_CASH_FLOW_CANDIDATE";
   }
-  if (/^6\.02(?:\.|$)/.test(accountCode)) {
-    if (
-      /\b(AQUISICAO|AQUISICOES|ADICAO|ADICOES)\b/.test(normalized) &&
-      /\b(IMOBILIZADO|INTANGIVEL)\b/.test(normalized) &&
-      !/\b(EMPRESA|NEGOCIO|CONTROLADA|COLIGADA|PARTICIPACAO|INVESTIDA|INVESTIMENTOS)\b/.test(
-        normalized,
-      )
+  if (
+    /\b(AQUISICAO|AQUISICOES|ADICAO|ADICOES)\b/.test(normalized) &&
+    /\b(IMOBILIZADO|INTANGIVEL)\b/.test(normalized) &&
+    !/\b(EMPRESA|NEGOCIO|CONTROLADA|COLIGADA|PARTICIPACAO|INVESTIDA|INVESTIMENTOS)\b/.test(
+      normalized,
     )
-      return "CAPEX_CANDIDATE";
-    return "INVESTING_CASH_FLOW_CANDIDATE";
-  }
-  return null;
+  )
+    return "CAPEX_CANDIDATE";
+  return "INVESTING_CASH_FLOW_CANDIDATE";
 }
 function key(...parts: string[]) {
   return parts.join("\u001f");
@@ -299,8 +290,8 @@ function reportedFact(
   };
 }
 
-function parseDecimal(value: string | null) {
-  const trimmed = value?.trim() ?? "";
+function parseDecimal(value: string) {
+  const trimmed = value.trim();
   if (!trimmed) return null;
   const normalized = trimmed.includes(",")
     ? trimmed.replace(/\./g, "").replace(",", ".")
@@ -388,7 +379,7 @@ function latestAsOf(
 function derivedFact(
   current: ValuationAccountingFactRecord,
   previous: ValuationAccountingFactRecord,
-  method: ValuationAccountingFactRecord["derivationMethod"],
+  method: Exclude<ValuationAccountingFactRecord["derivationMethod"], null>,
   periodStart: string,
   periodEnd: string,
 ) {
@@ -396,12 +387,7 @@ function derivedFact(
   if (calculatedValue === null) return null;
   return {
     ...current,
-    factKey: factKey([
-      "DERIVED",
-      method ?? "",
-      current.factKey,
-      previous.factKey,
-    ]),
+    factKey: factKey(["DERIVED", method, current.factKey, previous.factKey]),
     periodStart,
     periodEnd,
     recordType: "DERIVED" as const,
@@ -524,7 +510,7 @@ async function parseAccountingArchive(
   let readerDone = false;
   let settled = false;
   let resolveComplete: () => void;
-  let rejectComplete: (error: unknown) => void = () => undefined;
+  let rejectComplete!: (error: unknown) => void;
   const complete = new Promise<void>((resolve, reject) => {
     resolveComplete = resolve;
     rejectComplete = reject;
@@ -621,7 +607,7 @@ async function parseAccountingArchive(
       }
       pending += decoder.decode(data, { stream: !final });
       const lines = pending.split(/\r?\n/);
-      pending = lines.pop() ?? "";
+      pending = lines.pop()!;
       for (const line of lines) onLine(line);
       if (final) {
         if (pending) onLine(pending);
@@ -643,10 +629,8 @@ async function parseAccountingArchive(
     readerDone = true;
     finish();
   } catch (error) {
-    if (!settled) {
-      settled = true;
-      rejectComplete(error);
-    }
+    settled = true;
+    rejectComplete(error);
   }
   await complete;
   return rawRows.map((row) =>
