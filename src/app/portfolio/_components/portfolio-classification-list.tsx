@@ -35,6 +35,12 @@ type Classification = {
 export type PortfolioPosition = {
   id: string;
   product: string;
+  assetCode?: string | null;
+  issuer?: string | null;
+  source?: string;
+  referenceDate?: string | null;
+  conversionDate?: string | null;
+  estimatedThrough?: string | null;
   institution: string | null;
   estimatedValue?: number | null;
   totalValue: string | null;

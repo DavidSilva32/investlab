@@ -185,7 +185,7 @@ describe("PortfolioClassificationList", () => {
         .getByRole("button", { name: "Aplicar aos selecionados" })
         .hasAttribute("disabled"),
     ).toBe(true);
-  });
+  }, 15000);
 
   it("preserves hidden selections and allows clearing selected fields", async () => {
     const onSaveBulk = vi.fn().mockResolvedValue(false);

@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PortfolioOverview } from "@/app/portfolio/_components/portfolio-overview";
@@ -27,7 +27,7 @@ describe("PortfolioOverview", () => {
     expect(html).toContain(
       "A alocação pode incluir estimativas de CDB calculadas pelo CDI.",
     );
-    expect(html).toContain("Concentração relevante");
+    expect(html).toContain("Maior posição observada");
     expect(html).toContain("01/01/2030");
   });
 
@@ -91,8 +91,8 @@ describe("PortfolioOverview", () => {
         ]}
       />,
     );
-    expect(html).toContain("Maior exposição");
-    expect(html).toContain("Diversificação institucional");
+    expect(html).toContain("Maior posição observada");
+    expect(html).toContain("Instituições representadas");
     expect(html).toContain("Valor não informado");
   });
 });

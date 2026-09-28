@@ -137,12 +137,8 @@ export function PortfolioOverview({
             {concentration ? (
               <Insight
                 icon={ShieldAlert}
-                title={
-                  concentration.percentage >= 50
-                    ? "Concentração relevante"
-                    : "Maior exposição"
-                }
-                description={`${concentration.product} representa ${concentration.percentage.toFixed(1)}% do patrimônio atual.`}
+                title={"Maior posição observada"}
+                description={`${concentration.product} representa ${concentration.percentage.toFixed(1)}% do patrimônio com valor disponível. A participação isolada não mede diversificação.`}
               />
             ) : (
               <EmptyInsight message="Importe uma posição com valor atual para analisar concentração." />
@@ -157,8 +153,8 @@ export function PortfolioOverview({
             {insights.institutions > 1 && (
               <Insight
                 icon={Landmark}
-                title="Diversificação institucional"
-                description={`Seu patrimônio está distribuído entre ${insights.institutions} instituições.`}
+                title="Instituições representadas"
+                description={`${insights.institutions} instituições têm posições com valor disponível. A contagem não mede diversificação.`}
               />
             )}
           </CardContent>
