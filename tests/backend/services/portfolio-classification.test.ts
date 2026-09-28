@@ -80,6 +80,14 @@ describe("portfolio asset classification", () => {
       geography: null,
     });
   });
+  it("classifies general investment funds without guessing geography", () => {
+    const product = "Fundo de investimento em infraestrutura";
+    expect(inferPortfolioAssetClassification({ ...asset, product })).toEqual({
+      assetClass: "Fundos",
+      subClass: product,
+      geography: null,
+    });
+  });
   it("leaves unsupported class and geography unknown", () => {
     expect(
       inferPortfolioAssetClassification({

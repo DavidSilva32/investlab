@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,14 @@ import {
 } from "@/components/ui/select";
 import type { PortfolioPosition } from "./portfolio-overview";
 import { formatCurrency, formatQuantity } from "@/lib/utils";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 
 type ManualPosition = PortfolioPosition & {
   source?: string;
@@ -135,6 +143,71 @@ function Field({
         step={step}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+function currencyPrefix(currency: string) {
+  if (currency === "BRL") return "R$ ";
+  if (currency === "USD") return "US$ ";
+  if (currency === "EUR") return "€ ";
+  return `${currency} `;
+}
+
+function AmountField({
+  id,
+  label,
+  value,
+  onChange,
+  prefix,
+  required = false,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  prefix: string;
+  required?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const selectionRef = useRef<CurrencyInputSelection | null>(null);
+  const displayValue = formatBrazilianAmountValue(value, prefix);
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    const selection = selectionRef.current;
+    if (!input || !selection) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    selectionRef.current = null;
+  }, [displayValue]);
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        value={displayValue}
+        required={required}
+        onChange={(event) => {
+          const rawValue = event.target.value;
+          const nextValue = formatAmountInput(rawValue, prefix);
+          const start = event.target.selectionStart!;
+          const end = event.target.selectionEnd!;
+          selectionRef.current = getCurrencyInputSelection(
+            rawValue,
+            nextValue,
+            start,
+            end,
+            event.target.selectionDirection,
+          );
+          onChange(nextValue ? String(parseBrazilianAmount(nextValue)) : "");
+        }}
       />
     </div>
   );
@@ -482,21 +555,19 @@ export function ManualPositionManager({
                 </Select>
               </div>
               {values.valueBasis === "unit_price" ? (
-                <Field
+                <AmountField
                   id="manual-unit-price"
                   label={`Preço por unidade (${values.currency})`}
-                  type="number"
-                  step="any"
+                  prefix={currencyPrefix(values.currency)}
                   value={values.unitPrice}
                   onChange={(value) => set("unitPrice", value)}
                   required
                 />
               ) : (
-                <Field
+                <AmountField
                   id="manual-total-value"
                   label={`Valor total (${values.currency})`}
-                  type="number"
-                  step="any"
+                  prefix={currencyPrefix(values.currency)}
                   value={values.totalValue}
                   onChange={(value) => set("totalValue", value)}
                   required
@@ -511,11 +582,10 @@ export function ManualPositionManager({
               />
               {values.currency !== "BRL" && (
                 <>
-                  <Field
+                  <AmountField
                     id="manual-converted-value"
                     label="Valor convertido para BRL (opcional)"
-                    type="number"
-                    step="any"
+                    prefix="R$ "
                     value={values.convertedValueBrl}
                     onChange={(value) => set("convertedValueBrl", value)}
                   />

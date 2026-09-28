@@ -147,8 +147,11 @@ describe("ManualPositionManager", () => {
       target: { value: "1" },
     });
     fireEvent.change(screen.getByLabelText("Valor total (BRL)"), {
-      target: { value: "400" },
+      target: { value: "546444" },
     });
+    expect(
+      (screen.getByLabelText("Valor total (BRL)") as HTMLInputElement).value,
+    ).toBe("R$ 5.464,44");
     fireEvent.change(screen.getByLabelText("Data do valor"), {
       target: { value: "20/09/2026" },
     });
@@ -169,7 +172,7 @@ describe("ManualPositionManager", () => {
           currency: "BRL",
           valueBasis: "total_value",
           unitPrice: null,
-          totalValue: 400,
+          totalValue: 5464.44,
           positionDate: "2026-09-20",
           convertedValueBrl: null,
           conversionDate: null,
@@ -208,7 +211,7 @@ describe("ManualPositionManager", () => {
       target: { value: "2" },
     });
     fireEvent.change(screen.getByLabelText("Preço por unidade (USD)"), {
-      target: { value: "50" },
+      target: { value: "5000" },
     });
     fireEvent.change(screen.getByLabelText("Data do valor"), {
       target: { value: "20/09/2026" },
@@ -216,9 +219,16 @@ describe("ManualPositionManager", () => {
     fireEvent.change(
       screen.getByLabelText("Valor convertido para BRL (opcional)"),
       {
-        target: { value: "600" },
+        target: { value: "5654684" },
       },
     );
+    expect(
+      (
+        screen.getByLabelText(
+          "Valor convertido para BRL (opcional)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("R$ 56.546,84");
     fireEvent.change(screen.getByLabelText("Data da conversão"), {
       target: { value: "21/09/2026" },
     });
@@ -237,7 +247,7 @@ describe("ManualPositionManager", () => {
       valueBasis: "unit_price",
       unitPrice: 50,
       totalValue: null,
-      convertedValueBrl: 600,
+      convertedValueBrl: 56546.84,
       conversionDate: "2026-09-21",
     });
   }, 10000);
@@ -258,12 +268,55 @@ describe("ManualPositionManager", () => {
           "Valor convertido para BRL (opcional)",
         ) as HTMLInputElement
       ).value,
-    ).toBe("120");
+    ).toBe("R$ 120,00");
     submit();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][1].method).toBe("PATCH");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).id).toBe(row.id);
     expect(toast.success).toHaveBeenCalledWith("Posição atualizada.");
+  });
+
+  it("formats the manual amount using the selected EUR currency", () => {
+    render(<ManualPositionManager positions={[{ ...row, currency: "EUR" }]} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Editar ETF internacional" }),
+    );
+    expect(
+      (screen.getByLabelText("Preço por unidade (EUR)") as HTMLInputElement)
+        .value,
+    ).toBe("€ 50,00");
+  });
+
+  it("preserves an unlisted currency code while formatting manual amounts", () => {
+    render(<ManualPositionManager positions={[{ ...row, currency: "JPY" }]} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Editar ETF internacional" }),
+    );
+    const amount = screen.getByLabelText(
+      "Preço por unidade (JPY)",
+    ) as HTMLInputElement;
+    expect(amount.value).toBe("JPY 50,00");
+    fireEvent.change(amount, { target: { value: "" } });
+    expect(amount.value).toBe("");
+    fireEvent.change(amount, { target: { value: "123456" } });
+    expect(amount.value).toBe("JPY 1.234,56");
+  });
+
+  it("opens manual positions with missing classification metadata as unclassified", () => {
+    const unclassified = {
+      ...row,
+      classification: { assetClass: null, subClass: null, geography: null },
+    };
+    render(<ManualPositionManager positions={[unclassified]} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Editar ETF internacional" }),
+    );
+    expect(screen.getByLabelText("Classe").textContent).toContain(
+      "Selecione uma classe",
+    );
+    expect(screen.getByLabelText("Geografia").textContent).toContain(
+      "Não informado",
+    );
   });
 
   it("uses fallback values when optional manual position fields are absent", async () => {
@@ -297,7 +350,7 @@ describe("ManualPositionManager", () => {
     });
     await choose(user, 0, /Renda variável/);
     fireEvent.change(screen.getByLabelText("Valor total (BRL)"), {
-      target: { value: "100" },
+      target: { value: "10000" },
     });
     fireEvent.change(screen.getByLabelText("Data do valor"), {
       target: { value: "20/09/2026" },

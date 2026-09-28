@@ -632,17 +632,11 @@ describe("PortfolioAllocation", () => {
 
     await user.click(await screen.findByRole("checkbox", { name: "Fundos" }));
     await user.click(
-      await screen.findByRole("button", { name: "Pular por agora" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Pular por agora" }));
-    await user.click(
-      screen.getByRole("button", {
-        name: /Revisar estas classes nas minhas metas/,
-      }),
+      screen.getByRole("button", { name: /Revisar minhas metas/ }),
     );
 
     const reference = screen
-      .getByText(/Classes escolhidas como refer.ncia manual/)
+      .getByText(/Classes que voc. escolheu considerar/)
       .closest("aside");
     expect(reference).toBeTruthy();
     expect(reference?.textContent).toContain("Fundos");
@@ -652,11 +646,21 @@ describe("PortfolioAllocation", () => {
         .getByRole("spinbutton", { name: "Meta de Renda fixa" })
         .getAttribute("value"),
     ).toBe("70");
+    const fundTarget = screen.getByRole("spinbutton", {
+      name: "Meta de Fundos",
+    });
+    await user.clear(fundTarget);
+    await user.type(fundTarget, "25");
+    await user.click(
+      screen.getByRole("button", { name: /Revisar minhas metas/ }),
+    );
     expect(
-      screen
-        .getByRole("spinbutton", { name: "Meta de Fundos" })
-        .getAttribute("value"),
-    ).toBe("30");
+      (
+        screen.getByRole("spinbutton", {
+          name: "Meta de Fundos",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("25");
     expect(
       fetchMock.mock.calls.some(([, init]) => init?.method === "PUT"),
     ).toBe(false);
@@ -681,17 +685,11 @@ describe("PortfolioAllocation", () => {
 
     await user.click(await screen.findByRole("checkbox", { name: "Fundos" }));
     await user.click(
-      await screen.findByRole("button", { name: "Pular por agora" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Pular por agora" }));
-    await user.click(
-      screen.getByRole("button", {
-        name: /Revisar estas classes nas minhas metas/,
-      }),
+      screen.getByRole("button", { name: /Revisar minhas metas/ }),
     );
 
     const reference = screen
-      .getByText(/Classes escolhidas como refer.ncia manual/)
+      .getByText(/Classes que voc. escolheu considerar/)
       .closest("aside");
     expect(reference?.textContent).toContain("Fundos");
     expect(

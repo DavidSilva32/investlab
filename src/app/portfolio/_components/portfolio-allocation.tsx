@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,10 @@ import {
   type BulkClassification,
   type PortfolioPosition,
 } from "@/app/portfolio/_components/portfolio-classification-list";
-import { PortfolioAllocationTargets } from "@/app/portfolio/_components/portfolio-allocation-targets";
+import {
+  PortfolioAllocationTargets,
+  type PortfolioAllocationTargetsHandle,
+} from "@/app/portfolio/_components/portfolio-allocation-targets";
 import { StrategyGuidance } from "@/app/portfolio/_components/strategy-guidance";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import { formatCurrency } from "@/lib/utils";
@@ -45,7 +48,7 @@ export function PortfolioAllocation() {
   const [error, setError] = useState<string | null>(null);
   const [grouping, setGrouping] = useState<Grouping>("assetClass");
   const [saving, setSaving] = useState(false);
-  const [editTargetsRequest, setEditTargetsRequest] = useState(0);
+  const targetEditorRef = useRef<PortfolioAllocationTargetsHandle | null>(null);
   const [classesForReview, setClassesForReview] = useState<
     (typeof portfolioAssetClassOptions)[number][]
   >([]);
@@ -138,6 +141,11 @@ export function PortfolioAllocation() {
       setSaving(false);
     }
   }
+  function openStrategyTargets(classes: AssetClass[]) {
+    setClassesForReview(classes);
+    targetEditorRef.current?.openEditor();
+  }
+
   async function saveSingle(position: PortfolioPosition, formData: FormData) {
     const assetClass = formData.get("assetClass") as string | null;
     const geography = formData.get("geography") as string | null;
@@ -188,19 +196,13 @@ export function PortfolioAllocation() {
             <p className="text-sm text-muted-foreground">
               Importe posições para visualizar a classificação e a alocação.
             </p>
-            <StrategyGuidance
-              onOpenTargets={(classes) => {
-                setClassesForReview(classes);
-                setEditTargetsRequest((current) => current + 1);
-              }}
-            />
+            <StrategyGuidance onOpenTargets={openStrategyTargets} />
             <PortfolioAllocationTargets
-              key={editTargetsRequest}
+              ref={targetEditorRef}
               positions={positions}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}
-              editingRequested={editTargetsRequest > 0}
               classesForReview={classesForReview}
             />
           </>
@@ -279,19 +281,13 @@ export function PortfolioAllocation() {
                 Não há valores atuais para calcular a distribuição.
               </p>
             )}
-            <StrategyGuidance
-              onOpenTargets={(classes) => {
-                setClassesForReview(classes);
-                setEditTargetsRequest((current) => current + 1);
-              }}
-            />
+            <StrategyGuidance onOpenTargets={openStrategyTargets} />
             <PortfolioAllocationTargets
-              key={editTargetsRequest}
+              ref={targetEditorRef}
               positions={positions}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}
-              editingRequested={editTargetsRequest > 0}
               classesForReview={classesForReview}
             />
             <PortfolioClassificationList

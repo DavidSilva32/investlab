@@ -117,6 +117,40 @@ describe("ManualPortfolioPositionService", () => {
     ).rejects.toBeInstanceOf(ApplicationError);
   });
 
+  it("fills omitted classification fields with null when one field is supplied", async () => {
+    repository.create.mockImplementation(async (value) => ({
+      ...saved(),
+      ...value,
+    }));
+
+    await new ManualPortfolioPositionService().create({
+      ...input,
+      assetClass: "Fundos",
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      { assetClass: "Fundos", subClass: null, geography: null },
+    );
+  });
+  it("normalizes a missing asset class when a subclass is supplied", async () => {
+    repository.create.mockImplementation(async (value) => ({
+      ...saved(),
+      ...value,
+    }));
+
+    const result = await new ManualPortfolioPositionService().create({
+      ...input,
+      subClass: "Fundo de crédito",
+    });
+
+    expect(result.classification).toEqual({
+      assetClass: null,
+      subClass: "Fundo de crédito",
+      geography: null,
+    });
+  });
   it("uses only an explicitly dated user conversion in the BRL portfolio value", async () => {
     repository.create.mockImplementation(async (value) => ({
       ...saved(),
