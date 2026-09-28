@@ -3,9 +3,15 @@ import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   manualPortfolioPositionRepository,
+  type ManualPortfolioPositionClassification,
   type ManualPortfolioPositionInput,
 } from "@/backend/repositories/manual-portfolio-position.repository";
+import { portfolioClassificationRepository } from "@/backend/repositories/portfolio-classification.repository";
 import { logger } from "@/infrastructure/logging/logger";
+import {
+  portfolioAssetClassOptions,
+  portfolioAssetGeographyOptions,
+} from "@/lib/portfolio-classification-options";
 
 const maximumAmount = 1_000_000_000_000;
 const dateSchema = z
@@ -22,6 +28,9 @@ const positionInputSchema = z
   .object({
     product: z.string().trim().min(1).max(160),
     assetCode: z.string().trim().max(24).optional().nullable(),
+    assetClass: z.enum(portfolioAssetClassOptions).nullable().optional(),
+    subClass: z.string().trim().max(120).nullable().optional(),
+    geography: z.enum(portfolioAssetGeographyOptions).nullable().optional(),
     institution: z.string().trim().max(160).optional().nullable(),
     quantity: z.number().finite().positive().max(maximumAmount),
     currency: z
@@ -89,6 +98,23 @@ function decimalValue(value: number) {
   return value.toFixed(8);
 }
 
+const getClassification = (
+  value: z.infer<typeof positionInputSchema>,
+): ManualPortfolioPositionClassification | undefined => {
+  if (
+    value.assetClass === undefined &&
+    value.subClass === undefined &&
+    value.geography === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    assetClass: value.assetClass ?? null,
+    subClass: value.subClass ?? null,
+    geography: value.geography ?? null,
+  };
+};
+
 export function toPortfolioPosition(
   record: Awaited<
     ReturnType<typeof manualPortfolioPositionRepository.list>
@@ -129,6 +155,17 @@ export function toPortfolioPosition(
 export class ManualPortfolioPositionService {
   async list(requestId?: string) {
     const positions = await manualPortfolioPositionRepository.list(requestId);
+    const classifications =
+      await portfolioClassificationRepository.listByAssetKeys(
+        positions.map((position) => position.assetKey),
+        requestId,
+      );
+    const classificationsByAssetKey = new Map(
+      classifications.map((classification) => [
+        classification.assetKey,
+        classification,
+      ]),
+    );
     const counts = new Map<string, number>();
     for (const position of positions) {
       const key = position.assetCode?.toLocaleUpperCase("pt-BR");
@@ -136,6 +173,11 @@ export class ManualPortfolioPositionService {
     }
     return positions.map((position) => ({
       ...toPortfolioPosition(position),
+      classification: classificationsByAssetKey.get(position.assetKey) ?? {
+        assetClass: null,
+        subClass: null,
+        geography: null,
+      },
       duplicateAssetCode:
         position.assetCode !== null &&
         counts.get(position.assetCode.toLocaleUpperCase("pt-BR"))! > 1,
@@ -184,12 +226,20 @@ export class ManualPortfolioPositionService {
     const saved = await manualPortfolioPositionRepository.create(
       input,
       requestId,
+      getClassification(value),
     );
     logger.info("manual_portfolio_position_created", {
       requestId,
       positionId: saved.id,
     });
-    return toPortfolioPosition(saved);
+    const classification = getClassification(value) ??
+      (
+        await portfolioClassificationRepository.listByAssetKeys(
+          [saved.assetKey],
+          requestId,
+        )
+      )[0] ?? { assetClass: null, subClass: null, geography: null };
+    return { ...toPortfolioPosition(saved), classification };
   }
 
   async update(id: string, body: unknown, requestId?: string) {
@@ -231,6 +281,7 @@ export class ManualPortfolioPositionService {
       id,
       input,
       requestId,
+      getClassification(value),
     );
     if (!saved)
       throw new ApplicationError("Esta posição não existe mais.", 404);
@@ -238,7 +289,14 @@ export class ManualPortfolioPositionService {
       requestId,
       positionId: saved.id,
     });
-    return toPortfolioPosition(saved);
+    const classification = getClassification(value) ??
+      (
+        await portfolioClassificationRepository.listByAssetKeys(
+          [saved.assetKey],
+          requestId,
+        )
+      )[0] ?? { assetClass: null, subClass: null, geography: null };
+    return { ...toPortfolioPosition(saved), classification };
   }
 
   async delete(id: string, requestId?: string) {

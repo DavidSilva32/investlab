@@ -255,7 +255,7 @@ describe("PortfolioAllocationService", () => {
         },
         {
           assetKey: getPortfolioAssetKey(secondPosition),
-          assetClass: "Fundos",
+          assetClass: "Renda variável",
           subClass: "Fundo imobiliário",
           geography: null,
         },

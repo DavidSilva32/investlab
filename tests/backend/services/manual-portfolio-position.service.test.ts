@@ -6,8 +6,14 @@ const repository = vi.hoisted(() => ({
   update: vi.fn(),
   delete: vi.fn(),
 }));
+const classifications = vi.hoisted(() => ({
+  listByAssetKeys: vi.fn(),
+}));
 vi.mock("@/backend/repositories/manual-portfolio-position.repository", () => ({
   manualPortfolioPositionRepository: repository,
+}));
+vi.mock("@/backend/repositories/portfolio-classification.repository", () => ({
+  portfolioClassificationRepository: classifications,
 }));
 
 import { ApplicationError } from "@/backend/errors/application-error";
@@ -44,7 +50,10 @@ const saved = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("ManualPortfolioPositionService", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    classifications.listByAssetKeys.mockResolvedValue([]);
+  });
 
   it("stores unit-price positions and leaves foreign currency out of BRL totals without conversion", async () => {
     repository.create.mockImplementation(async (value) => ({
@@ -61,11 +70,51 @@ describe("ManualPortfolioPositionService", () => {
         convertedValueBrl: null,
       }),
       undefined,
+      undefined,
     );
     expect(result.source).toBe("MANUAL");
     expect(result.totalValue).toBeNull();
     expect(result.reportedTotalValue).toBe("200.00000000");
     expect(result.assetKey).toMatch(/^manual:/);
+  });
+
+  it("persists the selected asset class while keeping its name and ticker free-form", async () => {
+    repository.create.mockImplementation(async (value) => ({
+      ...saved(),
+      ...value,
+    }));
+    const result = await new ManualPortfolioPositionService().create({
+      ...input,
+      product: "Vanguard S&P 500 ETF",
+      assetCode: "VOO",
+      assetClass: "Renda variável",
+      subClass: "ETF de ações",
+      geography: "Exterior",
+    });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        product: "Vanguard S&P 500 ETF",
+        assetCode: "VOO",
+      }),
+      undefined,
+      {
+        assetClass: "Renda variável",
+        subClass: "ETF de ações",
+        geography: "Exterior",
+      },
+    );
+    expect(result.product).toBe("Vanguard S&P 500 ETF");
+    expect(result.classification).toEqual({
+      assetClass: "Renda variável",
+      subClass: "ETF de ações",
+      geography: "Exterior",
+    });
+    await expect(
+      new ManualPortfolioPositionService().create({
+        ...input,
+        assetClass: "ETF",
+      }),
+    ).rejects.toBeInstanceOf(ApplicationError);
   });
 
   it("uses only an explicitly dated user conversion in the BRL portfolio value", async () => {
@@ -93,6 +142,12 @@ describe("ManualPortfolioPositionService", () => {
     ).rejects.toBeInstanceOf(ApplicationError);
     await expect(
       service.create({ ...input, convertedValueBrl: 900 }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    await expect(
+      service.create({ ...input, geography: "Americas" }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    await expect(
+      service.create({ ...input, subClass: "x".repeat(121) }),
     ).rejects.toBeInstanceOf(ApplicationError);
     expect(repository.create).not.toHaveBeenCalled();
   });
@@ -126,6 +181,11 @@ describe("ManualPortfolioPositionService", () => {
       positionDate: "2026-09-20",
     });
     expect(result.totalValue).toBe("400.00000000");
+    expect(result.classification).toEqual({
+      assetClass: null,
+      subClass: null,
+      geography: null,
+    });
     expect(result.assetCode).toBeNull();
     expect(result.institution).toBeNull();
   });
@@ -170,6 +230,9 @@ describe("ManualPortfolioPositionService", () => {
         valueBasis: "total_value",
         unitPrice: null,
         totalValue: 400,
+        assetClass: "Renda variável",
+        subClass: "ETF de ações",
+        geography: "Exterior",
       },
       "req",
     );
@@ -177,8 +240,18 @@ describe("ManualPortfolioPositionService", () => {
       "position-id",
       expect.objectContaining({ totalValue: "400.00000000", unitPrice: null }),
       "req",
+      {
+        assetClass: "Renda variável",
+        subClass: "ETF de ações",
+        geography: "Exterior",
+      },
     );
     expect(result.totalValue).toBe("400.00000000");
+    expect(result.classification).toEqual({
+      assetClass: "Renda variável",
+      subClass: "ETF de ações",
+      geography: "Exterior",
+    });
     await expect(
       service.update("position-id", { ...input, quantity: -1 }),
     ).rejects.toBeInstanceOf(ApplicationError);
@@ -214,6 +287,7 @@ describe("ManualPortfolioPositionService", () => {
         conversionDate: "2026-09-19",
       }),
       undefined,
+      undefined,
     );
     repository.update.mockResolvedValue(null);
     await expect(service.update("missing", { ...input })).rejects.toMatchObject(
@@ -244,6 +318,29 @@ describe("ManualPortfolioPositionService", () => {
       false,
     ]);
   });
+  it("returns saved asset classes with manual positions", async () => {
+    repository.list.mockResolvedValue([saved()]);
+    classifications.listByAssetKeys.mockResolvedValue([
+      {
+        assetKey: saved().assetKey,
+        assetClass: "Renda variável",
+        subClass: "ETF internacional",
+        geography: "Exterior",
+      },
+    ]);
+    const result = await new ManualPortfolioPositionService().list("req");
+    expect(classifications.listByAssetKeys).toHaveBeenCalledWith(
+      [saved().assetKey],
+      "req",
+    );
+    expect(result[0].classification).toEqual({
+      assetKey: saved().assetKey,
+      assetClass: "Renda variável",
+      subClass: "ETF internacional",
+      geography: "Exterior",
+    });
+  });
+
   it("marks repeated manual asset codes so the interface can surface ambiguity", async () => {
     repository.list.mockResolvedValue([
       saved(),

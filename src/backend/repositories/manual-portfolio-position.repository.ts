@@ -1,7 +1,16 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
-import { manualPortfolioPositions } from "@/infrastructure/database/schema";
+import {
+  manualPortfolioPositions,
+  portfolioAssetClassifications,
+} from "@/infrastructure/database/schema";
+
+export type ManualPortfolioPositionClassification = {
+  assetClass: string | null;
+  subClass: string | null;
+  geography: string | null;
+};
 
 export type ManualPortfolioPositionInput = Pick<
   typeof manualPortfolioPositions.$inferInsert,
@@ -39,8 +48,36 @@ export class ManualPortfolioPositionRepository {
     }
   }
 
-  async create(input: ManualPortfolioPositionInput, requestId?: string) {
+  async create(
+    input: ManualPortfolioPositionInput,
+    requestId?: string,
+    classification?: ManualPortfolioPositionClassification,
+  ) {
     try {
+      if (classification) {
+        return await getDatabaseClient().transaction(async (transaction) => {
+          const [position] = await transaction
+            .insert(manualPortfolioPositions)
+            .values(input)
+            .returning();
+          await transaction
+            .insert(portfolioAssetClassifications)
+            .values({
+              assetKey: input.assetKey,
+              ...classification,
+            })
+            .onConflictDoUpdate({
+              target: portfolioAssetClassifications.assetKey,
+              set: {
+                assetClass: sql.raw('excluded."assetClass"'),
+                subClass: sql.raw('excluded."subClass"'),
+                geography: sql.raw('excluded."geography"'),
+                updatedAt: new Date(),
+              },
+            });
+          return position;
+        });
+      }
       const [position] = await getDatabaseClient()
         .insert(manualPortfolioPositions)
         .values(input)
@@ -59,8 +96,35 @@ export class ManualPortfolioPositionRepository {
     id: string,
     input: Omit<ManualPortfolioPositionInput, "id" | "assetKey">,
     requestId?: string,
+    classification?: ManualPortfolioPositionClassification,
   ) {
     try {
+      if (classification) {
+        return await getDatabaseClient().transaction(async (transaction) => {
+          const [position] = await transaction
+            .update(manualPortfolioPositions)
+            .set({ ...input, updatedAt: new Date() })
+            .where(eq(manualPortfolioPositions.id, id))
+            .returning();
+          if (!position) return null;
+          await transaction
+            .insert(portfolioAssetClassifications)
+            .values({
+              assetKey: position.assetKey,
+              ...classification,
+            })
+            .onConflictDoUpdate({
+              target: portfolioAssetClassifications.assetKey,
+              set: {
+                assetClass: sql.raw('excluded."assetClass"'),
+                subClass: sql.raw('excluded."subClass"'),
+                geography: sql.raw('excluded."geography"'),
+                updatedAt: new Date(),
+              },
+            });
+          return position;
+        });
+      }
       const [position] = await getDatabaseClient()
         .update(manualPortfolioPositions)
         .set({ ...input, updatedAt: new Date() })

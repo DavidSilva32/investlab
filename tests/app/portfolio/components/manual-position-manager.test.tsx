@@ -13,6 +13,14 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   Object.defineProperty(Element.prototype, "scrollIntoView", {
     configurable: true,
     value: () => {},
@@ -52,6 +60,11 @@ const row = {
   convertedValueBrl: "120",
   conversionDate: "2026-09-19",
   duplicateAssetCode: true,
+  classification: {
+    assetClass: "Renda variável",
+    subClass: "ETF de ações",
+    geography: "Exterior",
+  },
 };
 const emptyRow = {
   ...row,
@@ -100,6 +113,13 @@ describe("ManualPositionManager", () => {
     fireEvent.click(screen.getByRole("button", { name: /adicionar posição/i }));
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
+    expect(screen.getByLabelText("Classe")).toBeTruthy();
+    expect(screen.getByLabelText("Subclasse")).toBeTruthy();
+    expect(screen.getByLabelText("Geografia")).toBeTruthy();
+    submit();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Selecione a classe",
+    );
     expect(
       screen.getByText(
         /não consulta cotação nem converte moeda automaticamente/i,
@@ -114,6 +134,7 @@ describe("ManualPositionManager", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
   it("creates a BRL total-value position and clears empty optional fields", async () => {
+    const user = userEvent.setup();
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse());
     vi.stubGlobal("fetch", fetchMock);
     render(<ManualPositionManager positions={[]} />);
@@ -121,6 +142,7 @@ describe("ManualPositionManager", () => {
     fireEvent.change(screen.getByLabelText("Ativo ou produto"), {
       target: { value: "Tesouro Direto" },
     });
+    await choose(user, 0, /Renda fixa/);
     fireEvent.change(screen.getByLabelText("Quantidade"), {
       target: { value: "1" },
     });
@@ -128,7 +150,7 @@ describe("ManualPositionManager", () => {
       target: { value: "400" },
     });
     fireEvent.change(screen.getByLabelText("Data do valor"), {
-      target: { value: "2026-09-20" },
+      target: { value: "20/09/2026" },
     });
     submit();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -138,6 +160,9 @@ describe("ManualPositionManager", () => {
         method: "POST",
         body: JSON.stringify({
           product: "Tesouro Direto",
+          assetClass: "Renda fixa",
+          subClass: null,
+          geography: null,
           assetCode: null,
           institution: null,
           quantity: 1,
@@ -161,16 +186,24 @@ describe("ManualPositionManager", () => {
     render(<ManualPositionManager positions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: /adicionar posição/i }));
     fireEvent.change(screen.getByLabelText("Ativo ou produto"), {
-      target: { value: "ETF internacional" },
+      target: { value: "Vanguard S&P 500 ETF" },
     });
     fireEvent.change(screen.getByLabelText("Ticker ou código (opcional)"), {
-      target: { value: "VT" },
+      target: { value: "VOO" },
     });
     fireEvent.change(screen.getByLabelText("Instituição (opcional)"), {
       target: { value: "Corretora" },
     });
-    await choose(user, 0, /USD/);
-    await choose(user, 1, /preço por unidade/i);
+    await choose(user, 0, /Renda variável/);
+    await user.click(screen.getByLabelText("Subclasse"));
+    fireEvent.change(
+      screen.getByPlaceholderText("Digite para filtrar ou informar"),
+      { target: { value: "ETF de ações" } },
+    );
+    await user.click(screen.getByRole("option", { name: "ETF de ações" }));
+    await choose(user, 2, /Exterior/);
+    await choose(user, 3, /USD/);
+    await choose(user, 4, /preço por unidade/i);
     fireEvent.change(screen.getByLabelText("Quantidade"), {
       target: { value: "2" },
     });
@@ -178,7 +211,7 @@ describe("ManualPositionManager", () => {
       target: { value: "50" },
     });
     fireEvent.change(screen.getByLabelText("Data do valor"), {
-      target: { value: "2026-09-20" },
+      target: { value: "20/09/2026" },
     });
     fireEvent.change(
       screen.getByLabelText("Valor convertido para BRL (opcional)"),
@@ -187,13 +220,17 @@ describe("ManualPositionManager", () => {
       },
     );
     fireEvent.change(screen.getByLabelText("Data da conversão"), {
-      target: { value: "2026-09-21" },
+      target: { value: "21/09/2026" },
     });
     submit();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(payload).toMatchObject({
-      assetCode: "VT",
+      assetClass: "Renda variável",
+      subClass: "ETF de ações",
+      geography: "Exterior",
+      product: "Vanguard S&P 500 ETF",
+      assetCode: "VOO",
       institution: "Corretora",
       quantity: 2,
       currency: "USD",
@@ -203,7 +240,7 @@ describe("ManualPositionManager", () => {
       convertedValueBrl: 600,
       conversionDate: "2026-09-21",
     });
-  });
+  }, 10000);
 
   it("prepopulates and updates an existing manual position", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse());
@@ -238,15 +275,14 @@ describe("ManualPositionManager", () => {
       (screen.getByLabelText("Ticker ou código (opcional)") as HTMLInputElement)
         .value,
     ).toBe("");
-    expect(
-      (screen.getAllByRole("combobox")[0] as HTMLButtonElement).textContent,
-    ).toContain("BRL");
+    expect(screen.getByLabelText("Moeda").textContent).toContain("BRL");
     expect(
       (screen.getByLabelText("Valor total (BRL)") as HTMLInputElement).value,
     ).toBe("");
   });
 
   it("shows API messages and a fallback for non-Error failures", async () => {
+    const user = userEvent.setup();
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -259,11 +295,12 @@ describe("ManualPositionManager", () => {
     fireEvent.change(screen.getByLabelText("Ativo ou produto"), {
       target: { value: "ETF" },
     });
+    await choose(user, 0, /Renda variável/);
     fireEvent.change(screen.getByLabelText("Valor total (BRL)"), {
       target: { value: "100" },
     });
     fireEvent.change(screen.getByLabelText("Data do valor"), {
-      target: { value: "2026-09-20" },
+      target: { value: "20/09/2026" },
     });
     submit();
     await waitFor(() =>
@@ -341,6 +378,19 @@ describe("ManualPositionManager", () => {
     expect(screen.getByText(/valor não informado/)).toBeTruthy();
     expect(screen.queryByText("Nenhuma posição manual cadastrada.")).toBeNull();
   });
+  it("shows the saved portfolio class beside a manual position", () => {
+    const classifiedPosition = {
+      ...row,
+      classification: {
+        assetClass: "Fundos",
+        subClass: null,
+        geography: null,
+      },
+    };
+    render(<ManualPositionManager positions={[classifiedPosition]} />);
+    expect(screen.getByText("Fundos")).toBeTruthy();
+  });
+
   it("uses fallback currency and conversion text when value metadata is partial", () => {
     const currencyFallback = { ...emptyRow, reportedTotalValue: "50" };
     const missingConversionDate = {
