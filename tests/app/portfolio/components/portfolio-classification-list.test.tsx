@@ -27,7 +27,7 @@ const positions: PortfolioPosition[] = [
     institution: "Corretora Exemplo",
     totalValue: "500",
     classification: {
-      assetClass: "Fundos",
+      assetClass: "Renda variável",
       subClass: "FII",
       geography: "Brasil",
     },
@@ -157,7 +157,11 @@ describe("PortfolioClassificationList", () => {
     await user.click(
       screen.getByRole("combobox", { name: "Geografia em lote" }),
     );
-    await user.click(await screen.findByRole("option", { name: "Global" }));
+    await user.click(
+      await screen.findByRole("option", {
+        name: "Global",
+      }),
+    );
     await user.click(
       screen.getByRole("button", { name: "Aplicar aos selecionados" }),
     );

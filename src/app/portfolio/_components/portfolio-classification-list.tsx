@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { AssetSubclassInput } from "@/components/ui/asset-subclass-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -19,6 +20,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
+import {
+  portfolioAssetClassOptions,
+  portfolioAssetGeographyOptions,
+  portfolioAssetGeographyLabels,
+  portfolioAssetGeographyHelpText,
+} from "@/lib/portfolio-classification-options";
 
 type Classification = {
   assetClass: string | null;
@@ -49,15 +56,6 @@ type Props = {
   onSaveBulk: (input: BulkClassification) => Promise<boolean>;
 };
 
-const classOptions = [
-  "Renda fixa",
-  "Renda variável",
-  "Fundos",
-  "Criptoativos",
-  "Imóveis",
-  "Outros",
-];
-const geographyOptions = ["Brasil", "Exterior", "Global"];
 const unknownLabel = "Não informado";
 const unknownValue = "__not_informed__";
 const noSelectionValue = "__select_value__";
@@ -94,6 +92,12 @@ export function PortfolioClassificationList({
     new Set(),
   );
   const [bulkAssetClass, setBulkAssetClass] = useState(noSelectionValue);
+  const [rowAssetClasses, setRowAssetClasses] = useState<
+    Record<string, string>
+  >({});
+  const [rowSubClasses, setRowSubClasses] = useState<Record<string, string>>(
+    {},
+  );
   const [bulkSubClass, setBulkSubClass] = useState("");
   const [bulkGeography, setBulkGeography] = useState(noSelectionValue);
 
@@ -221,8 +225,10 @@ export function PortfolioClassificationList({
             )}
           </div>
         </div>
-        <CollapsibleContent className="pt-3">
-          {" "}
+        <CollapsibleContent className="space-y-3 pt-3">
+          <p className="text-xs text-muted-foreground">
+            {portfolioAssetGeographyHelpText}
+          </p>
           <div className="grid gap-3 rounded-lg border p-3 sm:p-4">
             <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-end">
               <div className="grid gap-1.5">
@@ -269,7 +275,10 @@ export function PortfolioClassificationList({
                       <Label htmlFor="bulk-asset-class">Classe em lote</Label>
                       <Select
                         value={bulkAssetClass}
-                        onValueChange={setBulkAssetClass}
+                        onValueChange={(value) => {
+                          setBulkAssetClass(value);
+                          setBulkSubClass("");
+                        }}
                       >
                         <SelectTrigger id="bulk-asset-class">
                           <SelectValue placeholder="Selecione uma classe" />
@@ -281,7 +290,7 @@ export function PortfolioClassificationList({
                           <SelectItem value={unknownValue}>
                             Não informado
                           </SelectItem>
-                          {classOptions.map((option) => (
+                          {portfolioAssetClassOptions.map((option) => (
                             <SelectItem key={option} value={option}>
                               {option}
                             </SelectItem>
@@ -293,13 +302,15 @@ export function PortfolioClassificationList({
                   {key === "subClass" && enabledBulkFields.has(key) && (
                     <div className="grid gap-1.5">
                       <Label htmlFor="bulk-sub-class">Subclasse em lote</Label>
-                      <Input
+                      <AssetSubclassInput
                         id="bulk-sub-class"
-                        value={bulkSubClass}
-                        onChange={(event) =>
-                          setBulkSubClass(event.target.value)
+                        assetClass={
+                          bulkAssetClass === unknownValue
+                            ? null
+                            : bulkAssetClass
                         }
-                        maxLength={120}
+                        value={bulkSubClass}
+                        onChange={setBulkSubClass}
                         placeholder="Deixe vazio para limpar"
                       />
                     </div>
@@ -321,9 +332,9 @@ export function PortfolioClassificationList({
                           <SelectItem value={unknownValue}>
                             Não informado
                           </SelectItem>
-                          {geographyOptions.map((option) => (
+                          {portfolioAssetGeographyOptions.map((option) => (
                             <SelectItem key={option} value={option}>
-                              {option}
+                              {portfolioAssetGeographyLabels[option]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -431,9 +442,21 @@ export function PortfolioClassificationList({
                           </Label>
                           <Select
                             name="assetClass"
-                            defaultValue={
-                              position.classification.assetClass ?? unknownValue
+                            value={
+                              rowAssetClasses[position.id] ??
+                              position.classification.assetClass ??
+                              unknownValue
                             }
+                            onValueChange={(value) => {
+                              setRowAssetClasses((current) => ({
+                                ...current,
+                                [position.id]: value,
+                              }));
+                              setRowSubClasses((current) => ({
+                                ...current,
+                                [position.id]: "",
+                              }));
+                            }}
                           >
                             <SelectTrigger id={`asset-class-${position.id}`}>
                               <SelectValue placeholder="Selecione uma classe" />
@@ -442,7 +465,7 @@ export function PortfolioClassificationList({
                               <SelectItem value={unknownValue}>
                                 Não informado
                               </SelectItem>
-                              {classOptions.map((option) => (
+                              {portfolioAssetClassOptions.map((option) => (
                                 <SelectItem key={option} value={option}>
                                   {option}
                                 </SelectItem>
@@ -454,14 +477,25 @@ export function PortfolioClassificationList({
                           <Label htmlFor={`sub-class-${position.id}`}>
                             Subclasse
                           </Label>
-                          <Input
+                          <AssetSubclassInput
                             id={`sub-class-${position.id}`}
                             name="subClass"
-                            maxLength={120}
-                            defaultValue={
-                              position.classification.subClass ?? ""
+                            assetClass={
+                              rowAssetClasses[position.id] ??
+                              position.classification.assetClass
                             }
-                            placeholder="Ex.: Tesouro IPCA+"
+                            value={
+                              rowSubClasses[position.id] ??
+                              position.classification.subClass ??
+                              ""
+                            }
+                            onChange={(value) =>
+                              setRowSubClasses((current) => ({
+                                ...current,
+                                [position.id]: value,
+                              }))
+                            }
+                            placeholder="Selecione ou digite"
                           />
                         </div>
                         <div className="grid gap-1.5 text-sm sm:col-span-2">
@@ -481,9 +515,9 @@ export function PortfolioClassificationList({
                               <SelectItem value={unknownValue}>
                                 Não informado
                               </SelectItem>
-                              {geographyOptions.map((option) => (
+                              {portfolioAssetGeographyOptions.map((option) => (
                                 <SelectItem key={option} value={option}>
-                                  {option}
+                                  {portfolioAssetGeographyLabels[option]}
                                 </SelectItem>
                               ))}
                             </SelectContent>

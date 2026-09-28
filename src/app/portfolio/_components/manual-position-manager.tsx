@@ -14,6 +14,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { AssetSubclassInput } from "@/components/ui/asset-subclass-input";
+import {
+  DatePickerField,
+  getTodayDateIso,
+} from "@/components/ui/date-picker-field";
+import {
+  portfolioAssetClassOptions,
+  portfolioAssetGeographyOptions,
+  portfolioAssetGeographyLabels,
+  portfolioAssetGeographyHelpText,
+} from "@/lib/portfolio-classification-options";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -34,10 +45,18 @@ type ManualPosition = PortfolioPosition & {
   valueBasis?: "unit_price" | "total_value";
   reportedTotalValue?: string | null;
   duplicateAssetCode?: boolean;
+  classification?: {
+    assetClass: string | null;
+    subClass: string | null;
+    geography: string | null;
+  };
 };
 
 type FormValues = {
   product: string;
+  assetClass: string;
+  subClass: string;
+  geography: string;
   assetCode: string;
   institution: string;
   quantity: string;
@@ -52,6 +71,9 @@ type FormValues = {
 
 const emptyValues = (): FormValues => ({
   product: "",
+  assetClass: "",
+  subClass: "",
+  geography: "__not_informed__",
   assetCode: "",
   institution: "",
   quantity: "1",
@@ -59,7 +81,7 @@ const emptyValues = (): FormValues => ({
   valueBasis: "total_value",
   unitPrice: "",
   totalValue: "",
-  positionDate: new Date().toISOString().slice(0, 10),
+  positionDate: getTodayDateIso(),
   convertedValueBrl: "",
   conversionDate: "",
 });
@@ -67,6 +89,9 @@ const emptyValues = (): FormValues => ({
 function fromPosition(position: ManualPosition): FormValues {
   return {
     product: position.product,
+    assetClass: position.classification?.assetClass ?? "",
+    subClass: position.classification?.subClass ?? "",
+    geography: position.classification?.geography ?? "__not_informed__",
     assetCode: position.assetCode ?? "",
     institution: position.institution ?? "",
     quantity: position.quantity,
@@ -88,6 +113,7 @@ function Field({
   type = "text",
   required = false,
   step,
+  placeholder,
 }: {
   id: string;
   label: string;
@@ -96,6 +122,7 @@ function Field({
   type?: string;
   required?: boolean;
   step?: string;
+  placeholder?: string;
 }) {
   return (
     <div className="space-y-2">
@@ -106,6 +133,7 @@ function Field({
         value={value}
         required={required}
         step={step}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>
@@ -124,6 +152,7 @@ export function ManualPositionManager({
   const [editing, setEditing] = useState<ManualPosition | null>(null);
   const [values, setValues] = useState<FormValues>(emptyValues);
   const [saving, setSaving] = useState(false);
+  const [assetClassError, setAssetClassError] = useState(false);
 
   const set = (field: keyof FormValues, value: string) =>
     setValues((current) => ({ ...current, [field]: value }));
@@ -140,9 +169,18 @@ export function ManualPositionManager({
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!values.assetClass) {
+      setAssetClassError(true);
+      return;
+    }
+    setAssetClassError(false);
     setSaving(true);
     const payload = {
       product: values.product,
+      assetClass: values.assetClass,
+      subClass: values.subClass.trim() || null,
+      geography:
+        values.geography === "__not_informed__" ? null : values.geography,
       assetCode: values.assetCode || null,
       institution: values.institution || null,
       quantity: Number(values.quantity),
@@ -260,6 +298,11 @@ export function ManualPositionManager({
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {position.classification?.assetClass && (
+                  <Badge variant="secondary">
+                    {position.classification.assetClass}
+                  </Badge>
+                )}
                 <Badge variant="outline">Manual</Badge>
                 <Button
                   type="button"
@@ -285,7 +328,7 @@ export function ManualPositionManager({
         </ul>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Editar posição" : "Adicionar posição manual"}
@@ -300,13 +343,89 @@ export function ManualPositionManager({
               <Field
                 id="manual-product"
                 label="Ativo ou produto"
+                placeholder="Ex.: Vanguard S&P 500 ETF"
                 value={values.product}
                 onChange={(value) => set("product", value)}
                 required
               />
+              <div className="space-y-2">
+                <Label htmlFor="manual-asset-class">Classe</Label>
+                <Select
+                  value={values.assetClass}
+                  onValueChange={(value) => {
+                    setValues((current) => ({
+                      ...current,
+                      assetClass: value,
+                      subClass: "",
+                    }));
+                    setAssetClassError(false);
+                  }}
+                >
+                  <SelectTrigger
+                    id="manual-asset-class"
+                    aria-invalid={assetClassError}
+                    aria-describedby={
+                      assetClassError ? "manual-asset-class-error" : undefined
+                    }
+                  >
+                    <SelectValue placeholder="Selecione uma classe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {portfolioAssetClassOptions.map((assetClass) => (
+                      <SelectItem key={assetClass} value={assetClass}>
+                        {assetClass}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {assetClassError && (
+                  <p
+                    id="manual-asset-class-error"
+                    role="alert"
+                    className="text-sm text-destructive"
+                  >
+                    Selecione a classe da posição.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="manual-sub-class">Subclasse</Label>
+                <AssetSubclassInput
+                  id="manual-sub-class"
+                  name="subClass"
+                  assetClass={values.assetClass}
+                  value={values.subClass}
+                  onChange={(value) => set("subClass", value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="manual-geography">Geografia</Label>
+                <Select
+                  value={values.geography}
+                  onValueChange={(value) => set("geography", value)}
+                >
+                  <SelectTrigger id="manual-geography">
+                    <SelectValue placeholder="Não informado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__not_informed__">
+                      Não informado
+                    </SelectItem>
+                    {portfolioAssetGeographyOptions.map((geography) => (
+                      <SelectItem key={geography} value={geography}>
+                        {portfolioAssetGeographyLabels[geography]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {portfolioAssetGeographyHelpText}
+                </p>
+              </div>
               <Field
                 id="manual-ticker"
                 label="Ticker ou código (opcional)"
+                placeholder="Ex.: VOO"
                 value={values.assetCode}
                 onChange={(value) => set("assetCode", value)}
               />
@@ -326,12 +445,12 @@ export function ManualPositionManager({
                 required
               />
               <div className="space-y-2">
-                <Label>Moeda</Label>
+                <Label htmlFor="manual-currency">Moeda</Label>
                 <Select
                   value={values.currency}
                   onValueChange={(value) => set("currency", value)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="manual-currency">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -342,14 +461,16 @@ export function ManualPositionManager({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Como informar o valor</Label>
+                <Label htmlFor="manual-value-basis">
+                  Como informar o valor
+                </Label>
                 <Select
                   value={values.valueBasis}
                   onValueChange={(value: FormValues["valueBasis"]) =>
                     set("valueBasis", value)
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="manual-value-basis">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -381,10 +502,9 @@ export function ManualPositionManager({
                   required
                 />
               )}
-              <Field
+              <DatePickerField
                 id="manual-position-date"
                 label="Data do valor"
-                type="date"
                 value={values.positionDate}
                 onChange={(value) => set("positionDate", value)}
                 required
@@ -399,10 +519,9 @@ export function ManualPositionManager({
                     value={values.convertedValueBrl}
                     onChange={(value) => set("convertedValueBrl", value)}
                   />
-                  <Field
+                  <DatePickerField
                     id="manual-conversion-date"
                     label="Data da conversão"
-                    type="date"
                     value={values.conversionDate}
                     onChange={(value) => set("conversionDate", value)}
                   />
