@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,25 +20,10 @@ import {
   type PortfolioAllocationTargetsHandle,
 } from "@/app/portfolio/_components/portfolio-allocation-targets";
 import { StrategyGuidance } from "@/app/portfolio/_components/strategy-guidance";
+import { PortfolioConcentrationAnalysis } from "@/app/portfolio/_components/portfolio-concentration-analysis";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
-import { formatCurrency } from "@/lib/utils";
 
-type Grouping = "assetClass" | "subClass" | "geography";
 type AssetClass = (typeof portfolioAssetClassOptions)[number];
-const unknownLabel = "Não informado";
-
-function positionValue(position: PortfolioPosition) {
-  if (
-    position.estimatedValue !== undefined &&
-    position.estimatedValue !== null &&
-    Number.isFinite(position.estimatedValue)
-  ) {
-    return position.estimatedValue;
-  }
-  if (position.totalValue === null) return null;
-  const value = Number(position.totalValue);
-  return Number.isFinite(value) ? value : null;
-}
 
 export function PortfolioAllocation() {
   const [positions, setPositions] = useState<PortfolioPosition[] | null>(null);
@@ -46,7 +31,6 @@ export function PortfolioAllocation() {
     Partial<Record<AssetClass, number>>
   >({});
   const [error, setError] = useState<string | null>(null);
-  const [grouping, setGrouping] = useState<Grouping>("assetClass");
   const [saving, setSaving] = useState(false);
   const targetEditorRef = useRef<PortfolioAllocationTargetsHandle | null>(null);
   const [classesForReview, setClassesForReview] = useState<
@@ -70,31 +54,6 @@ export function PortfolioAllocation() {
     window.addEventListener("portfolio:updated", load);
     return () => window.removeEventListener("portfolio:updated", load);
   }, [load]);
-
-  const totalValue = useMemo(
-    () =>
-      (positions ?? []).reduce(
-        (total, position) => total + (positionValue(position) ?? 0),
-        0,
-      ),
-    [positions],
-  );
-  const allocations = useMemo(() => {
-    const groups = new Map<string, number>();
-    for (const position of positions ?? []) {
-      const value = positionValue(position);
-      if (value === null) continue;
-      const label = position.classification[grouping] ?? unknownLabel;
-      groups.set(label, (groups.get(label) ?? 0) + value);
-    }
-    return [...groups.entries()]
-      .map(([label, value]) => ({
-        label,
-        value,
-        percentage: totalValue ? (value / totalValue) * 100 : 0,
-      }))
-      .sort((left, right) => right.value - left.value);
-  }, [grouping, positions, totalValue]);
 
   async function patchClassification(
     body: unknown,
@@ -173,9 +132,9 @@ export function PortfolioAllocation() {
       <CardHeader>
         <CardTitle>Classificação e alocação</CardTitle>
         <CardDescription>
-          Distribuição por classe, subclasse ou geografia. Produto e indexador
-          podem sugerir a classificação; geografia fica sem informação até
-          ajuste, pois a importação não identifica esse dado. Valores usam a
+          Concentração por ativo, classe, subclasse ou geografia. Produto e
+          indexador podem sugerir a classificação; geografia fica sem informação
+          até ajuste, pois a importação não identifica esse dado. Valores usam a
           estimativa atual quando disponível, ou o valor importado.
         </CardDescription>
       </CardHeader>
@@ -208,79 +167,7 @@ export function PortfolioAllocation() {
           </>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">
-                Patrimônio com valor informado: {formatCurrency(totalValue)}
-              </p>
-              <div
-                aria-label="Agrupar alocação"
-                className="flex flex-wrap gap-2"
-              >
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={grouping === "assetClass" ? "default" : "outline"}
-                  aria-pressed={grouping === "assetClass"}
-                  onClick={() => setGrouping("assetClass")}
-                >
-                  Classe
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={grouping === "subClass" ? "default" : "outline"}
-                  aria-pressed={grouping === "subClass"}
-                  onClick={() => setGrouping("subClass")}
-                >
-                  Subclasse
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={grouping === "geography" ? "default" : "outline"}
-                  aria-pressed={grouping === "geography"}
-                  onClick={() => setGrouping("geography")}
-                >
-                  Geografia
-                </Button>
-              </div>
-            </div>
-            {allocations.length ? (
-              <ul className="space-y-4" aria-label="Distribuição do patrimônio">
-                {allocations.map((allocation) => (
-                  <li key={allocation.label}>
-                    <div className="mb-2 flex items-baseline justify-between gap-4 text-sm">
-                      <span className="truncate font-medium">
-                        {allocation.label}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {allocation.percentage.toFixed(1)}% ·{" "}
-                        {formatCurrency(allocation.value)}
-                      </span>
-                    </div>
-                    <div
-                      className="h-2 overflow-hidden rounded-full bg-muted"
-                      role="progressbar"
-                      aria-label={`${allocation.label}: ${allocation.percentage.toFixed(1)}%`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={allocation.percentage}
-                    >
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{
-                          width: `${Math.min(100, Math.max(0, allocation.percentage))}%`,
-                        }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Não há valores atuais para calcular a distribuição.
-              </p>
-            )}
+            <PortfolioConcentrationAnalysis positions={positions} />
             <StrategyGuidance onOpenTargets={openStrategyTargets} />
             <PortfolioAllocationTargets
               ref={targetEditorRef}
