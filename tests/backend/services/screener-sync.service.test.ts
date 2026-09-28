@@ -13,6 +13,7 @@ import {
   type ScreenerSyncService as SyncServiceType,
 } from "@/backend/services/screener-sync.service";
 import type { ScreenerSyncRepository } from "@/backend/repositories/screener-sync.repository";
+import type { ValuationAccountingFactRecord } from "@/backend/providers/cvm-valuation-input.provider";
 import { logger } from "@/infrastructure/logging/logger";
 
 const company = (
@@ -89,6 +90,13 @@ function setup(
     cvmFailure?: Error;
     repositoryFailure?: Error;
     persistedFactCount?: number;
+    valuationProvider?: {
+      getArchive: (
+        documentType: "DFP" | "ITR",
+        year: number,
+        registryByCvmCode: Map<string, string>,
+      ) => Promise<ValuationAccountingFactRecord[]>;
+    };
   } = {},
 ) {
   const registry = new Map<string, CvmCompanyRecord>([
@@ -218,12 +226,14 @@ function setup(
       };
     }),
     markFailed: vi.fn().mockResolvedValue(undefined),
+    saveValuationFacts: vi.fn().mockResolvedValue(undefined),
   };
   const service = new ScreenerSyncService(
     brapi as unknown as BrapiScreenerProvider,
     cvm,
     repository as unknown as ScreenerSyncRepository,
     () => 2026,
+    overrides.valuationProvider,
   );
   return { service, brapi, cvm, repository, saved, registry };
 }
@@ -357,6 +367,126 @@ describe("ScreenerSyncService", () => {
     });
   });
 
+  it("ingests only registered issuers valuation facts and persists them", async () => {
+    const valuationFact: ValuationAccountingFactRecord = {
+      factKey: "valuation-fact-1",
+      issuerCnpj: "33000167000101",
+      documentType: "DFP",
+      documentId: "document-1",
+      documentCategory: "DFP",
+      documentReceivedDate: "2026-03-20",
+      metadataMatch: "MATCHED",
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      statement: "DRE",
+      accountCode: "3.05",
+      accountLabel: "Resultado Antes do Resultado Financeiro e dos Tributos",
+      candidateKind: "EBIT_CANDIDATE",
+      rawValue: "1000",
+      currency: "REAL",
+      scale: "MIL",
+      statementGroup: "DF Consolidado - DRE",
+      exerciseOrder: "ÚLTIMO",
+      version: "1",
+      sourceFile: "dfp_cia_aberta_2025.zip#dfp_cia_aberta_DRE_con_2025.csv",
+      sourceRow: 42,
+      archiveFetchedAt: new Date("2026-09-28T00:00:00.000Z"),
+      recordType: "REPORTED",
+      calculatedValue: null,
+      derivationMethod: null,
+      derivationCurrentFactKey: null,
+      derivationPreviousFactKey: null,
+    };
+    const valuationProvider = {
+      getArchive: vi.fn(async (documentType: "DFP" | "ITR", year: number) =>
+        documentType === "DFP" && year === 2025
+          ? [valuationFact, { ...valuationFact, issuerCnpj: "99999999999999" }]
+          : [],
+      ),
+    };
+    const context = setup({
+      catalog: [stock("PETR3")],
+      valuationProvider,
+    });
+
+    await expect(context.service.sync()).resolves.toMatchObject({
+      valuationAccountingFacts: 1,
+      valuationAccountingStatus: "COMPLETED",
+    });
+    expect(valuationProvider.getArchive).toHaveBeenCalledTimes(13);
+    expect(context.repository.saveValuationFacts).toHaveBeenCalledWith({
+      runId: "run-1",
+      facts: [valuationFact],
+    });
+  });
+  it("completes the screener sync when valuation archives are unavailable", async () => {
+    const valuationProvider = {
+      getArchive: vi
+        .fn()
+        .mockRejectedValue(new Error("upstream private detail")),
+    };
+    const context = setup({
+      catalog: [stock("PETR3")],
+      valuationProvider,
+    });
+
+    await expect(context.service.sync()).resolves.toMatchObject({
+      valuationAccountingFacts: 0,
+      valuationAccountingStatus: "FAILED",
+    });
+    expect(context.repository.saveFullSync).toHaveBeenCalledOnce();
+    expect(context.repository.markFailed).not.toHaveBeenCalled();
+  });
+  it("reports valuation unavailable when its persistence capability is missing", async () => {
+    const valuationFact: ValuationAccountingFactRecord = {
+      factKey: "valuation-fact-2",
+      issuerCnpj: "33000167000101",
+      documentType: "DFP",
+      documentId: null,
+      documentCategory: "DFP",
+      documentReceivedDate: "2026-03-20",
+      metadataMatch: "MATCHED",
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      statement: "DRE",
+      accountCode: "3.05",
+      accountLabel: "Resultado antes do resultado financeiro e dos tributos",
+      candidateKind: "EBIT_CANDIDATE",
+      rawValue: "1000",
+      currency: "REAL",
+      scale: "MIL",
+      statementGroup: "DF Consolidado - DRE",
+      exerciseOrder: "ÚLTIMO",
+      version: "1",
+      sourceFile: "dfp.zip#dre.csv",
+      sourceRow: 2,
+      archiveFetchedAt: new Date("2026-09-28T00:00:00.000Z"),
+      recordType: "REPORTED",
+      calculatedValue: null,
+      derivationMethod: null,
+      derivationCurrentFactKey: null,
+      derivationPreviousFactKey: null,
+    };
+    const context = setup({
+      catalog: [stock("PETR3")],
+      valuationProvider: {
+        getArchive: vi.fn(async (documentType: "DFP" | "ITR", year: number) =>
+          documentType === "DFP" && year === 2025 ? [valuationFact] : [],
+        ),
+      },
+    });
+    context.repository.saveValuationFacts =
+      undefined as unknown as typeof context.repository.saveValuationFacts;
+
+    await expect(context.service.sync()).resolves.toMatchObject({
+      valuationAccountingStatus: "FAILED",
+      valuationAccountingFacts: 0,
+    });
+    expect(context.repository.saveFullSync).toHaveBeenCalledOnce();
+    expect(context.repository.markFailed).not.toHaveBeenCalled();
+  });
   it("synchronizes exact CNPJ issuers, stock classes, fractional aliases and latest consolidated facts sequentially", async () => {
     const context = setup();
     const result = await context.service.sync();
@@ -367,6 +497,8 @@ describe("ScreenerSyncService", () => {
       facts: 18,
       persistedFacts: 18,
       nonFinancialIssuers: 1,
+      valuationAccountingFacts: 0,
+      valuationAccountingStatus: "NOT_CONFIGURED",
     });
     expect(
       context.brapi.getProfile.mock.calls.map(([ticker]) => ticker),

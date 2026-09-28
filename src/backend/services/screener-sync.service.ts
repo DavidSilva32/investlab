@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  CvmValuationInputProvider,
+  deriveQuarterlyFlowFacts,
+  type ValuationAccountingFactRecord,
+  type ValuationDocumentType,
+} from "@/backend/providers/cvm-valuation-input.provider";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   BrapiScreenerProvider,
@@ -30,7 +36,9 @@ type SyncRepository = Pick<
   ScreenerSyncRepository,
   "startRun" | "saveFullSync" | "markFailed"
 > &
-  Partial<Pick<ScreenerSyncRepository, "getStatus">>;
+  Partial<Pick<ScreenerSyncRepository, "getStatus" | "saveValuationFacts">>;
+
+type ValuationProvider = Pick<CvmValuationInputProvider, "getArchive">;
 
 function chooseFact(
   current: ScreenerFactRecord | undefined,
@@ -55,6 +63,7 @@ export class ScreenerSyncService {
     },
     private readonly repository: SyncRepository = screenerSyncRepository,
     private readonly currentYear = () => new Date().getUTCFullYear(),
+    private readonly valuationCvm?: ValuationProvider,
   ) {}
 
   async status() {
@@ -83,6 +92,8 @@ export class ScreenerSyncService {
       CVM_DFP:
         "Não foi possível consultar as demonstrações financeiras da CVM.",
       DATABASE_PERSIST: "Não foi possível salvar os dados sincronizados.",
+      CVM_VALUATION_ACCOUNTING:
+        "Não foi possível consultar componentes contábeis da CVM.",
     };
     const finishedAt = latestRun.completedAt ?? new Date();
     return {
@@ -227,6 +238,9 @@ export class ScreenerSyncService {
           "CVM DFP processing completed without normalized facts",
         );
       }
+      let valuationFacts: ValuationAccountingFactRecord[] = [];
+      let valuationAccountingStatus: "NOT_CONFIGURED" | "COMPLETED" | "FAILED" =
+        this.valuationCvm ? "COMPLETED" : "NOT_CONFIGURED";
       stage = "database_persist";
       const persistence = await this.repository.saveFullSync({
         runId,
@@ -250,6 +264,49 @@ export class ScreenerSyncService {
         });
         throw new Error("CVM DFP facts were not found after persistence");
       }
+      if (this.valuationCvm) {
+        stage = "cvm_valuation_accounting";
+        try {
+          const reportedFacts: ValuationAccountingFactRecord[] = [];
+          for (let year = firstYear; year <= this.currentYear(); year += 1) {
+            const documentTypes: ValuationDocumentType[] =
+              year <= latestCompletedYear ? ["DFP", "ITR"] : ["ITR"];
+            for (const documentType of documentTypes) {
+              const archiveFacts = await this.valuationCvm.getArchive(
+                documentType,
+                year,
+                registryByCvmCode,
+              );
+              reportedFacts.push(
+                ...archiveFacts.filter((fact) => issuers.has(fact.issuerCnpj)),
+              );
+            }
+          }
+          valuationFacts = [
+            ...reportedFacts,
+            ...deriveQuarterlyFlowFacts(reportedFacts),
+          ];
+          if (!this.repository.saveValuationFacts)
+            throw new Error("Valuation accounting persistence is unavailable");
+          await this.repository.saveValuationFacts({
+            runId,
+            facts: valuationFacts,
+          });
+        } catch (valuationError) {
+          valuationAccountingStatus = "FAILED";
+          valuationFacts = [];
+          const errorType =
+            valuationError instanceof Error &&
+            /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(valuationError.name)
+              ? valuationError.name
+              : "unknown";
+          logger.error("screener_valuation_accounting_ingestion_failed", {
+            runId,
+            stage: "cvm_valuation_accounting",
+            errorType,
+          });
+        }
+      }
       const result = {
         issuers: issuers.size,
         securities: securities.length,
@@ -258,6 +315,8 @@ export class ScreenerSyncService {
         ).length,
         facts: facts.length,
         persistedFacts,
+        valuationAccountingFacts: valuationFacts.length,
+        valuationAccountingStatus,
         nonFinancialIssuers: [...issuers.values()].filter(
           (issuer) => classifyCvmSector(issuer.sector) === "non_financial",
         ).length,
@@ -335,4 +394,10 @@ export class ScreenerSyncService {
   }
 }
 
-export const screenerSyncService = new ScreenerSyncService();
+export const screenerSyncService = new ScreenerSyncService(
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  new CvmValuationInputProvider(),
+);
