@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   portfolioAssetClassOptions,
+  portfolioAssetGeographyLabels,
   portfolioAssetGeographyOptions,
 } from "@/lib/portfolio-classification-options";
 
@@ -22,5 +23,13 @@ describe("portfolio classification options", () => {
       "Exterior",
       "Global",
     ]);
+  });
+
+  it("explains the difference between foreign and global exposure", () => {
+    expect(portfolioAssetGeographyLabels).toEqual({
+      Brasil: "Brasil",
+      Exterior: "Exterior",
+      Global: "Global",
+    });
   });
 });

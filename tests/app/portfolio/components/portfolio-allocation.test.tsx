@@ -68,7 +68,7 @@ const positions = [
     institution: "Corretora Exemplo",
     totalValue: "500",
     classification: {
-      assetClass: "Fundos",
+      assetClass: "Renda variável",
       subClass: "FII",
       geography: "Brasil",
     },
@@ -137,7 +137,7 @@ describe("PortfolioAllocation", () => {
       screen.getByRole("progressbar", { name: "Renda fixa: 72.2%" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("progressbar", { name: "Fundos: 27.8%" }),
+      screen.getByRole("progressbar", { name: "Renda variável: 27.8%" }),
     ).toBeTruthy();
     expect(screen.getAllByText(/CDB pós-fixado/)[0]).toBeTruthy();
     expect(screen.getByText(/ajuste manual/)).toBeTruthy();
@@ -324,7 +324,11 @@ describe("PortfolioAllocation", () => {
       await screen.findByRole("button", { name: "Editar classificação" }),
     );
     await user.click(screen.getByRole("combobox", { name: "Geografia" }));
-    await user.click(await screen.findByRole("option", { name: "Brasil" }));
+    await user.click(
+      await screen.findByRole("option", {
+        name: "Brasil",
+      }),
+    );
     await user.click(
       screen.getByRole("button", { name: "Salvar classificação" }),
     );

@@ -45,9 +45,35 @@ export function inferPortfolioAssetClassification(
   const product = normalize(asset.product);
   const indexer = normalize(asset.indexer);
 
-  if (
-    /\b(fii|fiagro|fundo imobiliario|etf|fundo de investimento)\b/.test(product)
-  ) {
+  if (/\b(fiis?|fundos? imobiliarios?)\b/.test(product)) {
+    return {
+      assetClass: "Renda variável",
+      subClass: asset.product.trim(),
+      geography: null,
+    };
+  }
+  if (/\betf de renda fixa\b/.test(product)) {
+    return {
+      assetClass: "Renda fixa",
+      subClass: asset.product.trim(),
+      geography: null,
+    };
+  }
+  if (/\betf de acoes\b/.test(product)) {
+    return {
+      assetClass: "Renda variável",
+      subClass: asset.product.trim(),
+      geography: null,
+    };
+  }
+  if (/\betf\b/.test(product)) {
+    return {
+      assetClass: null,
+      subClass: asset.product.trim(),
+      geography: null,
+    };
+  }
+  if (/\b(fiagro|fundo de investimento)\b/.test(product)) {
     return {
       assetClass: "Fundos",
       subClass: asset.product.trim(),

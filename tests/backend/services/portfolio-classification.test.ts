@@ -35,13 +35,31 @@ describe("portfolio asset classification", () => {
     });
   });
 
-  it("classifies funds and variable income from explicit product labels", () => {
+  it("classifies real estate funds as variable income and other funds separately", () => {
     expect(
       inferPortfolioAssetClassification({
         ...asset,
         product: "Fundo Imobiliário",
       }).assetClass,
-    ).toBe("Fundos");
+    ).toBe("Renda variável");
+    expect(
+      inferPortfolioAssetClassification({ ...asset, product: "FIIs" })
+        .assetClass,
+    ).toBe("Renda variável");
+    expect(
+      inferPortfolioAssetClassification({
+        ...asset,
+        product: "ETF de renda fixa",
+      }).assetClass,
+    ).toBe("Renda fixa");
+    expect(
+      inferPortfolioAssetClassification({ ...asset, product: "ETF de ações" })
+        .assetClass,
+    ).toBe("Renda variável");
+    expect(
+      inferPortfolioAssetClassification({ ...asset, product: "ETF" })
+        .assetClass,
+    ).toBeNull();
     expect(
       inferPortfolioAssetClassification({ ...asset, product: "Ação" })
         .assetClass,

@@ -9,6 +9,8 @@ const database = vi.hoisted(() => ({
     insert: vi.fn(),
     values: vi.fn(),
     returning: vi.fn(),
+    onConflictDoUpdate: vi.fn(),
+    transaction: vi.fn(),
     update: vi.fn(),
     set: vi.fn(),
     where: vi.fn(),
@@ -57,6 +59,10 @@ describe("ManualPortfolioPositionRepository", () => {
     database.query.returning.mockImplementation((selection) =>
       Promise.resolve(selection ? [{ id }] : [row]),
     );
+    database.query.onConflictDoUpdate.mockReturnValue(database.query);
+    database.query.transaction.mockImplementation((callback) =>
+      callback(database.query),
+    );
   });
 
   it("lists positions in the repository-defined order", async () => {
@@ -75,6 +81,75 @@ describe("ManualPortfolioPositionRepository", () => {
       new ManualPortfolioPositionRepository().create({ ...row }, "req"),
     ).resolves.toEqual(row);
     expect(database.query.values).toHaveBeenCalledWith(row);
+  });
+
+  it("creates a position and its selected asset class in one transaction", async () => {
+    const repository = new ManualPortfolioPositionRepository();
+    await expect(
+      repository.create({ ...row }, "req", {
+        assetClass: "Fundos",
+        subClass: "ETF de ações",
+        geography: "Exterior",
+      }),
+    ).resolves.toEqual(row);
+    expect(database.query.transaction).toHaveBeenCalledOnce();
+    expect(database.query.insert).toHaveBeenCalledTimes(2);
+    expect(database.query.values).toHaveBeenLastCalledWith({
+      assetKey: row.assetKey,
+      assetClass: "Fundos",
+      subClass: "ETF de ações",
+      geography: "Exterior",
+    });
+    expect(database.query.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          assetClass: expect.anything(),
+          subClass: expect.anything(),
+          geography: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it("updates the position and its selected asset class in one transaction", async () => {
+    const repository = new ManualPortfolioPositionRepository();
+    await expect(
+      repository.update(id, { ...row }, "req", {
+        assetClass: "Fundos",
+        subClass: "ETF de ações",
+        geography: "Exterior",
+      }),
+    ).resolves.toEqual(row);
+    expect(database.query.transaction).toHaveBeenCalledOnce();
+    expect(database.query.update).toHaveBeenCalledOnce();
+    expect(database.query.insert).toHaveBeenCalledOnce();
+    expect(database.query.values).toHaveBeenLastCalledWith({
+      assetKey: row.assetKey,
+      assetClass: "Fundos",
+      subClass: "ETF de ações",
+      geography: "Exterior",
+    });
+    expect(database.query.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          assetClass: expect.anything(),
+          subClass: expect.anything(),
+          geography: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it("does not write a classification when the position no longer exists", async () => {
+    database.query.returning.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().update(id, { ...row }, "req", {
+        assetClass: "Fundos",
+        subClass: "ETF de ações",
+        geography: "Exterior",
+      }),
+    ).resolves.toBeNull();
+    expect(database.query.insert).not.toHaveBeenCalled();
   });
 
   it("updates a position and reports a missing row as null", async () => {
