@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -283,24 +289,49 @@ describe("PortfolioClassificationList", () => {
     await user.click(
       screen.getByRole("button", { name: /Mostrar.*classifica/i }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Editar classificação" }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Salvar classificação" }),
-    );
+    await user.click(screen.getByRole("button", { name: /Editar classifica/ }));
+    await user.click(screen.getByRole("button", { name: /Salvar classifica/ }));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(screen.queryByLabelText("Subclasse")).toBeNull();
-    await user.click(
-      screen.getByRole("button", { name: "Editar classificação" }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Salvar classificação" }),
-    );
+    await user.click(screen.getByRole("button", { name: /Editar classifica/ }));
+    await user.click(screen.getByRole("button", { name: /Salvar classifica/ }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
     expect(screen.getByLabelText("Subclasse")).toBeTruthy();
   });
 
+  it("submits class and subclass changes made in the individual editor", async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <PortfolioClassificationList
+        positions={[positions[0]]}
+        saving={false}
+        onSave={onSave}
+        onSaveBulk={vi.fn().mockResolvedValue(true)}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Mostrar.*classifica/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /Editar classifica/ }));
+    await user.click(screen.getByRole("combobox", { name: "Classe" }));
+    await user.click(await screen.findByRole("option", { name: "Fundos" }));
+    await user.click(screen.getByLabelText("Subclasse"));
+    fireEvent.change(
+      screen.getByPlaceholderText("Digite para filtrar ou informar"),
+      {
+        target: { value: "Fundo alternativo" },
+      },
+    );
+
+    await user.click(screen.getByRole("button", { name: /Salvar classifica/ }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    const formData = onSave.mock.calls[0][1] as FormData;
+    expect(formData.get("assetClass")).toBe("Fundos");
+    expect(formData.get("subClass")).toBe("Fundo alternativo");
+    expect(screen.queryByLabelText("Subclasse")).toBeNull();
+  });
   it("toggles an individual position without changing other selections", async () => {
     const user = userEvent.setup();
     render(

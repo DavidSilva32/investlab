@@ -1,7 +1,14 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { ChevronDown } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -22,6 +29,7 @@ type Props = {
   targetPercentages: Targets;
   saving: boolean;
   onSave: (targets: Record<AssetClass, number>) => Promise<boolean>;
+  classesForReview?: AssetClass[];
 };
 
 function positionValue(position: PortfolioPosition) {
@@ -46,16 +54,32 @@ function initialDraft(targets: Targets): Record<AssetClass, string> {
   ) as Record<AssetClass, string>;
 }
 
-export function PortfolioAllocationTargets({
-  positions,
-  targetPercentages,
-  saving,
-  onSave,
-}: Props) {
+export type PortfolioAllocationTargetsHandle = {
+  openEditor: () => void;
+};
+
+export const PortfolioAllocationTargets = forwardRef<
+  PortfolioAllocationTargetsHandle,
+  Props
+>(function PortfolioAllocationTargets(
+  { positions, targetPercentages, saving, onSave, classesForReview = [] },
+  ref,
+) {
   const [editing, setEditing] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [draft, setDraft] = useState(() => initialDraft(targetPercentages));
   const [message, setMessage] = useState<string | null>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openEditor() {
+        setComparisonOpen(true);
+        setEditing(true);
+      },
+    }),
+    [],
+  );
   const current = useMemo(() => {
     const byClass = new Map<AssetClass, number>();
     let valuedTotal = 0;
@@ -181,6 +205,25 @@ export function PortfolioAllocationTargets({
                 Metas pessoais são uma estratégia sua, não uma recomendação
                 universal.
               </p>
+              {classesForReview.length > 0 && (
+                <aside className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                  <p className="text-sm font-medium">
+                    Classes que você escolheu considerar
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {classesForReview.map((assetClass) => (
+                      <Badge key={assetClass} variant="secondary">
+                        {assetClass}
+                      </Badge>
+                    ))}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Os percentuais abaixo são suas metas atuais. A seleção não
+                    altera nem preenche metas; revise manualmente se quiser
+                    fazer mudanças.
+                  </p>
+                </aside>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {portfolioAssetClassOptions.map((assetClass) => (
                   <label
@@ -321,4 +364,4 @@ export function PortfolioAllocationTargets({
       </Collapsible>
     </section>
   );
-}
+});

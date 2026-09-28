@@ -11,6 +11,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/utils";
+import {
+  formatAmountInput,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 
 type ReserveSuggestionHolding = {
   assetKey: string;
@@ -41,55 +48,13 @@ type SearchState =
   | { status: "loading" }
   | { status: "result"; result: EmergencyReservePositionSuggestions };
 
-function parseBrazilianAmount(value: string) {
-  const normalized = value
-    .trim()
-    .replace(/\s/g, "")
-    .replace(/^R\$/i, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
-  return normalized ? Number(normalized) : Number.NaN;
-}
-
-function formatAmountInput(value: string) {
-  const digits = value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-  if (!digits) return "";
-  const cents = digits.padStart(3, "0");
-  const integer = cents.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `R$ ${integer},${cents.slice(-2)}`;
-}
-
-function countDigitsBefore(value: string, position: number) {
-  return (value.slice(0, position).match(/\d/g) ?? []).length;
-}
-
-function caretPositionForDigitCount(value: string, digitsBefore: number) {
-  if (digitsBefore === 0) {
-    const firstDigit = value.search(/\d/);
-    return firstDigit < 0 ? value.length : firstDigit;
-  }
-
-  let digitCount = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    if (/\d/.test(value[index]) && ++digitCount === digitsBefore) {
-      return index + 1;
-    }
-  }
-  return value.length;
-}
-
 export function EmergencyReservePositionSuggestionsCard({
   holdings,
   onApply,
 }: Props) {
   const [amount, setAmount] = useState("");
   const amountInputRef = useRef<HTMLInputElement>(null);
-  const selectionRef = useRef<{
-    start: number;
-    end: number;
-    direction: "forward" | "backward" | "none";
-    endOfInput: boolean;
-  } | null>(null);
+  const selectionRef = useRef<CurrencyInputSelection | null>(null);
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
   const [error, setError] = useState<string | null>(null);
 
@@ -98,13 +63,8 @@ export function EmergencyReservePositionSuggestionsCard({
     const selection = selectionRef.current;
     if (!input || !selection) return;
 
-    const start = selection.endOfInput
-      ? input.value.length
-      : caretPositionForDigitCount(input.value, selection.start);
-    const end = selection.endOfInput
-      ? input.value.length
-      : caretPositionForDigitCount(input.value, selection.end);
-    input.setSelectionRange(start, end, selection.direction);
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
     selectionRef.current = null;
   }, [amount]);
 
@@ -174,16 +134,13 @@ export function EmergencyReservePositionSuggestionsCard({
               const nextAmount = formatAmountInput(value);
               const start = event.target.selectionStart ?? value.length;
               const end = event.target.selectionEnd ?? start;
-              selectionRef.current =
-                nextAmount === amount
-                  ? null
-                  : {
-                      start: countDigitsBefore(value, start),
-                      end: countDigitsBefore(value, end),
-                      direction: event.target.selectionDirection ?? "none",
-                      endOfInput:
-                        start === value.length && end === value.length,
-                    };
+              selectionRef.current = getCurrencyInputSelection(
+                value,
+                nextAmount,
+                start,
+                end,
+                event.target.selectionDirection ?? "none",
+              );
               setAmount(nextAmount);
               setError(null);
               setSearch({ status: "idle" });

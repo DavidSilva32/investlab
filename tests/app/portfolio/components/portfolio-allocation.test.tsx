@@ -616,4 +616,94 @@ describe("PortfolioAllocation", () => {
       ),
     );
   });
+  it("opens the target editor from strategy guidance with existing targets unchanged", async () => {
+    const savedTargets = { "Renda fixa": 70, Fundos: 30 };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({ positions: [], targetPercentages: savedTargets }),
+      )
+      .mockResolvedValueOnce(
+        response({ context: { objective: null, targetMonth: null } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Fundos" }));
+    await user.click(
+      screen.getByRole("button", { name: /Revisar minhas metas/ }),
+    );
+
+    const reference = screen
+      .getByText(/Classes que voc. escolheu considerar/)
+      .closest("aside");
+    expect(reference).toBeTruthy();
+    expect(reference?.textContent).toContain("Fundos");
+    expect(reference?.textContent).toMatch(/metas atuais/i);
+    expect(
+      screen
+        .getByRole("spinbutton", { name: "Meta de Renda fixa" })
+        .getAttribute("value"),
+    ).toBe("70");
+    const fundTarget = screen.getByRole("spinbutton", {
+      name: "Meta de Fundos",
+    });
+    await user.clear(fundTarget);
+    await user.type(fundTarget, "25");
+    await user.click(
+      screen.getByRole("button", { name: /Revisar minhas metas/ }),
+    );
+    expect(
+      (
+        screen.getByRole("spinbutton", {
+          name: "Meta de Fundos",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("25");
+    expect(
+      fetchMock.mock.calls.some(([, init]) => init?.method === "PUT"),
+    ).toBe(false);
+  });
+
+  it("opens strategy targets from guidance when portfolio positions exist", async () => {
+    const savedTargets = { "Renda fixa": 70, Fundos: 30 };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          positions: [positions[0]],
+          targetPercentages: savedTargets,
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({ context: { objective: null, targetMonth: null } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Fundos" }));
+    await user.click(
+      screen.getByRole("button", { name: /Revisar minhas metas/ }),
+    );
+
+    const reference = screen
+      .getByText(/Classes que voc. escolheu considerar/)
+      .closest("aside");
+    expect(reference?.textContent).toContain("Fundos");
+    expect(
+      screen
+        .getByRole("spinbutton", { name: "Meta de Renda fixa" })
+        .getAttribute("value"),
+    ).toBe("70");
+    expect(
+      screen
+        .getByRole("spinbutton", { name: "Meta de Fundos" })
+        .getAttribute("value"),
+    ).toBe("30");
+    expect(
+      fetchMock.mock.calls.some(([, init]) => init?.method === "PUT"),
+    ).toBe(false);
+  });
 });
