@@ -18,6 +18,7 @@ import { FundamentalIndicatorCard } from "./fundamental-indicator-card";
 import { FundamentalsEvolution } from "./fundamentals-evolution";
 import { FundamentalsGrid } from "./fundamentals-grid";
 import { PriceHistoryChart } from "./price-history-chart";
+import { StockValuationPanel } from "./stock-valuation-panel";
 import type { StockAnalysis } from "./stock-analysis-types";
 
 type TickerOption = { ticker: string; name: string };
@@ -319,6 +320,7 @@ export function StockAnalysisDashboard({
           ))}
         </CardContent>
       </Card>
+      <StockValuationPanel ticker={analysis.ticker} />
       <Card>
         <CardHeader>
           <CardTitle>Evolução dos fundamentos anuais</CardTitle>

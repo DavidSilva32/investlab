@@ -16,10 +16,69 @@ import {
   screenerMarketSnapshots,
   screenerMarketSnapshotQuotes,
   screenerSecurities,
+  cvmShareClassReconciliations,
 } from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
+import { classifyCvmSector } from "@/lib/cvm-sector-classification";
 
 export class ScreenerRepository {
+  async getStockValuationContext(ticker: string) {
+    const database = getDatabaseClient();
+    const [issuer] = await database
+      .select({ cnpj: screenerIssuers.cnpj, sector: screenerIssuers.sector })
+      .from(screenerSecurities)
+      .innerJoin(
+        screenerIssuers,
+        eq(screenerSecurities.issuerCnpj, screenerIssuers.cnpj),
+      )
+      .where(
+        and(
+          eq(screenerSecurities.ticker, ticker.toUpperCase()),
+          eq(screenerSecurities.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!issuer)
+      return { sector: "unknown" as const, shareGateComplete: false };
+
+    const [reconciliation] = await database
+      .select({
+        tickerClassStatus: cvmShareClassReconciliations.tickerClassStatus,
+        unitCompositionStatus:
+          cvmShareClassReconciliations.unitCompositionStatus,
+        crossSourceAlignmentStatus:
+          cvmShareClassReconciliations.crossSourceAlignmentStatus,
+        effectiveDateStatus: cvmShareClassReconciliations.effectiveDateStatus,
+        eventHistoryStatus: cvmShareClassReconciliations.eventHistoryStatus,
+        reconciledAt: cvmShareClassReconciliations.reconciledAt,
+      })
+      .from(cvmShareClassReconciliations)
+      .where(
+        and(
+          eq(cvmShareClassReconciliations.ticker, ticker.toUpperCase()),
+          eq(cvmShareClassReconciliations.issuerCnpj, issuer.cnpj),
+        ),
+      )
+      .orderBy(desc(cvmShareClassReconciliations.reconciledAt))
+      .limit(1);
+    const shareClassReconciled =
+      reconciliation?.tickerClassStatus === "COMPLETE" &&
+      reconciliation.unitCompositionStatus === "COMPLETE" &&
+      reconciliation.crossSourceAlignmentStatus === "COMPLETE" &&
+      reconciliation.effectiveDateStatus === "COMPLETE" &&
+      reconciliation.eventHistoryStatus === "COMPLETE";
+    // The current reconciliation record has no effective economic date to compare with a market quote.
+    const marketDateAligned = false;
+    const shareGateComplete = Boolean(
+      shareClassReconciled && marketDateAligned,
+    );
+
+    return {
+      sector: classifyCvmSector(issuer.sector),
+      shareGateComplete: Boolean(shareGateComplete),
+    };
+  }
+
   async hasSuccessfulSync() {
     const [run] = await getDatabaseClient()
       .select({ id: screenerIngestionRuns.id })
