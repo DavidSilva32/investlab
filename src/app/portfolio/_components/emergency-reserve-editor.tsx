@@ -138,9 +138,9 @@ export function EmergencyReserveEditor() {
   }
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-5" data-testid="reserve-editor">
       <p
-        className="text-xs text-muted-foreground"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
         aria-live="polite"
         role={error && !data ? "alert" : "status"}
       >
@@ -149,10 +149,34 @@ export function EmergencyReserveEditor() {
           : error && !data
             ? loadErrorMessage
             : data?.configured
-              ? `Meta pessoal de ${data.targetMonths} meses · ${data.selectedPositionCount} ativos selecionados`
+              ? `Meta pessoal de ${data.targetMonths} meses`
               : "Configuração pessoal ainda não definida"}
+        {data && (
+          <>
+            {" · "}
+            {selectedKeys.size}{" "}
+            {selectedKeys.size === 1
+              ? "grupo selecionado"
+              : "grupos selecionados"}
+          </>
+        )}
       </p>
-      {loading && <p role="status">Carregando configuração da reserva…</p>}
+      {loading && (
+        <div
+          className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
+          data-testid="reserve-editor-loading-layout"
+          aria-hidden="true"
+        >
+          <div className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="h-16 animate-pulse rounded-md bg-muted" />
+              <div className="h-16 animate-pulse rounded-md bg-muted" />
+            </div>
+            <div className="h-48 animate-pulse rounded-xl bg-muted" />
+          </div>
+          <div className="h-72 animate-pulse rounded-xl bg-muted" />
+        </div>
+      )}
       {error && !data && (
         <div role="alert" className="space-y-3 text-sm text-destructive">
           <p>{error}</p>
@@ -170,160 +194,195 @@ export function EmergencyReserveEditor() {
       )}
       {data && (
         <form className="space-y-5" onSubmit={save}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="monthly-expenses">Custo mensal</Label>
-              <Input
-                id="monthly-expenses"
-                type="number"
-                inputMode="decimal"
-                min="0.01"
-                step="0.01"
-                value={monthlyExpenses}
-                onChange={(event) => setMonthlyExpenses(event.target.value)}
-                aria-describedby="reserve-cost-help"
-                required
-              />
-              <p
-                id="reserve-cost-help"
-                className="text-xs text-muted-foreground"
+          <div
+            className="grid items-start gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
+            data-testid="reserve-editor-layout"
+          >
+            <div className="space-y-5">
+              <section
+                aria-labelledby="reserve-target-title"
+                className="space-y-4"
               >
-                Use o valor que melhor representa suas despesas mensais.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="target-months">Meta pessoal em meses</Label>
-              <Input
-                id="target-months"
-                type="number"
-                inputMode="numeric"
-                min="1"
-                max="1200"
-                step="1"
-                value={targetMonths}
-                onChange={(event) => setTargetMonths(event.target.value)}
-                aria-describedby="reserve-months-help"
-                required
+                <h3 id="reserve-target-title" className="text-sm font-semibold">
+                  Sua meta pessoal
+                </h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="monthly-expenses">Custo mensal</Label>
+                    <Input
+                      id="monthly-expenses"
+                      type="number"
+                      inputMode="decimal"
+                      min="0.01"
+                      step="0.01"
+                      value={monthlyExpenses}
+                      onChange={(event) =>
+                        setMonthlyExpenses(event.target.value)
+                      }
+                      aria-describedby="reserve-cost-help"
+                      required
+                    />
+                    <p
+                      id="reserve-cost-help"
+                      className="text-xs text-muted-foreground"
+                    >
+                      Use o valor que melhor representa suas despesas mensais.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="target-months">Meta pessoal em meses</Label>
+                    <Input
+                      id="target-months"
+                      type="number"
+                      inputMode="numeric"
+                      min="1"
+                      max="1200"
+                      step="1"
+                      value={targetMonths}
+                      onChange={(event) => setTargetMonths(event.target.value)}
+                      aria-describedby="reserve-months-help"
+                      required
+                    />
+                    <p
+                      id="reserve-months-help"
+                      className="text-xs text-muted-foreground"
+                    >
+                      A meta em reais é calculada pelo custo mensal multiplicado
+                      pelos meses que você definiu.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <EmergencyReservePositionSuggestionsCard
+                holdings={data.holdings}
+                onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
               />
-              <p
-                id="reserve-months-help"
-                className="text-xs text-muted-foreground"
-              >
-                A meta em reais é calculada pelo custo mensal multiplicado pelos
-                meses que você definiu.
-              </p>
             </div>
+
+            <fieldset className="min-w-0 space-y-3 rounded-xl border p-4">
+              <legend className="px-1 text-sm font-semibold">
+                Posições consideradas na reserva
+              </legend>
+              <p className="text-xs text-muted-foreground">
+                {selectedKeys.size} selecionado(s) · {data.holdings.length}{" "}
+                disponíveis
+              </p>
+              <fieldset className="space-y-3">
+                <legend className="sr-only">
+                  Investimentos que você quer considerar na reserva
+                </legend>
+                <p className="text-sm text-muted-foreground">
+                  Somente grupos classificados como renda fixa aparecem aqui. A
+                  classe não confirma prazo nem condições de resgate.
+                </p>
+                {data.missingSelectionCount > 0 && (
+                  <div
+                    role="status"
+                    className="space-y-3 rounded-md border p-3 text-sm"
+                  >
+                    <p>
+                      {data.missingSelectionCount} grupo(s) selecionado(s) não
+                      tem correspondência inequívoca com a importação mais
+                      recente e fica(m) fora do cálculo até ser(em)
+                      selecionado(s) novamente.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const visibleKeys = new Set(
+                          data.holdings.map((holding) => holding.assetKey),
+                        );
+                        setSelectedKeys(
+                          (current) =>
+                            new Set(
+                              [...current].filter((key) =>
+                                visibleKeys.has(key),
+                              ),
+                            ),
+                        );
+                      }}
+                    >
+                      Remover grupos sem correspondência
+                    </Button>
+                  </div>
+                )}
+                {data.holdings.length === 0 ? (
+                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    Importe uma posição da carteira para escolher os
+                    investimentos da reserva.
+                  </p>
+                ) : (
+                  <ul className="grid max-h-[min(28rem,45dvh)] gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-1">
+                    {data.holdings.map((holding) => (
+                      <li
+                        key={holding.assetKey}
+                        className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
+                      >
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            id={`reserve-holding-${holding.assetKey}`}
+                            className="mt-1"
+                            checked={selectedKeys.has(holding.assetKey)}
+                            onCheckedChange={() =>
+                              toggleHolding(holding.assetKey)
+                            }
+                          />
+                          <label
+                            htmlFor={`reserve-holding-${holding.assetKey}`}
+                            className="min-w-0 flex-1 cursor-pointer"
+                          >
+                            <span className="block font-medium">
+                              {holding.product}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {[
+                                holding.assetCode,
+                                holding.institution,
+                                holding.issuer,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") ||
+                                "Sem código ou instituição informados"}
+                              {holding.positionCount > 1 &&
+                                ` · ${holding.positionCount} posições agrupadas`}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {holding.value === null
+                                ? "Sem valor informado"
+                                : formatCurrency(holding.value)}
+                              {holding.unvaluedPositions > 0 &&
+                                ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
+                            </span>
+                          </label>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </fieldset>
+            </fieldset>
           </div>
 
-          <EmergencyReservePositionSuggestionsCard
-            holdings={data.holdings}
-            onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
-          />
-
-          <fieldset className="space-y-3">
-            <legend className="font-medium">
-              Investimentos que você quer considerar na reserva
-            </legend>
-            <p className="text-sm text-muted-foreground">
-              Somente grupos classificados como renda fixa aparecem aqui. A
-              classe não confirma prazo nem condições de resgate.
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              O cálculo usa o valor estimado para CDB DI/CDI quando disponível;
+              nos demais casos, usa o valor informado na importação. Confirme
+              com a instituição o prazo e as condições de resgate.
             </p>
-            {data.missingSelectionCount > 0 && (
-              <div
-                role="status"
-                className="space-y-3 rounded-md border p-3 text-sm"
-              >
-                <p>
-                  {data.missingSelectionCount} grupo(s) selecionado(s) não tem
-                  correspondência inequívoca com a importação mais recente e
-                  fica(m) fora do cálculo até ser(em) selecionado(s) novamente.
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    const visibleKeys = new Set(
-                      data.holdings.map((holding) => holding.assetKey),
-                    );
-                    setSelectedKeys(
-                      (current) =>
-                        new Set(
-                          [...current].filter((key) => visibleKeys.has(key)),
-                        ),
-                    );
-                  }}
-                >
-                  Remover grupos sem correspondência
-                </Button>
-              </div>
-            )}
-            {data.holdings.length === 0 ? (
-              <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                Importe uma posição da carteira para escolher os investimentos
-                da reserva.
+            {formError && (
+              <p role="alert" className="text-sm text-destructive">
+                {formError}
               </p>
-            ) : (
-              <ul className="grid max-h-96 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
-                {data.holdings.map((holding) => (
-                  <li
-                    key={holding.assetKey}
-                    className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        id={`reserve-holding-${holding.assetKey}`}
-                        className="mt-1"
-                        checked={selectedKeys.has(holding.assetKey)}
-                        onCheckedChange={() => toggleHolding(holding.assetKey)}
-                      />
-                      <label
-                        htmlFor={`reserve-holding-${holding.assetKey}`}
-                        className="min-w-0 flex-1 cursor-pointer"
-                      >
-                        <span className="block font-medium">
-                          {holding.product}
-                        </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {[
-                            holding.assetCode,
-                            holding.institution,
-                            holding.issuer,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") ||
-                            "Sem código ou instituição informados"}
-                          {holding.positionCount > 1 &&
-                            ` · ${holding.positionCount} posições agrupadas`}
-                        </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {holding.value === null
-                            ? "Sem valor informado"
-                            : formatCurrency(holding.value)}
-                          {holding.unvaluedPositions > 0 &&
-                            ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
-                        </span>
-                      </label>
-                    </div>
-                  </li>
-                ))}
-              </ul>
             )}
-          </fieldset>
-
-          <p className="text-xs text-muted-foreground">
-            O cálculo usa o valor estimado para CDB DI/CDI quando disponível;
-            nos demais casos, usa o valor informado na importação. Confirme com
-            a instituição o prazo e as condições de resgate.
-          </p>
-          {formError && (
-            <p role="alert" className="text-sm text-destructive">
-              {formError}
-            </p>
-          )}
-          <Button type="submit" disabled={saving}>
-            {saving ? "Salvando…" : "Salvar configuração"}
-          </Button>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={saving}>
+                {saving ? "Salvando…" : "Salvar configuração"}
+              </Button>
+            </div>
+          </div>
         </form>
       )}
     </section>

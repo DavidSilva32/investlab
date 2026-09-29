@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -15,7 +15,7 @@ vi.mock("@/components/reference-rates", () => ({
   ReferenceRates: () => <p>Taxas de referência</p>,
 }));
 vi.mock("@/app/portfolio/_components/emergency-reserve-editor", () => ({
-  EmergencyReserveEditor: () => null,
+  EmergencyReserveEditor: () => <div>Editor da reserva</div>,
 }));
 vi.mock("@/app/portfolio/_components/portfolio-allocation", () => ({
   PortfolioAllocation: ({
@@ -113,7 +113,7 @@ describe("PortfolioClient", () => {
     ).toBeTruthy();
   });
 
-  it("opens the reserve configuration in its own editing sheet", async () => {
+  it("contains reserve scrolling inside the editor while keeping the sheet viewport-sized", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
@@ -121,19 +121,44 @@ describe("PortfolioClient", () => {
 
     render(<PortfolioClient activeView="overview" />);
 
-    await userEvent
-      .setup()
-      .click(await screen.findByRole("button", { name: "Configurar reserva" }));
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Metas pessoais e detalhes" }),
+    );
+    const goalsSheet = await screen.findByRole("dialog");
+    expect(goalsSheet.className).toContain("inset-y-0");
+    expect(goalsSheet.className).toContain("h-full");
+    expect(goalsSheet.className).toContain("w-full");
+    expect(goalsSheet.className).toContain("overflow-y-auto");
+    expect(goalsSheet.className).toContain("sm:max-w-5xl");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(
+      screen.getByRole("button", { name: "Configurar reserva" }),
+    );
 
     expect(
       await screen.findByRole("heading", { name: "Configuração da reserva" }),
     ).toBeTruthy();
     const sheet = screen.getByRole("dialog");
-    expect(sheet.className).toContain("bottom-auto");
-    expect(sheet.className).toContain("top-4");
-    expect(sheet.className).toContain("h-auto");
-    expect(sheet.className).toContain("max-h-[calc(100dvh-2rem)]");
-    expect(sheet.className).toContain("overflow-y-auto");
+    expect(sheet.className).toContain("inset-y-0");
+    expect(sheet.className).toContain("h-dvh");
+    expect(sheet.className).toContain("max-h-dvh");
+    expect(sheet.className).toContain("flex-col");
+    expect(sheet.className).toContain("overflow-hidden");
+    expect(sheet.className).not.toContain("overflow-y-auto");
+    expect(sheet.className).toContain("w-full");
+    expect(sheet.className).toContain("sm:max-w-5xl");
+    expect(sheet.className).not.toMatch(/inset-y-auto|top-4|h-auto/);
+    const scrollRegion = screen.getByRole("region", {
+      name: "Conteúdo da configuração da reserva",
+    });
+    expect(scrollRegion.className).toContain("min-h-0");
+    expect(scrollRegion.className).toContain("flex-1");
+    expect(scrollRegion.className).toContain("overflow-y-auto");
+    expect(scrollRegion.className).toContain("overscroll-contain");
+    expect(scrollRegion.textContent).toContain("Editor da reserva");
   });
 
   it("reloads the portfolio after a CDI rate is updated", async () => {

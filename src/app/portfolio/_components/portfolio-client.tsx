@@ -121,16 +121,22 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
               </SheetTrigger>
               <SheetContent
                 side="right"
-                className="bottom-auto top-4 h-auto max-h-[calc(100dvh-2rem)] w-full overflow-y-auto sm:max-w-2xl"
+                className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden sm:max-w-5xl"
               >
-                <SheetHeader className="mb-6 pr-8">
+                <SheetHeader className="mb-6 shrink-0 pr-8">
                   <SheetTitle>Configuração da reserva</SheetTitle>
                   <SheetDescription>
                     Ajuste suas despesas, sua meta pessoal e os investimentos
                     que deseja considerar.
                   </SheetDescription>
                 </SheetHeader>
-                <EmergencyReserveEditor />
+                <div
+                  aria-label="Conteúdo da configuração da reserva"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                  role="region"
+                >
+                  <EmergencyReserveEditor />
+                </div>
               </SheetContent>
             </Sheet>
             <Sheet>

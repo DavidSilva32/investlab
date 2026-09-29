@@ -80,7 +80,7 @@ describe("EmergencyReserveEditor", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the complete reserve configuration inside its dedicated editor", async () => {
+  it("shows the complete reserve configuration in a responsive, expanded layout", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, json: async () => editorData }),
@@ -89,9 +89,41 @@ describe("EmergencyReserveEditor", () => {
     expect(await screen.findByText(/Meta pessoal de 6 meses/)).toBeTruthy();
     expect(await screen.findByLabelText("Custo mensal")).toBeTruthy();
     expect(screen.getByLabelText("Meta pessoal em meses")).toBeTruthy();
+    const layout = screen.getByTestId("reserve-editor-layout");
+    expect(layout.className).toContain(
+      "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]",
+    );
+    expect(screen.getByText(/1 grupo selecionado/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Buscar combinações" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText(/CDB liquidez/)).toBeTruthy();
+    expect(screen.getByLabelText(/Tesouro Selic/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Salvar configuração" }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("group", { name: "Posições consideradas na reserva" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Buscar grupos pelo valor/ }),
+    ).toBeNull();
+  });
+
+  it("uses a responsive loading scaffold before the reserve data arrives", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
+    render(<EmergencyReserveEditor />);
+
+    expect(screen.getByRole("status").textContent).toContain("Carregando");
+    const loadingLayout = screen.getByTestId("reserve-editor-loading-layout");
+    expect(loadingLayout.className).toContain(
+      "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]",
+    );
+    expect(loadingLayout.querySelectorAll(".animate-pulse")).toHaveLength(4);
+    expect(screen.queryByLabelText("Custo mensal")).toBeNull();
   });
 
   it("explains when the personal target has not been configured", async () => {
@@ -109,8 +141,23 @@ describe("EmergencyReserveEditor", () => {
     render(<EmergencyReserveEditor />);
 
     expect(
-      await screen.findByText("Configuração pessoal ainda não definida"),
+      await screen.findByText(/Configuração pessoal ainda não definida/),
     ).toBeTruthy();
+  });
+
+  it("reloads the reserve after the portfolio changes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => editorData,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EmergencyReserveEditor />);
+
+    await screen.findByLabelText("Custo mensal");
+    window.dispatchEvent(new Event("portfolio:updated"));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/emergency-reserve");
   });
 
   it("loads groups and saves the user's selection and personal target", async () => {
@@ -131,6 +178,7 @@ describe("EmergencyReserveEditor", () => {
 
     render(<EmergencyReserveEditor />);
 
+    await screen.findByLabelText("Custo mensal");
     const first = await screen.findByLabelText(/CDB liquidez/);
     await user.click(first);
     await user.click(first);
@@ -219,6 +267,7 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
+    await screen.findByLabelText("Custo mensal");
     await screen.findByRole("button", {
       name: "Remover grupos sem correspondência",
     });
@@ -253,6 +302,7 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
+    await screen.findByLabelText("Custo mensal");
     expect(
       await screen.findByText(/Importe uma posição da carteira/),
     ).toBeTruthy();
@@ -339,7 +389,9 @@ describe("EmergencyReserveEditor suggestion application", () => {
     await user.click(
       await screen.findByRole("button", { name: "Usar esta combinação" }),
     );
-
+    expect(screen.getByRole("status").textContent).toContain(
+      "1 grupo selecionado",
+    );
     expect(
       screen
         .getByRole("checkbox", { name: /Tesouro Selic/ })
