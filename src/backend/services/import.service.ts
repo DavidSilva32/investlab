@@ -5,6 +5,7 @@ import {
 } from "@/backend/schemas/import.schema";
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
 import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
+import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   importRepository,
@@ -50,6 +51,12 @@ export class ImportService {
         : {
             ...preview,
             referenceDate: positionReferenceDateSchema.parse(referenceDate),
+            liquidityFacts: preview.positions.map((position) =>
+              createTreasurySelicLiquidityFact({
+                ...position,
+                referenceDate: positionReferenceDateSchema.parse(referenceDate),
+              }),
+            ),
           };
     const result = await importRepository.create(
       { fileName: file.name, fileHash: preview.hash, ...importData },
