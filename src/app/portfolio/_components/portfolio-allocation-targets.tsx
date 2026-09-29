@@ -134,7 +134,7 @@ export function PortfolioAllocationTargets({
               id="allocation-targets-title"
               className="text-base font-semibold"
             >
-              Metas da sua estratégia
+              Metas pessoais de alocação
             </h3>
           </div>
           <div className="flex flex-wrap items-center gap-2">

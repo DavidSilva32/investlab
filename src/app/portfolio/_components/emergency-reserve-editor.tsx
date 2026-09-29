@@ -1,19 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmergencyReservePositionSuggestionsCard } from "@/app/portfolio/_components/emergency-reserve-position-suggestions";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
 
@@ -53,7 +46,6 @@ export function EmergencyReserveEditor() {
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
 
   const loadData = useCallback(() => {
     fetch("/api/emergency-reserve")
@@ -71,7 +63,6 @@ export function EmergencyReserveEditor() {
       })
       .catch(() => {
         setError(loadErrorMessage);
-        setIsOpen(true);
         toast.error(loadErrorMessage);
       })
       .finally(() => setLoading(false));
@@ -147,240 +138,194 @@ export function EmergencyReserveEditor() {
   }
 
   return (
-    <Card className="mb-6">
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <CardTitle>Reserva de emergência</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Defina seu custo mensal e sua meta pessoal em meses. A meta é
-                uma configuração sua, não uma regra universal.
-              </p>
+    <section className="space-y-5">
+      <p
+        className="text-xs text-muted-foreground"
+        aria-live="polite"
+        role={error && !data ? "alert" : "status"}
+      >
+        {loading
+          ? "Carregando configuração..."
+          : error && !data
+            ? loadErrorMessage
+            : data?.configured
+              ? `Meta pessoal de ${data.targetMonths} meses · ${data.selectedPositionCount} ativos selecionados`
+              : "Configuração pessoal ainda não definida"}
+      </p>
+      {loading && <p role="status">Carregando configuração da reserva…</p>}
+      {error && !data && (
+        <div role="alert" className="space-y-3 text-sm text-destructive">
+          <p>{error}</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setLoading(true);
+              loadData();
+            }}
+          >
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+      {data && (
+        <form className="space-y-5" onSubmit={save}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="monthly-expenses">Custo mensal</Label>
+              <Input
+                id="monthly-expenses"
+                type="number"
+                inputMode="decimal"
+                min="0.01"
+                step="0.01"
+                value={monthlyExpenses}
+                onChange={(event) => setMonthlyExpenses(event.target.value)}
+                aria-describedby="reserve-cost-help"
+                required
+              />
               <p
+                id="reserve-cost-help"
                 className="text-xs text-muted-foreground"
-                aria-live="polite"
-                role={error && !data ? "alert" : "status"}
               >
-                {loading
-                  ? "Carregando configuração..."
-                  : error && !data
-                    ? loadErrorMessage
-                    : data?.configured
-                      ? `Meta de ${data.targetMonths} meses · ${data.selectedPositionCount} ativos selecionados`
-                      : "Configuração pessoal ainda não definida"}
+                Use o valor que melhor representa suas despesas mensais.
               </p>
             </div>
-            <CollapsibleTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label={
-                  isOpen
-                    ? "Recolher configuração da reserva"
-                    : "Configurar reserva"
-                }
-                aria-expanded={isOpen}
+            <div className="space-y-2">
+              <Label htmlFor="target-months">Meta pessoal em meses</Label>
+              <Input
+                id="target-months"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="1200"
+                step="1"
+                value={targetMonths}
+                onChange={(event) => setTargetMonths(event.target.value)}
+                aria-describedby="reserve-months-help"
+                required
+              />
+              <p
+                id="reserve-months-help"
+                className="text-xs text-muted-foreground"
               >
-                {isOpen ? "Recolher" : "Configurar"}
-                <ChevronDown
-                  className={`size-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                />
-              </Button>
-            </CollapsibleTrigger>
+                A meta em reais é calculada pelo custo mensal multiplicado pelos
+                meses que você definiu.
+              </p>
+            </div>
           </div>
-        </CardHeader>
-        <CollapsibleContent>
-          <CardContent>
-            {loading && (
-              <p role="status">Carregando configuração da reserva…</p>
-            )}
-            {error && !data && (
-              <div role="alert" className="space-y-3 text-sm text-destructive">
-                <p>{error}</p>
+
+          <EmergencyReservePositionSuggestionsCard
+            holdings={data.holdings}
+            onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
+          />
+
+          <fieldset className="space-y-3">
+            <legend className="font-medium">
+              Investimentos que você quer considerar na reserva
+            </legend>
+            <p className="text-sm text-muted-foreground">
+              Somente grupos classificados como renda fixa aparecem aqui. A
+              classe não confirma prazo nem condições de resgate.
+            </p>
+            {data.missingSelectionCount > 0 && (
+              <div
+                role="status"
+                className="space-y-3 rounded-md border p-3 text-sm"
+              >
+                <p>
+                  {data.missingSelectionCount} grupo(s) selecionado(s) não tem
+                  correspondência inequívoca com a importação mais recente e
+                  fica(m) fora do cálculo até ser(em) selecionado(s) novamente.
+                </p>
                 <Button
                   type="button"
+                  size="sm"
                   variant="outline"
                   onClick={() => {
-                    setLoading(true);
-                    loadData();
+                    const visibleKeys = new Set(
+                      data.holdings.map((holding) => holding.assetKey),
+                    );
+                    setSelectedKeys(
+                      (current) =>
+                        new Set(
+                          [...current].filter((key) => visibleKeys.has(key)),
+                        ),
+                    );
                   }}
                 >
-                  Tentar novamente
+                  Remover grupos sem correspondência
                 </Button>
               </div>
             )}
-            {data && (
-              <form className="space-y-5" onSubmit={save}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="monthly-expenses">Custo mensal</Label>
-                    <Input
-                      id="monthly-expenses"
-                      type="number"
-                      inputMode="decimal"
-                      min="0.01"
-                      step="0.01"
-                      value={monthlyExpenses}
-                      onChange={(event) =>
-                        setMonthlyExpenses(event.target.value)
-                      }
-                      aria-describedby="reserve-cost-help"
-                      required
-                    />
-                    <p
-                      id="reserve-cost-help"
-                      className="text-xs text-muted-foreground"
-                    >
-                      Use o valor que melhor representa suas despesas mensais.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="target-months">Meta pessoal em meses</Label>
-                    <Input
-                      id="target-months"
-                      type="number"
-                      inputMode="numeric"
-                      min="1"
-                      max="1200"
-                      step="1"
-                      value={targetMonths}
-                      onChange={(event) => setTargetMonths(event.target.value)}
-                      aria-describedby="reserve-months-help"
-                      required
-                    />
-                    <p
-                      id="reserve-months-help"
-                      className="text-xs text-muted-foreground"
-                    >
-                      A meta em reais é calculada pelo custo mensal multiplicado
-                      pelos meses que você definiu.
-                    </p>
-                  </div>
-                </div>
-
-                <EmergencyReservePositionSuggestionsCard
-                  holdings={data.holdings}
-                  onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
-                />
-
-                <fieldset className="space-y-3">
-                  <legend className="font-medium">
-                    Investimentos que você quer considerar na reserva
-                  </legend>
-                  <p className="text-sm text-muted-foreground">
-                    Somente grupos classificados como renda fixa aparecem aqui.
-                    A classe não confirma prazo nem condições de resgate.
-                  </p>
-                  {data.missingSelectionCount > 0 && (
-                    <div
-                      role="status"
-                      className="space-y-3 rounded-md border p-3 text-sm"
-                    >
-                      <p>
-                        {data.missingSelectionCount} grupo(s) selecionado(s) não
-                        tem correspondência inequívoca com a importação mais
-                        recente e fica(m) fora do cálculo até ser(em)
-                        selecionado(s) novamente.
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const visibleKeys = new Set(
-                            data.holdings.map((holding) => holding.assetKey),
-                          );
-                          setSelectedKeys(
-                            (current) =>
-                              new Set(
-                                [...current].filter((key) =>
-                                  visibleKeys.has(key),
-                                ),
-                              ),
-                          );
-                        }}
+            {data.holdings.length === 0 ? (
+              <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                Importe uma posição da carteira para escolher os investimentos
+                da reserva.
+              </p>
+            ) : (
+              <ul className="grid max-h-96 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
+                {data.holdings.map((holding) => (
+                  <li
+                    key={holding.assetKey}
+                    className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
+                  >
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        id={`reserve-holding-${holding.assetKey}`}
+                        className="mt-1"
+                        checked={selectedKeys.has(holding.assetKey)}
+                        onCheckedChange={() => toggleHolding(holding.assetKey)}
+                      />
+                      <label
+                        htmlFor={`reserve-holding-${holding.assetKey}`}
+                        className="min-w-0 flex-1 cursor-pointer"
                       >
-                        Remover grupos sem correspondência
-                      </Button>
+                        <span className="block font-medium">
+                          {holding.product}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {[
+                            holding.assetCode,
+                            holding.institution,
+                            holding.issuer,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") ||
+                            "Sem código ou instituição informados"}
+                          {holding.positionCount > 1 &&
+                            ` · ${holding.positionCount} posições agrupadas`}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {holding.value === null
+                            ? "Sem valor informado"
+                            : formatCurrency(holding.value)}
+                          {holding.unvaluedPositions > 0 &&
+                            ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
+                        </span>
+                      </label>
                     </div>
-                  )}
-                  {data.holdings.length === 0 ? (
-                    <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                      Importe uma posição da carteira para escolher os
-                      investimentos da reserva.
-                    </p>
-                  ) : (
-                    <ul className="grid max-h-96 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
-                      {data.holdings.map((holding) => (
-                        <li
-                          key={holding.assetKey}
-                          className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
-                        >
-                          <div className="flex items-start gap-3">
-                            <Checkbox
-                              id={`reserve-holding-${holding.assetKey}`}
-                              className="mt-1"
-                              checked={selectedKeys.has(holding.assetKey)}
-                              onCheckedChange={() =>
-                                toggleHolding(holding.assetKey)
-                              }
-                            />
-                            <label
-                              htmlFor={`reserve-holding-${holding.assetKey}`}
-                              className="min-w-0 flex-1 cursor-pointer"
-                            >
-                              <span className="block font-medium">
-                                {holding.product}
-                              </span>
-                              <span className="block text-xs text-muted-foreground">
-                                {[
-                                  holding.assetCode,
-                                  holding.institution,
-                                  holding.issuer,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ") ||
-                                  "Sem código ou instituição informados"}
-                                {holding.positionCount > 1 &&
-                                  ` · ${holding.positionCount} posições agrupadas`}
-                              </span>
-                              <span className="block text-xs text-muted-foreground">
-                                {holding.value === null
-                                  ? "Sem valor informado"
-                                  : formatCurrency(holding.value)}
-                                {holding.unvaluedPositions > 0 &&
-                                  ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
-                              </span>
-                            </label>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </fieldset>
-
-                <p className="text-xs text-muted-foreground">
-                  O cálculo usa o valor estimado para CDB DI/CDI quando
-                  disponível; nos demais casos, usa o valor informado na
-                  importação. Confirme com a instituição o prazo e as condições
-                  de resgate.
-                </p>
-                {formError && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {formError}
-                  </p>
-                )}
-                <Button type="submit" disabled={saving}>
-                  {saving ? "Salvando…" : "Salvar configuração"}
-                </Button>
-              </form>
+                  </li>
+                ))}
+              </ul>
             )}
-          </CardContent>
-        </CollapsibleContent>
-      </Collapsible>
-    </Card>
+          </fieldset>
+
+          <p className="text-xs text-muted-foreground">
+            O cálculo usa o valor estimado para CDB DI/CDI quando disponível;
+            nos demais casos, usa o valor informado na importação. Confirme com
+            a instituição o prazo e as condições de resgate.
+          </p>
+          {formError && (
+            <p role="alert" className="text-sm text-destructive">
+              {formError}
+            </p>
+          )}
+          <Button type="submit" disabled={saving}>
+            {saving ? "Salvando…" : "Salvar configuração"}
+          </Button>
+        </form>
+      )}
+    </section>
   );
 }
