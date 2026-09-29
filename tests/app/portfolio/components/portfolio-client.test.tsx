@@ -17,7 +17,11 @@ vi.mock("@/app/portfolio/_components/emergency-reserve-editor", () => ({
   EmergencyReserveEditor: () => null,
 }));
 vi.mock("@/app/portfolio/_components/portfolio-allocation", () => ({
-  PortfolioAllocation: () => null,
+  PortfolioAllocation: ({
+    nextContributionGuidance,
+  }: {
+    nextContributionGuidance?: { title: string };
+  }) => <p>{nextContributionGuidance?.title}</p>,
 }));
 vi.mock("@/app/portfolio/_components/portfolio-overview", () => ({
   PortfolioOverview: () => <p>Visão geral</p>,
@@ -33,6 +37,11 @@ const overview = {
   positions: [],
   movements: [],
   referenceRates: { selic: null, cdi: null },
+  nextContributionGuidance: {
+    status: "target_gap" as const,
+    title: "Considere Renda fixa para o próximo aporte",
+    explanation: "Sua carteira está abaixo da meta pessoal registrada.",
+  },
 };
 
 describe("PortfolioClient", () => {
@@ -56,6 +65,19 @@ describe("PortfolioClient", () => {
 
     expect(await screen.findByText(text)).toBeTruthy();
     expect(fetch).toHaveBeenCalledWith("/api/portfolio");
+  });
+
+  it("passes the calculated contribution guidance to the portfolio allocation area", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
+    );
+
+    render(<PortfolioClient activeView="overview" />);
+
+    expect(
+      await screen.findByText("Considere Renda fixa para o próximo aporte"),
+    ).toBeTruthy();
   });
 
   it("reloads the portfolio after a CDI rate is updated", async () => {
