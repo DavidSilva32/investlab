@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalysisStockSearch } from "@/app/analyses/_components/analysis-stock-search";
@@ -44,6 +45,21 @@ describe("AnalysisStockSearch", () => {
       screen.getByRole("combobox", { name: "Pesquisar ação" }),
     ).toBeTruthy();
   });
+  it("synchronizes its input without searching the previous ticker", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const { rerender } = render(
+      <AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />,
+    );
+    rerender(<AnalysisStockSearch ticker="VALE3" onSelect={vi.fn()} />);
+
+    await waitFor(() => {
+      expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
+        "VALE3",
+      );
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("searches dynamically and selects a ticker by click", async () => {
     vi.useFakeTimers();
     const fetcher = vi
@@ -70,6 +86,30 @@ describe("AnalysisStockSearch", () => {
       name: "Vale S.A.",
     });
     expect(input.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("renders only the first result for tickers that differ by letter case", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response([
+          { ticker: "petr4", name: "Petrobras (primeiro resultado)" },
+          { ticker: "PETR4", name: "Petrobras (duplicado)" },
+        ]),
+      ),
+    );
+    render(<AnalysisStockSearch ticker="VALE3" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Petr" },
+    });
+    await advanceSearch();
+
+    expect(screen.getAllByRole("option", { name: /petr4/i })).toHaveLength(1);
+    expect(
+      screen.getByRole("option", { name: /primeiro resultado/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /duplicado/ })).toBeNull();
   });
 
   it("does not search short or currently selected input and supports an empty result", async () => {

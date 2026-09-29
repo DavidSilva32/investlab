@@ -26,18 +26,36 @@ export function AnalysisStockSearch({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(ticker);
-  const canSearch =
-    query.trim().length >= 2 && query.trim().toUpperCase() !== ticker;
+  const [queryTicker, setQueryTicker] = useState(ticker);
   const [options, setOptions] = useState<TickerOption[]>([]);
   const [open, setOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(false);
+  const tickerIsSynchronized = queryTicker === ticker;
+  const canSearch =
+    tickerIsSynchronized &&
+    query.trim().length >= 2 &&
+    query.trim().toUpperCase() !== ticker;
 
   useEffect(() => {
     inputRef.current?.setAttribute("aria-expanded", String(open && canSearch));
   });
 
   useEffect(() => {
+    if (tickerIsSynchronized) return;
+    const timer = window.setTimeout(() => {
+      setQueryTicker(ticker);
+      setQuery(ticker);
+      setOptions([]);
+      setOpen(false);
+      setSearching(false);
+      setSearchError(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [ticker, tickerIsSynchronized]);
+
+  useEffect(() => {
+    if (!tickerIsSynchronized) return;
     const normalized = query.trim();
     if (normalized.length < 2 || normalized.toUpperCase() === ticker) return;
 
@@ -53,7 +71,14 @@ export function AnalysisStockSearch({
         if (!response.ok) throw new Error("Ticker search failed");
         const body = (await response.json()) as { results: TickerOption[] };
         if (controller.signal.aborted) return;
-        setOptions(body.results);
+        const seenTickers = new Set<string>();
+        const uniqueResults = body.results.filter((option) => {
+          const normalizedTicker = option.ticker.toUpperCase();
+          if (seenTickers.has(normalizedTicker)) return false;
+          seenTickers.add(normalizedTicker);
+          return true;
+        });
+        setOptions(uniqueResults);
         setOpen(true);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") return;
@@ -68,7 +93,7 @@ export function AnalysisStockSearch({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, ticker]);
+  }, [query, ticker, tickerIsSynchronized]);
 
   function select(option: TickerOption) {
     setQuery(option.ticker);
