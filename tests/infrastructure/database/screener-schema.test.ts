@@ -84,6 +84,17 @@ describe("Screener persistence schema", () => {
       ]),
     );
     expect(
+      facts.foreignKeys.map((foreignKey) => ({
+        columns: foreignKey.reference().columns.map(({ name }) => name),
+        foreignColumns: foreignKey
+          .reference()
+          .foreignColumns.map(({ name }) => name),
+      })),
+    ).toEqual([
+      { columns: ["issuerCnpj"], foreignColumns: ["cnpj"] },
+      { columns: ["ingestionRunId"], foreignColumns: ["id"] },
+    ]);
+    expect(
       facts.foreignKeys.map(
         (foreignKey) => foreignKey.reference().columns[0]?.name,
       ),
@@ -181,6 +192,17 @@ describe("Screener persistence schema", () => {
         "cvm_share_capital_run_idx",
       ]),
     );
+    expect(
+      facts.foreignKeys.map((foreignKey) => ({
+        columns: foreignKey.reference().columns.map(({ name }) => name),
+        foreignColumns: foreignKey
+          .reference()
+          .foreignColumns.map(({ name }) => name),
+      })),
+    ).toEqual([
+      { columns: ["issuerCnpj"], foreignColumns: ["cnpj"] },
+      { columns: ["ingestionRunId"], foreignColumns: ["id"] },
+    ]);
     expect(reconciliation.name).toBe("cvm_share_class_reconciliations");
     expect(reconciliation.columns.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
@@ -200,5 +222,16 @@ describe("Screener persistence schema", () => {
     expect(reconciliation.indexes.map(({ config }) => config.name)).toContain(
       "cvm_share_class_run_ticker_uidx",
     );
+    expect(
+      reconciliation.foreignKeys.map((foreignKey) => ({
+        columns: foreignKey.reference().columns.map(({ name }) => name),
+        foreignColumns: foreignKey
+          .reference()
+          .foreignColumns.map(({ name }) => name),
+      })),
+    ).toEqual([
+      { columns: ["ingestionRunId"], foreignColumns: ["id"] },
+      { columns: ["issuerCnpj"], foreignColumns: ["cnpj"] },
+    ]);
   });
 });

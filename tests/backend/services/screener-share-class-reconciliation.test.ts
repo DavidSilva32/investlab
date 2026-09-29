@@ -104,6 +104,31 @@ describe("reconcileShareClassFacts", () => {
     expect(differentDocuments.freDocumentAlignmentStatus).toBe("AMBIGUOUS");
   });
 
+  it("sorts evidence by document version before source file and row", () => {
+    const [result] = reconcileShareClassFacts(
+      [security("PETR4")],
+      [
+        fact("CAPITAL_SOCIAL", {
+          factKey: "version-2",
+          documentVersion: 2,
+          sourceFile: "z-file.csv",
+          sourceRow: 9,
+        }),
+        fact("CAPITAL_SOCIAL", {
+          factKey: "version-1",
+          documentVersion: 1,
+          sourceFile: "a-file.csv",
+          sourceRow: 1,
+        }),
+      ],
+    );
+
+    expect(result?.evidence.map(({ factKey }) => factKey)).toEqual([
+      "version-1",
+      "version-2",
+    ]);
+  });
+
   it("does not transfer a base ticker class identity to its fractional code", () => {
     const [fractional] = reconcileShareClassFacts(
       [{ ...security("PETR4F"), baseTicker: "PETR4" }],
@@ -162,5 +187,48 @@ describe("reconcileShareClassFacts", () => {
       treasuryStatus: "UNAVAILABLE",
       evidence: [],
     });
+  });
+
+  it("orders equal document evidence by source row and reports treasury separately", () => {
+    const [result] = reconcileShareClassFacts(
+      [security("PETR3")],
+      [
+        fact("TREASURY_POSITION", {
+          factKey: "treasury",
+          referenceDate: null,
+          documentReceivedDate: null,
+          sourceFile: "fre_cia_aberta_posicao_acionaria_2026.csv",
+          sourceRow: 5,
+        }),
+        fact("CAPITAL_SOCIAL_CLASS", {
+          factKey: "capital-later-row",
+          referenceDate: null,
+          documentReceivedDate: null,
+          sourceRow: 8,
+        }),
+        fact("CAPITAL_SOCIAL", {
+          factKey: "capital-earlier-row",
+          referenceDate: null,
+          documentReceivedDate: null,
+          sourceRow: 3,
+        }),
+        fact("CAPITAL_SOCIAL_CLASS", {
+          factKey: "unmatched-issuer",
+          issuerCnpj: "22222333000182",
+        }),
+      ],
+    );
+
+    expect(result.evidence.map(({ factKey }) => factKey)).toEqual([
+      "capital-earlier-row",
+      "capital-later-row",
+      "treasury",
+    ]);
+    expect(result).toMatchObject({
+      tickerClassStatus: "AMBIGUOUS",
+      treasuryStatus: "REPORTED_UNRECONCILED",
+      freDocumentAlignmentStatus: "ALIGNED",
+    });
+    expect(result.reasons.join(" ")).toContain("tesouraria foi reportada");
   });
 });

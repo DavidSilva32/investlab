@@ -163,10 +163,10 @@ function parseCsv(text: string) {
 
 function documentKey(row: CsvRow): DocumentKey {
   return [
-    row.CNPJ_CIA ?? row.CNPJ_Companhia ?? "",
-    row.DT_REFER ?? row.Data_Referencia ?? "",
-    row.VERSAO ?? row.Versao ?? "",
-    row.ID_DOC ?? row.ID_Documento ?? "",
+    row.CNPJ_CIA ?? row.CNPJ_Companhia,
+    row.DT_REFER ?? row.Data_Referencia,
+    row.VERSAO ?? row.Versao,
+    row.ID_DOC ?? row.ID_Documento,
   ].join("|");
 }
 
@@ -192,7 +192,7 @@ function rowsFromCsv(
   const headers = headerRow.map((value, index) =>
     index === 0 ? value.replace(/^\uFEFF/, "") : value,
   );
-  const required = requiredHeaders[tableName] ?? [];
+  const required = requiredHeaders[tableName]!;
   const missing = required.filter((header) => !headers.includes(header));
   if (missing.length)
     throw new Error(
@@ -359,13 +359,9 @@ export function parseCvmFreArchive(
       const ambiguousDocuments = new Set<DocumentKey>();
       for (const [fileName, fileRows] of allRows) {
         if (fileName === "metadata") continue;
-        const kind = sourceKind(fileName);
-        if (!kind) continue;
+        const kind = sourceKind(fileName)!;
         for (const { row, rowNumber } of fileRows) {
-          const issuerCnpj = normalizeCnpj(
-            row.CNPJ_CIA ?? row.CNPJ_Companhia ?? "",
-          );
-          if (!knownIssuerCnpjs.has(issuerCnpj)) continue;
+          const issuerCnpj = normalizeCnpj(row.CNPJ_CIA ?? row.CNPJ_Companhia!);
           const fields = safeFields(row, kind);
           if (!fields) continue;
           const recordKind =
@@ -420,14 +416,10 @@ export function parseCvmFreArchive(
         diagnostics.unavailableCoverageReasons.push(
           "No explicit Ações Tesouraria position was reported for the matched issuers; treasury balance is unavailable.",
         );
-      if (diagnostics.unsupportedEventTables.length)
-        diagnostics.unavailableCoverageReasons.push(
-          "The current FRE archive does not provide structured historical capital events or treasury movements.",
-        );
-      diagnostics.ingestionStatus =
-        diagnostics.unavailableCoverageReasons.length === 0
-          ? "COMPLETED"
-          : "PARTIAL";
+      diagnostics.unavailableCoverageReasons.push(
+        "The current FRE archive does not provide structured historical capital events or treasury movements.",
+      );
+      diagnostics.ingestionStatus = "PARTIAL";
       resolve({ records, diagnostics });
     };
 
@@ -443,8 +435,7 @@ export function parseCvmFreArchive(
       diagnostics.filesRead += 1;
       const tableName = isMetadata
         ? "metadata"
-        : (file.name.match(/fre_cia_aberta_(.+)_\d{4}\.csv$/i)?.[1] ??
-          "unknown");
+        : file.name.match(/fre_cia_aberta_(.+)_\d{4}\.csv$/i)![1]!;
       seenTables.add(tableName);
       const chunks: Uint8Array[] = [];
       file.ondata = (error, data, final) => {
@@ -467,11 +458,11 @@ export function parseCvmFreArchive(
         try {
           rowCount = rowsFromCsv(contents, tableName, (row, rowNumber) => {
             if (isMetadata) {
-              const issuerCnpj = normalizeCnpj(row.CNPJ_CIA ?? "");
+              const issuerCnpj = normalizeCnpj(row.CNPJ_CIA!);
               if (!knownIssuerCnpjs.has(issuerCnpj)) return;
             } else {
               const issuerCnpj = normalizeCnpj(
-                row.CNPJ_CIA ?? row.CNPJ_Companhia ?? "",
+                row.CNPJ_CIA ?? row.CNPJ_Companhia!,
               );
               if (!knownIssuerCnpjs.has(issuerCnpj)) return;
             }

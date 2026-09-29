@@ -286,6 +286,88 @@ describe("ScreenerSyncService", () => {
     });
   });
 
+  it("continues DFP sync when optional share-capital ingestion fails", async () => {
+    const provider = {
+      getAnnualFacts: vi
+        .fn()
+        .mockRejectedValue(new Error("private source detail")),
+    };
+    const context = setup({ shareCapitalProvider: provider });
+    const log = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).resolves.toMatchObject({
+        shareCapitalStatus: "FAILED",
+        shareCapitalFacts: 0,
+      });
+      expect(context.saved[0]).not.toHaveProperty("shareCapitalFacts");
+      expect(log).toHaveBeenCalledWith(
+        "screener_share_capital_ingestion_failed",
+        expect.objectContaining({
+          errorType: "Error",
+          stage: "cvm_share_capital",
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "private source detail",
+      );
+    } finally {
+      log.mockRestore();
+    }
+
+    const invalidName = Object.assign(new Error("private source detail"), {
+      name: "invalid name with details",
+    });
+    const opaqueProvider = {
+      getAnnualFacts: vi.fn().mockRejectedValue(invalidName),
+    };
+    const opaqueContext = setup({ shareCapitalProvider: opaqueProvider });
+    const opaqueLog = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+    try {
+      await opaqueContext.service.sync();
+      expect(opaqueLog).toHaveBeenCalledWith(
+        "screener_share_capital_ingestion_failed",
+        expect.objectContaining({ errorType: "unknown" }),
+      );
+    } finally {
+      opaqueLog.mockRestore();
+    }
+  });
+
+  it("fails safely when share-class persistence methods are unavailable", async () => {
+    const context = setup({
+      shareCapitalProvider: {
+        getAnnualFacts: vi.fn().mockResolvedValue({
+          records: [],
+          diagnostics: {
+            archiveYear: 2026,
+            sourceArchive: "fre_cia_aberta_2026.zip",
+            filesRead: 7,
+            rowsRead: 0,
+            records: 0,
+            documentsMatched: 0,
+            documentsWithoutMetadata: 0,
+            ambiguousDocuments: 0,
+            treasuryPositionRecords: 0,
+            ingestionStatus: "PARTIAL",
+            unavailableCoverageReasons: [],
+            unsupportedEventTables: [],
+          },
+        }),
+      },
+    });
+    context.repository.getShareCapitalFacts = undefined as never;
+
+    await expect(context.service.sync()).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(context.repository.markFailed).toHaveBeenCalledWith(
+      "run-1",
+      "DATABASE_PERSIST",
+    );
+  });
+
   it("omits an error message for a successful run", async () => {
     const repository = {
       getStatus: vi.fn().mockResolvedValue({

@@ -7,6 +7,7 @@ import {
   screenerIssuers,
   screenerSecurities,
   cvmShareCapitalFacts,
+  cvmShareClassReconciliations,
   valuationAccountingFacts,
 } from "@/infrastructure/database/schema";
 import type {
@@ -15,6 +16,7 @@ import type {
 } from "@/backend/providers/screener-data.provider";
 import type { ValuationAccountingFactRecord } from "@/backend/providers/cvm-valuation-input.provider";
 import type { CvmShareCapitalRecord } from "@/backend/providers/cvm-share-capital.provider";
+import type { ShareClassReconciliationRecord } from "@/backend/services/screener-share-class-reconciliation";
 
 const mocks = vi.hoisted(() => ({ getDatabaseClient: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
@@ -275,6 +277,89 @@ describe("ScreenerSyncRepository", () => {
         rawFields: shareCapitalFact.rawFields,
       },
     ]);
+  });
+
+  it("reads FRE rows and converts stored timestamps to ISO strings", async () => {
+    const fetchedAt = new Date("2026-06-01T12:30:00.000Z");
+    const row = {
+      ...shareCapitalFact,
+      fetchedAt,
+    };
+    mocks.getDatabaseClient.mockReturnValue({
+      select: () => ({
+        from: () => ({
+          where: vi.fn().mockResolvedValue([row]),
+        }),
+      }),
+    });
+
+    await expect(
+      new ScreenerSyncRepository().getShareCapitalFacts("run-1"),
+    ).resolves.toMatchObject([
+      { ...shareCapitalFact, fetchedAt: fetchedAt.toISOString() },
+    ]);
+  });
+
+  it("does not issue a reconciliation insert for an empty result", async () => {
+    const { database } = setup();
+    await expect(
+      new ScreenerSyncRepository().saveShareClassReconciliations("run-1", []),
+    ).resolves.toBeUndefined();
+    expect(database.insert).not.toHaveBeenCalled();
+  });
+
+  it("persists reconciliation results in bounded batches with ticker upserts", async () => {
+    const inserts: { values?: unknown[]; conflict?: unknown }[] = [];
+    const database = {
+      insert: vi.fn((table: unknown) => {
+        expect(table).toBe(cvmShareClassReconciliations);
+        const record: { values?: unknown[]; conflict?: unknown } = {};
+        inserts.push(record);
+        return {
+          values(values: unknown[]) {
+            record.values = values;
+            return this;
+          },
+          onConflictDoUpdate(conflict: unknown) {
+            record.conflict = conflict;
+            return Promise.resolve();
+          },
+        };
+      }),
+    };
+    mocks.getDatabaseClient.mockReturnValue(database);
+    const record: ShareClassReconciliationRecord = {
+      issuerCnpj: "111",
+      ticker: "TEST3",
+      instrumentSubtype: "stock",
+      issuerIdentityStatus: "CNPJ_MATCHED",
+      tickerClassStatus: "UNAVAILABLE",
+      unitCompositionStatus: "UNAVAILABLE",
+      freDocumentAlignmentStatus: "UNAVAILABLE",
+      crossSourceAlignmentStatus: "UNAVAILABLE",
+      effectiveDateStatus: "UNAVAILABLE",
+      eventHistoryStatus: "UNAVAILABLE",
+      treasuryStatus: "UNAVAILABLE",
+      reasons: ["No aligned source evidence."],
+      evidence: [],
+    };
+
+    await new ScreenerSyncRepository().saveShareClassReconciliations(
+      "run-1",
+      Array.from({ length: 501 }, (_, index) => ({
+        ...record,
+        ticker: `T${String(index).padStart(5, "0")}`,
+      })),
+    );
+
+    expect(inserts.map(({ values }) => values?.length)).toEqual([500, 1]);
+    expect(inserts[0]?.values?.[0]).toMatchObject({
+      ingestionRunId: "run-1",
+      ticker: "T00000",
+      reasons: record.reasons,
+      evidence: [],
+    });
+    expect(inserts[0]?.conflict).toBeDefined();
   });
   it("reports valuation persistence errors without logging account contents", async () => {
     const failure = new Error("sensitive accounting row");
@@ -541,6 +626,24 @@ describe("ScreenerSyncRepository", () => {
       catalogCount: 0,
       profileCount: 0,
     });
+  });
+
+  it("persists a sync without optional FRE facts", async () => {
+    const { inserts } = setup();
+    await expect(
+      new ScreenerSyncRepository().saveFullSync({
+        runId: "run-1",
+        catalogCount: 1,
+        profileCount: 1,
+        issuers: [issuer],
+        securities: [security("ABC3")],
+        facts: [fact(1)],
+      }),
+    ).resolves.toEqual({ persistedFactCount: 1 });
+
+    expect(inserts.some(({ table }) => table === cvmShareCapitalFacts)).toBe(
+      false,
+    );
   });
 
   it("logs safe DB metadata for a failed persistence batch and rethrows the same error", async () => {
