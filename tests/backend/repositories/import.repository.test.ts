@@ -10,6 +10,7 @@ vi.mock("@/infrastructure/database/client", () => ({
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
 import { importRepository } from "@/backend/repositories/import.repository";
+import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
 
 const positions = [
   {
@@ -48,7 +49,7 @@ describe("import repository", () => {
     expect(mocks.logger.error).toHaveBeenCalled();
   });
   it("creates import, snapshot and position items in one transaction", async () => {
-    const persistItems = vi.fn().mockResolvedValue(undefined);
+    let persistedPositions: unknown[] = [];
     const transaction = { insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
@@ -59,7 +60,14 @@ describe("import repository", () => {
           returning: async () => [{ id: "snapshot-1", importId: "import-1" }],
         }),
       })
-      .mockReturnValueOnce({ values: persistItems });
+      .mockReturnValueOnce({
+        values: (items: unknown[]) => ({
+          returning: async () => {
+            persistedPositions = items;
+            return [{ id: "position-1" }];
+          },
+        }),
+      });
     mocks.client.transaction.mockImplementation(
       (callback: (tx: typeof transaction) => unknown) => callback(transaction),
     );
@@ -72,7 +80,7 @@ describe("import repository", () => {
         positions,
       }),
     ).resolves.toMatchObject({ snapshotId: "snapshot-1" });
-    expect(persistItems).toHaveBeenCalledWith([
+    expect(persistedPositions).toEqual([
       expect.objectContaining({
         snapshotId: "snapshot-1",
         valuationSource: "CURVA",
@@ -80,6 +88,144 @@ describe("import repository", () => {
         curveTotalValue: "3177.67",
       }),
     ]);
+  });
+
+  it("persists a new liquidity fact with its source position and snapshot", async () => {
+    const persistedFacts: unknown[][] = [];
+    const transaction = { insert: vi.fn() };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "import-1" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({
+          returning: async () => [{ id: "snapshot-1", importId: "import-1" }],
+        }),
+      })
+      .mockReturnValueOnce({
+        values: (items: Array<{ id: string }>) => ({
+          returning: async () => items.map(({ id }) => ({ id })).reverse(),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: async (facts: unknown[]) => persistedFacts.push(facts),
+      });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    const selicPosition = {
+      product: "Tesouro Selic 2029",
+      maturityAt: "2029-03-01",
+      quantity: "1",
+      availableQuantity: "1",
+      unavailableQuantity: "0",
+      institution: "Corretora",
+      assetCode: "LFT-2029",
+      referenceDate: "2026-09-28",
+    };
+    const liquidityFact = createTreasurySelicLiquidityFact(selicPosition);
+
+    await importRepository.create({
+      fileName: "selic.xlsx",
+      fileHash: "selic-hash",
+      documentType: "B3_POSITION_XLSX",
+      referenceDate: "2026-09-28",
+      positions: [selicPosition as never],
+      liquidityFacts: [liquidityFact && { ...liquidityFact, asOf: null }],
+    });
+
+    expect(persistedFacts).toEqual([
+      [
+        expect.objectContaining({
+          positionItemId: expect.any(String),
+          snapshotId: "snapshot-1",
+          ruleVersion: "portaria-mf-1748-2024-v1",
+          status: "determined",
+          asOf: "2026-09-28",
+          availableQuantity: "1",
+          source: "B3_POSITION_XLSX",
+        }),
+      ],
+    ]);
+  });
+
+  it("links multiple liquidity facts to their positions when RETURNING order differs", async () => {
+    const insertedPositions: Array<Record<string, unknown>> = [];
+    const persistedFacts: Array<Record<string, unknown>> = [];
+    const transaction = { insert: vi.fn() };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "import-1" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "snapshot-1" }] }),
+      })
+      .mockReturnValueOnce({
+        values: (items: Array<Record<string, unknown>>) => {
+          insertedPositions.push(...items);
+          return {
+            returning: async () =>
+              items.map(({ id }) => ({ id: id as string })).reverse(),
+          };
+        },
+      })
+      .mockReturnValueOnce({
+        values: async (facts: Array<Record<string, unknown>>) =>
+          persistedFacts.push(...facts),
+      });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    const inputs = [
+      {
+        product: "Tesouro Selic 2029",
+        maturityAt: "2029-03-01",
+        quantity: "1",
+        availableQuantity: "0.75",
+        unavailableQuantity: "0.25",
+        institution: "Corretora A",
+        assetCode: "LFT-A",
+        referenceDate: "2026-09-28",
+      },
+      {
+        product: "Tesouro Selic 2031",
+        maturityAt: "2031-03-01",
+        quantity: "2",
+        availableQuantity: "1.5",
+        unavailableQuantity: "0.5",
+        institution: "Corretora B",
+        assetCode: "LFT-B",
+        referenceDate: "2026-09-28",
+      },
+    ];
+    await importRepository.create({
+      fileName: "selic.xlsx",
+      fileHash: "multi-selic-hash",
+      documentType: "B3_POSITION_XLSX",
+      referenceDate: "2026-09-28",
+      positions: inputs as never,
+      liquidityFacts: inputs.map((input) =>
+        createTreasurySelicLiquidityFact(input),
+      ),
+    });
+
+    expect(insertedPositions).toHaveLength(2);
+    expect(persistedFacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          positionItemId: insertedPositions[0].id,
+          institution: "Corretora A",
+          assetCode: "LFT-A",
+          availableQuantity: "0.75",
+        }),
+        expect.objectContaining({
+          positionItemId: insertedPositions[1].id,
+          institution: "Corretora B",
+          assetCode: "LFT-B",
+          availableQuantity: "1.5",
+        }),
+      ]),
+    );
   });
   it("returns an empty list without snapshots", async () => {
     mocks.client.select.mockReturnValue(chain([]));
@@ -108,6 +254,56 @@ describe("import repository", () => {
       .mockReturnValueOnce(chain([{ product: "Ativo", quantity: "1" }]));
     await expect(importRepository.listLatestPositions()).resolves.toEqual([
       { product: "Ativo", quantity: "1" },
+    ]);
+  });
+  it("returns the latest position fact with its versioned general rule", async () => {
+    const position = { id: "position-1", product: "Tesouro Selic 2029" };
+    const fact = {
+      positionItemId: "position-1",
+      ruleVersion: "portaria-mf-1748-2024-v1",
+      status: "determined",
+    };
+    const rule = {
+      version: "portaria-mf-1748-2024-v1",
+      sourceTitle: "Regulamento do Programa Tesouro Direto",
+    };
+    mocks.client.select
+      .mockReturnValueOnce(
+        chain([{ id: "snapshot-1", referenceDate: "2026-09-28" }]),
+      )
+      .mockReturnValueOnce(chain([position]))
+      .mockReturnValueOnce({ from: () => ({ where: async () => [fact] }) })
+      .mockReturnValueOnce({ from: () => ({ where: async () => [rule] }) });
+
+    await expect(importRepository.listLatestPositions()).resolves.toEqual([
+      {
+        ...position,
+        referenceDate: "2026-09-28",
+        liquidityProfile: { ...fact, rule },
+      },
+    ]);
+  });
+  it("returns a null rule when its recorded rule version is unavailable", async () => {
+    const position = { id: "position-1", product: "Tesouro Selic 2029" };
+    const fact = {
+      positionItemId: "position-1",
+      ruleVersion: "missing-rule-version",
+      status: "indeterminate",
+    };
+    mocks.client.select
+      .mockReturnValueOnce(
+        chain([{ id: "snapshot-1", referenceDate: "2026-09-28" }]),
+      )
+      .mockReturnValueOnce(chain([position]))
+      .mockReturnValueOnce({ from: () => ({ where: async () => [fact] }) })
+      .mockReturnValueOnce({ from: () => ({ where: async () => [] }) });
+
+    await expect(importRepository.listLatestPositions()).resolves.toEqual([
+      {
+        ...position,
+        referenceDate: "2026-09-28",
+        liquidityProfile: { ...fact, rule: null },
+      },
     ]);
   });
 
@@ -292,7 +488,14 @@ describe("import repository", () => {
             }),
           })
           .mockReturnValueOnce({
-            values: async (items: unknown[]) => persisted.push(items),
+            values: (items: unknown[]) => ({
+              returning: async () => {
+                persisted.push(items);
+                return firstSnapshot.map((_, index) => ({
+                  id: `position-${index}`,
+                }));
+              },
+            }),
           });
         return callback(transaction);
       },
