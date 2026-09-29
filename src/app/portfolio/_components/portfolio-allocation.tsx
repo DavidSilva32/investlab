@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,28 +15,25 @@ import {
   type BulkClassification,
   type PortfolioPosition,
 } from "@/app/portfolio/_components/portfolio-classification-list";
-import {
-  PortfolioAllocationTargets,
-  type PortfolioAllocationTargetsHandle,
-} from "@/app/portfolio/_components/portfolio-allocation-targets";
+import { PortfolioAllocationTargets } from "@/app/portfolio/_components/portfolio-allocation-targets";
 import { StrategyGuidance } from "@/app/portfolio/_components/strategy-guidance";
 import { PortfolioConcentrationAnalysis } from "@/app/portfolio/_components/portfolio-concentration-analysis";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
+import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 
 type AssetClass = (typeof portfolioAssetClassOptions)[number];
 
-export function PortfolioAllocation() {
+export function PortfolioAllocation({
+  nextContributionGuidance,
+}: {
+  nextContributionGuidance?: ContributionGuidance;
+}) {
   const [positions, setPositions] = useState<PortfolioPosition[] | null>(null);
   const [targetPercentages, setTargetPercentages] = useState<
     Partial<Record<AssetClass, number>>
   >({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const targetEditorRef = useRef<PortfolioAllocationTargetsHandle | null>(null);
-  const [classesForReview, setClassesForReview] = useState<
-    (typeof portfolioAssetClassOptions)[number][]
-  >([]);
-
   const load = useCallback(() => {
     fetch("/api/portfolio/allocation")
       .then(async (response) => {
@@ -100,11 +97,6 @@ export function PortfolioAllocation() {
       setSaving(false);
     }
   }
-  function openStrategyTargets(classes: AssetClass[]) {
-    setClassesForReview(classes);
-    targetEditorRef.current?.openEditor();
-  }
-
   async function saveSingle(position: PortfolioPosition, formData: FormData) {
     const assetClass = formData.get("assetClass") as string | null;
     const geography = formData.get("geography") as string | null;
@@ -155,27 +147,27 @@ export function PortfolioAllocation() {
             <p className="text-sm text-muted-foreground">
               Importe posições para visualizar a classificação e a alocação.
             </p>
-            <StrategyGuidance onOpenTargets={openStrategyTargets} />
+            <StrategyGuidance
+              nextContributionGuidance={nextContributionGuidance}
+            />
             <PortfolioAllocationTargets
-              ref={targetEditorRef}
               positions={positions}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}
-              classesForReview={classesForReview}
             />
           </>
         ) : (
           <>
             <PortfolioConcentrationAnalysis positions={positions} />
-            <StrategyGuidance onOpenTargets={openStrategyTargets} />
+            <StrategyGuidance
+              nextContributionGuidance={nextContributionGuidance}
+            />
             <PortfolioAllocationTargets
-              ref={targetEditorRef}
               positions={positions}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}
-              classesForReview={classesForReview}
             />
             <PortfolioClassificationList
               positions={positions}

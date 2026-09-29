@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ReferenceRates } from "@/components/reference-rates";
 import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
 import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
+import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 import { MovementDetails, PositionDetails } from "./portfolio-details";
 import {
   PortfolioOverview,
@@ -18,6 +19,7 @@ type Overview = {
   positions: PortfolioPosition[];
   movements: Parameters<typeof MovementDetails>[0]["movements"];
   referenceRates: Parameters<typeof ReferenceRates>[0]["rates"];
+  nextContributionGuidance: ContributionGuidance;
 };
 
 const loadErrorMessage = "Não foi possível carregar a carteira.";
@@ -73,7 +75,9 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
       {activeView === "overview" ? (
         <div className="space-y-5">
           <PortfolioOverview positions={overview.positions} />
-          <PortfolioAllocation />
+          <PortfolioAllocation
+            nextContributionGuidance={overview.nextContributionGuidance}
+          />
         </div>
       ) : activeView === "positions" ? (
         <PositionDetails positions={overview.positions} />

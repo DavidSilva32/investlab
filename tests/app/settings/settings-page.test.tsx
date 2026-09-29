@@ -12,9 +12,6 @@ vi.mock("@/components/app-shell", () => ({
     </main>
   ),
 }));
-vi.mock("@/app/settings/_components/investor-context-settings", () => ({
-  InvestorContextSettings: () => <section>Objetivo de investimento</section>,
-}));
 vi.mock("@/app/settings/_components/screener-data-settings", () => ({
   ScreenerDataSettings: () => <section>Dados da CVM</section>,
 }));
@@ -29,7 +26,6 @@ describe("SettingsPage", () => {
     expect(container.querySelector("main > div")?.className).toBe(
       "w-full space-y-6",
     );
-    expect(screen.getByText("Objetivo de investimento")).toBeTruthy();
     expect(screen.getByText("Dados da CVM")).toBeTruthy();
     expect(screen.getByText("Dados de mercado")).toBeTruthy();
     expect(screen.queryByText(/Veja quais fontes alimentam/)).toBeNull();
