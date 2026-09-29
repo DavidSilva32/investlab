@@ -63,6 +63,72 @@ export const positionItems = pgTable("position_items", {
   source: varchar({ length: 40 }).notNull().default("B3"),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+export const treasuryLiquidityRules = pgTable("treasury_liquidity_rules", {
+  id: uuid().defaultRandom().primaryKey(),
+  version: varchar({ length: 80 }).notNull().unique(),
+  sourceUrl: text().notNull(),
+  sourceTitle: text().notNull(),
+  observedAt: date().notNull(),
+  effectiveFrom: date().notNull(),
+  effectiveTo: date(),
+  terms: jsonb()
+    .$type<{
+      instrumentType: string;
+      identityMethod: string;
+      regulatoryBasis: {
+        sourceUrl: string;
+        sourceTitle: string;
+        effectiveFrom: string;
+      };
+      settlementWindows: Array<{
+        requestWindow: string;
+        relativeSettlement: string;
+      }>;
+    }>()
+    .notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+export const treasuryPositionLiquidityFacts = pgTable(
+  "treasury_position_liquidity_facts",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    positionItemId: uuid()
+      .notNull()
+      .references(() => positionItems.id, { onDelete: "cascade" }),
+    snapshotId: uuid()
+      .notNull()
+      .references(() => positionSnapshots.id, { onDelete: "cascade" }),
+    ruleVersion: varchar({ length: 80 })
+      .notNull()
+      .references(() => treasuryLiquidityRules.version),
+    status: varchar({ length: 16 }).notNull(),
+    reasons: jsonb().$type<string[]>().notNull(),
+    asOf: date().notNull(),
+    normalizedTitleType: varchar({ length: 40 }),
+    maturityAt: date(),
+    positionQuantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    availableQuantity: numeric({ precision: 24, scale: 8 }),
+    unavailableQuantity: numeric({ precision: 24, scale: 8 }),
+    institution: text(),
+    assetCode: text(),
+    settlementEstimate: jsonb().$type<{
+      condition: "normal_operation";
+      windows: Array<{
+        requestWindow: string;
+        relativeSettlement: string;
+      }>;
+      exclusions: string[];
+    } | null>(),
+    source: varchar({ length: 40 }).notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("treasury_position_liquidity_position_uidx").on(
+      table.positionItemId,
+    ),
+    index("treasury_position_liquidity_snapshot_idx").on(table.snapshotId),
+  ],
+);
 
 export const manualPortfolioPositions = pgTable("manual_portfolio_positions", {
   id: uuid().defaultRandom().primaryKey(),

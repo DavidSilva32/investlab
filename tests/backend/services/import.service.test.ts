@@ -131,6 +131,44 @@ describe("ImportService persistence", () => {
     );
   });
 
+  it("records per-position Tesouro Selic facts from the B3 snapshot date", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [
+        {
+          product: "Tesouro Selic 2029",
+          maturityAt: "2029-03-01",
+          quantity: "1",
+          availableQuantity: "1",
+          unavailableQuantity: "0",
+          institution: "Corretora Exemplo",
+          assetCode: null,
+        },
+      ],
+    });
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockResolvedValue({
+      importId: "import-3",
+      snapshotId: "snapshot-3",
+    });
+
+    await importService.confirm(persistenceFile, "request-3", "2026-09-28");
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceDate: "2026-09-28",
+        liquidityFacts: [
+          expect.objectContaining({
+            status: "determined",
+            asOf: "2026-09-28",
+            positionSource: "B3_POSITION_XLSX",
+          }),
+        ],
+      }),
+      "request-3",
+    );
+  });
+
   it("rejects duplicate files and invalid deletion types", async () => {
     parser.mockReturnValue({
       documentType: "B3_MOVEMENT_XLSX",

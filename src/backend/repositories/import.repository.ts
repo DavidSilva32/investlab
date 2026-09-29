@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { inArray, desc, eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -6,16 +7,21 @@ import {
   movementItems,
   positionItems,
   positionSnapshots,
+  treasuryPositionLiquidityFacts,
+  treasuryLiquidityRules,
 } from "@/infrastructure/database/schema";
+import type { TreasurySelicLiquidityFact } from "@/backend/types/treasury-selic-liquidity";
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
 
 export type B3DocumentType = ParsedB3Import["documentType"];
 type ImportCreateInput =
-  | ({ fileName: string; fileHash: string; referenceDate: string } & Extract<
-      ParsedB3Import,
-      { documentType: "B3_POSITION_XLSX" }
-    >)
+  | ({
+      fileName: string;
+      fileHash: string;
+      referenceDate: string;
+      liquidityFacts?: Array<TreasurySelicLiquidityFact | null>;
+    } & Extract<ParsedB3Import, { documentType: "B3_POSITION_XLSX" }>)
   | {
       fileName: string;
       fileHash: string;
@@ -77,12 +83,52 @@ export class ImportRepository {
             referenceDate: input.referenceDate,
           })
           .returning();
-        await transaction.insert(positionItems).values(
-          input.positions.map((position) => ({
-            snapshotId: snapshot.id,
-            ...position,
-          })),
+        const positionRows = input.positions.map((position, index) => ({
+          id: randomUUID(),
+          position,
+          fact: input.liquidityFacts?.[index] ?? null,
+        }));
+        const persistedPositions = await transaction
+          .insert(positionItems)
+          .values(
+            positionRows.map(({ id, position }) => ({
+              id,
+              snapshotId: snapshot.id,
+              ...position,
+            })),
+          )
+          .returning({ id: positionItems.id });
+        const rowById = new Map<string, (typeof positionRows)[number]>(
+          positionRows.map((row) => [row.id, row]),
         );
+        const facts = persistedPositions.flatMap(({ id }) => {
+          const row = rowById.get(id);
+          const fact = row?.fact;
+          if (!row || !fact) return [];
+          return [
+            {
+              positionItemId: id,
+              snapshotId: snapshot.id,
+              ruleVersion: fact.ruleVersion,
+              status: fact.status,
+              reasons: fact.reasons,
+              asOf: fact.asOf ?? input.referenceDate,
+              normalizedTitleType: fact.normalizedTitleType,
+              maturityAt: fact.maturityAt,
+              positionQuantity: row.position.quantity,
+              availableQuantity: row.position.availableQuantity,
+              unavailableQuantity: row.position.unavailableQuantity,
+              institution: row.position.institution,
+              assetCode: row.position.assetCode,
+              settlementEstimate: fact.settlementEstimate,
+              source: fact.positionSource,
+            },
+          ];
+        });
+        if (facts.length)
+          await transaction
+            .insert(treasuryPositionLiquidityFacts)
+            .values(facts);
         return { importId: importRecord.id, snapshotId: snapshot.id };
       });
     } catch (error) {
@@ -146,10 +192,46 @@ export class ImportRepository {
         .from(positionItems)
         .where(eq(positionItems.snapshotId, snapshot.id))
         .orderBy(positionItems.product);
-      return positions.map((position) => ({
-        ...position,
-        referenceDate,
-      }));
+      const positionIds = positions.flatMap((position) =>
+        typeof position.id === "string" ? [position.id] : [],
+      );
+      const facts = positionIds.length
+        ? await getDatabaseClient()
+            .select()
+            .from(treasuryPositionLiquidityFacts)
+            .where(
+              inArray(
+                treasuryPositionLiquidityFacts.positionItemId,
+                positionIds,
+              ),
+            )
+        : [];
+      const factByPositionId = new Map(
+        facts.map((fact) => [fact.positionItemId, fact]),
+      );
+      const ruleVersions = [...new Set(facts.map((fact) => fact.ruleVersion))];
+      const rules = ruleVersions.length
+        ? await getDatabaseClient()
+            .select()
+            .from(treasuryLiquidityRules)
+            .where(inArray(treasuryLiquidityRules.version, ruleVersions))
+        : [];
+      const ruleByVersion = new Map(rules.map((rule) => [rule.version, rule]));
+      return positions.map((position) => {
+        const fact = factByPositionId.get(position.id);
+        return {
+          ...position,
+          referenceDate,
+          ...(fact
+            ? {
+                liquidityProfile: {
+                  ...fact,
+                  rule: ruleByVersion.get(fact.ruleVersion) ?? null,
+                },
+              }
+            : {}),
+        };
+      });
     } catch (error) {
       logger.error("database_positions_query_failed", { requestId, error });
       throw error;
