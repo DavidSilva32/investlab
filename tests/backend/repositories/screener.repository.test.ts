@@ -8,6 +8,7 @@ import {
   screenerMarketRefreshRuns,
   screenerMarketSnapshots,
   screenerSecurities,
+  cvmShareClassReconciliations,
 } from "@/infrastructure/database/schema";
 
 const mocks = vi.hoisted(() => ({ getDatabaseClient: vi.fn() }));
@@ -61,6 +62,82 @@ const sqlFor = (expression: unknown) =>
 
 describe("ScreenerRepository", () => {
   beforeEach(() => mocks.getDatabaseClient.mockReset());
+
+  it("fails closed when a ticker has no persisted issuer context", async () => {
+    const builder = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([]),
+    };
+    mocks.getDatabaseClient.mockReturnValue({ select: vi.fn(() => builder) });
+    await expect(
+      new ScreenerRepository().getStockValuationContext("TEST3"),
+    ).resolves.toEqual({ sector: "unknown", shareGateComplete: false });
+  });
+
+  it("resolves sector from CVM rows and keeps the share gate closed without an effective date", async () => {
+    const rows = [
+      [{ cnpj: "12345678000195", sector: "Petróleo e Gás" }],
+      [
+        {
+          tickerClassStatus: "COMPLETE",
+          unitCompositionStatus: "COMPLETE",
+          crossSourceAlignmentStatus: "COMPLETE",
+          effectiveDateStatus: "COMPLETE",
+          eventHistoryStatus: "COMPLETE",
+          reconciledAt: new Date("2026-09-28T00:00:00Z"),
+        },
+      ],
+    ];
+    let queryIndex = 0;
+    const builder = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      limit: vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(rows[queryIndex++])),
+    };
+    mocks.getDatabaseClient.mockReturnValue({ select: vi.fn(() => builder) });
+    await expect(
+      new ScreenerRepository().getStockValuationContext("test3"),
+    ).resolves.toEqual({ sector: "non_financial", shareGateComplete: false });
+    expect(builder.innerJoin).toHaveBeenCalled();
+    expect(builder.orderBy).toHaveBeenCalled();
+    expect(cvmShareClassReconciliations.ticker).toBeDefined();
+  });
+
+  it("keeps the per-share gate closed when persisted reconciliation is incomplete", async () => {
+    const rows = [
+      [{ cnpj: "12345678000195", sector: "Bancos" }],
+      [
+        {
+          tickerClassStatus: "AMBIGUOUS",
+          unitCompositionStatus: "UNAVAILABLE",
+          crossSourceAlignmentStatus: "UNAVAILABLE",
+          effectiveDateStatus: "UNAVAILABLE",
+          eventHistoryStatus: "UNAVAILABLE",
+          reconciledAt: new Date("2026-09-28T00:00:00Z"),
+        },
+      ],
+    ];
+    let queryIndex = 0;
+    const builder = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      limit: vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(rows[queryIndex++])),
+    };
+    mocks.getDatabaseClient.mockReturnValue({ select: vi.fn(() => builder) });
+    await expect(
+      new ScreenerRepository().getStockValuationContext("TEST3"),
+    ).resolves.toEqual({ sector: "financial", shareGateComplete: false });
+  });
 
   it("reports whether any ingestion run completed successfully", async () => {
     const makeDatabase = (rows: unknown[]) => ({
