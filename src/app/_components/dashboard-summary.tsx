@@ -1,178 +1,348 @@
 import Link from "next/link";
 import {
+  ArrowRight,
   CalendarDays,
-  ChartNoAxesCombined,
-  PieChart,
+  ChevronDown,
+  CircleAlert,
+  Info,
   WalletCards,
 } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   getPortfolioInsights,
   type PortfolioInsightPosition,
 } from "@/lib/portfolio-insights";
 import { formatCurrency } from "@/lib/utils";
-import { ReferenceRates } from "@/components/reference-rates";
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
-import type { BcbReferenceRates } from "@/backend/services/bcb-reference-rates.service";
-import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
-import { NextContributionGuidanceCard } from "@/app/_components/next-contribution-guidance-card";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 export function DashboardSummary({
   positions,
-  referenceRates,
   emergencyReserve,
-  nextContributionGuidance,
 }: {
   positions: PortfolioInsightPosition[];
-  referenceRates?: BcbReferenceRates;
   emergencyReserve?: EmergencyReserveCalculation;
-  nextContributionGuidance?: ContributionGuidance;
 }) {
   const insights = getPortfolioInsights(positions);
+  const referenceDates = [
+    ...new Set(
+      positions
+        .map((position) => position.referenceDate)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+  const referenceDate =
+    referenceDates.length === 1 &&
+    positions.length > 0 &&
+    positions.every((position) => position.referenceDate === referenceDates[0])
+      ? referenceDates[0]
+      : null;
+  const dataDateIsMixed = referenceDates.length > 0 && referenceDate === null;
+  const missingValueCount = positions.length - insights.valuedPositions;
   const nextMaturity = insights.upcomingMaturities[0];
+  const reserveIncomplete = Boolean(
+    emergencyReserve &&
+    (emergencyReserve.unvaluedGroups > 0 ||
+      (emergencyReserve.missingSelectionCount ?? 0) > 0),
+  );
+
+  const attentionItems = [
+    ...(reserveIncomplete
+      ? [
+          {
+            icon: CircleAlert,
+            title: "Os dados da reserva estão incompletos",
+            detail:
+              "Há valores ausentes ou seleções que não correspondem às posições atuais. Confira os dados antes de tirar conclusões sobre a cobertura.",
+            tone: "attention" as const,
+          },
+        ]
+      : []),
+    ...(!reserveIncomplete &&
+    emergencyReserve?.status === "below_target" &&
+    emergencyReserve.difference !== null
+      ? [
+          {
+            icon: CircleAlert,
+            title: "A reserva está abaixo da sua meta pessoal",
+            detail: `A diferença é ${formatCurrency(emergencyReserve.difference)}. Essa meta foi definida por você; não é uma recomendação do InvestLab.`,
+            tone: "attention" as const,
+          },
+        ]
+      : []),
+    ...(insights.largestPosition
+      ? [
+          {
+            icon: WalletCards,
+            title: "Maior posição na carteira conhecida",
+            detail: `${insights.largestPosition.product} representa ${insights.largestPosition.percentage.toFixed(1)}% do valor conhecido. Isso descreve a distribuição; não classifica o nível de risco.`,
+            tone: "neutral" as const,
+          },
+        ]
+      : []),
+    ...(nextMaturity
+      ? [
+          {
+            icon: CalendarDays,
+            title: "Próximo vencimento informado",
+            detail: `${nextMaturity.product} · ${date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))}. O vencimento é uma data registrada e não confirma quando o dinheiro ficará disponível.`,
+            tone: "neutral" as const,
+          },
+        ]
+      : []),
+  ];
+
+  const nextAction = getNextAction({
+    positionCount: positions.length,
+    missingValueCount,
+    reserveIncomplete,
+    reserve: emergencyReserve,
+  });
+
   return (
-    <>
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          icon={WalletCards}
-          label="Patrimônio atual"
-          value={
-            insights.valuedPositions ? formatCurrency(insights.totalValue) : "—"
-          }
-          detail={
-            insights.valuedPositions
-              ? "Valor da última posição B3"
-              : "Importe uma posição para começar"
-          }
-        />
-        <SummaryCard
-          icon={ChartNoAxesCombined}
-          label="Ativos acompanhados"
-          value={String(positions.length)}
-          detail={
-            positions.length
-              ? "Posições da última importação B3"
-              : "Nenhuma posição importada"
-          }
-        />
-        <SummaryCard
-          icon={PieChart}
-          label="Maior exposição"
-          value={
-            insights.largestPosition
-              ? `${insights.largestPosition.percentage.toFixed(1)}%`
-              : "—"
-          }
-          detail={
-            insights.largestPosition
-              ? insights.largestPosition.product
-              : "Ainda sem valores atuais"
-          }
-        />
-        <SummaryCard
-          icon={CalendarDays}
-          label="Próximo vencimento"
-          value={
-            nextMaturity
-              ? date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))
-              : "—"
-          }
-          detail={
-            nextMaturity ? nextMaturity.product : "Nenhum vencimento informado"
-          }
-        />
+    <div className="space-y-5">
+      <section aria-labelledby="dashboard-where-am-i">
+        <Card className="overflow-hidden border-primary/20 shadow-sm">
+          <CardContent className="p-5 sm:p-7">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Onde você está
+                </p>
+                <h2
+                  id="dashboard-where-am-i"
+                  className="mt-1 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl"
+                >
+                  {insights.valuedPositions
+                    ? formatCurrency(insights.totalValue)
+                    : "Ainda sem valores conhecidos"}
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Patrimônio da carteira que o InvestLab conhece
+                </p>
+              </div>
+              <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary">
+                <WalletCards aria-hidden="true" className="size-5" />
+              </span>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-4 text-sm">
+              <span>
+                <strong className="tabular-nums">
+                  {insights.valuedPositions} de {positions.length}
+                </strong>{" "}
+                posições com valor
+              </span>
+              {referenceDate ? (
+                <span className="text-muted-foreground">
+                  Dados de {date.format(new Date(`${referenceDate}T00:00:00Z`))}
+                </span>
+              ) : dataDateIsMixed ? (
+                <span className="text-muted-foreground">
+                  Datas-base variadas ou incompletas
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Data-base não informada
+                </span>
+              )}
+              {missingValueCount > 0 && (
+                <span className="text-amber-800 dark:text-amber-300">
+                  {missingValueCount} sem valor atual
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </section>
-      <section className="mt-4">
+
+      <section aria-labelledby="dashboard-reserve-title">
         <EmergencyReserveSummary calculation={emergencyReserve} />
       </section>
-      <section className="mt-4">
-        <NextContributionGuidanceCard guidance={nextContributionGuidance} />
-      </section>
-      {referenceRates && (
-        <div className="mt-4">
-          <ReferenceRates rates={referenceRates} />
-        </div>
-      )}
+
       <section
-        aria-labelledby="dashboard-next-steps"
-        className="mt-8 space-y-4"
+        aria-labelledby="dashboard-attention-title"
+        className="space-y-3"
       >
-        <div>
-          <h2 id="dashboard-next-steps" className="text-lg font-semibold">
-            Próximos passos
-          </h2>
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">
+              Leitura da carteira
+            </p>
+            <h2
+              id="dashboard-attention-title"
+              className="text-xl font-semibold"
+            >
+              O que merece atenção
+            </h2>
+          </div>
+          <Link
+            href="/portfolio"
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
+            Ver carteira <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        {attentionItems.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {attentionItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Card key={item.title}>
+                  <CardContent className="flex gap-3 p-4">
+                    <span
+                      className={
+                        item.tone === "attention"
+                          ? "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          : "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
+                      }
+                    >
+                      <Icon aria-hidden="true" className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="font-medium">{item.title}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {item.detail}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
           <Card>
-            <CardContent className="space-y-2 p-5">
-              <h3 className="font-medium">
-                {positions.length
-                  ? "Revise sua carteira"
-                  : "Importe sua carteira"}
-              </h3>
-              <Link
-                href={positions.length ? "/portfolio" : "/imports"}
-                className="inline-block text-sm font-medium text-primary hover:underline"
-              >
-                {positions.length ? "Abrir carteira" : "Ir para Importações"}
-              </Link>
+            <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
+              <Info aria-hidden="true" className="size-4 shrink-0" />
+              {missingValueCount > 0
+                ? "A leitura fica limitada enquanto houver posições sem valor atual."
+                : "Importe sua carteira para que o InvestLab possa fazer uma leitura dos dados conhecidos."}
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="space-y-2 p-5">
-              <h3 className="font-medium">Empresas em estudo</h3>
-              <Link
-                href="/analyses"
-                className="inline-block text-sm font-medium text-primary hover:underline"
-              >
-                Abrir Descobrir
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
+        )}
       </section>
-      <div className="mt-4 flex justify-end">
-        <Link
-          href="/portfolio"
-          className="text-sm font-medium text-primary hover:underline"
-        >
-          Ver carteira completa
-        </Link>
-      </div>
-    </>
+
+      <section aria-labelledby="dashboard-next-action-title">
+        <Card className="bg-muted/40">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">
+                Próxima ação
+              </p>
+              <h2
+                id="dashboard-next-action-title"
+                className="mt-1 font-semibold"
+              >
+                {nextAction.title}
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                {nextAction.detail}
+              </p>
+            </div>
+            <Link
+              href={nextAction.href}
+              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {nextAction.label}
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Collapsible className="text-sm text-muted-foreground">
+        <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-2 rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Como ler estes dados
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 transition-transform group-data-[state=open]:rotate-180"
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2 max-w-3xl space-y-2 rounded-lg border p-4">
+          <p>
+            O patrimônio soma os valores conhecidos das posições. Ativos sem
+            valor atual não entram na soma; a data mostrada é a data-base
+            registrada para as posições.
+          </p>
+          <p>
+            A participação da maior posição e as datas de vencimento são fatos
+            da carteira conhecida. Não determinam, por si só, risco, adequação
+            ou uma decisão de investimento.
+          </p>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 }
 
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  detail,
+function getNextAction({
+  positionCount,
+  missingValueCount,
+  reserveIncomplete,
+  reserve,
 }: {
-  icon: typeof WalletCards;
-  label: string;
-  value: string;
-  detail: string;
+  positionCount: number;
+  missingValueCount: number;
+  reserveIncomplete: boolean;
+  reserve?: EmergencyReserveCalculation;
 }) {
-  return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
-              {value}
-            </p>
-          </div>
-          <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
-            <Icon className="size-4" />
-          </span>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">{detail}</p>
-      </CardContent>
-    </Card>
-  );
+  if (positionCount === 0) {
+    return {
+      title: "Adicione os dados da sua carteira",
+      detail: "Sem posições, ainda não há base para interpretar sua situação.",
+      label: "Importar carteira",
+      href: "/imports",
+    };
+  }
+  if (missingValueCount > 0) {
+    return {
+      title: "Revise as posições sem valor atual",
+      detail:
+        "Valores ausentes deixam o total conhecido e a distribuição incompletos.",
+      label: "Revisar carteira",
+      href: "/portfolio",
+    };
+  }
+  if (reserveIncomplete) {
+    return {
+      title: "Revise as posições selecionadas como reserva",
+      detail:
+        "Há posições sem valor ou seleções ausentes; não é possível confirmar a comparação com sua meta.",
+      label: "Revisar reserva",
+      href: "/portfolio",
+    };
+  }
+  if (reserve?.monthlyExpenses === null) {
+    return {
+      title: "Informe suas despesas mensais para calcular a cobertura",
+      detail:
+        "Com esse valor, o InvestLab compara a reserva conhecida com suas despesas. Para novos aportes, ainda falta um método validado para montar alternativas com base na carteira inteira; por isso, não sugerimos onde aportar.",
+      label: "Configurar reserva",
+      href: "/portfolio",
+    };
+  }
+  if (reserve?.status === "below_target") {
+    return {
+      title:
+        "Se sua meta continua prioritária, considere direcionar o próximo aporte à reserva",
+      detail:
+        "Esta possibilidade considera apenas a meta pessoal que você definiu; o InvestLab não recomenda um ativo nem um valor de aporte.",
+      label: "Revisar reserva",
+      href: "/portfolio",
+    };
+  }
+  return {
+    title: "Confira se sua carteira está atualizada",
+    detail:
+      "Ainda falta um método validado para montar e escolher alternativas de investimento a partir da carteira inteira. Por isso, o InvestLab não sugere onde colocar novos aportes.",
+    label: "Revisar carteira",
+    href: "/portfolio",
+  };
 }

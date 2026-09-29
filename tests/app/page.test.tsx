@@ -9,7 +9,7 @@ describe("HomePage", () => {
   it("renders only the API-backed dashboard shell", () => {
     const html = renderToStaticMarkup(<HomePage />);
     expect(dynamic).toBe("force-dynamic");
-    expect(html).toContain("Patrimônio importado");
+    expect(html).toContain("Dashboard");
     expect(html).toContain("Carregando dashboard");
     expect(html).toContain('href="/imports"');
   });

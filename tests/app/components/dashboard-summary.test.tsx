@@ -1,56 +1,221 @@
 // @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
 
 const positions = [
   {
-    product: "CDB",
+    product: "CDB Banco A",
     institution: "Banco A",
     maturityAt: "2030-01-01",
     totalValue: "100",
+    referenceDate: "2026-09-01",
+  },
+  {
+    product: "Tesouro Selic",
+    institution: "Tesouro",
+    maturityAt: null,
+    totalValue: "300",
+    referenceDate: "2026-09-01",
   },
 ];
 
 describe("DashboardSummary", () => {
-  it("shows the current summary and route to the full portfolio", () => {
+  afterEach(cleanup);
+
+  it("prioritizes known wealth and data quality before portfolio observations", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary positions={positions} />,
     );
-    expect(html).toContain("Patrimônio atual");
-    expect(html).toContain("Ativos acompanhados");
-    expect(html).toContain("Maior exposição");
-    expect(html).toContain("01/01/2030");
+
+    expect(html).toContain("Onde você está");
+    expect(html).toContain("R$");
+    expect(html).toContain("2 de 2");
+    expect(html).toContain("Dados de 01/09/2026");
+    expect(html).toContain("O que merece atenção");
+    expect(html).toContain("Tesouro Selic representa 75.0%");
+    expect(html).toContain("Isso descreve a distribuição");
+    expect(html).toContain("Próximo vencimento informado");
+    expect(html).toContain("Como ler estes dados");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("group-data-[state=open]:rotate-180");
     expect(html).toContain('href="/portfolio"');
-    expect(html).toContain("Próximos passos");
-    expect(html).toContain("Reserva de emergência");
-    expect(html).toContain('href="/analyses"');
   });
 
-  it("includes the reference rates when the API has supplied them", () => {
+  it("provides an accessible, keyboard-focusable details disclosure", async () => {
+    const user = userEvent.setup();
+    render(<DashboardSummary positions={positions} />);
+
+    const trigger = screen.getByRole("button", {
+      name: "Como ler estes dados",
+    });
+    expect(trigger.className).toContain("focus-visible:ring-2");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.querySelector("svg")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+
+    await user.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      screen.getByText(/O patrimônio soma os valores conhecidos/),
+    ).toBeTruthy();
+  });
+
+  it("shows an attention from the user's personal reserve target without investment-target guidance", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
         positions={positions}
-        referenceRates={{
-          selic: { annualRate: "15", date: "2026-09-18" },
-          cdi: null,
+        emergencyReserve={{
+          monthlyExpenses: 100,
+          targetMonths: 3,
+          selectedValue: 200,
+          selectedGroups: 1,
+          unvaluedGroups: 0,
+          referenceDate: "2026-09-01",
+          targetValue: 300,
+          coveredMonths: 2,
+          difference: 100,
+          progressPercentage: 66.7,
+          status: "below_target",
         }}
       />,
     );
-    expect(html).toContain("Indicadores");
-  });
-  it("shows the empty imported-data state", () => {
-    const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
-    expect(html).toContain("Nenhuma posição importada");
-    expect(html).toContain('href="/imports"');
+
+    expect(html).toContain("A reserva está abaixo da sua meta pessoal");
+    expect(html).toContain("não é uma recomendação do InvestLab");
+    expect(html).toContain("direcionar o próximo aporte à reserva");
+    expect(html).not.toContain("Defina sua estratégia de alocação");
   });
 
-  it("renders every empty summary state when no current data is available", () => {
+  it("does not infer an investment destination when no reserve target exists", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        emergencyReserve={{
+          monthlyExpenses: 100,
+          targetMonths: null,
+          selectedValue: 200,
+          selectedGroups: 1,
+          unvaluedGroups: 0,
+          referenceDate: "2026-09-01",
+          targetValue: null,
+          coveredMonths: 2,
+          difference: null,
+          progressPercentage: null,
+          status: "not_configured",
+        }}
+      />,
+    );
+
+    expect(html).toContain("2.0 meses de despesas");
+    expect(html).toContain("Sem meta pessoal configurada");
+    expect(html).toContain(
+      "método validado para montar e escolher alternativas de investimento",
+    );
+    expect(html).toContain("não sugere onde colocar novos aportes");
+    expect(html).not.toContain("Próximo aporte");
+  });
+
+  it("explains the missing alternative-selection method when the personal goal is met", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        emergencyReserve={{
+          monthlyExpenses: 100,
+          targetMonths: 3,
+          selectedValue: 300,
+          selectedGroups: 1,
+          unvaluedGroups: 0,
+          referenceDate: "2026-09-01",
+          targetValue: 300,
+          coveredMonths: 3,
+          difference: 0,
+          progressPercentage: 100,
+          status: "on_target",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Sua meta pessoal está atingida.");
+    expect(html).toContain(
+      "método validado para montar e escolher alternativas de investimento",
+    );
+  });
+
+  it("offers reserve settings when monthly expenses are missing", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        emergencyReserve={{
+          monthlyExpenses: null,
+          targetMonths: null,
+          selectedValue: 200,
+          selectedGroups: 1,
+          unvaluedGroups: 0,
+          referenceDate: "2026-09-01",
+          targetValue: null,
+          coveredMonths: null,
+          difference: null,
+          progressPercentage: null,
+          status: "not_configured",
+        }}
+      />,
+    );
+
+    expect(html).toContain(
+      "Informe suas despesas mensais para calcular a cobertura",
+    );
+    expect(html).toContain("falta um método validado para montar alternativas");
+    expect(html).toContain("não sugerimos onde aportar");
+    expect(html).toContain('href="/portfolio"');
+    expect(html).toContain("Configurar reserva");
+  });
+
+  it("does not conclude the personal target is unmet when reserve data is incomplete", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        emergencyReserve={{
+          monthlyExpenses: 100,
+          targetMonths: 3,
+          selectedValue: 200,
+          selectedGroups: 1,
+          unvaluedGroups: 1,
+          missingSelectionCount: 1,
+          referenceDate: "2026-09-01",
+          targetValue: 300,
+          coveredMonths: 2,
+          difference: 100,
+          progressPercentage: 66.7,
+          status: "below_target",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Os dados da reserva estão incompletos");
+    expect(html).not.toContain("A reserva está abaixo da sua meta pessoal");
+    expect(html).toContain("Revise as posições selecionadas como reserva");
+    expect(html).not.toContain("direcionar o próximo aporte à reserva");
+  });
+
+  it("offers import as the next action when no positions are known", () => {
+    const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
+
+    expect(html).toContain("Ainda sem valores conhecidos");
+    expect(html).toContain("Adicione os dados da sua carteira");
+    expect(html).toContain('href="/imports"');
+    expect(html).toContain("Importe sua carteira");
+  });
+
+  it("flags positions without values and offers review", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
         positions={[
           {
-            product: "Sem valor",
+            product: "Ativo sem valor",
             institution: null,
             maturityAt: null,
             totalValue: null,
@@ -58,21 +223,24 @@ describe("DashboardSummary", () => {
         ]}
       />,
     );
-    expect(html).toContain("Importe uma posição para começar");
-    expect(html).toContain("Ainda sem valores atuais");
-    expect(html).toContain("Nenhum vencimento informado");
+
+    expect(html).toContain("0 de 1");
+    expect(html).toContain("1 sem valor atual");
+    expect(html).toContain("A leitura fica limitada");
+    expect(html).toContain("Revise as posições sem valor atual");
   });
-  it("renders the contribution guidance supplied by the overview", () => {
+
+  it("does not imply a single date when known positions have different dates", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
-        positions={positions}
-        nextContributionGuidance={{
-          status: "target_gap",
-          title: "Class gap for next contribution",
-          explanation: "Based on your saved allocation targets.",
-        }}
+        positions={[
+          { ...positions[0]!, referenceDate: "2026-09-01" },
+          { ...positions[1]!, referenceDate: "2026-08-01" },
+        ]}
       />,
     );
-    expect(html).toContain("Class gap for next contribution");
+
+    expect(html).toContain("Datas-base variadas ou incompletas");
+    expect(html).not.toContain("Dados de 01/09/2026");
   });
 });

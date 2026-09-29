@@ -11,7 +11,7 @@ const base = {
 };
 
 describe("calculateEmergencyReserve", () => {
-  it("does not calculate coverage before the user configures a target", () => {
+  it("does not calculate coverage before monthly expenses are configured", () => {
     const result = calculateEmergencyReserve({
       ...base,
       monthlyExpenses: null,
@@ -27,12 +27,42 @@ describe("calculateEmergencyReserve", () => {
     });
   });
 
+  it("calculates coverage from known reserve value without a personal target", () => {
+    const result = calculateEmergencyReserve({
+      ...base,
+      targetMonths: null,
+    });
+
+    expect(result).toMatchObject({
+      targetValue: null,
+      coveredMonths: 3,
+      difference: null,
+      progressPercentage: null,
+      status: "not_configured",
+    });
+  });
+
   it("requires a positive monthly cost to calculate covered months", () => {
     const result = calculateEmergencyReserve({ ...base, monthlyExpenses: 0 });
 
     expect(result).toMatchObject({
       targetValue: 0,
       coveredMonths: null,
+      status: "expenses_required",
+    });
+  });
+
+  it("does not divide by zero when expenses are invalid and there is no target", () => {
+    const result = calculateEmergencyReserve({
+      ...base,
+      monthlyExpenses: 0,
+      targetMonths: null,
+    });
+
+    expect(result).toMatchObject({
+      targetValue: null,
+      coveredMonths: null,
+      difference: null,
       status: "expenses_required",
     });
   });

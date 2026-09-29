@@ -37,7 +37,7 @@ export function calculateEmergencyReserve(
   const monthlyExpenses = input.monthlyExpenses;
   const targetMonths = input.targetMonths;
 
-  if (monthlyExpenses === null || targetMonths === null) {
+  if (monthlyExpenses === null) {
     return {
       ...input,
       selectedValue,
@@ -49,19 +49,34 @@ export function calculateEmergencyReserve(
     };
   }
 
-  const targetValue = cents(monthlyExpenses * targetMonths);
   if (monthlyExpenses <= 0) {
+    const targetValue =
+      targetMonths === null ? null : cents(monthlyExpenses * targetMonths);
     return {
       ...input,
       selectedValue,
       targetValue,
       coveredMonths: null,
-      difference: targetValue - selectedValue,
+      difference: targetValue === null ? null : targetValue - selectedValue,
       progressPercentage: null,
       status: "expenses_required",
     };
   }
 
+  const coveredMonths = selectedValue / monthlyExpenses;
+  if (targetMonths === null) {
+    return {
+      ...input,
+      selectedValue,
+      targetValue: null,
+      coveredMonths,
+      difference: null,
+      progressPercentage: null,
+      status: "not_configured",
+    };
+  }
+
+  const targetValue = cents(monthlyExpenses * targetMonths);
   const difference = cents(targetValue - selectedValue);
   const epsilon = 0.005;
   const status =
@@ -75,7 +90,7 @@ export function calculateEmergencyReserve(
     ...input,
     selectedValue,
     targetValue,
-    coveredMonths: selectedValue / monthlyExpenses,
+    coveredMonths,
     difference,
     progressPercentage:
       targetValue > 0

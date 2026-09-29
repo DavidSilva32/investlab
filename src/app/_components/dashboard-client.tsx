@@ -23,22 +23,13 @@ export function DashboardClient() {
         if (!response.ok) throw new Error(body.message);
         return body;
       })
-      .then(
-        ({
+      .then(({ positions, emergencyReserve }) => {
+        setOverview({
           positions,
-          referenceRates,
           emergencyReserve,
-          nextContributionGuidance,
-        }) => {
-          setOverview({
-            positions,
-            referenceRates,
-            emergencyReserve,
-            nextContributionGuidance,
-          });
-          setError(null);
-        },
-      )
+        });
+        setError(null);
+      })
       .catch(() => {
         setError(loadErrorMessage);
         toast.error(loadErrorMessage);

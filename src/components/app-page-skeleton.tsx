@@ -21,10 +21,12 @@ export function AppContentSkeleton({ title, variant }: AppPageSkeletonProps) {
   return (
     <section aria-busy="true" aria-live="polite" className="space-y-6">
       <p className="sr-only">Carregando {title.toLowerCase()}</p>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <Skeleton className="h-5 w-72" />
-        <Skeleton className="h-5 w-28" />
-      </div>
+      {variant !== "dashboard" && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <Skeleton className="h-5 w-72" />
+          <Skeleton className="h-5 w-28" />
+        </div>
+      )}
       {variant === "portfolio" && <PortfolioSkeleton />}
       {variant === "dashboard" && <DashboardSkeleton />}
       {variant === "form" && <FormSkeleton />}
@@ -53,10 +55,30 @@ function PortfolioSkeleton() {
 function DashboardSkeleton() {
   return (
     <>
-      <MetricSkeletons />
-      <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-        <PanelSkeleton />
-        <PanelSkeleton compact />
+      <div className="space-y-5">
+        <div className="rounded-xl border bg-card p-5 sm:p-7">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="mt-3 h-10 w-56" />
+          <Skeleton className="mt-3 h-4 w-64" />
+          <div className="mt-6 flex gap-5 border-t pt-4">
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+        </div>
+        <div className="rounded-xl border bg-card p-5 sm:p-6">
+          <Skeleton className="h-6 w-56" />
+          <Skeleton className="mt-5 h-4 w-full max-w-xl" />
+          <Skeleton className="mt-3 h-2.5 w-full" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <PanelSkeleton compact />
+          <PanelSkeleton compact />
+        </div>
+        <div className="rounded-xl border bg-card p-5">
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="mt-3 h-4 w-full max-w-xl" />
+          <Skeleton className="mt-4 h-10 w-36" />
+        </div>
       </div>
     </>
   );

@@ -4,6 +4,7 @@
   maturityAt: string | null;
   totalValue: string | null;
   estimatedValue?: number | null;
+  referenceDate?: string | null;
 };
 
 export type PortfolioInsights = {
