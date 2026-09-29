@@ -1,17 +1,16 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  CalendarDays,
-  Landmark,
-  PieChart,
-  ShieldAlert,
-  WalletCards,
-} from "lucide-react";
+import { ArrowRight, CalendarDays, CircleAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getPortfolioInsights } from "@/lib/portfolio-insights";
+import { getPortfolioConcentration } from "@/lib/portfolio-concentration";
 import { formatCurrency } from "@/lib/utils";
+import { PortfolioDistributionCharts } from "./portfolio-distribution-charts";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+const percentage = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 
 export type PortfolioPosition = {
   id: string;
@@ -38,223 +37,250 @@ export type PortfolioPosition = {
   cdbEstimateStatus?: "official" | "provisional" | "unavailable" | null;
 };
 
+export type ClassifiedPosition = {
+  id: string;
+  product: string;
+  assetCode?: string | null;
+  issuer?: string | null;
+  institution?: string | null;
+  indexer?: string | null;
+  regimeType?: string | null;
+  referenceDate?: string | null;
+  conversionDate?: string | null;
+  estimatedThrough?: string | null;
+  totalValue: string | null;
+  estimatedValue?: number | null;
+  classification: {
+    assetClass: string | null;
+    subClass: string | null;
+    geography: string | null;
+  };
+};
+
+function positionValue(position: PortfolioPosition) {
+  const value =
+    position.estimatedValue ??
+    (position.totalValue === null ? null : Number(position.totalValue));
+  return value !== null && Number.isFinite(value) ? value : null;
+}
+
 export function PortfolioOverview({
   positions,
+  classifiedPositions,
+  classificationStatus,
+  summaryContent,
 }: {
   positions: PortfolioPosition[];
+  classifiedPositions: ClassifiedPosition[] | null;
+  classificationStatus: "loading" | "loaded" | "unavailable";
+  summaryContent?: React.ReactNode;
 }) {
   const insights = getPortfolioInsights(positions);
-  const nextMaturity = insights.upcomingMaturities[0];
-  const concentration = insights.largestPosition;
-  const provisional = positions.find(
+  const classDistribution = classifiedPositions
+    ? getPortfolioConcentration(classifiedPositions, "assetClass")
+    : null;
+  const valuedPositions = positions
+    .map((position) => ({ position, value: positionValue(position) }))
+    .filter(
+      (item): item is { position: PortfolioPosition; value: number } =>
+        item.value !== null,
+    )
+    .sort((left, right) => right.value - left.value);
+  const topPositions = valuedPositions.slice(0, 5);
+  const unvaluedCount = positions.length - valuedPositions.length;
+  const provisionalCount = positions.filter(
     (position) => position.cdbEstimateStatus === "provisional",
-  );
-  const hasUnavailable = positions.some(
+  ).length;
+  const unavailableEstimateCount = positions.filter(
     (position) => position.cdbEstimateStatus === "unavailable",
-  );
-  const portfolioDetail = hasUnavailable
-    ? "Não foi possível atualizar todas as estimativas; exibindo o último valor da B3."
-    : provisional?.estimatedThrough
-      ? `Estimativa provisória até ${date.format(new Date(`${provisional.estimatedThrough}T00:00:00Z`))}; CDI oficial pendente.`
-      : "Atualizado com CDI oficial quando disponível.";
+  ).length;
+  const nextMaturity = insights.upcomingMaturities[0];
+  const hasAttention =
+    unvaluedCount > 0 ||
+    provisionalCount > 0 ||
+    unavailableEstimateCount > 0 ||
+    nextMaturity !== undefined;
+
+  const institutionDistribution = insights.allocations.map((item) => ({
+    label: item.institution,
+    value: item.value,
+    percentage: item.percentage,
+  }));
+  const classItems = classDistribution?.groups.map((item) => ({
+    label: item.label,
+    value: item.value,
+    percentage: item.percentage,
+  }));
 
   return (
     <div className="space-y-5">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
-          icon={WalletCards}
-          label="Patrimônio atual"
-          value={
-            insights.valuedPositions ? formatCurrency(insights.totalValue) : "—"
-          }
-          detail={
-            insights.valuedPositions
-              ? portfolioDetail
-              : "Importe uma posição para começar"
-          }
-        />
-        <Metric
-          icon={PieChart}
-          label="Ativos acompanhados"
-          value={String(positions.length)}
-        />
-        <Metric
-          icon={Landmark}
-          label="Instituições"
-          value={String(insights.institutions)}
-        />
-        <Metric
-          icon={CalendarDays}
-          label="Próximo vencimento"
-          value={
-            nextMaturity
-              ? date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))
-              : "—"
-          }
-        />
-      </section>
-      <section className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Alocação por instituição</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {insights.allocations.length ? (
-              <div className="space-y-5">
-                {insights.allocations.map((allocation) => (
-                  <div key={allocation.institution}>
-                    <div className="mb-2 flex items-baseline justify-between gap-4 text-sm">
-                      <span className="truncate font-medium">
-                        {allocation.institution}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {allocation.percentage.toFixed(1)}% ·{" "}
-                        {formatCurrency(allocation.value)}
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${allocation.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyInsight message="Ainda não há valores atuais para mostrar a alocação." />
-            )}
-            <p className="text-xs text-muted-foreground">
-              A alocação pode incluir estimativas de CDB calculadas pelo CDI.
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>O que merece sua atenção</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {concentration ? (
-              <Insight
-                icon={ShieldAlert}
-                title={"Maior posição observada"}
-                description={`${concentration.product} representa ${concentration.percentage.toFixed(1)}% do patrimônio com valor disponível. A participação isolada não mede diversificação.`}
-              />
-            ) : (
-              <EmptyInsight message="Importe uma posição com valor atual para analisar concentração." />
-            )}
-            {nextMaturity && (
-              <Insight
-                icon={CalendarDays}
-                title="Vencimento mais próximo"
-                description={`${nextMaturity.product} vence em ${date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))}.`}
-              />
-            )}
-            {insights.institutions > 1 && (
-              <Insight
-                icon={Landmark}
-                title="Instituições representadas"
-                description={`${insights.institutions} instituições têm posições com valor disponível. A contagem não mede diversificação.`}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </section>
       <Card>
-        <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
+        <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
           <div>
-            <CardTitle>Próximos vencimentos</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Valor conhecido da carteira
+            </p>
+            <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
+              {insights.valuedPositions
+                ? formatCurrency(insights.totalValue)
+                : "—"}
+            </p>
+          </div>
+          <div className="text-sm text-muted-foreground sm:text-right">
+            <p>
+              {valuedPositions.length} de {positions.length} posições com valor
+            </p>
+            {(provisionalCount > 0 || unavailableEstimateCount > 0) && (
+              <p className="mt-1">Alguns valores podem ser estimativas.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {summaryContent}
+
+      <PortfolioDistributionCharts
+        institutionItems={institutionDistribution}
+        classItems={classItems ?? null}
+        unclassifiedValue={classDistribution?.unclassifiedValue ?? null}
+        totalValue={classDistribution?.totalValue ?? null}
+        loading={classificationStatus === "loading"}
+      />
+
+      <section aria-labelledby="top-positions-heading">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2
+              id="top-positions-heading"
+              className="text-lg font-semibold tracking-tight"
+            >
+              Principais posições
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Ordenadas pelo maior valor conhecido
+            </p>
           </div>
           <Link
             href="/portfolio?view=positions"
             className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
           >
-            Ver posições <ArrowRight className="size-4" />
+            Ver todas as posições <ArrowRight className="size-4" />
           </Link>
+        </div>
+        {topPositions.length ? (
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <ul
+              className="divide-y"
+              aria-label="Principais posições por valor conhecido"
+            >
+              {topPositions.map(({ position, value }) => (
+                <li
+                  key={position.id}
+                  className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {position.product}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {position.institution ?? "Instituição não informada"}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-medium tabular-nums">
+                      {formatCurrency(value)}
+                    </p>
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {percentage.format(
+                        insights.totalValue > 0
+                          ? (value / insights.totalValue) * 100
+                          : 0,
+                      )}
+                      % da carteira conhecida
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="rounded-xl border px-4 py-5 text-sm text-muted-foreground">
+            Ainda não há posições com valor conhecido.
+          </p>
+        )}
+      </section>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">O que merece atenção</CardTitle>
         </CardHeader>
         <CardContent>
-          {insights.upcomingMaturities.length ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {insights.upcomingMaturities.map((position) => (
-                <div
-                  key={`${position.product}-${position.maturityAt}`}
-                  className="rounded-lg border bg-muted/25 p-4"
-                >
-                  <p className="truncate font-medium">{position.product}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Vence em{" "}
-                    {date.format(new Date(`${position.maturityAt}T00:00:00Z`))}
-                  </p>
-                  <p className="mt-3 text-sm font-medium tabular-nums">
-                    {position.value === null
-                      ? "Valor não informado"
-                      : formatCurrency(position.value)}
-                  </p>
-                </div>
-              ))}
-            </div>
+          {hasAttention ? (
+            <ul className="space-y-3">
+              {unvaluedCount > 0 && (
+                <AttentionItem>
+                  {unvaluedCount}{" "}
+                  {unvaluedCount === 1 ? "posição está" : "posições estão"} sem
+                  valor atual informado.
+                </AttentionItem>
+              )}
+              {provisionalCount > 0 && (
+                <AttentionItem>
+                  {provisionalCount}{" "}
+                  {provisionalCount === 1
+                    ? "estimativa está"
+                    : "estimativas estão"}{" "}
+                  provisória{provisionalCount === 1 ? "" : "s"}.
+                </AttentionItem>
+              )}
+              {unavailableEstimateCount > 0 && (
+                <AttentionItem>
+                  Não foi possível atualizar{" "}
+                  {unavailableEstimateCount === 1
+                    ? "uma estimativa"
+                    : `${unavailableEstimateCount} estimativas`}{" "}
+                  de CDB; a tabela mostra o último valor informado.
+                </AttentionItem>
+              )}
+              {nextMaturity && (
+                <AttentionItem icon={<CalendarDays className="size-4" />}>
+                  Próximo vencimento informado: {nextMaturity.product}, em{" "}
+                  {date.format(
+                    new Date(`${nextMaturity.maturityAt}T00:00:00Z`),
+                  )}
+                  .
+                </AttentionItem>
+              )}
+            </ul>
           ) : (
-            <EmptyInsight message="Não há vencimentos futuros informados nas posições atuais." />
+            <p className="text-sm text-muted-foreground">
+              Não há valores ausentes ou estimativas pendentes informados na
+              carteira.
+            </p>
           )}
+          <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">
+            Estes são fatos dos dados registrados; não indicam, por si só, risco
+            ou recomendação.
+          </p>
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function Metric({
-  icon: Icon,
-  label,
-  value,
-  detail,
+function AttentionItem({
+  children,
+  icon,
 }: {
-  icon: typeof WalletCards;
-  label: string;
-  value: string;
-  detail?: string;
+  children: React.ReactNode;
+  icon?: React.ReactNode;
 }) {
   return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-muted-foreground">{label}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
-              {value}
-            </p>
-          </div>
-          <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
-            <Icon className="size-4" />
-          </span>
-        </div>
-        {detail && (
-          <p className="mt-3 text-xs text-muted-foreground">{detail}</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-function Insight({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: typeof ShieldAlert;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex gap-3">
-      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-muted text-primary">
-        <Icon className="size-4" />
+    <li className="flex items-start gap-2.5 text-sm">
+      <span className="mt-0.5 text-muted-foreground">
+        {icon ?? <CircleAlert className="size-4" />}
       </span>
-      <div>
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-      </div>
-    </div>
+      <span>{children}</span>
+    </li>
   );
-}
-function EmptyInsight({ message }: { message: string }) {
-  return <p className="py-4 text-sm text-muted-foreground">{message}</p>;
 }

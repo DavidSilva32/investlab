@@ -1,19 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmergencyReservePositionSuggestionsCard } from "@/app/portfolio/_components/emergency-reserve-position-suggestions";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
 
@@ -53,7 +46,6 @@ export function EmergencyReserveEditor() {
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
 
   const loadData = useCallback(() => {
     fetch("/api/emergency-reserve")
@@ -71,7 +63,6 @@ export function EmergencyReserveEditor() {
       })
       .catch(() => {
         setError(loadErrorMessage);
-        setIsOpen(true);
         toast.error(loadErrorMessage);
       })
       .finally(() => setLoading(false));
@@ -147,74 +138,75 @@ export function EmergencyReserveEditor() {
   }
 
   return (
-    <Card className="mb-6">
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <CardTitle>Reserva de emergência</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Defina seu custo mensal e sua meta pessoal em meses. A meta é
-                uma configuração sua, não uma regra universal.
-              </p>
-              <p
-                className="text-xs text-muted-foreground"
-                aria-live="polite"
-                role={error && !data ? "alert" : "status"}
-              >
-                {loading
-                  ? "Carregando configuração..."
-                  : error && !data
-                    ? loadErrorMessage
-                    : data?.configured
-                      ? `Meta de ${data.targetMonths} meses · ${data.selectedPositionCount} ativos selecionados`
-                      : "Configuração pessoal ainda não definida"}
-              </p>
+    <section className="space-y-5" data-testid="reserve-editor">
+      <p
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+        aria-live="polite"
+        role={error && !data ? "alert" : "status"}
+      >
+        {loading
+          ? "Carregando configuração..."
+          : error && !data
+            ? loadErrorMessage
+            : data?.configured
+              ? `Meta pessoal de ${data.targetMonths} meses`
+              : "Configuração pessoal ainda não definida"}
+        {data && (
+          <>
+            {" · "}
+            {selectedKeys.size}{" "}
+            {selectedKeys.size === 1
+              ? "grupo selecionado"
+              : "grupos selecionados"}
+          </>
+        )}
+      </p>
+      {loading && (
+        <div
+          className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
+          data-testid="reserve-editor-loading-layout"
+          aria-hidden="true"
+        >
+          <div className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="h-16 animate-pulse rounded-md bg-muted" />
+              <div className="h-16 animate-pulse rounded-md bg-muted" />
             </div>
-            <CollapsibleTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label={
-                  isOpen
-                    ? "Recolher configuração da reserva"
-                    : "Configurar reserva"
-                }
-                aria-expanded={isOpen}
-              >
-                {isOpen ? "Recolher" : "Configurar"}
-                <ChevronDown
-                  className={`size-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                />
-              </Button>
-            </CollapsibleTrigger>
+            <div className="h-48 animate-pulse rounded-xl bg-muted" />
           </div>
-        </CardHeader>
-        <CollapsibleContent>
-          <CardContent>
-            {loading && (
-              <p role="status">Carregando configuração da reserva…</p>
-            )}
-            {error && !data && (
-              <div role="alert" className="space-y-3 text-sm text-destructive">
-                <p>{error}</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setLoading(true);
-                    loadData();
-                  }}
-                >
-                  Tentar novamente
-                </Button>
-              </div>
-            )}
-            {data && (
-              <form className="space-y-5" onSubmit={save}>
-                <div className="grid gap-4 sm:grid-cols-2">
+          <div className="h-72 animate-pulse rounded-xl bg-muted" />
+        </div>
+      )}
+      {error && !data && (
+        <div role="alert" className="space-y-3 text-sm text-destructive">
+          <p>{error}</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setLoading(true);
+              loadData();
+            }}
+          >
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+      {data && (
+        <form className="space-y-5" onSubmit={save}>
+          <div
+            className="grid items-start gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
+            data-testid="reserve-editor-layout"
+          >
+            <div className="space-y-5">
+              <section
+                aria-labelledby="reserve-target-title"
+                className="space-y-4"
+              >
+                <h3 id="reserve-target-title" className="text-sm font-semibold">
+                  Sua meta pessoal
+                </h3>
+                <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="monthly-expenses">Custo mensal</Label>
                     <Input
@@ -260,127 +252,139 @@ export function EmergencyReserveEditor() {
                     </p>
                   </div>
                 </div>
+              </section>
 
-                <EmergencyReservePositionSuggestionsCard
-                  holdings={data.holdings}
-                  onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
-                />
+              <EmergencyReservePositionSuggestionsCard
+                holdings={data.holdings}
+                onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
+              />
+            </div>
 
-                <fieldset className="space-y-3">
-                  <legend className="font-medium">
-                    Investimentos que você quer considerar na reserva
-                  </legend>
-                  <p className="text-sm text-muted-foreground">
-                    Somente grupos classificados como renda fixa aparecem aqui.
-                    A classe não confirma prazo nem condições de resgate.
-                  </p>
-                  {data.missingSelectionCount > 0 && (
-                    <div
-                      role="status"
-                      className="space-y-3 rounded-md border p-3 text-sm"
-                    >
-                      <p>
-                        {data.missingSelectionCount} grupo(s) selecionado(s) não
-                        tem correspondência inequívoca com a importação mais
-                        recente e fica(m) fora do cálculo até ser(em)
-                        selecionado(s) novamente.
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const visibleKeys = new Set(
-                            data.holdings.map((holding) => holding.assetKey),
-                          );
-                          setSelectedKeys(
-                            (current) =>
-                              new Set(
-                                [...current].filter((key) =>
-                                  visibleKeys.has(key),
-                                ),
-                              ),
-                          );
-                        }}
-                      >
-                        Remover grupos sem correspondência
-                      </Button>
-                    </div>
-                  )}
-                  {data.holdings.length === 0 ? (
-                    <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                      Importe uma posição da carteira para escolher os
-                      investimentos da reserva.
-                    </p>
-                  ) : (
-                    <ul className="grid max-h-96 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
-                      {data.holdings.map((holding) => (
-                        <li
-                          key={holding.assetKey}
-                          className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
-                        >
-                          <div className="flex items-start gap-3">
-                            <Checkbox
-                              id={`reserve-holding-${holding.assetKey}`}
-                              className="mt-1"
-                              checked={selectedKeys.has(holding.assetKey)}
-                              onCheckedChange={() =>
-                                toggleHolding(holding.assetKey)
-                              }
-                            />
-                            <label
-                              htmlFor={`reserve-holding-${holding.assetKey}`}
-                              className="min-w-0 flex-1 cursor-pointer"
-                            >
-                              <span className="block font-medium">
-                                {holding.product}
-                              </span>
-                              <span className="block text-xs text-muted-foreground">
-                                {[
-                                  holding.assetCode,
-                                  holding.institution,
-                                  holding.issuer,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ") ||
-                                  "Sem código ou instituição informados"}
-                                {holding.positionCount > 1 &&
-                                  ` · ${holding.positionCount} posições agrupadas`}
-                              </span>
-                              <span className="block text-xs text-muted-foreground">
-                                {holding.value === null
-                                  ? "Sem valor informado"
-                                  : formatCurrency(holding.value)}
-                                {holding.unvaluedPositions > 0 &&
-                                  ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
-                              </span>
-                            </label>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </fieldset>
-
-                <p className="text-xs text-muted-foreground">
-                  O cálculo usa o valor estimado para CDB DI/CDI quando
-                  disponível; nos demais casos, usa o valor informado na
-                  importação. Confirme com a instituição o prazo e as condições
-                  de resgate.
+            <fieldset className="min-w-0 space-y-3 rounded-xl border p-4">
+              <legend className="px-1 text-sm font-semibold">
+                Posições consideradas na reserva
+              </legend>
+              <p className="text-xs text-muted-foreground">
+                {selectedKeys.size} selecionado(s) · {data.holdings.length}{" "}
+                disponíveis
+              </p>
+              <fieldset className="space-y-3">
+                <legend className="sr-only">
+                  Investimentos que você quer considerar na reserva
+                </legend>
+                <p className="text-sm text-muted-foreground">
+                  Somente grupos classificados como renda fixa aparecem aqui. A
+                  classe não confirma prazo nem condições de resgate.
                 </p>
-                {formError && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {formError}
-                  </p>
+                {data.missingSelectionCount > 0 && (
+                  <div
+                    role="status"
+                    className="space-y-3 rounded-md border p-3 text-sm"
+                  >
+                    <p>
+                      {data.missingSelectionCount} grupo(s) selecionado(s) não
+                      tem correspondência inequívoca com a importação mais
+                      recente e fica(m) fora do cálculo até ser(em)
+                      selecionado(s) novamente.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const visibleKeys = new Set(
+                          data.holdings.map((holding) => holding.assetKey),
+                        );
+                        setSelectedKeys(
+                          (current) =>
+                            new Set(
+                              [...current].filter((key) =>
+                                visibleKeys.has(key),
+                              ),
+                            ),
+                        );
+                      }}
+                    >
+                      Remover grupos sem correspondência
+                    </Button>
+                  </div>
                 )}
-                <Button type="submit" disabled={saving}>
-                  {saving ? "Salvando…" : "Salvar configuração"}
-                </Button>
-              </form>
+                {data.holdings.length === 0 ? (
+                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    Importe uma posição da carteira para escolher os
+                    investimentos da reserva.
+                  </p>
+                ) : (
+                  <ul className="grid max-h-[min(28rem,45dvh)] gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-1">
+                    {data.holdings.map((holding) => (
+                      <li
+                        key={holding.assetKey}
+                        className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
+                      >
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            id={`reserve-holding-${holding.assetKey}`}
+                            className="mt-1"
+                            checked={selectedKeys.has(holding.assetKey)}
+                            onCheckedChange={() =>
+                              toggleHolding(holding.assetKey)
+                            }
+                          />
+                          <label
+                            htmlFor={`reserve-holding-${holding.assetKey}`}
+                            className="min-w-0 flex-1 cursor-pointer"
+                          >
+                            <span className="block font-medium">
+                              {holding.product}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {[
+                                holding.assetCode,
+                                holding.institution,
+                                holding.issuer,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") ||
+                                "Sem código ou instituição informados"}
+                              {holding.positionCount > 1 &&
+                                ` · ${holding.positionCount} posições agrupadas`}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {holding.value === null
+                                ? "Sem valor informado"
+                                : formatCurrency(holding.value)}
+                              {holding.unvaluedPositions > 0 &&
+                                ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
+                            </span>
+                          </label>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </fieldset>
+            </fieldset>
+          </div>
+
+          <div className="space-y-3 border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              O cálculo usa o valor estimado para CDB DI/CDI quando disponível;
+              nos demais casos, usa o valor informado na importação. Confirme
+              com a instituição o prazo e as condições de resgate.
+            </p>
+            {formError && (
+              <p role="alert" className="text-sm text-destructive">
+                {formError}
+              </p>
             )}
-          </CardContent>
-        </CollapsibleContent>
-      </Collapsible>
-    </Card>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={saving}>
+                {saving ? "Salvando…" : "Salvar configuração"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }

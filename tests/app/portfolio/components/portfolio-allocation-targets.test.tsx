@@ -73,7 +73,7 @@ describe("PortfolioAllocationTargets", () => {
     expect(screen.queryByText("60.0%")).toBeNull();
     await user.click(screen.getByRole("button", { name: /Mostrar.*metas/i }));
 
-    expect(screen.getByText("Metas da sua estratégia")).toBeTruthy();
+    expect(screen.getByText("Metas pessoais de alocação")).toBeTruthy();
     expect(screen.getByText("60.0%")).toBeTruthy();
     expect(screen.getByText("50.0%")).toBeTruthy();
     expect(screen.getAllByText("-10.0%")).toHaveLength(2);

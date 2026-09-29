@@ -122,12 +122,11 @@ export function PortfolioAllocation({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Classificação e alocação</CardTitle>
+        <CardTitle>Metas pessoais e detalhes da carteira</CardTitle>
         <CardDescription>
-          Concentração por ativo, classe, subclasse ou geografia. Produto e
-          indexador podem sugerir a classificação; geografia fica sem informação
-          até ajuste, pois a importação não identifica esse dado. Valores usam a
-          estimativa atual quando disponível, ou o valor importado.
+          As metas são definidas por você. A comparação e a orientação abaixo
+          refletem essas metas pessoais; não representam uma estratégia criada
+          pelo InvestLab. A classificação pode ser ajustada quando necessário.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -147,6 +146,10 @@ export function PortfolioAllocation({
             <p className="text-sm text-muted-foreground">
               Importe posições para visualizar a classificação e a alocação.
             </p>
+            <p className="text-sm text-muted-foreground">
+              Metas são pessoais e não representam uma estratégia criada pelo
+              InvestLab.
+            </p>
             <StrategyGuidance
               nextContributionGuidance={nextContributionGuidance}
             />
@@ -160,6 +163,9 @@ export function PortfolioAllocation({
         ) : (
           <>
             <PortfolioConcentrationAnalysis positions={positions} />
+            <p className="text-sm text-muted-foreground">
+              Orientação comparada às metas pessoais que você registrou.
+            </p>
             <StrategyGuidance
               nextContributionGuidance={nextContributionGuidance}
             />
