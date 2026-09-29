@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -137,6 +138,7 @@ describe("StockAnalysisDashboard", () => {
     const initialResponse = new Promise<Response>((resolve) => {
       resolveInitial = resolve;
     });
+    let initialResponseUsed = false;
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/search?"))
@@ -147,6 +149,9 @@ describe("StockAnalysisDashboard", () => {
         return Promise.resolve(
           jsonResponse({ ...analysis, ticker: "VALE3", companyName: "Vale" }),
         );
+      if (url.endsWith("/PETR4") && initialResponseUsed)
+        return Promise.resolve(jsonResponse(analysis));
+      if (url.endsWith("/PETR4")) initialResponseUsed = true;
       return initialResponse;
     });
     vi.stubGlobal("fetch", fetcher);
@@ -172,17 +177,26 @@ describe("StockAnalysisDashboard", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getByText(/VALE3/)).toBeTruthy();
-    vi.clearAllMocks();
-    window.history.pushState({}, "", "/analyses?ticker=PETR4");
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(screen.getByText(/VALE3.*Vale/)).toBeTruthy();
     await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
     });
     expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
-      "PETR4",
+      "VALE3",
     );
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    await act(async () => {
+      window.history.pushState({}, "", "/analyses?ticker=PETR4");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/PETR4.*Petrobras/)).toBeTruthy();
+      expect(screen.getAllByRole("combobox")).toHaveLength(1);
+      expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
+        "PETR4",
+      );
+    });
     expect(fetcher).toHaveBeenCalledWith("/api/analyses/stocks/PETR4");
     expect(toast.loading).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();

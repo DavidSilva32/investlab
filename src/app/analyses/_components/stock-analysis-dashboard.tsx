@@ -180,11 +180,7 @@ export function StockAnalysisDashboard({
   }, [days, history]);
 
   const search = (
-    <AnalysisStockSearch
-      key={selectedTicker}
-      ticker={selectedTicker}
-      onSelect={selectTicker}
-    />
+    <AnalysisStockSearch ticker={selectedTicker} onSelect={selectTicker} />
   );
   if (loading)
     return (
@@ -320,7 +316,7 @@ export function StockAnalysisDashboard({
           ))}
         </CardContent>
       </Card>
-      <StockValuationPanel ticker={analysis.ticker} />
+      <StockValuationPanel key={analysis.ticker} ticker={analysis.ticker} />
       <Card>
         <CardHeader>
           <CardTitle>Evolução dos fundamentos anuais</CardTitle>
