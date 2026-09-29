@@ -8,6 +8,8 @@ import {
   screenerMarketRefreshRuns,
   screenerMarketSnapshotQuotes,
   screenerSecurities,
+  cvmShareCapitalFacts,
+  cvmShareClassReconciliations,
 } from "@/infrastructure/database/schema";
 
 describe("Screener persistence schema", () => {
@@ -82,6 +84,17 @@ describe("Screener persistence schema", () => {
       ]),
     );
     expect(
+      facts.foreignKeys.map((foreignKey) => ({
+        columns: foreignKey.reference().columns.map(({ name }) => name),
+        foreignColumns: foreignKey
+          .reference()
+          .foreignColumns.map(({ name }) => name),
+      })),
+    ).toEqual([
+      { columns: ["issuerCnpj"], foreignColumns: ["cnpj"] },
+      { columns: ["ingestionRunId"], foreignColumns: ["id"] },
+    ]);
+    expect(
       facts.foreignKeys.map(
         (foreignKey) => foreignKey.reference().columns[0]?.name,
       ),
@@ -147,5 +160,78 @@ describe("Screener persistence schema", () => {
     expect(
       evidence.foreignKeys[0]?.reference().columns.map(({ name }) => name),
     ).toEqual(["snapshotId"]);
+  });
+
+  it("stores FRE source lineage and explicit per-ticker reconciliation states", () => {
+    const facts = getTableConfig(cvmShareCapitalFacts);
+    const reconciliation = getTableConfig(cvmShareClassReconciliations);
+    expect(facts.name).toBe("cvm_share_capital_facts");
+    expect(facts.columns.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "issuerCnpj",
+        "ingestionRunId",
+        "referenceDate",
+        "documentVersion",
+        "documentId",
+        "documentReceivedDate",
+        "metadataStatus",
+        "sourceArchive",
+        "sourceFile",
+        "sourceRow",
+        "rawFields",
+        "tickerClassStatus",
+        "quantitySemantics",
+        "fetchedAt",
+      ]),
+    );
+    expect(facts.indexes.map(({ config }) => config.name)).toEqual(
+      expect.arrayContaining([
+        "cvm_share_capital_issuer_reference_idx",
+        "cvm_share_capital_document_idx",
+        "cvm_share_capital_received_idx",
+        "cvm_share_capital_run_idx",
+      ]),
+    );
+    expect(
+      facts.foreignKeys.map((foreignKey) => ({
+        columns: foreignKey.reference().columns.map(({ name }) => name),
+        foreignColumns: foreignKey
+          .reference()
+          .foreignColumns.map(({ name }) => name),
+      })),
+    ).toEqual([
+      { columns: ["issuerCnpj"], foreignColumns: ["cnpj"] },
+      { columns: ["ingestionRunId"], foreignColumns: ["id"] },
+    ]);
+    expect(reconciliation.name).toBe("cvm_share_class_reconciliations");
+    expect(reconciliation.columns.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "ticker",
+        "issuerIdentityStatus",
+        "tickerClassStatus",
+        "unitCompositionStatus",
+        "freDocumentAlignmentStatus",
+        "crossSourceAlignmentStatus",
+        "effectiveDateStatus",
+        "eventHistoryStatus",
+        "treasuryStatus",
+        "reasons",
+        "evidence",
+      ]),
+    );
+    expect(reconciliation.indexes.map(({ config }) => config.name)).toContain(
+      "cvm_share_class_run_ticker_uidx",
+    );
+    expect(
+      reconciliation.foreignKeys.map((foreignKey) => ({
+        columns: foreignKey.reference().columns.map(({ name }) => name),
+        foreignColumns: foreignKey
+          .reference()
+          .foreignColumns.map(({ name }) => name),
+      })),
+    ).toEqual([
+      { columns: ["ingestionRunId"], foreignColumns: ["id"] },
+      { columns: ["issuerCnpj"], foreignColumns: ["cnpj"] },
+    ]);
   });
 });

@@ -241,6 +241,95 @@ export const screenerFinancialFacts = pgTable(
   ],
 );
 
+export const cvmShareCapitalFacts = pgTable(
+  "cvm_share_capital_facts",
+  {
+    factKey: varchar({ length: 64 }).primaryKey(),
+    issuerCnpj: varchar({ length: 14 })
+      .notNull()
+      .references(() => screenerIssuers.cnpj, { onDelete: "cascade" }),
+    ingestionRunId: uuid()
+      .notNull()
+      .references(() => screenerIngestionRuns.id),
+    referenceDate: date(),
+    documentVersion: integer().notNull(),
+    documentId: varchar({ length: 32 }).notNull(),
+    documentReceivedDate: date(),
+    metadataStatus: varchar({ length: 16 }).notNull(),
+    recordKind: varchar({ length: 40 }).notNull(),
+    capitalId: varchar({ length: 32 }),
+    shareholderId: varchar({ length: 32 }),
+    sourceArchive: varchar({ length: 64 }).notNull(),
+    sourceFile: varchar({ length: 128 }).notNull(),
+    sourceRow: integer().notNull(),
+    rawFields: jsonb().$type<Record<string, string>>().notNull(),
+    tickerClassStatus: varchar({ length: 16 }).notNull(),
+    quantitySemantics: varchar({ length: 64 }).notNull(),
+    fetchedAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("cvm_share_capital_issuer_reference_idx").on(
+      table.issuerCnpj,
+      table.referenceDate,
+    ),
+    index("cvm_share_capital_document_idx").on(
+      table.issuerCnpj,
+      table.documentId,
+      table.documentVersion,
+    ),
+    index("cvm_share_capital_received_idx").on(table.documentReceivedDate),
+    index("cvm_share_capital_run_idx").on(table.ingestionRunId),
+  ],
+);
+
+export const cvmShareClassReconciliations = pgTable(
+  "cvm_share_class_reconciliations",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    ingestionRunId: uuid()
+      .notNull()
+      .references(() => screenerIngestionRuns.id),
+    issuerCnpj: varchar({ length: 14 }).references(() => screenerIssuers.cnpj, {
+      onDelete: "cascade",
+    }),
+    ticker: varchar({ length: 16 }).notNull(),
+    instrumentSubtype: varchar({ length: 16 }).notNull(),
+    issuerIdentityStatus: varchar({ length: 16 }).notNull(),
+    tickerClassStatus: varchar({ length: 16 }).notNull(),
+    unitCompositionStatus: varchar({ length: 16 }).notNull(),
+    freDocumentAlignmentStatus: varchar({ length: 16 }).notNull(),
+    crossSourceAlignmentStatus: varchar({ length: 16 }).notNull(),
+    effectiveDateStatus: varchar({ length: 16 }).notNull(),
+    eventHistoryStatus: varchar({ length: 16 }).notNull(),
+    treasuryStatus: varchar({ length: 32 }).notNull(),
+    reasons: jsonb().$type<string[]>().notNull(),
+    evidence: jsonb()
+      .$type<
+        Array<{
+          factKey: string;
+          recordKind: string;
+          documentId: string;
+          documentVersion: number;
+          referenceDate: string | null;
+          documentReceivedDate: string | null;
+          sourceArchive: string;
+          sourceFile: string;
+          sourceRow: number;
+          quantitySemantics: string;
+        }>
+      >()
+      .notNull(),
+    reconciledAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("cvm_share_class_run_ticker_uidx").on(
+      table.ingestionRunId,
+      table.ticker,
+    ),
+    index("cvm_share_class_issuer_idx").on(table.issuerCnpj, table.ticker),
+  ],
+);
+
 export const screenerMarketSnapshots = pgTable(
   "screener_market_snapshots",
   {

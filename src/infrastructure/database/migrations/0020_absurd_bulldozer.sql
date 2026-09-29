@@ -1,0 +1,2 @@
+ALTER TABLE "cvm_share_class_reconciliations" ALTER COLUMN "issuerCnpj" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "cvm_share_class_reconciliations" ADD COLUMN "issuerIdentityStatus" varchar(16) NOT NULL;

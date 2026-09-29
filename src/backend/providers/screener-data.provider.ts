@@ -741,7 +741,8 @@ export class BrapiScreenerProvider {
         const ticker = entry.stock ?? entry.symbol ?? entry.ticker;
         const subtype = entry.subType ?? entry.subtype;
         const active = entry.isActive ?? entry.active ?? false;
-        if (!ticker || !active || subtype !== "stock") continue;
+        if (!ticker || !active || (subtype !== "stock" && subtype !== "unit"))
+          continue;
         securities.set(ticker, {
           ticker,
           name: entry.name,

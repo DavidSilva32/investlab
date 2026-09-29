@@ -5,6 +5,15 @@ import {
   type ValuationAccountingFactRecord,
   type ValuationDocumentType,
 } from "@/backend/providers/cvm-valuation-input.provider";
+import {
+  CvmShareCapitalProvider,
+  type CvmShareCapitalDiagnostics,
+  type CvmShareCapitalRecord,
+} from "@/backend/providers/cvm-share-capital.provider";
+import {
+  reconcileShareClassFacts,
+  type ShareClassReconciliationRecord,
+} from "@/backend/services/screener-share-class-reconciliation";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   BrapiScreenerProvider,
@@ -36,9 +45,24 @@ type SyncRepository = Pick<
   ScreenerSyncRepository,
   "startRun" | "saveFullSync" | "markFailed"
 > &
-  Partial<Pick<ScreenerSyncRepository, "getStatus" | "saveValuationFacts">>;
+  Partial<
+    Pick<
+      ScreenerSyncRepository,
+      | "getStatus"
+      | "saveValuationFacts"
+      | "getShareCapitalFacts"
+      | "saveShareClassReconciliations"
+    >
+  >;
 
 type ValuationProvider = Pick<CvmValuationInputProvider, "getArchive">;
+
+function countBy<T extends string>(values: T[]) {
+  return values.reduce<Partial<Record<T, number>>>((counts, value) => {
+    counts[value] = (counts[value] ?? 0) + 1;
+    return counts;
+  }, {});
+}
 
 function chooseFact(
   current: ScreenerFactRecord | undefined,
@@ -64,6 +88,10 @@ export class ScreenerSyncService {
     private readonly repository: SyncRepository = screenerSyncRepository,
     private readonly currentYear = () => new Date().getUTCFullYear(),
     private readonly valuationCvm?: ValuationProvider,
+    private readonly shareCapitalCvm?: Pick<
+      CvmShareCapitalProvider,
+      "getAnnualFacts"
+    >,
   ) {}
 
   async status() {
@@ -241,6 +269,36 @@ export class ScreenerSyncService {
       let valuationFacts: ValuationAccountingFactRecord[] = [];
       let valuationAccountingStatus: "NOT_CONFIGURED" | "COMPLETED" | "FAILED" =
         this.valuationCvm ? "COMPLETED" : "NOT_CONFIGURED";
+      let shareCapitalFacts: CvmShareCapitalRecord[] = [];
+      let shareCapitalDiagnostics: CvmShareCapitalDiagnostics | null = null;
+      let shareCapitalStatus:
+        "NOT_CONFIGURED" | "COMPLETED" | "PARTIAL" | "FAILED" = this
+        .shareCapitalCvm
+        ? "COMPLETED"
+        : "NOT_CONFIGURED";
+      if (this.shareCapitalCvm) {
+        try {
+          const shareCapital = await this.shareCapitalCvm.getAnnualFacts(
+            this.currentYear(),
+            new Set(issuers.keys()),
+          );
+          shareCapitalFacts = shareCapital.records;
+          shareCapitalDiagnostics = shareCapital.diagnostics;
+          shareCapitalStatus = shareCapital.diagnostics.ingestionStatus;
+        } catch (shareCapitalError) {
+          shareCapitalStatus = "FAILED";
+          const errorType =
+            shareCapitalError instanceof Error &&
+            /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(shareCapitalError.name)
+              ? shareCapitalError.name
+              : "unknown";
+          logger.warn("screener_share_capital_ingestion_failed", {
+            runId,
+            stage: "cvm_share_capital",
+            errorType,
+          });
+        }
+      }
       stage = "database_persist";
       const persistence = await this.repository.saveFullSync({
         runId,
@@ -249,6 +307,10 @@ export class ScreenerSyncService {
         issuers: [...issuers.values()],
         securities,
         facts,
+        ...(shareCapitalStatus === "COMPLETED" ||
+        shareCapitalStatus === "PARTIAL"
+          ? { shareCapitalFacts }
+          : {}),
       });
       const persistedFacts = persistence.persistedFactCount;
       if (
@@ -263,6 +325,32 @@ export class ScreenerSyncService {
           missingFactCount: Math.max(0, facts.length - persistedFacts),
         });
         throw new Error("CVM DFP facts were not found after persistence");
+      }
+      let shareClassReconciliations: ShareClassReconciliationRecord[] = [];
+      if (
+        shareCapitalStatus === "COMPLETED" ||
+        shareCapitalStatus === "PARTIAL"
+      ) {
+        if (
+          !this.repository.getShareCapitalFacts ||
+          !this.repository.saveShareClassReconciliations
+        )
+          throw new Error(
+            "CVM share-class reconciliation persistence is unavailable",
+          );
+        const persistedShareCapitalFacts =
+          await this.repository.getShareCapitalFacts(runId);
+        shareClassReconciliations = reconcileShareClassFacts(
+          securities,
+          persistedShareCapitalFacts,
+          catalog.filter(
+            (instrument) => instrument.active && instrument.subtype === "unit",
+          ),
+        );
+        await this.repository.saveShareClassReconciliations(
+          runId,
+          shareClassReconciliations,
+        );
       }
       if (this.valuationCvm) {
         stage = "cvm_valuation_accounting";
@@ -307,6 +395,39 @@ export class ScreenerSyncService {
           });
         }
       }
+      const shareClassReconciliationSummary = {
+        total: shareClassReconciliations.length,
+        bySubtype: countBy(
+          shareClassReconciliations.map((record) => record.instrumentSubtype),
+        ),
+        tickerClassStatuses: countBy(
+          shareClassReconciliations.map((record) => record.tickerClassStatus),
+        ),
+        unitCompositionStatuses: countBy(
+          shareClassReconciliations.map(
+            (record) => record.unitCompositionStatus,
+          ),
+        ),
+        freDocumentAlignmentStatuses: countBy(
+          shareClassReconciliations.map(
+            (record) => record.freDocumentAlignmentStatus,
+          ),
+        ),
+        crossSourceAlignmentStatuses: countBy(
+          shareClassReconciliations.map(
+            (record) => record.crossSourceAlignmentStatus,
+          ),
+        ),
+        effectiveDateStatuses: countBy(
+          shareClassReconciliations.map((record) => record.effectiveDateStatus),
+        ),
+        eventHistoryStatuses: countBy(
+          shareClassReconciliations.map((record) => record.eventHistoryStatus),
+        ),
+        treasuryStatuses: countBy(
+          shareClassReconciliations.map((record) => record.treasuryStatus),
+        ),
+      };
       const result = {
         issuers: issuers.size,
         securities: securities.length,
@@ -317,11 +438,36 @@ export class ScreenerSyncService {
         persistedFacts,
         valuationAccountingFacts: valuationFacts.length,
         valuationAccountingStatus,
+        shareCapitalFacts: shareCapitalFacts.length,
+        shareCapitalStatus,
+        shareCapitalDiagnostics,
+        shareClassReconciliationSummary,
+        shareClassTickerMapping: "UNAVAILABLE",
+        unitComposition: "UNAVAILABLE",
+        eventHistory: "UNAVAILABLE",
+        treasuryReconciliation: "UNRECONCILED",
         nonFinancialIssuers: [...issuers.values()].filter(
           (issuer) => classifyCvmSector(issuer.sector) === "non_financial",
         ).length,
       };
-      logger.info("screener_sync_completed", { runId, ...result });
+      logger.info("screener_sync_completed", {
+        runId,
+        ...result,
+        shareCapitalDiagnostics: shareCapitalDiagnostics
+          ? {
+              archiveYear: shareCapitalDiagnostics.archiveYear,
+              filesRead: shareCapitalDiagnostics.filesRead,
+              records: shareCapitalDiagnostics.records,
+              documentsMatched: shareCapitalDiagnostics.documentsMatched,
+              documentsWithoutMetadata:
+                shareCapitalDiagnostics.documentsWithoutMetadata,
+              ambiguousDocuments: shareCapitalDiagnostics.ambiguousDocuments,
+              treasuryPositionRecords:
+                shareCapitalDiagnostics.treasuryPositionRecords,
+            }
+          : null,
+        shareClassReconciliationCount: shareClassReconciliationSummary.total,
+      });
       return result;
     } catch (error) {
       const errorCode =
@@ -400,4 +546,5 @@ export const screenerSyncService = new ScreenerSyncService(
   undefined,
   undefined,
   new CvmValuationInputProvider(),
+  new CvmShareCapitalProvider(),
 );

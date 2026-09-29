@@ -974,6 +974,14 @@ describe("BRAPI screener provider", () => {
         changed: false,
       },
       {
+        ticker: "BPAC11",
+        name: "BTG",
+        subtype: "unit",
+        active: true,
+        cnpj: null,
+        changed: false,
+      },
+      {
         ticker: "VALE3F",
         name: "Vale fracionário",
         subtype: "stock",
@@ -1023,6 +1031,7 @@ describe("BRAPI screener provider", () => {
     const provider = new BrapiScreenerProvider(fetcher, "test-token");
     await expect(provider.getCatalog()).resolves.toMatchObject([
       { ticker: "PETR3", subtype: "stock" },
+      { ticker: "UNIT11", subtype: "unit" },
       { ticker: "VALE3", subtype: "stock" },
     ]);
     expect(fetcher).toHaveBeenCalledTimes(2);

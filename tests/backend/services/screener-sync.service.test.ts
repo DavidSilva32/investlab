@@ -14,6 +14,10 @@ import {
 } from "@/backend/services/screener-sync.service";
 import type { ScreenerSyncRepository } from "@/backend/repositories/screener-sync.repository";
 import type { ValuationAccountingFactRecord } from "@/backend/providers/cvm-valuation-input.provider";
+import type {
+  CvmShareCapitalDiagnostics,
+  CvmShareCapitalRecord,
+} from "@/backend/providers/cvm-share-capital.provider";
 import { logger } from "@/infrastructure/logging/logger";
 
 const company = (
@@ -97,6 +101,13 @@ function setup(
         registryByCvmCode: Map<string, string>,
       ) => Promise<ValuationAccountingFactRecord[]>;
     };
+    shareCapitalProvider?: {
+      getAnnualFacts: () => Promise<{
+        records: CvmShareCapitalRecord[];
+        diagnostics: CvmShareCapitalDiagnostics;
+      }>;
+    };
+    shareCapitalFacts?: CvmShareCapitalRecord[];
   } = {},
 ) {
   const registry = new Map<string, CvmCompanyRecord>([
@@ -227,6 +238,10 @@ function setup(
     }),
     markFailed: vi.fn().mockResolvedValue(undefined),
     saveValuationFacts: vi.fn().mockResolvedValue(undefined),
+    getShareCapitalFacts: vi
+      .fn()
+      .mockResolvedValue(overrides.shareCapitalFacts ?? []),
+    saveShareClassReconciliations: vi.fn().mockResolvedValue(undefined),
   };
   const service = new ScreenerSyncService(
     brapi as unknown as BrapiScreenerProvider,
@@ -234,6 +249,7 @@ function setup(
     repository as unknown as ScreenerSyncRepository,
     () => 2026,
     overrides.valuationProvider,
+    overrides.shareCapitalProvider,
   );
   return { service, brapi, cvm, repository, saved, registry };
 }
@@ -268,6 +284,88 @@ describe("ScreenerSyncService", () => {
           "Não foi possível consultar as demonstrações financeiras da CVM.",
       },
     });
+  });
+
+  it("continues DFP sync when optional share-capital ingestion fails", async () => {
+    const provider = {
+      getAnnualFacts: vi
+        .fn()
+        .mockRejectedValue(new Error("private source detail")),
+    };
+    const context = setup({ shareCapitalProvider: provider });
+    const log = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      await expect(context.service.sync()).resolves.toMatchObject({
+        shareCapitalStatus: "FAILED",
+        shareCapitalFacts: 0,
+      });
+      expect(context.saved[0]).not.toHaveProperty("shareCapitalFacts");
+      expect(log).toHaveBeenCalledWith(
+        "screener_share_capital_ingestion_failed",
+        expect.objectContaining({
+          errorType: "Error",
+          stage: "cvm_share_capital",
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain(
+        "private source detail",
+      );
+    } finally {
+      log.mockRestore();
+    }
+
+    const invalidName = Object.assign(new Error("private source detail"), {
+      name: "invalid name with details",
+    });
+    const opaqueProvider = {
+      getAnnualFacts: vi.fn().mockRejectedValue(invalidName),
+    };
+    const opaqueContext = setup({ shareCapitalProvider: opaqueProvider });
+    const opaqueLog = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+    try {
+      await opaqueContext.service.sync();
+      expect(opaqueLog).toHaveBeenCalledWith(
+        "screener_share_capital_ingestion_failed",
+        expect.objectContaining({ errorType: "unknown" }),
+      );
+    } finally {
+      opaqueLog.mockRestore();
+    }
+  });
+
+  it("fails safely when share-class persistence methods are unavailable", async () => {
+    const context = setup({
+      shareCapitalProvider: {
+        getAnnualFacts: vi.fn().mockResolvedValue({
+          records: [],
+          diagnostics: {
+            archiveYear: 2026,
+            sourceArchive: "fre_cia_aberta_2026.zip",
+            filesRead: 7,
+            rowsRead: 0,
+            records: 0,
+            documentsMatched: 0,
+            documentsWithoutMetadata: 0,
+            ambiguousDocuments: 0,
+            treasuryPositionRecords: 0,
+            ingestionStatus: "PARTIAL",
+            unavailableCoverageReasons: [],
+            unsupportedEventTables: [],
+          },
+        }),
+      },
+    });
+    context.repository.getShareCapitalFacts = undefined as never;
+
+    await expect(context.service.sync()).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(context.repository.markFailed).toHaveBeenCalledWith(
+      "run-1",
+      "DATABASE_PERSIST",
+    );
   });
 
   it("omits an error message for a successful run", async () => {
@@ -365,6 +463,88 @@ describe("ScreenerSyncService", () => {
     expect(context.saved[0]).toMatchObject({
       securities: [expect.objectContaining({ ticker: "PETR3" })],
     });
+  });
+
+  it("reconciles only persisted FRE evidence and records unavailable ticker mappings", async () => {
+    const shareCapitalFact: CvmShareCapitalRecord = {
+      factKey: "share-capital-fact-1",
+      issuerCnpj: "33000167000101",
+      referenceDate: "2026-12-31",
+      documentVersion: 2,
+      documentId: "777",
+      documentReceivedDate: "2026-05-29",
+      metadataStatus: "MATCHED",
+      recordKind: "CAPITAL_SOCIAL_CLASS",
+      capitalId: "100",
+      shareholderId: null,
+      sourceArchive: "fre_cia_aberta_2026.zip",
+      sourceFile: "fre_cia_aberta_capital_social_classe_acao_2026.csv",
+      sourceRow: 2,
+      rawFields: { Tipo_Classe_Acao_Preferencial: "Preferencial Classe A" },
+      tickerClassStatus: "UNAVAILABLE",
+      quantitySemantics: "REPORTED_CAPITAL_NOT_CURRENT_OUTSTANDING",
+      fetchedAt: "2026-09-28T12:00:00.000Z",
+    };
+    const diagnostics: CvmShareCapitalDiagnostics = {
+      archiveYear: 2026,
+      sourceArchive: "fre_cia_aberta_2026.zip",
+      filesRead: 2,
+      rowsRead: 2,
+      records: 1,
+      documentsMatched: 1,
+      documentsWithoutMetadata: 0,
+      ambiguousDocuments: 0,
+      treasuryPositionRecords: 0,
+      ingestionStatus: "PARTIAL",
+      unavailableCoverageReasons: ["Treasury position unavailable."],
+      unsupportedEventTables: ["capital_increase_reduction"],
+    };
+    const provider = {
+      getAnnualFacts: vi.fn().mockResolvedValue({
+        records: [shareCapitalFact],
+        diagnostics,
+      }),
+    };
+    const context = setup({
+      shareCapitalProvider: provider,
+      shareCapitalFacts: [shareCapitalFact],
+    });
+
+    const result = await context.service.sync();
+    expect(result).toMatchObject({
+      shareCapitalStatus: "PARTIAL",
+      shareCapitalFacts: 1,
+      shareClassReconciliationSummary: {
+        total: 5,
+        bySubtype: { stock: 4, unit: 1 },
+        tickerClassStatuses: { AMBIGUOUS: 2, UNAVAILABLE: 3 },
+        unitCompositionStatuses: { UNAVAILABLE: 5 },
+        freDocumentAlignmentStatuses: { UNAVAILABLE: 5 },
+        crossSourceAlignmentStatuses: { UNAVAILABLE: 5 },
+        effectiveDateStatuses: { UNAVAILABLE: 5 },
+        eventHistoryStatuses: { UNAVAILABLE: 5 },
+        treasuryStatuses: { UNAVAILABLE: 5 },
+      },
+    });
+    expect(result).not.toHaveProperty("shareClassReconciliations");
+    expect(provider.getAnnualFacts).toHaveBeenCalledWith(2026, expect.any(Set));
+    expect(context.saved[0]).toMatchObject({
+      shareCapitalFacts: [shareCapitalFact],
+    });
+    expect(context.repository.getShareCapitalFacts).toHaveBeenCalledWith(
+      "run-1",
+    );
+    expect(
+      context.repository.saveShareClassReconciliations,
+    ).toHaveBeenCalledWith(
+      "run-1",
+      expect.arrayContaining([
+        expect.objectContaining({
+          ticker: "PETR3",
+          evidence: [expect.any(Object)],
+        }),
+      ]),
+    );
   });
 
   it("ingests only registered issuers valuation facts and persists them", async () => {
@@ -523,6 +703,24 @@ describe("ScreenerSyncService", () => {
       nonFinancialIssuers: 1,
       valuationAccountingFacts: 0,
       valuationAccountingStatus: "NOT_CONFIGURED",
+      shareCapitalFacts: 0,
+      shareCapitalStatus: "NOT_CONFIGURED",
+      shareCapitalDiagnostics: null,
+      shareClassReconciliationSummary: {
+        total: 0,
+        bySubtype: {},
+        tickerClassStatuses: {},
+        unitCompositionStatuses: {},
+        freDocumentAlignmentStatuses: {},
+        crossSourceAlignmentStatuses: {},
+        effectiveDateStatuses: {},
+        eventHistoryStatuses: {},
+        treasuryStatuses: {},
+      },
+      shareClassTickerMapping: "UNAVAILABLE",
+      unitComposition: "UNAVAILABLE",
+      eventHistory: "UNAVAILABLE",
+      treasuryReconciliation: "UNRECONCILED",
     });
     expect(
       context.brapi.getProfile.mock.calls.map(([ticker]) => ticker),
