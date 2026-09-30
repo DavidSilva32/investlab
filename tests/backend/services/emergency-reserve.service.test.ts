@@ -380,6 +380,42 @@ describe("EmergencyReserveService", () => {
     });
   });
 
+  it("does not suggest positions assigned to another objective", async () => {
+    const eligible = position({ assetCode: "ELIGIBLE", totalValue: "20000" });
+    const assigned = position({
+      assetCode: "ASSIGNED",
+      totalValue: "27322.95",
+    });
+    const eligibleKey = getEmergencyReserveAssetKey(eligible);
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    mocks.listLatestPositions.mockResolvedValue([eligible, assigned]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        {
+          id: "00000000-0000-4000-8000-000000000010",
+          name: "Reserva",
+        },
+      ],
+      assignments: [{ objectiveId: "objective-trip", assetKey: assignedKey }],
+    });
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 47322.95,
+    });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      kind: "nearest",
+      candidates: [{ assetKeys: [eligibleKey], total: 20000 }],
+    });
+    expect(
+      result.status === "suggestions" &&
+        result.candidates.some((candidate) =>
+          candidate.assetKeys.includes(assignedKey),
+        ),
+    ).toBe(false);
+  });
+
   it("rejects an invalid suggestion target before loading positions", async () => {
     await expect(
       new EmergencyReserveService().suggestPositions({ targetAmount: 0 }),
@@ -480,8 +516,29 @@ describe("EmergencyReserveService", () => {
     const assetKey = getEmergencyReserveAssetKey(cdb);
     mocks.listLatestPositions.mockResolvedValue([cdb]);
     mocks.listObjectives.mockResolvedValue({
-      objectives: [{ id: "reserve", name: "Reserva" }],
+      objectives: [{ id: "goal-trip", name: "Viagem" }],
       assignments: [{ objectiveId: "goal-trip", assetKey }],
+    });
+
+    const save = new EmergencyReserveService().saveSettings({
+      monthlyExpenses: 2000,
+      targetMonths: 6,
+      selectedAssetKeys: [assetKey],
+    });
+    await expect(save).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    await expect(save).rejects.toThrow("Viagem");
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("uses a safe fallback name for an orphaned objective assignment", async () => {
+    const cdb = position();
+    const assetKey = getEmergencyReserveAssetKey(cdb);
+    mocks.listLatestPositions.mockResolvedValue([cdb]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [],
+      assignments: [{ objectiveId: "deleted-objective", assetKey }],
     });
 
     await expect(
@@ -490,11 +547,41 @@ describe("EmergencyReserveService", () => {
         targetMonths: 6,
         selectedAssetKeys: [assetKey],
       }),
-    ).rejects.toMatchObject({
-      statusCode: 409,
-      message: expect.stringContaining("informado"),
+    ).rejects.toThrow("objetivo informado");
+  });
+
+  it("allows updating positions already assigned to the reserve", async () => {
+    const cdb = position();
+    const assetKey = getEmergencyReserveAssetKey(cdb);
+    mocks.listLatestPositions.mockResolvedValue([cdb]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        {
+          id: "00000000-0000-4000-8000-000000000010",
+          name: "Reserva",
+        },
+      ],
+      assignments: [
+        {
+          objectiveId: "00000000-0000-4000-8000-000000000010",
+          assetKey,
+        },
+      ],
     });
-    expect(mocks.saveSettings).not.toHaveBeenCalled();
+
+    await expect(
+      new EmergencyReserveService().saveSettings({
+        monthlyExpenses: 2000,
+        targetMonths: 6,
+        selectedAssetKeys: [assetKey],
+      }),
+    ).resolves.toBeDefined();
+
+    expect(mocks.saveSettings).toHaveBeenCalledWith({
+      monthlyExpenses: "2000.00",
+      targetMonths: 6,
+      selectedAssetKeys: [assetKey],
+    });
   });
 
   it("deduplicates selected asset keys when saving and returns refreshed data", async () => {

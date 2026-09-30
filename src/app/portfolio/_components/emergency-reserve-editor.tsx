@@ -153,8 +153,12 @@ export function EmergencyReserveEditor() {
       setSelectedKeys(new Set(body.selectedAssetKeys));
       toast.success("Reserva atualizada com sucesso.");
       window.dispatchEvent(new Event("portfolio:updated"));
-    } catch {
-      setFormError("Não foi possível salvar a configuração. Tente novamente.");
+    } catch (cause) {
+      setFormError(
+        cause instanceof Error && cause.message
+          ? cause.message
+          : "Não foi possível salvar a configuração. Tente novamente.",
+      );
     } finally {
       setSaving(false);
     }

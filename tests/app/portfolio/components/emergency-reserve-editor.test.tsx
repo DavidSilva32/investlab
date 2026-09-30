@@ -371,7 +371,11 @@ describe("EmergencyReserveEditor", () => {
       })
       .mockResolvedValueOnce({
         ok: false,
-        json: async () => ({ message: "save failed" }),
+        status: 409,
+        json: async () => ({
+          message:
+            "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
+        }),
       });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -384,9 +388,27 @@ describe("EmergencyReserveEditor", () => {
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
     expect((await screen.findByRole("alert")).textContent).toContain(
+      "Esta posição já está vinculada ao objetivo Viagem.",
+    );
+  });
+
+  it("uses a generic message for unexpected save failures without an error message", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => editorData })
+      .mockRejectedValueOnce("network failure");
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+
+    await screen.findByLabelText("Custo mensal");
+    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível salvar a configuração. Tente novamente.",
     );
   });
+
   it("offers retry after the editor cannot load", async () => {
     const fetchMock = vi
       .fn()

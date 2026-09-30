@@ -77,6 +77,23 @@ describe("emergency reserve route", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
+  it("preserves position-assignment conflicts as a safe 409 response", async () => {
+    const message =
+      "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.";
+    controller.update.mockRejectedValue(new ApplicationError(message, 409));
+    const response = await PUT(
+      new Request("http://test", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ message });
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
   it("hides unexpected save errors and malformed request bodies", async () => {
     controller.update.mockRejectedValue(new Error("database secret"));
     const response = await PUT(

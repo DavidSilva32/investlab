@@ -166,11 +166,33 @@ export class EmergencyReserveService {
       normalizedPositions,
       requestId,
     );
-    const holdings = this.buildData(positions, {
-      monthlyExpenses: null,
-      targetMonths: null,
-      selectedAssetKeys: [],
-    }).holdings;
+    const objectives = await portfolioObjectivesRepository.list();
+    const objectiveNameById = new Map(
+      objectives.objectives.map((objective) => [objective.id, objective.name]),
+    );
+    const ownerByAssetKey = new Map(
+      objectives.assignments.map((assignment) => [
+        assignment.assetKey,
+        {
+          id: assignment.objectiveId,
+          name:
+            objectiveNameById.get(assignment.objectiveId) ?? "Outro objetivo",
+        },
+      ]),
+    );
+    const holdings = this.buildData(
+      positions,
+      {
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedAssetKeys: [],
+      },
+      ownerByAssetKey,
+    ).holdings.filter(
+      (holding) =>
+        holding.assignedObjectiveId === null ||
+        holding.assignedObjectiveId === reserveObjectiveId,
+    );
     const result = suggestEmergencyReservePositions(
       parsed.data.targetAmount,
       holdings,
