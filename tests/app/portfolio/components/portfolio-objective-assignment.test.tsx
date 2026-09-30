@@ -158,7 +158,6 @@ describe("PortfolioObjectiveAssignment", () => {
         positions={positions}
         preferredObjectiveId="trip"
         saving={false}
-        error={null}
         onSave={onSave}
       />,
     );
@@ -213,7 +212,6 @@ describe("PortfolioObjectiveAssignment", () => {
         positions={positions}
         preferredObjectiveId="trip"
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );
@@ -253,7 +251,6 @@ describe("PortfolioObjectiveAssignment", () => {
         positions={positions}
         preferredObjectiveId="trip"
         saving={false}
-        error={null}
         onSave={onSave}
       />,
     );
@@ -280,7 +277,6 @@ describe("PortfolioObjectiveAssignment", () => {
         positions={positions}
         preferredObjectiveId="trip"
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );
@@ -308,7 +304,7 @@ describe("PortfolioObjectiveAssignment", () => {
     ).toBe("true");
   });
 
-  it("shows incomplete position values, grouped lots and a save error", () => {
+  it("shows incomplete position values and grouped lots", () => {
     render(
       <PortfolioObjectiveAssignment
         objectives={goals}
@@ -326,7 +322,6 @@ describe("PortfolioObjectiveAssignment", () => {
         ]}
         preferredObjectiveId="trip"
         saving={false}
-        error="Não foi possível salvar as posições."
         onSave={vi.fn()}
       />,
     );
@@ -336,9 +331,6 @@ describe("PortfolioObjectiveAssignment", () => {
         "Valor indisponível · 2 posições agrupadas · 1 sem valor",
       ),
     ).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain(
-      "Não foi possível salvar as posições.",
-    );
   });
 
   it("guides the user to import when no current portfolio positions exist", () => {
@@ -348,7 +340,6 @@ describe("PortfolioObjectiveAssignment", () => {
         positions={[]}
         preferredObjectiveId="trip"
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );
@@ -369,7 +360,6 @@ describe("PortfolioObjectiveAssignment", () => {
         objectives={[]}
         positions={[]}
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );
@@ -388,7 +378,6 @@ describe("PortfolioObjectiveAssignment", () => {
         objectives={[]}
         positions={positions}
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );
@@ -408,7 +397,6 @@ describe("PortfolioObjectiveAssignment", () => {
         positions={positions}
         preferredObjectiveId={reserveObjectiveId}
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );
@@ -424,7 +412,6 @@ describe("PortfolioObjectiveAssignment", () => {
         objectives={[goals[0]]}
         positions={positions}
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );
@@ -443,7 +430,6 @@ describe("PortfolioObjectiveAssignment", () => {
         positions={positions}
         preferredObjectiveId="trip"
         saving={false}
-        error={null}
         onSave={vi.fn()}
       />,
     );

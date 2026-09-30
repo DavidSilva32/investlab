@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   AlertCircle,
   ChevronDown,
@@ -22,6 +23,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { getApiMessage } from "@/lib/api-message";
 
 type SyncStatus = {
   lastSuccessfulCompletedAt: string | null;
@@ -37,6 +39,9 @@ type SyncStatus = {
     errorMessage: string | null;
   };
 };
+class ApiResponseError extends Error {}
+const statusErrorFallback =
+  "Não foi possível consultar o status da sincronização.";
 
 const dateTime = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "medium",
@@ -66,7 +71,6 @@ export function ScreenerDataSettings() {
   const [syncStartedAt, setSyncStartedAt] = useState(() => Date.now());
   const [syncCurrentTime, setSyncCurrentTime] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const getStatus = useCallback(async () => {
     const response = await fetch("/api/settings/screener", {
@@ -75,7 +79,8 @@ export function ScreenerDataSettings() {
     const body = (await response.json()) as SyncStatus & {
       message?: string;
     };
-    if (!response.ok) throw new Error(body.message);
+    if (!response.ok)
+      throw new ApiResponseError(getApiMessage(body, statusErrorFallback));
     return body;
   }, []);
 
@@ -86,9 +91,9 @@ export function ScreenerDataSettings() {
       setStatus(await getStatus());
     } catch (loadError) {
       setError(
-        loadError instanceof Error && loadError.message
+        loadError instanceof ApiResponseError && loadError.message
           ? loadError.message
-          : "Não foi possível consultar o status da sincronização.",
+          : statusErrorFallback,
       );
     } finally {
       setLoading(false);
@@ -112,9 +117,9 @@ export function ScreenerDataSettings() {
       .catch((loadError: unknown) => {
         if (!cancelled)
           setError(
-            loadError instanceof Error && loadError.message
+            loadError instanceof ApiResponseError && loadError.message
               ? loadError.message
-              : "Não foi possível consultar o status da sincronização.",
+              : statusErrorFallback,
           );
       })
       .finally(() => {
@@ -126,13 +131,11 @@ export function ScreenerDataSettings() {
   }, [getStatus]);
 
   async function synchronize() {
-    let syncErrorMessage: string | null = null;
     const startedAt = Date.now();
     setSyncStartedAt(startedAt);
     setSyncCurrentTime(startedAt);
     setSyncing(true);
     setError(null);
-    setNotice(null);
     try {
       const response = await fetch("/api/settings/screener/sync", {
         method: "POST",
@@ -140,17 +143,24 @@ export function ScreenerDataSettings() {
         body: "{}",
       });
       const body = (await response.json()) as { message?: string };
-      if (!response.ok) throw new Error(body.message);
-      setNotice("Sincronização concluída com sucesso.");
-    } catch (syncError) {
-      syncErrorMessage =
-        syncError instanceof Error && syncError.message
-          ? syncError.message
-          : "A sincronização não foi concluída. Consulte o status abaixo.";
-      setError(syncErrorMessage);
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(
+            body,
+            "A sincronização não foi concluída. Consulte o status abaixo.",
+          ),
+        );
+        return;
+      }
+      toast.success(
+        getApiMessage(body, "Sincronização concluída com sucesso."),
+      );
+    } catch {
+      toast.error(
+        "A sincronização não foi concluída. Consulte o status abaixo.",
+      );
     } finally {
       await loadStatus();
-      if (syncErrorMessage) setError(syncErrorMessage);
       setSyncing(false);
     }
   }
@@ -219,14 +229,6 @@ export function ScreenerDataSettings() {
               {formatDuration(Math.max(0, syncCurrentTime - syncStartedAt))}.
             </p>
           </>
-        )}
-        {notice && (
-          <p
-            role="status"
-            className="text-sm text-emerald-700 dark:text-emerald-400"
-          >
-            {notice}
-          </p>
         )}
         {loading && !status ? (
           <p role="status" className="text-sm text-muted-foreground">

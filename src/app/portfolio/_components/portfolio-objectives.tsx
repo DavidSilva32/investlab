@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { PortfolioObjectiveAssignment } from "@/app/portfolio/_components/portfolio-objective-assignment";
 import type { ObjectivePosition } from "@/app/portfolio/_components/portfolio-objective-assignment";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
@@ -28,6 +29,8 @@ type View =
   | { kind: "edit"; objectiveId: string; returnTo: "overview" | "detail" }
   | { kind: "assign"; objectiveId: string }
   | { kind: "reserve-settings" };
+
+const loadErrorMessage = "Não foi possível carregar seus objetivos e posições.";
 
 export function PortfolioObjectives({
   navigation = { open: true, objectiveId: null, screen: null },
@@ -57,21 +60,24 @@ export function PortfolioObjectives({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [deleteObjectiveId, setDeleteObjectiveId] = useState<string | null>(
     null,
   );
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    let failureMessage = loadErrorMessage;
     try {
       const response = await fetch("/api/portfolio/objectives");
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        failureMessage = getApiMessage(body, loadErrorMessage);
+        throw new Error("portfolio_objectives_load_failed");
+      }
       setData(body as ObjectivesData);
       setError(null);
     } catch {
-      setError("Não foi possível carregar seus objetivos e posições.");
+      setError(failureMessage);
     } finally {
       setLoading(false);
     }
@@ -114,7 +120,6 @@ export function PortfolioObjectives({
     monthlyPlannedAmount: number | null;
   }) {
     setSaving(true);
-    setFormError(null);
     try {
       const response = await fetch("/api/portfolio/objectives", {
         method: editObjectiveId ? "PUT" : "POST",
@@ -124,18 +129,32 @@ export function PortfolioObjectives({
           ...(editObjectiveId ? { objectiveId: editObjectiveId } : {}),
         }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(getApiMessage(body, "Não foi possível salvar o objetivo."));
+        return;
+      }
       toast.success(
-        editObjectiveId ? "Objetivo atualizado." : "Objetivo criado.",
+        getApiMessage(
+          body,
+          editObjectiveId ? "Objetivo atualizado." : "Objetivo criado.",
+        ),
       );
       await loadData();
-      setView({ kind: "detail", objectiveId: editObjectiveId ?? body.id });
-      navigateToObjective(editObjectiveId ?? body.id);
-    } catch (saveError) {
-      throw saveError instanceof Error
-        ? saveError
-        : new Error("Não foi possível salvar o objetivo.");
+      const objectiveId =
+        editObjectiveId ??
+        (typeof body === "object" &&
+        body !== null &&
+        "id" in body &&
+        typeof body.id === "string"
+          ? body.id
+          : "");
+      if (objectiveId) {
+        setView({ kind: "detail", objectiveId });
+        navigateToObjective(objectiveId);
+      }
+    } catch {
+      toast.error("Não foi possível salvar o objetivo.");
     } finally {
       setSaving(false);
     }
@@ -143,25 +162,25 @@ export function PortfolioObjectives({
 
   async function saveAssignments(objectiveId: string, assetKeys: string[]) {
     setSaving(true);
-    setFormError(null);
     try {
       const response = await fetch("/api/portfolio/objectives", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ objectiveId, assetKeys }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      toast.success("Posições vinculadas ao objetivo.");
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(body, "Não foi possível salvar as posições."),
+        );
+        return;
+      }
+      toast.success(getApiMessage(body, "Posições vinculadas ao objetivo."));
       await loadData();
       setView({ kind: "detail", objectiveId });
       navigateToObjective(objectiveId);
-    } catch (saveError) {
-      setFormError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Não foi possível salvar as posições.",
-      );
+    } catch {
+      toast.error("Não foi possível salvar as posições.");
     } finally {
       setSaving(false);
     }
@@ -169,27 +188,32 @@ export function PortfolioObjectives({
 
   async function deleteObjective(objectiveId: string) {
     setSaving(true);
-    setFormError(null);
     try {
       const response = await fetch(
         "/api/portfolio/objectives?objectiveId=" +
           encodeURIComponent(objectiveId),
         { method: "DELETE" },
       );
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      toast.success("Objetivo excluído; as posições ficaram sem destino.");
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(body, "Não foi possível excluir o objetivo."),
+        );
+        return;
+      }
+      toast.success(
+        getApiMessage(
+          body,
+          "Objetivo excluído; as posições ficaram sem destino.",
+        ),
+      );
       setDeleteObjectiveId(null);
       setView({ kind: "overview" });
       navigateToObjective(null);
       await loadData();
-    } catch (deleteError) {
+    } catch {
       setDeleteObjectiveId(null);
-      setFormError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Não foi possível excluir o objetivo.",
-      );
+      toast.error("Não foi possível excluir o objetivo.");
     } finally {
       setSaving(false);
     }
@@ -217,7 +241,6 @@ export function PortfolioObjectives({
     } else {
       setView({ kind: "overview" });
     }
-    setFormError(null);
   }
 
   const subviewTitle =
@@ -252,11 +275,6 @@ export function PortfolioObjectives({
       )}
       {data && view.kind === "overview" && (
         <>
-          {formError && (
-            <p role="alert" className="text-sm text-destructive">
-              {formError}
-            </p>
-          )}
           <PortfolioObjectivesOverview
             data={data}
             deleting={saving}
@@ -277,7 +295,6 @@ export function PortfolioObjectives({
             }
             onDelete={(objectiveId) => void deleteObjective(objectiveId)}
             onCreate={() => {
-              setFormError(null);
               setView({ kind: "create" });
             }}
           />
@@ -307,11 +324,6 @@ export function PortfolioObjectives({
               {subviewTitle}
             </h2>
           </div>
-          {formError && (
-            <p role="alert" className="text-sm text-destructive">
-              {formError}
-            </p>
-          )}
           {view.kind === "detail" && activeObjective && (
             <PortfolioObjectiveDetail
               objective={activeObjective}
@@ -361,7 +373,6 @@ export function PortfolioObjectives({
               positions={data.positions}
               preferredObjectiveId={activeObjective.id}
               saving={saving}
-              error={formError}
               onSave={saveAssignments}
             />
           )}

@@ -2,7 +2,9 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { ScreenerDataSettings } from "@/app/settings/_components/screener-data-settings";
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const response = (body: unknown, ok = true) =>
   Promise.resolve({ ok, json: () => Promise.resolve(body) });
 const cleanStatus = {
@@ -22,6 +24,8 @@ const cleanStatus = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.error).mockReset();
 });
 
 describe("ScreenerDataSettings", () => {
@@ -55,7 +59,11 @@ describe("ScreenerDataSettings", () => {
       screen.getByRole("link", { name: /Calend.rio de entrega da CVM/ }),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
-    expect(await screen.findByRole("status")).toBeTruthy();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Sincronização concluída com sucesso.",
+      ),
+    );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/settings/screener/sync",
@@ -68,6 +76,11 @@ describe("ScreenerDataSettings", () => {
     expect(fetchMock).toHaveBeenLastCalledWith("/api/settings/screener", {
       cache: "no-store",
     });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Sincronização concluída com sucesso.",
+      ),
+    );
   });
 
   it("announces elapsed time accessibly while the sync request is pending", async () => {
@@ -144,11 +157,11 @@ describe("ScreenerDataSettings", () => {
       ),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
-    expect(
-      await screen.findByText(
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
         "A sincronização não foi concluída. Consulte o status abaixo.",
       ),
-    ).toBeTruthy();
+    );
   });
   it.each([
     [{ message: "Status refresh failed." }, "Status refresh failed."],
@@ -243,6 +256,29 @@ describe("ScreenerDataSettings", () => {
     ).toBeTruthy();
   });
 
+  it("shows a safe status fallback when the post-sync status request rejects", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(cleanStatus))
+      .mockResolvedValueOnce(response({ message: "Sincronização iniciada." }))
+      .mockRejectedValueOnce(new Error("private status detail"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDataSettings />);
+
+    await screen.findByText("Status: Concluída");
+    await user.click(screen.getByRole("button", { name: "Detalhes técnicos" }));
+    await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Sincronização iniciada."),
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível consultar o status da sincronização.",
+    );
+    expect(screen.queryByText("private status detail")).toBeNull();
+  });
+
   it("shows the empty history state and a generic error when sync fails", async () => {
     const user = userEvent.setup();
     const fetchMock = vi
@@ -262,9 +298,11 @@ describe("ScreenerDataSettings", () => {
       await screen.findByText(/Os dados ainda não foram sincronizados/),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
-    expect(
-      await screen.findByText("A sincronização não foi concluída."),
-    ).toBeTruthy();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A sincronização não foi concluída.",
+      ),
+    );
   });
   it("shows an elapsed age for an older successful CVM sync", async () => {
     vi.stubGlobal(

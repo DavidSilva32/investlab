@@ -134,6 +134,43 @@ afterEach(() => {
 });
 
 describe("StockAnalysisDashboard", () => {
+  it("toasts a selected ticker API failure without duplicating it inline", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn((input: RequestInfo | URL) =>
+      String(input).includes("/search?")
+        ? Promise.resolve(
+            jsonResponse({ results: [{ ticker: "VALE3", name: "Vale" }] }),
+          )
+        : Promise.resolve(
+            jsonResponse({ message: "Consulta indisponível para Vale." }, 503),
+          ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard />);
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251);
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("option", { name: /VALE3.*Vale/ }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "Consulta indisponível para Vale.",
+      { id: "stock-analysis-load" },
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeTruthy();
+  });
+
   it("updates the share URL and ignores an older ticker response", async () => {
     vi.useFakeTimers();
     let resolveInitial!: (response: Response) => void;

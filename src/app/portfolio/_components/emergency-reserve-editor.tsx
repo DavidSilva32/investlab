@@ -31,6 +31,7 @@ import { PositionCombinationSuggestions } from "@/app/portfolio/_components/posi
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { getApiMessage } from "@/lib/api-message";
 
 type Holding = {
   assetKey: string;
@@ -105,27 +106,32 @@ export function EmergencyReserveEditor() {
   const loadData = useCallback(() => {
     fetch("/api/emergency-reserve")
       .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message);
-        return body as EditorData;
-      })
-      .then((body) => {
-        setData(body);
-        setMonthlyExpenses(body.monthlyExpenses?.toString() ?? "");
-        setTargetMonths(body.targetMonths?.toString() ?? "");
-        const loadedMonths = body.targetMonths?.toString() ?? "";
+        const body: unknown = await response.json();
+        if (!response.ok) {
+          setError(
+            getApiMessage(
+              body,
+              "Não foi possível carregar a configuração da reserva.",
+            ),
+          );
+          return;
+        }
+        const data = body as EditorData;
+        setData(data);
+        setMonthlyExpenses(data.monthlyExpenses?.toString() ?? "");
+        setTargetMonths(data.targetMonths?.toString() ?? "");
+        const loadedMonths = data.targetMonths?.toString() ?? "";
         setCustomMonths(loadedMonths);
         setMonthChoice(
           loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
             ? loadedMonths
             : "custom",
         );
-        setSelectedKeys(new Set(body.selectedAssetKeys));
+        setSelectedKeys(new Set(data.selectedAssetKeys));
         setError(null);
       })
       .catch(() => {
         setError(loadErrorMessage);
-        toast.error(loadErrorMessage);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -181,33 +187,40 @@ export function EmergencyReserveEditor() {
           ...(transfers.length ? { transfers } : {}),
         }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      setData(body as EditorData);
-      setMonthlyExpenses(body.monthlyExpenses?.toString() ?? "");
-      setTargetMonths(body.targetMonths?.toString() ?? "");
-      const loadedMonths = body.targetMonths?.toString() ?? "";
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(body, "Não foi possível salvar a configuração."),
+        );
+        return;
+      }
+      const savedData = body as EditorData;
+      setData(savedData);
+      setMonthlyExpenses(savedData.monthlyExpenses?.toString() ?? "");
+      setTargetMonths(savedData.targetMonths?.toString() ?? "");
+      const loadedMonths = savedData.targetMonths?.toString() ?? "";
       setCustomMonths(loadedMonths);
       setMonthChoice(
         loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
           ? loadedMonths
           : "custom",
       );
-      setSelectedKeys(new Set(body.selectedAssetKeys));
+      setSelectedKeys(new Set(savedData.selectedAssetKeys));
       const transferMessage = transfers.length
         ? createTransferSuccessMessage(transfers, transferImpacts)
         : null;
       setTransferSuccess(transferMessage);
       setPendingTransfer(null);
-      toast.success(transferMessage ?? "Reserva atualizada com sucesso.");
-      window.dispatchEvent(new Event("portfolio:updated"));
-    } catch (cause) {
-      setPendingTransfer(null);
-      setFormError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : "Não foi possível salvar a configuração. Tente novamente.",
+      toast.success(
+        getApiMessage(
+          body,
+          transferMessage ?? "Reserva atualizada com sucesso.",
+        ),
       );
+      window.dispatchEvent(new Event("portfolio:updated"));
+    } catch {
+      setPendingTransfer(null);
+      toast.error("Não foi possível salvar a configuração. Tente novamente.");
     } finally {
       setSaving(false);
     }

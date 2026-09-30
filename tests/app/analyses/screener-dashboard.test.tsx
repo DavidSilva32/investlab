@@ -2,7 +2,11 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { ScreenerDashboard } from "@/app/analyses/_components/screener-dashboard";
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+}));
 
 const company = {
   cnpj: "33000167000101",
@@ -66,6 +70,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.error).mockReset();
+  vi.mocked(toast.warning).mockReset();
 });
 
 describe("ScreenerDashboard", () => {
@@ -134,11 +141,11 @@ describe("ScreenerDashboard", () => {
     await screen.findByText("Petrobras");
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
 
-    expect(
-      await screen.findByText(
+    await vi.waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
         "Mercado atualizado: 20 emissores válidos; 2 emissores indisponíveis.",
       ),
-    ).toBeTruthy();
+    );
     expect(fetchMock.mock.calls[1]).toEqual([
       "/api/screener/market/refresh",
       { method: "POST", cache: "no-store" },
@@ -162,9 +169,14 @@ describe("ScreenerDashboard", () => {
     render(<ScreenerDashboard />);
     await screen.findByText("Petrobras");
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "BRAPI temporariamente indisponível.",
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "BRAPI temporariamente indisponível.",
+      ),
     );
+    expect(
+      screen.queryByText("BRAPI temporariamente indisponível."),
+    ).toBeNull();
     expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/screener");
   });
 
@@ -179,8 +191,10 @@ describe("ScreenerDashboard", () => {
     render(<ScreenerDashboard />);
     await screen.findByText("Petrobras");
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Não foi possível atualizar os dados de mercado agora.",
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível atualizar os dados de mercado agora.",
+      ),
     );
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
       "private network detail",
@@ -206,11 +220,11 @@ describe("ScreenerDashboard", () => {
     render(<ScreenerDashboard />);
     await screen.findByText("Petrobras");
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
-    expect(
-      await screen.findByText(
+    await vi.waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
         "Mercado atualizado: 0 emissores válidos; 1 emissor indisponível.",
       ),
-    ).toBeTruthy();
+    );
   });
   it("uses a safe fallback when the refresh route returns no message", async () => {
     const user = userEvent.setup();
@@ -223,8 +237,10 @@ describe("ScreenerDashboard", () => {
     render(<ScreenerDashboard />);
     await screen.findByText("Petrobras");
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "A atualização de mercado não foi concluída.",
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A atualização de mercado não foi concluída.",
+      ),
     );
   });
   it("stops refresh when a batch reports no progress", async () => {
@@ -243,8 +259,10 @@ describe("ScreenerDashboard", () => {
     render(<ScreenerDashboard />);
     await screen.findByText("Petrobras");
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "A atualização não avançou. Tente novamente mais tarde.",
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A atualização não avançou. Tente novamente mais tarde.",
+      ),
     );
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -260,9 +278,11 @@ describe("ScreenerDashboard", () => {
     render(<ScreenerDashboard />);
     await screen.findByText("Petrobras");
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
-    expect(
-      await screen.findByText("Mercado atualizado: 0 emissores válidos."),
-    ).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Mercado atualizado: 0 emissores válidos.",
+      ),
+    );
   });
   it("combines entered filters and submits them to the local API", async () => {
     const user = userEvent.setup();

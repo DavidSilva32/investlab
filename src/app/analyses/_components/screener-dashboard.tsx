@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type SyntheticEvent } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { AlertCircle, Filter, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +19,7 @@ import {
   type ScreenerResult,
   type ScreenerCoverage,
 } from "@/app/analyses/_components/screener-results-list";
+import { getApiMessage } from "@/lib/api-message";
 
 type Filters = {
   positiveProfitYears?: number;
@@ -40,6 +42,7 @@ type Payload = {
   results: ScreenerResult[];
   counts: Counts & ScreenerCoverage;
   hasSuccessfulSync: boolean;
+  message?: string;
 };
 
 function buildQuery(filters: Filters) {
@@ -62,17 +65,21 @@ export function ScreenerDashboard() {
   const load = useCallback(async (filters: Filters) => {
     setLoading(true);
     setError(null);
+    let loadErrorMessage =
+      "Não foi possível consultar a base sincronizada. Tente novamente.";
     try {
       const query = buildQuery(filters);
       const response = await fetch(`/api/screener${query ? `?${query}` : ""}`, {
         cache: "no-store",
       });
-      if (!response.ok) throw new Error();
-      setPayload((await response.json()) as Payload);
+      const body = (await response.json()) as Payload;
+      if (!response.ok) {
+        loadErrorMessage = getApiMessage(body, loadErrorMessage);
+        throw new Error("Screener request failed");
+      }
+      setPayload(body);
     } catch {
-      setError(
-        "Não foi possível consultar a base sincronizada. Tente novamente.",
-      );
+      setError(loadErrorMessage);
     } finally {
       setLoading(false);
     }
@@ -81,16 +88,18 @@ export function ScreenerDashboard() {
   useEffect(() => {
     let cancelled = false;
     async function loadInitialResults() {
+      let loadErrorMessage =
+        "Não foi possível consultar a base sincronizada. Tente novamente.";
       try {
         const response = await fetch("/api/screener", { cache: "no-store" });
-        if (!response.ok) throw new Error();
         const data = (await response.json()) as Payload;
+        if (!response.ok) {
+          loadErrorMessage = getApiMessage(data, loadErrorMessage);
+          throw new Error("Screener request failed");
+        }
         if (!cancelled) setPayload(data);
       } catch {
-        if (!cancelled)
-          setError(
-            "Não foi possível consultar a base sincronizada. Tente novamente.",
-          );
+        if (!cancelled) setError(loadErrorMessage);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -109,6 +118,9 @@ export function ScreenerDashboard() {
     let initialTotal: number | null = null;
     let updated = 0;
     let unavailable = 0;
+    let completionMessage: string | undefined;
+    let refreshErrorMessage =
+      "Não foi possível atualizar os dados de mercado agora.";
     try {
       while (remaining > 0) {
         const response = await fetch("/api/screener/market/refresh", {
@@ -123,10 +135,14 @@ export function ScreenerDashboard() {
           unavailableIssuers?: number;
           attemptedIssuers?: number;
         };
-        if (!response.ok)
-          throw new Error(
-            payload.message ?? "A atualização de mercado não foi concluída.",
+        if (!response.ok) {
+          refreshErrorMessage = getApiMessage(
+            payload,
+            "A atualização de mercado não foi concluída.",
           );
+          throw new Error("Market refresh failed");
+        }
+        completionMessage = getApiMessage(payload, "") || completionMessage;
         initialTotal ??= payload.totalStaleIssuers ?? 0;
         updated += payload.updatedIssuers ?? 0;
         unavailable += payload.unavailableIssuers ?? 0;
@@ -135,10 +151,11 @@ export function ScreenerDashboard() {
         setMarketRefreshMessage(
           `Atualizando dados de mercado: ${processed} de ${initialTotal} emissores.`,
         );
-        if (remaining > 0 && (payload.attemptedIssuers ?? 0) === 0)
-          throw new Error(
-            "A atualização não avançou. Tente novamente mais tarde.",
-          );
+        if (remaining > 0 && (payload.attemptedIssuers ?? 0) === 0) {
+          refreshErrorMessage =
+            "A atualização não avançou. Tente novamente mais tarde.";
+          throw new Error("Market refresh made no progress");
+        }
       }
       const unavailableSummary =
         unavailable === 1
@@ -146,17 +163,17 @@ export function ScreenerDashboard() {
           : unavailable > 1
             ? `; ${unavailable} emissores indisponíveis`
             : "";
-      setMarketRefreshMessage(
-        `Mercado atualizado: ${updated} emissores válidos${unavailableSummary}.`,
-      );
+      const successMessage =
+        completionMessage ??
+        `Mercado atualizado: ${updated} emissores válidos${unavailableSummary}.`;
+      if (unavailable > 0) toast.warning(successMessage);
+      else toast.success(successMessage);
+      setMarketRefreshMessage(null);
       await load(draft);
-    } catch (refreshError) {
+    } catch {
       await load(draft);
-      setError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : "Não foi possível atualizar os dados de mercado agora.",
-      );
+      toast.error(refreshErrorMessage);
+      setMarketRefreshMessage(null);
     } finally {
       setRefreshingMarket(false);
     }

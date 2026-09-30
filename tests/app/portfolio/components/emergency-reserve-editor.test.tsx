@@ -219,6 +219,7 @@ describe("EmergencyReserveEditor", () => {
               monthlyExpenses: null,
               targetMonths: null,
               selectedAssetKeys: [keyA, keyB],
+              message: "Reserva salva pela API.",
             }
           : editorData,
     }));
@@ -237,6 +238,7 @@ describe("EmergencyReserveEditor", () => {
     await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
 
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.success).toHaveBeenCalledWith("Reserva salva pela API.");
     const saveCall = fetchMock.mock.calls.find(
       ([, options]) => options?.method === "PUT",
     );
@@ -368,7 +370,7 @@ describe("EmergencyReserveEditor", () => {
     );
   });
 
-  it("shows the no-positions state and save errors", async () => {
+  it("shows the no-positions state and reports save conflicts once", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -393,12 +395,15 @@ describe("EmergencyReserveEditor", () => {
       await screen.findByText(/Importe uma posição da carteira/),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Esta posição já está vinculada ao objetivo Viagem.",
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
+      ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("uses a generic message for unexpected save failures without an error message", async () => {
+  it("uses a generic toast for unexpected save failures without an error message", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => editorData })
@@ -410,12 +415,13 @@ describe("EmergencyReserveEditor", () => {
     await screen.findByLabelText("Custo mensal");
     await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
+    expect(toast.error).toHaveBeenCalledWith(
       "Não foi possível salvar a configuração. Tente novamente.",
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("offers retry after the editor cannot load", async () => {
+  it("keeps a blocking load failure inline and offers retry", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -428,13 +434,34 @@ describe("EmergencyReserveEditor", () => {
     render(<EmergencyReserveEditor />);
 
     await screen.findByRole("button", { name: "Tentar novamente" });
-    expect(toast.error).toHaveBeenCalledWith(
-      "Não foi possível carregar a configuração da reserva.",
-    );
+    expect(await screen.findByText("load failed")).toBeTruthy();
+    expect(toast.error).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /Tentar novamente/ }));
 
     await openReservePositions(user);
     expect(await screen.findByLabelText(/Tesouro Selic/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a fixed inline fallback when loading rejects at the network", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("private transport detail"))
+      .mockResolvedValueOnce({ ok: true, json: async () => editorData });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+
+    expect(
+      await screen.findAllByText(
+        "Não foi possível carregar a configuração da reserva.",
+      ),
+    ).toHaveLength(2);
+    expect(screen.queryByText("private transport detail")).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await screen.findByLabelText("Custo mensal");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -819,6 +846,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     expect(success.textContent).toMatch(
       /Viagem agora possui R\$\s6\.000,00 de R\$\s10\.000,00/,
     );
+    expect(toast.success).toHaveBeenCalledWith(success.textContent);
     const put = fetchMock.mock.calls.find(
       ([, options]) => options?.method === "PUT",
     );

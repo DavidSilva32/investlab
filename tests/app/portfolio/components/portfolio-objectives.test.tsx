@@ -13,7 +13,8 @@ import type { ObjectivePosition } from "@/app/portfolio/_components/portfolio-ob
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 vi.mock("@/app/portfolio/_components/emergency-reserve-editor", () => ({
   EmergencyReserveEditor: () => (
     <div>
@@ -132,6 +133,8 @@ function response(body: unknown, ok = true) {
 
 describe("PortfolioObjectives", () => {
   beforeEach(() => {
+    toast.success.mockReset();
+    toast.error.mockReset();
     for (const method of [
       "hasPointerCapture",
       "setPointerCapture",
@@ -547,9 +550,32 @@ describe("PortfolioObjectives", () => {
     });
     fetchMock.mockRejectedValueOnce("offline");
     await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Não foi possível salvar o objetivo.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar o objetivo.",
+      ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the create form open when a successful response has no objective id", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
+    await user.type(screen.getByLabelText("Nome"), "Casa");
+    fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
+      target: { value: "R$ 100.000,00" },
+    });
+    fetchMock.mockResolvedValueOnce(response({ message: "Objetivo criado." }));
+    fetchMock.mockResolvedValueOnce(response(currentData));
+
+    await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Objetivo criado."),
+    );
+    expect(await screen.findByLabelText("Nome")).toBeTruthy();
   });
 
   it("shows an assignment error when saving fails with a transport value", async () => {
@@ -564,10 +590,12 @@ describe("PortfolioObjectives", () => {
     );
     fetchMock.mockRejectedValueOnce("offline");
     await user.click(screen.getByRole("button", { name: /Salvar posições/ }));
-    await screen.findAllByRole("alert");
-    expect(screen.getAllByRole("alert").at(-1)?.textContent).toContain(
-      "Não foi possível salvar as posições.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar as posições.",
+      ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("can cancel deleting a personal objective without issuing a request", async () => {
@@ -588,7 +616,7 @@ describe("PortfolioObjectives", () => {
     ).toBe(false);
   });
 
-  it("shows an error when deleting an objective fails without a server message", async () => {
+  it("shows a fallback toast when deleting an objective fails due to transport", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
@@ -602,9 +630,12 @@ describe("PortfolioObjectives", () => {
     await user.click(
       screen.getByRole("button", { name: "Confirmar exclusão" }),
     );
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Não foi possível excluir o objetivo.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível excluir o objetivo.",
+      ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows the server error when an objective delete is rejected", async () => {
@@ -623,9 +654,12 @@ describe("PortfolioObjectives", () => {
     await user.click(
       screen.getByRole("button", { name: "Confirmar exclusão" }),
     );
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "A posição ainda está vinculada.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A posição ainda está vinculada.",
+      ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows an unavailable state when the selected objective disappears", async () => {
@@ -653,11 +687,11 @@ describe("PortfolioObjectives", () => {
     );
     render(<PortfolioObjectives />);
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "Não foi possível carregar seus objetivos e posições.",
+      "Carteira indisponível.",
     );
   });
 
-  it("shows an API validation message when creating an objective fails", async () => {
+  it("shows an API error toast when creating an objective fails", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
@@ -670,9 +704,10 @@ describe("PortfolioObjectives", () => {
       response({ message: "Meta inválida no servidor." }, false),
     );
     await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Meta inválida no servidor.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Meta inválida no servidor."),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows an API message when saving objective positions fails", async () => {
@@ -689,9 +724,10 @@ describe("PortfolioObjectives", () => {
       response({ message: "As posições mudaram." }, false),
     );
     await user.click(screen.getByRole("button", { name: /Salvar posições/ }));
-    expect(screen.getAllByRole("alert").at(-1)?.textContent).toContain(
-      "As posições mudaram.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("As posições mudaram."),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows retry after an initial load failure", async () => {

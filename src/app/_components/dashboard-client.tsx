@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
+import { getApiMessage } from "@/lib/api-message";
 
 type Overview = Parameters<typeof DashboardSummary>[0] & {
   positions: NonNullable<Parameters<typeof DashboardSummary>[0]["positions"]>;
@@ -53,22 +54,26 @@ export function DashboardClient() {
   }, []);
 
   const loadOverview = useCallback(() => {
+    let failureMessage = loadErrorMessage;
     fetch("/api/portfolio")
       .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message);
-        return body;
+        const body: unknown = await response.json();
+        if (!response.ok) {
+          failureMessage = getApiMessage(body, loadErrorMessage);
+          throw new Error("dashboard_portfolio_load_failed");
+        }
+        return body as Overview;
       })
-      .then(({ positions, emergencyReserve }) => {
+      .then((data) => {
         setOverview({
-          positions,
-          emergencyReserve,
+          positions: data.positions,
+          emergencyReserve: data.emergencyReserve,
         });
         setError(null);
         loadUnassignedSummary();
       })
       .catch(() => {
-        setError(loadErrorMessage);
+        setError(failureMessage);
       });
   }, [loadUnassignedSummary]);
 

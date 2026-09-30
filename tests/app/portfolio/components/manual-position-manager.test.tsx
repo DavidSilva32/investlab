@@ -368,12 +368,14 @@ describe("ManualPositionManager", () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Dados inválidos."),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
     submit();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível salvar a posição.",
       ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("removes a position only after confirmation and handles API failures", async () => {
@@ -411,7 +413,9 @@ describe("ManualPositionManager", () => {
     );
     remove();
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Falha interna"),
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível remover a posição.",
+      ),
     );
     remove();
     await waitFor(() =>
@@ -421,6 +425,7 @@ describe("ManualPositionManager", () => {
     );
     expect(confirm).toHaveBeenCalledTimes(5);
     expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("renders duplicate codes, source, conversion and valuation dates", () => {

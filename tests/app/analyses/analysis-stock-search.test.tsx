@@ -146,6 +146,64 @@ describe("AnalysisStockSearch", () => {
     );
   });
 
+  it("shows a safe fallback for a rejected network request", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+
+    await advanceSearch();
+
+    expect(screen.getByRole("status").textContent).toBe(
+      "Não foi possível pesquisar ações agora.",
+    );
+  });
+
+  it("treats a successful response without results as an empty search", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 })),
+    );
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+
+    await advanceSearch();
+
+    expect(screen.getByRole("status").textContent).toBe(
+      "Nenhuma ação encontrada.",
+    );
+  });
+
+  it("preserves a safe API message in the autocomplete status", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ message: "Catálogo temporariamente indisponível." }),
+          {
+            status: 503,
+          },
+        ),
+      ),
+    );
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+    await advanceSearch();
+    expect(screen.getByRole("status").textContent).toBe(
+      "Catálogo temporariamente indisponível.",
+    );
+  });
+
   it("clears prior options before debounce so Enter cannot select stale results", async () => {
     vi.useFakeTimers();
     const fetcher = vi

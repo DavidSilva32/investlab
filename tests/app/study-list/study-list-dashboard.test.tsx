@@ -8,11 +8,18 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { StudyListDashboard } from "@/app/study-list/_components/study-list-dashboard";
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.error).mockReset();
 });
 
 const firstEntry = {
@@ -132,6 +139,34 @@ describe("StudyListDashboard", () => {
     await Promise.resolve();
   });
 
+  it("ignores a failed HTTP response that arrives after the list unmounts", async () => {
+    let resolveRequest!: (value: {
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }) => void;
+    const pendingFailure = new Promise<{
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }>((resolve) => {
+      resolveRequest = resolve;
+    });
+    const fetchMock = vi.fn().mockReturnValueOnce(pendingFailure);
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(<StudyListDashboard />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    view.unmount();
+
+    resolveRequest({
+      ok: false,
+      json: () => Promise.resolve({ message: "Late server error." }),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.body.textContent).toBe("");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it("removes a stale entry when the server confirms it was already absent", async () => {
     vi.stubGlobal(
       "fetch",
@@ -192,7 +227,7 @@ describe("StudyListDashboard", () => {
     );
   });
 
-  it("keeps the reason unchanged after failed saves and lets the user cancel", async () => {
+  it("keeps the reason unchanged after failed saves and reports failures by toast", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ entries: [firstEntry] }))
@@ -211,20 +246,19 @@ describe("StudyListDashboard", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Salvar motivo" }));
     await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(
-        "Falha ao atualizar.",
-      ),
+      expect(toast.error).toHaveBeenCalledWith("Falha ao atualizar."),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("textbox", { name: /Editar motivo/ })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Salvar motivo" }));
     await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain("motivo da"),
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível atualizar o motivo da inclusão.",
+      ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Salvar motivo" }));
-    await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain("motivo da"),
-    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(3));
 
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(screen.getByText(firstEntry.reason)).toBeTruthy();
@@ -289,7 +323,7 @@ describe("StudyListDashboard", () => {
     expect(screen.getByText("Emissor sem ticker")).toBeTruthy();
   });
 
-  it("keeps the entry visible and shows safe errors for note and removal failures", async () => {
+  it("keeps the entry visible and reports note and removal failures by toast", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ entries: [firstEntry] }))
@@ -309,16 +343,18 @@ describe("StudyListDashboard", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Registrar observação" }),
     );
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Não foi possível registrar a observação.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível registrar a observação.",
+      ),
     );
 
     fireEvent.click(
       screen.getByRole("button", { name: "Registrar observação" }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(
-        "Falha ao registrar.",
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível registrar a observação.",
       ),
     );
 
@@ -333,9 +369,7 @@ describe("StudyListDashboard", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Salvar alteração" }));
     await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(
-        "Falha ao editar.",
-      ),
+      expect(toast.error).toHaveBeenCalledWith("Falha ao editar."),
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     fireEvent.click(screen.getByRole("button", { name: "Editar" }));
@@ -349,7 +383,7 @@ describe("StudyListDashboard", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Salvar alteração" }));
     await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(
+      expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível atualizar a observação.",
       ),
     );
@@ -359,16 +393,18 @@ describe("StudyListDashboard", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Remover empresa" }),
     );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Falha ao remover."),
+    );
     expect(
-      (await within(screen.getByRole("alertdialog")).findByRole("alert"))
-        .textContent,
-    ).toContain("Falha ao remover.");
+      within(screen.getByRole("alertdialog")).queryByRole("alert"),
+    ).toBeNull();
     expect(screen.getByText("Empresa exemplo")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Remover empresa" }));
     await waitFor(() =>
-      expect(
-        within(screen.getByRole("alertdialog")).getByRole("alert").textContent,
-      ).toContain("Não foi possível remover a empresa da Lista de estudo."),
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível remover a empresa da Lista de estudo.",
+      ),
     );
     expect(screen.getByText("Empresa exemplo")).toBeTruthy();
   });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,12 +74,8 @@ export function PortfolioObjectiveForm({
         setTargetAmount("");
         setMonthlyAmount("");
       }
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Não foi possível salvar o objetivo.",
-      );
+    } catch {
+      toast.error("Não foi possível salvar o objetivo.");
     }
   }
 

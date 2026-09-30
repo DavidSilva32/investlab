@@ -43,7 +43,7 @@ export type StudyEntry = {
 type Props = {
   entry: StudyEntry;
   pending: boolean;
-  onRemove: () => Promise<string | null>;
+  onRemove: () => Promise<boolean>;
   onUpdateReason: (reason: string) => Promise<boolean>;
   onAddObservation: (text: string) => Promise<boolean>;
   onUpdateObservation: (
@@ -71,7 +71,6 @@ export function StudyListEntryCard({
   onUpdateObservation,
 }: Props) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editingReason, setEditingReason] = useState(false);
   const [reasonDraft, setReasonDraft] = useState(entry.reason);
   const [newObservation, setNewObservation] = useState("");
@@ -89,10 +88,8 @@ export function StudyListEntryCard({
   }
   async function confirmRemoval(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
-    const error = await onRemove();
-    if (error) setDeleteError(error);
-    else {
-      setDeleteError(null);
+    const removed = await onRemove();
+    if (removed) {
       setDeleteDialogOpen(false);
     }
   }
@@ -129,7 +126,6 @@ export function StudyListEntryCard({
               onOpenChange={(open) => {
                 if (!open && pending) return;
                 setDeleteDialogOpen(open);
-                if (open) setDeleteError(null);
               }}
             >
               <AlertDialogTrigger asChild>
@@ -151,14 +147,6 @@ export function StudyListEntryCard({
                   <AlertDialogDescription>
                     A empresa e todas as observações pessoais registradas para
                     ela serão excluídas. Essa ação não pode ser desfeita.
-                    {deleteError && (
-                      <span
-                        role="alert"
-                        className="mt-2 block text-destructive"
-                      >
-                        {deleteError}
-                      </span>
-                    )}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

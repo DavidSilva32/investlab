@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { getApiMessage } from "@/lib/api-message";
 import {
   Card,
   CardContent,
@@ -24,14 +26,18 @@ export function StudyListDashboard() {
     try {
       const response = await fetch("/api/study-list", { cache: "no-store" });
       const body = (await response.json()) as ListPayload;
-      if (!response.ok) throw new Error(body.message);
+      if (!response.ok) {
+        setError(
+          getApiMessage(
+            body,
+            "Não foi possível carregar a Lista de estudo agora.",
+          ),
+        );
+        return;
+      }
       setEntries(body.entries);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error && loadError.message
-          ? loadError.message
-          : "Não foi possível carregar a Lista de estudo agora.",
-      );
+    } catch {
+      setError("Não foi possível carregar a Lista de estudo agora.");
     }
   }, []);
 
@@ -40,16 +46,21 @@ export function StudyListDashboard() {
     void fetch("/api/study-list", { cache: "no-store" })
       .then(async (response) => {
         const body = (await response.json()) as ListPayload;
-        if (!response.ok) throw new Error(body.message);
+        if (!response.ok) {
+          if (!cancelled)
+            setError(
+              getApiMessage(
+                body,
+                "Não foi possível carregar a Lista de estudo agora.",
+              ),
+            );
+          return;
+        }
         if (!cancelled) setEntries(body.entries);
       })
-      .catch((loadError: unknown) => {
+      .catch(() => {
         if (!cancelled)
-          setError(
-            loadError instanceof Error && loadError.message
-              ? loadError.message
-              : "Não foi possível carregar a Lista de estudo agora.",
-          );
+          setError("Não foi possível carregar a Lista de estudo agora.");
       });
     return () => {
       cancelled = true;
@@ -58,7 +69,6 @@ export function StudyListDashboard() {
 
   async function removeEntry(entry: StudyEntry) {
     setPending(entry.issuerCnpj);
-    setError(null);
     try {
       const response = await fetch("/api/study-list/" + entry.issuerCnpj, {
         method: "DELETE",
@@ -67,18 +77,25 @@ export function StudyListDashboard() {
         removed?: boolean;
         message?: string;
       };
-      if (!response.ok) throw new Error(body.message);
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(
+            body,
+            "Não foi possível remover a empresa da Lista de estudo.",
+          ),
+        );
+        return false;
+      }
       setEntries((current) =>
         current!.filter((item) => item.issuerCnpj !== entry.issuerCnpj),
       );
-      return null;
-    } catch (removeError) {
-      const message =
-        removeError instanceof Error && removeError.message
-          ? removeError.message
-          : "Não foi possível remover a empresa da Lista de estudo.";
-      setError(message);
-      return message;
+      toast.success(
+        getApiMessage(body, "Empresa removida da Lista de estudo."),
+      );
+      return true;
+    } catch {
+      toast.error("Não foi possível remover a empresa da Lista de estudo.");
+      return false;
     } finally {
       setPending(null);
     }
@@ -86,7 +103,6 @@ export function StudyListDashboard() {
 
   async function updateReason(entry: StudyEntry, reason: string) {
     setPending(entry.issuerCnpj);
-    setError(null);
     try {
       const response = await fetch("/api/study-list/" + entry.issuerCnpj, {
         method: "PATCH",
@@ -97,7 +113,15 @@ export function StudyListDashboard() {
         reason?: string;
         message?: string;
       };
-      if (!response.ok || !body.reason) throw new Error(body.message);
+      if (!response.ok || !body.reason) {
+        toast.error(
+          getApiMessage(
+            body,
+            "Não foi possível atualizar o motivo da inclusão.",
+          ),
+        );
+        return false;
+      }
       setEntries((current) =>
         current!.map((item) =>
           item.issuerCnpj === entry.issuerCnpj
@@ -105,13 +129,10 @@ export function StudyListDashboard() {
             : item,
         ),
       );
+      toast.success(getApiMessage(body, "Motivo da inclusão atualizado."));
       return true;
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error && saveError.message
-          ? saveError.message
-          : "Não foi possível atualizar o motivo da inclusão.",
-      );
+    } catch {
+      toast.error("Não foi possível atualizar o motivo da inclusão.");
       return false;
     } finally {
       setPending(null);
@@ -120,7 +141,6 @@ export function StudyListDashboard() {
 
   async function addObservation(entry: StudyEntry, text: string) {
     setPending(entry.issuerCnpj);
-    setError(null);
     try {
       const response = await fetch(
         "/api/study-list/" + entry.issuerCnpj + "/observations",
@@ -134,7 +154,12 @@ export function StudyListDashboard() {
         observation?: StudyEntry["observations"][number];
         message?: string;
       };
-      if (!response.ok || !body.observation) throw new Error(body.message);
+      if (!response.ok || !body.observation) {
+        toast.error(
+          getApiMessage(body, "Não foi possível registrar a observação."),
+        );
+        return false;
+      }
       setEntries((current) =>
         current!.map((item) =>
           item.issuerCnpj === entry.issuerCnpj
@@ -145,13 +170,10 @@ export function StudyListDashboard() {
             : item,
         ),
       );
+      toast.success(getApiMessage(body, "Observação registrada."));
       return true;
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error && saveError.message
-          ? saveError.message
-          : "Não foi possível registrar a observação.",
-      );
+    } catch {
+      toast.error("Não foi possível registrar a observação.");
       return false;
     } finally {
       setPending(null);
@@ -164,7 +186,6 @@ export function StudyListDashboard() {
     text: string,
   ) {
     setPending(entry.issuerCnpj);
-    setError(null);
     try {
       const response = await fetch(
         "/api/study-list/" +
@@ -181,7 +202,12 @@ export function StudyListDashboard() {
         observation?: StudyEntry["observations"][number];
         message?: string;
       };
-      if (!response.ok || !body.observation) throw new Error(body.message);
+      if (!response.ok || !body.observation) {
+        toast.error(
+          getApiMessage(body, "Não foi possível atualizar a observação."),
+        );
+        return false;
+      }
       setEntries((current) =>
         current!.map((item) =>
           item.issuerCnpj === entry.issuerCnpj
@@ -196,13 +222,10 @@ export function StudyListDashboard() {
             : item,
         ),
       );
+      toast.success(getApiMessage(body, "Observação atualizada."));
       return true;
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error && saveError.message
-          ? saveError.message
-          : "Não foi possível atualizar a observação.",
-      );
+    } catch {
+      toast.error("Não foi possível atualizar a observação.");
       return false;
     } finally {
       setPending(null);
@@ -248,11 +271,6 @@ export function StudyListDashboard() {
           </Button>
         </CardContent>
       </Card>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
       {entries.length === 0 ? (
         <Card>
           <CardContent className="space-y-3 py-10 text-center">

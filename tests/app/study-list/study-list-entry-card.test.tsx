@@ -37,7 +37,7 @@ const props = (
 ) => ({
   entry,
   pending: false,
-  onRemove: vi.fn().mockResolvedValue(null),
+  onRemove: vi.fn().mockResolvedValue(true),
   onUpdateReason: vi.fn().mockResolvedValue(true),
   onAddObservation: vi.fn().mockResolvedValue(true),
   onUpdateObservation: vi.fn().mockResolvedValue(true),
@@ -115,11 +115,11 @@ describe("StudyListEntryCard", () => {
   });
 
   it("prevents dismissing removal while the delete request is pending", async () => {
-    let resolveRemoval!: (value: string | null) => void;
+    let resolveRemoval!: (value: boolean) => void;
     const callbacks = props({
       onRemove: vi.fn(
         () =>
-          new Promise<string | null>((resolve) => {
+          new Promise<boolean>((resolve) => {
             resolveRemoval = resolve;
           }),
       ),
@@ -137,14 +137,14 @@ describe("StudyListEntryCard", () => {
     await userEvent.setup().keyboard("{Escape}");
     expect(screen.getByRole("alertdialog")).toBeTruthy();
 
-    resolveRemoval(null);
+    resolveRemoval(true);
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
   it("keeps editors and confirmation open after failed callbacks and renders entries without analysis", async () => {
     const callbacks = props({
       entry: { ...entry, ticker: null, availableTickers: [], observations: [] },
-      onRemove: vi.fn().mockResolvedValue("Falha de remoção segura."),
+      onRemove: vi.fn().mockResolvedValue(false),
       onUpdateReason: vi.fn().mockResolvedValue(false),
       onAddObservation: vi.fn().mockResolvedValue(false),
       onUpdateObservation: vi.fn().mockResolvedValue(false),
@@ -185,8 +185,6 @@ describe("StudyListEntryCard", () => {
       await screen.findByRole("button", { name: "Remover empresa" }),
     );
     await waitFor(() => expect(callbacks.onRemove).toHaveBeenCalled());
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Falha de remoção segura.",
-    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

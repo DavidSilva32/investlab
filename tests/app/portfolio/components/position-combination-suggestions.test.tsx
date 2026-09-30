@@ -8,6 +8,10 @@ import {
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const toast = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
+
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
 
 const holdings = [
@@ -33,6 +37,7 @@ const holdings = [
 
 afterEach(() => {
   cleanup();
+  toast.error.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -295,7 +300,7 @@ describe("PositionCombinationSuggestions", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("uses a safe fallback when the API error has no message", async () => {
+  it("uses a safe fallback toast when the API error has no message", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
@@ -317,9 +322,10 @@ describe("PositionCombinationSuggestions", () => {
       "10000",
     );
     await user.click(screen.getByRole("button", { name: /Buscar combin/ }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Tente novamente.",
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível buscar combinações agora. Tente novamente.",
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows partial-search and tied-alternative limits", async () => {
@@ -409,7 +415,7 @@ describe("PositionCombinationSuggestions", () => {
     expect(screen.getByText(/A busca foi limitada/)).toBeTruthy();
   });
 
-  it("shows a safe API message and can retry", async () => {
+  it("shows a safe API message once and can retry", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -439,9 +445,8 @@ describe("PositionCombinationSuggestions", () => {
     );
     const search = screen.getByRole("button", { name: /Buscar combin/ });
     await user.click(search);
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Falha segura.",
-    );
+    expect(toast.error).toHaveBeenCalledWith("Falha segura.");
+    expect(screen.queryByRole("alert")).toBeNull();
     await user.click(search);
     expect(await screen.findByText(/grupos com valor atual/)).toBeTruthy();
   });

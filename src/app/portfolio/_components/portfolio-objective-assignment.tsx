@@ -40,7 +40,6 @@ type Props = {
   positions: ObjectivePosition[];
   preferredObjectiveId?: string;
   saving: boolean;
-  error: string | null;
   onSave: (objectiveId: string, assetKeys: string[]) => void;
 };
 
@@ -49,7 +48,6 @@ export function PortfolioObjectiveAssignment({
   positions,
   preferredObjectiveId,
   saving,
-  error,
   onSave,
 }: Props) {
   const defaultObjectiveId =
@@ -269,11 +267,6 @@ export function PortfolioObjectiveAssignment({
               </ul>
             </CollapsibleContent>
           </Collapsible>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
           <div className="flex justify-end">
             <Button
               type="button"

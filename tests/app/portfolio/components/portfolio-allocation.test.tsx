@@ -287,14 +287,40 @@ describe("PortfolioAllocation", () => {
   it("shows a load error and allows retry", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(response({ message: "failed" }, false))
+      .mockResolvedValueOnce(
+        response({ message: "Alocação indisponível pela API." }, false),
+      )
       .mockResolvedValueOnce(response({ positions: [] }));
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Alocação indisponível pela API.",
+    );
     await user.click(
       await screen.findByRole("button", { name: "Tentar novamente" }),
     );
+    expect(
+      await screen.findByText(
+        "Importe posições para visualizar a classificação e a alocação.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("uses a fixed inline fallback for network errors while loading", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("private transport detail"))
+      .mockResolvedValueOnce(response({ positions: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível carregar a alocação.",
+    );
+    expect(screen.queryByText("private transport detail")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(
       await screen.findByText(
         "Importe posições para visualizar a classificação e a alocação.",
@@ -313,7 +339,7 @@ describe("PortfolioAllocation", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ positions: [positions[0]] }))
-      .mockResolvedValueOnce(response({ message: "Classificação salva." }))
+      .mockResolvedValueOnce(response({ message: "Classificação atualizada." }))
       .mockResolvedValueOnce(response({ positions: savedPositions }));
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -338,7 +364,7 @@ describe("PortfolioAllocation", () => {
     );
 
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith("Classificação salva."),
+      expect(toast.success).toHaveBeenCalledWith("Classificação atualizada."),
     );
     expect(fetchMock.mock.calls[1][1]).toMatchObject({
       method: "PATCH",
@@ -390,14 +416,16 @@ describe("PortfolioAllocation", () => {
         },
       }),
     });
-    expect(toast.success).toHaveBeenCalledWith("Metas de alocação salvas.");
+    expect(toast.success).toHaveBeenCalledWith("Metas salvas.");
   });
 
   it("reports failed target saves without closing the editor", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ positions: [], targetPercentages: {} }))
-      .mockResolvedValueOnce(response({ message: "failed" }, false));
+      .mockResolvedValueOnce(
+        response({ message: "Meta recusada pelo servidor." }, false),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
@@ -415,10 +443,64 @@ describe("PortfolioAllocation", () => {
     await user.click(screen.getByRole("button", { name: "Salvar metas" }));
 
     await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Meta recusada pelo servidor."),
+    );
+    expect(screen.getByRole("button", { name: "Salvar metas" })).toBeTruthy();
+  });
+
+  it("uses a safe toast when saving a classification rejects at the network", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ positions: [positions[0]] }))
+      .mockRejectedValueOnce(new Error("private transport detail"));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+    await user.click(
+      await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: /Editar classifica/i }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Salvar classifica/i }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar a classificação.",
+      ),
+    );
+    expect(screen.queryByText("private transport detail")).toBeNull();
+    expect(screen.getByLabelText("Subclasse")).toBeTruthy();
+  });
+
+  it("uses a safe toast when saving allocation targets rejects at the network", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ positions: [], targetPercentages: {} }))
+      .mockRejectedValueOnce(new Error("private transport detail"));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<PortfolioAllocation />);
+    await user.click(
+      await screen.findByRole("button", { name: "Definir metas" }),
+    );
+    await user.clear(
+      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
+    );
+    await user.type(
+      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
+      "100",
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar metas" }));
+
+    await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível salvar as metas de alocação.",
       ),
     );
+    expect(screen.queryByText("private transport detail")).toBeNull();
     expect(screen.getByRole("button", { name: "Salvar metas" })).toBeTruthy();
   });
   it("allows confirming a fully unknown classification", async () => {
@@ -488,11 +570,7 @@ describe("PortfolioAllocation", () => {
     await user.click(
       screen.getByRole("button", { name: "Salvar classificação" }),
     );
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        "Não foi possível salvar a classificação.",
-      ),
-    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("failed"));
     expect(screen.getByLabelText("Subclasse")).toBeTruthy();
   });
 
@@ -501,7 +579,7 @@ describe("PortfolioAllocation", () => {
       .fn()
       .mockResolvedValueOnce(response({ positions }))
       .mockResolvedValueOnce(
-        response({ count: 3, message: "Classificação salva." }),
+        response({ count: 3, message: "Classificação em lote concluída." }),
       )
       .mockResolvedValueOnce(response({ positions }));
     vi.stubGlobal("fetch", fetchMock);
@@ -557,7 +635,7 @@ describe("PortfolioAllocation", () => {
       }),
     });
     expect(toast.success).toHaveBeenCalledWith(
-      "Classificação aplicada a 3 posições.",
+      "Classificação em lote concluída.",
     );
   });
 
@@ -582,13 +660,13 @@ describe("PortfolioAllocation", () => {
     ).toBe(true);
   });
 
-  it("uses singular wording when a bulk edit applies to one position", async () => {
+  it("uses the API message when a bulk edit applies to one position", async () => {
     const singlePosition = positions[0];
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response({ positions: [singlePosition] }))
       .mockResolvedValueOnce(
-        response({ count: 1, message: "Classificação salva." }),
+        response({ count: 1, message: "Classificação individual salva." }),
       )
       .mockResolvedValueOnce(response({ positions: [singlePosition] }));
     vi.stubGlobal("fetch", fetchMock);
@@ -614,7 +692,7 @@ describe("PortfolioAllocation", () => {
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
-        "Classificação aplicada a 1 posição.",
+        "Classificação individual salva.",
       ),
     );
   });

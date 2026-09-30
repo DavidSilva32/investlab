@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { formatCurrency } from "@/lib/utils";
 import {
   formatAmountInput,
@@ -150,18 +152,25 @@ export function PositionCombinationSuggestions({
           ...(requestFilter ? { [requestFilter.key]: filter } : {}),
         }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(
+            body,
+            "Não foi possível buscar combinações agora. Tente novamente.",
+          ),
+        );
+        setSearch({ status: "idle" });
+        return;
+      }
       setSearch({
         status: "result",
         result: body as EmergencyReservePositionSuggestions,
       });
-    } catch (cause) {
+    } catch {
       setSearch({ status: "idle" });
-      setError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : "Não foi possível buscar combinações agora. Tente novamente.",
+      toast.error(
+        "Não foi possível buscar combinações agora. Tente novamente.",
       );
     }
   }

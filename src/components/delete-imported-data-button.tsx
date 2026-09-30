@@ -2,7 +2,9 @@
 
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { getApiMessage } from "@/lib/api-message";
 
 type DocumentType = "B3_POSITION_XLSX" | "B3_MOVEMENT_XLSX";
 
@@ -16,7 +18,6 @@ export function DeleteImportedDataButton({
   label,
 }: DeleteImportedDataButtonProps) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>();
 
   const remove = async () => {
     if (
@@ -26,7 +27,6 @@ export function DeleteImportedDataButton({
     )
       return;
     setLoading(true);
-    setError(undefined);
     try {
       const response = await fetch(
         `/api/imports?documentType=${documentType}`,
@@ -34,14 +34,15 @@ export function DeleteImportedDataButton({
           method: "DELETE",
         },
       );
-      const body = await response.json();
+      const body: unknown = await response.json();
       if (!response.ok) {
-        setError(body.message ?? "Não foi possível excluir os dados.");
+        toast.error(getApiMessage(body, "Não foi possível excluir os dados."));
         return;
       }
-      window.location.reload();
+      toast.success(getApiMessage(body, "Dados importados excluídos."));
+      window.dispatchEvent(new Event("portfolio:updated"));
     } catch {
-      setError("Não foi possível comunicar com o servidor.");
+      toast.error("Não foi possível comunicar com o servidor.");
     } finally {
       setLoading(false);
     }
@@ -53,7 +54,6 @@ export function DeleteImportedDataButton({
         <Trash2 aria-hidden="true" />
         {loading ? "Excluindo..." : `Excluir ${label}`}
       </Button>
-      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Search, RefreshCw, Clock3 } from "lucide-react";
 import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -119,6 +120,7 @@ export function StockAnalysisDashboard({
   const [selectedTicker, setSelectedTicker] = useState(initialTicker);
   const requestSequence = useRef(0);
   const [error, setError] = useState<string | null>(null);
+  const [showErrorInline, setShowErrorInline] = useState(false);
   const [loading, setLoading] = useState(Boolean(initialTicker));
   const [retryRemaining, setRetryRemaining] = useState(0);
   const [days, setDays] = useState(365);
@@ -130,7 +132,10 @@ export function StockAnalysisDashboard({
       toast.loading(`Consultando dados de ${ticker}...`, { id: toastId });
     setLoading(true);
     setError(null);
+    setShowErrorInline(false);
     setRetryRemaining(0);
+    let failureMessage =
+      "Não foi possível consultar a ação agora. Tente novamente em instantes.";
     try {
       const response = await fetch(
         `/api/analyses/stocks/${encodeURIComponent(ticker)}`,
@@ -144,7 +149,13 @@ export function StockAnalysisDashboard({
         retryAfter > 0
       )
         setRetryRemaining(Math.ceil(retryAfter));
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        failureMessage = getApiMessage(
+          body,
+          "Não foi possível consultar a ação agora. Tente novamente em instantes.",
+        );
+        throw new Error("API request failed");
+      }
       if (body) {
         const loadedAnalysis = body as StockAnalysis;
         setAnalysis(loadedAnalysis);
@@ -157,19 +168,18 @@ export function StockAnalysisDashboard({
         setAnalysis(null);
       }
       if (notify)
-        toast.success(`Dados de ${ticker} carregados com sucesso.`, {
-          id: toastId,
-        });
+        toast.success(
+          getApiMessage(body, `Dados de ${ticker} carregados com sucesso.`),
+          {
+            id: toastId,
+          },
+        );
     } catch {
       if (sequence !== requestSequence.current) return;
       setAnalysis(null);
-      if (notify)
-        toast.error("Não foi possível carregar os dados da ação.", {
-          id: toastId,
-        });
-      setError(
-        "Não foi possível consultar a ação agora. Tente novamente em instantes.",
-      );
+      if (notify) toast.error(failureMessage, { id: toastId });
+      setError(failureMessage);
+      setShowErrorInline(!notify);
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
@@ -274,9 +284,11 @@ export function StockAnalysisDashboard({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            {showErrorInline && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <Button
               type="button"
               variant="outline"

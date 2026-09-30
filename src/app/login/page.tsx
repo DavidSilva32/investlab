@@ -2,6 +2,8 @@
 import { Eye, EyeOff, LockKeyhole } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type SyntheticEvent, useState } from "react";
+import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,12 +39,12 @@ export default function LoginPage() {
       });
       const body = (await response.json()) as { message?: string };
       if (!response.ok) {
-        setError(body.message ?? "Não foi possível concluir o login.");
+        toast.error(getApiMessage(body, "Não foi possível concluir o login."));
         return;
       }
       router.push("/");
     } catch {
-      setError("Não foi possível concluir o login.");
+      toast.error("Não foi possível concluir o login.");
     } finally {
       setLoading(false);
     }

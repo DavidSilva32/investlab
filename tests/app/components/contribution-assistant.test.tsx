@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { ContributionAssistant } from "@/app/_components/contribution-assistant";
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 describe("ContributionAssistant", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.mocked(toast.error).mockReset();
   });
 
   it("submits the amount and shows reserve-first values and class split", async () => {
@@ -210,7 +213,7 @@ describe("ContributionAssistant", () => {
     ).toBeTruthy();
   });
 
-  it("reports a request failure accessibly", async () => {
+  it("reports a request failure by toast without duplicating inline feedback", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
     render(<ContributionAssistant />);
     fireEvent.change(
@@ -221,15 +224,20 @@ describe("ContributionAssistant", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Ver distribuição" }));
 
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível calcular o aporte. Tente novamente.",
+      ),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("announces a client error returned by the API", async () => {
+  it("uses a safe frontend fallback for unusable API messages", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
-        json: async () => ({ message: "invalid" }),
+        json: async () => ({ message: "  " }),
       }),
     );
     render(<ContributionAssistant />);
@@ -239,9 +247,12 @@ describe("ContributionAssistant", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Ver distribuição" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Não foi possível calcular o aporte. Tente novamente.",
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível calcular o aporte. Tente novamente.",
+      ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("blocks the allocation and marks amounts unavailable when reserve data is incomplete", async () => {

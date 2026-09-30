@@ -14,6 +14,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
+import { getApiMessage } from "@/lib/api-message";
 
 type TickerOption = { ticker: string; name: string };
 
@@ -30,7 +31,7 @@ export function AnalysisStockSearch({
   const [options, setOptions] = useState<TickerOption[]>([]);
   const [open, setOpen] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const tickerIsSynchronized = queryTicker === ticker;
   const canSearch =
     tickerIsSynchronized &&
@@ -49,7 +50,7 @@ export function AnalysisStockSearch({
       setOptions([]);
       setOpen(false);
       setSearching(false);
-      setSearchError(false);
+      setSearchError(null);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [ticker, tickerIsSynchronized]);
@@ -62,17 +63,27 @@ export function AnalysisStockSearch({
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setSearching(true);
-      setSearchError(false);
+      setSearchError(null);
       try {
         const response = await fetch(
           `/api/analyses/stocks/search?q=${encodeURIComponent(normalized)}`,
           { signal: controller.signal },
         );
-        if (!response.ok) throw new Error("Ticker search failed");
-        const body = (await response.json()) as { results: TickerOption[] };
+        const body = (await response.json()) as {
+          results?: TickerOption[];
+          message?: string;
+        };
+        if (!response.ok) {
+          setSearchError(
+            getApiMessage(body, "Não foi possível pesquisar ações agora."),
+          );
+          setOptions([]);
+          setOpen(true);
+          return;
+        }
         if (controller.signal.aborted) return;
         const seenTickers = new Set<string>();
-        const uniqueResults = body.results.filter((option) => {
+        const uniqueResults = (body.results ?? []).filter((option) => {
           const normalizedTicker = option.ticker.toUpperCase();
           if (seenTickers.has(normalizedTicker)) return false;
           seenTickers.add(normalizedTicker);
@@ -84,7 +95,7 @@ export function AnalysisStockSearch({
         if (error instanceof Error && error.name === "AbortError") return;
         setOptions([]);
         setOpen(true);
-        setSearchError(true);
+        setSearchError("Não foi possível pesquisar ações agora.");
       } finally {
         if (!controller.signal.aborted) setSearching(false);
       }
@@ -126,7 +137,7 @@ export function AnalysisStockSearch({
                 onValueChange={(value) => {
                   setQuery(value);
                   setOptions([]);
-                  setSearchError(false);
+                  setSearchError(null);
                   setSearching(
                     value.trim().length >= 2 &&
                       value.trim().toUpperCase() !== ticker,
@@ -160,7 +171,7 @@ export function AnalysisStockSearch({
                 className="px-3 py-2 text-sm text-muted-foreground"
                 role="status"
               >
-                Não foi possível pesquisar ações agora.
+                {searchError}
               </div>
             )}
             {!searching && !searchError && options.length === 0 && (

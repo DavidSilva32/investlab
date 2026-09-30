@@ -20,8 +20,11 @@ import { StrategyGuidance } from "@/app/portfolio/_components/strategy-guidance"
 import { PortfolioConcentrationAnalysis } from "@/app/portfolio/_components/portfolio-concentration-analysis";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
+import { getApiMessage } from "@/lib/api-message";
 
 type AssetClass = (typeof portfolioAssetClassOptions)[number];
+
+const loadErrorMessage = "Não foi possível carregar a alocação.";
 
 export function PortfolioAllocation({
   nextContributionGuidance,
@@ -35,15 +38,23 @@ export function PortfolioAllocation({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const load = useCallback(() => {
+    let failureMessage = loadErrorMessage;
     fetch("/api/portfolio/allocation")
       .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message);
-        setPositions(body.positions);
-        setTargetPercentages(body.targetPercentages ?? {});
+        const body: unknown = await response.json();
+        if (!response.ok) {
+          failureMessage = getApiMessage(body, loadErrorMessage);
+          throw new Error("portfolio_allocation_load_failed");
+        }
+        const data = body as {
+          positions: PortfolioPosition[];
+          targetPercentages?: Partial<Record<AssetClass, number>>;
+        };
+        setPositions(data.positions);
+        setTargetPercentages(data.targetPercentages ?? {});
         setError(null);
       })
-      .catch(() => setError("Não foi possível carregar a alocação."));
+      .catch(() => setError(failureMessage));
   }, []);
 
   useEffect(() => {
@@ -63,10 +74,19 @@ export function PortfolioAllocation({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const result: { count?: number; message?: string } =
-        await response.json();
-      if (!response.ok) throw new Error(result.message);
-      toast.success(successMessage(result));
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(result, "Não foi possível salvar a classificação."),
+        );
+        return false;
+      }
+      toast.success(
+        getApiMessage(
+          result,
+          successMessage(result as { count?: number; message?: string }),
+        ),
+      );
       load();
       return true;
     } catch {
@@ -85,9 +105,17 @@ export function PortfolioAllocation({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ targetPercentages: targets }),
       });
-      const result: { message?: string } = await response.json();
-      if (!response.ok) throw new Error(result.message);
-      toast.success("Metas de alocação salvas.");
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(
+            result,
+            "Não foi possível salvar as metas de alocação.",
+          ),
+        );
+        return false;
+      }
+      toast.success(getApiMessage(result, "Metas de alocação salvas."));
       load();
       return true;
     } catch {

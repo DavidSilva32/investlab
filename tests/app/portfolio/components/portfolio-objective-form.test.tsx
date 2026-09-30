@@ -11,8 +11,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PortfolioObjectiveForm } from "@/app/portfolio/_components/portfolio-objective-form";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 
+const toast = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
+
 describe("PortfolioObjectiveForm", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    toast.error.mockReset();
+  });
 
   it("validates before saving and sends masked values as numbers", async () => {
     const user = userEvent.setup();
@@ -42,7 +48,7 @@ describe("PortfolioObjectiveForm", () => {
     ).toBe("");
   });
 
-  it("shows save failures and supports canceling an edit", async () => {
+  it("shows a safe fallback toast for save failures and supports canceling an edit", async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();
     const onSave = vi.fn().mockRejectedValue(new Error("Falha ao salvar"));
@@ -62,9 +68,12 @@ describe("PortfolioObjectiveForm", () => {
       />,
     );
     await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Falha ao salvar",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar o objetivo.",
+      ),
     );
+    expect(screen.queryByRole("alert")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Cancelar edição" }));
     expect(onCancel).toHaveBeenCalledOnce();
   });
@@ -169,8 +178,9 @@ describe("PortfolioObjectiveForm", () => {
       ).value,
     ).toBe("R$ 125,50");
     await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
+    expect(toast.error).toHaveBeenCalledWith(
       "Não foi possível salvar o objetivo.",
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
