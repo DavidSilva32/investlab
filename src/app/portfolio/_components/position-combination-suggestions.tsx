@@ -33,6 +33,30 @@ export type PositionCombinationSuggestionHolding = {
   value: number | null;
 };
 
+type SuggestionCandidate = {
+  assetKeys: string[];
+  total: number;
+  difference: number;
+  transfers?: {
+    assetKey: string;
+    product: string;
+    value: number;
+    fromObjectiveId: string;
+    fromObjectiveName: string;
+    toObjectiveId: string;
+  }[];
+  impacts?: {
+    objectiveId: string;
+    objectiveName: string;
+    currentValue: number | null;
+    knownValue: number;
+    targetAmount: number | null;
+    progressPercent: number | null;
+    transferredValue: number;
+    transferredPositionCount: number;
+  }[];
+};
+
 type EmergencyReservePositionSuggestions =
   | { status: "invalid_target" }
   | { status: "no_valued_positions" }
@@ -40,14 +64,20 @@ type EmergencyReservePositionSuggestions =
   | {
       status: "suggestions";
       kind: "exact" | "nearest";
-      candidates: { assetKeys: string[]; total: number; difference: number }[];
+      candidates: SuggestionCandidate[];
       searchLimited: boolean;
       alternativesLimited: boolean;
     };
 
 type Props = {
   holdings: PositionCombinationSuggestionHolding[];
-  onApply: (assetKeys: string[]) => void;
+  onApply: (
+    assetKeys: string[],
+    candidate?: Extract<
+      EmergencyReservePositionSuggestions,
+      { status: "suggestions" }
+    >["candidates"][number],
+  ) => void | false;
   endpoint: string;
   amountLabel: string;
   title: string;
@@ -61,6 +91,7 @@ type Props = {
   selectionActionLabel?: (index: number) => string;
   applyButtonLabel?: string;
   comparisonDetails?: string;
+  requestBody?: Record<string, number | null>;
 };
 
 type SearchState =
@@ -79,6 +110,7 @@ export function PositionCombinationSuggestions({
   selectionActionLabel,
   applyButtonLabel = "Usar esta combinação",
   comparisonDetails,
+  requestBody,
 }: Props) {
   const [amount, setAmount] = useState("");
   const amountInputRef = useRef<HTMLInputElement>(null);
@@ -114,6 +146,7 @@ export function PositionCombinationSuggestions({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           targetAmount: target,
+          ...requestBody,
           ...(requestFilter ? { [requestFilter.key]: filter } : {}),
         }),
       });
@@ -276,9 +309,10 @@ export function PositionCombinationSuggestions({
               result={search.result}
               target={parseBrazilianAmount(amount)}
               holdings={holdings}
-              onApply={(assetKeys) => {
-                onApply(assetKeys);
-                setDraftSelected(true);
+              onApply={(assetKeys, candidate) => {
+                if (onApply(assetKeys, candidate) !== false) {
+                  setDraftSelected(true);
+                }
               }}
               selectionActionLabel={selectionActionLabel}
               applyButtonLabel={applyButtonLabel}
@@ -410,7 +444,7 @@ function CandidateSummary({
   selectionActionLabel,
   applyButtonLabel,
 }: {
-  candidate: { assetKeys: string[]; total: number; difference: number };
+  candidate: SuggestionCandidate;
   index: number;
   exact: boolean;
   included: PositionCombinationSuggestionHolding[];
@@ -464,34 +498,62 @@ function CandidateSummary({
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-3 pt-2">
           <ul className="space-y-2">
-            {included.map((holding) => (
-              <li
-                key={holding.assetKey}
-                className="min-w-0 rounded-lg border bg-muted/30 p-3"
-              >
-                <span className="block truncate text-sm font-medium">
-                  {holding.product}
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {holding.institution ?? "Instituição não informada"}
-                </span>
-                <span className="mt-2 block text-sm tabular-nums">
-                  {holding.value === null
-                    ? "Sem valor informado"
-                    : formatCurrency(holding.value)}
-                </span>
-              </li>
-            ))}
+            {included.map((holding) => {
+              const transfer = candidate.transfers?.find(
+                (item) => item.assetKey === holding.assetKey,
+              );
+              return (
+                <li
+                  key={holding.assetKey}
+                  className="min-w-0 rounded-lg border bg-muted/30 p-3"
+                >
+                  <span className="block truncate text-sm font-medium">
+                    {holding.product}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {holding.institution ?? "Instituição não informada"}
+                  </span>
+                  {transfer && (
+                    <span className="mt-1 block text-xs text-amber-700">
+                      Será transferida de {transfer.fromObjectiveName} para
+                      Reserva
+                    </span>
+                  )}
+                  <span className="mt-2 block text-sm tabular-nums">
+                    {holding.value === null
+                      ? "Sem valor informado"
+                      : formatCurrency(holding.value)}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
+          {candidate.impacts && candidate.transfers?.length ? (
+            <ul className="space-y-1 rounded-md bg-muted/40 p-3 text-xs">
+              {candidate.impacts.map((impact) => (
+                <li key={impact.objectiveId}>
+                  {impact.objectiveName}:{" "}
+                  {impact.currentValue === null
+                    ? `total indisponível · ${formatCurrency(impact.knownValue)} conhecidos`
+                    : formatCurrency(impact.currentValue)}
+                  {impact.targetAmount === null
+                    ? ""
+                    : ` de ${formatCurrency(impact.targetAmount)}${impact.progressPercent === null ? "" : ` · ${impact.progressPercent.toFixed(1)}%`}`}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </CollapsibleContent>
       </Collapsible>
       <Button
         type="button"
         variant="outline"
         className="mt-3 w-full"
-        onClick={() => onApply(candidate.assetKeys)}
+        onClick={() => onApply(candidate.assetKeys, candidate)}
       >
-        {selectionActionLabel?.(index) ?? applyButtonLabel}
+        {candidate.transfers?.length
+          ? "Usar e transferir"
+          : (selectionActionLabel?.(index) ?? applyButtonLabel)}
       </Button>
     </li>
   );

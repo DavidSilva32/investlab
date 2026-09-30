@@ -107,7 +107,13 @@ describe("PositionCombinationSuggestions", () => {
     expect(screen.getByText("CDB 115% CDI")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Usar esta/ }));
     expect(screen.getByRole("status").textContent).toContain("rascunho");
-    expect(onApply).toHaveBeenCalledWith(["inter-box", "inter-named"]);
+    expect(onApply).toHaveBeenCalledWith(
+      ["inter-box", "inter-named"],
+      expect.objectContaining({
+        assetKeys: ["inter-box", "inter-named"],
+        difference: 0,
+      }),
+    );
   });
 
   it("keeps nearest candidates compact until reviewed", async () => {
@@ -151,6 +157,73 @@ describe("PositionCombinationSuggestions", () => {
     ).toContain("1.000,00");
     expect(screen.queryByText("CDB Inter daily liquidity")).toBeNull();
     expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("shows known objective value when transfer progress is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "suggestions",
+          kind: "exact",
+          candidates: [
+            {
+              assetKeys: ["inter-box"],
+              total: 30_000,
+              difference: 0,
+              transfers: [
+                {
+                  assetKey: "inter-box",
+                  product: "CDB Inter daily liquidity",
+                  value: 30_000,
+                  fromObjectiveId: "goal-trip",
+                  fromObjectiveName: "Viagem",
+                  toObjectiveId: "reserve",
+                },
+              ],
+              impacts: [
+                {
+                  objectiveId: "goal-trip",
+                  objectiveName: "Viagem",
+                  currentValue: 30_000,
+                  knownValue: 30_000,
+                  targetAmount: 40_000,
+                  progressPercent: null,
+                  transferredValue: 30_000,
+                  transferredPositionCount: 1,
+                },
+              ],
+            },
+          ],
+          searchLimited: false,
+        }),
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
+        holdings={holdings.slice(0, 1)}
+        onApply={vi.fn()}
+      />,
+    );
+    await user.type(
+      screen.getByLabelText("Valor conhecido da reserva"),
+      "3000000",
+    );
+    await user.click(screen.getByRole("button", { name: /Buscar combin/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Ver 1 posições" }),
+    );
+    expect(
+      screen.getByText(/Viagem: R\$ 30\.000,00 de R\$ 40\.000,00/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/40\.000,00 ·/)).toBeNull();
   });
 
   it("keeps the input locked while a request is pending", async () => {

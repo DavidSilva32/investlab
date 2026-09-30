@@ -1,10 +1,21 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
   portfolioObjectivePositions,
   portfolioObjectives,
 } from "@/infrastructure/database/schema";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+
+type DatabaseTransaction = Parameters<
+  Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
+>[0];
+
+export type ObjectiveAssignmentTransfer = {
+  assetKey: string;
+  fromObjectiveId: string;
+  toObjectiveId: string;
+};
 
 export class PortfolioObjectivesRepository {
   async list() {
@@ -69,6 +80,79 @@ export class PortfolioObjectivesRepository {
           .values(assetKeys.map((assetKey) => ({ objectiveId, assetKey })));
       }
     });
+  }
+
+  async transferAssignments(
+    transaction: DatabaseTransaction,
+    transfers: ObjectiveAssignmentTransfer[],
+  ) {
+    if (transfers.length === 0) return;
+    const assetKeys = transfers.map((transfer) => transfer.assetKey);
+    if (
+      new Set(assetKeys).size !== assetKeys.length ||
+      transfers.some(
+        (transfer) => transfer.fromObjectiveId === transfer.toObjectiveId,
+      )
+    ) {
+      throw new ApplicationError("Revise as transferências de posições.", 400);
+    }
+    const assignments = await transaction
+      .select()
+      .from(portfolioObjectivePositions)
+      .where(inArray(portfolioObjectivePositions.assetKey, assetKeys))
+      .for("update");
+    const assignmentByKey = new Map(
+      assignments.map((assignment) => [assignment.assetKey, assignment]),
+    );
+    for (const transfer of transfers) {
+      const assignment =
+        assignmentByKey.get(transfer.assetKey) ??
+        (
+          await transaction
+            .select()
+            .from(portfolioObjectivePositions)
+            .where(eq(portfolioObjectivePositions.assetKey, transfer.assetKey))
+            .for("update")
+        )[0];
+      if (assignment?.objectiveId !== transfer.fromObjectiveId) {
+        const [currentObjective] = assignment
+          ? await transaction
+              .select({ name: portfolioObjectives.name })
+              .from(portfolioObjectives)
+              .where(eq(portfolioObjectives.id, assignment.objectiveId))
+              .limit(1)
+          : [];
+        throw new ApplicationError(
+          currentObjective
+            ? `A posição mudou desde a busca e agora está vinculada a ${currentObjective.name}. Atualize os objetivos e tente novamente.`
+            : "A posição mudou desde a busca e está sem destino. Atualize os objetivos e tente novamente.",
+          409,
+        );
+      }
+      await transaction
+        .update(portfolioObjectivePositions)
+        .set({ objectiveId: transfer.toObjectiveId, assignedAt: new Date() })
+        .where(
+          and(
+            eq(portfolioObjectivePositions.assetKey, transfer.assetKey),
+            eq(
+              portfolioObjectivePositions.objectiveId,
+              transfer.fromObjectiveId,
+            ),
+          ),
+        );
+    }
+  }
+
+  async findAssignment(assetKey: string) {
+    const [assignment] = await getDatabaseClient()
+      .select()
+      .from(portfolioObjectivePositions)
+      .where(eq(portfolioObjectivePositions.assetKey, assetKey))
+      .limit(1);
+    if (!assignment) return null;
+    const objective = await this.getObjective(assignment.objectiveId);
+    return { ...assignment, objectiveName: objective?.name ?? null };
   }
 
   async getObjective(objectiveId: string) {

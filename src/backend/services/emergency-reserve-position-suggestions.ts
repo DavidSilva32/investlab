@@ -9,6 +9,27 @@ export type ReservePositionSuggestion = {
   assetKeys: string[];
   total: number;
   difference: number;
+  transfers?: ReservePositionTransfer[];
+  impacts?: ReservePositionImpact[];
+};
+
+export type ReservePositionTransfer = {
+  assetKey: string;
+  product: string;
+  value: number;
+  fromObjectiveId: string;
+  fromObjectiveName: string;
+  toObjectiveId: string;
+};
+
+export type ReservePositionImpact = {
+  objectiveId: string;
+  objectiveName: string;
+  currentValue: number | null;
+  targetAmount: number | null;
+  progressPercent: number | null;
+  transferredValue: number;
+  transferredPositionCount: number;
 };
 
 export type EmergencyReservePositionSuggestions =

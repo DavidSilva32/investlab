@@ -12,6 +12,7 @@ vi.mock("@/infrastructure/database/client", () => ({
 }));
 
 import { PortfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
+import { ApplicationError } from "@/backend/errors/application-error";
 
 describe("PortfolioObjectivesRepository", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -156,5 +157,160 @@ describe("PortfolioObjectivesRepository", () => {
     await expect(
       repository.replaceReserveAssignments(["v1:c"]),
     ).resolves.toBeUndefined();
+  });
+
+  it("moves an assignment row to its destination without creating a duplicate", async () => {
+    const sourceObjectiveId = "00000000-0000-4000-8000-000000000099";
+    const destinationObjectiveId = "00000000-0000-4000-8000-000000000010";
+    const assetKey = "v1:position";
+    const lockRows = vi
+      .fn()
+      .mockResolvedValue([{ objectiveId: sourceObjectiveId, assetKey }]);
+    const transaction = {
+      select: () => ({ from: () => ({ where: () => ({ for: lockRows }) }) }),
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })),
+      insert: vi.fn(),
+      delete: vi.fn(),
+    };
+
+    await new PortfolioObjectivesRepository().transferAssignments(
+      transaction as never,
+      [
+        {
+          assetKey,
+          fromObjectiveId: sourceObjectiveId,
+          toObjectiveId: destinationObjectiveId,
+        },
+      ],
+    );
+
+    expect(lockRows).toHaveBeenCalledWith("update");
+    expect(transaction.update).toHaveBeenCalledTimes(1);
+    expect(transaction.insert).not.toHaveBeenCalled();
+    expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it("accepts no transfers and rejects duplicate or same-destination moves", async () => {
+    const transaction = {
+      select: vi.fn(),
+      update: vi.fn(),
+    };
+    const repository = new PortfolioObjectivesRepository();
+    await expect(
+      repository.transferAssignments(transaction as never, []),
+    ).resolves.toBeUndefined();
+    expect(transaction.select).not.toHaveBeenCalled();
+
+    const transfer = {
+      assetKey: "v1:position",
+      fromObjectiveId: "goal-1",
+      toObjectiveId: "goal-2",
+    };
+    await expect(
+      repository.transferAssignments(transaction as never, [
+        transfer,
+        transfer,
+      ]),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+    } satisfies Partial<ApplicationError>);
+    await expect(
+      repository.transferAssignments(transaction as never, [
+        { ...transfer, toObjectiveId: transfer.fromObjectiveId },
+      ]),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+    } satisfies Partial<ApplicationError>);
+    expect(transaction.select).not.toHaveBeenCalled();
+  });
+
+  it("rejects a transfer when the expected source changed and names the current destination", async () => {
+    const sourceObjectiveId = "00000000-0000-4000-8000-000000000099";
+    const currentObjectiveId = "00000000-0000-4000-8000-000000000088";
+    const assetKey = "v1:position";
+    const assignmentLock = vi
+      .fn()
+      .mockResolvedValue([{ objectiveId: currentObjectiveId, assetKey }]);
+    const currentName = vi.fn().mockResolvedValue([{ name: "Casa" }]);
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ for: assignmentLock }) }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: currentName }) }),
+      });
+    const transaction = {
+      select,
+      update: vi.fn(),
+    };
+
+    await expect(
+      new PortfolioObjectivesRepository().transferAssignments(
+        transaction as never,
+        [
+          {
+            assetKey,
+            fromObjectiveId: sourceObjectiveId,
+            toObjectiveId: "00000000-0000-4000-8000-000000000010",
+          },
+        ],
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Casa"),
+    } satisfies Partial<ApplicationError>);
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a transfer whose position became unassigned", async () => {
+    const assetKey = "v1:position";
+    const assignmentLock = vi.fn().mockResolvedValue([]);
+    const select = vi.fn().mockReturnValue({
+      from: () => ({ where: () => ({ for: assignmentLock }) }),
+    });
+    const transaction = { select, update: vi.fn() };
+
+    await expect(
+      new PortfolioObjectivesRepository().transferAssignments(
+        transaction as never,
+        [
+          {
+            assetKey,
+            fromObjectiveId: "00000000-0000-4000-8000-000000000099",
+            toObjectiveId: "00000000-0000-4000-8000-000000000010",
+          },
+        ],
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("sem destino"),
+    } satisfies Partial<ApplicationError>);
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  it("returns null for a missing assignment and a missing assigned objective", async () => {
+    const limit = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    database.select.mockReturnValue({
+      from: () => ({ where: () => ({ limit }) }),
+    });
+    const repository = new PortfolioObjectivesRepository();
+    await expect(repository.findAssignment("missing")).resolves.toBeNull();
+
+    const assignment = { objectiveId: "deleted-goal", assetKey: "v1:asset" };
+    const assignmentLimit = vi.fn().mockResolvedValue([assignment]);
+    const objectiveLimit = vi.fn().mockResolvedValue([]);
+    database.select
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: assignmentLimit }) }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: objectiveLimit }) }),
+      });
+    await expect(repository.findAssignment("v1:asset")).resolves.toEqual({
+      ...assignment,
+      objectiveName: null,
+    });
   });
 });
