@@ -13,6 +13,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   getPortfolioInsights,
   type PortfolioInsightPosition,
@@ -27,9 +28,21 @@ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 export function DashboardSummary({
   positions,
   emergencyReserve,
+  unassignedSummary,
+  onRetryUnassigned,
 }: {
   positions: PortfolioInsightPosition[];
   emergencyReserve?: EmergencyReserveCalculation;
+  unassignedSummary?:
+    | {
+        status: "loaded";
+        knownValue: number;
+        positionCount: number;
+        unvaluedPositionCount: number;
+      }
+    | { status: "unavailable" }
+    | null;
+  onRetryUnassigned?: () => void;
 }) {
   const insights = getPortfolioInsights(positions);
   const referenceDates = [
@@ -167,6 +180,76 @@ export function DashboardSummary({
       <section aria-labelledby="dashboard-reserve-title">
         <EmergencyReserveSummary calculation={emergencyReserve} />
       </section>
+
+      {unassignedSummary && (
+        <section aria-labelledby="dashboard-unassigned-title">
+          {unassignedSummary.status === "loaded" ? (
+            <Card>
+              <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4 sm:px-5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                    <WalletCards aria-hidden="true" className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2
+                      id="dashboard-unassigned-title"
+                      className="text-sm font-medium"
+                    >
+                      Patrimônio conhecido sem destino
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {unassignedSummary.positionCount} posições ainda não
+                      associadas a um objetivo
+                      {unassignedSummary.unvaluedPositionCount > 0 &&
+                        ` · ${unassignedSummary.unvaluedPositionCount} sem valor atual`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="font-semibold tabular-nums">
+                    {formatCurrency(unassignedSummary.knownValue)}
+                  </span>
+                  <Link
+                    href="/portfolio?panel=objectives"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    Ver objetivos
+                    <ArrowRight aria-hidden="true" className="size-4" />
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent
+                className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-5"
+                role="status"
+              >
+                <div>
+                  <h2
+                    id="dashboard-unassigned-title"
+                    className="text-sm font-medium"
+                  >
+                    Patrimônio sem destino indisponível
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Não foi possível carregar este resumo. Nenhum valor foi
+                    presumido.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto p-0"
+                  onClick={onRetryUnassigned}
+                >
+                  Tentar novamente
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </section>
+      )}
 
       <ContributionAssistant />
 
@@ -335,7 +418,7 @@ function getNextAction({
       detail:
         "Há posições sem valor ou seleções que não correspondem à carteira atual.",
       label: "Revisar reserva",
-      href: "/portfolio",
+      href: "/portfolio?panel=objectives&objective=reserve",
     };
   }
   if (positionCount === 0) {
@@ -352,7 +435,7 @@ function getNextAction({
       detail:
         "Valores ausentes deixam o total conhecido e a distribuição incompletos.",
       label: "Revisar carteira",
-      href: "/portfolio",
+      href: "/portfolio?view=positions",
     };
   }
   if (
@@ -364,7 +447,7 @@ function getNextAction({
       detail:
         "Informe suas despesas e defina sua meta pessoal para acompanhar a cobertura.",
       label: "Configurar reserva",
-      href: "/portfolio",
+      href: "/portfolio?panel=objectives&objective=reserve&screen=reserve-settings",
     };
   }
   return null;

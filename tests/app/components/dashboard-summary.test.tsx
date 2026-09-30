@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
 
 const positions = [
@@ -24,6 +24,46 @@ const positions = [
 
 describe("DashboardSummary", () => {
   afterEach(cleanup);
+
+  it("shows known wealth without a destination and links to objective overview", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        unassignedSummary={{
+          status: "loaded",
+          knownValue: 1250,
+          positionCount: 2,
+          unvaluedPositionCount: 1,
+        }}
+      />,
+    );
+
+    expect(html).toContain("Patrimônio conhecido sem destino");
+    expect(html).toContain("2 posições ainda não associadas a um objetivo");
+    expect(html).toContain("1 sem valor atual");
+    expect(html).toContain("R$");
+    expect(html).toContain('href="/portfolio?panel=objectives"');
+    expect(html).toContain("Ver objetivos");
+  });
+
+  it("shows an unavailable destination summary without a fabricated amount and retries", async () => {
+    const user = userEvent.setup();
+    const onRetryUnassigned = vi.fn();
+    render(
+      <DashboardSummary
+        positions={positions}
+        unassignedSummary={{ status: "unavailable" }}
+        onRetryUnassigned={onRetryUnassigned}
+      />,
+    );
+
+    expect(
+      screen.getByText("Patrimônio sem destino indisponível"),
+    ).toBeTruthy();
+    expect(screen.getByText(/Nenhum valor foi presumido/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(onRetryUnassigned).toHaveBeenCalledOnce();
+  });
 
   it("prioritizes known wealth and data quality before portfolio observations", () => {
     const html = renderToStaticMarkup(
@@ -49,7 +89,9 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Como ler estes dados");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("group-data-[state=open]:rotate-180");
-    expect(html).toContain('href="/portfolio"');
+    expect(html).toContain(
+      'href="/portfolio?panel=objectives&amp;objective=reserve"',
+    );
     expect(html).not.toContain('aria-labelledby="dashboard-next-action-title"');
   });
 
@@ -171,7 +213,9 @@ describe("DashboardSummary", () => {
 
     expect(html).toContain("Complete a configuração da reserva");
     expect(html).toContain("Informe suas despesas e defina sua meta pessoal");
-    expect(html).toContain('href="/portfolio"');
+    expect(html).toContain(
+      'href="/portfolio?panel=objectives&amp;objective=reserve&amp;screen=reserve-settings"',
+    );
     expect(html).toContain("Configurar reserva");
   });
 
@@ -200,6 +244,10 @@ describe("DashboardSummary", () => {
     expect(html).not.toContain("A reserva está abaixo da sua meta pessoal");
     expect(html).toContain("Revise as posições selecionadas como reserva");
     expect(html).toContain('aria-labelledby="dashboard-next-action-title"');
+    expect(html).toContain(
+      'href="/portfolio?panel=objectives&amp;objective=reserve"',
+    );
+    expect(html).not.toContain("screen=reserve-settings");
   });
 
   it("offers import as the next action when no positions are known", () => {

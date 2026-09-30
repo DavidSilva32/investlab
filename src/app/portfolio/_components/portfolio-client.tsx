@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
 import { ReferenceRates } from "@/components/reference-rates";
-import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
+import { PortfolioObjectives } from "@/app/portfolio/_components/portfolio-objectives";
 import {
   Sheet,
   SheetContent,
@@ -38,12 +38,64 @@ type ClassificationState =
 
 const loadErrorMessage = "Não foi possível carregar a carteira.";
 
-export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
+export function PortfolioClient({
+  activeView,
+  initialObjectivesOpen = false,
+  initialObjectiveId = null,
+  initialObjectiveScreen = null,
+}: {
+  activeView: PortfolioView;
+  initialObjectivesOpen?: boolean;
+  initialObjectiveId?: string | null;
+  initialObjectiveScreen?: string | null;
+}) {
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [objectivesRoute, setObjectivesRoute] = useState({
+    open: initialObjectivesOpen,
+    objectiveId: initialObjectiveId,
+    screen: initialObjectiveScreen,
+  });
   const [classification, setClassification] = useState<ClassificationState>({
     status: "loading",
   });
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      setObjectivesRoute({
+        open: params.get("panel") === "objectives",
+        objectiveId: params.get("objective"),
+        screen: params.get("screen"),
+      });
+    };
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, []);
+
+  const writeObjectivesRoute = useCallback(
+    (
+      open: boolean,
+      objectiveId: string | null = null,
+      screen: string | null = null,
+    ) => {
+      const params = new URLSearchParams(window.location.search);
+      if (open) params.set("panel", "objectives");
+      else params.delete("panel");
+      if (open && objectiveId) params.set("objective", objectiveId);
+      else params.delete("objective");
+      if (open && screen) params.set("screen", screen);
+      else params.delete("screen");
+      const query = params.toString();
+      window.history[open ? "pushState" : "replaceState"](
+        null,
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+      );
+      setObjectivesRoute({ open, objectiveId, screen });
+    },
+    [],
+  );
 
   const loadOverview = useCallback(() => {
     fetch("/api/portfolio")
@@ -113,10 +165,19 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
             summaryContent={<ReferenceRates rates={overview.referenceRates} />}
           />
           <div className="flex flex-wrap gap-2 border-t pt-4">
-            <Sheet>
+            <Sheet
+              open={objectivesRoute.open}
+              onOpenChange={(open) =>
+                writeObjectivesRoute(
+                  open,
+                  open ? objectivesRoute.objectiveId : null,
+                  open ? objectivesRoute.screen : null,
+                )
+              }
+            >
               <SheetTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  Configurar reserva
+                <Button type="button" size="sm">
+                  Objetivos e destinos
                 </Button>
               </SheetTrigger>
               <SheetContent
@@ -124,18 +185,23 @@ export function PortfolioClient({ activeView }: { activeView: PortfolioView }) {
                 className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden sm:max-w-5xl"
               >
                 <SheetHeader className="mb-6 shrink-0 pr-8">
-                  <SheetTitle>Configuração da reserva</SheetTitle>
+                  <SheetTitle>Objetivos e destinos</SheetTitle>
                   <SheetDescription>
-                    Ajuste suas despesas, sua meta pessoal e os investimentos
-                    que deseja considerar.
+                    Acompanhe como as posições inteiras se distribuem entre a
+                    reserva, objetivos pessoais e valores ainda sem destino.
                   </SheetDescription>
                 </SheetHeader>
                 <div
-                  aria-label="Conteúdo da configuração da reserva"
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                  aria-label="Conteúdo dos objetivos e destinos"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
                   role="region"
                 >
-                  <EmergencyReserveEditor />
+                  <PortfolioObjectives
+                    navigation={objectivesRoute}
+                    onNavigationChange={(objectiveId, screen) =>
+                      writeObjectivesRoute(true, objectiveId, screen)
+                    }
+                  />
                 </div>
               </SheetContent>
             </Sheet>

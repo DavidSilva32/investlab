@@ -33,7 +33,9 @@ describe("EmergencyReserveSummary", () => {
     expect(html).toContain("meta que você escolheu");
     expect(html).toContain('role="progressbar"');
     expect(html).toContain("Cobertura em relação à sua meta pessoal");
-    expect(html).toContain('href="/portfolio"');
+    expect(html).toContain(
+      'href="/portfolio?panel=objectives&amp;objective=reserve"',
+    );
   });
 
   it("calculates and shows months even without a personal target", () => {

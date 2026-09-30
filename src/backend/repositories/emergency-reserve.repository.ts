@@ -1,6 +1,11 @@
 import { eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
-import { emergencyReserveSettings } from "@/infrastructure/database/schema";
+import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
+import {
+  emergencyReserveSettings,
+  portfolioObjectivePositions,
+} from "@/infrastructure/database/schema";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 const singletonId = "default";
 
@@ -11,7 +16,14 @@ export class EmergencyReserveRepository {
       .from(emergencyReserveSettings)
       .where(eq(emergencyReserveSettings.id, singletonId))
       .limit(1);
-    return settings ?? null;
+    const selectedAssetKeys =
+      await portfolioObjectivesRepository.listReserveAssignments();
+    if (!settings && selectedAssetKeys.length === 0) return null;
+    return {
+      monthlyExpenses: settings?.monthlyExpenses ?? null,
+      targetMonths: settings?.targetMonths ?? null,
+      selectedAssetKeys,
+    };
   }
 
   async saveSettings(input: {
@@ -19,15 +31,36 @@ export class EmergencyReserveRepository {
     targetMonths: number;
     selectedAssetKeys: string[];
   }) {
-    const [settings] = await getDatabaseClient()
-      .insert(emergencyReserveSettings)
-      .values({ id: singletonId, ...input })
-      .onConflictDoUpdate({
-        target: emergencyReserveSettings.id,
-        set: { ...input, updatedAt: new Date() },
-      })
-      .returning();
-    return settings;
+    return getDatabaseClient().transaction(async (transaction) => {
+      const [settings] = await transaction
+        .insert(emergencyReserveSettings)
+        .values({
+          id: singletonId,
+          monthlyExpenses: input.monthlyExpenses,
+          targetMonths: input.targetMonths,
+        })
+        .onConflictDoUpdate({
+          target: emergencyReserveSettings.id,
+          set: {
+            monthlyExpenses: input.monthlyExpenses,
+            targetMonths: input.targetMonths,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      await transaction
+        .delete(portfolioObjectivePositions)
+        .where(eq(portfolioObjectivePositions.objectiveId, reserveObjectiveId));
+      if (input.selectedAssetKeys.length) {
+        await transaction.insert(portfolioObjectivePositions).values(
+          input.selectedAssetKeys.map((assetKey) => ({
+            objectiveId: reserveObjectiveId,
+            assetKey,
+          })),
+        );
+      }
+      return { ...settings, selectedAssetKeys: input.selectedAssetKeys };
+    });
   }
 }
 

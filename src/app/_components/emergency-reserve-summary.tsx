@@ -53,7 +53,7 @@ export function EmergencyReserveSummary({
             </div>
           </div>
           <Link
-            href="/portfolio"
+            href="/portfolio?panel=objectives&objective=reserve"
             className="text-sm font-medium text-primary hover:underline"
           >
             Ver reserva

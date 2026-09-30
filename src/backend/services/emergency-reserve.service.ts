@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
+import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
@@ -9,6 +10,7 @@ import { suggestEmergencyReservePositions } from "@/backend/services/emergency-r
 import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 import { logger } from "@/infrastructure/logging/logger";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 const suggestionSchema = z.object({
   targetAmount: z.number().finite().positive().max(1_000_000_000_000),
@@ -63,9 +65,10 @@ function getPositionValue(position: Position) {
 export class EmergencyReserveService {
   async getEditorData(requestId?: string) {
     logger.info("emergency_reserve_editor_loading", { requestId });
-    const [rawPositions, settings] = await Promise.all([
+    const [rawPositions, settings, objectives] = await Promise.all([
       importRepository.listLatestPositions(requestId),
       emergencyReserveRepository.getSettings(),
+      portfolioObjectivesRepository.list(),
     ]);
     const estimatedPositions = await cdbEstimateService.enrich(rawPositions);
     const normalizedPositions: Position[] = estimatedPositions.map(
@@ -78,11 +81,28 @@ export class EmergencyReserveService {
       normalizedPositions,
       requestId,
     );
-    const data = this.buildData(positions, {
-      monthlyExpenses: settings?.monthlyExpenses ?? null,
-      targetMonths: settings?.targetMonths ?? null,
-      selectedAssetKeys: settings?.selectedAssetKeys ?? [],
-    });
+    const objectiveNameById = new Map(
+      objectives.objectives.map((objective) => [objective.id, objective.name]),
+    );
+    const ownerByAssetKey = new Map(
+      objectives.assignments.map((assignment) => [
+        assignment.assetKey,
+        {
+          id: assignment.objectiveId,
+          name:
+            objectiveNameById.get(assignment.objectiveId) ?? "Outro objetivo",
+        },
+      ]),
+    );
+    const data = this.buildData(
+      positions,
+      {
+        monthlyExpenses: settings?.monthlyExpenses ?? null,
+        targetMonths: settings?.targetMonths ?? null,
+        selectedAssetKeys: settings?.selectedAssetKeys ?? [],
+      },
+      ownerByAssetKey,
+    );
     logger.info("emergency_reserve_editor_loaded", {
       requestId,
       holdings: data.holdings.length,
@@ -190,6 +210,28 @@ export class EmergencyReserveService {
           ] as const,
       ),
     );
+    const objectives = await portfolioObjectivesRepository.list();
+    const ownerByAssetKey = new Map(
+      objectives.assignments.map((assignment) => [
+        assignment.assetKey,
+        assignment.objectiveId,
+      ]),
+    );
+    const conflict = selectedAssetKeys.find(
+      (key) =>
+        ownerByAssetKey.has(key) &&
+        ownerByAssetKey.get(key) !== reserveObjectiveId,
+    );
+    if (conflict) {
+      const objectiveId = ownerByAssetKey.get(conflict);
+      const objectiveName = objectives.objectives.find(
+        (objective) => objective.id === objectiveId,
+      )?.name;
+      throw new ApplicationError(
+        `Esta posição já está vinculada ao objetivo ${objectiveName ?? "informado"}. Remova-a desse objetivo antes de incluí-la na reserva.`,
+        409,
+      );
+    }
     if (
       selectedAssetKeys.some(
         (key) =>
@@ -214,7 +256,11 @@ export class EmergencyReserveService {
     return this.getEditorData(requestId);
   }
 
-  private buildData(positions: Position[], settings: ReserveSettings) {
+  private buildData(
+    positions: Position[],
+    settings: ReserveSettings,
+    ownerByAssetKey: Map<string, { id: string; name: string }> = new Map(),
+  ) {
     const groups = new Map<
       string,
       {
@@ -267,6 +313,9 @@ export class EmergencyReserveService {
         ...group,
         value: group.hasValue ? group.value : null,
         selected: selected.has(group.assetKey),
+        assignedObjectiveId: ownerByAssetKey.get(group.assetKey)?.id ?? null,
+        assignedObjectiveName:
+          ownerByAssetKey.get(group.assetKey)?.name ?? null,
       }))
       .sort((left, right) =>
         left.product.localeCompare(right.product, "pt-BR"),
