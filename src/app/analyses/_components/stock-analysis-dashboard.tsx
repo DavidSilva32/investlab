@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
-import { AddStudyListButton } from "@/components/study-list-add-button";
+import { ChevronDown, Search, RefreshCw, Clock3 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Card,
   CardContent,
@@ -18,13 +22,55 @@ import { FundamentalIndicatorCard } from "./fundamental-indicator-card";
 import { FundamentalsEvolution } from "./fundamentals-evolution";
 import { FundamentalsGrid } from "./fundamentals-grid";
 import { PriceHistoryChart } from "./price-history-chart";
-import { StockValuationPanel } from "./stock-valuation-panel";
+import { StockAnalysisReading } from "./stock-analysis-reading";
 import type { StockAnalysis } from "./stock-analysis-types";
 
 type TickerOption = { ticker: string; name: string };
+const recentTickersKey = "investlab:analyses:recent-tickers";
+const recentTickerLimit = 5;
+
+function readRecentTickers(): TickerOption[] {
+  try {
+    const stored: unknown = JSON.parse(
+      window.localStorage.getItem(recentTickersKey) ?? "[]",
+    );
+    if (!Array.isArray(stored)) return [];
+    return stored
+      .filter(
+        (item): item is TickerOption =>
+          typeof item === "object" &&
+          item !== null &&
+          "ticker" in item &&
+          typeof item.ticker === "string" &&
+          /^[A-Z]{4}[0-9]{1,2}$/.test(item.ticker) &&
+          "name" in item &&
+          typeof item.name === "string",
+      )
+      .slice(0, recentTickerLimit);
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentTicker(option: TickerOption) {
+  try {
+    const recent = [
+      option,
+      ...readRecentTickers().filter((item) => item.ticker !== option.ticker),
+    ].slice(0, recentTickerLimit);
+    window.localStorage.setItem(recentTickersKey, JSON.stringify(recent));
+  } catch {
+    // Recent tickers are a convenience and must not interrupt an analysis.
+  }
+}
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
+});
+const pricePercent = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  signDisplay: "exceptZero",
+  maximumFractionDigits: 2,
 });
 const historyIntervals = [
   { days: 30, label: "1 mês" },
@@ -64,15 +110,16 @@ function hasPeriodCoverage(history: StockAnalysis["history"], days: number) {
 }
 
 export function StockAnalysisDashboard({
-  initialTicker = "PETR4",
+  initialTicker = "",
 }: {
   initialTicker?: string;
 }) {
   const [analysis, setAnalysis] = useState<StockAnalysis | null>(null);
+  const [recentTickers, setRecentTickers] = useState<TickerOption[]>([]);
   const [selectedTicker, setSelectedTicker] = useState(initialTicker);
   const requestSequence = useRef(0);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(initialTicker));
   const [retryRemaining, setRetryRemaining] = useState(0);
   const [days, setDays] = useState(365);
 
@@ -98,7 +145,17 @@ export function StockAnalysisDashboard({
       )
         setRetryRemaining(Math.ceil(retryAfter));
       if (!response.ok) throw new Error();
-      setAnalysis(body as StockAnalysis);
+      if (body) {
+        const loadedAnalysis = body as StockAnalysis;
+        setAnalysis(loadedAnalysis);
+        saveRecentTicker({
+          ticker: ticker.toUpperCase(),
+          name: loadedAnalysis.companyName ?? ticker.toUpperCase(),
+        });
+        setRecentTickers(readRecentTickers());
+      } else {
+        setAnalysis(null);
+      }
       if (notify)
         toast.success(`Dados de ${ticker} carregados com sucesso.`, {
           id: toastId,
@@ -119,9 +176,18 @@ export function StockAnalysisDashboard({
   }, []);
 
   useEffect(() => {
+    if (!initialTicker) return;
     const timer = window.setTimeout(() => void load(initialTicker), 0);
     return () => window.clearTimeout(timer);
   }, [initialTicker, load]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setRecentTickers(readRecentTickers()),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     function handlePopState() {
@@ -131,10 +197,17 @@ export function StockAnalysisDashboard({
       );
       const ticker = queryTicker?.match(/^[A-Za-z]{4}[0-9]{1,2}$/)
         ? queryTicker.toUpperCase()
-        : "PETR4";
+        : "";
       setSelectedTicker(ticker);
       setDays(365);
-      void load(ticker);
+      if (ticker) {
+        void load(ticker);
+      } else {
+        requestSequence.current += 1;
+        setAnalysis(null);
+        setError(null);
+        setLoading(false);
+      }
     }
 
     window.addEventListener("popstate", handlePopState);
@@ -219,7 +292,64 @@ export function StockAnalysisDashboard({
         </Card>
       </div>
     );
-  if (!analysis) return search;
+  if (!analysis)
+    return (
+      <div className="space-y-5">
+        {search}
+        {recentTickers.length > 0 && (
+          <section
+            aria-labelledby="recent-analyses-title"
+            className="space-y-2"
+          >
+            <h2
+              id="recent-analyses-title"
+              className="flex items-center gap-2 text-sm font-medium"
+            >
+              <Clock3
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              Consultadas recentemente
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {recentTickers.map((option) => (
+                <Button
+                  key={option.ticker}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectTicker(option)}
+                  aria-label={`Retomar análise de ${option.ticker}`}
+                >
+                  <span className="font-semibold tabular-nums">
+                    {option.ticker}
+                  </span>
+                  <span className="max-w-40 truncate text-muted-foreground">
+                    {option.name}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </section>
+        )}
+        <Card className="border-dashed">
+          <CardContent className="flex min-h-44 flex-col items-center justify-center gap-3 py-8 text-center">
+            <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Search className="size-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="font-medium">
+                Encontre uma empresa para analisar
+              </h2>
+              <p className="mt-1 max-w-lg text-sm text-muted-foreground">
+                Pesquise pelo ticker ou nome para ver a cotação, o histórico de
+                preço e os dados financeiros disponíveis.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
 
   const annual = analysis.fundamentals.filter(
     (period) => period.sourceDocument === "DFP",
@@ -230,6 +360,25 @@ export function StockAnalysisDashboard({
   const intervals = historyIntervals.filter(({ days }) =>
     hasPeriodCoverage(history, days),
   );
+  const selectedIntervalLabel = historyIntervals.find(
+    (interval) => interval.days === days,
+  )!.label;
+  const firstVisiblePrice = points[0]?.close;
+  const lastVisiblePrice = points.at(-1)?.close;
+  const priceChange =
+    intervals.some((interval) => interval.days === days) &&
+    points.length >= 2 &&
+    Number.isFinite(firstVisiblePrice) &&
+    Number.isFinite(lastVisiblePrice) &&
+    firstVisiblePrice! > 0
+      ? (lastVisiblePrice! - firstVisiblePrice!) / firstVisiblePrice!
+      : null;
+  const priceChangeTone =
+    priceChange === null || priceChange === 0
+      ? "text-muted-foreground"
+      : priceChange > 0
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-rose-600 dark:text-rose-400";
 
   return (
     <div className="space-y-4">
@@ -246,24 +395,24 @@ export function StockAnalysisDashboard({
           <p className="text-3xl font-semibold tracking-tight">
             {analysis.price === null ? "—" : money.format(analysis.price)}
           </p>
-          <p
-            className={
-              analysis.changePercent !== null && analysis.changePercent < 0
-                ? "text-sm font-medium text-destructive"
-                : "text-sm font-medium text-emerald-600 dark:text-emerald-400"
-            }
-          >
+          <div className="sm:ml-auto">
+            <p className="text-xs text-muted-foreground">
+              Variação do preço no período · {selectedIntervalLabel}
+            </p>
+            <p
+              className={`mt-0.5 text-xl font-semibold tabular-nums ${priceChangeTone}`}
+            >
+              {priceChange === null
+                ? "Indisponível"
+                : pricePercent.format(priceChange)}
+            </p>
+            <p className="text-xs text-muted-foreground">Sem dividendos</p>
+          </div>
+          <p className="text-xs text-muted-foreground sm:ml-4">
             {analysis.changePercent === null
               ? "Variação do dia não informada"
               : `Variação do dia: ${analysis.changePercent.toFixed(2)}%`}
           </p>
-          <div className="sm:ml-auto">
-            <AddStudyListButton
-              issuerCnpj={analysis.cnpj}
-              companyName={analysis.companyName ?? analysis.ticker}
-              ticker={analysis.ticker}
-            />
-          </div>
         </CardContent>
       </Card>
       <Card>
@@ -300,6 +449,17 @@ export function StockAnalysisDashboard({
       </Card>
       <Card>
         <CardHeader>
+          <CardTitle>Leitura do InvestLab</CardTitle>
+          <CardDescription>
+            Um resumo factual das demonstrações anuais disponíveis.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <StockAnalysisReading periods={annual} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
           <CardTitle>Indicadores fundamentalistas</CardTitle>
           <CardDescription>
             P/L e P/VP usam o valor de mercado da BRAPI e as demonstrações
@@ -316,33 +476,72 @@ export function StockAnalysisDashboard({
           ))}
         </CardContent>
       </Card>
-      <StockValuationPanel key={analysis.ticker} ticker={analysis.ticker} />
       <Card>
         <CardHeader>
           <CardTitle>Evolução dos fundamentos anuais</CardTitle>
           <CardDescription>
-            Comparação entre exercícios encerrados. Os demonstrativos
-            intermediários aparecem separadamente abaixo.
+            Comparação visual entre os exercícios anuais informados.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <FundamentalsEvolution periods={annual} />
-          <FundamentalsGrid periods={annual} type="DFP" />
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Demonstrativos intermediários</CardTitle>
-          <CardDescription>
-            Informações trimestrais acumuladas no exercício até cada data; não
-            representam trimestres isolados nem devem ser comparadas diretamente
-            às demonstrações financeiras anuais.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FundamentalsGrid periods={interim} type="ITR" />
-        </CardContent>
-      </Card>
+      <Collapsible>
+        <Card>
+          <CardHeader className="pb-3">
+            <div>
+              <h2 className="font-semibold leading-none tracking-tight">
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-auto justify-between gap-3 p-0 text-left hover:bg-transparent"
+                  >
+                    <span>Ver demonstrativos e detalhes técnicos</span>
+                    <ChevronDown
+                      className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]_&]:rotate-180"
+                      aria-hidden="true"
+                    />
+                  </Button>
+                </CollapsibleTrigger>
+              </h2>
+              <CardDescription className="mt-1">
+                Valores anuais e informações trimestrais acumuladas.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="space-y-6 pt-0">
+              <section
+                aria-labelledby="annual-evidence-title"
+                className="space-y-3"
+              >
+                <h3 id="annual-evidence-title" className="font-medium">
+                  Demonstrações financeiras anuais (DFP)
+                </h3>
+                <FundamentalsGrid periods={annual} type="DFP" />
+              </section>
+              <section
+                aria-labelledby="interim-evidence-title"
+                className="space-y-3"
+              >
+                <div>
+                  <h3 id="interim-evidence-title" className="font-medium">
+                    Informações trimestrais (ITR)
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Valores acumulados no exercício até cada data; não
+                    representam trimestres isolados nem devem ser comparados
+                    diretamente com os exercícios anuais.
+                  </p>
+                </div>
+                <FundamentalsGrid periods={interim} type="ITR" />
+              </section>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
     </div>
   );
 }

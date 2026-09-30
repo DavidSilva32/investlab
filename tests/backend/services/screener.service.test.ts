@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   filtersFromSearchParams,
   ScreenerService,
@@ -67,6 +67,10 @@ const company: ScreenerCompany = {
   },
 };
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("ScreenerService", () => {
   it("returns neutral empty local results and zero coverage counts", async () => {
     const repository = {
@@ -93,6 +97,8 @@ describe("ScreenerService", () => {
   });
 
   it("counts all locally available metric families and applies user filters", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
     const repository = {
       getUniverse: vi.fn().mockResolvedValue([company]),
       hasSuccessfulSync: vi.fn().mockResolvedValue(true),

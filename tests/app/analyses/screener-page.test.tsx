@@ -12,20 +12,15 @@ vi.mock("@/components/app-shell", () => ({
     </main>
   ),
 }));
-vi.mock("@/app/analyses/_components/analysis-experience-nav", () => ({
-  AnalysisExperienceNav: ({ active }: { active: string }) => (
-    <nav>{active}</nav>
-  ),
-}));
 vi.mock("@/app/analyses/_components/screener-dashboard", () => ({
   ScreenerDashboard: () => <section>Local screener panel</section>,
 }));
 
 describe("ScreenerPage", () => {
-  it("composes the exploration title, experience switcher and screener panel", () => {
+  it("keeps the direct screener route outside the main navigation", () => {
     render(<ScreenerPage />);
     expect(screen.getByRole("heading", { name: "Explorar" })).toBeTruthy();
-    expect(screen.getByText("explore")).toBeTruthy();
+    expect(screen.queryByRole("navigation")).toBeNull();
     expect(screen.getByText(/Ajuste filtros financeiros/)).toBeTruthy();
     expect(screen.getByText("Local screener panel")).toBeTruthy();
   });

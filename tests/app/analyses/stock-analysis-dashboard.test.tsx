@@ -1,10 +1,11 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import {
   act,
   cleanup,
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -115,6 +116,7 @@ const jsonResponse = (body: unknown, status = 200, headers?: HeadersInit) =>
   });
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -204,13 +206,10 @@ describe("StockAnalysisDashboard", () => {
 
     window.history.pushState({}, "", "/analyses?ticker=bad");
     window.dispatchEvent(new PopStateEvent("popstate"));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
-      "PETR4",
+    await waitFor(() =>
+      expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(""),
     );
+    expect(screen.getByText("Encontre uma empresa para analisar")).toBeTruthy();
 
     const requestsBeforeLeaving = fetcher.mock.calls.length;
     window.history.pushState({}, "", "/?ticker=VALE3");
@@ -228,25 +227,43 @@ describe("StockAnalysisDashboard", () => {
 
   it("renders chronological chart data, interval controls, units, and fundamentals", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
-    render(<StockAnalysisDashboard />);
+    render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
 
     const chart = await screen.findByTestId("price-chart");
     expect(chart.dataset.points).toBe("2025-09-20,2026-08-25,2026-09-19");
     expect(screen.getByRole("button", { name: "1 ano" })).toBeTruthy();
+    expect(
+      screen.getByText("Variação do preço no período · 1 ano"),
+    ).toBeTruthy();
+    expect(screen.getByText("Sem dividendos")).toBeTruthy();
+    expect(screen.getByText(/\+24(?:,00)?%/).className).toContain(
+      "text-emerald-600",
+    );
     expect(
       screen
         .getByRole("button", { name: "1 ano" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(screen.getByRole("button", { name: "6 meses" })).toBeTruthy();
+    expect(screen.getByText(/30,00/)).toBeTruthy();
     expect(screen.getByText("8.4x")).toBeTruthy();
+    expect(screen.getByText("1.2x")).toBeTruthy();
     expect(screen.getByText("18.4%")).toBeTruthy();
     expect(screen.getByText("Sem demonstrativo compatível")).toBeTruthy();
-    expect(screen.getByText(/acumulado até/i)).toBeTruthy();
+    await userEvent.setup().click(
+      screen.getByRole("button", {
+        name: /ver demonstrativos e detalhes técnicos/i,
+      }),
+    );
+    expect(await screen.findByText(/acumulados no exercício/)).toBeTruthy();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "1 mês" }));
     expect(chart.dataset.points).toBe("2026-08-25,2026-09-19");
+    expect(
+      screen.getByText("Variação do preço no período · 1 mês"),
+    ).toBeTruthy();
+    expect(screen.getByText(/\+3,33%/)).toBeTruthy();
     expect(
       screen
         .getByRole("button", { name: "1 mês" })
@@ -277,9 +294,73 @@ describe("StockAnalysisDashboard", () => {
         }),
       ),
     );
-    render(<StockAnalysisDashboard />);
+    render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
 
     expect(await screen.findByRole("button", { name: "1 ano" })).toBeTruthy();
+  });
+
+  it("shows a negative change in the selected period in red", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          history: [
+            { date: "2025-09-19", close: 31 },
+            { date: "2026-09-19", close: 25 },
+          ],
+        }),
+      ),
+    );
+    const { container } = render(
+      <StockAnalysisDashboard initialTicker="PETR4" />,
+    );
+
+    expect(await screen.findByText("-19,35%")).toBeTruthy();
+    expect(container.querySelector(".text-rose-600")).toBeTruthy();
+  });
+
+  it("shows zero change neutrally", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          history: [
+            { date: "2025-09-19", close: 30 },
+            { date: "2026-09-19", close: 30 },
+          ],
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    expect(
+      (await screen.findByText("0%", { exact: true })).className,
+    ).toContain("text-muted-foreground");
+  });
+
+  it("marks a zero starting price as unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          ticker: "ITUB4",
+          history: [
+            { date: "2025-09-19", close: 0 },
+            { date: "2026-09-19", close: 30 },
+          ],
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="ITUB4" />);
+    expect(
+      await screen.findByText("Variação do preço no período · 1 ano"),
+    ).toBeTruthy();
+    const priceChange = screen.getByText(
+      "Variação do preço no período · 1 ano",
+    ).parentElement;
+    expect(within(priceChange!).getByText("Indisponível")).toBeTruthy();
   });
 
   it("offers five years only when the history covers that period", async () => {
@@ -295,7 +376,7 @@ describe("StockAnalysisDashboard", () => {
         }),
       ),
     );
-    render(<StockAnalysisDashboard />);
+    render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
 
     const fiveYears = await screen.findByRole("button", { name: "5 anos" });
     await userEvent.setup().click(fiveYears);
@@ -303,38 +384,16 @@ describe("StockAnalysisDashboard", () => {
     expect(chart.dataset.points).toBe("2019-02-28,2024-02-29");
   });
 
-  it("adds an analyzed issuer to the study list using the CNPJ from analysis", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(analysis))
-      .mockResolvedValueOnce(jsonResponse({ added: true }));
+  it("keeps the analysis focused on its data without offering the study list", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(jsonResponse(analysis));
     vi.stubGlobal("fetch", fetcher);
     render(<StockAnalysisDashboard initialTicker="PETR4" />);
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: /Adicionar.*Lista de estudo/,
-      }),
-    );
-    fireEvent.change(screen.getByLabelText(/Motivo da inclus/), {
-      target: { value: "Estudar os demonstrativos." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
-
+    expect(await screen.findByText(/PETR4.*Petrobras/)).toBeTruthy();
     expect(
-      await screen.findByRole("button", { name: "Na Lista de estudo" }),
-    ).toBeTruthy();
-    expect(fetcher).toHaveBeenNthCalledWith(
-      2,
-      "/api/study-list",
-      expect.objectContaining({ method: "POST" }),
-    );
-    expect(JSON.parse(fetcher.mock.calls[1]![1].body as string)).toMatchObject({
-      issuerCnpj: "33000167000101",
-      companyName: "Petrobras",
-      ticker: "PETR4",
-      reason: "Estudar os demonstrativos.",
-    });
+      screen.queryByRole("button", { name: /lista de estudo/i }),
+    ).toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the analysis available when its CNPJ is unresolved", async () => {
@@ -345,12 +404,7 @@ describe("StockAnalysisDashboard", () => {
     render(<StockAnalysisDashboard initialTicker="PETR4" />);
 
     expect(await screen.findByText("Ativo consultado")).toBeTruthy();
-    expect(screen.getByText(/CNPJ/)).toBeTruthy();
-    expect(
-      screen
-        .getByRole("button", { name: /Adicionar.*Lista de estudo/ })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+    expect(screen.getByText(/PETR4.*Petrobras/)).toBeTruthy();
   });
 
   it("shows a loading state before the request resolves", () => {
@@ -358,7 +412,7 @@ describe("StockAnalysisDashboard", () => {
       "fetch",
       vi.fn().mockReturnValue(new Promise(() => undefined)),
     );
-    render(<StockAnalysisDashboard />);
+    render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
     expect(screen.getByText("Carregando análise...")).toBeTruthy();
     expect(screen.getByRole("generic", { busy: true })).toBeTruthy();
   });
@@ -369,13 +423,15 @@ describe("StockAnalysisDashboard", () => {
       .mockResolvedValueOnce(jsonResponse({ ...analysis, history: [] }))
       .mockResolvedValueOnce(jsonResponse({ message: "erro" }, 500));
     vi.stubGlobal("fetch", fetcher);
-    const { unmount } = render(<StockAnalysisDashboard />);
+    const { unmount } = render(
+      <StockAnalysisDashboard initialTicker={"PETR4"} />,
+    );
     expect(
       await screen.findByText(/não há histórico suficiente/i),
     ).toBeTruthy();
     unmount();
 
-    render(<StockAnalysisDashboard />);
+    render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
     const retry = await screen.findByRole("button", {
       name: "Tentar novamente",
     });
@@ -393,7 +449,7 @@ describe("StockAnalysisDashboard", () => {
         }),
       ),
     );
-    render(<StockAnalysisDashboard />);
+    render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
@@ -415,7 +471,7 @@ describe("StockAnalysisDashboard", () => {
 
   it("opens indicator help by click and closes it with Escape", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
-    render(<StockAnalysisDashboard />);
+    render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", { name: /ajuda sobre p\/l/i }),
@@ -444,7 +500,7 @@ it("handles missing company and price data with no available history interval", 
       }),
     ),
   );
-  render(<StockAnalysisDashboard />);
+  render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
     await Promise.resolve();
@@ -455,6 +511,15 @@ it("handles missing company and price data with no available history interval", 
   expect(screen.getByText(/Varia.*informada/)).toBeTruthy();
   expect(screen.getByText("—")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "1 ano" })).toBeNull();
+  const periodChange = screen.getByText(
+    /Variação do preço no período/,
+  ).parentElement;
+  expect(within(periodChange!).getByText("Indisponível")).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /ver demonstrativos e detalhes técnicos/i,
+    }),
+  );
   expect(screen.getAllByText(/Sem demonstra/)).toHaveLength(2);
   expect(screen.getByText(/Sem informa/)).toBeTruthy();
 });
@@ -462,7 +527,7 @@ it("handles missing company and price data with no available history interval", 
 it("returns to search when a successful response has no analysis body", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(null)));
-  render(<StockAnalysisDashboard />);
+  render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
     await Promise.resolve();
@@ -470,6 +535,117 @@ it("returns to search when a successful response has no analysis body", async ()
   });
   expect(screen.getByLabelText("Pesquisar ação")).toBeTruthy();
   expect(screen.queryByText("Ativo consultado")).toBeNull();
+});
+
+it("starts with an empty search and does not fetch a default company", () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  render(<StockAnalysisDashboard />);
+  expect(screen.getByLabelText("Pesquisar ação")).toBeTruthy();
+  expect(screen.getByText("Encontre uma empresa para analisar")).toBeTruthy();
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("offers recent tickers stored locally and lets the user resume one", async () => {
+  window.localStorage.setItem(
+    "investlab:analyses:recent-tickers",
+    JSON.stringify([
+      { ticker: "PETR4", name: "Petrobras" },
+      { ticker: "VALE3", name: "Vale" },
+    ]),
+  );
+  const fetcher = vi.fn().mockResolvedValue(jsonResponse(analysis));
+  vi.stubGlobal("fetch", fetcher);
+
+  render(<StockAnalysisDashboard />);
+  expect(await screen.findByText("Consultadas recentemente")).toBeTruthy();
+  expect(fetcher).not.toHaveBeenCalled();
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Retomar análise de PETR4" }));
+
+  expect(await screen.findByText(/PETR4.*Petrobras/)).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledWith("/api/analyses/stocks/PETR4");
+});
+
+it("ignores malformed recent ticker storage and keeps the search available", async () => {
+  window.localStorage.setItem("investlab:analyses:recent-tickers", "{");
+  render(<StockAnalysisDashboard />);
+
+  expect(await screen.findByLabelText("Pesquisar ação")).toBeTruthy();
+  expect(screen.queryByText("Consultadas recentemente")).toBeNull();
+});
+
+it("ignores recent ticker storage that is not an array", async () => {
+  window.localStorage.setItem("investlab:analyses:recent-tickers", "null");
+  render(<StockAnalysisDashboard />);
+
+  expect(await screen.findByLabelText("Pesquisar ação")).toBeTruthy();
+  expect(screen.queryByText("Consultadas recentemente")).toBeNull();
+});
+
+it("moves a newly consulted ticker to the front and keeps only five unique entries", async () => {
+  window.localStorage.setItem(
+    "investlab:analyses:recent-tickers",
+    JSON.stringify([
+      { ticker: "PETR4", name: "Old name" },
+      { ticker: "VALE3", name: "Vale" },
+      { ticker: "ITUB4", name: "Itaú" },
+      { ticker: "BBDC4", name: "Bradesco" },
+      { ticker: "ABEV3", name: "Ambev" },
+    ]),
+  );
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
+
+  render(<StockAnalysisDashboard initialTicker="PETR4" />);
+  expect(await screen.findByText("Ativo consultado")).toBeTruthy();
+
+  const recent = JSON.parse(
+    window.localStorage.getItem("investlab:analyses:recent-tickers") ?? "[]",
+  ) as Array<{ ticker: string; name: string }>;
+  expect(recent).toHaveLength(5);
+  expect(recent[0]).toEqual({ ticker: "PETR4", name: "Petrobras" });
+  expect(new Set(recent.map(({ ticker }) => ticker)).size).toBe(5);
+});
+
+it("shows the annual fact reading and keeps statement detail collapsed", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      jsonResponse({
+        ...analysis,
+        fundamentals: [
+          {
+            ...analysis.fundamentals[0],
+            referenceDate: "2024-12-31",
+            revenue: "900000",
+            netIncome: "80000",
+          },
+          {
+            ...analysis.fundamentals[0],
+            referenceDate: "2025-12-31",
+            revenue: "1000000",
+            netIncome: "100000",
+          },
+          analysis.fundamentals[1],
+        ],
+      }),
+    ),
+  );
+  render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+  expect(await screen.findByText("Lucro líquido do exercício")).toBeTruthy();
+  expect(screen.getByText("Receita anual")).toBeTruthy();
+  expect(screen.getByText("Resultado positivo")).toBeTruthy();
+  expect(screen.queryByText(/Informações trimestrais \(ITR\)/)).toBeNull();
+  await userEvent.setup().click(
+    screen.getByRole("button", {
+      name: /ver demonstrativos e detalhes técnicos/i,
+    }),
+  );
+  expect(
+    await screen.findByText(/Informações trimestrais \(ITR\)/),
+  ).toBeTruthy();
 });
 
 it("ignores a stale request rejection after a newer ticker has loaded", async () => {
@@ -483,7 +659,7 @@ it("ignores a stale request rejection after a newer ticker has loaded", async ()
     .mockImplementationOnce(() => staleResponse)
     .mockResolvedValueOnce(jsonResponse(analysis));
   vi.stubGlobal("fetch", fetcher);
-  render(<StockAnalysisDashboard />);
+  render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });

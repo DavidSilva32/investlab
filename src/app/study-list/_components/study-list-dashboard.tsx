@@ -244,10 +244,7 @@ export function StudyListDashboard() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link href="/analyses">Descobrir empresas</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/analyses?ticker=PETR4">Analisar um ticker</Link>
+            <Link href="/analyses">Buscar empresa em Análises</Link>
           </Button>
         </CardContent>
       </Card>
@@ -261,14 +258,11 @@ export function StudyListDashboard() {
           <CardContent className="space-y-3 py-10 text-center">
             <h2 className="font-medium">Sua lista ainda está vazia</h2>
             <p className="text-sm text-muted-foreground">
-              Adicione uma empresa por Descobrir ou depois de abrir uma análise.
+              Use a busca de Análises para encontrar e abrir uma empresa.
             </p>
             <div className="flex justify-center gap-2">
               <Button asChild>
-                <Link href="/analyses">Ir para Descobrir</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/analyses?ticker=PETR4">Ir para Analisar</Link>
+                <Link href="/analyses">Buscar uma empresa</Link>
               </Button>
             </div>
           </CardContent>

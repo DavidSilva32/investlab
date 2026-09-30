@@ -90,21 +90,6 @@ export function FundamentalsEvolution({
                 />
               </BarChart>
             </ChartContainer>
-            <ul
-              aria-label={`Valores exatos de ${metric.label} por exercício`}
-              className="mt-3 space-y-1 border-t pt-3 text-xs"
-            >
-              {annual.map((period) => (
-                <li key={period.year} className="flex justify-between gap-2">
-                  <span className="text-muted-foreground">{period.year}</span>
-                  <span className="text-right font-medium tabular-nums">
-                    {period[metric.key] === null
-                      ? "Não informado"
-                      : exactMoney.format(period[metric.key]!)}
-                  </span>
-                </li>
-              ))}
-            </ul>
           </section>
         );
       })}
