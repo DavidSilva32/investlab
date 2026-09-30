@@ -158,9 +158,42 @@ export const emergencyReserveSettings = pgTable("emergency_reserve_settings", {
   id: varchar({ length: 20 }).primaryKey().default("default"),
   monthlyExpenses: numeric({ precision: 18, scale: 2 }),
   targetMonths: integer(),
-  selectedAssetKeys: jsonb().$type<string[]>().notNull().default([]),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+/* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
+export const portfolioObjectives = pgTable(
+  "portfolio_objectives",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    kind: varchar({ length: 16 }).notNull().default("CUSTOM"),
+    name: varchar({ length: 120 }).notNull(),
+    targetAmount: numeric({ precision: 18, scale: 2 }),
+    monthlyPlannedAmount: numeric({ precision: 18, scale: 2 }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("portfolio_objectives_kind_created_idx").on(
+      table.kind,
+      table.createdAt,
+    ),
+  ],
+);
+export const portfolioObjectivePositions = pgTable(
+  "portfolio_objective_positions",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    objectiveId: uuid()
+      .notNull()
+      .references(() => portfolioObjectives.id, { onDelete: "cascade" }),
+    assetKey: varchar({ length: 80 }).notNull().unique(),
+    assignedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("portfolio_objective_positions_objective_idx").on(table.objectiveId),
+  ],
+);
+/* v8 ignore stop */
 export const portfolioAllocationTargets = pgTable(
   "portfolio_allocation_targets",
   {

@@ -9,6 +9,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -19,7 +26,7 @@ import {
   type CurrencyInputSelection,
 } from "@/lib/currency-input";
 
-type ReserveSuggestionHolding = {
+export type PositionCombinationSuggestionHolding = {
   assetKey: string;
   product: string;
   institution: string | null;
@@ -39,8 +46,21 @@ type EmergencyReservePositionSuggestions =
     };
 
 type Props = {
-  holdings: ReserveSuggestionHolding[];
+  holdings: PositionCombinationSuggestionHolding[];
   onApply: (assetKeys: string[]) => void;
+  endpoint: string;
+  amountLabel: string;
+  title: string;
+  description: string;
+  requestFilter?: {
+    label: string;
+    key: string;
+    options: { value: string; label: string }[];
+    defaultValue: string;
+  };
+  selectionActionLabel?: (index: number) => string;
+  applyButtonLabel?: string;
+  comparisonDetails?: string;
 };
 
 type SearchState =
@@ -48,15 +68,25 @@ type SearchState =
   | { status: "loading" }
   | { status: "result"; result: EmergencyReservePositionSuggestions };
 
-export function EmergencyReservePositionSuggestionsCard({
+export function PositionCombinationSuggestions({
   holdings,
   onApply,
+  endpoint,
+  amountLabel,
+  title,
+  description,
+  requestFilter,
+  selectionActionLabel,
+  applyButtonLabel = "Usar esta combinação",
+  comparisonDetails,
 }: Props) {
   const [amount, setAmount] = useState("");
   const amountInputRef = useRef<HTMLInputElement>(null);
   const selectionRef = useRef<CurrencyInputSelection | null>(null);
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState(requestFilter?.defaultValue ?? "");
+  const [draftSelected, setDraftSelected] = useState(false);
 
   useLayoutEffect(() => {
     const input = amountInputRef.current;
@@ -79,10 +109,13 @@ export function EmergencyReservePositionSuggestionsCard({
     setError(null);
     setSearch({ status: "loading" });
     try {
-      const response = await fetch("/api/emergency-reserve/suggestions", {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetAmount: target }),
+        body: JSON.stringify({
+          targetAmount: target,
+          ...(requestFilter ? { [requestFilter.key]: filter } : {}),
+        }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message);
@@ -101,105 +134,166 @@ export function EmergencyReservePositionSuggestionsCard({
   }
 
   return (
-    <section
-      aria-labelledby="reserve-suggestion-title"
-      className="space-y-4 rounded-xl border bg-muted/20 p-4 sm:p-5"
-    >
-      <div className="space-y-1">
-        <h3 id="reserve-suggestion-title" className="font-semibold">
-          Encontrar grupos pelo valor
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Digite os números do saldo conhecido; os centavos são preenchidos
-          automaticamente.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="min-w-0 flex-1 space-y-2">
-          <Label htmlFor="reserve-known-total">
-            Valor conhecido da reserva
-          </Label>
-          <Input
-            id="reserve-known-total"
-            ref={amountInputRef}
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            disabled={search.status === "loading"}
-            placeholder="R$ 0,00"
-            value={amount}
-            onChange={(event) => {
-              const value = event.target.value;
-              const nextAmount = formatAmountInput(value);
-              const start = event.target.selectionStart ?? value.length;
-              const end = event.target.selectionEnd ?? start;
-              selectionRef.current = getCurrencyInputSelection(
-                value,
-                nextAmount,
-                start,
-                end,
-                event.target.selectionDirection ?? "none",
-              );
-              setAmount(nextAmount);
-              setError(null);
-              setSearch({ status: "idle" });
-            }}
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? "reserve-suggestion-error" : undefined}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void findSuggestions();
-              }
-            }}
-          />
-        </div>
-        <Button
-          type="button"
-          onClick={() => void findSuggestions()}
-          disabled={search.status === "loading"}
-        >
-          {search.status === "loading" ? "Comparando…" : "Buscar combinações"}
-        </Button>
-      </div>
+    <section className="rounded-xl border bg-muted/20 p-4 sm:p-5">
       <Collapsible>
         <CollapsibleTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="px-0">
-            Como funciona a comparação
-            <ChevronDown aria-hidden="true" className="ml-1 size-4" />
+          <Button
+            type="button"
+            variant="ghost"
+            className="group h-auto w-full justify-between p-0 text-left hover:bg-transparent"
+          >
+            <span className="space-y-1">
+              <span className="block font-semibold">{title}</span>
+              <span className="block text-sm font-normal text-muted-foreground">
+                Buscar uma combinação pelo valor
+              </span>
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+            />
           </Button>
         </CollapsibleTrigger>
-        <CollapsibleContent>
-          <p className="max-w-3xl text-xs text-muted-foreground">
-            Compara o total com valores atuais: estimativa de CDB DI/CDI quando
-            disponível ou valor importado. Não identifica finalidade,
-            titularidade, liquidez ou condições de resgate.
-          </p>
+        <CollapsibleContent className="space-y-4 pt-4">
+          <p className="text-sm text-muted-foreground">{description}</p>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1 space-y-2">
+              <Label htmlFor="position-combination-target">{amountLabel}</Label>
+              <Input
+                id="position-combination-target"
+                ref={amountInputRef}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                disabled={search.status === "loading"}
+                placeholder="R$ 0,00"
+                value={amount}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const nextAmount = formatAmountInput(value);
+                  const start = event.target.selectionStart ?? value.length;
+                  const end = event.target.selectionEnd ?? start;
+                  selectionRef.current = getCurrencyInputSelection(
+                    value,
+                    nextAmount,
+                    start,
+                    end,
+                    event.target.selectionDirection ?? "none",
+                  );
+                  setAmount(nextAmount);
+                  setError(null);
+                  setSearch({ status: "idle" });
+                  setDraftSelected(false);
+                }}
+                aria-invalid={Boolean(error)}
+                aria-describedby={
+                  error ? "position-combination-error" : undefined
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void findSuggestions();
+                  }
+                }}
+              />
+            </div>
+            {requestFilter && (
+              <div className="min-w-0 space-y-2 sm:w-56">
+                <Label htmlFor="position-combination-filter">
+                  {requestFilter.label}
+                </Label>
+                <Select
+                  value={filter}
+                  onValueChange={(value) => {
+                    setFilter(value);
+                    setSearch({ status: "idle" });
+                  }}
+                >
+                  <SelectTrigger id="position-combination-filter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {requestFilter.options.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <Button
+              type="button"
+              onClick={() => void findSuggestions()}
+              disabled={search.status === "loading"}
+            >
+              {search.status === "loading"
+                ? "Comparando…"
+                : "Buscar combinações"}
+            </Button>
+          </div>
+          {comparisonDetails && (
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="px-0 [&[data-state=open]>svg]:rotate-180"
+                >
+                  Como funciona a comparação
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="ml-1 size-4 transition-transform group-data-[state=open]:rotate-180"
+                  />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <p className="max-w-3xl text-xs text-muted-foreground">
+                  {comparisonDetails}
+                </p>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
+          {error && (
+            <p
+              id="position-combination-error"
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {error}
+            </p>
+          )}
+          {search.status === "loading" && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Comparando combinações de valores…
+            </p>
+          )}
+          {search.status === "result" && (
+            <SuggestionResults
+              result={search.result}
+              target={parseBrazilianAmount(amount)}
+              holdings={holdings}
+              onApply={(assetKeys) => {
+                onApply(assetKeys);
+                setDraftSelected(true);
+              }}
+              selectionActionLabel={selectionActionLabel}
+              applyButtonLabel={applyButtonLabel}
+            />
+          )}
         </CollapsibleContent>
       </Collapsible>
-
-      {error && (
+      {draftSelected && (
         <p
-          id="reserve-suggestion-error"
-          role="alert"
-          className="text-sm text-destructive"
+          role="status"
+          className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
         >
-          {error}
+          Combinação selecionada como rascunho. Salve a configuração para
+          confirmar.
         </p>
-      )}
-      {search.status === "loading" && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Comparando combinações de valores…
-        </p>
-      )}
-      {search.status === "result" && (
-        <SuggestionResults
-          result={search.result}
-          target={parseBrazilianAmount(amount)}
-          holdings={holdings}
-          onApply={onApply}
-        />
       )}
     </section>
   );
@@ -210,11 +304,15 @@ function SuggestionResults({
   target,
   holdings,
   onApply,
+  selectionActionLabel,
+  applyButtonLabel,
 }: {
   result: EmergencyReservePositionSuggestions;
   target: number;
-  holdings: ReserveSuggestionHolding[];
+  holdings: PositionCombinationSuggestionHolding[];
   onApply: Props["onApply"];
+  selectionActionLabel: Props["selectionActionLabel"];
+  applyButtonLabel: string;
 }) {
   if (result.status === "invalid_target") {
     return (
@@ -280,8 +378,9 @@ function SuggestionResults({
             .map((assetKey) =>
               holdings.find((holding) => holding.assetKey === assetKey),
             )
-            .filter((holding): holding is ReserveSuggestionHolding =>
-              Boolean(holding),
+            .filter(
+              (holding): holding is PositionCombinationSuggestionHolding =>
+                Boolean(holding),
             );
 
           return (
@@ -292,6 +391,8 @@ function SuggestionResults({
               exact={exact}
               included={included}
               onApply={onApply}
+              selectionActionLabel={selectionActionLabel}
+              applyButtonLabel={applyButtonLabel}
             />
           );
         })}
@@ -306,12 +407,16 @@ function CandidateSummary({
   exact,
   included,
   onApply,
+  selectionActionLabel,
+  applyButtonLabel,
 }: {
   candidate: { assetKeys: string[]; total: number; difference: number };
   index: number;
   exact: boolean;
-  included: ReserveSuggestionHolding[];
+  included: PositionCombinationSuggestionHolding[];
   onApply: Props["onApply"];
+  selectionActionLabel: Props["selectionActionLabel"];
+  applyButtonLabel: string;
 }) {
   return (
     <li className="rounded-xl border bg-background p-3 shadow-sm">
@@ -348,11 +453,13 @@ function CandidateSummary({
             type="button"
             variant="ghost"
             size="sm"
-            className="w-full justify-between px-1"
+            className="group w-full justify-between px-1"
           >
-            Revisar {included.length}{" "}
-            {included.length === 1 ? "grupo" : "grupos"}
-            <ChevronDown aria-hidden="true" className="ml-1 size-4" />
+            Ver {included.length} posições
+            <ChevronDown
+              aria-hidden="true"
+              className="ml-1 size-4 transition-transform group-data-[state=open]:rotate-180"
+            />
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-3 pt-2">
@@ -376,16 +483,16 @@ function CandidateSummary({
               </li>
             ))}
           </ul>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => onApply(candidate.assetKeys)}
-          >
-            Usar esta combinação
-          </Button>
         </CollapsibleContent>
       </Collapsible>
+      <Button
+        type="button"
+        variant="outline"
+        className="mt-3 w-full"
+        onClick={() => onApply(candidate.assetKeys)}
+      >
+        {selectionActionLabel?.(index) ?? applyButtonLabel}
+      </Button>
     </li>
   );
 }

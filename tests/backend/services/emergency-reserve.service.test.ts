@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   saveSettings: vi.fn(),
   enrich: vi.fn(),
   classifyPositions: vi.fn(),
+  listObjectives: vi.fn(),
+  replaceReserveAssignments: vi.fn(),
 }));
 
 vi.mock("@/backend/repositories/import.repository", () => ({
@@ -15,6 +17,13 @@ vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
   emergencyReserveRepository: {
     getSettings: mocks.getSettings,
     saveSettings: mocks.saveSettings,
+  },
+}));
+vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
+  portfolioObjectivesRepository: {
+    list: mocks.listObjectives,
+    listReserveAssignments: vi.fn().mockResolvedValue([]),
+    replaceReserveAssignments: mocks.replaceReserveAssignments,
   },
 }));
 vi.mock("@/backend/services/cdb-estimate.service", () => ({
@@ -90,6 +99,8 @@ describe("EmergencyReserveService", () => {
     );
     mocks.getSettings.mockResolvedValue(null);
     mocks.saveSettings.mockResolvedValue(undefined);
+    mocks.listObjectives.mockResolvedValue({ objectives: [], assignments: [] });
+    mocks.replaceReserveAssignments.mockResolvedValue(undefined);
   });
 
   it("returns an empty contribution context when reserve settings do not exist", async () => {
@@ -225,6 +236,35 @@ describe("EmergencyReserveService", () => {
     });
     expect(data.selectedPositionCount).toBe(3);
     expect(data.missingSelectionCount).toBe(0);
+  });
+
+  it("shows the objective assignment owner for matching reserve holdings", async () => {
+    const cdb = position();
+    const assetKey = getEmergencyReserveAssetKey(cdb);
+    mocks.listLatestPositions.mockResolvedValue([cdb]);
+    mocks.enrich.mockResolvedValue([cdb]);
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "100",
+      targetMonths: 2,
+      selectedAssetKeys: [assetKey],
+    });
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        { id: "00000000-0000-4000-8000-000000000010", name: "Reserva" },
+      ],
+      assignments: [
+        { objectiveId: "00000000-0000-4000-8000-000000000010", assetKey },
+        { objectiveId: "legacy-goal", assetKey: "v1:orphaned" },
+      ],
+    });
+
+    const result = await new EmergencyReserveService().getEditorData();
+
+    expect(result.holdings[0]).toMatchObject({
+      selected: true,
+      assignedObjectiveId: "00000000-0000-4000-8000-000000000010",
+      assignedObjectiveName: "Reserva",
+    });
   });
 
   it("retains selections that are absent from the latest snapshot without counting them", async () => {
@@ -431,6 +471,28 @@ describe("EmergencyReserveService", () => {
       message:
         "A reserva só pode incluir posições classificadas como renda fixa. Revise a seleção antes de salvar.",
       statusCode: 400,
+    });
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("rejects positions already assigned to another objective", async () => {
+    const cdb = position();
+    const assetKey = getEmergencyReserveAssetKey(cdb);
+    mocks.listLatestPositions.mockResolvedValue([cdb]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: "reserve", name: "Reserva" }],
+      assignments: [{ objectiveId: "goal-trip", assetKey }],
+    });
+
+    await expect(
+      new EmergencyReserveService().saveSettings({
+        monthlyExpenses: 2000,
+        targetMonths: 6,
+        selectedAssetKeys: [assetKey],
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("informado"),
     });
     expect(mocks.saveSettings).not.toHaveBeenCalled();
   });

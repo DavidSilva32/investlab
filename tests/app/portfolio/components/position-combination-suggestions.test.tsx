@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+} from "@testing-library/react";
+import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EmergencyReservePositionSuggestionsCard } from "@/app/portfolio/_components/emergency-reserve-position-suggestions";
+import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
 
 const holdings = [
   {
@@ -30,7 +36,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("EmergencyReservePositionSuggestionsCard", () => {
+function render(ui: ReactElement) {
+  const result = rtlRender(ui);
+  fireEvent.click(
+    result.getByRole("button", { name: /Buscar uma combinação pelo valor/ }),
+  );
+  return result;
+}
+
+describe("PositionCombinationSuggestions", () => {
   it("masks typed digits as Brazilian currency and requires review before apply", async () => {
     const onApply = vi.fn();
     const fetchMock = vi.fn().mockResolvedValue({
@@ -51,7 +65,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={onApply}
       />,
@@ -63,12 +82,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     await user.click(screen.getByRole("button", { name: /Buscar combin/ }));
 
     const review = await screen.findByRole("button", {
-      name: /Revisar 2 grupos/,
+      name: /Ver 2 posições/,
     });
     expect(review.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByText("Exata")).toBeTruthy();
     expect(screen.queryByText("CDB Inter daily liquidity")).toBeNull();
-    expect(screen.queryByRole("button", { name: /Usar esta/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Usar esta/ })).toBeTruthy();
     expect(onApply).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/emergency-reserve/suggestions",
@@ -81,9 +100,13 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
 
     await user.click(review);
     expect(review.getAttribute("aria-expanded")).toBe("true");
+    expect(review.querySelector("svg")?.className.baseVal).toContain(
+      "group-data-[state=open]:rotate-180",
+    );
     expect(screen.getByText("CDB Inter daily liquidity")).toBeTruthy();
     expect(screen.getByText("CDB 115% CDI")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Usar esta/ }));
+    expect(screen.getByRole("status").textContent).toContain("rascunho");
     expect(onApply).toHaveBeenCalledWith(["inter-box", "inter-named"]);
   });
 
@@ -105,7 +128,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     );
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings.slice(0, 1)}
         onApply={onApply}
       />,
@@ -142,7 +170,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     );
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -165,7 +198,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -191,7 +229,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     );
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -224,7 +267,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     );
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -262,7 +310,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     );
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -297,7 +350,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -317,7 +375,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
   it("leaves the field empty when input has no digits", async () => {
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -346,7 +409,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
     );
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -365,7 +433,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
   });
   it("handles unavailable native selection data", () => {
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -387,7 +460,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
   it("restores the caret around empty and normalized digit input", async () => {
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
@@ -419,7 +497,12 @@ describe("EmergencyReservePositionSuggestionsCard", () => {
   it("keeps the caret beside the edited digits in the formatted amount", async () => {
     const user = userEvent.setup();
     render(
-      <EmergencyReservePositionSuggestionsCard
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
         holdings={holdings}
         onApply={vi.fn()}
       />,
