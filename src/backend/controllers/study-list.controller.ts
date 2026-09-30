@@ -6,14 +6,6 @@ export class StudyListController {
     return Response.json({ entries, requestId });
   }
 
-  async add(body: unknown, requestId: string) {
-    const result = await studyListService.add(body, requestId);
-    return Response.json(
-      { ...result, requestId },
-      { status: result.added ? 201 : 200 },
-    );
-  }
-
   async updateReason(issuerCnpj: string, body: unknown, requestId: string) {
     const result = await studyListService.updateReason(
       issuerCnpj,

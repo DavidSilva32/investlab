@@ -2,11 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
-  discover: vi.fn(),
   parse: vi.fn(),
 }));
 vi.mock("@/backend/services/screener.service", () => ({
-  screenerService: { search: mocks.search, discover: mocks.discover },
+  screenerService: { search: mocks.search },
   filtersFromSearchParams: mocks.parse,
 }));
 
@@ -15,7 +14,6 @@ import { ScreenerController } from "@/backend/controllers/screener.controller";
 describe("ScreenerController", () => {
   beforeEach(() => {
     mocks.search.mockReset();
-    mocks.discover.mockReset();
     mocks.parse.mockReset().mockReturnValue({ maximumPe: 20 });
   });
 
@@ -46,18 +44,5 @@ describe("ScreenerController", () => {
     await expect(
       new ScreenerController().search(new URLSearchParams(), "request-2"),
     ).rejects.toBe(failure);
-  });
-
-  it("delegates discovery and adapts the request id", async () => {
-    const result = { results: [], hasSuccessfulSync: true };
-    mocks.discover.mockResolvedValue(result);
-    const response = await new ScreenerController().discover(
-      "discover-request",
-    );
-    expect(mocks.discover).toHaveBeenCalledExactlyOnceWith("discover-request");
-    await expect(response.json()).resolves.toEqual({
-      ...result,
-      requestId: "discover-request",
-    });
   });
 });

@@ -29,7 +29,7 @@ Para gerar o hash da senha localmente:
 node scripts/hash-password.mjs "MINHA_SENHA"
 ```
 
-Configure `AUTH_EMAIL`, `AUTH_PASSWORD_HASH`, `AUTH_SECRET`, `DATABASE_URL_POOLED` e `DATABASE_URL`. Para atualizar dados de empresas, configure também `BRAPI_TOKEN` e `SCREENER_SYNC_SECRET`. Use `DATABASE_URL_POOLED` para o acesso de runtime e `DATABASE_URL` para Drizzle Kit e migrations. Credenciais e valores reais de ambiente não devem entrar no repositório.
+Configure `AUTH_EMAIL`, `AUTH_PASSWORD_HASH`, `AUTH_SECRET`, `DATABASE_URL_POOLED` e `DATABASE_URL`. Para atualizar dados de empresas, configure também `BRAPI_TOKEN`. Use `DATABASE_URL_POOLED` para o acesso de runtime e `DATABASE_URL` para Drizzle Kit e migrations. Credenciais e valores reais de ambiente não devem entrar no repositório.
 
 ## Dados de empresas
 

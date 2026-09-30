@@ -85,10 +85,6 @@ describe("PortfolioService", () => {
     );
     expect(allocation.getAllocationTargets).toHaveBeenCalledWith("request-1");
     expect(reserve.getSummary).toHaveBeenCalledWith(classified, "request-1");
-    await expect(service.listPositions("request-2")).resolves.toEqual(
-      estimated,
-    );
-    expect(repository.listLatestPositions).toHaveBeenCalledWith("request-2");
   });
   it.each(["classification", "targets", "emergency_reserve"] as const)(
     "keeps the dashboard available when the %s lookup fails",

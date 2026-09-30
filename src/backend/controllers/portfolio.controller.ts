@@ -50,16 +50,6 @@ export class PortfolioController {
     });
     return Response.json(overview);
   }
-
-  async positions(requestId: string) {
-    logger.info("portfolio_positions_requested", { requestId });
-    const positions = await portfolioService.listPositions(requestId);
-    logger.info("portfolio_positions_responded", {
-      requestId,
-      positions: positions.length,
-    });
-    return Response.json(positions);
-  }
 }
 
 export const portfolioController = new PortfolioController();
