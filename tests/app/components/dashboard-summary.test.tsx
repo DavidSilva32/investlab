@@ -35,9 +35,17 @@ describe("DashboardSummary", () => {
     expect(html).toContain("2 de 2");
     expect(html).toContain("Dados de 01/09/2026");
     expect(html).toContain("O que merece atenção");
+    expect(html).toContain("Fatos da carteira");
     expect(html).toContain("Tesouro Selic representa 75.0%");
     expect(html).toContain("Isso descreve a distribuição");
     expect(html).toContain("Próximo vencimento informado");
+    const attentionSection = html.slice(
+      html.indexOf('aria-labelledby="dashboard-attention-title"'),
+      html.indexOf('aria-labelledby="dashboard-facts-title"'),
+    );
+    expect(attentionSection).not.toContain(
+      "Maior posição na carteira conhecida",
+    );
     expect(html).toContain("Como ler estes dados");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("group-data-[state=open]:rotate-180");
@@ -207,7 +215,9 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Ainda sem valores conhecidos");
     expect(html).toContain("Adicione os dados da sua carteira");
     expect(html).toContain('href="/imports"');
-    expect(html).toContain("Importe sua carteira");
+    expect(html).toContain("Importar carteira");
+    expect(html).toContain("Ainda não há posições conhecidas");
+    expect(html.match(/href="\/imports"/g)).toHaveLength(1);
   });
 
   it("flags positions without values and offers review", () => {

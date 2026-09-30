@@ -1,11 +1,18 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -35,6 +42,7 @@ const collator = new Intl.Collator("pt-BR", {
   numeric: true,
   sensitivity: "base",
 });
+const PAGE_SIZE = 10;
 
 export function PortfolioTable<Row extends { id: string }>({
   columns,
@@ -43,6 +51,9 @@ export function PortfolioTable<Row extends { id: string }>({
   initialSort,
 }: PortfolioTableProps<Row>) {
   const [sort, setSort] = useState(initialSort);
+  const [pagination, setPagination] = useState({ rows, page: 0 });
+  if (pagination.rows !== rows) setPagination({ rows, page: 0 });
+  const page = pagination.rows === rows ? pagination.page : 0;
   const sortedRows = useMemo(() => {
     const column = columns.find((item) => item.id === sort.id) ?? columns[0];
     return [...rows].sort((left, right) => {
@@ -60,6 +71,7 @@ export function PortfolioTable<Row extends { id: string }>({
   }, [columns, rows, sort]);
 
   const toggleSort = (id: string) => {
+    setPagination({ rows, page: 0 });
     setSort((current) =>
       current.id === id
         ? { id, direction: current.direction === "asc" ? "desc" : "asc" }
@@ -74,6 +86,15 @@ export function PortfolioTable<Row extends { id: string }>({
       </p>
     );
   }
+
+  const pageCount = Math.ceil(sortedRows.length / PAGE_SIZE);
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageRows = sortedRows.slice(
+    currentPage * PAGE_SIZE,
+    (currentPage + 1) * PAGE_SIZE,
+  );
+  const firstRow = currentPage * PAGE_SIZE + 1;
+  const lastRow = Math.min((currentPage + 1) * PAGE_SIZE, sortedRows.length);
 
   return (
     <Table className="min-w-262.5 table-fixed">
@@ -115,7 +136,7 @@ export function PortfolioTable<Row extends { id: string }>({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sortedRows.map((row) => (
+        {pageRows.map((row) => (
           <TableRow key={row.id}>
             {columns.map((column) => (
               <TableCell
@@ -128,6 +149,44 @@ export function PortfolioTable<Row extends { id: string }>({
           </TableRow>
         ))}
       </TableBody>
+      <TableFooter>
+        <TableRow>
+          <TableCell colSpan={columns.length} className="px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p aria-live="polite" className="text-sm text-muted-foreground">
+                Mostrando {firstRow}–{lastRow} de {sortedRows.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-label="Página anterior"
+                  onClick={() => setPagination({ rows, page: currentPage - 1 })}
+                  disabled={currentPage === 0}
+                >
+                  <ChevronLeft aria-hidden="true" className="size-4" />
+                  Anterior
+                </Button>
+                <span className="min-w-16 text-center text-sm tabular-nums text-muted-foreground">
+                  Página {currentPage + 1} de {pageCount}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-label="Próxima página"
+                  onClick={() => setPagination({ rows, page: currentPage + 1 })}
+                  disabled={currentPage >= pageCount - 1}
+                >
+                  Próxima
+                  <ChevronRight aria-hidden="true" className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </TableCell>
+        </TableRow>
+      </TableFooter>
     </Table>
   );
 }

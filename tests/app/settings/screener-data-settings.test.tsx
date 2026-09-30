@@ -35,20 +35,22 @@ describe("ScreenerDataSettings", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<ScreenerDataSettings />);
     expect(await screen.findByText("Status: Concluída")).toBeTruthy();
-    expect(screen.getByText("520")).toBeTruthy();
-    expect(screen.getByText("8.000")).toBeTruthy();
-    expect(screen.getByText("2 min 30 s")).toBeTruthy();
+    expect(screen.getByText(/Última atualização concluída/)).toBeTruthy();
+    expect(screen.queryByText("520")).toBeNull();
     const sourceDetails = screen.getByRole("button", {
-      name: "Prazo e limite da fonte CVM",
+      name: "Detalhes técnicos",
       expanded: false,
     });
     await user.click(sourceDetails);
     expect(
       screen.getByRole("button", {
-        name: "Prazo e limite da fonte CVM",
+        name: "Detalhes técnicos",
         expanded: true,
       }),
     ).toBeTruthy();
+    expect(screen.getByText("520")).toBeTruthy();
+    expect(screen.getByText("8.000")).toBeTruthy();
+    expect(screen.getByText("2 min 30 s")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /Calend.rio de entrega da CVM/ }),
     ).toBeTruthy();
@@ -79,6 +81,9 @@ describe("ScreenerDataSettings", () => {
     vi.stubGlobal("fetch", fetchMock);
     try {
       render(<ScreenerDataSettings />);
+      await user.click(
+        await screen.findByRole("button", { name: "Detalhes técnicos" }),
+      );
       await user.click(
         await screen.findByRole("button", { name: "Sincronizar agora" }),
       );
@@ -115,6 +120,9 @@ describe("ScreenerDataSettings", () => {
     );
     render(<ScreenerDataSettings />);
     expect(await screen.findByText("Status: Em andamento")).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Detalhes técnicos" }));
     expect(screen.getByText("12 s")).toBeTruthy();
     expect(screen.getAllByText("—")).toHaveLength(3);
   });
@@ -157,6 +165,9 @@ describe("ScreenerDataSettings", () => {
       const user = userEvent.setup();
       render(<ScreenerDataSettings />);
       await user.click(
+        await screen.findByRole("button", { name: "Detalhes técnicos" }),
+      );
+      await user.click(
         await screen.findByRole("button", { name: "Sincronizar agora" }),
       );
       expect(await screen.findByText(message)).toBeTruthy();
@@ -193,6 +204,7 @@ describe("ScreenerDataSettings", () => {
     },
   );
   it("renders failed runs with a client-safe error message", async () => {
+    const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -208,6 +220,7 @@ describe("ScreenerDataSettings", () => {
     );
     render(<ScreenerDataSettings />);
     expect(await screen.findByText("Status: Falhou")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Detalhes técnicos" }));
     expect(screen.getByText("A fonte de dados não respondeu.")).toBeTruthy();
   });
 

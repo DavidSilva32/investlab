@@ -176,6 +176,8 @@ export function MarketDataSettings() {
       : run.status === "COMPLETED"
         ? CheckCircle2
         : XCircle;
+  const firstRefresh = !status?.latestQuote;
+  const refreshDisabled = refreshing || loading || run?.status === "RUNNING";
 
   return (
     <Card>
@@ -188,16 +190,15 @@ export function MarketDataSettings() {
               independentes da sincronização anual da CVM.
             </CardDescription>
           </div>
-          <Button
-            onClick={() => void refresh()}
-            disabled={refreshing || loading}
-          >
-            <RefreshCw
-              className={`size-4 ${refreshing ? "animate-spin" : ""}`}
-              aria-hidden="true"
-            />
-            {refreshing ? "Atualizando…" : "Atualizar mercado"}
-          </Button>
+          {firstRefresh && (
+            <Button onClick={() => void refresh()} disabled={refreshDisabled}>
+              <RefreshCw
+                className={`size-4 ${refreshing ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {refreshing ? "Atualizando…" : "Atualizar mercado"}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -231,76 +232,83 @@ export function MarketDataSettings() {
               />
               <span>Status da última execução: {label}</span>
             </div>
-            <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <dt className="text-xs text-muted-foreground">
-                  Cotação mais recente registrada
-                </dt>
-                <dd className="mt-1 text-sm font-medium">
-                  {status?.latestQuote
-                    ? `${dateTime.format(new Date(status.latestQuote.quoteObservedAt))} (${ageLabel(status.latestQuote.quoteObservedAt)})`
-                    : "Sem cotação registrada"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted-foreground">
-                  Ticker da observação
-                </dt>
-                <dd className="mt-1 text-sm font-medium">
-                  {status?.latestQuote?.sourceTicker ?? "—"}
-                </dd>
-              </div>
-              {run && (
-                <>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      Última execução
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium">
-                      {dateTime.format(new Date(run.startedAt))}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      Emissores tentados
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium tabular-nums">
-                      {number.format(run.attemptedIssuers)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      Atualizados
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium tabular-nums">
-                      {number.format(run.updatedIssuers)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      Indisponíveis
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium tabular-nums">
-                      {number.format(run.unavailableIssuers)}
-                    </dd>
-                  </div>
-                </>
-              )}
-            </dl>
+            <p className="text-sm text-muted-foreground">
+              Cotação mais recente registrada:{" "}
+              {status?.latestQuote
+                ? `${dateTime.format(new Date(status.latestQuote.quoteObservedAt))} (${ageLabel(status.latestQuote.quoteObservedAt)})`
+                : "nenhuma cotação registrada"}
+            </p>
             <Collapsible className="text-xs text-muted-foreground">
               <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                Critério e limite das cotações
+                Detalhes técnicos
                 <ChevronDown
                   aria-hidden="true"
                   className="size-4 transition-transform group-data-[state=open]:rotate-180"
                 />
               </CollapsibleTrigger>
-              <CollapsibleContent>
-                <p className="mt-2 leading-relaxed">
+              <CollapsibleContent className="mt-3 space-y-4">
+                {!firstRefresh && (
+                  <Button
+                    onClick={() => void refresh()}
+                    disabled={refreshDisabled}
+                  >
+                    <RefreshCw
+                      className={`size-4 ${refreshing ? "animate-spin" : ""}`}
+                      aria-hidden="true"
+                    />
+                    {refreshing ? "Atualizando…" : "Atualizar mercado"}
+                  </Button>
+                )}
+                <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">
+                      Ticker da observação
+                    </dt>
+                    <dd className="mt-1 text-sm font-medium">
+                      {status?.latestQuote?.sourceTicker ?? "—"}
+                    </dd>
+                  </div>
+                  {run && (
+                    <>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">
+                          Última execução
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium">
+                          {dateTime.format(new Date(run.startedAt))}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">
+                          Emissores tentados
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium tabular-nums">
+                          {number.format(run.attemptedIssuers)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">
+                          Atualizados
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium tabular-nums">
+                          {number.format(run.updatedIssuers)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">
+                          Indisponíveis
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium tabular-nums">
+                          {number.format(run.unavailableIssuers)}
+                        </dd>
+                      </div>
+                    </>
+                  )}
+                </dl>
+                <p className="leading-relaxed">
                   As múltiplas do Screener só usam cotações verificadas com até
-                  sete dias. Atualize quando a observação ultrapassar essa
-                  janela; essa é uma regra do cálculo atual e não garante
-                  cobertura de todos os ativos.
+                  sete dias. Essa regra não garante cobertura de todos os
+                  ativos.
                 </p>
               </CollapsibleContent>
             </Collapsible>

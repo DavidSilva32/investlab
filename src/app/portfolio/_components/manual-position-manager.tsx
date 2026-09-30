@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,11 @@ import {
   portfolioAssetGeographyHelpText,
 } from "@/lib/portfolio-classification-options";
 import { Label } from "@/components/ui/label";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -336,69 +341,80 @@ export function ManualPositionManager({
           Nenhuma posição manual cadastrada.
         </p>
       ) : (
-        <ul className="divide-y">
-          {manualPositions.map((position) => (
-            <li
-              key={position.id}
-              className="flex flex-wrap items-center justify-between gap-3 py-3"
-            >
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {position.product}{" "}
-                  {position.assetCode && (
-                    <span className="text-muted-foreground">
-                      · {position.assetCode}
-                    </span>
-                  )}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {formatQuantity(Number(position.quantity))} unidades ·{" "}
-                  {position.reportedTotalValue
-                    ? `${Number(position.reportedTotalValue).toLocaleString("pt-BR")} ${position.currency ?? "BRL"}`
-                    : "valor não informado"}
-                  {position.totalValue && position.currency !== "BRL"
-                    ? ` · ${formatCurrency(Number(position.totalValue))} em reais (conversão em ${position.conversionDate ?? "data não informada"})`
-                    : ""}
-                  {position.positionDate
-                    ? ` · valor de ${new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${position.positionDate}T00:00:00Z`))}`
-                    : ""}
-                </p>
-                {position.duplicateAssetCode && (
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Código repetido em outra posição manual; confira se os
-                    ativos são distintos.
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {position.classification?.assetClass && (
-                  <Badge variant="secondary">
-                    {position.classification.assetClass}
-                  </Badge>
-                )}
-                <Badge variant="outline">Manual</Badge>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  aria-label={`Editar ${position.product}`}
-                  onClick={() => startEdit(position)}
+        <Collapsible>
+          <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-medium hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span>{manualPositions.length} posições manuais cadastradas</span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 transition-transform group-data-[state=open]:rotate-180"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ul className="mt-2 max-h-96 divide-y overflow-y-auto rounded-md border px-3">
+              {manualPositions.map((position) => (
+                <li
+                  key={position.id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3"
                 >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  aria-label={`Remover ${position.product}`}
-                  onClick={() => remove(position)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {position.product}{" "}
+                      {position.assetCode && (
+                        <span className="text-muted-foreground">
+                          · {position.assetCode}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatQuantity(Number(position.quantity))} unidades ·{" "}
+                      {position.reportedTotalValue
+                        ? `${Number(position.reportedTotalValue).toLocaleString("pt-BR")} ${position.currency ?? "BRL"}`
+                        : "valor não informado"}
+                      {position.totalValue && position.currency !== "BRL"
+                        ? ` · ${formatCurrency(Number(position.totalValue))} em reais (conversão em ${position.conversionDate ?? "data não informada"})`
+                        : ""}
+                      {position.positionDate
+                        ? ` · valor de ${new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${position.positionDate}T00:00:00Z`))}`
+                        : ""}
+                    </p>
+                    {position.duplicateAssetCode && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                        Código repetido em outra posição manual; confira se os
+                        ativos são distintos.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {position.classification?.assetClass && (
+                      <Badge variant="secondary">
+                        {position.classification.assetClass}
+                      </Badge>
+                    )}
+                    <Badge variant="outline">Manual</Badge>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label={`Editar ${position.product}`}
+                      onClick={() => startEdit(position)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label={`Remover ${position.product}`}
+                      onClick={() => remove(position)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </CollapsibleContent>
+        </Collapsible>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">

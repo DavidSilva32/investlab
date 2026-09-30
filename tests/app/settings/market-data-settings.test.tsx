@@ -26,6 +26,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const revealRefreshAction = async (
+  user: ReturnType<typeof userEvent.setup>,
+) => {
+  const details = await screen.findByRole("button", {
+    name: "Detalhes técnicos",
+  });
+  if (details?.getAttribute("aria-expanded") === "false")
+    await user.click(details);
+};
+
 describe("MarketDataSettings", () => {
   it("shows quote age separately from refresh execution and runs a manual refresh", async () => {
     const user = userEvent.setup();
@@ -56,9 +66,15 @@ describe("MarketDataSettings", () => {
     expect(
       await screen.findByText("Status da última execução: Concluída"),
     ).toBeTruthy();
-    expect(screen.getByText("AAA3")).toBeTruthy();
     expect(screen.getByText(/hoje/)).toBeTruthy();
+    expect(screen.queryByText("AAA3")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Atualizar mercado" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Detalhes técnicos" }));
+    expect(screen.getByText("AAA3")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
+    await revealRefreshAction(user);
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
     expect(
       await screen.findByText(
@@ -87,20 +103,47 @@ describe("MarketDataSettings", () => {
     expect(
       await screen.findByText("Status da última execução: Ainda não executada"),
     ).toBeTruthy();
-    expect(screen.getByText(/Sem cota/)).toBeTruthy();
+    expect(screen.getByText(/nenhuma cotação registrada/)).toBeTruthy();
     const criteria = screen.getByRole("button", {
-      name: /Crit.rio e limite das cota/,
+      name: "Detalhes técnicos",
       expanded: false,
     });
     await user.click(criteria);
     expect(
       screen.getByRole("button", {
-        name: /Crit.rio e limite das cota/,
+        name: "Detalhes técnicos",
         expanded: true,
       }),
     ).toBeTruthy();
     expect(await screen.findByText(/sete dias/)).toBeTruthy();
   });
+
+  it.each(["RUNNING", "PARTIAL"] as const)(
+    "keeps the initial refresh action visible without a quote when the latest run is %s",
+    async (runStatus) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          response({
+            latestQuote: null,
+            latestRun: { ...status.latestRun, status: runStatus },
+          }),
+        ),
+      );
+      render(<MarketDataSettings />);
+
+      const refreshButton = await screen.findByRole("button", {
+        name: "Atualizar mercado",
+      });
+      expect(refreshButton).toHaveProperty("disabled", runStatus === "RUNNING");
+      expect(
+        screen.getByRole("button", {
+          name: "Detalhes técnicos",
+          expanded: false,
+        }),
+      ).toBeTruthy();
+    },
+  );
 
   it("reports failed fetch and refresh with safe feedback", async () => {
     const user = userEvent.setup();
@@ -112,6 +155,7 @@ describe("MarketDataSettings", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<MarketDataSettings />);
     expect(await screen.findByText("offline")).toBeTruthy();
+    await revealRefreshAction(user);
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
     expect(await screen.findByText("Falha da BRAPI")).toBeTruthy();
   });
@@ -174,6 +218,7 @@ describe("MarketDataSettings", () => {
     expect(
       await screen.findByText(/possível consultar os dados de mercado/),
     ).toBeTruthy();
+    await revealRefreshAction(user);
     await user.click(screen.getByRole("button", { name: "Atualizar mercado" }));
     expect(await screen.findByText(/não foi concluída/)).toBeTruthy();
   });
@@ -186,6 +231,7 @@ describe("MarketDataSettings", () => {
       .mockResolvedValueOnce(response({ latestQuote: null, latestRun: null }));
     vi.stubGlobal("fetch", fetchMock);
     render(<MarketDataSettings />);
+    await revealRefreshAction(user);
     await user.click(
       await screen.findByRole("button", { name: "Atualizar mercado" }),
     );
@@ -215,6 +261,7 @@ describe("MarketDataSettings", () => {
         .mockResolvedValueOnce(response(status));
       vi.stubGlobal("fetch", fetchMock);
       render(<MarketDataSettings />);
+      await revealRefreshAction(user);
       await user.click(
         await screen.findByRole("button", { name: "Atualizar mercado" }),
       );
@@ -234,6 +281,7 @@ describe("MarketDataSettings", () => {
       .mockResolvedValueOnce(response({ latestQuote: null, latestRun: null }));
     vi.stubGlobal("fetch", fetchMock);
     render(<MarketDataSettings />);
+    await revealRefreshAction(user);
     await user.click(
       await screen.findByRole("button", { name: "Atualizar mercado" }),
     );
@@ -279,6 +327,7 @@ describe("MarketDataSettings", () => {
       .mockResolvedValueOnce(response({ latestQuote: null, latestRun: null }));
     vi.stubGlobal("fetch", fetchMock);
     render(<MarketDataSettings />);
+    await revealRefreshAction(user);
     await user.click(
       await screen.findByRole("button", { name: "Atualizar mercado" }),
     );
