@@ -2,6 +2,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 
 import LoginPage from "@/app/login/page";
 import { LogoutButton } from "@/components/logout-button";
@@ -9,11 +10,13 @@ import { LogoutButton } from "@/components/logout-button";
 const push = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 describe("authentication interface", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.mocked(toast.error).mockReset();
   });
 
   it("validates the e-mail format before requesting login", async () => {
@@ -32,7 +35,7 @@ describe("authentication interface", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("shows the safe credentials error returned by the server", async () => {
+  it("shows the safe credentials error returned by the server in a toast", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -52,7 +55,10 @@ describe("authentication interface", () => {
       screen.getByRole("button", { name: "Entrar" }).closest("form")!,
     );
 
-    expect(await screen.findByText("E-mail ou senha incorretos.")).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("E-mail ou senha incorretos."),
+    );
+    expect(screen.queryByText("E-mail ou senha incorretos.")).toBeNull();
   });
 
   it("handles missing form fields and an error response without a message", async () => {
@@ -81,7 +87,11 @@ describe("authentication interface", () => {
       screen.getByRole("button", { name: "Entrar" }).closest("form")!,
     );
 
-    expect(await screen.findByText(/concluir o login/)).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível concluir o login.",
+      ),
+    );
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("redirects after login and logout", async () => {
@@ -120,7 +130,11 @@ describe("authentication interface", () => {
       screen.getByRole("button", { name: "Entrar" }).closest("form")!,
     );
 
-    expect(await screen.findByText(/concluir o login/)).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível concluir o login.",
+      ),
+    );
   });
 });
 

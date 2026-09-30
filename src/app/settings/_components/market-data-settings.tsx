@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   AlertCircle,
   ChevronDown,
@@ -22,6 +23,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { getApiMessage } from "@/lib/api-message";
 
 type MarketDataStatus = {
   latestQuote: { quoteObservedAt: string; sourceTicker: string } | null;
@@ -35,6 +37,8 @@ type MarketDataStatus = {
     skippedFreshIssuers: number;
   };
 };
+class ApiResponseError extends Error {}
+const statusErrorFallback = "Não foi possível consultar os dados de mercado.";
 
 const dateTime = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "medium",
@@ -64,7 +68,8 @@ export function MarketDataSettings() {
     const body = (await response.json()) as MarketDataStatus & {
       message?: string;
     };
-    if (!response.ok) throw new Error(body.message);
+    if (!response.ok)
+      throw new ApiResponseError(getApiMessage(body, statusErrorFallback));
     setStatus(body);
   }, []);
 
@@ -75,7 +80,8 @@ export function MarketDataSettings() {
         const body = (await response.json()) as MarketDataStatus & {
           message?: string;
         };
-        if (!response.ok) throw new Error(body.message);
+        if (!response.ok)
+          throw new ApiResponseError(getApiMessage(body, statusErrorFallback));
         return body;
       })
       .then((body) => {
@@ -84,9 +90,9 @@ export function MarketDataSettings() {
       .catch((loadError: unknown) => {
         if (!cancelled)
           setError(
-            loadError instanceof Error && loadError.message
+            loadError instanceof ApiResponseError && loadError.message
               ? loadError.message
-              : "Não foi possível consultar os dados de mercado.",
+              : statusErrorFallback,
           );
       })
       .finally(() => {
@@ -105,6 +111,7 @@ export function MarketDataSettings() {
     let initialTotal: number | null = null;
     let updated = 0;
     let unavailable = 0;
+    let apiSuccessMessage = "";
     try {
       while (remaining > 0) {
         const response = await fetch("/api/screener/market/refresh", {
@@ -119,10 +126,14 @@ export function MarketDataSettings() {
           unavailableIssuers?: number;
           attemptedIssuers?: number;
         };
-        if (!response.ok)
-          throw new Error(
-            body.message ?? "A atualização de mercado não foi concluída.",
+        if (!response.ok) {
+          toast.error(
+            getApiMessage(body, "A atualização de mercado não foi concluída."),
           );
+          setNotice(null);
+          return;
+        }
+        apiSuccessMessage = getApiMessage(body, "") || apiSuccessMessage;
         initialTotal ??= body.totalStaleIssuers ?? 0;
         updated += body.updatedIssuers ?? 0;
         unavailable += body.unavailableIssuers ?? 0;
@@ -130,27 +141,36 @@ export function MarketDataSettings() {
         setNotice(
           `Atualizando dados de mercado: ${initialTotal - remaining} de ${initialTotal} emissores.`,
         );
-        if (remaining > 0 && (body.attemptedIssuers ?? 0) === 0)
-          throw new Error(
-            "A atualização não avançou. Tente novamente mais tarde.",
-          );
+        if (remaining > 0 && (body.attemptedIssuers ?? 0) === 0) {
+          toast.error("A atualização não avançou. Tente novamente mais tarde.");
+          setNotice(null);
+          return;
+        }
       }
-      await loadStatus();
+      try {
+        await loadStatus();
+      } catch (statusLoadError) {
+        setError(
+          statusLoadError instanceof ApiResponseError
+            ? statusLoadError.message
+            : statusErrorFallback,
+        );
+      }
       const unavailableSummary =
         unavailable === 1
           ? "; 1 emissor indisponível"
           : unavailable > 1
             ? `; ${number.format(unavailable)} emissores indisponíveis`
             : "";
-      setNotice(
-        `Mercado atualizado: ${number.format(updated)} emissores com cotação validada${unavailableSummary}.`,
-      );
-    } catch (refreshError) {
-      setError(
-        refreshError instanceof Error && refreshError.message
-          ? refreshError.message
-          : "Não foi possível atualizar os dados de mercado.",
-      );
+      const successMessage =
+        apiSuccessMessage ||
+        `Mercado atualizado: ${number.format(updated)} emissores com cotação validada${unavailableSummary}.`;
+      if (unavailable > 0) toast.warning(successMessage);
+      else toast.success(successMessage);
+      setNotice(null);
+    } catch {
+      toast.error("Não foi possível atualizar os dados de mercado.");
+      setNotice(null);
       try {
         await loadStatus();
       } catch {

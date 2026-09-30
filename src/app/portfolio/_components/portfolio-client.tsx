@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
 import { ReferenceRates } from "@/components/reference-rates";
@@ -59,6 +60,7 @@ export function PortfolioClient({
     status: "loading",
   });
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedOverview = useRef(false);
 
   useEffect(() => {
     const syncFromUrl = () => {
@@ -98,13 +100,18 @@ export function PortfolioClient({
   );
 
   const loadOverview = useCallback(() => {
+    let failureMessage = loadErrorMessage;
     fetch("/api/portfolio")
       .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message);
-        return body;
+        const body: unknown = await response.json();
+        if (!response.ok) {
+          failureMessage = getApiMessage(body, loadErrorMessage);
+          throw new Error("portfolio_request_failed");
+        }
+        return body as Overview;
       })
       .then((data) => {
+        hasLoadedOverview.current = true;
         setOverview(data);
         setError(null);
         if (activeView === "overview") {
@@ -124,8 +131,8 @@ export function PortfolioClient({
         }
       })
       .catch(() => {
-        setError(loadErrorMessage);
-        toast.error(loadErrorMessage);
+        if (hasLoadedOverview.current) toast.error(failureMessage);
+        else setError(failureMessage);
       });
   }, [activeView]);
 

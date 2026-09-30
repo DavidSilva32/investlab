@@ -8,6 +8,10 @@ import {
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const toast = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
+
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
 
 const holdings = [
@@ -33,6 +37,7 @@ const holdings = [
 
 afterEach(() => {
   cleanup();
+  toast.error.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -107,7 +112,13 @@ describe("PositionCombinationSuggestions", () => {
     expect(screen.getByText("CDB 115% CDI")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Usar esta/ }));
     expect(screen.getByRole("status").textContent).toContain("rascunho");
-    expect(onApply).toHaveBeenCalledWith(["inter-box", "inter-named"]);
+    expect(onApply).toHaveBeenCalledWith(
+      ["inter-box", "inter-named"],
+      expect.objectContaining({
+        assetKeys: ["inter-box", "inter-named"],
+        difference: 0,
+      }),
+    );
   });
 
   it("keeps nearest candidates compact until reviewed", async () => {
@@ -151,6 +162,73 @@ describe("PositionCombinationSuggestions", () => {
     ).toContain("1.000,00");
     expect(screen.queryByText("CDB Inter daily liquidity")).toBeNull();
     expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("shows known objective value when transfer progress is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "suggestions",
+          kind: "exact",
+          candidates: [
+            {
+              assetKeys: ["inter-box"],
+              total: 30_000,
+              difference: 0,
+              transfers: [
+                {
+                  assetKey: "inter-box",
+                  product: "CDB Inter daily liquidity",
+                  value: 30_000,
+                  fromObjectiveId: "goal-trip",
+                  fromObjectiveName: "Viagem",
+                  toObjectiveId: "reserve",
+                },
+              ],
+              impacts: [
+                {
+                  objectiveId: "goal-trip",
+                  objectiveName: "Viagem",
+                  currentValue: 30_000,
+                  knownValue: 30_000,
+                  targetAmount: 40_000,
+                  progressPercent: null,
+                  transferredValue: 30_000,
+                  transferredPositionCount: 1,
+                },
+              ],
+            },
+          ],
+          searchLimited: false,
+        }),
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Valor conhecido da reserva"
+        comparisonDetails="Metodologia de teste."
+        holdings={holdings.slice(0, 1)}
+        onApply={vi.fn()}
+      />,
+    );
+    await user.type(
+      screen.getByLabelText("Valor conhecido da reserva"),
+      "3000000",
+    );
+    await user.click(screen.getByRole("button", { name: /Buscar combin/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Ver 1 posições" }),
+    );
+    expect(
+      screen.getByText(/Viagem: R\$ 30\.000,00 de R\$ 40\.000,00/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/40\.000,00 ·/)).toBeNull();
   });
 
   it("keeps the input locked while a request is pending", async () => {
@@ -222,7 +300,7 @@ describe("PositionCombinationSuggestions", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("uses a safe fallback when the API error has no message", async () => {
+  it("uses a safe fallback toast when the API error has no message", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
@@ -244,9 +322,10 @@ describe("PositionCombinationSuggestions", () => {
       "10000",
     );
     await user.click(screen.getByRole("button", { name: /Buscar combin/ }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Tente novamente.",
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível buscar combinações agora. Tente novamente.",
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows partial-search and tied-alternative limits", async () => {
@@ -336,7 +415,7 @@ describe("PositionCombinationSuggestions", () => {
     expect(screen.getByText(/A busca foi limitada/)).toBeTruthy();
   });
 
-  it("shows a safe API message and can retry", async () => {
+  it("shows a safe API message once and can retry", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -366,9 +445,8 @@ describe("PositionCombinationSuggestions", () => {
     );
     const search = screen.getByRole("button", { name: /Buscar combin/ });
     await user.click(search);
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Falha segura.",
-    );
+    expect(toast.error).toHaveBeenCalledWith("Falha segura.");
+    expect(screen.queryByRole("alert")).toBeNull();
     await user.click(search);
     expect(await screen.findByText(/grupos com valor atual/)).toBeTruthy();
   });

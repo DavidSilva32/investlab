@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Settings2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -46,13 +47,15 @@ export function CdbRateConfiguration({
             : { assetCode, cdiPercentage: percentage },
         ),
       });
-      const data = (await response.json()) as { message?: string };
+      const data: unknown = await response.json();
       if (!response.ok) {
-        toast.error(data.message ?? "Não foi possível salvar a configuração.");
+        toast.error(
+          getApiMessage(data, "Não foi possível salvar a configuração."),
+        );
         return;
       }
 
-      toast.success(data.message ?? "Configuração salva com sucesso.");
+      toast.success(getApiMessage(data, "Configuração salva com sucesso."));
       setEditing(false);
       window.dispatchEvent(new Event("portfolio:updated"));
       router.refresh();

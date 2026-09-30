@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,15 @@ type Item = {
   referenceDate?: string;
 };
 type MutationResponse = { message?: string };
+type ConfirmationItem = Item & { preview: Preview };
+type ConfirmationResult =
+  | { status: "success"; item: ConfirmationItem; message: string }
+  | {
+      status: "failure";
+      item: ConfirmationItem & { error: string };
+      notification: string;
+    };
+class ApiMessageError extends Error {}
 const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 });
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -71,7 +81,9 @@ export function PortfolioImport() {
     const response = await fetch(endpoint, { method: "POST", body: form });
     const body = (await response.json()) as MutationResponse & Preview;
     if (!response.ok)
-      throw new Error(body.message ?? "Não foi possível ler o arquivo.");
+      throw new ApiMessageError(
+        getApiMessage(body, "Não foi possível ler o arquivo."),
+      );
     return body;
   }
 
@@ -96,15 +108,20 @@ export function PortfolioImport() {
         } catch (error) {
           return {
             file,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Não foi possível comunicar com o servidor.",
+            error: "Prévia indisponível.",
+            notification:
+              error instanceof ApiMessageError
+                ? `${file.name}: ${error.message}`
+                : `${file.name}: Não foi possível comunicar com o servidor.`,
           };
         }
       }),
     );
-    setItems(results);
+    const previewFailures = results.flatMap((result) =>
+      "notification" in result ? [result.notification] : [],
+    );
+    if (previewFailures.length > 0) toast.error(previewFailures.join(" · "));
+    setItems(results.map(({ notification: _notification, ...item }) => item));
     setLoading(false);
   }
 
@@ -123,25 +140,43 @@ export function PortfolioImport() {
               ? item.referenceDate
               : undefined,
           );
-          return { item, message: response.message };
+          return {
+            status: "success" as const,
+            item,
+            message: getApiMessage(response, "Arquivo importado com sucesso."),
+          };
         } catch (error) {
           const message =
-            error instanceof Error
+            error instanceof ApiMessageError
               ? error.message
               : "Não foi possível salvar o arquivo.";
-          toast.error(message);
-          return { item: { ...item, error: message } };
+          return {
+            status: "failure" as const,
+            item: {
+              ...item,
+              error: "Importação não concluída.",
+            },
+            notification: `${item.file.name}: ${message}`,
+          };
         }
       }),
     );
     setLoading(false);
-    const confirmedItems = results.map((result) => result.item);
-    if (confirmedItems.every((item) => !item.error)) {
-      results.forEach((result) =>
-        toast.success(result.message ?? "Arquivo importado com sucesso."),
-      );
-      location.reload();
-    } else setItems(confirmedItems);
+    const successes = results.filter(
+      (result): result is Extract<ConfirmationResult, { status: "success" }> =>
+        result.status === "success",
+    );
+    const failures = results.filter(
+      (result): result is Extract<ConfirmationResult, { status: "failure" }> =>
+        result.status === "failure",
+    );
+    if (successes.length > 0) {
+      toast.success(successes.map((result) => result.message).join(" · "));
+      window.dispatchEvent(new Event("portfolio:updated"));
+    }
+    if (failures.length > 0)
+      toast.error(failures.map((result) => result.notification).join(" · "));
+    setItems(failures.map((result) => result.item));
   }
 
   const hasMissingPositionReferenceDate = items.some(

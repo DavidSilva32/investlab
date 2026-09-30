@@ -70,7 +70,10 @@ describe("DashboardClient", () => {
   it("announces an initial API failure and allows a retry", async () => {
     const fetchMock = vi
       .fn()
-      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ message: "Dashboard indisponível pela API." }),
+      })
       .mockResolvedValueOnce({ ok: true, json: async () => overview })
       .mockResolvedValueOnce({
         ok: true,
@@ -81,12 +84,33 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
 
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "Não foi possível carregar o dashboard.",
+      "Dashboard indisponível pela API.",
     );
     await screen
       .findByRole("button", { name: "Tentar novamente" })
       .then((button) => button.click());
 
+    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
+  });
+
+  it("uses the fixed inline fallback when an API payload has no message", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => overview })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => objectivesOverview,
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<DashboardClient />);
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível carregar o dashboard.",
+    );
+    await screen
+      .findByRole("button", { name: "Tentar novamente" })
+      .then((button) => button.click());
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
   });
 
@@ -101,16 +125,42 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await screen.findByText("Resumo do dashboard");
 
-    fetchMock.mockImplementationOnce(() =>
-      Promise.resolve({ ok: false, json: async () => overview }),
-    );
+    fetchMock.mockRejectedValueOnce(new Error("private transport detail"));
     window.dispatchEvent(new Event("portfolio:updated"));
 
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível carregar o dashboard.",
+    );
+    expect(screen.queryByText("private transport detail")).toBeNull();
     expect(screen.getByText("Resumo do dashboard")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Tentar novamente" }),
     ).toBeTruthy();
+  });
+
+  it("shows a safe API message when a later dashboard refresh fails", async () => {
+    const fetchMock = vi.fn(
+      (url: string): Promise<{ ok: boolean; json: () => Promise<unknown> }> =>
+        url === "/api/portfolio"
+          ? Promise.resolve({ ok: true, json: async () => overview })
+          : Promise.resolve({ ok: true, json: async () => objectivesOverview }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<DashboardClient />);
+    await screen.findByText("Resumo do dashboard");
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: false,
+        json: async () => ({ message: "Atualização recusada pela API." }),
+      }),
+    );
+    window.dispatchEvent(new Event("portfolio:updated"));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Atualização recusada pela API.",
+    );
+    expect(screen.getByText("Resumo do dashboard")).toBeTruthy();
   });
 
   it("hides unassigned wealth when the objectives endpoint is unavailable", async () => {

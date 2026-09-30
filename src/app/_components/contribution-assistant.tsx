@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowRight, ChevronDown, CircleAlert } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
+import { getApiMessage } from "@/lib/api-message";
 import type { ContributionAllocationResult } from "@/lib/contribution-allocation";
 import {
   formatAmountInput,
@@ -80,10 +82,19 @@ export function ContributionAssistant() {
         body: JSON.stringify({ contributionAmount: parsedAmount }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(
+            body,
+            "Não foi possível calcular o aporte. Tente novamente.",
+          ),
+        );
+        setResult(null);
+        return;
+      }
       setResult(body as ContributionAllocationResult);
     } catch {
-      setError("Não foi possível calcular o aporte. Tente novamente.");
+      toast.error("Não foi possível calcular o aporte. Tente novamente.");
       setResult(null);
     } finally {
       setLoading(false);

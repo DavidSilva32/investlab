@@ -17,10 +17,21 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Info, ChevronDown } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { getApiMessage } from "@/lib/api-message";
 
 type Holding = {
   assetKey: string;
@@ -49,6 +60,30 @@ type EditorData = {
   calculation: EmergencyReserveCalculation;
 };
 
+type TransferDetails = {
+  assetKey: string;
+  product: string;
+  value: number;
+  fromObjectiveId: string;
+  fromObjectiveName: string;
+  toObjectiveId: string;
+};
+type TransferImpact = {
+  objectiveId: string;
+  objectiveName: string;
+  currentValue: number | null;
+  knownValue: number;
+  targetAmount: number | null;
+  progressPercent: number | null;
+  transferredValue: number;
+  transferredPositionCount: number;
+};
+type PendingTransfer = {
+  assetKeys: string[];
+  transfers: TransferDetails[];
+  impacts: TransferImpact[];
+};
+
 const loadErrorMessage = "Não foi possível carregar a configuração da reserva.";
 
 export function EmergencyReserveEditor() {
@@ -64,31 +99,39 @@ export function EmergencyReserveEditor() {
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pendingTransfer, setPendingTransfer] =
+    useState<PendingTransfer | null>(null);
+  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
 
   const loadData = useCallback(() => {
     fetch("/api/emergency-reserve")
       .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message);
-        return body as EditorData;
-      })
-      .then((body) => {
-        setData(body);
-        setMonthlyExpenses(body.monthlyExpenses?.toString() ?? "");
-        setTargetMonths(body.targetMonths?.toString() ?? "");
-        const loadedMonths = body.targetMonths?.toString() ?? "";
+        const body: unknown = await response.json();
+        if (!response.ok) {
+          setError(
+            getApiMessage(
+              body,
+              "Não foi possível carregar a configuração da reserva.",
+            ),
+          );
+          return;
+        }
+        const data = body as EditorData;
+        setData(data);
+        setMonthlyExpenses(data.monthlyExpenses?.toString() ?? "");
+        setTargetMonths(data.targetMonths?.toString() ?? "");
+        const loadedMonths = data.targetMonths?.toString() ?? "";
         setCustomMonths(loadedMonths);
         setMonthChoice(
           loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
             ? loadedMonths
             : "custom",
         );
-        setSelectedKeys(new Set(body.selectedAssetKeys));
+        setSelectedKeys(new Set(data.selectedAssetKeys));
         setError(null);
       })
       .catch(() => {
         setError(loadErrorMessage);
-        toast.error(loadErrorMessage);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -99,8 +142,13 @@ export function EmergencyReserveEditor() {
     return () => window.removeEventListener("portfolio:updated", loadData);
   }, [loadData]);
 
-  async function save(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function save(
+    event?: React.FormEvent<HTMLFormElement>,
+    requestedKeys = [...selectedKeys],
+    transfers: TransferDetails[] = [],
+    transferImpacts: TransferImpact[] = [],
+  ) {
+    event?.preventDefault();
     const expenses = Number(monthlyExpenses);
     const months = Number(targetMonths);
     if (
@@ -135,26 +183,44 @@ export function EmergencyReserveEditor() {
         body: JSON.stringify({
           monthlyExpenses: expenses,
           targetMonths: months,
-          selectedAssetKeys: [...selectedKeys],
+          selectedAssetKeys: requestedKeys,
+          ...(transfers.length ? { transfers } : {}),
         }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      setData(body as EditorData);
-      setMonthlyExpenses(body.monthlyExpenses?.toString() ?? "");
-      setTargetMonths(body.targetMonths?.toString() ?? "");
-      const loadedMonths = body.targetMonths?.toString() ?? "";
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(body, "Não foi possível salvar a configuração."),
+        );
+        return;
+      }
+      const savedData = body as EditorData;
+      setData(savedData);
+      setMonthlyExpenses(savedData.monthlyExpenses?.toString() ?? "");
+      setTargetMonths(savedData.targetMonths?.toString() ?? "");
+      const loadedMonths = savedData.targetMonths?.toString() ?? "";
       setCustomMonths(loadedMonths);
       setMonthChoice(
         loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
           ? loadedMonths
           : "custom",
       );
-      setSelectedKeys(new Set(body.selectedAssetKeys));
-      toast.success("Reserva atualizada com sucesso.");
+      setSelectedKeys(new Set(savedData.selectedAssetKeys));
+      const transferMessage = transfers.length
+        ? createTransferSuccessMessage(transfers, transferImpacts)
+        : null;
+      setTransferSuccess(transferMessage);
+      setPendingTransfer(null);
+      toast.success(
+        getApiMessage(
+          body,
+          transferMessage ?? "Reserva atualizada com sucesso.",
+        ),
+      );
       window.dispatchEvent(new Event("portfolio:updated"));
     } catch {
-      setFormError("Não foi possível salvar a configuração. Tente novamente.");
+      setPendingTransfer(null);
+      toast.error("Não foi possível salvar a configuração. Tente novamente.");
     } finally {
       setSaving(false);
     }
@@ -382,8 +448,24 @@ export function EmergencyReserveEditor() {
                 description="Digite os números do saldo conhecido; os centavos são preenchidos automaticamente."
                 amountLabel="Valor conhecido da reserva"
                 comparisonDetails="Compara o total com valores atuais: estimativa de CDB DI/CDI quando disponível ou valor importado. Não identifica finalidade, titularidade, liquidez ou condições de resgate."
+                requestBody={{
+                  reserveTargetAmount: hasValidReserveTarget
+                    ? reserveTargetAmount
+                    : null,
+                }}
                 holdings={data.holdings}
-                onApply={(assetKeys) => setSelectedKeys(new Set(assetKeys))}
+                onApply={(assetKeys, candidate) => {
+                  if (candidate?.transfers?.length) {
+                    setPendingTransfer({
+                      assetKeys,
+                      transfers: candidate.transfers,
+                      impacts: candidate.impacts ?? [],
+                    });
+                    return false;
+                  }
+                  setSelectedKeys(new Set(assetKeys));
+                  setTransferSuccess(null);
+                }}
               />
             </div>
 
@@ -557,6 +639,11 @@ export function EmergencyReserveEditor() {
                 {formError}
               </p>
             )}
+            {transferSuccess && (
+              <p role="status" className="text-sm text-emerald-700">
+                {transferSuccess}
+              </p>
+            )}
             <div className="flex justify-end">
               <Button type="submit" disabled={saving}>
                 {saving ? "Salvando…" : "Salvar configuração"}
@@ -565,6 +652,102 @@ export function EmergencyReserveEditor() {
           </div>
         </form>
       )}
+      <AlertDialog
+        open={pendingTransfer !== null}
+        onOpenChange={() => setPendingTransfer(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Confirmar transferência para a Reserva
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              As posições listadas sairão dos objetivos atuais e passarão para a
+              Reserva na mesma transação que salva a configuração.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-60 space-y-2 overflow-y-auto">
+            {pendingTransfer?.transfers.map((transfer) => (
+              <div
+                key={transfer.assetKey}
+                className="rounded-md border p-3 text-sm"
+              >
+                <p className="font-medium">{transfer.product}</p>
+                <p className="text-muted-foreground">
+                  De {transfer.fromObjectiveName} para Reserva ·{" "}
+                  {formatCurrency(transfer.value)}
+                </p>
+              </div>
+            ))}
+          </div>
+          {pendingTransfer?.impacts.length ? (
+            <div className="rounded-md bg-muted/40 p-3 text-sm">
+              <p className="mb-2 font-medium">
+                Saldo esperado após a transferência
+              </p>
+              <ul className="space-y-1">
+                {pendingTransfer.impacts.map((impact) => (
+                  <li key={impact.objectiveId}>
+                    {impact.objectiveName}:{" "}
+                    {impact.currentValue === null
+                      ? `total indisponível · ${formatCurrency(impact.knownValue)} conhecidos`
+                      : formatCurrency(impact.currentValue)}
+                    {impact.targetAmount === null
+                      ? ""
+                      : ` de ${formatCurrency(impact.targetAmount)}`}
+                    {impact.progressPercent === null
+                      ? ""
+                      : ` (${impact.progressPercent.toFixed(1)}%)`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving || !pendingTransfer}
+              onClick={(event) => {
+                event.preventDefault();
+                const transfer = pendingTransfer!;
+                void save(
+                  undefined,
+                  transfer.assetKeys,
+                  transfer.transfers,
+                  transfer.impacts,
+                );
+              }}
+            >
+              {saving ? "Transferindo…" : "Usar e transferir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
+}
+
+function createTransferSuccessMessage(
+  transfers: TransferDetails[],
+  impacts: TransferImpact[],
+) {
+  const byObjective = new Map<string, TransferDetails[]>();
+  for (const transfer of transfers) {
+    const items = byObjective.get(transfer.fromObjectiveId) ?? [];
+    items.push(transfer);
+    byObjective.set(transfer.fromObjectiveId, items);
+  }
+  const sourceMessages = [...byObjective].map(([objectiveId, items]) => {
+    const impact = impacts.find((entry) => entry.objectiveId === objectiveId)!;
+    const target =
+      impact.targetAmount === null
+        ? ""
+        : ` de ${formatCurrency(impact.targetAmount)}`;
+    const balance =
+      impact.currentValue === null
+        ? `total indisponível; ${formatCurrency(impact.knownValue)} conhecidos${target}`
+        : `${formatCurrency(impact.currentValue)}${target}`;
+    return `${items.length} ${items.length === 1 ? "posição foi transferida" : "posições foram transferidas"} de ${items[0].fromObjectiveName} para Reserva. ${items[0].fromObjectiveName} agora possui ${balance}`;
+  });
+  return sourceMessages.join(" ");
 }

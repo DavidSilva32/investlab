@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -53,6 +53,11 @@ const movementPreview = {
 };
 
 describe("PortfolioImport", () => {
+  beforeEach(() => {
+    toast.success.mockReset();
+    toast.error.mockReset();
+  });
+
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -154,7 +159,7 @@ describe("PortfolioImport", () => {
       screen.getByRole("columnheader", { name: "Valor total" }),
     ).toBeTruthy();
   });
-  it("shows API and communication failures for automatic previews", async () => {
+  it("toasts API preview messages without repeating operational details inline", async () => {
     vi.stubGlobal(
       "fetch",
       vi
@@ -173,18 +178,19 @@ describe("PortfolioImport", () => {
       },
     });
 
-    expect(await screen.findByText(/Arquivo inválido/)).toBeTruthy();
     expect(
-      await screen.findByText(/Não foi possível comunicar com o servidor/),
+      await screen.findByText("invalido.xlsx: Prévia indisponível."),
     ).toBeTruthy();
+    expect(screen.getByText("offline.xlsx: Prévia indisponível.")).toBeTruthy();
+    expect(screen.queryByText("Arquivo inválido")).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith(
+      "invalido.xlsx: Arquivo inválido · offline.xlsx: Não foi possível comunicar com o servidor.",
+    );
   });
 
-  it("confirms ready previews and reloads only when every file is saved", async () => {
-    const reload = vi.fn();
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { reload },
-    });
+  it("shows success, clears previews, and notifies the portfolio after confirmation", async () => {
+    const portfolioUpdated = vi.fn();
+    window.addEventListener("portfolio:updated", portfolioUpdated);
     vi.stubGlobal(
       "fetch",
       vi
@@ -204,10 +210,12 @@ describe("PortfolioImport", () => {
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
 
-    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    await waitFor(() => expect(portfolioUpdated).toHaveBeenCalledOnce());
     expect(toast.success).toHaveBeenCalledWith(
       "Arquivo importado com sucesso.",
     );
+    expect(screen.queryByText("ETF")).toBeNull();
+    window.removeEventListener("portfolio:updated", portfolioUpdated);
   });
 
   it("keeps a preview visible when confirmation fails and can cancel it", async () => {
@@ -233,10 +241,80 @@ describe("PortfolioImport", () => {
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
 
-    expect(await screen.findByText(/Falha ao salvar/)).toBeTruthy();
-    expect(toast.error).toHaveBeenCalledWith("Falha ao salvar");
+    expect(
+      await screen.findByText("posicoes.xlsx: Importação não concluída."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Falha ao salvar")).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith("posicoes.xlsx: Falha ao salvar");
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(screen.queryByText("ETF")).toBeNull());
+  });
+
+  it("reports partial success and retries only the failed file", async () => {
+    const portfolioUpdated = vi.fn();
+    window.addEventListener("portfolio:updated", portfolioUpdated);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => positionPreview })
+      .mockResolvedValueOnce({ ok: true, json: async () => movementPreview })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Posições importadas." }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ message: "Movimentações recusadas." }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ message: "Movimentações seguem recusadas." }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: {
+        files: [spreadsheet("posicoes.xlsx"), spreadsheet("movimentos.xlsx")],
+      },
+    });
+    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
+      target: { value: "2026-09-18" },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 2 arquivo/ }),
+    );
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("Posições importadas.");
+      expect(toast.error).toHaveBeenCalledWith(
+        "movimentos.xlsx: Movimentações recusadas.",
+      );
+    });
+    expect(portfolioUpdated).toHaveBeenCalledOnce();
+    expect(screen.queryByText("posicoes.xlsx")).toBeNull();
+    expect(
+      screen.getByText("movimentos.xlsx: Importação não concluída."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Movimentações recusadas.")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenLastCalledWith(
+        "movimentos.xlsx: Movimentações seguem recusadas.",
+      ),
+    );
+    const confirmationRequests = fetchMock.mock.calls.filter(
+      ([url]) => url === "/api/imports/confirm",
+    );
+    expect(
+      confirmationRequests.map(
+        ([, init]) => ((init?.body as FormData).get("file") as File).name,
+      ),
+    ).toEqual(["posicoes.xlsx", "movimentos.xlsx", "movimentos.xlsx"]);
+    expect(portfolioUpdated).toHaveBeenCalledOnce();
+    window.removeEventListener("portfolio:updated", portfolioUpdated);
   });
 
   it("does not start a preview when the file chooser is empty", () => {
@@ -290,7 +368,7 @@ describe("PortfolioImport", () => {
     expect(await screen.findByText("Sem total")).toBeTruthy();
   });
 
-  it("uses fallback messages when the preview API omits an error message", async () => {
+  it("uses a fallback toast when the preview API omits an error message", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
@@ -299,7 +377,12 @@ describe("PortfolioImport", () => {
     fireEvent.change(container.querySelector("input[type=file]")!, {
       target: { files: [spreadsheet("erro.xlsx")] },
     });
-    expect(await screen.findByText(/N/)).toBeTruthy();
+    expect(
+      await screen.findByText("erro.xlsx: Prévia indisponível."),
+    ).toBeTruthy();
+    expect(toast.error).toHaveBeenCalledWith(
+      "erro.xlsx: Não foi possível ler o arquivo.",
+    );
   });
   it("uses a safe fallback when confirmation rejects without an Error", async () => {
     vi.stubGlobal(
@@ -320,10 +403,10 @@ describe("PortfolioImport", () => {
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
     expect(
-      await screen.findByText(/Não foi possível salvar o arquivo/),
+      await screen.findByText("offline.xlsx: Importação não concluída."),
     ).toBeTruthy();
     expect(toast.error).toHaveBeenCalledWith(
-      "Não foi possível salvar o arquivo.",
+      "offline.xlsx: Não foi possível salvar o arquivo.",
     );
   });
   it("treats a missing file list as an empty chooser", () => {
@@ -338,11 +421,8 @@ describe("PortfolioImport", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
   it("confirms movement previews without a position reference date", async () => {
-    const reload = vi.fn();
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { reload },
-    });
+    const portfolioUpdated = vi.fn();
+    window.addEventListener("portfolio:updated", portfolioUpdated);
     vi.stubGlobal(
       "fetch",
       vi
@@ -362,8 +442,10 @@ describe("PortfolioImport", () => {
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
 
-    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    await waitFor(() => expect(portfolioUpdated).toHaveBeenCalledOnce());
     expect(toast.success).toHaveBeenCalledWith("Movimentacoes importadas.");
+    expect(screen.queryByText("movimentos.xlsx")).toBeNull();
+    window.removeEventListener("portfolio:updated", portfolioUpdated);
   });
   it("renders an empty legacy position preview when positions are omitted", async () => {
     vi.stubGlobal(

@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -213,6 +219,7 @@ describe("EmergencyReserveEditor", () => {
               monthlyExpenses: null,
               targetMonths: null,
               selectedAssetKeys: [keyA, keyB],
+              message: "Reserva salva pela API.",
             }
           : editorData,
     }));
@@ -231,6 +238,7 @@ describe("EmergencyReserveEditor", () => {
     await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
 
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.success).toHaveBeenCalledWith("Reserva salva pela API.");
     const saveCall = fetchMock.mock.calls.find(
       ([, options]) => options?.method === "PUT",
     );
@@ -362,7 +370,7 @@ describe("EmergencyReserveEditor", () => {
     );
   });
 
-  it("shows the no-positions state and save errors", async () => {
+  it("shows the no-positions state and reports save conflicts once", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -371,7 +379,11 @@ describe("EmergencyReserveEditor", () => {
       })
       .mockResolvedValueOnce({
         ok: false,
-        json: async () => ({ message: "save failed" }),
+        status: 409,
+        json: async () => ({
+          message:
+            "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
+        }),
       });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -383,11 +395,33 @@ describe("EmergencyReserveEditor", () => {
       await screen.findByText(/Importe uma posição da carteira/),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
+      ),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("uses a generic toast for unexpected save failures without an error message", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => editorData })
+      .mockRejectedValueOnce("network failure");
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+
+    await screen.findByLabelText("Custo mensal");
+    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+
+    expect(toast.error).toHaveBeenCalledWith(
       "Não foi possível salvar a configuração. Tente novamente.",
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
-  it("offers retry after the editor cannot load", async () => {
+
+  it("keeps a blocking load failure inline and offers retry", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -400,13 +434,34 @@ describe("EmergencyReserveEditor", () => {
     render(<EmergencyReserveEditor />);
 
     await screen.findByRole("button", { name: "Tentar novamente" });
-    expect(toast.error).toHaveBeenCalledWith(
-      "Não foi possível carregar a configuração da reserva.",
-    );
+    expect(await screen.findByText("load failed")).toBeTruthy();
+    expect(toast.error).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /Tentar novamente/ }));
 
     await openReservePositions(user);
     expect(await screen.findByLabelText(/Tesouro Selic/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a fixed inline fallback when loading rejects at the network", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("private transport detail"))
+      .mockResolvedValueOnce({ ok: true, json: async () => editorData });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+
+    expect(
+      await screen.findAllByText(
+        "Não foi possível carregar a configuração da reserva.",
+      ),
+    ).toHaveLength(2);
+    expect(screen.queryByText("private transport detail")).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await screen.findByLabelText("Custo mensal");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -499,5 +554,305 @@ describe("EmergencyReserveEditor suggestion application", () => {
     expect(JSON.parse(saveCall?.[1]?.body as string).selectedAssetKeys).toEqual(
       [keyB],
     );
+  });
+
+  it("requires confirmation before transferring a suggested position", async () => {
+    const ownedData = structuredClone(editorData);
+    Object.assign(ownedData.holdings[0], {
+      assignedObjectiveId: "00000000-0000-4000-8000-000000000099",
+      assignedObjectiveName: "Viagem",
+    });
+    Object.assign(ownedData.holdings[1], {
+      assignedObjectiveId: "00000000-0000-4000-8000-000000000099",
+      assignedObjectiveName: "Viagem",
+    });
+    const transfer = {
+      assetKey: keyB,
+      product: "Tesouro Selic",
+      value: 1000,
+      fromObjectiveId: "00000000-0000-4000-8000-000000000099",
+      fromObjectiveName: "Viagem",
+      toObjectiveId: "00000000-0000-4000-8000-000000000010",
+    };
+    const firstTransfer = {
+      ...transfer,
+      assetKey: keyA,
+      product: "CDB liquidez",
+      value: 3000,
+    };
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () => {
+        if (options?.method === "POST") {
+          return {
+            status: "suggestions",
+            kind: "exact",
+            candidates: [
+              {
+                assetKeys: [keyA, keyB],
+                total: 4000,
+                difference: 0,
+                transfers: [firstTransfer, transfer],
+                impacts: [
+                  {
+                    objectiveId: "00000000-0000-4000-8000-000000000099",
+                    objectiveName: "Viagem",
+                    currentValue: null,
+                    knownValue: 5000,
+                    targetAmount: null,
+                    progressPercent: null,
+                    transferredValue: 4000,
+                    transferredPositionCount: 2,
+                  },
+                  {
+                    objectiveId: "00000000-0000-4000-8000-000000000010",
+                    objectiveName: "Reserva",
+                    currentValue: 4000,
+                    knownValue: 4000,
+                    targetAmount: 4000,
+                    progressPercent: 100,
+                    transferredValue: 4000,
+                    transferredPositionCount: 2,
+                  },
+                ],
+              },
+            ],
+            searchLimited: false,
+            alternativesLimited: false,
+          };
+        }
+        if (options?.method === "PUT") return editorData;
+        return ownedData;
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Encontrar grupos pelo valor/,
+      }),
+    );
+    await user.type(
+      screen.getByLabelText("Valor conhecido da reserva"),
+      "100000",
+    );
+    await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
+    const suggestionRequest = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "POST",
+    );
+    expect(JSON.parse(suggestionRequest?.[1]?.body as string)).toMatchObject({
+      targetAmount: 1000,
+      reserveTargetAmount: 12000,
+    });
+    const positionToggles = await screen.findAllByRole("button", {
+      name: "Ver 2 posições",
+    });
+    await user.click(positionToggles[positionToggles.length - 1]);
+    expect(screen.getAllByText("Tesouro Selic")).toHaveLength(1);
+    await user.click(
+      await screen.findByRole("button", { name: "Usar e transferir" }),
+    );
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getAllByText(/De Viagem para Reserva/)).toHaveLength(
+      2,
+    );
+    expect(within(dialog).getByText(/total indisponível/)).toBeTruthy();
+    expect(
+      within(dialog).getByText(/Reserva: R\$ 4\.000,00 de R\$ 4\.000,00/),
+    ).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+    ).toBe(false);
+    expect(
+      within(dialog).getByRole("button", { name: "Usar e transferir" }),
+    ).toBeTruthy();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Usar e transferir" }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+      ).toBe(true),
+    );
+    const put = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(put?.[1]?.body as string)).toMatchObject({
+      selectedAssetKeys: [keyA, keyB],
+      transfers: [firstTransfer, transfer],
+    });
+    const confirmation = await screen.findByText(
+      /2 posições foram transferidas de Viagem para Reserva/,
+    );
+    expect(confirmation.textContent).toMatch(
+      /Viagem agora possui total indisponível; R\$\s5\.000,00 conhecidos/,
+    );
+  });
+
+  it("cancels a transfer confirmation without changing selection or sending PUT", async () => {
+    const ownedData = structuredClone(editorData);
+    Object.assign(ownedData.holdings[1], {
+      assignedObjectiveId: "00000000-0000-4000-8000-000000000099",
+      assignedObjectiveName: "Viagem",
+    });
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () =>
+        options?.method === "POST"
+          ? {
+              status: "suggestions",
+              kind: "exact",
+              candidates: [
+                {
+                  assetKeys: [keyB],
+                  total: 1000,
+                  difference: 0,
+                  transfers: [
+                    {
+                      assetKey: keyB,
+                      product: "Tesouro Selic",
+                      value: 1000,
+                      fromObjectiveId: "00000000-0000-4000-8000-000000000099",
+                      fromObjectiveName: "Viagem",
+                      toObjectiveId: "00000000-0000-4000-8000-000000000010",
+                    },
+                  ],
+                },
+              ],
+              searchLimited: false,
+              alternativesLimited: false,
+            }
+          : ownedData,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Encontrar grupos pelo valor/,
+      }),
+    );
+    await user.type(
+      screen.getByLabelText("Valor conhecido da reserva"),
+      "100000",
+    );
+    await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Usar e transferir" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+    expect(await screen.queryByRole("alertdialog")).toBeNull();
+
+    expect(
+      fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+    ).toBe(false);
+    await openReservePositions(user);
+    expect(
+      screen
+        .getByRole("checkbox", { name: /CDB liquidez/ })
+        .getAttribute("data-state"),
+    ).toBe("checked");
+    expect(
+      screen
+        .getByRole("checkbox", { name: /Tesouro Selic/ })
+        .getAttribute("data-state"),
+    ).toBe("unchecked");
+  });
+
+  it("shows a known source balance and singular success after one transfer", async () => {
+    const ownedData = structuredClone(editorData);
+    Object.assign(ownedData.holdings[1], {
+      assignedObjectiveId: "00000000-0000-4000-8000-000000000099",
+      assignedObjectiveName: "Viagem",
+    });
+    const transfer = {
+      assetKey: keyB,
+      product: "Tesouro Selic",
+      value: 1000,
+      fromObjectiveId: "00000000-0000-4000-8000-000000000099",
+      fromObjectiveName: "Viagem",
+      toObjectiveId: "00000000-0000-4000-8000-000000000010",
+    };
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () =>
+        options?.method === "POST"
+          ? {
+              status: "suggestions",
+              kind: "exact",
+              candidates: [
+                {
+                  assetKeys: [keyB],
+                  total: 1000,
+                  difference: 0,
+                  transfers: [transfer],
+                  impacts: [
+                    {
+                      objectiveId: transfer.fromObjectiveId,
+                      objectiveName: "Viagem",
+                      currentValue: 6000,
+                      knownValue: 6000,
+                      targetAmount: 10000,
+                      progressPercent: 60,
+                      transferredValue: 1000,
+                      transferredPositionCount: 1,
+                    },
+                  ],
+                },
+              ],
+              searchLimited: false,
+              alternativesLimited: false,
+            }
+          : options?.method === "PUT"
+            ? editorData
+            : ownedData,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Encontrar grupos pelo valor/,
+      }),
+    );
+    await user.type(
+      screen.getByLabelText("Valor conhecido da reserva"),
+      "100000",
+    );
+    await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Usar e transferir" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(
+        /Viagem: R\$ 6\.000,00 de R\$ 10\.000,00 \(60\.0%\)/,
+      ),
+    ).toBeTruthy();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Usar e transferir" }),
+    );
+
+    const success = await screen.findByText(
+      /1 posição foi transferida de Viagem para Reserva/,
+    );
+    expect(success.textContent).toMatch(
+      /Viagem agora possui R\$\s6\.000,00 de R\$\s10\.000,00/,
+    );
+    expect(toast.success).toHaveBeenCalledWith(success.textContent);
+    const put = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(put?.[1]?.body as string)).toMatchObject({
+      selectedAssetKeys: [keyB],
+      transfers: [transfer],
+    });
   });
 });

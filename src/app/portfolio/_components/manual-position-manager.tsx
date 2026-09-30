@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -286,17 +287,21 @@ export function ManualPositionManager({
           editing ? { ...payload, id: editing.id } : payload,
         ),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      toast.success(editing ? "Posição atualizada." : "Posição adicionada.");
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(getApiMessage(body, "Não foi possível salvar a posição."));
+        return;
+      }
+      toast.success(
+        getApiMessage(
+          body,
+          editing ? "Posição atualizada." : "Posição adicionada.",
+        ),
+      );
       setOpen(false);
       window.dispatchEvent(new Event("portfolio:updated"));
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível salvar a posição.",
-      );
+    } catch {
+      toast.error("Não foi possível salvar a posição.");
     } finally {
       setSaving(false);
     }
@@ -309,16 +314,15 @@ export function ManualPositionManager({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: position.id }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.message);
-      toast.success("Posição removida.");
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(getApiMessage(body, "Não foi possível remover a posição."));
+        return;
+      }
+      toast.success(getApiMessage(body, "Posição removida."));
       window.dispatchEvent(new Event("portfolio:updated"));
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível remover a posição.",
-      );
+    } catch {
+      toast.error("Não foi possível remover a posição.");
     }
   };
 

@@ -307,7 +307,35 @@ describe("PortfolioClient", () => {
   it("announces an initial API failure and allows a retry", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({ ok: false, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ message: "Carteira indisponível pela API." }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => overview })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ positions: [] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<PortfolioClient activeView="overview" />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Carteira indisponível pela API.",
+    );
+    expect(toastError).not.toHaveBeenCalled();
+
+    await screen
+      .findByRole("button", { name: "Tentar novamente" })
+      .then((button) => button.click());
+
+    expect(await screen.findByText("Valor conhecido da carteira")).toBeTruthy();
+  });
+
+  it("uses a fixed fallback for a network failure on the initial load", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("private transport detail"))
       .mockResolvedValueOnce({ ok: true, json: async () => overview })
       .mockResolvedValueOnce({
         ok: true,
@@ -320,14 +348,12 @@ describe("PortfolioClient", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível carregar a carteira.",
     );
-    expect(toastError).toHaveBeenCalledWith(
-      "Não foi possível carregar a carteira.",
-    );
+    expect(screen.queryByText("private transport detail")).toBeNull();
+    expect(toastError).not.toHaveBeenCalled();
 
     await screen
       .findByRole("button", { name: "Tentar novamente" })
       .then((button) => button.click());
-
     expect(await screen.findByText("Valor conhecido da carteira")).toBeTruthy();
   });
 
@@ -348,7 +374,34 @@ describe("PortfolioClient", () => {
     window.dispatchEvent(new Event("portfolio:updated"));
 
     await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    expect(toastError).toHaveBeenCalledWith(
+      "Não foi possível carregar a carteira.",
+    );
     expect(screen.getByText("Valor conhecido da carteira")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("uses the API message in a refresh toast without duplicating inline feedback", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => overview })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ positions: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ message: "Atualização recusada pela API." }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<PortfolioClient activeView="overview" />);
+    await screen.findByText("Valor conhecido da carteira");
+    window.dispatchEvent(new Event("portfolio:updated"));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Atualização recusada pela API."),
+    );
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
