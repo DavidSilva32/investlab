@@ -9,6 +9,10 @@ import {
   getNextContributionGuidance,
   type ContributionGuidance,
 } from "@/lib/next-contribution-guidance";
+import {
+  calculateContributionAllocation,
+  type ContributionPosition,
+} from "@/lib/contribution-allocation";
 
 const unavailableGuidance: ContributionGuidance = {
   status: "unavailable",
@@ -18,6 +22,26 @@ const unavailableGuidance: ContributionGuidance = {
 };
 
 export class PortfolioService {
+  async calculateContribution(contributionAmount: number, requestId?: string) {
+    const current = await portfolioPositionService.listCurrent(requestId);
+    const estimated =
+      await portfolioPositionService.enrichImportedPositions(current);
+    const [positions, targets] = await Promise.all([
+      portfolioAllocationService.classifyPositions(estimated, requestId),
+      portfolioAllocationService.getAllocationTargets(requestId),
+    ]);
+    const reserve =
+      await emergencyReserveService.getContributionContext(positions);
+    return calculateContributionAllocation({
+      contributionAmount,
+      positions: positions as ContributionPosition[],
+      targets,
+      reserve: reserve.calculation,
+      selectedReserveAssetKeys: reserve.selectedAssetKeys,
+      strategySource: "user_defined",
+    });
+  }
+
   async getOverview(requestId?: string) {
     logger.info("portfolio_overview_loading", { requestId });
     const [positions, movements] = await Promise.all([

@@ -65,7 +65,7 @@ describe("EmergencyReserveSummary", () => {
           selectedValue: 7000,
           coveredMonths: 7,
           difference: -1000,
-          progressPercentage: 100,
+          progressPercentage: 116.7,
           status: "above_target",
         }}
       />,
@@ -73,6 +73,7 @@ describe("EmergencyReserveSummary", () => {
 
     expect(html).toContain("7.0 meses de despesas");
     expect(html).toContain("A cobertura está R$ 1.000,00 acima da meta");
+    expect(html).toContain('aria-valuenow="100"');
   });
 
   it("describes a personal target that is exactly reached", () => {

@@ -26,10 +26,8 @@ vi.mock("@/backend/services/portfolio-allocation.service", () => ({
 
 import { ApplicationError } from "@/backend/errors/application-error";
 import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
-import {
-  EmergencyReserveService,
-  getEmergencyReserveAssetKey,
-} from "@/backend/services/emergency-reserve.service";
+import { EmergencyReserveService } from "@/backend/services/emergency-reserve.service";
+import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 
 const position = (overrides: Record<string, unknown> = {}) => ({
   id: "snapshot-row-1",
@@ -92,6 +90,42 @@ describe("EmergencyReserveService", () => {
     );
     mocks.getSettings.mockResolvedValue(null);
     mocks.saveSettings.mockResolvedValue(undefined);
+  });
+
+  it("returns an empty contribution context when reserve settings do not exist", async () => {
+    mocks.getSettings.mockResolvedValue(null);
+    const result = await new EmergencyReserveService().getContributionContext(
+      [],
+    );
+
+    expect(result.selectedAssetKeys).toEqual([]);
+    expect(result.calculation.status).toBe("not_configured");
+    expect(result.calculation.missingSelectionCount).toBe(0);
+  });
+
+  it("preserves configured reserve settings for the aporte calculation", async () => {
+    const cdb = position();
+    const assetKey = getEmergencyReserveAssetKey(cdb);
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "2500.00",
+      targetMonths: 6,
+      selectedAssetKeys: [assetKey],
+    });
+    const result = await new EmergencyReserveService().getContributionContext([
+      {
+        ...cdb,
+        estimatedValue: 100,
+        classification: { assetClass: "Renda fixa" },
+      },
+    ]);
+
+    expect(result.selectedAssetKeys).toEqual([assetKey]);
+    expect(result.calculation).toMatchObject({
+      monthlyExpenses: 2500,
+      targetMonths: 6,
+      selectedValue: 100,
+      selectedGroups: 1,
+    });
   });
 
   it("keeps a group key stable when quantities and values change", () => {
