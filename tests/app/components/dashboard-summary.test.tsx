@@ -50,6 +50,7 @@ describe("DashboardSummary", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("group-data-[state=open]:rotate-180");
     expect(html).toContain('href="/portfolio"');
+    expect(html).not.toContain('aria-labelledby="dashboard-next-action-title"');
   });
 
   it("provides an accessible, keyboard-focusable details disclosure", async () => {
@@ -94,7 +95,7 @@ describe("DashboardSummary", () => {
 
     expect(html).toContain("A reserva está abaixo da sua meta pessoal");
     expect(html).toContain("não é uma recomendação do InvestLab");
-    expect(html).toContain("direcionar o próximo aporte à reserva");
+    expect(html).not.toContain('aria-labelledby="dashboard-next-action-title"');
     expect(html).not.toContain("Defina sua estratégia de alocação");
   });
 
@@ -120,14 +121,11 @@ describe("DashboardSummary", () => {
 
     expect(html).toContain("2.0 meses de despesas");
     expect(html).toContain("Sem meta pessoal configurada");
-    expect(html).toContain(
-      "método validado para montar e escolher alternativas de investimento",
-    );
-    expect(html).toContain("não sugere onde colocar novos aportes");
-    expect(html).not.toContain("Próximo aporte");
+    expect(html).toContain("Complete a configuração da reserva");
+    expect(html).toContain('aria-labelledby="dashboard-next-action-title"');
   });
 
-  it("explains the missing alternative-selection method when the personal goal is met", () => {
+  it("does not show a redundant next action when the personal goal is met", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
         positions={positions}
@@ -148,9 +146,7 @@ describe("DashboardSummary", () => {
     );
 
     expect(html).toContain("Sua meta pessoal está atingida.");
-    expect(html).toContain(
-      "método validado para montar e escolher alternativas de investimento",
-    );
+    expect(html).not.toContain('aria-labelledby="dashboard-next-action-title"');
   });
 
   it("offers reserve settings when monthly expenses are missing", () => {
@@ -173,11 +169,8 @@ describe("DashboardSummary", () => {
       />,
     );
 
-    expect(html).toContain(
-      "Informe suas despesas mensais para calcular a cobertura",
-    );
-    expect(html).toContain("falta um método validado para montar alternativas");
-    expect(html).toContain("não sugerimos onde aportar");
+    expect(html).toContain("Complete a configuração da reserva");
+    expect(html).toContain("Informe suas despesas e defina sua meta pessoal");
     expect(html).toContain('href="/portfolio"');
     expect(html).toContain("Configurar reserva");
   });
@@ -206,7 +199,7 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Os dados da reserva estão incompletos");
     expect(html).not.toContain("A reserva está abaixo da sua meta pessoal");
     expect(html).toContain("Revise as posições selecionadas como reserva");
-    expect(html).not.toContain("direcionar o próximo aporte à reserva");
+    expect(html).toContain('aria-labelledby="dashboard-next-action-title"');
   });
 
   it("offers import as the next action when no positions are known", () => {

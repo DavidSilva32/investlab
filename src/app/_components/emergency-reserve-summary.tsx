@@ -6,6 +6,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
 
@@ -80,19 +81,14 @@ export function EmergencyReserveSummary({
             {hasPersonalTarget &&
               !incomplete &&
               calculation.progressPercentage !== null && (
-                <div
-                  role="progressbar"
+                <Progress
                   aria-label="Cobertura em relação à sua meta pessoal"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(calculation.progressPercentage)}
-                  className="h-2.5 overflow-hidden rounded-full bg-muted"
-                >
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width]"
-                    style={{ width: `${calculation.progressPercentage}%` }}
-                  />
-                </div>
+                  value={Math.min(
+                    100,
+                    Math.round(calculation.progressPercentage),
+                  )}
+                  className="h-2.5 bg-muted"
+                />
               )}
             {hasPersonalTarget && incomplete ? (
               <p className="text-sm font-medium text-amber-800 dark:text-amber-300">

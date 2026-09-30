@@ -20,6 +20,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
+import { ContributionAssistant } from "@/app/_components/contribution-assistant";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
@@ -167,6 +168,8 @@ export function DashboardSummary({
         <EmergencyReserveSummary calculation={emergencyReserve} />
       </section>
 
+      <ContributionAssistant />
+
       <section
         aria-labelledby="dashboard-attention-title"
         className="space-y-3"
@@ -260,33 +263,35 @@ export function DashboardSummary({
         </section>
       )}
 
-      <section aria-labelledby="dashboard-next-action-title">
-        <Card className="bg-muted/40">
-          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Próxima ação
-              </p>
-              <h2
-                id="dashboard-next-action-title"
-                className="mt-1 font-semibold"
+      {nextAction && (
+        <section aria-labelledby="dashboard-next-action-title">
+          <Card className="bg-muted/40">
+            <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  Próxima ação
+                </p>
+                <h2
+                  id="dashboard-next-action-title"
+                  className="mt-1 font-semibold"
+                >
+                  {nextAction.title}
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                  {nextAction.detail}
+                </p>
+              </div>
+              <Link
+                href={nextAction.href}
+                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {nextAction.title}
-              </h2>
-              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                {nextAction.detail}
-              </p>
-            </div>
-            <Link
-              href={nextAction.href}
-              className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {nextAction.label}
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
-          </CardContent>
-        </Card>
-      </section>
+                {nextAction.label}
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       <Collapsible className="text-sm text-muted-foreground">
         <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-2 rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -324,6 +329,15 @@ function getNextAction({
   reserveIncomplete: boolean;
   reserve?: EmergencyReserveCalculation;
 }) {
+  if (reserveIncomplete) {
+    return {
+      title: "Revise as posições selecionadas como reserva",
+      detail:
+        "Há posições sem valor ou seleções que não correspondem à carteira atual.",
+      label: "Revisar reserva",
+      href: "/portfolio",
+    };
+  }
   if (positionCount === 0) {
     return {
       title: "Adicione os dados da sua carteira",
@@ -341,39 +355,17 @@ function getNextAction({
       href: "/portfolio",
     };
   }
-  if (reserveIncomplete) {
+  if (
+    reserve &&
+    (reserve.monthlyExpenses === null || reserve.status === "not_configured")
+  ) {
     return {
-      title: "Revise as posições selecionadas como reserva",
+      title: "Complete a configuração da reserva",
       detail:
-        "Há posições sem valor ou seleções ausentes; não é possível confirmar a comparação com sua meta.",
-      label: "Revisar reserva",
-      href: "/portfolio",
-    };
-  }
-  if (reserve?.monthlyExpenses === null) {
-    return {
-      title: "Informe suas despesas mensais para calcular a cobertura",
-      detail:
-        "Com esse valor, o InvestLab compara a reserva conhecida com suas despesas. Para novos aportes, ainda falta um método validado para montar alternativas com base na carteira inteira; por isso, não sugerimos onde aportar.",
+        "Informe suas despesas e defina sua meta pessoal para acompanhar a cobertura.",
       label: "Configurar reserva",
       href: "/portfolio",
     };
   }
-  if (reserve?.status === "below_target") {
-    return {
-      title:
-        "Se sua meta continua prioritária, considere direcionar o próximo aporte à reserva",
-      detail:
-        "Esta possibilidade considera apenas a meta pessoal que você definiu; o InvestLab não recomenda um ativo nem um valor de aporte.",
-      label: "Revisar reserva",
-      href: "/portfolio",
-    };
-  }
-  return {
-    title: "Confira se sua carteira está atualizada",
-    detail:
-      "Ainda falta um método validado para montar e escolher alternativas de investimento a partir da carteira inteira. Por isso, o InvestLab não sugere onde colocar novos aportes.",
-    label: "Revisar carteira",
-    href: "/portfolio",
-  };
+  return null;
 }

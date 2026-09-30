@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
@@ -9,6 +8,7 @@ import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-
 import { suggestEmergencyReservePositions } from "@/backend/services/emergency-reserve-position-suggestions";
 import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 import { logger } from "@/infrastructure/logging/logger";
+import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 
 const suggestionSchema = z.object({
   targetAmount: z.number().finite().positive().max(1_000_000_000_000),
@@ -43,26 +43,6 @@ type ReserveSettings = {
   targetMonths: number | null;
   selectedAssetKeys: string[];
 };
-
-const canonicalPart = (value: string | null | undefined) =>
-  value?.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR") ?? "";
-
-export function getEmergencyReserveAssetKey(position: Position) {
-  const identity = [
-    position.product,
-    position.assetCode,
-    position.institution,
-    position.issuer,
-    position.indexer,
-    position.regimeType,
-    position.issuedAt,
-    position.maturityAt,
-  ].map(canonicalPart);
-  const fingerprint = createHash("sha256")
-    .update(JSON.stringify(identity))
-    .digest("hex");
-  return `v1:${fingerprint}`;
-}
 
 function isReserveFixedIncomePosition(position: Position) {
   const inferredClass = inferPortfolioAssetClassification(position).assetClass;
@@ -126,6 +106,22 @@ export class EmergencyReserveService {
     return {
       ...data.calculation,
       missingSelectionCount: data.missingSelectionCount,
+    };
+  }
+
+  async getContributionContext(positions: ClassifiedPosition[]) {
+    const settings = await emergencyReserveRepository.getSettings();
+    const data = this.buildData(positions, {
+      monthlyExpenses: settings?.monthlyExpenses ?? null,
+      targetMonths: settings?.targetMonths ?? null,
+      selectedAssetKeys: settings?.selectedAssetKeys ?? [],
+    });
+    return {
+      calculation: {
+        ...data.calculation,
+        missingSelectionCount: data.missingSelectionCount,
+      },
+      selectedAssetKeys: data.selectedAssetKeys,
     };
   }
 
