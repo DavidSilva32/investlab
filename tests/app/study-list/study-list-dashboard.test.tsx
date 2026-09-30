@@ -68,14 +68,11 @@ describe("StudyListDashboard", () => {
     expect(await screen.findByText("Sua lista ainda está vazia")).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: "Ir para Descobrir" })
+        .getByRole("link", { name: "Buscar uma empresa" })
         .getAttribute("href"),
     ).toBe("/analyses");
-    expect(
-      screen
-        .getByRole("link", { name: "Ir para Analisar" })
-        .getAttribute("href"),
-    ).toContain("/analyses?ticker=");
+    expect(screen.queryByRole("link", { name: /PETR4/ })).toBeNull();
+    expect(screen.queryByText(/Descobrir/)).toBeNull();
   });
 
   it("retries after a load error", async () => {

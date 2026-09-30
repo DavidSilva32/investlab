@@ -38,7 +38,7 @@ vi.mock("recharts", () => ({
 }));
 
 describe("FundamentalsEvolution", () => {
-  it("charts annual DFP series separately and keeps exact values visible", () => {
+  it("charts annual DFP series separately and formats exact tooltip values", () => {
     render(
       <FundamentalsEvolution
         periods={[
@@ -76,13 +76,11 @@ describe("FundamentalsEvolution", () => {
     expect(screen.getAllByText("Receita").length).toBeGreaterThan(0);
     expect(screen.getByText("Lucro líquido")).toBeTruthy();
     expect(screen.getByText("Patrimônio líquido")).toBeTruthy();
-    expect(screen.getAllByText(/1\.000\.000,00/).length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("exact-tooltip").length).toBe(3);
     expect(
       document.querySelector("[data-years='2024,2025,2026']"),
     ).toBeTruthy();
     expect(screen.getAllByTestId("compact-tick").length).toBe(3);
-    expect(screen.getAllByTestId("exact-tooltip").length).toBe(3);
-    expect(screen.getAllByText("Não informado").length).toBeGreaterThan(0);
   });
 
   it("renders nothing when annual statements are absent", () => {

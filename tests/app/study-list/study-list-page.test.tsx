@@ -16,11 +16,6 @@ vi.mock("@/components/app-shell", () => ({
     </main>
   ),
 }));
-vi.mock("@/app/analyses/_components/analysis-experience-nav", () => ({
-  AnalysisExperienceNav: ({ active }: { active: string }) => (
-    <nav aria-label="Navegação">{active}</nav>
-  ),
-}));
 vi.mock("@/app/study-list/_components/study-list-dashboard", () => ({
   StudyListDashboard: () => <section aria-label="Lista" />,
 }));
@@ -30,14 +25,12 @@ import StudyListPage from "@/app/study-list/page";
 afterEach(cleanup);
 
 describe("StudyListPage", () => {
-  it("renders the app shell, list navigation and list dashboard", () => {
+  it("renders the app shell and list dashboard without main analysis navigation", () => {
     render(StudyListPage());
     expect(
       screen.getByRole("heading", { name: "Lista de estudo" }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("navigation", { name: "Navegação" }).textContent,
-    ).toBe("study-list");
+    expect(screen.queryByRole("navigation")).toBeNull();
     expect(screen.getByRole("region", { name: "Lista" })).toBeTruthy();
   });
 });
