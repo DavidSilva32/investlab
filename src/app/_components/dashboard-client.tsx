@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
@@ -32,7 +31,6 @@ export function DashboardClient() {
       })
       .catch(() => {
         setError(loadErrorMessage);
-        toast.error(loadErrorMessage);
       });
   }, []);
 
@@ -58,5 +56,22 @@ export function DashboardClient() {
     );
   if (!overview)
     return <AppContentSkeleton title="Dashboard" variant="dashboard" />;
-  return <DashboardSummary {...overview} />;
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div role="alert" className="space-y-2 text-sm text-destructive">
+          <p>{error}</p>
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto p-0 text-foreground"
+            onClick={loadOverview}
+          >
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+      <DashboardSummary {...overview} />
+    </div>
+  );
 }

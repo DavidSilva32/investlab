@@ -94,6 +94,10 @@ const submit = () => {
   if (!form) throw new Error("form missing");
   fireEvent.submit(form);
 };
+const expandManualPositions = () =>
+  fireEvent.click(
+    screen.getByRole("button", { name: /posições manuais cadastradas/ }),
+  );
 const choose = async (
   user: ReturnType<typeof userEvent.setup>,
   index: number,
@@ -256,6 +260,7 @@ describe("ManualPositionManager", () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse());
     vi.stubGlobal("fetch", fetchMock);
     render(<ManualPositionManager positions={[row]} />);
+    expandManualPositions();
     fireEvent.click(
       screen.getByRole("button", { name: "Editar ETF internacional" }),
     );
@@ -278,6 +283,7 @@ describe("ManualPositionManager", () => {
 
   it("formats the manual amount using the selected EUR currency", () => {
     render(<ManualPositionManager positions={[{ ...row, currency: "EUR" }]} />);
+    expandManualPositions();
     fireEvent.click(
       screen.getByRole("button", { name: "Editar ETF internacional" }),
     );
@@ -289,6 +295,7 @@ describe("ManualPositionManager", () => {
 
   it("preserves an unlisted currency code while formatting manual amounts", () => {
     render(<ManualPositionManager positions={[{ ...row, currency: "JPY" }]} />);
+    expandManualPositions();
     fireEvent.click(
       screen.getByRole("button", { name: "Editar ETF internacional" }),
     );
@@ -308,6 +315,7 @@ describe("ManualPositionManager", () => {
       classification: { assetClass: null, subClass: null, geography: null },
     };
     render(<ManualPositionManager positions={[unclassified]} />);
+    expandManualPositions();
     fireEvent.click(
       screen.getByRole("button", { name: "Editar ETF internacional" }),
     );
@@ -321,6 +329,7 @@ describe("ManualPositionManager", () => {
 
   it("uses fallback values when optional manual position fields are absent", async () => {
     render(<ManualPositionManager positions={[emptyRow]} />);
+    expandManualPositions();
     fireEvent.click(
       screen.getByRole("button", { name: "Editar Fundo de índice" }),
     );
@@ -385,6 +394,7 @@ describe("ManualPositionManager", () => {
       .mockRejectedValueOnce("offline");
     vi.stubGlobal("fetch", fetchMock);
     render(<ManualPositionManager positions={[row]} />);
+    expandManualPositions();
     const remove = () =>
       fireEvent.click(
         screen.getByRole("button", { name: "Remover ETF internacional" }),
@@ -423,6 +433,16 @@ describe("ManualPositionManager", () => {
         ]}
       />,
     );
+    expect(
+      screen.getByRole("button", {
+        name: /posições manuais cadastradas/,
+        expanded: false,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/Código repetido em outra posição manual/),
+    ).toBeNull();
+    expandManualPositions();
     expect(screen.getAllByText("Manual")).toHaveLength(2);
     expect(
       screen.getByText(/Código repetido em outra posição manual/),
@@ -441,6 +461,7 @@ describe("ManualPositionManager", () => {
       },
     };
     render(<ManualPositionManager positions={[classifiedPosition]} />);
+    expandManualPositions();
     expect(screen.getByText("Fundos")).toBeTruthy();
   });
 
@@ -455,6 +476,7 @@ describe("ManualPositionManager", () => {
         positions={[currencyFallback, missingConversionDate]}
       />,
     );
+    expandManualPositions();
     expect(screen.getByText(/50 BRL/)).toBeTruthy();
     expect(screen.getByText(/conversão em data não informada/)).toBeTruthy();
   });

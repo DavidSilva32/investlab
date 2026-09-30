@@ -77,13 +77,14 @@ export function DashboardSummary({
           },
         ]
       : []),
+  ];
+  const portfolioFacts = [
     ...(insights.largestPosition
       ? [
           {
             icon: WalletCards,
             title: "Maior posição na carteira conhecida",
             detail: `${insights.largestPosition.product} representa ${insights.largestPosition.percentage.toFixed(1)}% do valor conhecido. Isso descreve a distribuição; não classifica o nível de risco.`,
-            tone: "neutral" as const,
           },
         ]
       : []),
@@ -93,7 +94,6 @@ export function DashboardSummary({
             icon: CalendarDays,
             title: "Próximo vencimento informado",
             detail: `${nextMaturity.product} · ${date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))}. O vencimento é uma data registrada e não confirma quando o dinheiro ficará disponível.`,
-            tone: "neutral" as const,
           },
         ]
       : []),
@@ -183,12 +183,14 @@ export function DashboardSummary({
               O que merece atenção
             </h2>
           </div>
-          <Link
-            href="/portfolio"
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-          >
-            Ver carteira <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
+          {positions.length > 0 && (
+            <Link
+              href="/portfolio"
+              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            >
+              Ver carteira <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          )}
         </div>
         {attentionItems.length ? (
           <div className="grid gap-3 md:grid-cols-2">
@@ -197,13 +199,7 @@ export function DashboardSummary({
               return (
                 <Card key={item.title}>
                   <CardContent className="flex gap-3 p-4">
-                    <span
-                      className={
-                        item.tone === "attention"
-                          ? "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                          : "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
-                      }
-                    >
+                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                       <Icon aria-hidden="true" className="size-4" />
                     </span>
                     <div className="min-w-0">
@@ -223,11 +219,46 @@ export function DashboardSummary({
               <Info aria-hidden="true" className="size-4 shrink-0" />
               {missingValueCount > 0
                 ? "A leitura fica limitada enquanto houver posições sem valor atual."
-                : "Importe sua carteira para que o InvestLab possa fazer uma leitura dos dados conhecidos."}
+                : positions.length === 0
+                  ? "Ainda não há posições conhecidas para identificar pontos de atenção."
+                  : "Não há pontos de atenção identificados com os dados disponíveis."}
             </CardContent>
           </Card>
         )}
       </section>
+
+      {portfolioFacts.length > 0 && (
+        <section aria-labelledby="dashboard-facts-title" className="space-y-3">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">
+              Dados registrados
+            </p>
+            <h2 id="dashboard-facts-title" className="text-lg font-semibold">
+              Fatos da carteira
+            </h2>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {portfolioFacts.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Card key={item.title}>
+                  <CardContent className="flex gap-3 p-4">
+                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+                      <Icon aria-hidden="true" className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="font-medium">{item.title}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {item.detail}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section aria-labelledby="dashboard-next-action-title">
         <Card className="bg-muted/40">

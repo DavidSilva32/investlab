@@ -1,12 +1,6 @@
 ﻿// @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
-
-vi.mock("sonner", () => ({
-  toast: { error: toastError },
-}));
 vi.mock("@/components/app-page-skeleton", () => ({
   AppContentSkeleton: () => <p>Carregando dashboard...</p>,
 }));
@@ -24,7 +18,6 @@ const overview = {
 describe("DashboardClient", () => {
   afterEach(() => {
     cleanup();
-    toastError.mockReset();
     vi.restoreAllMocks();
   });
 
@@ -52,10 +45,6 @@ describe("DashboardClient", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível carregar o dashboard.",
     );
-    expect(toastError).toHaveBeenCalledWith(
-      "Não foi possível carregar o dashboard.",
-    );
-
     await screen
       .findByRole("button", { name: "Tentar novamente" })
       .then((button) => button.click());
@@ -75,8 +64,10 @@ describe("DashboardClient", () => {
 
     window.dispatchEvent(new Event("portfolio:updated"));
 
-    await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText("Resumo do dashboard")).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeTruthy();
   });
 });

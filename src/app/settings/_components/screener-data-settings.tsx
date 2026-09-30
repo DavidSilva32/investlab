@@ -178,20 +178,22 @@ export function ScreenerDataSettings() {
           <div>
             <CardTitle>Fundamentos e cadastro</CardTitle>
             <CardDescription className="mt-1 max-w-2xl">
-              Atualiza cadastro de emissores, tickers e demonstrações anuais DFP
-              consolidadas da CVM. A sincronização pode levar alguns minutos.
+              Mantém atualizados os emissores, tickers e demonstrativos anuais
+              da CVM usados nas análises.
             </CardDescription>
           </div>
-          <Button
-            onClick={() => void synchronize()}
-            disabled={syncing || loading}
-          >
-            <RefreshCw
-              className={`size-4 ${syncing ? "animate-spin" : ""}`}
-              aria-hidden="true"
-            />
-            {syncing ? "Sincronizando…" : "Sincronizar agora"}
-          </Button>
+          {!status?.hasSuccessfulSync && (
+            <Button
+              onClick={() => void synchronize()}
+              disabled={syncing || loading}
+            >
+              <RefreshCw
+                className={`size-4 ${syncing ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {syncing ? "Sincronizando…" : "Sincronizar agora"}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -226,32 +228,6 @@ export function ScreenerDataSettings() {
             {notice}
           </p>
         )}
-        <Collapsible className="text-xs text-muted-foreground">
-          <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-            Prazo e limite da fonte CVM
-            <ChevronDown
-              aria-hidden="true"
-              className="size-4 transition-transform group-data-[state=open]:rotate-180"
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <p className="mt-2 leading-relaxed">
-              A CVM prevê prazo de até três meses após o encerramento do
-              exercício para a entrega da DFP. Revise esta base depois da janela
-              anual de divulgação; isso não garante que toda empresa já tenha
-              publicado.{" "}
-              <a
-                className="underline underline-offset-4"
-                href="https://www.gov.br/cvm/pt-br/assuntos-regulados/envio-de-informacoes-a-cvm-calendario"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Calendário de entrega da CVM
-              </a>
-            </p>
-          </CollapsibleContent>
-        </Collapsible>
-
         {loading && !status ? (
           <p role="status" className="text-sm text-muted-foreground">
             Consultando a última sincronização…
@@ -267,68 +243,97 @@ export function ScreenerDataSettings() {
             </div>
             {run ? (
               <>
-                <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      Última atualização bem-sucedida
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium">
-                      {status?.lastSuccessfulCompletedAt
-                        ? `${dateTime.format(new Date(status.lastSuccessfulCompletedAt))} (${ageLabel(status.lastSuccessfulCompletedAt)})`
-                        : "Sem sincronização concluída"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      Iniciada em
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium">
-                      {dateTime.format(new Date(run.startedAt))}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Duração</dt>
-                    <dd className="mt-1 text-sm font-medium">
-                      {formatDuration(run.durationMs)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Emissores</dt>
-                    <dd className="mt-1 text-sm font-medium tabular-nums">
-                      {run.issuerCount === null
-                        ? "—"
-                        : number.format(run.issuerCount)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Tickers</dt>
-                    <dd className="mt-1 text-sm font-medium tabular-nums">
-                      {run.securityCount === null
-                        ? "—"
-                        : number.format(run.securityCount)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
-                      Fatos financeiros
-                    </dt>
-                    <dd className="mt-1 text-sm font-medium tabular-nums">
-                      {run.factCount === null
-                        ? "—"
-                        : number.format(run.factCount)}
-                    </dd>
-                  </div>
-                  {run.errorMessage && (
-                    <div className="sm:col-span-2 lg:col-span-4">
-                      <dt className="text-xs text-muted-foreground">
-                        Mensagem
-                      </dt>
-                      <dd className="mt-1 text-sm text-destructive">
-                        {run.errorMessage}
-                      </dd>
+                <p className="text-sm text-muted-foreground">
+                  Última atualização concluída:{" "}
+                  {status?.lastSuccessfulCompletedAt
+                    ? `${dateTime.format(new Date(status.lastSuccessfulCompletedAt))} (${ageLabel(status.lastSuccessfulCompletedAt)})`
+                    : "nenhuma sincronização concluída"}
+                </p>
+                <Collapsible className="text-xs text-muted-foreground">
+                  <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                    Detalhes técnicos
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                    />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-3 space-y-4">
+                    {status?.hasSuccessfulSync && (
+                      <Button
+                        onClick={() => void synchronize()}
+                        disabled={syncing || loading}
+                      >
+                        <RefreshCw
+                          className={`size-4 ${syncing ? "animate-spin" : ""}`}
+                          aria-hidden="true"
+                        />
+                        {syncing ? "Sincronizando…" : "Sincronizar agora"}
+                      </Button>
+                    )}
+                    <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <dt className="text-xs text-muted-foreground">
+                          Iniciada em
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium">
+                          {dateTime.format(new Date(run.startedAt))}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">
+                          Duração
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium">
+                          {formatDuration(run.durationMs)}
+                        </dd>
+                      </div>
+                      {(
+                        [
+                          { label: "Emissores", value: run.issuerCount },
+                          { label: "Tickers", value: run.securityCount },
+                          {
+                            label: "Fatos financeiros",
+                            value: run.factCount,
+                          },
+                        ] as const
+                      ).map(({ label, value }) => (
+                        <div key={label}>
+                          <dt className="text-xs text-muted-foreground">
+                            {label}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium tabular-nums">
+                            {value === null ? "—" : number.format(value)}
+                          </dd>
+                        </div>
+                      ))}
+                      {run.errorMessage && (
+                        <div className="sm:col-span-2 lg:col-span-4">
+                          <dt className="text-xs text-muted-foreground">
+                            Mensagem
+                          </dt>
+                          <dd className="mt-1 text-sm text-destructive">
+                            {run.errorMessage}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                    <div className="space-y-2">
+                      <p>
+                        A CVM prevê prazo de até três meses após o encerramento
+                        do exercício para entrega da DFP. A publicação pode
+                        ocorrer depois dessa janela.{" "}
+                        <a
+                          className="underline underline-offset-4"
+                          href="https://www.gov.br/cvm/pt-br/assuntos-regulados/envio-de-informacoes-a-cvm-calendario"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Calendário de entrega da CVM
+                        </a>
+                      </p>
                     </div>
-                  )}
-                </dl>
+                  </CollapsibleContent>
+                </Collapsible>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
