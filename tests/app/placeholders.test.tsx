@@ -14,7 +14,6 @@ vi.mock("@/components/portfolio-import", () => ({
 import AnalysesPage from "@/app/analyses/page";
 import ImportsPage from "@/app/imports/page";
 import SettingsPage from "@/app/settings/page";
-import { ComingSoonPage } from "@/components/coming-soon-page";
 
 describe("secondary pages", () => {
   it("renders each planned area with its context", async () => {
@@ -38,13 +37,5 @@ describe("secondary pages", () => {
       }),
     );
     expect(markup).toContain('value="VALE3"');
-  });
-
-  it("renders the reusable empty-state presentation", () => {
-    expect(
-      renderToStaticMarkup(
-        <ComingSoonPage title="Teste" description="Contexto" />,
-      ),
-    ).toContain("Em desenvolvimento");
   });
 });

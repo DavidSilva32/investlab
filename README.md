@@ -1,6 +1,6 @@
 # InvestLab
 
-InvestLab é uma aplicação Next.js para acompanhar uma carteira pessoal e estudar empresas com fontes e critérios explícitos. O produto organiza patrimônio importado, descoberta e análise de ativos sem transformar indicadores isolados em recomendações de compra ou venda.
+InvestLab é uma aplicação Next.js para acompanhar uma carteira pessoal e analisar empresas com fontes e critérios explícitos. O produto organiza patrimônio importado, objetivos e destinos, aportes e dados de empresas sem transformar indicadores isolados em recomendações de compra ou venda.
 
 ## Arquitetura
 
@@ -33,9 +33,9 @@ Configure `AUTH_EMAIL`, `AUTH_PASSWORD_HASH`, `AUTH_SECRET`, `DATABASE_URL_POOLE
 
 ## Dados de empresas
 
-A área **Análises** oferece **Descobrir**, o Screener manual em **Explorar** e a análise individual em **Analisar**. A base do Screener é atualizada manualmente em Configurações com cadastro e cotações da BRAPI e fatos anuais consolidados DFP da CVM. A atualização de mercado também pode ser executada separadamente. Não há cron configurado.
+A navegação principal oferece **Dashboard**, **Carteira**, **Importações**, **Análises** e **Configurações**. Análises abre a busca e a análise individual de empresas; o Screener fica disponível em `/analyses/screener`, fora da navegação principal. A Lista de estudo continua disponível em `/study-list`, também fora da navegação principal. Não há uma tela de Descobrir na jornada atual.
 
-A metodologia de Descobrir usa somente setores e conceitos contábeis já validados pelo projeto. Os dados mostram período, origem e critérios atendidos, não atendidos ou indisponíveis. As múltiplas do Screener manual exigem cotações verificadas com até sete dias. Atualização da base não significa que cada empresa tenha divulgado um novo demonstrativo ou que cada cotação esteja igualmente recente.
+A base do Screener é atualizada manualmente em Configurações com cadastro e cotações da BRAPI e fatos anuais consolidados DFP da CVM. A atualização de mercado também pode ser executada separadamente. Não há cron configurado. Os dados mostram período, origem e critérios atendidos, não atendidos ou indisponíveis. As múltiplas do Screener exigem cotações verificadas com até sete dias. Atualização da base não significa que cada empresa tenha divulgado um novo demonstrativo ou que cada cotação esteja igualmente recente.
 
 ## Banco, testes e qualidade
 
