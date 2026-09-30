@@ -202,12 +202,6 @@ export const portfolioAllocationTargets = pgTable(
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
 );
-export const investorContextSettings = pgTable("investor_context_settings", {
-  id: varchar({ length: 20 }).primaryKey().default("default"),
-  objective: varchar({ length: 160 }),
-  targetMonth: varchar({ length: 7 }),
-  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
 export const cdiDailyRates = pgTable("cdi_daily_rates", {
   rateDate: date().primaryKey(),
   annualRate: numeric({ precision: 9, scale: 6 }).notNull(),
