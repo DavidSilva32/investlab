@@ -61,9 +61,6 @@ describe("POST /api/settings/screener/sync", () => {
       requestId: "manual-sync",
     });
     expect(mocks.sync).toHaveBeenCalledOnce();
-    expect(JSON.stringify(mocks.error.mock.calls)).not.toContain(
-      "SCREENER_SYNC_SECRET",
-    );
   });
 
   it("creates a request id when omitted and hides non-Error failures", async () => {

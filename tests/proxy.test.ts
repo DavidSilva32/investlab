@@ -13,20 +13,20 @@ describe("proxy authentication", () => {
       (await proxy(new NextRequest("http://test/"))).headers.get("location"),
     ).toContain("/login");
     expect(
-      (await proxy(new NextRequest("http://test/api/positions"))).status,
+      (await proxy(new NextRequest("http://test/api/screener"))).status,
     ).toBe(401);
   });
-  it("allows only the secret-guarded external sync route without a session", async () => {
+  it("requires a session for the remaining screener API routes", async () => {
     verify.mockResolvedValue(false);
     expect(
       (
         await proxy(
-          new NextRequest("http://test/api/screener/sync", {
+          new NextRequest("http://test/api/screener", {
             method: "POST",
           }),
         )
       ).status,
-    ).toBe(200);
+    ).toBe(401);
     expect(
       (await proxy(new NextRequest("http://test/api/settings/screener")))
         .status,

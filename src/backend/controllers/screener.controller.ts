@@ -11,11 +11,6 @@ export class ScreenerController {
     );
     return Response.json({ ...result, requestId });
   }
-
-  async discover(requestId: string) {
-    const result = await screenerService.discover(requestId);
-    return Response.json({ ...result, requestId });
-  }
 }
 
 export const screenerController = new ScreenerController();

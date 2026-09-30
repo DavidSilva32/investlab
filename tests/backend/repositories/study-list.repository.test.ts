@@ -82,29 +82,6 @@ describe("StudyListRepository", () => {
     ]);
   });
 
-  it("adds once per CNPJ and treats a duplicate as an unchanged entry", async () => {
-    const returning = vi
-      .fn()
-      .mockResolvedValueOnce([{ issuerCnpj: "12345678000199" }])
-      .mockResolvedValueOnce([]);
-    const onConflictDoNothing = vi.fn().mockReturnValue({ returning });
-    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
-    client.insert.mockReturnValue({ values });
-
-    const repository = new StudyListRepository();
-    const input = {
-      issuerCnpj: "12345678000199",
-      companyName: "Empresa exemplo",
-      ticker: "EXMP3",
-      reason: "Analisar o negócio.",
-    };
-    await expect(repository.add(input)).resolves.toBe(true);
-    await expect(repository.add(input)).resolves.toBe(false);
-    expect(onConflictDoNothing).toHaveBeenCalledWith({
-      target: expect.anything(),
-    });
-  });
-
   it("updates an inclusion reason by issuer CNPJ and returns null if absent", async () => {
     const returning = vi
       .fn()

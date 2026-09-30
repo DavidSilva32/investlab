@@ -6,12 +6,6 @@ import {
 } from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 
-export type StudyListEntryInput = {
-  issuerCnpj: string;
-  companyName: string;
-  ticker: string | null;
-  reason: string;
-};
 export type StudyListObservationInput = {
   issuerCnpj: string;
   text: string;
@@ -63,15 +57,6 @@ export class StudyListRepository {
         ]),
       ],
     }));
-  }
-
-  async add(input: StudyListEntryInput) {
-    const [entry] = await getDatabaseClient()
-      .insert(studyListEntries)
-      .values(input)
-      .onConflictDoNothing({ target: studyListEntries.issuerCnpj })
-      .returning({ issuerCnpj: studyListEntries.issuerCnpj });
-    return Boolean(entry);
   }
 
   async updateReason(input: { issuerCnpj: string; reason: string }) {

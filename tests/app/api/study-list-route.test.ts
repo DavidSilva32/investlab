@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const controller = vi.hoisted(() => ({
   list: vi.fn(),
-  add: vi.fn(),
   remove: vi.fn(),
   updateReason: vi.fn(),
   addObservation: vi.fn(),
@@ -15,7 +14,7 @@ vi.mock("@/backend/controllers/study-list.controller", () => ({
 vi.mock("@/infrastructure/logging/logger", () => ({ logger }));
 
 import { ApplicationError } from "@/backend/errors/application-error";
-import { GET, POST } from "@/app/api/study-list/route";
+import { GET } from "@/app/api/study-list/route";
 import {
   DELETE,
   PATCH as UPDATE_REASON,
@@ -39,12 +38,10 @@ function requestWithoutId(method: string, body?: string) {
     method,
     ...(body === undefined
       ? {}
-      : {
-          headers: { "content-type": "application/json" },
-          body,
-        }),
+      : { headers: { "content-type": "application/json" }, body }),
   });
 }
+
 const context = {
   params: Promise.resolve({
     cnpj: "12345678000199",
@@ -55,29 +52,15 @@ const context = {
 describe("study-list route handlers", () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it("delegates list and add requests to the controller", async () => {
+  it("delegates list requests to the controller", async () => {
     controller.list.mockResolvedValueOnce(Response.json({ entries: [] }));
-    controller.add.mockResolvedValueOnce(
-      Response.json({ added: true }, { status: 201 }),
-    );
 
     expect((await GET(request("GET"))).status).toBe(200);
     expect(controller.list).toHaveBeenCalledWith("request-1");
-    expect(
-      (await POST(request("POST", JSON.stringify({ issuerCnpj: "123" }))))
-        .status,
-    ).toBe(201);
-    expect(controller.add).toHaveBeenCalledWith(
-      { issuerCnpj: "123" },
-      "request-1",
-    );
   });
 
   it("generates a request id when callers do not send one", async () => {
     controller.list.mockResolvedValueOnce(Response.json({ entries: [] }));
-    controller.add.mockResolvedValueOnce(
-      Response.json({ added: true }, { status: 201 }),
-    );
     controller.remove.mockResolvedValueOnce(Response.json({ removed: true }));
     controller.updateReason.mockResolvedValueOnce(
       Response.json({ reason: "Motivo atualizado." }),
@@ -90,9 +73,6 @@ describe("study-list route handlers", () => {
     );
 
     expect((await GET(requestWithoutId("GET"))).status).toBe(200);
-    const postResponse = await POST(requestWithoutId("POST", "{}"));
-    expect(postResponse.status).toBe(201);
-    expect(controller.add.mock.calls[0]?.[1]).toMatch(/^[0-9a-f-]{36}$/i);
     expect((await DELETE(requestWithoutId("DELETE"), context)).status).toBe(
       200,
     );
@@ -106,6 +86,7 @@ describe("study-list route handlers", () => {
       200,
     );
   });
+
   it("returns a generic read error and logs only error type and request id", async () => {
     controller.list.mockRejectedValueOnce(new Error("database detail"));
     const response = await GET(request("GET"));
@@ -127,44 +108,17 @@ describe("study-list route handlers", () => {
     });
   });
 
-  it("maps invalid add requests and malformed JSON to client-safe responses", async () => {
-    controller.add.mockRejectedValueOnce(
-      new ApplicationError("Revise os dados.", 422),
-    );
-    const expectedError = await POST(request("POST", "{}"));
-    expect(expectedError.status).toBe(422);
-    await expect(expectedError.json()).resolves.toMatchObject({
-      message: "Revise os dados.",
-    });
-
-    controller.add.mockRejectedValueOnce("unexpected");
-    const fallback = await POST(request("POST", "{}"));
-    expect(fallback.status).toBe(502);
-    await expect(fallback.json()).resolves.toMatchObject({
-      message: "Não foi possível adicionar a empresa à Lista de estudo.",
-    });
-
-    const invalidJson = await POST(request("POST", "{"));
-    expect(invalidJson.status).toBe(400);
-    await expect(invalidJson.json()).resolves.toMatchObject({
-      message: "Envie um corpo JSON válido.",
-    });
-    expect(controller.add).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns 400 for malformed JSON across every mutation body", async () => {
+  it("returns 400 for malformed JSON across body mutations", async () => {
     const malformed = "{";
     const responses = await Promise.all([
-      POST(request("POST", malformed)),
       UPDATE_REASON(request("PATCH", malformed), context),
       ADD_NOTE(request("POST", malformed), context),
       PATCH(request("PATCH", malformed), context),
     ]);
 
     expect(responses.map((response) => response.status)).toEqual([
-      400, 400, 400, 400,
+      400, 400, 400,
     ]);
-    expect(controller.add).not.toHaveBeenCalled();
     expect(controller.updateReason).not.toHaveBeenCalled();
     expect(controller.addObservation).not.toHaveBeenCalled();
     expect(controller.updateObservation).not.toHaveBeenCalled();

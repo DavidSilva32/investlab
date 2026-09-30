@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 const service = vi.hoisted(() => ({
   list: vi.fn(),
-  add: vi.fn(),
   remove: vi.fn(),
   updateReason: vi.fn(),
   addObservation: vi.fn(),
@@ -17,14 +16,6 @@ import { StudyListController } from "@/backend/controllers/study-list.controller
 describe("StudyListController", () => {
   it("serializes list, add, remove, and observation operations", async () => {
     service.list.mockResolvedValueOnce([{ issuerCnpj: "12345678000199" }]);
-    service.add.mockResolvedValueOnce({
-      added: true,
-      issuerCnpj: "12345678000199",
-    });
-    service.add.mockResolvedValueOnce({
-      added: false,
-      issuerCnpj: "12345678000199",
-    });
     service.remove.mockResolvedValueOnce({
       removed: true,
       issuerCnpj: "12345678000199",
@@ -47,8 +38,6 @@ describe("StudyListController", () => {
       requestId: "req-1",
     });
 
-    expect((await controller.add({}, "req-2")).status).toBe(201);
-    expect((await controller.add({}, "req-2")).status).toBe(200);
     expect((await controller.remove("12345678000199", "req-3")).status).toBe(
       200,
     );

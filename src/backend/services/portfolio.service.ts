@@ -113,18 +113,6 @@ export class PortfolioService {
       nextContributionGuidance,
     };
   }
-
-  async listPositions(requestId?: string) {
-    logger.info("portfolio_positions_loading", { requestId });
-    const positions = await portfolioPositionService.listCurrent(requestId);
-    const estimatedPositions =
-      await portfolioPositionService.enrichImportedPositions(positions);
-    logger.info("portfolio_positions_loaded", {
-      requestId,
-      positions: estimatedPositions.length,
-    });
-    return estimatedPositions;
-  }
 }
 
 export const portfolioService = new PortfolioService();

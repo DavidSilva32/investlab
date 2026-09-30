@@ -21,7 +21,6 @@ describe("StudyListService", () => {
     const entries = [{ ...entry, observations: [note] }];
     const repository = {
       list: vi.fn().mockResolvedValue(entries),
-      add: vi.fn(),
       remove: vi.fn(),
       updateReason: vi.fn(),
       addObservation: vi.fn(),
@@ -30,37 +29,6 @@ describe("StudyListService", () => {
     await expect(
       new StudyListService(repository).list("request-1"),
     ).resolves.toBe(entries);
-  });
-
-  it("validates CNPJ identity and required reason, then preserves existing data on duplicates", async () => {
-    const repository = {
-      list: vi.fn(),
-      add: vi.fn().mockResolvedValue(false),
-      remove: vi.fn(),
-      updateReason: vi.fn(),
-      addObservation: vi.fn(),
-      updateObservation: vi.fn(),
-    };
-    const service = new StudyListService(repository);
-    await expect(
-      service.add({ ...entry, issuerCnpj: "123" }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      message: expect.stringContaining("CNPJ"),
-    });
-    await expect(
-      service.add({ ...entry, reason: "  " }),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    await expect(
-      service.add({ ...entry, ticker: "not-a-ticker" }),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    await expect(
-      service.add({ ...entry, ticker: null }, "request-2"),
-    ).resolves.toEqual({
-      added: false,
-      issuerCnpj: entry.issuerCnpj,
-    });
-    expect(repository.add).toHaveBeenCalledOnce();
   });
 
   it("validates and updates a non-empty inclusion reason", async () => {

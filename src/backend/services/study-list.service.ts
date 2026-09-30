@@ -6,16 +6,6 @@ import {
 } from "@/backend/repositories/study-list.repository";
 import { logger } from "@/infrastructure/logging/logger";
 
-const tickerPattern = /^[A-Z]{4}[0-9]{1,2}$/;
-const addEntrySchema = z.object({
-  issuerCnpj: z
-    .string()
-    .trim()
-    .regex(/^\d{14}$/),
-  companyName: z.string().trim().min(1).max(200),
-  ticker: z.string().trim().toUpperCase().regex(tickerPattern).nullable(),
-  reason: z.string().trim().min(1).max(1000),
-});
 const observationSchema = z.object({
   text: z.string().trim().min(1).max(4000),
 });
@@ -26,7 +16,6 @@ export class StudyListService {
     private readonly repository: Pick<
       StudyListRepository,
       | "list"
-      | "add"
       | "remove"
       | "updateReason"
       | "addObservation"
@@ -38,23 +27,6 @@ export class StudyListService {
     const entries = await this.repository.list();
     logger.info("study_list_loaded", { requestId, entryCount: entries.length });
     return entries;
-  }
-
-  async add(rawInput: unknown, requestId?: string) {
-    const input = addEntrySchema.safeParse(rawInput);
-    if (!input.success)
-      throw new ApplicationError(
-        "Informe uma empresa identificada pelo CNPJ, o motivo do estudo e um ticker válido quando disponível.",
-        400,
-      );
-
-    const added = await this.repository.add(input.data);
-    logger.info("study_list_entry_add_attempted", {
-      requestId,
-      added,
-      hasTicker: input.data.ticker !== null,
-    });
-    return { added, issuerCnpj: input.data.issuerCnpj };
   }
 
   async updateReason(rawCnpj: unknown, rawInput: unknown, requestId?: string) {

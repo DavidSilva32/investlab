@@ -1,6 +1,5 @@
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
-  assessCompanyForDiscovery,
   filterScreenerCompanies,
   screenerFilterSchema,
 } from "@/backend/services/screener-metrics";
@@ -52,32 +51,6 @@ export class ScreenerService {
       counts,
     });
     return { results, counts, filters: parsed.data, hasSuccessfulSync };
-  }
-
-  async discover(requestId?: string) {
-    const [universe, hasSuccessfulSync] = await Promise.all([
-      this.repository.getUniverse(),
-      this.repository.hasSuccessfulSync(),
-    ]);
-    const results = [...universe]
-      .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"))
-      .map((source) => {
-        const {
-          facts: _facts,
-          marketSnapshot: _marketSnapshot,
-          ...identity
-        } = source;
-        return {
-          ...identity,
-          assessment: assessCompanyForDiscovery(source),
-        };
-      });
-    logger.info("screener_discovery_completed", {
-      requestId,
-      resultCount: results.length,
-      hasSuccessfulSync,
-    });
-    return { results, hasSuccessfulSync };
   }
 }
 
