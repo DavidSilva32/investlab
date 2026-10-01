@@ -1,8 +1,10 @@
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
   portfolioObjectivePositions,
+  portfolioObjectiveBalanceReferences,
+  portfolioObjectiveReferenceBatches,
   portfolioObjectives,
 } from "@/infrastructure/database/schema";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -16,6 +18,8 @@ export type ObjectiveAssignmentTransfer = {
   fromObjectiveId: string;
   toObjectiveId: string;
 };
+
+export type AllocationReference = { objectiveId: string; amountCents: string };
 
 export class PortfolioObjectivesRepository {
   async list() {
@@ -245,6 +249,164 @@ export class PortfolioObjectivesRepository {
       .where(eq(portfolioObjectives.id, objectiveId))
       .limit(1);
     return objective ?? null;
+  }
+
+  async listLatestBalanceReferences() {
+    const rows = await getDatabaseClient()
+      .select({
+        objectiveId: portfolioObjectiveBalanceReferences.objectiveId,
+        amountCents: portfolioObjectiveBalanceReferences.amountCents,
+        observedDate: portfolioObjectiveReferenceBatches.observedOn,
+        createdAt: portfolioObjectiveBalanceReferences.createdAt,
+      })
+      .from(portfolioObjectiveBalanceReferences)
+      .innerJoin(
+        portfolioObjectiveReferenceBatches,
+        eq(
+          portfolioObjectiveBalanceReferences.batchId,
+          portfolioObjectiveReferenceBatches.id,
+        ),
+      )
+      .orderBy(
+        desc(portfolioObjectiveBalanceReferences.createdAt),
+        desc(portfolioObjectiveBalanceReferences.id),
+      );
+    const latest = new Map<string, (typeof rows)[number]>();
+    for (const row of rows)
+      if (!latest.has(row.objectiveId)) latest.set(row.objectiveId, row);
+    return [...latest.values()].map(
+      ({ objectiveId, amountCents, observedDate }) => ({
+        objectiveId,
+        amountCents,
+        observedDate,
+      }),
+    );
+  }
+
+  async saveGlobalAllocation(input: {
+    observedOn: string;
+    expectedOwners: Record<string, string | null>;
+    allocation: Record<string, string | null>;
+    references: AllocationReference[];
+  }) {
+    const db = getDatabaseClient();
+    try {
+      return await db.transaction(
+        async (transaction) => {
+          const assetKeys = Object.keys(input.expectedOwners).sort();
+          if (
+            assetKeys.length !== Object.keys(input.allocation).length ||
+            assetKeys.some((assetKey) => !(assetKey in input.allocation))
+          ) {
+            throw new ApplicationError(
+              "A distribuição mudou desde a busca. Faça uma nova busca.",
+              409,
+            );
+          }
+          const locked = assetKeys.length
+            ? await transaction
+                .select()
+                .from(portfolioObjectivePositions)
+                .where(inArray(portfolioObjectivePositions.assetKey, assetKeys))
+                .orderBy(portfolioObjectivePositions.assetKey)
+                .for("update")
+            : [];
+          const currentOwners = new Map(
+            locked.map((row) => [row.assetKey, row.objectiveId]),
+          );
+          for (const assetKey of assetKeys) {
+            if (
+              (currentOwners.get(assetKey) ?? null) !==
+              input.expectedOwners[assetKey]
+            ) {
+              throw new ApplicationError(
+                "Uma posição mudou de destino desde a busca. Atualize e tente novamente.",
+                409,
+              );
+            }
+          }
+          const destinationIds = [
+            ...new Set([
+              ...input.references.map((reference) => reference.objectiveId),
+              ...Object.values(input.allocation).filter(
+                (id): id is string => id !== null,
+              ),
+            ]),
+          ].sort();
+          const validObjectives = await transaction
+            .select({ id: portfolioObjectives.id })
+            .from(portfolioObjectives)
+            .where(inArray(portfolioObjectives.id, destinationIds))
+            .for("update");
+          if (
+            destinationIds.some(
+              (id) => !validObjectives.some((objective) => objective.id === id),
+            )
+          ) {
+            throw new ApplicationError(
+              "Um objetivo não está mais disponível. Atualize e tente novamente.",
+              409,
+            );
+          }
+          const batch = await transaction
+            .insert(portfolioObjectiveReferenceBatches)
+            .values({ observedOn: input.observedOn })
+            .returning({ id: portfolioObjectiveReferenceBatches.id });
+          const batchId = batch[0].id;
+          if (input.references.length) {
+            await transaction
+              .insert(portfolioObjectiveBalanceReferences)
+              .values(
+                input.references.map((reference) => ({
+                  ...reference,
+                  batchId,
+                })),
+              );
+          }
+          for (const assetKey of assetKeys) {
+            const from = input.expectedOwners[assetKey] ?? null;
+            const to = input.allocation[assetKey] ?? null;
+            if (from === to) continue;
+            if (from !== null) {
+              await transaction
+                .delete(portfolioObjectivePositions)
+                .where(
+                  and(
+                    eq(portfolioObjectivePositions.assetKey, assetKey),
+                    eq(portfolioObjectivePositions.objectiveId, from),
+                  ),
+                );
+            }
+            if (to !== null) {
+              await transaction
+                .insert(portfolioObjectivePositions)
+                .values({ assetKey, objectiveId: to });
+            }
+          }
+          return { batchId };
+        },
+        { isolationLevel: "serializable" },
+      );
+    } catch (error) {
+      const postgresError = error as { code?: string; constraint?: string };
+      if (postgresError.code === "40001") {
+        throw new ApplicationError(
+          "Uma atribuição mudou durante a confirmação. Atualize e tente novamente.",
+          409,
+        );
+      }
+      if (
+        postgresError.code === "23505" &&
+        postgresError.constraint ===
+          "portfolio_objective_positions_assetKey_unique"
+      ) {
+        throw new ApplicationError(
+          "Uma posição foi atribuída a outro objetivo durante a confirmação. Atualize e tente novamente.",
+          409,
+        );
+      }
+      throw error;
+    }
   }
 
   async listReserveAssignments() {

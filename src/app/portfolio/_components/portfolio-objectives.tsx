@@ -11,6 +11,7 @@ import { PortfolioObjectiveDetail } from "@/app/portfolio/_components/portfolio-
 import { PortfolioObjectiveForm } from "@/app/portfolio/_components/portfolio-objective-form";
 import { PortfolioObjectivesOverview } from "@/app/portfolio/_components/portfolio-objectives-overview";
 import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
+import { PortfolioObjectiveOrganizer } from "@/app/portfolio/_components/portfolio-objective-organizer";
 import { Button } from "@/components/ui/button";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import type { SuggestionCandidate } from "@/app/portfolio/_components/position-combination-suggestions";
@@ -19,6 +20,11 @@ type AssignmentTransfer = NonNullable<SuggestionCandidate["transfers"]>[number];
 
 type ObjectivesData = {
   objectives: PortfolioObjective[];
+  balanceReferences?: Array<{
+    objectiveId: string;
+    amountCents: string;
+    observedDate: string;
+  }>;
   destinationSummary: {
     categories: Array<{
       key: "reserve" | "personal" | "unassigned";
@@ -43,6 +49,7 @@ type View =
   | { kind: "create" }
   | { kind: "edit"; objectiveId: string; returnTo: "overview" | "detail" }
   | { kind: "assign"; objectiveId: string }
+  | { kind: "organize" }
   | { kind: "reserve-settings" };
 
 const loadErrorMessage = "Não foi possível carregar seus objetivos e posições.";
@@ -273,9 +280,11 @@ export function PortfolioObjectives({
         ? "Editar objetivo"
         : view.kind === "assign"
           ? "Gerenciar posições"
-          : view.kind === "reserve-settings"
-            ? "Configurar reserva"
-            : (activeObjective?.name ?? "Objetivo");
+          : view.kind === "organize"
+            ? "Organizar objetivos"
+            : view.kind === "reserve-settings"
+              ? "Configurar reserva"
+              : (activeObjective?.name ?? "Objetivo");
 
   return (
     <div className="space-y-5" data-testid="portfolio-objectives">
@@ -320,6 +329,7 @@ export function PortfolioObjectives({
             onCreate={() => {
               setView({ kind: "create" });
             }}
+            onOrganize={() => setView({ kind: "organize" })}
           />
         </>
       )}
@@ -397,6 +407,17 @@ export function PortfolioObjectives({
               preferredObjectiveId={activeObjective.id}
               saving={saving}
               onSave={saveAssignments}
+            />
+          )}
+          {view.kind === "organize" && (
+            <PortfolioObjectiveOrganizer
+              objectives={data.objectives.map(({ id, name }) => ({ id, name }))}
+              balanceReferences={data.balanceReferences}
+              onCancel={returnFromSubview}
+              onCompleted={() => {
+                setView({ kind: "overview" });
+                navigateToObjective(null);
+              }}
             />
           )}
           {view.kind === "reserve-settings" && <EmergencyReserveEditor />}

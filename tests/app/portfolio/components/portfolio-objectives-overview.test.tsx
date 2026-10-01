@@ -159,6 +159,9 @@ describe("PortfolioObjectivesOverview", () => {
     expect(onOpen).toHaveBeenCalledWith(objectives[1]);
     fireEvent.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
     expect(onCreate).toHaveBeenCalledOnce();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Organizar objetivos" }),
+    );
   });
 
   it("shows an empty chart state when all known category values are zero", () => {

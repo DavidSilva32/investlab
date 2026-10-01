@@ -7,6 +7,8 @@ const service = vi.hoisted(() => ({
   findPositionCombinations: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  previewGlobalAllocation: vi.fn(),
+  confirmGlobalAllocation: vi.fn(),
 }));
 vi.mock("@/backend/services/portfolio-objectives.service", () => ({
   portfolioObjectivesService: service,
@@ -72,6 +74,46 @@ describe("PortfolioObjectivesController", () => {
     expect(service.findPositionCombinations).toHaveBeenCalledWith(
       { targetAmount: 100 },
       "r5",
+    );
+  });
+
+  it("returns the global allocation preview and logs its safe summary", async () => {
+    const data = {
+      objectives: [{ objectiveId: "goal-a" }],
+      allocation: { asset: "goal-a" },
+      optimal: true,
+    };
+    service.previewGlobalAllocation.mockResolvedValue(data);
+    const body = { valuationDate: "2026-10-01", balances: [] };
+    const response =
+      await new PortfolioObjectivesController().previewAllocation(
+        body,
+        "r-allocation-preview",
+      );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(data);
+    expect(service.previewGlobalAllocation).toHaveBeenCalledWith(
+      body,
+      "r-allocation-preview",
+    );
+  });
+
+  it("confirms a global allocation and returns the saved reference batch", async () => {
+    service.confirmGlobalAllocation.mockResolvedValue({ batchId: "batch-1" });
+    const body = { allocation: { asset: "goal-a" } };
+    const response =
+      await new PortfolioObjectivesController().confirmAllocation(
+        body,
+        "r-allocation-confirm",
+      );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      message: "A distribuição foi salva.",
+      batchId: "batch-1",
+    });
+    expect(service.confirmGlobalAllocation).toHaveBeenCalledWith(
+      body,
+      "r-allocation-confirm",
     );
   });
 

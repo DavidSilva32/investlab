@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getObjective: vi.fn(),
   replaceAssignments: vi.fn(),
   replaceAssignmentsWithTransfers: vi.fn(),
+  listLatestBalanceReferences: vi.fn(),
+  saveGlobalAllocation: vi.fn(),
 }));
 
 vi.mock("@/backend/services/portfolio-position.service", () => ({
@@ -31,6 +33,8 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
     getObjective: mocks.getObjective,
     replaceAssignments: mocks.replaceAssignments,
     replaceAssignmentsWithTransfers: mocks.replaceAssignmentsWithTransfers,
+    listLatestBalanceReferences: mocks.listLatestBalanceReferences,
+    saveGlobalAllocation: mocks.saveGlobalAllocation,
   },
 }));
 
@@ -73,6 +77,7 @@ describe("PortfolioObjectivesService", () => {
     mocks.classifyPositions.mockImplementation(async (positions) => positions);
     mocks.getSettings.mockResolvedValue(null);
     mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
+    mocks.listLatestBalanceReferences.mockResolvedValue([]);
     mocks.getObjective.mockResolvedValue(customObjective);
     mocks.create.mockResolvedValue(customObjective);
     mocks.replaceAssignmentsWithTransfers.mockResolvedValue(undefined);
@@ -1521,5 +1526,448 @@ describe("PortfolioObjectivesService", () => {
     expect(result.candidates[0].transfers).toEqual([
       expect.objectContaining({ assetKey: key, fromObjectiveId: sourceId }),
     ]);
+  });
+
+  it("optimizes only entered balances and preserves owners of omitted objectives", async () => {
+    const measuredId = "00000000-0000-4000-8000-000000000001";
+    const omittedId = "00000000-0000-4000-8000-000000000002";
+    const measured = { ...customObjective, id: measuredId, name: "Reserva" };
+    const omitted = { ...customObjective, id: omittedId, name: "Viagem" };
+    const freePosition = imported({
+      assetCode: "FREE",
+      totalValue: "100.00",
+      canonicalValueCents: "10000",
+    });
+    const ownedPosition = imported({
+      assetCode: "OWNED",
+      totalValue: "90.00",
+      canonicalValueCents: "9000",
+    });
+    const freeKey = getEmergencyReserveAssetKey(freePosition);
+    const ownedKey = getEmergencyReserveAssetKey(ownedPosition);
+    mocks.listCurrentEnriched.mockResolvedValue([freePosition, ownedPosition]);
+    mocks.list.mockResolvedValue({
+      objectives: [measured, omitted],
+      assignments: [{ objectiveId: omittedId, assetKey: ownedKey }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId: measuredId, amount: 100 }],
+      });
+
+    expect(result.optimal).toBe(true);
+    expect(result.allocation).toEqual({ [freeKey]: measuredId });
+    expect(result.preservedPositionCount).toBe(1);
+    expect(result.expectedValueCents).toEqual({ [freeKey]: "10000" });
+    expect(result.expectedValuationDates).toEqual({
+      [freeKey]: "2026-09-30",
+    });
+    expect(result.objectives[0]).toMatchObject({
+      name: "Reserva",
+      observedBalanceCents: "10000",
+      proposedValueCents: "10000",
+      differenceCents: "0",
+    });
+  });
+
+  it("confirms only the server-recomputed complete allocation and stores its references", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000003";
+    const position = imported({
+      assetCode: "CONFIRM",
+      totalValue: "25.00",
+      canonicalValueCents: "2500",
+    });
+    const additionalPosition = imported({
+      assetCode: "CONFIRM-ADDITIONAL",
+      totalValue: "5.00",
+      canonicalValueCents: "500",
+    });
+    const assetKey = getEmergencyReserveAssetKey(position);
+    const additionalAssetKey = getEmergencyReserveAssetKey(additionalPosition);
+    mocks.listCurrentEnriched.mockResolvedValue([position, additionalPosition]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId, name: "Reserva" }],
+      assignments: [],
+    });
+    mocks.saveGlobalAllocation.mockResolvedValue({ batchId: "batch-1" });
+    const preview =
+      await new PortfolioObjectivesService().previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 25 }],
+      });
+
+    await expect(
+      new PortfolioObjectivesService().confirmGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 25 }],
+        allocation: preview.allocation,
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: Object.fromEntries(
+          Object.entries(preview.expectedValueCents).reverse(),
+        ),
+        expectedValuationDates: Object.fromEntries(
+          Object.entries(preview.expectedValuationDates).reverse(),
+        ),
+      }),
+    ).resolves.toEqual({ batchId: "batch-1" });
+    expect(mocks.saveGlobalAllocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observedOn: "2026-10-01",
+        allocation: { [assetKey]: objectiveId, [additionalAssetKey]: null },
+        references: [{ objectiveId, amountCents: "2500" }],
+      }),
+    );
+  });
+
+  it("rejects a stale or changed allocation before persistence", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000004";
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    const service = new PortfolioObjectivesService();
+    const preview = await service.previewGlobalAllocation({
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 1 }],
+    });
+    await expect(
+      service.confirmGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 1 }],
+        allocation: { forged: objectiveId },
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
+  });
+
+  it("rejects confirmation when an eligible position's canonical cents change", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000013";
+    const position = imported({
+      assetCode: "CHANGING-VALUE",
+      canonicalValueCents: "2500",
+    });
+    const changedPosition = { ...position, canonicalValueCents: "2501" };
+    mocks.listCurrentEnriched
+      .mockResolvedValueOnce([position])
+      .mockResolvedValueOnce([changedPosition])
+      .mockResolvedValueOnce([changedPosition]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    const service = new PortfolioObjectivesService();
+    const preview = await service.previewGlobalAllocation({
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 25 }],
+    });
+    const changedPreview = await service.previewGlobalAllocation({
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 25 }],
+    });
+    expect(changedPreview.allocation).toEqual(preview.allocation);
+    expect(changedPreview.expectedValueCents).not.toEqual(
+      preview.expectedValueCents,
+    );
+
+    await expect(
+      service.confirmGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 25 }],
+        allocation: preview.allocation,
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
+  });
+
+  it("rejects confirmation when an eligible position's effective date changes", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000014";
+    const position = imported({
+      assetCode: "CHANGING-DATE",
+      canonicalValueCents: "2500",
+      referenceDate: "2026-09-29",
+    });
+    const changedPosition = { ...position, referenceDate: "2026-09-30" };
+    mocks.listCurrentEnriched
+      .mockResolvedValueOnce([position])
+      .mockResolvedValueOnce([changedPosition]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    const service = new PortfolioObjectivesService();
+    const preview = await service.previewGlobalAllocation({
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 25 }],
+    });
+
+    await expect(
+      service.confirmGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 25 }],
+        allocation: preview.allocation,
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed confirmation payload", async () => {
+    await expect(
+      new PortfolioObjectivesService().confirmGlobalAllocation({}),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
+  });
+
+  it("validates balances and protects duplicate or deleted destinations", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000005";
+    const service = new PortfolioObjectivesService();
+    await expect(service.previewGlobalAllocation({})).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(
+      service.previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [
+          { objectiveId, amount: 1 },
+          { objectiveId, amount: 2 },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
+    await expect(
+      service.previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 1 }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("reports candidate transfers, effective dates, limitations, and unvalued positions", async () => {
+    const sourceId = "00000000-0000-4000-8000-000000000006";
+    const targetId = "00000000-0000-4000-8000-000000000007";
+    const omittedId = "00000000-0000-4000-8000-000000000012";
+    const source = { ...customObjective, id: sourceId, name: "Viagem" };
+    const target = { ...customObjective, id: targetId, name: "Reserva" };
+    const omitted = { ...customObjective, id: omittedId, name: "Casa" };
+    const transferPosition = imported({
+      assetCode: "TRANSFER-ME",
+      totalValue: "1.00",
+      canonicalValueCents: "100",
+      estimatedThrough: "2026-09-30",
+      cdbEstimateLimitation: "Taxas disponíveis até 30/09.",
+    });
+    const unvalued = imported({
+      assetCode: "UNVALUED",
+      canonicalValueCents: null,
+      cdbEstimateLimitation: "Data-base CURVA nao confirmada.",
+    });
+    const omittedValued = imported({
+      assetCode: "OMITTED-VALUED",
+      canonicalValueCents: "250",
+    });
+    const omittedUnvalued = imported({
+      assetCode: "OMITTED-UNVALUED",
+      canonicalValueCents: null,
+    });
+    const freeUnvalued = imported({
+      assetCode: "FREE-UNVALUED",
+      canonicalValueCents: null,
+    });
+    const transferKey = getEmergencyReserveAssetKey(transferPosition);
+    const unvaluedKey = getEmergencyReserveAssetKey(unvalued);
+    const omittedValuedKey = getEmergencyReserveAssetKey(omittedValued);
+    const omittedUnvaluedKey = getEmergencyReserveAssetKey(omittedUnvalued);
+    const freeUnvaluedKey = getEmergencyReserveAssetKey(freeUnvalued);
+    mocks.listCurrentEnriched.mockResolvedValue([
+      transferPosition,
+      unvalued,
+      omittedValued,
+      omittedUnvalued,
+      freeUnvalued,
+    ]);
+    mocks.list.mockResolvedValue({
+      objectives: [source, target, omitted],
+      assignments: [
+        { objectiveId: sourceId, assetKey: transferKey },
+        { objectiveId: targetId, assetKey: unvaluedKey },
+        { objectiveId: omittedId, assetKey: omittedValuedKey },
+        { objectiveId: omittedId, assetKey: omittedUnvaluedKey },
+      ],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [
+          { objectiveId: sourceId, amount: 0 },
+          { objectiveId: targetId, amount: 1 },
+        ],
+      });
+
+    expect(result.transfers).toEqual([
+      expect.objectContaining({
+        assetKey: transferKey,
+        fromObjectiveId: sourceId,
+        fromObjectiveName: "Viagem",
+        toObjectiveId: targetId,
+        toObjectiveName: "Reserva",
+      }),
+    ]);
+    expect(result.effectiveValuationDates).toEqual(["2026-09-30"]);
+    expect(result.limitations).toEqual(["Taxas disponíveis até 30/09."]);
+    expect(result.preservedPositionCount).toBe(4);
+    expect(result.preservedPositions).toEqual([
+      {
+        assetKey: unvaluedKey,
+        product: unvalued.product,
+        ownerObjectiveId: targetId,
+        ownerObjectiveName: "Reserva",
+        valueCents: null,
+        reasons: [
+          {
+            code: "value_unavailable",
+            limitation: "Data-base CURVA nao confirmada.",
+          },
+        ],
+      },
+      {
+        assetKey: omittedValuedKey,
+        product: omittedValued.product,
+        ownerObjectiveId: omittedId,
+        ownerObjectiveName: "Casa",
+        valueCents: "250",
+        reasons: [{ code: "objective_balance_not_provided" }],
+      },
+      {
+        assetKey: omittedUnvaluedKey,
+        product: omittedUnvalued.product,
+        ownerObjectiveId: omittedId,
+        ownerObjectiveName: "Casa",
+        valueCents: null,
+        reasons: [
+          {
+            code: "value_unavailable",
+            limitation: null,
+          },
+          { code: "objective_balance_not_provided" },
+        ],
+      },
+      {
+        assetKey: freeUnvaluedKey,
+        product: freeUnvalued.product,
+        ownerObjectiveId: null,
+        ownerObjectiveName: null,
+        valueCents: null,
+        reasons: [
+          {
+            code: "value_unavailable",
+            limitation: null,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("does not allow a partial search to be confirmed", async () => {
+    const firstId = "00000000-0000-4000-8000-000000000008";
+    const secondId = "00000000-0000-4000-8000-000000000009";
+    const position = imported({
+      assetCode: "LIMITED",
+      canonicalValueCents: "100",
+    });
+    const key = getEmergencyReserveAssetKey(position);
+    mocks.listCurrentEnriched.mockResolvedValue([position]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        { ...customObjective, id: firstId },
+        { ...customObjective, id: secondId },
+      ],
+      assignments: [],
+    });
+    const service = new PortfolioObjectivesService(1);
+    const preview = await service.previewGlobalAllocation({
+      valuationDate: "2026-10-01",
+      balances: [
+        { objectiveId: firstId, amount: 1 },
+        { objectiveId: secondId, amount: 2 },
+      ],
+    });
+    expect(preview).toMatchObject({
+      optimal: false,
+      canConfirm: false,
+      stateLimit: 1,
+    });
+    await expect(
+      service.confirmGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [
+          { objectiveId: firstId, amount: 1 },
+          { objectiveId: secondId, amount: 2 },
+        ],
+        allocation: preview.allocation,
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
+    expect(preview.expectedOwners).toEqual({ [key]: null });
+  });
+
+  it("rejects confirmation when the expected owner map is stale even if allocation is unchanged", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000010";
+    const service = new PortfolioObjectivesService();
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    const preview = await service.previewGlobalAllocation({
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 0 }],
+    });
+    await expect(
+      service.confirmGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 0 }],
+        allocation: preview.allocation,
+        expectedOwners: { stale: null },
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("leaves positions whose values exceed a small measured balance unassigned", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000011";
+    const position = imported({
+      assetCode: "TOO-LARGE",
+      canonicalValueCents: "10000",
+      referenceDate: null,
+    });
+    const key = getEmergencyReserveAssetKey(position);
+    mocks.listCurrentEnriched.mockResolvedValue([position]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    const result =
+      await new PortfolioObjectivesService().previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 10 }],
+      });
+    expect(result.unassignedPositions).toEqual([
+      { assetKey: key, product: position.product, valueCents: "10000" },
+    ]);
+    expect(result.effectiveValuationDates).toEqual([]);
   });
 });

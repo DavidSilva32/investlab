@@ -48,6 +48,7 @@ type Props = {
   onDeleteOpenChange: (objectiveId: string, open: boolean) => void;
   onDelete: (objectiveId: string) => void;
   onCreate: () => void;
+  onOrganize?: () => void;
 };
 
 const chartConfig = {
@@ -69,6 +70,7 @@ export function PortfolioObjectivesOverview({
   onDeleteOpenChange,
   onDelete,
   onCreate,
+  onOrganize = () => {},
 }: Props) {
   const labels = {
     reserve: "Reserva",
@@ -225,9 +227,14 @@ export function PortfolioObjectivesOverview({
               Cada posição pertence a no máximo um destino.
             </p>
           </div>
-          <Button type="button" onClick={onCreate}>
-            + Novo objetivo
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={onOrganize}>
+              Organizar objetivos
+            </Button>
+            <Button type="button" onClick={onCreate}>
+              + Novo objetivo
+            </Button>
+          </div>
         </div>
         {data.objectives.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2">

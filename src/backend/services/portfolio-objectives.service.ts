@@ -5,6 +5,10 @@ import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import {
+  portfolioObjectiveAllocationStateLimit,
+  solvePortfolioObjectiveAllocation,
+} from "@/backend/services/portfolio-objective-allocation";
+import {
   mergePartialPositionCandidates,
   suggestEmergencyReservePositions,
 } from "@/backend/services/emergency-reserve-position-suggestions";
@@ -73,6 +77,24 @@ const suggestionsSchema = z.object({
     )
     .optional(),
 });
+const allocationSchema = z.object({
+  valuationDate: z
+    .string()
+    .refine(isValidValuationDate, "Informe uma data válida.")
+    .refine(
+      (value) => !isFutureValuationDate(value),
+      "A data não pode ser futura.",
+    ),
+  balances: z
+    .array(
+      z.object({
+        objectiveId: z.string().uuid(),
+        amount: z.number().finite().min(0).max(maximumAmount),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
 
 type RawPosition = {
   assetKey?: string;
@@ -115,14 +137,19 @@ function valueFor(position: RawPosition) {
 }
 
 export class PortfolioObjectivesService {
+  constructor(
+    private readonly allocationStateLimit = portfolioObjectiveAllocationStateLimit,
+  ) {}
+
   async getOverview(
     requestId?: string,
     valuationDate?: string,
     evaluatedPositions?: RawPosition[],
   ) {
-    const [stored, reserveSettings] = await Promise.all([
+    const [stored, reserveSettings, balanceReferences] = await Promise.all([
       portfolioObjectivesRepository.list(),
       emergencyReserveRepository.getSettings(),
+      portfolioObjectivesRepository.listLatestBalanceReferences(),
     ]);
     const classified = evaluatedPositions
       ? evaluatedPositions
@@ -241,6 +268,7 @@ export class PortfolioObjectivesService {
     ];
     return {
       objectives,
+      balanceReferences,
       destinationSummary: {
         categories: destinationValues.map(({ key, valueCents }) => ({
           key,
@@ -305,6 +333,243 @@ export class PortfolioObjectivesService {
         monthlyPlannedAmount == null ? null : monthlyPlannedAmount.toFixed(2),
     });
     return objective;
+  }
+
+  async previewGlobalAllocation(body: unknown, requestId?: string) {
+    const parsed = allocationSchema.safeParse(body);
+    if (!parsed.success)
+      throw new ApplicationError(
+        "Informe pelo menos um saldo válido e uma data de consulta.",
+        400,
+      );
+    if (
+      new Set(parsed.data.balances.map((balance) => balance.objectiveId))
+        .size !== parsed.data.balances.length
+    ) {
+      throw new ApplicationError(
+        "Cada objetivo pode ter apenas um saldo informado.",
+        400,
+      );
+    }
+    const overview = await this.getOverview(
+      requestId,
+      parsed.data.valuationDate,
+    );
+    const balances = parsed.data.balances.map((balance) => {
+      if (
+        !overview.objectives.some(
+          (objective) => objective.id === balance.objectiveId,
+        )
+      ) {
+        throw new ApplicationError(
+          "Um objetivo informado não está mais disponível.",
+          409,
+        );
+      }
+      const amountCents = decimalToCents(balance.amount)!;
+      return { objectiveId: balance.objectiveId, amountCents };
+    });
+    const measuredObjectiveIds = new Set(
+      balances.map((balance) => balance.objectiveId),
+    );
+    const eligiblePositions = overview.positions.filter(
+      (position) =>
+        position.valueCents !== null &&
+        (position.objectiveId === null ||
+          measuredObjectiveIds.has(position.objectiveId)),
+    );
+    const positions = eligiblePositions.map((position) => ({
+      assetKey: position.assetKey,
+      valueCents: BigInt(position.valueCents!),
+      objectiveId: position.objectiveId,
+    }));
+    const result = solvePortfolioObjectiveAllocation(
+      positions,
+      balances,
+      this.allocationStateLimit,
+    );
+    const objectiveById = new Map(
+      overview.objectives.map((objective) => [objective.id, objective]),
+    );
+    const allocation = result.allocation;
+    const expectedOwners = Object.fromEntries(
+      positions.map((position) => [position.assetKey, position.objectiveId]),
+    );
+    const expectedValueCents = Object.fromEntries(
+      positions.map((position) => [
+        position.assetKey,
+        position.valueCents.toString(),
+      ]),
+    );
+    const expectedValuationDates = Object.fromEntries(
+      eligiblePositions.map((position) => [
+        position.assetKey,
+        position.estimatedThrough ?? position.referenceDate,
+      ]),
+    );
+    const transfers = positions.flatMap((position) => {
+      const toObjectiveId = allocation[position.assetKey] ?? null;
+      if (
+        !position.objectiveId ||
+        !toObjectiveId ||
+        position.objectiveId === toObjectiveId
+      )
+        return [];
+      return [
+        {
+          assetKey: position.assetKey,
+          fromObjectiveId: position.objectiveId,
+          fromObjectiveName: objectiveById.get(position.objectiveId)!.name,
+          toObjectiveId,
+          toObjectiveName: objectiveById.get(toObjectiveId)!.name,
+          valueCents: position.valueCents.toString(),
+        },
+      ];
+    });
+    const totals = balances.map((balance) => {
+      const objective = objectiveById.get(balance.objectiveId)!;
+      const proposedValueCents = result.totals[balance.objectiveId];
+      return {
+        objectiveId: objective.id,
+        name: objective.name,
+        observedBalanceCents: balance.amountCents.toString(),
+        proposedValueCents: proposedValueCents.toString(),
+        differenceCents: (proposedValueCents - balance.amountCents).toString(),
+        assetKeys: Object.entries(allocation)
+          .filter(([, id]) => id === objective.id)
+          .map(([assetKey]) => assetKey)
+          .sort(),
+      };
+    });
+    const unassignedPositions = eligiblePositions
+      .filter((position) => allocation[position.assetKey] === null)
+      .map((position) => ({
+        assetKey: position.assetKey,
+        product: position.product,
+        valueCents: position.valueCents!,
+      }));
+    const preservedPositions = overview.positions.flatMap((position) => {
+      const reasons: Array<
+        | { code: "value_unavailable"; limitation: string | null }
+        | { code: "objective_balance_not_provided" }
+      > = [];
+      if (position.valueCents === null) {
+        reasons.push({
+          code: "value_unavailable",
+          limitation: position.cdbEstimateLimitation ?? null,
+        });
+      }
+      if (
+        position.objectiveId !== null &&
+        !measuredObjectiveIds.has(position.objectiveId)
+      ) {
+        reasons.push({ code: "objective_balance_not_provided" });
+      }
+      if (!reasons.length) return [];
+      return [
+        {
+          assetKey: position.assetKey,
+          product: position.product,
+          ownerObjectiveId: position.objectiveId,
+          ownerObjectiveName: position.objectiveId
+            ? objectiveById.get(position.objectiveId)!.name
+            : null,
+          valueCents: position.valueCents,
+          reasons,
+        },
+      ];
+    });
+    const effectiveValuationDates = [
+      ...new Set(
+        eligiblePositions
+          .map(
+            (position) => position.estimatedThrough ?? position.referenceDate,
+          )
+          .filter((date): date is string => Boolean(date)),
+      ),
+    ].sort();
+    const limitations = [
+      ...new Set(
+        eligiblePositions
+          .map((position) => position.cdbEstimateLimitation)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    return {
+      valuationDate: parsed.data.valuationDate,
+      effectiveValuationDates,
+      optimal: result.optimal,
+      exploredStates: result.exploredStates,
+      stateLimit: this.allocationStateLimit,
+      canConfirm: result.optimal,
+      allocation,
+      expectedOwners,
+      expectedValueCents,
+      expectedValuationDates,
+      objectives: totals,
+      transfers,
+      unassignedPositions,
+      preservedPositions,
+      preservedPositionCount: preservedPositions.length,
+      limitations,
+      mathematicalDistributionNotice:
+        "A distribuição organiza posições por valor. Ela não confirma quais notas compõem cada saldo informado no banco.",
+    };
+  }
+
+  async confirmGlobalAllocation(body: unknown, requestId?: string) {
+    const parsed = allocationSchema
+      .extend({
+        allocation: z.record(z.string(), z.string().uuid().nullable()),
+        expectedOwners: z.record(z.string(), z.string().uuid().nullable()),
+        expectedValueCents: z.record(z.string(), z.string().regex(/^\d+$/)),
+        expectedValuationDates: z.record(
+          z.string(),
+          z.string().refine(isValidValuationDate).nullable(),
+        ),
+      })
+      .safeParse(body);
+    if (!parsed.success)
+      throw new ApplicationError(
+        "A prévia da distribuição está inválida. Faça uma nova busca.",
+        400,
+      );
+    const preview = await this.previewGlobalAllocation(
+      {
+        valuationDate: parsed.data.valuationDate,
+        balances: parsed.data.balances,
+      },
+      requestId,
+    );
+    if (!preview.optimal)
+      throw new ApplicationError(
+        "A busca não encontrou uma distribuição global concluída. Use a seleção manual.",
+        409,
+      );
+    if (
+      !sameRecord(parsed.data.allocation, preview.allocation) ||
+      !sameRecord(parsed.data.expectedOwners, preview.expectedOwners) ||
+      !sameRecord(parsed.data.expectedValueCents, preview.expectedValueCents) ||
+      !sameRecord(
+        parsed.data.expectedValuationDates,
+        preview.expectedValuationDates,
+      )
+    ) {
+      throw new ApplicationError(
+        "A prévia mudou desde a busca. Faça uma nova busca antes de confirmar.",
+        409,
+      );
+    }
+    const references = parsed.data.balances.map((balance) => ({
+      objectiveId: balance.objectiveId,
+      amountCents: decimalToCents(balance.amount)!.toString(),
+    }));
+    return portfolioObjectivesRepository.saveGlobalAllocation({
+      observedOn: parsed.data.valuationDate,
+      expectedOwners: preview.expectedOwners,
+      allocation: preview.allocation,
+      references,
+    });
   }
 
   async updateAssignments(objectiveId: string, body: unknown) {
@@ -758,6 +1023,18 @@ export class PortfolioObjectivesService {
 }
 
 export const portfolioObjectivesService = new PortfolioObjectivesService();
+
+function sameRecord(
+  left: Record<string, string | null>,
+  right: Record<string, string | null>,
+) {
+  const sortEntries = (entries: Array<[string, string | null]>) =>
+    entries.sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+  return (
+    JSON.stringify(sortEntries(Object.entries(left))) ===
+    JSON.stringify(sortEntries(Object.entries(right)))
+  );
+}
 
 function closestDifferenceCents(
   result: ReturnType<typeof suggestEmergencyReservePositions>,
