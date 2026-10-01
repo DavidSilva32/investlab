@@ -228,8 +228,8 @@ export function PositionCombinationSuggestions({
         <CollapsibleContent className="space-y-4 pt-4">
           <p className="text-sm text-muted-foreground">{description}</p>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,0.7fr)_auto] lg:items-end">
-            <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-0 flex-[1_1_14rem] space-y-2">
               <Label htmlFor="position-combination-target">{amountLabel}</Label>
               <Input
                 id="position-combination-target"
@@ -270,7 +270,7 @@ export function PositionCombinationSuggestions({
               />
             </div>
             {requestFilter && (
-              <div className="min-w-0 space-y-2 sm:w-56">
+              <div className="min-w-0 flex-[1_1_14rem] space-y-2 sm:w-56">
                 <Label htmlFor="position-combination-filter">
                   {requestFilter.label}
                 </Label>
@@ -294,18 +294,21 @@ export function PositionCombinationSuggestions({
                 </Select>
               </div>
             )}
-            <DatePickerField
-              id="position-combination-valuation-date"
-              label="Data consultada no banco"
-              value={valuationDate}
-              onChange={(value) => {
-                setValuationDate(value);
-                setSearch({ status: "idle" });
-              }}
-              required
-            />
+            <div className="min-w-0 flex-[1_1_14rem]">
+              <DatePickerField
+                id="position-combination-valuation-date"
+                label="Data consultada no banco"
+                value={valuationDate}
+                onChange={(value) => {
+                  setValuationDate(value);
+                  setSearch({ status: "idle" });
+                }}
+                required
+              />
+            </div>
             <Button
               type="button"
+              className="shrink-0"
               onClick={() => void findSuggestions()}
               disabled={search.status === "loading"}
             >

@@ -57,6 +57,31 @@ function render(ui: ReactElement) {
 }
 
 describe("PositionCombinationSuggestions", () => {
+  it("keeps the amount, date, and search controls in a wrapping layout", () => {
+    render(
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Saldo atual da Reserva no banco"
+        holdings={holdings}
+        onApply={vi.fn()}
+      />,
+    );
+
+    const amount = screen.getByLabelText("Saldo atual da Reserva no banco");
+    const controls = amount.parentElement?.parentElement;
+
+    expect(controls?.className).toContain("flex-wrap");
+    expect(controls?.className).toContain("items-end");
+    expect(
+      controls?.contains(screen.getByLabelText("Data consultada no banco")),
+    ).toBe(true);
+    expect(
+      controls?.contains(screen.getByRole("button", { name: /Buscar combin/ })),
+    ).toBe(true);
+  });
+
   it("masks typed digits as Brazilian currency and requires review before apply", async () => {
     const onApply = vi.fn();
     const fetchMock = vi.fn().mockResolvedValue({
