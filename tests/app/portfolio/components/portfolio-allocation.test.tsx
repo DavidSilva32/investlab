@@ -198,6 +198,39 @@ describe("PortfolioAllocation", () => {
     ).toBeTruthy();
   });
 
+  it("keeps empty allocation usable when an older response omits its summary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ positions: [] }),
+      }),
+    );
+    render(<PortfolioAllocation />);
+
+    expect(
+      await screen.findByText(
+        "Importe posições para visualizar a classificação e a alocação.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("renders unclassified current positions when an older response omits summaries", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ positions: [positions[3]] }),
+      }),
+    );
+    render(<PortfolioAllocation />);
+
+    expect(
+      await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+    ).toBeTruthy();
+  });
+
   it("places valued but unclassified positions in the unknown allocation", async () => {
     const unclassified = { ...positions[3], totalValue: "250" };
     vi.stubGlobal(

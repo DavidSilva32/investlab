@@ -118,4 +118,55 @@ describe("calculateEmergencyReserve", () => {
     expect(result.selectedValue).toBe(0);
     expect(result.difference).toBe(6000);
   });
+
+  it("prefers explicit canonical cents and handles expenses that round to zero cents", () => {
+    expect(
+      calculateEmergencyReserve({
+        ...base,
+        selectedValue: 999,
+        selectedValueCents: "1250",
+      }),
+    ).toMatchObject({ selectedValue: 12.5, selectedValueCents: "1250" });
+
+    expect(
+      calculateEmergencyReserve({
+        ...base,
+        monthlyExpenses: 0.001,
+        targetMonths: 1,
+      }),
+    ).toMatchObject({
+      coveredMonths: null,
+      targetValue: 0,
+      status: "above_target",
+    });
+  });
+
+  it("safely maps non-finite legacy numbers to zero cents", () => {
+    expect(
+      calculateEmergencyReserve({
+        ...base,
+        selectedValue: Number.NaN,
+        monthlyExpenses: Number.NaN,
+        targetMonths: 1,
+      }),
+    ).toMatchObject({
+      selectedValue: 0,
+      selectedValueCents: "0",
+      targetValue: 0,
+      targetValueCents: "0",
+      coveredMonths: null,
+      status: "on_target",
+    });
+
+    expect(
+      calculateEmergencyReserve({
+        ...base,
+        monthlyExpenses: Number.NEGATIVE_INFINITY,
+      }),
+    ).toMatchObject({
+      targetValue: 0,
+      targetValueCents: "0",
+      status: "expenses_required",
+    });
+  });
 });

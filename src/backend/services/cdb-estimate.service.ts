@@ -257,7 +257,7 @@ export class CdbEstimateService {
           cdbEstimateStatus: null,
         };
 
-      const rates = cachedRatesByBaseDate.get(referenceDate) ?? [];
+      const rates = cachedRatesByBaseDate.get(referenceDate)!;
       const missingDates = missingWeekdaysAfter(
         rates.at(-1)?.rateDate ?? previousWeekday(referenceDate),
         valuationDate,

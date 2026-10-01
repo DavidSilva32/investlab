@@ -429,7 +429,6 @@ describe("PortfolioClient", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          positions: [],
           classDistribution: getPortfolioConcentration([], "assetClass"),
         }),
       });

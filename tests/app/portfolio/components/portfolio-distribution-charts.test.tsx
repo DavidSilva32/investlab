@@ -106,4 +106,18 @@ describe("PortfolioDistributionCharts", () => {
       screen.queryByText(/R\$\s*0,00 \(0%\) sem classe informada/),
     ).toBeNull();
   });
+
+  it("shows a safe zero percentage when the backend omitted that summary", () => {
+    render(
+      <PortfolioDistributionCharts
+        institutionItems={[]}
+        classItems={[]}
+        unclassifiedValue={100}
+        unclassifiedPercentage={null}
+        loading={false}
+      />,
+    );
+
+    expect(screen.getByText(/100,00 \(0%\) sem classe informada/)).toBeTruthy();
+  });
 });

@@ -77,6 +77,20 @@ describe("calculateObjectiveValue", () => {
     });
   });
 
+  it("safely treats a malformed legacy known value as no known cents", () => {
+    expect(
+      calculateObjectiveValue(
+        ["asset-a"],
+        [position({ value: null, knownValue: Number.NaN })],
+      ),
+    ).toMatchObject({
+      currentValue: 0,
+      knownValue: 0,
+      knownValueCents: "0",
+      unvaluedPositionCount: 0,
+    });
+  });
+
   it("exposes the stable reserve objective identifier", () => {
     expect(reserveObjectiveId).toBe("00000000-0000-4000-8000-000000000010");
   });

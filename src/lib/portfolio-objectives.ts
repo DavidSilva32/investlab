@@ -61,7 +61,7 @@ export function calculateObjectiveValue(
       missingPositionCount > 0 || unvaluedPositionCount > 0
         ? null
         : knownValueCents.toString(),
-    knownValue: centsToNumber(knownValueCents) ?? 0,
+    knownValue: centsToNumber(knownValueCents)!,
     knownValueCents: knownValueCents.toString(),
     missingPositionCount,
     unvaluedPositionCount,

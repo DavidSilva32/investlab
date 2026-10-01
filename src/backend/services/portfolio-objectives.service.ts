@@ -177,11 +177,9 @@ export class PortfolioObjectivesService {
       (position) => !objectiveByAssetKey.has(position.assetKey),
     );
     const unassignedKnownValueCents = sumMoneyCents(
-      unassignedPositions.map((position) =>
-        BigInt(position.knownValueCents ?? "0"),
-      ),
+      unassignedPositions.map((position) => BigInt(position.knownValueCents!)),
     );
-    const unassignedKnownValue = centsToNumber(unassignedKnownValueCents) ?? 0;
+    const unassignedKnownValue = centsToNumber(unassignedKnownValueCents)!;
     const reserveKnownValueCents = BigInt(
       objectives.find((objective) => objective.kind === "RESERVE")
         ?.knownValueCents ?? "0",
@@ -189,7 +187,7 @@ export class PortfolioObjectivesService {
     const personalKnownValueCents = sumMoneyCents(
       objectives
         .filter((objective) => objective.kind !== "RESERVE")
-        .map((objective) => BigInt(objective.knownValueCents ?? "0")),
+        .map((objective) => BigInt(objective.knownValueCents)),
     );
     const destinationsKnownTotalCents = sumMoneyCents([
       reserveKnownValueCents,
@@ -206,14 +204,14 @@ export class PortfolioObjectivesService {
       destinationSummary: {
         categories: destinationValues.map(({ key, valueCents }) => ({
           key,
-          value: centsToNumber(valueCents) ?? 0,
+          value: centsToNumber(valueCents)!,
           valueCents: valueCents.toString(),
           percentage:
             destinationsKnownTotalCents > 0n
               ? (Number(valueCents) / Number(destinationsKnownTotalCents)) * 100
               : 0,
         })),
-        knownTotal: centsToNumber(destinationsKnownTotalCents) ?? 0,
+        knownTotal: centsToNumber(destinationsKnownTotalCents)!,
         knownTotalCents: destinationsKnownTotalCents.toString(),
         missingPositionCount: objectives.reduce(
           (total, objective) => total + objective.missingPositionCount,
@@ -454,10 +452,10 @@ export class PortfolioObjectivesService {
     return [...grouped.values()].map(
       ({ allValuesKnown, valueCents, knownValueCents, ...position }) => ({
         ...position,
-        valueCents: allValuesKnown ? (valueCents?.toString() ?? null) : null,
+        valueCents: allValuesKnown ? valueCents!.toString() : null,
         value: allValuesKnown ? centsToNumber(valueCents) : null,
         knownValueCents: knownValueCents.toString(),
-        knownValue: centsToNumber(knownValueCents) ?? 0,
+        knownValue: centsToNumber(knownValueCents)!,
       }),
     );
   }

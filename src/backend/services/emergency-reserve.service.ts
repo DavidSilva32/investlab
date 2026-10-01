@@ -129,7 +129,7 @@ export class EmergencyReserveService {
     return calculateEmergencyReserve({
       monthlyExpenses: parsed.data.monthlyExpenses,
       targetMonths: parsed.data.targetMonths,
-      selectedValue: centsToNumber(selectedValueCents) ?? 0,
+      selectedValue: centsToNumber(selectedValueCents)!,
       selectedValueCents: selectedValueCents.toString(),
       selectedGroups: holdings.length,
       unvaluedGroups: holdings.filter((holding) => holding.valueCents === null)
@@ -635,7 +635,7 @@ export class EmergencyReserveService {
     const calculation = calculateEmergencyReserve({
       monthlyExpenses,
       targetMonths: settings.targetMonths,
-      selectedValue: centsToNumber(selectedValueCents) ?? 0,
+      selectedValue: centsToNumber(selectedValueCents)!,
       selectedValueCents: selectedValueCents.toString(),
       selectedGroups: selectedHoldings.length,
       unvaluedGroups,

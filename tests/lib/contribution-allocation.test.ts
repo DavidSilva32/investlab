@@ -60,6 +60,25 @@ describe("calculateContributionAllocation", () => {
     expect(result.longTermPortfolioValue).toBe(100.52);
   });
 
+  it("treats an explicitly unvalued canonical position as incomplete", () => {
+    const result = calculateContributionAllocation({
+      contributionAmount: 0,
+      positions: [position({ canonicalValueCents: null })],
+      targets,
+      reserve: reserve({
+        status: "not_configured",
+        difference: null,
+        targetValue: null,
+      }),
+      selectedReserveAssetKeys: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "incomplete_data",
+      unknownPositionCount: 1,
+    });
+  });
+
   it("subtracts the personal reserve gap and excludes reserve positions from long-term totals", () => {
     const heldForReserve = position({
       assetCode: "RESERVE",

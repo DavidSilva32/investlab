@@ -304,8 +304,7 @@ export function EmergencyReserveEditor() {
     selectedKeysSignature === [...data.selectedAssetKeys].sort().join("|"),
   );
   const visibleCalculation =
-    previewCalculation ??
-    (hasCurrentDraft ? (data?.calculation ?? null) : null);
+    previewCalculation ?? (hasCurrentDraft ? data!.calculation : null);
   const selectedHasIncompleteValues =
     selectedKeys.size > selectedHoldings.length ||
     selectedHoldings.some(

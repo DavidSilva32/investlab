@@ -160,6 +160,43 @@ describe("CdbEstimateService.enrich", () => {
     );
   });
 
+  it("returns unestimated positions when the post-fill canonical reread fails", async () => {
+    vi.setSystemTime(new Date("2026-09-18T15:00:00Z"));
+    repository.listConfigurations.mockResolvedValue([
+      { assetCode: "CDB1", cdiPercentage: "100" },
+    ]);
+    repository.listRatesFrom
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("database unavailable"));
+    bcb.fetchRates.mockResolvedValue([
+      { date: "2026-09-17", annualRate: "14.9" },
+    ]);
+
+    const result = await new CdbEstimateService().enrich([
+      cdb,
+      {
+        product: "Outro ativo",
+        assetCode: null,
+        indexer: null,
+        totalValue: "50",
+        referenceDate: null,
+      },
+      {
+        product: "CDB sem taxa configurada",
+        assetCode: "CDB2",
+        indexer: "DI",
+        totalValue: "50",
+        referenceDate: "2026-09-16",
+      },
+    ]);
+
+    expect(result).toMatchObject([
+      { cdiPercentage: "100", estimatedValue: null },
+      { cdiPercentage: null, estimatedValue: null },
+      { cdiPercentage: null, estimatedValue: null },
+    ]);
+  });
+
   it("uses the persisted winner when a concurrent insert wins a CDI date", async () => {
     vi.setSystemTime(new Date("2026-09-18T15:00:00Z"));
     const officialValue = "47296.00520902593";

@@ -433,7 +433,16 @@ describe("EmergencyReserveEditor", () => {
               ok: false,
               json: async () => ({ message: "preview unavailable" }),
             }
-          : { ok: true, json: async () => editorData },
+          : {
+              ok: true,
+              json: async () => ({
+                ...editorData,
+                calculation: {
+                  ...editorData.calculation,
+                  selectedValueCents: undefined,
+                },
+              }),
+            },
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -452,6 +461,66 @@ describe("EmergencyReserveEditor", () => {
       timeout: 1000,
     });
     expect(screen.getByText(/Valor conhecido selecionado/)).toBeTruthy();
+  });
+
+  it("shows unavailable values for an edited draft after its preview fails", async () => {
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) =>
+      Promise.resolve(
+        options?.method === "PATCH"
+          ? {
+              ok: false,
+              json: async () => ({ message: "preview unavailable" }),
+            }
+          : { ok: true, json: async () => editorData },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EmergencyReserveEditor />);
+
+    const expenses = await screen.findByLabelText("Custo mensal");
+    fireEvent.change(expenses, { target: { value: "3000" } });
+    await vi.waitFor(
+      () =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/emergency-reserve",
+          expect.objectContaining({ method: "PATCH" }),
+        ),
+      { timeout: 1000 },
+    );
+    expect(await screen.findAllByText("—")).toHaveLength(2);
+  });
+
+  it("aborts a pending preview when its editor unmounts", async () => {
+    let rejectPreview: (reason: unknown) => void = () => {};
+    const pendingPreview = new Promise<never>((_resolve, reject) => {
+      rejectPreview = reject;
+    });
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) =>
+      options?.method === "PATCH"
+        ? pendingPreview
+        : Promise.resolve({
+            ok: true,
+            json: async () => ({ ...editorData, selectedAssetKeys: [] }),
+          }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { unmount } = render(<EmergencyReserveEditor />);
+
+    await screen.findByLabelText("Custo mensal");
+    await vi.waitFor(
+      () =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/emergency-reserve",
+          expect.objectContaining({
+            method: "PATCH",
+            body: expect.stringContaining('"selectedAssetKeys":[]'),
+          }),
+        ),
+      { timeout: 1000 },
+    );
+    unmount();
+    rejectPreview(new Error("aborted"));
+    await Promise.resolve();
   });
 
   it("uses a generic toast for unexpected save failures without an error message", async () => {
@@ -479,7 +548,7 @@ describe("EmergencyReserveEditor", () => {
         ok: false,
         json: async () => ({ message: "load failed" }),
       })
-      .mockResolvedValueOnce({ ok: true, json: async () => editorData });
+      .mockResolvedValue({ ok: true, json: async () => editorData });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
@@ -491,7 +560,9 @@ describe("EmergencyReserveEditor", () => {
 
     await openReservePositions(user);
     expect(await screen.findByLabelText(/Tesouro Selic/)).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      fetchMock.mock.calls.filter(([, options]) => options?.method !== "PATCH"),
+    ).toHaveLength(2);
   });
 
   it("uses a fixed inline fallback when loading rejects at the network", async () => {

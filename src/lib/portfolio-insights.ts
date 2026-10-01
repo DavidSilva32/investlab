@@ -71,7 +71,7 @@ export function getPortfolioInsights(
         item.cents !== null,
     );
   const totalCents = sumMoneyCents(valued.map((item) => item.cents));
-  const totalValue = centsToNumber(totalCents) ?? 0;
+  const totalValue = centsToNumber(totalCents)!;
   const byInstitution = new Map<string, bigint>();
   for (const { position, cents } of valued) {
     const institution = position.institution ?? "Instituição não informada";
@@ -88,7 +88,7 @@ export function getPortfolioInsights(
   const allocations = sortedInstitutionEntries
     .map(([institution, cents]) => ({
       institution,
-      value: centsToNumber(cents) ?? 0,
+      value: centsToNumber(cents)!,
       percentage:
         totalCents > 0n ? (Number(cents) / Number(totalCents)) * 100 : 0,
     }))
@@ -107,7 +107,7 @@ export function getPortfolioInsights(
             ...allocations.slice(0, 5),
             {
               institution: "Demais instituições",
-              value: centsToNumber(remainderCents) ?? 0,
+              value: centsToNumber(remainderCents)!,
               percentage:
                 totalCents > 0n
                   ? (Number(remainderCents) / Number(totalCents)) * 100
@@ -160,7 +160,7 @@ export function getPortfolioInsights(
     largestPosition: sortedValued[0]
       ? {
           product: sortedValued[0].position.product,
-          value: centsToNumber(sortedValued[0].cents) ?? 0,
+          value: centsToNumber(sortedValued[0].cents)!,
           percentage:
             totalCents > 0n
               ? (Number(sortedValued[0].cents) / Number(totalCents)) * 100
@@ -172,7 +172,7 @@ export function getPortfolioInsights(
     topPositions: sortedValued.slice(0, 5).map(({ position, cents }) => ({
       product: position.product,
       institution: position.institution,
-      value: centsToNumber(cents) ?? 0,
+      value: centsToNumber(cents)!,
       percentage:
         totalCents > 0n ? (Number(cents) / Number(totalCents)) * 100 : 0,
     })),

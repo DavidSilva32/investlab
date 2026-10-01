@@ -84,6 +84,8 @@ describe("suggestEmergencyReservePositions", () => {
         holding("null", null),
         holding("zero", 0),
         holding("invalid", Number.NaN),
+        holding("sub-cent", 0.001),
+        { ...holding("invalid-cents", 10), valueCents: "not-cents" },
         holding("rounded", 9.995),
       ]),
     ).toMatchObject({

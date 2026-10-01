@@ -41,7 +41,7 @@ export function calculateEmergencyReserve(
     : (decimalToCents(input.selectedValue) ?? 0n);
   const selectedValueCents =
     parsedSelectedCents > 0n ? parsedSelectedCents : 0n;
-  const selectedValue = centsToNumber(selectedValueCents) ?? 0;
+  const selectedValue = centsToNumber(selectedValueCents)!;
   const monthlyExpenses = input.monthlyExpenses;
   const targetMonths = input.targetMonths;
 
@@ -104,9 +104,9 @@ export function calculateEmergencyReserve(
   }
 
   const targetCents = expenseCents * BigInt(targetMonths);
-  const targetValue = centsToNumber(targetCents) ?? 0;
+  const targetValue = centsToNumber(targetCents)!;
   const differenceCents = targetCents - selectedValueCents;
-  const difference = centsToNumber(differenceCents) ?? 0;
+  const difference = centsToNumber(differenceCents)!;
   const status =
     differenceCents > 0n
       ? "below_target"

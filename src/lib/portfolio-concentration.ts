@@ -130,15 +130,15 @@ export function getPortfolioConcentration(
   const totalCents = sumMoneyCents(
     [...groups.values()].map((group) => group.cents),
   );
-  const totalValue = centsToNumber(totalCents) ?? 0;
-  const classifiedValue = centsToNumber(classifiedCents) ?? 0;
+  const totalValue = centsToNumber(totalCents)!;
+  const classifiedValue = centsToNumber(classifiedCents)!;
   const unclassifiedCents = totalCents - classifiedCents;
-  const unclassifiedValue = centsToNumber(unclassifiedCents) ?? 0;
+  const unclassifiedValue = centsToNumber(unclassifiedCents)!;
   const denominator = totalCents > 0n ? totalCents : 0n;
 
   const formattedGroups = sortedGroups.map((group) => ({
     label: group.label,
-    value: centsToNumber(group.cents) ?? 0,
+    value: centsToNumber(group.cents)!,
     percentage:
       denominator > 0n ? (Number(group.cents) / Number(denominator)) * 100 : 0,
   }));
@@ -148,12 +148,11 @@ export function getPortfolioConcentration(
           ...formattedGroups.slice(0, 5),
           {
             label: "Demais classes",
-            value:
-              centsToNumber(
-                sortedGroups
-                  .slice(5)
-                  .reduce((total, group) => total + group.cents, 0n),
-              ) ?? 0,
+            value: centsToNumber(
+              sortedGroups
+                .slice(5)
+                .reduce((total, group) => total + group.cents, 0n),
+            )!,
             percentage:
               denominator > 0n
                 ? (Number(

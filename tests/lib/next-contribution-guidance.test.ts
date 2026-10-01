@@ -72,6 +72,19 @@ describe("getNextContributionGuidance", () => {
     });
   });
 
+  it("keeps a null canonical value incomplete instead of falling back to legacy fields", () => {
+    expect(
+      getNextContributionGuidance({
+        positions: [{ ...position("Renda fixa"), canonicalValueCents: null }],
+        targets,
+        emergencyReserve: reserve({
+          status: "not_configured",
+          difference: null,
+        }),
+      }),
+    ).toMatchObject({ status: "incomplete_data" });
+  });
+
   it("prioritizes a complete user-defined reserve gap", () => {
     expect(
       getNextContributionGuidance({

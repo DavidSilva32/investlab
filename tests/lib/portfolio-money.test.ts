@@ -77,6 +77,16 @@ describe("portfolio money", () => {
     expect(sumMoneyCents([123n, null, 456n, undefined])).toBe(579n);
   });
 
+  it("falls back from malformed estimate cents to the imported amount", () => {
+    expect(
+      resolvePositionMoney({
+        estimatedValueCents: "not-cents",
+        estimatedValue: null,
+        totalValue: "12.34",
+      }),
+    ).toEqual({ cents: 1234n, source: "B3_IMPORTED" });
+  });
+
   it("converts cents for numeric compatibility and formats without floating point", () => {
     expect(centsToDecimalString(-123456n)).toBe("-1234.56");
     expect(centsToNumber(123n)).toBe(1.23);

@@ -208,4 +208,123 @@ describe("getPortfolioConcentration", () => {
       percentage: expect.closeTo((300 / 2800) * 100),
     });
   });
+
+  it("handles explicit unvalued cents and all-zero chart remainders", () => {
+    const unvalued = getPortfolioConcentration(
+      [
+        {
+          ...positions[0],
+          canonicalValueCents: null,
+          totalValue: "100",
+        },
+      ],
+      "assetClass",
+    );
+    expect(unvalued).toMatchObject({
+      totalValueCents: "0",
+      unvaluedPositions: 1,
+    });
+
+    const zeroGroups = Array.from({ length: 7 }, (_, index) => ({
+      ...positions[0],
+      id: `zero-${index}`,
+      canonicalValueCents: "0",
+      totalValue: null,
+      estimatedValue: null,
+      classification: {
+        assetClass: `Classe ${index}`,
+        subClass: null,
+        geography: null,
+      },
+    }));
+    expect(
+      getPortfolioConcentration(zeroGroups, "assetClass").chartGroups.at(-1),
+    ).toMatchObject({ value: 0, percentage: 0 });
+  });
+
+  it("uses labels as a stable tie-breaker and accepts legacy values", () => {
+    const tied = getPortfolioConcentration(
+      [
+        {
+          ...positions[0],
+          id: "tie-z",
+          canonicalValueCents: undefined,
+          totalValue: "10",
+          classification: {
+            assetClass: "Classe Z",
+            subClass: null,
+            geography: null,
+          },
+        },
+        {
+          ...positions[0],
+          id: "tie-a",
+          canonicalValueCents: undefined,
+          totalValue: "10",
+          classification: {
+            assetClass: "Classe A",
+            subClass: null,
+            geography: null,
+          },
+        },
+      ],
+      "assetClass",
+    );
+
+    expect(tied.groups.map(({ label }) => label)).toEqual([
+      "Classe A",
+      "Classe Z",
+    ]);
+    expect(tied.totalValueCents).toBe("180000");
+  });
+
+  it("sorts lower valued groups after larger groups", () => {
+    const result = getPortfolioConcentration(
+      [
+        {
+          ...positions[0],
+          id: "small",
+          canonicalValueCents: "100",
+          totalValue: null,
+          estimatedValue: null,
+          classification: {
+            assetClass: "Classe pequena",
+            subClass: null,
+            geography: null,
+          },
+        },
+        {
+          ...positions[0],
+          id: "large",
+          canonicalValueCents: "300",
+          totalValue: null,
+          estimatedValue: null,
+          classification: {
+            assetClass: "Classe grande",
+            subClass: null,
+            geography: null,
+          },
+        },
+        {
+          ...positions[0],
+          id: "middle",
+          canonicalValueCents: "200",
+          totalValue: null,
+          estimatedValue: null,
+          classification: {
+            assetClass: "Classe média",
+            subClass: null,
+            geography: null,
+          },
+        },
+      ],
+      "assetClass",
+    );
+
+    expect(result.groups.map(({ label }) => label)).toEqual([
+      "Classe grande",
+      "Classe média",
+      "Classe pequena",
+    ]);
+  });
 });
