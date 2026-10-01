@@ -19,6 +19,7 @@ export type ObjectivePosition = {
   canonicalValueSource?: string;
   estimationBaseDate?: string | null;
   estimatedThrough?: string | null;
+  cdbEstimateComparisonApproximate?: boolean | null;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
 };

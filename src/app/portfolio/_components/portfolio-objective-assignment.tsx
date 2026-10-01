@@ -6,6 +6,16 @@ import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -24,6 +34,11 @@ import {
   portfolioMoneySourceLabels,
 } from "@/lib/portfolio-money";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { formatCurrency } from "@/lib/utils";
+import type { SuggestionCandidate } from "@/app/portfolio/_components/position-combination-suggestions";
+
+type AssignmentTransfer = NonNullable<SuggestionCandidate["transfers"]>[number];
+type TransferImpact = NonNullable<SuggestionCandidate["impacts"]>[number];
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
@@ -36,12 +51,14 @@ export type ObjectivePosition = {
   positionCount: number;
   value: number | null;
   valueCents?: string | null;
+  referenceDate?: string | null;
   unvaluedPositions: number;
   objectiveId: string | null;
   objectiveName: string | null;
   canonicalValueSource?: string;
   estimationBaseDate?: string | null;
   estimatedThrough?: string | null;
+  cdbEstimateComparisonApproximate?: boolean | null;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
 };
@@ -51,7 +68,11 @@ type Props = {
   positions: ObjectivePosition[];
   preferredObjectiveId?: string;
   saving: boolean;
-  onSave: (objectiveId: string, assetKeys: string[]) => void;
+  onSave: (
+    objectiveId: string,
+    assetKeys: string[],
+    transfers?: AssignmentTransfer[],
+  ) => void;
 };
 
 export function PortfolioObjectiveAssignment({
@@ -76,6 +97,11 @@ export function PortfolioObjectiveAssignment({
         ?.assignedAssetKeys ?? [],
     ),
   );
+  const [pendingTransfer, setPendingTransfer] = useState<{
+    assetKeys: string[];
+    transfers: AssignmentTransfer[];
+    impacts: TransferImpact[];
+  } | null>(null);
   const objective = useMemo(
     () => objectives.find((item) => item.id === selectedObjectiveId),
     [objectives, selectedObjectiveId],
@@ -172,7 +198,9 @@ export function PortfolioObjectiveAssignment({
               endpoint="/api/portfolio/objectives/suggestions"
               title="Encontrar posições pelo valor"
               description="Pré-selecionar substitui a seleção atual nesta revisão; nada muda até Salvar posições. O filtro apenas limita a busca."
-              amountLabel="Valor desejado"
+              amountLabel="Saldo atual do objetivo no banco"
+              requestBody={{ objectiveId: objective.id }}
+              targetObjectiveName={objective.name}
               holdings={positions
                 .filter((position) => position.objectiveId === null)
                 .map((position) => ({
@@ -184,6 +212,9 @@ export function PortfolioObjectiveAssignment({
                   canonicalValueSource: position.canonicalValueSource,
                   estimationBaseDate: position.estimationBaseDate,
                   estimatedThrough: position.estimatedThrough,
+                  cdbEstimateComparisonApproximate:
+                    position.cdbEstimateComparisonApproximate,
+                  referenceDate: position.referenceDate,
                   cdbEstimateStatus: position.cdbEstimateStatus,
                   cdbEstimateLimitation: position.cdbEstimateLimitation,
                 }))}
@@ -192,13 +223,23 @@ export function PortfolioObjectiveAssignment({
                 key: "instrumentType",
                 defaultValue: "ALL",
                 options: [
-                  { value: "ALL", label: "Todos os instrumentos sem destino" },
+                  { value: "ALL", label: "Todos os instrumentos" },
                   { value: "CDB", label: "Somente CDB identificado" },
                 ],
               }}
               selectionActionLabel={(index) => "Pré-selecionar " + (index + 1)}
               applyButtonLabel="Pré-selecionar"
-              onApply={(assetKeys) => setSelectedAssetKeys(new Set(assetKeys))}
+              onApply={(assetKeys, candidate) => {
+                if (candidate?.transfers?.length) {
+                  setPendingTransfer({
+                    assetKeys,
+                    transfers: candidate.transfers,
+                    impacts: candidate.impacts ?? [],
+                  });
+                  return false;
+                }
+                setSelectedAssetKeys(new Set(assetKeys));
+              }}
             />
           )}
           <p className="rounded-md bg-muted/40 p-3 text-sm" aria-live="polite">
@@ -292,11 +333,10 @@ export function PortfolioObjectiveAssignment({
                           )}
                           {position.estimatedThrough && (
                             <span className="block text-xs text-muted-foreground">
-                              Estimativa{" "}
-                              {position.cdbEstimateStatus === "provisional"
-                                ? "parcial "
-                                : ""}
-                              até{" "}
+                              {position.cdbEstimateStatus === "provisional" ||
+                              position.cdbEstimateComparisonApproximate
+                                ? "Estimativa aproximada até "
+                                : "Estimativa até "}
                               {date.format(
                                 new Date(
                                   `${position.estimatedThrough}T00:00:00Z`,
@@ -336,6 +376,76 @@ export function PortfolioObjectiveAssignment({
           </div>
         </>
       )}
+      <AlertDialog
+        open={pendingTransfer !== null}
+        onOpenChange={() => setPendingTransfer(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Confirmar transferência entre objetivos
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              As posições listadas sairão dos objetivos atuais e passarão para{" "}
+              {objective?.name} junto com a atualização das atribuições.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-60 space-y-2 overflow-y-auto">
+            {pendingTransfer?.transfers.map((transfer) => (
+              <div
+                key={transfer.assetKey}
+                className="rounded-md border p-3 text-sm"
+              >
+                <p className="font-medium">{transfer.product}</p>
+                <p className="text-muted-foreground">
+                  De {transfer.fromObjectiveName} para {objective?.name} ·{" "}
+                  {formatCurrency(transfer.value)}
+                </p>
+              </div>
+            ))}
+          </div>
+          {pendingTransfer?.impacts.length ? (
+            <div className="rounded-md bg-muted/40 p-3 text-sm">
+              <p className="mb-2 font-medium">
+                Saldo estimado após a transferência
+              </p>
+              <ul className="space-y-1">
+                {pendingTransfer.impacts.map((impact) => (
+                  <li key={impact.objectiveId}>
+                    {impact.objectiveName}:{" "}
+                    {impact.currentValue === null
+                      ? "total indisponível"
+                      : formatCurrency(impact.currentValue)}
+                    {impact.targetAmount === null
+                      ? ""
+                      : ` de ${formatCurrency(impact.targetAmount)}`}
+                    {impact.progressPercent === null
+                      ? ""
+                      : ` (${impact.progressPercent.toFixed(1)}%)`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving || !pendingTransfer}
+              onClick={(event) => {
+                event.preventDefault();
+                onSave(
+                  objective.id,
+                  pendingTransfer!.assetKeys,
+                  pendingTransfer!.transfers,
+                );
+                setPendingTransfer(null);
+              }}
+            >
+              {saving ? "Transferindo…" : "Usar e transferir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

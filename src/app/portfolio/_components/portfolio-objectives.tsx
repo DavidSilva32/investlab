@@ -13,6 +13,9 @@ import { PortfolioObjectivesOverview } from "@/app/portfolio/_components/portfol
 import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
 import { Button } from "@/components/ui/button";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import type { SuggestionCandidate } from "@/app/portfolio/_components/position-combination-suggestions";
+
+type AssignmentTransfer = NonNullable<SuggestionCandidate["transfers"]>[number];
 
 type ObjectivesData = {
   objectives: PortfolioObjective[];
@@ -172,13 +175,17 @@ export function PortfolioObjectives({
     }
   }
 
-  async function saveAssignments(objectiveId: string, assetKeys: string[]) {
+  async function saveAssignments(
+    objectiveId: string,
+    assetKeys: string[],
+    transfers: AssignmentTransfer[] = [],
+  ) {
     setSaving(true);
     try {
       const response = await fetch("/api/portfolio/objectives", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectiveId, assetKeys }),
+        body: JSON.stringify({ objectiveId, assetKeys, transfers }),
       });
       const body: unknown = await response.json();
       if (!response.ok) {
@@ -187,7 +194,11 @@ export function PortfolioObjectives({
         );
         return;
       }
-      toast.success(getApiMessage(body, "Posições vinculadas ao objetivo."));
+      toast.success(
+        transfers.length
+          ? `${transfers.length} ${transfers.length === 1 ? "posição foi transferida" : "posições foram transferidas"} para ${data!.objectives.find((item) => item.id === objectiveId)!.name}.`
+          : getApiMessage(body, "Posições vinculadas ao objetivo."),
+      );
       await loadData();
       setView({ kind: "detail", objectiveId });
       navigateToObjective(objectiveId);

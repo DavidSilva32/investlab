@@ -18,6 +18,11 @@ import {
   sumMoneyCents,
   type PortfolioMoneySource,
 } from "@/lib/portfolio-money";
+import {
+  isFutureValuationDate,
+  isValidValuationDate,
+  todayInSaoPaulo,
+} from "@/lib/valuation-date";
 
 const maximumAmount = 1_000_000_000_000;
 const createSchema = z.object({
@@ -39,12 +44,31 @@ const createSchema = z.object({
 });
 const assignmentsSchema = z.object({
   assetKeys: z.array(z.string().trim().min(1).max(80)).max(500),
+  transfers: z
+    .array(
+      z.object({
+        assetKey: z.string().trim().min(1).max(80),
+        fromObjectiveId: z.string().uuid(),
+        toObjectiveId: z.string().uuid(),
+      }),
+    )
+    .max(500)
+    .default([]),
 });
 const updateSchema = createSchema.extend({ objectiveId: z.string().uuid() });
 const deleteSchema = z.object({ objectiveId: z.string().uuid() });
 const suggestionsSchema = z.object({
   targetAmount: z.number().finite().positive().max(maximumAmount),
   instrumentType: z.enum(["ALL", "CDB"]).default("ALL"),
+  objectiveId: z.string().trim().min(1).optional(),
+  valuationDate: z
+    .string()
+    .refine(isValidValuationDate, "Informe uma data válida.")
+    .refine(
+      (value) => !isFutureValuationDate(value),
+      "A data não pode ser futura.",
+    )
+    .optional(),
 });
 
 type RawPosition = {
@@ -69,6 +93,7 @@ type RawPosition = {
   maturityAt?: string | null;
   estimationBaseDate?: string | null;
   estimatedThrough?: string | null;
+  cdbEstimateComparisonApproximate?: boolean;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
 };
@@ -87,16 +112,24 @@ function valueFor(position: RawPosition) {
 }
 
 export class PortfolioObjectivesService {
-  async getOverview(requestId?: string) {
-    const [rawPositions, stored, reserveSettings] = await Promise.all([
-      portfolioPositionService.listCurrentEnriched(requestId),
+  async getOverview(
+    requestId?: string,
+    valuationDate?: string,
+    evaluatedPositions?: RawPosition[],
+  ) {
+    const [stored, reserveSettings] = await Promise.all([
       portfolioObjectivesRepository.list(),
       emergencyReserveRepository.getSettings(),
     ]);
-    const classified = await portfolioAllocationService.classifyPositions(
-      rawPositions,
-      requestId,
-    );
+    const classified = evaluatedPositions
+      ? evaluatedPositions
+      : await portfolioAllocationService.classifyPositions(
+          await portfolioPositionService.listCurrentEnriched(
+            requestId,
+            valuationDate,
+          ),
+          requestId,
+        );
     const positions = this.groupPositions(classified as RawPosition[]);
     const assignedByObjective = new Map<string, string[]>();
     const objectiveByAssetKey = new Map<string, string>();
@@ -286,6 +319,18 @@ export class PortfolioObjectivesService {
       );
     }
     const assetKeys = [...new Set(parsed.data.assetKeys)];
+    const transfers = parsed.data.transfers;
+    if (
+      new Set(transfers.map((transfer) => transfer.assetKey)).size !==
+        transfers.length ||
+      transfers.some(
+        (transfer) =>
+          !assetKeys.includes(transfer.assetKey) ||
+          transfer.toObjectiveId !== objectiveId,
+      )
+    ) {
+      throw new ApplicationError("Revise as transferências selecionadas.", 400);
+    }
     const current = await this.getOverview();
     const currentKeys = new Set(
       current.positions.map((position) => position.assetKey),
@@ -300,7 +345,9 @@ export class PortfolioObjectivesService {
       (position) =>
         assetKeys.includes(position.assetKey) &&
         position.objectiveId !== null &&
-        position.objectiveId !== objectiveId,
+        position.objectiveId !== objectiveId &&
+        transfers.find((transfer) => transfer.assetKey === position.assetKey)
+          ?.fromObjectiveId !== position.objectiveId,
     );
     if (conflicts.length) {
       throw new ApplicationError(
@@ -308,9 +355,22 @@ export class PortfolioObjectivesService {
         409,
       );
     }
-    await portfolioObjectivesRepository.replaceAssignments(
+    const invalidTransfer = transfers.find(
+      (transfer) =>
+        current.positions.find(
+          (position) => position.assetKey === transfer.assetKey,
+        )?.objectiveId !== transfer.fromObjectiveId,
+    );
+    if (invalidTransfer) {
+      throw new ApplicationError(
+        "Uma posição mudou de destino desde a busca. Atualize os objetivos e tente novamente.",
+        409,
+      );
+    }
+    await portfolioObjectivesRepository.replaceAssignmentsWithTransfers(
       objectiveId,
       assetKeys,
+      transfers,
     );
   }
 
@@ -320,32 +380,193 @@ export class PortfolioObjectivesService {
       throw new ApplicationError("Informe um valor válido para comparar.", 400);
     }
     const { targetAmount, instrumentType } = parsed.data;
-    const available = (await this.getOverview(requestId)).positions.filter(
-      (position) => position.objectiveId === null,
+    const valuationDate = parsed.data.valuationDate ?? todayInSaoPaulo();
+    const overview = await this.getOverview(requestId, valuationDate);
+    const targetObjective = overview.objectives.find(
+      (objective) => objective.id === parsed.data.objectiveId,
+    );
+    const objectiveId = targetObjective?.id;
+    const eligible = overview.positions.filter(
+      (position) =>
+        position.objectiveId === null ||
+        (objectiveId !== undefined && position.objectiveId === objectiveId),
     );
     const candidates =
       instrumentType === "CDB"
-        ? available.filter(
+        ? eligible.filter(
             (position) =>
               position.assetClass === "Renda fixa" &&
               /^CDB(?:\b|\s|-)/i.test(position.product.trim()),
           )
-        : available;
-    return suggestEmergencyReservePositions(
+        : eligible;
+    const toHolding = (position: (typeof overview.positions)[number]) => ({
+      assetKey: position.assetKey,
+      product: position.product,
+      institution: position.institution,
+      value: position.value,
+      valueCents: position.valueCents ?? null,
+      canonicalValueSource: position.canonicalValueSource,
+      estimationBaseDate: position.estimationBaseDate ?? null,
+      estimatedThrough: position.estimatedThrough ?? null,
+      cdbEstimateComparisonApproximate:
+        position.cdbEstimateComparisonApproximate ?? false,
+      referenceDate: position.referenceDate ?? null,
+      cdbEstimateStatus: position.cdbEstimateStatus ?? null,
+      cdbEstimateLimitation: position.cdbEstimateLimitation ?? null,
+    });
+    let result = suggestEmergencyReservePositions(
       targetAmount,
       candidates.map((position) => ({
-        assetKey: position.assetKey,
-        product: position.product,
-        institution: position.institution,
-        value: position.value,
-        valueCents: position.valueCents ?? null,
-        canonicalValueSource: position.canonicalValueSource,
-        estimationBaseDate: position.estimationBaseDate ?? null,
-        estimatedThrough: position.estimatedThrough ?? null,
-        cdbEstimateStatus: position.cdbEstimateStatus ?? null,
-        cdbEstimateLimitation: position.cdbEstimateLimitation ?? null,
+        ...toHolding(position),
       })),
     );
+    if (
+      objectiveId &&
+      !(result.status === "suggestions" && result.kind === "exact") &&
+      !(result.status === "suggestions" && result.searchLimited)
+    ) {
+      const expandedPositions = overview.positions.filter((position) =>
+        instrumentType === "CDB"
+          ? position.assetClass === "Renda fixa" &&
+            /^CDB(?:\b|\s|-)/i.test(position.product.trim())
+          : true,
+      );
+      const expanded = suggestEmergencyReservePositions(
+        targetAmount,
+        expandedPositions.map(toHolding),
+      );
+      if (expanded.status === "suggestions") {
+        const baselineDifference =
+          result.status === "suggestions"
+            ? Math.min(
+                ...result.candidates.map((candidate) =>
+                  Math.abs(candidate.difference),
+                ),
+              )
+            : Number.POSITIVE_INFINITY;
+        const better = expanded.candidates.filter(
+          (candidate) =>
+            candidate.difference === 0 ||
+            Math.abs(candidate.difference) < baselineDifference,
+        );
+        if (better.length) {
+          const positionByKey = new Map(
+            overview.positions.map((position) => [position.assetKey, position]),
+          );
+          const objectivesById = new Map(
+            overview.objectives.map((objective) => [objective.id, objective]),
+          );
+          result = {
+            ...expanded,
+            kind: better.some((candidate) => candidate.difference === 0)
+              ? "exact"
+              : "nearest",
+            candidates: better.map((candidate) => {
+              const candidateCentsByKey = new Map(
+                candidate.positions.map((position) => [
+                  position.assetKey,
+                  BigInt(position.valueCents),
+                ]),
+              );
+              const transfers = candidate.assetKeys.flatMap((assetKey) => {
+                const position = positionByKey.get(assetKey)!;
+                if (
+                  !position.objectiveId ||
+                  position.objectiveId === objectiveId
+                )
+                  return [];
+                return [
+                  {
+                    assetKey,
+                    product: position.product,
+                    value: centsToNumber(candidateCentsByKey.get(assetKey)!)!,
+                    fromObjectiveId: position.objectiveId,
+                    fromObjectiveName:
+                      position.objectiveName ?? "Outro objetivo",
+                    toObjectiveId: objectiveId,
+                  },
+                ];
+              });
+              const removedByObjective = new Map<string, bigint>();
+              for (const transfer of transfers) {
+                const transferredCents = candidateCentsByKey.get(
+                  transfer.assetKey,
+                )!;
+                removedByObjective.set(
+                  transfer.fromObjectiveId,
+                  (removedByObjective.get(transfer.fromObjectiveId) ?? 0n) +
+                    transferredCents,
+                );
+              }
+              const impacts = [
+                {
+                  objectiveId,
+                  objectiveName: targetObjective!.name,
+                  currentValue: centsToNumber(BigInt(candidate.totalCents)),
+                  knownValue: centsToNumber(BigInt(candidate.totalCents))!,
+                  targetAmount: targetObjective!.targetAmount,
+                  progressPercent: targetObjective!.targetAmount
+                    ? Math.min(
+                        (candidate.total / targetObjective!.targetAmount!) *
+                          100,
+                        100,
+                      )
+                    : null,
+                  transferredValue: centsToNumber(
+                    transfers.reduce(
+                      (sum, transfer) =>
+                        sum + candidateCentsByKey.get(transfer.assetKey)!,
+                      0n,
+                    ),
+                  )!,
+                  transferredPositionCount: transfers.length,
+                },
+                ...[...removedByObjective].map(([sourceId, removedCents]) => {
+                  const source = objectivesById.get(sourceId);
+                  const sourceCurrentCents = source?.currentValueCents ?? null;
+                  const sourceKnownCents = BigInt(
+                    source?.knownValueCents ?? "0",
+                  );
+                  const currentValue =
+                    sourceCurrentCents === null ||
+                    sourceCurrentCents === undefined
+                      ? null
+                      : centsToNumber(
+                          BigInt(sourceCurrentCents) > removedCents
+                            ? BigInt(sourceCurrentCents) - removedCents
+                            : 0n,
+                        );
+                  return {
+                    objectiveId: sourceId,
+                    objectiveName: source?.name ?? "Outro objetivo",
+                    currentValue,
+                    knownValue: centsToNumber(
+                      sourceKnownCents > removedCents
+                        ? sourceKnownCents - removedCents
+                        : 0n,
+                    )!,
+                    targetAmount: source?.targetAmount ?? null,
+                    progressPercent:
+                      currentValue === null || !source?.targetAmount
+                        ? null
+                        : Math.min(
+                            (currentValue / source.targetAmount) * 100,
+                            100,
+                          ),
+                    transferredValue: centsToNumber(removedCents)!,
+                    transferredPositionCount: transfers.filter(
+                      (transfer) => transfer.fromObjectiveId === sourceId,
+                    ).length,
+                  };
+                }),
+              ];
+              return { ...candidate, transfers, impacts };
+            }),
+          };
+        }
+      }
+    }
+    return { ...result, valuationDate };
   }
 
   async update(objectiveId: string, body: unknown) {
@@ -413,6 +634,7 @@ export class PortfolioObjectivesService {
         referenceDate: string | null;
         estimationBaseDate: string | null;
         estimatedThrough: string | null;
+        cdbEstimateComparisonApproximate: boolean | null;
         cdbEstimateStatus: "complete" | "provisional" | "unavailable" | null;
         cdbEstimateLimitation: string | null;
         source: string | null;
@@ -443,6 +665,11 @@ export class PortfolioObjectivesService {
           existing.estimationBaseDate = null;
         if (existing.estimatedThrough !== (position.estimatedThrough ?? null))
           existing.estimatedThrough = null;
+        if (
+          existing.cdbEstimateComparisonApproximate !==
+          (position.cdbEstimateComparisonApproximate ?? null)
+        )
+          existing.cdbEstimateComparisonApproximate = null;
         if (existing.cdbEstimateStatus !== (position.cdbEstimateStatus ?? null))
           existing.cdbEstimateStatus = null;
         if (
@@ -482,6 +709,8 @@ export class PortfolioObjectivesService {
         referenceDate: position.referenceDate ?? null,
         estimationBaseDate: position.estimationBaseDate ?? null,
         estimatedThrough: position.estimatedThrough ?? null,
+        cdbEstimateComparisonApproximate:
+          position.cdbEstimateComparisonApproximate ?? null,
         cdbEstimateStatus: position.cdbEstimateStatus ?? null,
         cdbEstimateLimitation: position.cdbEstimateLimitation ?? null,
         source: position.source ?? null,

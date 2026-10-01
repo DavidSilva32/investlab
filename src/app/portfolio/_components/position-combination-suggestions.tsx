@@ -17,9 +17,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { formatCurrency } from "@/lib/utils";
+import { isFutureValuationDate, todayInSaoPaulo } from "@/lib/valuation-date";
 import {
   formatCurrencyCents,
   portfolioMoneySourceLabels,
@@ -42,13 +44,15 @@ export type PositionCombinationSuggestionHolding = {
   canonicalValueSource?: string;
   estimationBaseDate?: string | null;
   estimatedThrough?: string | null;
+  cdbEstimateComparisonApproximate?: boolean | null;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
+  referenceDate?: string | null;
 };
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
-type SuggestionCandidate = {
+export type SuggestionCandidate = {
   assetKeys: string[];
   total: number;
   difference: number;
@@ -77,13 +81,13 @@ type EmergencyReservePositionSuggestions =
   | { status: "invalid_target" }
   | { status: "no_valued_positions" }
   | { status: "too_many_positions"; maximum: number }
-  | {
+  | ({
       status: "suggestions";
       kind: "exact" | "nearest";
       candidates: SuggestionCandidate[];
       searchLimited: boolean;
       alternativesLimited: boolean;
-    };
+    } & { valuationDate?: string });
 
 type Props = {
   holdings: PositionCombinationSuggestionHolding[];
@@ -107,7 +111,8 @@ type Props = {
   selectionActionLabel?: (index: number) => string;
   applyButtonLabel?: string;
   comparisonDetails?: string;
-  requestBody?: Record<string, number | null>;
+  requestBody?: Record<string, string | number | null>;
+  targetObjectiveName?: string;
 };
 
 type SearchState =
@@ -127,8 +132,10 @@ export function PositionCombinationSuggestions({
   applyButtonLabel = "Usar esta combinação",
   comparisonDetails,
   requestBody,
+  targetObjectiveName = "Reserva",
 }: Props) {
   const [amount, setAmount] = useState("");
+  const [valuationDate, setValuationDate] = useState(todayInSaoPaulo);
   const amountInputRef = useRef<HTMLInputElement>(null);
   const selectionRef = useRef<CurrencyInputSelection | null>(null);
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
@@ -153,6 +160,13 @@ export function PositionCombinationSuggestions({
       setSearch({ status: "idle" });
       return;
     }
+    if (!valuationDate || isFutureValuationDate(valuationDate)) {
+      setError(
+        "Informe uma data de consulta válida, igual ou anterior a hoje.",
+      );
+      setSearch({ status: "idle" });
+      return;
+    }
 
     setError(null);
     setSearch({ status: "loading" });
@@ -162,6 +176,7 @@ export function PositionCombinationSuggestions({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           targetAmount: target,
+          valuationDate,
           ...requestBody,
           ...(requestFilter ? { [requestFilter.key]: filter } : {}),
         }),
@@ -213,7 +228,7 @@ export function PositionCombinationSuggestions({
         <CollapsibleContent className="space-y-4 pt-4">
           <p className="text-sm text-muted-foreground">{description}</p>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,0.7fr)_auto] lg:items-end">
             <div className="min-w-0 flex-1 space-y-2">
               <Label htmlFor="position-combination-target">{amountLabel}</Label>
               <Input
@@ -279,6 +294,16 @@ export function PositionCombinationSuggestions({
                 </Select>
               </div>
             )}
+            <DatePickerField
+              id="position-combination-valuation-date"
+              label="Data consultada no banco"
+              value={valuationDate}
+              onChange={(value) => {
+                setValuationDate(value);
+                setSearch({ status: "idle" });
+              }}
+              required
+            />
             <Button
               type="button"
               onClick={() => void findSuggestions()}
@@ -330,6 +355,7 @@ export function PositionCombinationSuggestions({
           {search.status === "result" && (
             <SuggestionResults
               result={search.result}
+              targetObjectiveName={targetObjectiveName}
               target={parseBrazilianAmount(amount)}
               holdings={holdings}
               onApply={(assetKeys, candidate) => {
@@ -359,6 +385,7 @@ export function PositionCombinationSuggestions({
 function SuggestionResults({
   result,
   target,
+  targetObjectiveName,
   holdings,
   onApply,
   selectionActionLabel,
@@ -366,6 +393,7 @@ function SuggestionResults({
 }: {
   result: EmergencyReservePositionSuggestions;
   target: number;
+  targetObjectiveName: string;
   holdings: PositionCombinationSuggestionHolding[];
   onApply: Props["onApply"];
   selectionActionLabel: Props["selectionActionLabel"];
@@ -428,6 +456,14 @@ function SuggestionResults({
           {result.searchLimited &&
             " A busca atingiu o limite de combinações avaliadas."}
         </p>
+        {result.valuationDate && (
+          <p className="text-xs text-muted-foreground">
+            Data informada:{" "}
+            {date.format(new Date(`${result.valuationDate}T00:00:00Z`))}. As
+            combinações são candidatas matemáticas; confira cada posição e sua
+            data de valor antes de escolher.
+          </p>
+        )}
       </div>
       <ol className="grid gap-2 sm:grid-cols-2">
         {result.candidates.map((candidate, index) => {
@@ -452,6 +488,7 @@ function SuggestionResults({
               onApply={onApply}
               selectionActionLabel={selectionActionLabel}
               applyButtonLabel={applyButtonLabel}
+              targetObjectiveName={targetObjectiveName}
             />
           );
         })}
@@ -468,6 +505,7 @@ function CandidateSummary({
   onApply,
   selectionActionLabel,
   applyButtonLabel,
+  targetObjectiveName,
 }: {
   candidate: SuggestionCandidate;
   index: number;
@@ -476,6 +514,7 @@ function CandidateSummary({
   onApply: Props["onApply"];
   selectionActionLabel: Props["selectionActionLabel"];
   applyButtonLabel: string;
+  targetObjectiveName: string;
 }) {
   return (
     <li className="rounded-xl border bg-background p-3 shadow-sm">
@@ -541,7 +580,7 @@ function CandidateSummary({
                   {transfer && (
                     <span className="mt-1 block text-xs text-amber-700">
                       Será transferida de {transfer.fromObjectiveName} para
-                      Reserva
+                      {targetObjectiveName}
                     </span>
                   )}
                   <span className="mt-2 block text-sm tabular-nums">
@@ -572,13 +611,21 @@ function CandidateSummary({
                   )}
                   {holding.estimatedThrough && (
                     <span className="block text-xs text-muted-foreground">
-                      Estimativa{" "}
-                      {holding.cdbEstimateStatus === "provisional"
-                        ? "parcial "
-                        : ""}
-                      até{" "}
+                      {holding.cdbEstimateStatus === "provisional" ||
+                      holding.cdbEstimateComparisonApproximate
+                        ? "Estimativa aproximada até "
+                        : "Valor estimado até "}
                       {date.format(
                         new Date(`${holding.estimatedThrough}T00:00:00Z`),
+                      )}
+                    </span>
+                  )}
+                  {!holding.estimatedThrough && holding.referenceDate && (
+                    <span className="block text-xs text-muted-foreground">
+                      Comparação aproximada: valor importado com referência B3
+                      de{" "}
+                      {date.format(
+                        new Date(`${holding.referenceDate}T00:00:00Z`),
                       )}
                     </span>
                   )}

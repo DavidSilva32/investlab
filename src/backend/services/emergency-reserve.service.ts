@@ -17,13 +17,27 @@ import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import {
   centsToNumber,
+  decimalToCents,
   sumMoneyCents,
   type PortfolioMoneySource,
 } from "@/lib/portfolio-money";
 import { withCanonicalPortfolioValue } from "@/backend/services/portfolio-position.service";
+import {
+  isFutureValuationDate,
+  isValidValuationDate,
+  todayInSaoPaulo,
+} from "@/lib/valuation-date";
 
 const suggestionSchema = z.object({
   targetAmount: z.number().finite().positive().max(1_000_000_000_000),
+  valuationDate: z
+    .string()
+    .refine(isValidValuationDate, "Informe uma data válida.")
+    .refine(
+      (value) => !isFutureValuationDate(value),
+      "A data não pode ser futura.",
+    )
+    .optional(),
   reserveTargetAmount: z
     .number()
     .finite()
@@ -67,6 +81,7 @@ type Position = {
   referenceDate?: string | null;
   estimationBaseDate?: string | null;
   estimatedThrough?: string | null;
+  cdbEstimateComparisonApproximate?: boolean;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
   estimatedValue?: number | null;
@@ -88,7 +103,9 @@ type ReserveImpactObjective = {
   id: string;
   name: string;
   currentValue: number | null;
+  currentValueCents?: string | null;
   knownValue: number;
+  knownValueCents?: string | null;
   targetAmount: number | null;
 };
 
@@ -241,8 +258,12 @@ export class EmergencyReserveService {
       );
     }
 
+    const valuationDate = parsed.data.valuationDate ?? todayInSaoPaulo();
     const rawPositions = await importRepository.listLatestPositions(requestId);
-    const estimatedPositions = await cdbEstimateService.enrich(rawPositions);
+    const estimatedPositions = await cdbEstimateService.enrich(
+      rawPositions,
+      valuationDate,
+    );
     const normalizedPositions: Position[] = estimatedPositions.map(
       (position): Position =>
         withCanonicalPortfolioValue({
@@ -311,7 +332,11 @@ export class EmergencyReserveService {
         );
         if (better.length > 0) {
           const [overview, reserveSettings] = await Promise.all([
-            portfolioObjectivesService.getOverview(requestId),
+            portfolioObjectivesService.getOverview(
+              requestId,
+              valuationDate,
+              positions,
+            ),
             parsed.data.reserveTargetAmount === undefined
               ? emergencyReserveRepository.getSettings()
               : Promise.resolve(null),
@@ -326,12 +351,6 @@ export class EmergencyReserveService {
           const objectiveById = new Map(
             overview.objectives.map((objective) => [objective.id, objective]),
           );
-          const valueByAsset = new Map(
-            overview.positions.map((position) => [
-              position.assetKey,
-              position.value,
-            ]),
-          );
           const holdingByAsset = new Map(
             holdings.map((holding) => [holding.assetKey, holding]),
           );
@@ -344,7 +363,6 @@ export class EmergencyReserveService {
               this.addTransferDetails(
                 candidate,
                 holdingByAsset,
-                valueByAsset,
                 objectiveById,
                 reserveTarget,
               ),
@@ -360,7 +378,7 @@ export class EmergencyReserveService {
       candidates:
         result.status === "suggestions" ? result.candidates.length : 0,
     });
-    return result;
+    return { ...result, valuationDate };
   }
 
   async saveSettings(body: unknown, requestId?: string) {
@@ -470,18 +488,23 @@ export class EmergencyReserveService {
       {
         product: string;
         value: number | null;
+        valueCents: string | null;
         assignedObjectiveId: string | null;
         assignedObjectiveName: string | null;
       }
     >,
-    valueByAsset: Map<string, number | null>,
     objectiveById: Map<string, ReserveImpactObjective>,
     targetAmount: number | null,
   ): ReservePositionSuggestion {
+    const candidateCentsByAsset = new Map(
+      candidate.positions.map((position) => [
+        position.assetKey,
+        BigInt(position.valueCents),
+      ]),
+    );
     const transfers = candidate.assetKeys.flatMap((assetKey) => {
-      const holding = holdings.get(assetKey);
+      const holding = holdings.get(assetKey)!;
       if (
-        !holding ||
         !holding.assignedObjectiveId ||
         holding.assignedObjectiveId === reserveObjectiveId
       ) {
@@ -491,19 +514,19 @@ export class EmergencyReserveService {
         {
           assetKey,
           product: holding.product,
-          value: holding.value!,
+          value: centsToNumber(candidateCentsByAsset.get(assetKey)!)!,
           fromObjectiveId: holding.assignedObjectiveId,
           fromObjectiveName: holding.assignedObjectiveName!,
           toObjectiveId: reserveObjectiveId,
         },
       ];
     });
-    const transferValueByObjective = new Map<string, number>();
+    const transferValueByObjective = new Map<string, bigint>();
     for (const transfer of transfers) {
       transferValueByObjective.set(
         transfer.fromObjectiveId,
-        (transferValueByObjective.get(transfer.fromObjectiveId) ?? 0) +
-          (valueByAsset.get(transfer.assetKey) ?? transfer.value),
+        (transferValueByObjective.get(transfer.fromObjectiveId) ?? 0n) +
+          candidateCentsByAsset.get(transfer.assetKey)!,
       );
     }
     const impacts = [
@@ -517,35 +540,43 @@ export class EmergencyReserveService {
           targetAmount === null
             ? null
             : Math.min((candidate.total / targetAmount) * 100, 100),
-        transferredValue: transfers.reduce(
-          (total, transfer) =>
-            total + (valueByAsset.get(transfer.assetKey) ?? transfer.value),
-          0,
-        ),
+        transferredValue: centsToNumber(
+          transfers.reduce(
+            (total, transfer) =>
+              total + candidateCentsByAsset.get(transfer.assetKey)!,
+            0n,
+          ),
+        )!,
         transferredPositionCount: transfers.length,
       },
       ...[...transferValueByObjective].map(
-        ([objectiveId, transferredValue]) => {
+        ([objectiveId, transferredValueCents]) => {
           const objective = objectiveById.get(objectiveId);
+          const sourceCurrentCents = objective?.currentValueCents ?? null;
+          const sourceKnownCents = BigInt(objective?.knownValueCents ?? "0");
           const currentValue =
-            objective?.currentValue === null ||
-            objective?.currentValue === undefined
+            sourceCurrentCents === null || sourceCurrentCents === undefined
               ? null
-              : Math.max(objective.currentValue - transferredValue, 0);
+              : centsToNumber(
+                  BigInt(sourceCurrentCents) > transferredValueCents
+                    ? BigInt(sourceCurrentCents) - transferredValueCents
+                    : 0n,
+                );
           return {
             objectiveId,
             objectiveName: objective?.name ?? "Outro objetivo",
             currentValue,
-            knownValue: Math.max(
-              (objective?.knownValue ?? 0) - transferredValue,
-              0,
-            ),
+            knownValue: centsToNumber(
+              sourceKnownCents > transferredValueCents
+                ? sourceKnownCents - transferredValueCents
+                : 0n,
+            )!,
             targetAmount: objective?.targetAmount ?? null,
             progressPercent:
               currentValue === null || !objective?.targetAmount
                 ? null
                 : Math.min((currentValue / objective.targetAmount) * 100, 100),
-            transferredValue,
+            transferredValue: centsToNumber(transferredValueCents)!,
             transferredPositionCount: transfers.filter(
               (transfer) => transfer.fromObjectiveId === objectiveId,
             ).length,
@@ -576,8 +607,10 @@ export class EmergencyReserveService {
         valueCents: bigint;
         hasValue: boolean;
         valueSource: PortfolioMoneySource;
+        referenceDate: string | null;
         estimationBaseDate: string | null;
         estimatedThrough: string | null;
+        cdbEstimateComparisonApproximate: boolean | null;
         cdbEstimateStatus: "complete" | "provisional" | "unavailable" | null;
         cdbEstimateLimitation: string | null;
       }
@@ -595,6 +628,11 @@ export class EmergencyReserveService {
           existing.estimationBaseDate = null;
         if (existing.estimatedThrough !== (position.estimatedThrough ?? null))
           existing.estimatedThrough = null;
+        if (
+          existing.cdbEstimateComparisonApproximate !==
+          (position.cdbEstimateComparisonApproximate ?? null)
+        )
+          existing.cdbEstimateComparisonApproximate = null;
         if (existing.cdbEstimateStatus !== (position.cdbEstimateStatus ?? null))
           existing.cdbEstimateStatus = null;
         if (
@@ -633,8 +671,11 @@ export class EmergencyReserveService {
         valueCents: valueCents ?? 0n,
         hasValue: valueCents !== null,
         valueSource: position.canonicalValueSource,
+        referenceDate: position.referenceDate ?? null,
         estimationBaseDate: position.estimationBaseDate ?? null,
         estimatedThrough: position.estimatedThrough ?? null,
+        cdbEstimateComparisonApproximate:
+          position.cdbEstimateComparisonApproximate ?? null,
         cdbEstimateStatus: position.cdbEstimateStatus ?? null,
         cdbEstimateLimitation: position.cdbEstimateLimitation ?? null,
       });

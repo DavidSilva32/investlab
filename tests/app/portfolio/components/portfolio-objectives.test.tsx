@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -489,9 +490,12 @@ describe("PortfolioObjectives", () => {
     await user.click(
       screen.getByRole("button", { name: /Buscar uma combina/ }),
     );
-    fireEvent.change(screen.getByLabelText("Valor desejado"), {
-      target: { value: "R$ 250,00" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Saldo atual do objetivo no banco"),
+      {
+        target: { value: "R$ 250,00" },
+      },
+    );
     await user.click(
       screen.getByRole("button", { name: "Buscar combinações" }),
     );
@@ -514,12 +518,125 @@ describe("PortfolioObjectives", () => {
           body: JSON.stringify({
             objectiveId: "objective-trip",
             assetKeys: [freeKey],
+            transfers: [],
           }),
         }),
       ),
     );
     expect(await screen.findByRole("heading", { name: "Viagem" })).toBeTruthy();
   });
+
+  it.each([
+    { count: 1, message: "1 posição foi transferida para Viagem." },
+    { count: 2, message: "2 posições foram transferidas para Viagem." },
+  ])(
+    "confirms and reports objective transfers ($count)",
+    async ({ count, message }) => {
+      const user = userEvent.setup();
+      const transferKeys = Array.from(
+        { length: count },
+        (_, index) => `v1:transfer-${index}`,
+      );
+      const sourceId = "objective-home";
+      currentData = {
+        ...currentData,
+        objectives: [
+          ...currentData.objectives,
+          objective({
+            id: sourceId,
+            kind: "CUSTOM",
+            name: "Casa",
+            currentValue: 100,
+            knownValue: 100,
+            assignedAssetKeys: transferKeys,
+          }),
+        ],
+        positions: [
+          ...currentData.positions,
+          ...transferKeys.map((assetKey, index) => ({
+            assetKey,
+            product: `CDB da Casa ${index + 1}`,
+            assetCode: `CASA${index + 1}`,
+            institution: "Banco A",
+            assetClass: "Renda fixa",
+            positionCount: 1,
+            value: 100 / count,
+            unvaluedPositions: 0,
+            objectiveId: sourceId,
+            objectiveName: "Casa",
+          })),
+        ],
+      };
+      render(<PortfolioObjectives />);
+      await screen.findByText("Patrimônio por destino");
+      await user.click(
+        screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: /Gerenciar posições/ }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: /Buscar uma combinação/ }),
+      );
+      fireEvent.change(
+        screen.getByLabelText("Saldo atual do objetivo no banco"),
+        {
+          target: { value: "R$ 100,00" },
+        },
+      );
+      fetchMock.mockImplementationOnce(() =>
+        response({
+          status: "suggestions",
+          kind: "exact",
+          valuationDate: "2026-09-30",
+          candidates: [
+            {
+              assetKeys: transferKeys,
+              total: 100,
+              difference: 0,
+              positions: transferKeys.map((assetKey, index) => ({
+                assetKey,
+                product: `CDB da Casa ${index + 1}`,
+                institution: "Banco A",
+                value: 100 / count,
+              })),
+              transfers: transferKeys.map((assetKey, index) => ({
+                assetKey,
+                product: `CDB da Casa ${index + 1}`,
+                value: 100 / count,
+                fromObjectiveId: sourceId,
+                fromObjectiveName: "Casa",
+                toObjectiveId: "objective-trip",
+              })),
+              impacts: [],
+            },
+          ],
+          searchLimited: false,
+          alternativesLimited: false,
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Buscar combinações" }),
+      );
+      await screen.findByText(/Data informada: 30\/09\/2026/);
+      await user.click(
+        screen.getByRole("button", { name: `Ver ${count} posições` }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Usar e transferir" }),
+      );
+      const transferDialog = await screen.findByRole("alertdialog");
+      await user.click(
+        within(transferDialog).getByRole("button", {
+          name: "Usar e transferir",
+        }),
+      );
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith(message));
+      expect(
+        fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
+      ).toBe(true);
+    },
+  );
 
   it("deletes a personal objective through its actions menu and keeps the position in the portfolio", async () => {
     const user = userEvent.setup();

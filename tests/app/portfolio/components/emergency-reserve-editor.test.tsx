@@ -102,6 +102,7 @@ const editorData = {
       estimationBaseDate: "2026-09-16",
       estimatedThrough: "2026-09-19",
       cdbEstimateStatus: "complete" as const,
+      cdbEstimateComparisonApproximate: true,
       cdbEstimateLimitation: null,
       selected: false,
     },
@@ -158,7 +159,9 @@ describe("EmergencyReserveEditor", () => {
     expect(screen.getByText("Origem: Estimativa CDI")).toBeTruthy();
     expect(screen.getByText("Origem: UNRECOGNIZED_PROVIDER")).toBeTruthy();
     expect(screen.getByText("R$ 1.000,00")).toBeTruthy();
-    expect(screen.getByText("Estimativa até 19/09/2026")).toBeTruthy();
+    expect(
+      screen.getByText("Estimativa aproximada até 19/09/2026"),
+    ).toBeTruthy();
     expect(
       screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
     ).toBeTruthy();
@@ -172,6 +175,26 @@ describe("EmergencyReserveEditor", () => {
     expect(
       screen.queryByRole("button", { name: /Buscar grupos pelo valor/ }),
     ).toBeNull();
+  });
+
+  it("labels a same-date complete estimate without the approximate qualifier", async () => {
+    const data = {
+      ...editorData,
+      holdings: editorData.holdings.map((holding) =>
+        holding.assetKey === keyC
+          ? { ...holding, cdbEstimateComparisonApproximate: false }
+          : holding,
+      ),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => data }),
+    );
+    render(<EmergencyReserveEditor />);
+    await screen.findByText(/Meta pessoal de 6 meses/);
+    await openReservePositions();
+
+    expect(screen.getByText("Estimativa até 19/09/2026")).toBeTruthy();
   });
 
   it("disables a holding assigned to a different objective", async () => {
@@ -328,6 +351,17 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
+    await screen.findByLabelText("Custo mensal");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), {
+      timeout: 1000,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/emergency-reserve");
+    expect(fetchMock.mock.calls[0]?.[1]).toBeUndefined();
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("PATCH");
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)).targetMonths,
+    ).toBe(6);
+
     await user.click(
       await screen.findByRole("button", { name: "Personalizado" }),
     );
@@ -345,7 +379,15 @@ describe("EmergencyReserveEditor", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Informe sua meta pessoal como um número inteiro de 1 a 1200 meses.",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+    ).toBe(false);
+    expect(
+      fetchMock.mock.calls.some(([, options]) =>
+        options?.body?.toString().includes('"targetMonths":1201'),
+      ),
+    ).toBe(false);
   });
 
   it("preserves a custom month value across shortcut changes and explains the shortcuts", async () => {
@@ -591,7 +633,8 @@ describe("EmergencyReserveEditor", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => editorData })
-      .mockRejectedValueOnce("network failure");
+      .mockRejectedValueOnce("network failure")
+      .mockResolvedValue({ ok: true, json: async () => editorData });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
@@ -603,6 +646,13 @@ describe("EmergencyReserveEditor", () => {
       "Não foi possível salvar a configuração. Tente novamente.",
     );
     expect(screen.queryByRole("alert")).toBeNull();
+    await vi.waitFor(
+      () => {
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("PATCH");
+      },
+      { timeout: 1000 },
+    );
   });
 
   it("keeps a blocking load failure inline and offers retry", async () => {
@@ -702,7 +752,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     );
 
     await user.type(
-      screen.getByLabelText("Valor conhecido da reserva"),
+      screen.getByLabelText("Saldo atual da Reserva no banco"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
@@ -821,7 +871,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
       }),
     );
     await user.type(
-      screen.getByLabelText("Valor conhecido da reserva"),
+      screen.getByLabelText("Saldo atual da Reserva no banco"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
@@ -924,7 +974,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
       }),
     );
     await user.type(
-      screen.getByLabelText("Valor conhecido da reserva"),
+      screen.getByLabelText("Saldo atual da Reserva no banco"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
@@ -1009,7 +1059,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
       }),
     );
     await user.type(
-      screen.getByLabelText("Valor conhecido da reserva"),
+      screen.getByLabelText("Saldo atual da Reserva no banco"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));

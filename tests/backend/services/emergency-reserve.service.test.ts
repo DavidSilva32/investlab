@@ -321,12 +321,15 @@ describe("EmergencyReserveService", () => {
       totalValue: "100",
       estimatedValue: 110,
       canonicalValueSource: "CDB_ESTIMATE",
+      cdbEstimateComparisonApproximate: true,
+      referenceDate: null,
     });
     const duplicate = position({
       id: "snapshot-row-2",
       totalValue: "50",
       estimatedValue: 55,
       canonicalValueSource: "CDB_ESTIMATE",
+      cdbEstimateComparisonApproximate: false,
     });
     mocks.listLatestPositions.mockResolvedValue([first, duplicate]);
     mocks.enrich.mockResolvedValue([first, duplicate]);
@@ -337,6 +340,8 @@ describe("EmergencyReserveService", () => {
       positionCount: 2,
       value: 165,
       valueSource: "CDB_ESTIMATE",
+      cdbEstimateComparisonApproximate: null,
+      referenceDate: null,
     });
   });
 
@@ -515,7 +520,9 @@ describe("EmergencyReserveService", () => {
 
     const result = await new EmergencyReserveService().suggestPositions({
       targetAmount: 100,
+      valuationDate: "2026-09-30",
     });
+    expect(mocks.enrich).toHaveBeenCalledWith(expect.any(Array), "2026-09-30");
 
     expect(result).toMatchObject({
       status: "suggestions",
@@ -557,20 +564,36 @@ describe("EmergencyReserveService", () => {
         },
       ],
     });
-    mocks.getObjectivesOverview.mockResolvedValue({
-      objectives: [
-        {
-          id: "00000000-0000-4000-8000-000000000099",
-          name: "Viagem",
-          currentValue: 27322.95,
-          targetAmount: 60000,
-        },
-      ],
-      positions: [
-        { assetKey: eligibleKey, value: 20000 },
-        { assetKey: assignedKey, value: 27322.95 },
-      ],
-    });
+    mocks.getObjectivesOverview.mockImplementation(
+      async (_requestId, _valuationDate, evaluatedPositions) => {
+        const positions = (
+          evaluatedPositions as Array<ReturnType<typeof position>>
+        ).map((evaluated) => {
+          const assetKey = getEmergencyReserveAssetKey(evaluated);
+          const cents = evaluated.canonicalValueCents;
+          return {
+            assetKey,
+            valueCents: cents,
+            value: cents === null ? null : Number(cents) / 100,
+          };
+        });
+        const assigned = positions.find(
+          (candidate) => candidate.assetKey === assignedKey,
+        );
+        return {
+          objectives: [
+            {
+              id: "00000000-0000-4000-8000-000000000099",
+              name: "Viagem",
+              currentValue: assigned?.value ?? null,
+              currentValueCents: assigned?.valueCents ?? null,
+              targetAmount: 60000,
+            },
+          ],
+          positions,
+        };
+      },
+    );
     mocks.getSettings.mockResolvedValue({
       monthlyExpenses: "2000",
       targetMonths: 12,
@@ -580,9 +603,21 @@ describe("EmergencyReserveService", () => {
     const result = await new EmergencyReserveService().suggestPositions({
       targetAmount: 47322.95,
       reserveTargetAmount: 30000,
+      valuationDate: "2026-09-17",
     });
 
     expect(result.status).toBe("suggestions");
+    expect(mocks.getObjectivesOverview).toHaveBeenCalledWith(
+      undefined,
+      "2026-09-17",
+      expect.any(Array),
+    );
+    expect(mocks.enrich).toHaveBeenCalledTimes(1);
+    expect(mocks.getObjectivesOverview.mock.calls[0]?.[2]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ canonicalValueCents: "2732295" }),
+      ]),
+    );
     if (result.status !== "suggestions")
       throw new Error("Expected suggestions");
     expect(result.kind).toBe("exact");
@@ -590,9 +625,18 @@ describe("EmergencyReserveService", () => {
       [eligibleKey, assignedKey].sort(),
     );
     expect(result.candidates[0].total).toBe(47322.95);
+    expect(result.candidates[0].positions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetKey: assignedKey,
+          valueCents: "2732295",
+        }),
+      ]),
+    );
     expect(result.candidates[0].transfers).toEqual([
       expect.objectContaining({
         assetKey: assignedKey,
+        value: 27322.95,
         fromObjectiveId: "00000000-0000-4000-8000-000000000099",
         fromObjectiveName: "Viagem",
       }),
@@ -665,6 +709,64 @@ describe("EmergencyReserveService", () => {
     expect(mocks.getSettings).toHaveBeenCalled();
   });
 
+  it("reports zero known source value after transferring all valued positions", async () => {
+    const assigned = position({
+      assetCode: "GOAL-ALL-VALUE",
+      totalValue: "80",
+    });
+    const unvalued = position({
+      assetCode: "GOAL-UNVALUED",
+      totalValue: "not available",
+    });
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    const unvaluedKey = getEmergencyReserveAssetKey(unvalued);
+    const sourceId = "goal-trip";
+    mocks.listLatestPositions.mockResolvedValue([assigned, unvalued]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: sourceId, name: "Viagem" }],
+      assignments: [
+        { objectiveId: sourceId, assetKey: assignedKey },
+        { objectiveId: sourceId, assetKey: unvaluedKey },
+      ],
+    });
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [
+        {
+          id: sourceId,
+          name: "Viagem",
+          currentValue: null,
+          currentValueCents: null,
+          knownValue: 80,
+          knownValueCents: "8000",
+          targetAmount: 500,
+        },
+      ],
+      positions: [
+        { assetKey: assignedKey, value: 80, valueCents: "8000" },
+        { assetKey: unvaluedKey, value: null, valueCents: null },
+      ],
+    });
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 80,
+    });
+
+    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
+    if (result.status !== "suggestions")
+      throw new Error("Expected suggestions");
+    expect(result.candidates[0].impacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          objectiveId: sourceId,
+          currentValue: null,
+          knownValue: 0,
+          transferredValue: 80,
+          transferredPositionCount: 1,
+        }),
+      ]),
+    );
+  });
+
   it("prefers a strictly closer expanded combination and computes both impacts", async () => {
     const free = position({ assetCode: "FREE-NEAR", totalValue: "40" });
     const assigned = position({ assetCode: "GOAL-NEAR", totalValue: "55" });
@@ -684,8 +786,10 @@ describe("EmergencyReserveService", () => {
         {
           id: "goal-trip",
           name: "Viagem",
-          currentValue: 55,
-          knownValue: 55,
+          currentValue: 100,
+          currentValueCents: "10000",
+          knownValue: 100,
+          knownValueCents: "10000",
           targetAmount: 100,
         },
       ],
@@ -706,9 +810,10 @@ describe("EmergencyReserveService", () => {
             { objectiveName: "Reserva", targetAmount: 120 },
             {
               objectiveName: "Viagem",
-              currentValue: 0,
+              currentValue: 45,
+              knownValue: 45,
               targetAmount: 100,
-              progressPercent: 0,
+              progressPercent: 45,
             },
           ],
         },
@@ -777,13 +882,25 @@ describe("EmergencyReserveService", () => {
     expect(mocks.listLatestPositions).not.toHaveBeenCalled();
   });
 
+  it("returns readable feedback for an invalid valuation date", async () => {
+    await expect(
+      new EmergencyReserveService().suggestPositions({
+        targetAmount: 100,
+        valuationDate: "not-a-date",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Informe um valor maior que zero para comparar as posições.",
+    });
+  });
+
   it("returns no suggestions when current positions are not fixed income", async () => {
     const stock = position({ product: "Ação XPTO", assetCode: "STOCK1" });
     mocks.listLatestPositions.mockResolvedValue([stock]);
 
     await expect(
       new EmergencyReserveService().suggestPositions({ targetAmount: 100 }),
-    ).resolves.toEqual({ status: "no_valued_positions" });
+    ).resolves.toMatchObject({ status: "no_valued_positions" });
   });
 
   it("limits reserve holdings and its calculation to fixed-income classifications", async () => {
@@ -886,7 +1003,10 @@ describe("EmergencyReserveService", () => {
     await expect(save).rejects.toMatchObject({
       statusCode: 409,
     });
-    await expect(save).rejects.toThrow("Viagem");
+    await expect(save).rejects.toMatchObject({
+      message:
+        "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
+    });
     expect(mocks.saveSettings).not.toHaveBeenCalled();
   });
 
