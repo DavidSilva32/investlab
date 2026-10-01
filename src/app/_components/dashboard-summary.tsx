@@ -14,9 +14,9 @@ import {
 } from "@/components/ui/collapsible";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  getPortfolioInsights,
-  type PortfolioInsightPosition,
+import type {
+  PortfolioInsightPosition,
+  PortfolioInsights,
 } from "@/lib/portfolio-insights";
 import { formatCurrency } from "@/lib/utils";
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
@@ -27,11 +27,13 @@ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 export function DashboardSummary({
   positions,
+  insights,
   emergencyReserve,
   unassignedSummary,
   onRetryUnassigned,
 }: {
   positions: PortfolioInsightPosition[];
+  insights: PortfolioInsights;
   emergencyReserve?: EmergencyReserveCalculation;
   unassignedSummary?:
     | {
@@ -44,7 +46,6 @@ export function DashboardSummary({
     | null;
   onRetryUnassigned?: () => void;
 }) {
-  const insights = getPortfolioInsights(positions);
   const referenceDates = [
     ...new Set(
       positions
@@ -59,7 +60,7 @@ export function DashboardSummary({
       ? referenceDates[0]
       : null;
   const dataDateIsMixed = referenceDates.length > 0 && referenceDate === null;
-  const missingValueCount = positions.length - insights.valuedPositions;
+  const missingValueCount = insights.unvaluedPositions;
   const nextMaturity = insights.upcomingMaturities[0];
   const reserveIncomplete = Boolean(
     emergencyReserve &&

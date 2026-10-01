@@ -14,6 +14,7 @@ export type ContributionPosition = {
   maturityAt: string | null;
   assetKey?: string;
   estimatedValue?: number | null;
+  canonicalValueCents?: string | null;
   totalValue: string | null;
   classification: { assetClass: string | null };
 };
@@ -64,6 +65,11 @@ const isAssetClass = (
   portfolioAssetClassOptions.some((assetClass) => assetClass === value);
 
 function getPositionValue(position: ContributionPosition) {
+  if (position.canonicalValueCents !== undefined) {
+    return position.canonicalValueCents === null
+      ? null
+      : Number(BigInt(position.canonicalValueCents)) / 100;
+  }
   const value =
     position.estimatedValue ??
     (position.totalValue === null ? null : Number(position.totalValue));

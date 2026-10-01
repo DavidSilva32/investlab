@@ -40,6 +40,51 @@ const reserve = (
 });
 
 describe("getNextContributionGuidance", () => {
+  it("uses canonical cents when comparing allocation gaps", () => {
+    const positions = [
+      {
+        ...position(portfolioAssetClassOptions[0]),
+        canonicalValueCents: "10000",
+      },
+      {
+        ...position(portfolioAssetClassOptions[1]),
+        canonicalValueCents: "10000",
+      },
+      ...portfolioAssetClassOptions.slice(2).map((assetClass) => ({
+        ...position(assetClass),
+        canonicalValueCents: "0",
+      })),
+    ];
+
+    expect(
+      getNextContributionGuidance({
+        positions,
+        targets,
+        emergencyReserve: reserve({
+          status: "not_configured",
+          difference: null,
+        }),
+      }),
+    ).toMatchObject({
+      status: "target_gap",
+      assetClass: "Renda fixa",
+      currentPercentage: 50,
+    });
+  });
+
+  it("keeps a null canonical value incomplete instead of falling back to legacy fields", () => {
+    expect(
+      getNextContributionGuidance({
+        positions: [{ ...position("Renda fixa"), canonicalValueCents: null }],
+        targets,
+        emergencyReserve: reserve({
+          status: "not_configured",
+          difference: null,
+        }),
+      }),
+    ).toMatchObject({ status: "incomplete_data" });
+  });
+
   it("prioritizes a complete user-defined reserve gap", () => {
     expect(
       getNextContributionGuidance({

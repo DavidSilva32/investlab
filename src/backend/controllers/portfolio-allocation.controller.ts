@@ -35,14 +35,15 @@ const classificationSchema = z
 
 export class PortfolioAllocationController {
   async get(requestId: string) {
-    const positions = await portfolioAllocationService.getAllocation(requestId);
+    const allocation =
+      await portfolioAllocationService.getAllocationOverview(requestId);
     const targetPercentages =
       await portfolioAllocationService.getAllocationTargets(requestId);
     logger.info("portfolio_allocation_responded", {
       requestId,
-      positions: positions.length,
+      positions: allocation.positions.length,
     });
-    return Response.json({ positions, targetPercentages });
+    return Response.json({ ...allocation, targetPercentages });
   }
 
   async updateTargets(request: Request, requestId: string) {

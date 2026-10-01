@@ -75,9 +75,12 @@ vi.mock("@/app/portfolio/_components/portfolio-details", () => ({
 }));
 
 import { PortfolioClient } from "@/app/portfolio/_components/portfolio-client";
+import { getPortfolioInsights } from "@/lib/portfolio-insights";
+import { getPortfolioConcentration } from "@/lib/portfolio-concentration";
 
 const overview = {
   positions: [],
+  insights: getPortfolioInsights([]),
   movements: [],
   referenceRates: { selic: null, cdi: null },
   nextContributionGuidance: {
@@ -423,7 +426,12 @@ describe("PortfolioClient", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          classDistribution: getPortfolioConcentration([], "assetClass"),
+        }),
+      });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<PortfolioClient activeView="overview" />);

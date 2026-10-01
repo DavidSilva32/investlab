@@ -122,6 +122,16 @@ const baseData = {
   unassignedKnownValue: 250,
   unassignedPositionCount: 1,
   unassignedUnvaluedPositionCount: 0,
+  destinationSummary: {
+    categories: [
+      { key: "reserve" as const, value: 400, percentage: 61.5 },
+      { key: "personal" as const, value: 0, percentage: 0 },
+      { key: "unassigned" as const, value: 250, percentage: 38.5 },
+    ],
+    knownTotal: 650,
+    missingPositionCount: 0,
+    unvaluedPositionCount: 0,
+  },
 };
 
 let fetchMock: ReturnType<typeof vi.fn>;

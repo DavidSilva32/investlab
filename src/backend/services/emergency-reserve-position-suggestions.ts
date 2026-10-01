@@ -1,12 +1,17 @@
+import { centsToNumber, decimalToCents } from "@/lib/portfolio-money";
+
 export type ReserveSuggestionHolding = {
   assetKey: string;
   product: string;
   institution: string | null;
   value: number | null;
+  valueCents?: string | null;
 };
 
 export type ReservePositionSuggestion = {
   assetKeys: string[];
+  totalCents: string;
+  differenceCents: string;
   total: number;
   difference: number;
   transfers?: ReservePositionTransfer[];
@@ -48,22 +53,17 @@ const MAX_GROUPS = 40;
 const MAX_VISITED_NODES = 50_000;
 const MAX_CANDIDATES = 3;
 
-const toCents = (value: number) => {
-  const match = /^([+-]?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(
-    value.toString(),
-  )!;
-  const digits = BigInt(match[2] + (match[3] || ""));
-  const decimalPlaces = (match[3] || "").length;
-  const scale = Number(match[4] || 0) - decimalPlaces + 2;
-  if (scale >= 0) return Number(digits * 10n ** BigInt(scale));
-
-  const divisor = 10n ** BigInt(-scale);
-  const quotient = digits / divisor;
-  const remainder = digits % divisor;
-  const rounded = remainder * 2n >= divisor ? quotient + 1n : quotient;
-  return Number(rounded);
+const compareText = (left: string, right: string) =>
+  left < right ? -1 : left > right ? 1 : 0;
+const absolute = (value: bigint) => (value < 0n ? -value : value);
+const holdingCents = (holding: ReserveSuggestionHolding) => {
+  if (holding.valueCents !== null && holding.valueCents !== undefined) {
+    return /^\d+$/.test(holding.valueCents) ? BigInt(holding.valueCents) : null;
+  }
+  return holding.value !== null && Number.isFinite(holding.value)
+    ? decimalToCents(holding.value)
+    : null;
 };
-const fromCents = (value: number) => value / 100;
 
 /**
  * Finds bounded mathematical combinations of current position values. This
@@ -77,22 +77,26 @@ export function suggestEmergencyReservePositions(
     return { status: "invalid_target" };
   }
 
-  const target = toCents(targetAmount);
-  if (target <= 0) return { status: "invalid_target" };
+  const target = decimalToCents(targetAmount);
+  if (target === null || target <= 0n) return { status: "invalid_target" };
+  const targetCents = target;
 
   const valued = holdings
-    .filter(
-      (holding) =>
-        holding.value !== null &&
-        Number.isFinite(holding.value) &&
-        holding.value > 0,
-    )
     .map((holding) => ({
       assetKey: holding.assetKey,
-      cents: toCents(holding.value!),
+      cents: holdingCents(holding),
     }))
-    .filter((holding) => holding.cents > 0)
-    .sort((left, right) => right.cents - left.cents);
+    .filter(
+      (holding): holding is { assetKey: string; cents: bigint } =>
+        holding.cents !== null && holding.cents > 0n,
+    )
+    .sort((left, right) =>
+      left.cents === right.cents
+        ? compareText(left.assetKey, right.assetKey)
+        : left.cents > right.cents
+          ? -1
+          : 1,
+    );
 
   if (valued.length === 0) return { status: "no_valued_positions" };
   if (valued.length > MAX_GROUPS) {
@@ -101,31 +105,34 @@ export function suggestEmergencyReservePositions(
 
   const exactCandidates: ReservePositionSuggestion[] = [];
   const nearestCandidates: ReservePositionSuggestion[] = [];
-  let nearestDifference = Number.POSITIVE_INFINITY;
+  let nearestDifference: bigint | null = null;
   let visitedNodes = 0;
   let searchLimited = false;
   let exactAlternativesLimited = false;
   let nearestAlternativesLimited = false;
 
-  function visit(index: number, total: number, selected: string[]) {
+  function visit(index: number, total: bigint, selected: string[]) {
     if (visitedNodes >= MAX_VISITED_NODES) {
       searchLimited = true;
       return;
     }
     visitedNodes += 1;
 
-    if (total > 0) {
-      const difference = target - total;
-      if (difference === 0) {
+    if (total > 0n) {
+      const difference = targetCents - total;
+      if (difference === 0n) {
+        const assetKeys = [...selected].sort(compareText);
         if (
           !exactCandidates.some((candidate) =>
-            sameKeys(candidate.assetKeys, selected),
+            sameKeys(candidate.assetKeys, assetKeys),
           )
         ) {
           if (exactCandidates.length < MAX_CANDIDATES) {
             exactCandidates.push({
-              assetKeys: [...selected],
-              total: fromCents(total),
+              assetKeys,
+              totalCents: total.toString(),
+              differenceCents: "0",
+              total: centsToNumber(total)!,
               difference: 0,
             });
           } else {
@@ -135,22 +142,29 @@ export function suggestEmergencyReservePositions(
         return;
       }
 
-      if (Math.abs(difference) < nearestDifference) {
-        nearestDifference = Math.abs(difference);
+      const absoluteDifference = absolute(difference);
+      if (
+        nearestDifference === null ||
+        absoluteDifference < nearestDifference
+      ) {
+        nearestDifference = absoluteDifference;
         nearestCandidates.length = 0;
         nearestAlternativesLimited = false;
       }
       if (
-        Math.abs(difference) === nearestDifference &&
+        absoluteDifference === nearestDifference &&
         !nearestCandidates.some((candidate) =>
-          sameKeys(candidate.assetKeys, selected),
+          sameKeys(candidate.assetKeys, [...selected].sort(compareText)),
         )
       ) {
         if (nearestCandidates.length < MAX_CANDIDATES) {
+          const assetKeys = [...selected].sort(compareText);
           nearestCandidates.push({
-            assetKeys: [...selected],
-            total: fromCents(total),
-            difference: fromCents(difference),
+            assetKeys,
+            totalCents: total.toString(),
+            differenceCents: difference.toString(),
+            total: centsToNumber(total)!,
+            difference: centsToNumber(difference)!,
           });
         } else {
           nearestAlternativesLimited = true;
@@ -158,7 +172,7 @@ export function suggestEmergencyReservePositions(
       }
     }
 
-    if (total >= target || index >= valued.length) return;
+    if (total >= targetCents || index >= valued.length) return;
 
     selected.push(valued[index].assetKey);
     visit(index + 1, total + valued[index].cents, selected);
@@ -166,14 +180,14 @@ export function suggestEmergencyReservePositions(
     visit(index + 1, total, selected);
   }
 
-  visit(0, 0, []);
+  visit(0, 0n, []);
 
   const candidates = (
     exactCandidates.length ? exactCandidates : nearestCandidates
   ).sort(
     (left, right) =>
       left.assetKeys.length - right.assetKeys.length ||
-      left.assetKeys.join("|").localeCompare(right.assetKeys.join("|")),
+      compareText(left.assetKeys.join("|"), right.assetKeys.join("|")),
   );
   return {
     status: "suggestions",

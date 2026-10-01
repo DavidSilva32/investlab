@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import {
   Collapsible,
@@ -10,14 +10,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import {
-  getPortfolioConcentration,
   type ConcentrationDimension,
-  type PortfolioConcentrationPosition,
+  type PortfolioConcentration,
 } from "@/lib/portfolio-concentration";
 import { portfolioAssetGeographyLabels } from "@/lib/portfolio-classification-options";
 
 type Props = {
-  positions: PortfolioConcentrationPosition[];
+  analyses: Record<ConcentrationDimension, PortfolioConcentration>;
 };
 
 const dimensions: Array<{ key: ConcentrationDimension; label: string }> = [
@@ -50,13 +49,10 @@ function displayLabel(label: string) {
   );
 }
 
-export function PortfolioConcentrationAnalysis({ positions }: Props) {
+export function PortfolioConcentrationAnalysis({ analyses }: Props) {
   const [dimension, setDimension] = useState<ConcentrationDimension>("asset");
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const analysis = useMemo(
-    () => getPortfolioConcentration(positions, dimension),
-    [dimension, positions],
-  );
+  const analysis = analyses[dimension];
   const largestGroup = analysis.groups[0]!;
 
   return (
@@ -127,9 +123,7 @@ export function PortfolioConcentrationAnalysis({ positions }: Props) {
               <span className="font-medium">Classificado nesta dimensão:</span>{" "}
               {formatCurrency(analysis.classifiedValue)} (
               {formatPercentage(
-                analysis.totalValue > 0
-                  ? (analysis.classifiedValue / analysis.totalValue) * 100
-                  : 0,
+                analysis.totalValue > 0 ? analysis.classifiedPercentage : 0,
               )}
               ) em {analysis.classifiedPositions}{" "}
               {analysis.classifiedPositions === 1 ? "posição" : "posições"}
@@ -138,9 +132,7 @@ export function PortfolioConcentrationAnalysis({ positions }: Props) {
               <span className="font-medium">Não classificado:</span>{" "}
               {formatCurrency(analysis.unclassifiedValue)} (
               {formatPercentage(
-                analysis.totalValue > 0
-                  ? (analysis.unclassifiedValue / analysis.totalValue) * 100
-                  : 0,
+                analysis.totalValue > 0 ? analysis.unclassifiedPercentage : 0,
               )}
               ) em {analysis.unclassifiedPositions}{" "}
               {analysis.unclassifiedPositions === 1 ? "posição" : "posições"}

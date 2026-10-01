@@ -75,6 +75,78 @@ describe("PortfolioObjectivesService", () => {
     mocks.create.mockResolvedValue(customObjective);
   });
 
+  it("uses canonical cents for unassigned objective totals", async () => {
+    mocks.listCurrentEnriched.mockResolvedValue([
+      imported({
+        canonicalValueCents: "12345",
+        canonicalValueSource: "CDB_ESTIMATE",
+      }),
+    ]);
+
+    const result = await new PortfolioObjectivesService().getOverview();
+
+    expect(result.unassignedKnownValue).toBe(123.45);
+    expect(result.unassignedKnownValueCents).toBe("12345");
+    expect(result.positions[0]).toMatchObject({
+      value: 123.45,
+      valueCents: "12345",
+    });
+  });
+
+  it("handles canonical valued and unvalued positions with incomplete metadata", async () => {
+    const valued = imported({
+      canonicalValueCents: "10000",
+      canonicalValueSource: undefined,
+      totalValue: "1",
+    });
+    const key = getEmergencyReserveAssetKey(valued);
+    mocks.listCurrentEnriched.mockResolvedValue([valued]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        {
+          ...customObjective,
+          targetAmount: "50.00",
+          monthlyPlannedAmount: "bad",
+        },
+      ],
+      assignments: [{ objectiveId: customObjective.id, assetKey: key }],
+    });
+
+    const valuedResult = await new PortfolioObjectivesService().getOverview();
+
+    expect(valuedResult.objectives[0]).toMatchObject({
+      currentValueCents: "10000",
+      remainingAmountCents: "0",
+      progressPercent: 100,
+      monthlyPlannedAmount: 0,
+      monthlyPlannedAmountCents: null,
+    });
+
+    const unvalued = imported({
+      assetCode: "CDB2",
+      canonicalValueCents: null,
+      totalValue: "100",
+    });
+    mocks.listCurrentEnriched.mockResolvedValue([unvalued]);
+    mocks.list.mockResolvedValue({
+      objectives: [customObjective],
+      assignments: [
+        {
+          objectiveId: customObjective.id,
+          assetKey: getEmergencyReserveAssetKey(unvalued),
+        },
+      ],
+    });
+
+    const unvaluedResult = await new PortfolioObjectivesService().getOverview();
+
+    expect(unvaluedResult.objectives[0]).toMatchObject({
+      currentValue: null,
+      currentValueCents: null,
+      unvaluedPositionCount: 1,
+    });
+  });
+
   it("builds objective progress from current position values and reports unassigned wealth", async () => {
     const first = imported();
     const duplicate = imported({ totalValue: "50" });

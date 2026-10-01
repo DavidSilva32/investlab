@@ -26,10 +26,39 @@ vi.mock("@/app/portfolio/_components/portfolio-distribution-charts", () => ({
 }));
 
 import {
-  PortfolioOverview,
+  PortfolioOverview as PortfolioOverviewComponent,
   type ClassifiedPosition,
   type PortfolioPosition,
 } from "@/app/portfolio/_components/portfolio-overview";
+import { getPortfolioInsights } from "@/lib/portfolio-insights";
+import { getPortfolioConcentration } from "@/lib/portfolio-concentration";
+
+function PortfolioOverview({
+  positions,
+  classifiedPositions,
+  ...props
+}: Omit<
+  Parameters<typeof PortfolioOverviewComponent>[0],
+  "insights" | "classDistribution"
+> & {
+  classifiedPositions?: ClassifiedPosition[] | null;
+}) {
+  return (
+    <PortfolioOverviewComponent
+      {...props}
+      positions={positions}
+      insights={getPortfolioInsights(
+        positions,
+        new Date("2026-09-30T12:00:00-03:00"),
+      )}
+      classDistribution={
+        classifiedPositions
+          ? getPortfolioConcentration(classifiedPositions, "assetClass")
+          : null
+      }
+    />
+  );
+}
 
 function position(
   id: string,

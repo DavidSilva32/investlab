@@ -19,6 +19,7 @@ const positions: PortfolioPosition[] = [
     product: "CDB",
     institution: "Banco Exemplo",
     estimatedValue: 1000,
+    canonicalValueCents: "100000",
     totalValue: "900",
     classification: {
       assetClass: "Renda fixa",
@@ -32,6 +33,7 @@ const positions: PortfolioPosition[] = [
     product: "Fundo Imobiliário",
     institution: "Corretora Exemplo",
     totalValue: "500",
+    canonicalValueCents: "50000",
     classification: {
       assetClass: "Renda variável",
       subClass: "FII",

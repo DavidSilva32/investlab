@@ -1,3 +1,5 @@
+import { centsToNumber, decimalToCents } from "@/lib/portfolio-money";
+
 export const reserveObjectiveId = "00000000-0000-4000-8000-000000000010";
 
 export type ObjectivePosition = {
@@ -8,10 +10,13 @@ export type ObjectivePosition = {
   assetClass: string | null;
   positionCount: number;
   value: number | null;
+  valueCents?: string | null;
   knownValue: number;
+  knownValueCents?: string;
   unvaluedPositions: number;
   referenceDate: string | null;
   source: string | null;
+  canonicalValueSource?: string;
 };
 
 export function calculateObjectiveValue(
@@ -19,14 +24,16 @@ export function calculateObjectiveValue(
   positions: ObjectivePosition[],
 ): {
   currentValue: number | null;
+  currentValueCents: string | null;
   knownValue: number;
+  knownValueCents: string;
   missingPositionCount: number;
   unvaluedPositionCount: number;
 } {
   const byKey = new Map(
     positions.map((position) => [position.assetKey, position]),
   );
-  let knownValue = 0;
+  let knownValueCents = 0n;
   let missingPositionCount = 0;
   let unvaluedPositionCount = 0;
 
@@ -37,19 +44,33 @@ export function calculateObjectiveValue(
       continue;
     }
     if (position.value === null) {
-      knownValue += position.knownValue;
+      knownValueCents += getKnownCents(position);
       unvaluedPositionCount += position.unvaluedPositions;
       continue;
     }
-    knownValue += position.knownValue;
+    knownValueCents += getKnownCents(position);
     unvaluedPositionCount += position.unvaluedPositions;
   }
 
   return {
     currentValue:
-      missingPositionCount > 0 || unvaluedPositionCount > 0 ? null : knownValue,
-    knownValue,
+      missingPositionCount > 0 || unvaluedPositionCount > 0
+        ? null
+        : centsToNumber(knownValueCents),
+    currentValueCents:
+      missingPositionCount > 0 || unvaluedPositionCount > 0
+        ? null
+        : knownValueCents.toString(),
+    knownValue: centsToNumber(knownValueCents)!,
+    knownValueCents: knownValueCents.toString(),
     missingPositionCount,
     unvaluedPositionCount,
   };
+}
+
+function getKnownCents(position: ObjectivePosition) {
+  if (position.knownValueCents !== undefined) {
+    return BigInt(position.knownValueCents);
+  }
+  return decimalToCents(position.knownValue) ?? 0n;
 }

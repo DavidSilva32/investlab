@@ -3,7 +3,24 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DashboardSummary } from "@/app/_components/dashboard-summary";
+import { DashboardSummary as DashboardSummaryComponent } from "@/app/_components/dashboard-summary";
+import { getPortfolioInsights } from "@/lib/portfolio-insights";
+
+type SummaryProps = Omit<
+  Parameters<typeof DashboardSummaryComponent>[0],
+  "insights"
+>;
+function DashboardSummary(props: SummaryProps) {
+  return (
+    <DashboardSummaryComponent
+      {...props}
+      insights={getPortfolioInsights(
+        props.positions,
+        new Date("2026-09-30T12:00:00-03:00"),
+      )}
+    />
+  );
+}
 
 const positions = [
   {

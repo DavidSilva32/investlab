@@ -1,6 +1,26 @@
 import { importRepository } from "@/backend/repositories/import.repository";
 import { manualPortfolioPositionService } from "@/backend/services/manual-portfolio-position.service";
 import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
+import { decimalToCents, resolvePositionMoney } from "@/lib/portfolio-money";
+
+export function withCanonicalPortfolioValue<
+  T extends {
+    source?: string | null;
+    currency?: string | null;
+    totalValue?: string | number | null;
+    estimatedValue?: string | number | null;
+    estimatedValueCents?: string | null;
+    convertedValueBrl?: string | number | null;
+  },
+>(position: T) {
+  const resolved = resolvePositionMoney(position);
+  return {
+    ...position,
+    canonicalValueCents: resolved.cents?.toString() ?? null,
+    canonicalValueSource: resolved.source,
+    reportedValueCents: decimalToCents(position.totalValue)?.toString() ?? null,
+  };
+}
 
 export class PortfolioPositionService {
   async listCurrent(requestId?: string) {
@@ -20,7 +40,7 @@ export class PortfolioPositionService {
       totalValue: string | null;
       referenceDate?: string | null;
     },
-  >(positions: T[]) {
+  >(positions: T[], valuationDate?: string) {
     const imported = positions.filter(
       (position) => position.source !== "MANUAL",
     );
@@ -32,12 +52,16 @@ export class PortfolioPositionService {
         estimatedValue: null,
         cdbEstimateStatus: null,
       }));
-    return [...(await cdbEstimateService.enrich(imported)), ...manual];
+    const enriched =
+      valuationDate === undefined
+        ? await cdbEstimateService.enrich(imported)
+        : await cdbEstimateService.enrich(imported, valuationDate);
+    return [...enriched, ...manual].map(withCanonicalPortfolioValue);
   }
 
-  async listCurrentEnriched(requestId?: string) {
+  async listCurrentEnriched(requestId?: string, valuationDate?: string) {
     const positions = await this.listCurrent(requestId);
-    return this.enrichImportedPositions(positions);
+    return this.enrichImportedPositions(positions, valuationDate);
   }
 }
 

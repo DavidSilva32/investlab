@@ -13,6 +13,7 @@ import {
   calculateContributionAllocation,
   type ContributionPosition,
 } from "@/lib/contribution-allocation";
+import { getPortfolioInsights } from "@/lib/portfolio-insights";
 
 const unavailableGuidance: ContributionGuidance = {
   status: "unavailable",
@@ -44,12 +45,18 @@ export class PortfolioService {
 
   async getOverview(requestId?: string) {
     logger.info("portfolio_overview_loading", { requestId });
+    const valuationDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date());
     const [positions, movements] = await Promise.all([
       portfolioPositionService.listCurrent(requestId),
       importRepository.listMovements(requestId),
     ]);
     const [estimatedPositions, referenceRates] = await Promise.all([
-      portfolioPositionService.enrichImportedPositions(positions),
+      portfolioPositionService.enrichImportedPositions(
+        positions,
+        valuationDate,
+      ),
       bcbReferenceRatesService.getReferenceRates(),
     ]);
     const [classificationResult, targetsResult] = await Promise.all([
@@ -90,6 +97,10 @@ export class PortfolioService {
     }
     const positionsWithClassification =
       classificationResult.value ?? estimatedPositions;
+    const insights = getPortfolioInsights(
+      positionsWithClassification,
+      new Date(`${valuationDate}T12:00:00-03:00`),
+    );
     const nextContributionGuidance =
       classificationResult.value === null ||
       targetsResult.value === null ||
@@ -107,6 +118,8 @@ export class PortfolioService {
     });
     return {
       positions: positionsWithClassification,
+      insights,
+      valuationDate,
       movements,
       referenceRates,
       emergencyReserve,

@@ -67,6 +67,7 @@ export function DashboardClient() {
       .then((data) => {
         setOverview({
           positions: data.positions,
+          insights: data.insights,
           emergencyReserve: data.emergencyReserve,
         });
         setError(null);

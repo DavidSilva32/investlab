@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,32 +10,21 @@ import {
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
-import type { PortfolioPosition } from "@/app/portfolio/_components/portfolio-classification-list";
 import { formatCurrency } from "@/lib/utils";
 import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-target-values";
+import type { PortfolioConcentration } from "@/lib/portfolio-concentration";
+import type { PortfolioPosition } from "@/app/portfolio/_components/portfolio-classification-list";
 
 type AssetClass = (typeof portfolioAssetClassOptions)[number];
 type Targets = Partial<Record<AssetClass, number>>;
 
 type Props = {
-  positions: PortfolioPosition[];
+  positions?: PortfolioPosition[];
+  classSummary?: PortfolioConcentration | null;
   targetPercentages: Targets;
   saving: boolean;
   onSave: (targets: Record<AssetClass, number>) => Promise<boolean>;
 };
-
-function positionValue(position: PortfolioPosition) {
-  if (
-    position.estimatedValue !== undefined &&
-    position.estimatedValue !== null &&
-    Number.isFinite(position.estimatedValue)
-  ) {
-    return position.estimatedValue;
-  }
-  if (position.totalValue === null) return null;
-  const value = Number(position.totalValue);
-  return Number.isFinite(value) ? value : null;
-}
 
 function initialDraft(targets: Targets): Record<AssetClass, string> {
   return Object.fromEntries(
@@ -47,7 +36,7 @@ function initialDraft(targets: Targets): Record<AssetClass, string> {
 }
 
 export function PortfolioAllocationTargets({
-  positions,
+  classSummary = null,
   targetPercentages,
   saving,
   onSave,
@@ -56,36 +45,7 @@ export function PortfolioAllocationTargets({
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [draft, setDraft] = useState(() => initialDraft(targetPercentages));
   const [message, setMessage] = useState<string | null>(null);
-  const current = useMemo(() => {
-    const byClass = new Map<AssetClass, number>();
-    let valuedTotal = 0;
-    let unclassifiedValue = 0;
-    let unclassifiedValuedCount = 0;
-    let unvaluedCount = 0;
-    for (const position of positions) {
-      const value = positionValue(position);
-      if (value === null) {
-        unvaluedCount += 1;
-        continue;
-      }
-      valuedTotal += value;
-      const assetClass = position.classification
-        .assetClass as AssetClass | null;
-      if (!assetClass || !portfolioAssetClassOptions.includes(assetClass)) {
-        unclassifiedValue += value;
-        unclassifiedValuedCount += 1;
-      } else {
-        byClass.set(assetClass, (byClass.get(assetClass) ?? 0) + value);
-      }
-    }
-    return {
-      valuedTotal,
-      unclassifiedValue,
-      unclassifiedValuedCount,
-      unvaluedCount,
-      byClass,
-    };
-  }, [positions]);
+  const current = classSummary;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -262,10 +222,10 @@ export function PortfolioAllocationTargets({
               <ul className="space-y-2">
                 {portfolioAssetClassOptions.map((assetClass) => {
                   const actual =
-                    current.valuedTotal > 0
-                      ? ((current.byClass.get(assetClass) ?? 0) /
-                          current.valuedTotal) *
-                        100
+                    current && current.totalValue > 0
+                      ? (current.groups.find(
+                          (group) => group.label === assetClass,
+                        )?.percentage ?? 0)
                       : null;
                   const target = targetPercentages[assetClass] ?? 0;
                   const difference = actual === null ? null : target - actual;
@@ -292,21 +252,21 @@ export function PortfolioAllocationTargets({
                   );
                 })}
               </ul>
-              {current.valuedTotal === 0 ? (
+              {!current || current.totalValue === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   Não há valores atuais disponíveis para comparar com as metas.
                 </p>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Base atual: {formatCurrency(current.valuedTotal)} com valor
+                  Base atual: {formatCurrency(current.totalValue)} com valor
                   informado.{" "}
-                  {current.unclassifiedValuedCount > 0 &&
-                    current.unclassifiedValuedCount +
+                  {current.unclassifiedPositions > 0 &&
+                    current.unclassifiedPositions +
                       " posição(ões) com valor (" +
                       formatCurrency(current.unclassifiedValue) +
                       ") sem classe não entram nas linhas acima. "}
-                  {current.unvaluedCount > 0 &&
-                    current.unvaluedCount +
+                  {current.unvaluedPositions > 0 &&
+                    current.unvaluedPositions +
                       " posição(ões) sem valor atual não entram no cálculo."}
                 </p>
               )}

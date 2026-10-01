@@ -24,6 +24,16 @@ import { ChevronDown } from "lucide-react";
 
 type Data = {
   objectives: PortfolioObjective[];
+  destinationSummary: {
+    categories: Array<{
+      key: "reserve" | "personal" | "unassigned";
+      value: number;
+      percentage: number;
+    }>;
+    knownTotal: number;
+    missingPositionCount: number;
+    unvaluedPositionCount: number;
+  };
   unassignedKnownValue: number;
   unassignedPositionCount: number;
   unassignedUnvaluedPositionCount: number;
@@ -60,38 +70,18 @@ export function PortfolioObjectivesOverview({
   onDelete,
   onCreate,
 }: Props) {
-  const reserve = data.objectives.find(
-    (objective) => objective.kind === "RESERVE",
-  );
-  const categories = [
-    { key: "reserve", label: "Reserva", value: reserve?.knownValue ?? 0 },
-    {
-      key: "personal",
-      label: "Objetivos pessoais",
-      value: data.objectives
-        .filter((objective) => objective.kind !== "RESERVE")
-        .reduce((sum, objective) => sum + objective.knownValue, 0),
-    },
-    {
-      key: "unassigned",
-      label: "Sem destino",
-      value: data.unassignedKnownValue,
-    },
-  ] as const;
-  const knownTotal = categories.reduce(
-    (sum, category) => sum + category.value,
-    0,
-  );
-  const missingCount = data.objectives.reduce(
-    (sum, objective) => sum + objective.missingPositionCount,
-    0,
-  );
-  const unvaluedCount =
-    data.unassignedUnvaluedPositionCount +
-    data.objectives.reduce(
-      (sum, objective) => sum + objective.unvaluedPositionCount,
-      0,
-    );
+  const labels = {
+    reserve: "Reserva",
+    personal: "Objetivos pessoais",
+    unassigned: "Sem destino",
+  } as const;
+  const categories = data.destinationSummary.categories.map((category) => ({
+    ...category,
+    label: labels[category.key],
+  }));
+  const knownTotal = data.destinationSummary.knownTotal;
+  const missingCount = data.destinationSummary.missingPositionCount;
+  const unvaluedCount = data.destinationSummary.unvaluedPositionCount;
   const incompleteCount = missingCount + unvaluedCount;
   const chartData = categories.filter((category) => category.value > 0);
 
@@ -167,8 +157,6 @@ export function PortfolioObjectivesOverview({
             className="space-y-3"
           >
             {categories.map((category) => {
-              const share =
-                knownTotal > 0 ? (category.value / knownTotal) * 100 : 0;
               return (
                 <li
                   key={category.key}
@@ -189,7 +177,7 @@ export function PortfolioObjectivesOverview({
                       {formatCurrency(category.value)}
                     </span>
                     <span className="block text-xs text-muted-foreground tabular-nums">
-                      {percent.format(share)}%
+                      {percent.format(category.percentage)}%
                     </span>
                   </span>
                 </li>

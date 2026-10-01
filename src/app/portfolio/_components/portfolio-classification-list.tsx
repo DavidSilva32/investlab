@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrencyCents } from "@/lib/portfolio-money";
 import {
   portfolioAssetClassOptions,
   portfolioAssetGeographyOptions,
@@ -43,6 +43,7 @@ export type PortfolioPosition = {
   estimatedThrough?: string | null;
   institution: string | null;
   estimatedValue?: number | null;
+  canonicalValueCents?: string | null;
   totalValue: string | null;
   classification: Classification;
   classificationSource: "manual" | "inferred" | "unclassified";
@@ -72,16 +73,10 @@ const bulkFields: Array<{ key: BulkField; label: string }> = [
 ];
 
 function formatPositionValue(position: PortfolioPosition) {
-  if (
-    position.estimatedValue !== undefined &&
-    position.estimatedValue !== null &&
-    Number.isFinite(position.estimatedValue)
-  ) {
-    return formatCurrency(position.estimatedValue);
-  }
-  if (position.totalValue === null) return "Sem valor atual";
-  const value = Number(position.totalValue);
-  return Number.isFinite(value) ? formatCurrency(value) : "Sem valor atual";
+  return position.canonicalValueCents === null ||
+    position.canonicalValueCents === undefined
+    ? "Sem valor atual"
+    : formatCurrencyCents(position.canonicalValueCents);
 }
 
 export function PortfolioClassificationList({

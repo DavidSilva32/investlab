@@ -2,7 +2,24 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PortfolioAllocationTargets } from "@/app/portfolio/_components/portfolio-allocation-targets";
+import { PortfolioAllocationTargets as PortfolioAllocationTargetsComponent } from "@/app/portfolio/_components/portfolio-allocation-targets";
+import { getPortfolioConcentration } from "@/lib/portfolio-concentration";
+import type { PortfolioPosition } from "@/app/portfolio/_components/portfolio-classification-list";
+
+function PortfolioAllocationTargets({
+  positions,
+  ...props
+}: Parameters<typeof PortfolioAllocationTargetsComponent>[0] & {
+  positions: PortfolioPosition[];
+}) {
+  return (
+    <PortfolioAllocationTargetsComponent
+      {...props}
+      positions={positions}
+      classSummary={getPortfolioConcentration(positions, "assetClass")}
+    />
+  );
+}
 
 const positions = [
   {

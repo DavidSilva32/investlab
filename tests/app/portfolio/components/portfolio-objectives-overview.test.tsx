@@ -88,6 +88,16 @@ describe("PortfolioObjectivesOverview", () => {
       <PortfolioObjectivesOverview
         data={{
           objectives,
+          destinationSummary: {
+            categories: [
+              { key: "reserve", value: 250, percentage: 25 },
+              { key: "personal", value: 300, percentage: 30 },
+              { key: "unassigned", value: 450, percentage: 45 },
+            ],
+            knownTotal: 1000,
+            missingPositionCount: 1,
+            unvaluedPositionCount: 3,
+          },
           unassignedKnownValue: 450,
           unassignedPositionCount: 3,
           unassignedUnvaluedPositionCount: 2,
@@ -156,6 +166,16 @@ describe("PortfolioObjectivesOverview", () => {
       <PortfolioObjectivesOverview
         data={{
           objectives: [],
+          destinationSummary: {
+            categories: [
+              { key: "reserve", value: 0, percentage: 0 },
+              { key: "personal", value: 0, percentage: 0 },
+              { key: "unassigned", value: 0, percentage: 0 },
+            ],
+            knownTotal: 0,
+            missingPositionCount: 0,
+            unvaluedPositionCount: 1,
+          },
           unassignedKnownValue: 0,
           unassignedPositionCount: 1,
           unassignedUnvaluedPositionCount: 1,

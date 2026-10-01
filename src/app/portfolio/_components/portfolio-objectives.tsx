@@ -16,6 +16,18 @@ import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 type ObjectivesData = {
   objectives: PortfolioObjective[];
+  destinationSummary: {
+    categories: Array<{
+      key: "reserve" | "personal" | "unassigned";
+      value: number;
+      valueCents: string;
+      percentage: number;
+    }>;
+    knownTotal: number;
+    knownTotalCents: string;
+    missingPositionCount: number;
+    unvaluedPositionCount: number;
+  };
   positions: ObjectivePosition[];
   unassignedKnownValue: number;
   unassignedPositionCount: number;

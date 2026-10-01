@@ -111,6 +111,40 @@ describe("EmergencyReserveService", () => {
     });
   });
 
+  it("previews selected holdings from canonical integer cents", async () => {
+    const service = new EmergencyReserveService();
+    vi.spyOn(service, "getEditorData").mockResolvedValue({
+      holdings: [
+        { assetKey: `v1:${"a".repeat(64)}`, valueCents: "12550" },
+        { assetKey: `v1:${"b".repeat(64)}`, valueCents: null },
+        { assetKey: `v1:${"c".repeat(64)}`, valueCents: "99900" },
+      ],
+      calculation: { referenceDate: "2026-09-30" },
+    } as never);
+
+    await expect(
+      service.preview(
+        {
+          monthlyExpenses: 1000,
+          targetMonths: 3,
+          selectedAssetKeys: [`v1:${"a".repeat(64)}`, `v1:${"b".repeat(64)}`],
+        },
+        "preview-1",
+      ),
+    ).resolves.toMatchObject({
+      selectedValueCents: "12550",
+      selectedGroups: 2,
+      unvaluedGroups: 1,
+      targetValueCents: "300000",
+    });
+  });
+
+  it("rejects invalid reserve preview input", async () => {
+    await expect(
+      new EmergencyReserveService().preview({ monthlyExpenses: -1 }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+  });
+
   it("returns an empty contribution context when reserve settings do not exist", async () => {
     mocks.getSettings.mockResolvedValue(null);
     const result = await new EmergencyReserveService().getContributionContext(

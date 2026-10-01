@@ -22,11 +22,11 @@ vi.mock("recharts", () => ({
 
 import { PortfolioDistributionCharts } from "@/app/portfolio/_components/portfolio-distribution-charts";
 
-const institutions = Array.from({ length: 7 }, (_, index) => ({
+const institutions = Array.from({ length: 5 }, (_, index) => ({
   label: `Banco ${index + 1}`,
   value: (7 - index) * 100,
   percentage: ((7 - index) / 28) * 100,
-}));
+})).concat([{ label: "Demais instituições", value: 300, percentage: 10.7 }]);
 
 describe("PortfolioDistributionCharts", () => {
   it("shows amounts and shares and uses the right remainder label per distribution", () => {
@@ -39,11 +39,10 @@ describe("PortfolioDistributionCharts", () => {
           { label: "Fundos", value: 100, percentage: 10 },
           { label: "ETFs", value: 50, percentage: 5 },
           { label: "Exterior", value: 50, percentage: 5 },
-          { label: "Alternativos", value: 25, percentage: 2.5 },
-          { label: "Outros", value: 25, percentage: 2.5 },
+          { label: "Demais classes", value: 100, percentage: 10 },
         ]}
         unclassifiedValue={300}
-        totalValue={1000}
+        unclassifiedPercentage={30}
         loading={false}
       />,
     );
@@ -67,7 +66,7 @@ describe("PortfolioDistributionCharts", () => {
         institutionItems={[]}
         classItems={null}
         unclassifiedValue={null}
-        totalValue={null}
+        unclassifiedPercentage={null}
         loading
       />,
     );
@@ -78,7 +77,7 @@ describe("PortfolioDistributionCharts", () => {
         institutionItems={[]}
         classItems={null}
         unclassifiedValue={null}
-        totalValue={null}
+        unclassifiedPercentage={null}
         loading={false}
       />,
     );
@@ -91,7 +90,7 @@ describe("PortfolioDistributionCharts", () => {
         institutionItems={[]}
         classItems={[]}
         unclassifiedValue={0}
-        totalValue={0}
+        unclassifiedPercentage={0}
         loading={false}
       />,
     );
@@ -106,5 +105,19 @@ describe("PortfolioDistributionCharts", () => {
     expect(
       screen.queryByText(/R\$\s*0,00 \(0%\) sem classe informada/),
     ).toBeNull();
+  });
+
+  it("shows a safe zero percentage when the backend omitted that summary", () => {
+    render(
+      <PortfolioDistributionCharts
+        institutionItems={[]}
+        classItems={[]}
+        unclassifiedValue={100}
+        unclassifiedPercentage={null}
+        loading={false}
+      />,
+    );
+
+    expect(screen.getByText(/100,00 \(0%\) sem classe informada/)).toBeTruthy();
   });
 });

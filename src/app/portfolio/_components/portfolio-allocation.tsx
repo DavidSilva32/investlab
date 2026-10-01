@@ -20,6 +20,10 @@ import { StrategyGuidance } from "@/app/portfolio/_components/strategy-guidance"
 import { PortfolioConcentrationAnalysis } from "@/app/portfolio/_components/portfolio-concentration-analysis";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
+import type {
+  ConcentrationDimension,
+  PortfolioConcentration,
+} from "@/lib/portfolio-concentration";
 import { getApiMessage } from "@/lib/api-message";
 
 type AssetClass = (typeof portfolioAssetClassOptions)[number];
@@ -35,6 +39,10 @@ export function PortfolioAllocation({
   const [targetPercentages, setTargetPercentages] = useState<
     Partial<Record<AssetClass, number>>
   >({});
+  const [concentrations, setConcentrations] = useState<Record<
+    ConcentrationDimension,
+    PortfolioConcentration
+  > | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const load = useCallback(() => {
@@ -49,8 +57,13 @@ export function PortfolioAllocation({
         const data = body as {
           positions: PortfolioPosition[];
           targetPercentages?: Partial<Record<AssetClass, number>>;
+          concentrations: Record<
+            ConcentrationDimension,
+            PortfolioConcentration
+          >;
         };
         setPositions(data.positions);
+        setConcentrations(data.concentrations);
         setTargetPercentages(data.targetPercentages ?? {});
         setError(null);
       })
@@ -182,7 +195,7 @@ export function PortfolioAllocation({
               nextContributionGuidance={nextContributionGuidance}
             />
             <PortfolioAllocationTargets
-              positions={positions}
+              classSummary={concentrations?.assetClass ?? null}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}
@@ -190,7 +203,9 @@ export function PortfolioAllocation({
           </>
         ) : (
           <>
-            <PortfolioConcentrationAnalysis positions={positions} />
+            {concentrations && (
+              <PortfolioConcentrationAnalysis analyses={concentrations} />
+            )}
             <p className="text-sm text-muted-foreground">
               Orientação comparada às metas pessoais que você registrou.
             </p>
@@ -198,7 +213,7 @@ export function PortfolioAllocation({
               nextContributionGuidance={nextContributionGuidance}
             />
             <PortfolioAllocationTargets
-              positions={positions}
+              classSummary={concentrations?.assetClass ?? null}
               targetPercentages={targetPercentages}
               saving={saving}
               onSave={saveTargets}

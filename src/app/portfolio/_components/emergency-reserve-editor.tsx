@@ -30,6 +30,7 @@ import {
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
+import { formatCurrencyCents } from "@/lib/portfolio-money";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { getApiMessage } from "@/lib/api-message";
 
@@ -99,6 +100,9 @@ export function EmergencyReserveEditor() {
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [previewCalculation, setPreviewCalculation] =
+    useState<EmergencyReserveCalculation | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [pendingTransfer, setPendingTransfer] =
     useState<PendingTransfer | null>(null);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
@@ -128,6 +132,8 @@ export function EmergencyReserveEditor() {
             : "custom",
         );
         setSelectedKeys(new Set(data.selectedAssetKeys));
+        setPreviewCalculation(null);
+        setPreviewFailed(false);
         setError(null);
       })
       .catch(() => {
@@ -141,6 +147,55 @@ export function EmergencyReserveEditor() {
     window.addEventListener("portfolio:updated", loadData);
     return () => window.removeEventListener("portfolio:updated", loadData);
   }, [loadData]);
+
+  const selectedKeysSignature = [...selectedKeys].sort().join("|");
+  useEffect(() => {
+    const expenses = Number(monthlyExpenses);
+    const months = Number(targetMonths);
+    if (
+      !data ||
+      !monthlyExpenses ||
+      !Number.isFinite(expenses) ||
+      expenses <= 0 ||
+      !Number.isInteger(months) ||
+      months < 1 ||
+      months > 1200
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch("/api/emergency-reserve", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          monthlyExpenses: expenses,
+          targetMonths: months,
+          selectedAssetKeys: selectedKeysSignature
+            ? selectedKeysSignature.split("|")
+            : [],
+        }),
+      })
+        .then(async (response) => {
+          const body: unknown = await response.json();
+          if (!response.ok) throw new Error("reserve_preview_failed");
+          return typeof body === "object" &&
+            body !== null &&
+            "calculation" in body
+            ? (body as EditorData).calculation
+            : (body as EmergencyReserveCalculation);
+        })
+        .then(setPreviewCalculation)
+        .catch(() => {
+          if (!controller.signal.aborted) setPreviewFailed(true);
+        });
+    }, 200);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [data, monthlyExpenses, selectedKeysSignature, targetMonths]);
 
   async function save(
     event?: React.FormEvent<HTMLFormElement>,
@@ -206,6 +261,8 @@ export function EmergencyReserveEditor() {
           : "custom",
       );
       setSelectedKeys(new Set(savedData.selectedAssetKeys));
+      setPreviewCalculation(null);
+      setPreviewFailed(false);
       const transferMessage = transfers.length
         ? createTransferSuccessMessage(transfers, transferImpacts)
         : null;
@@ -227,6 +284,8 @@ export function EmergencyReserveEditor() {
   }
 
   function toggleHolding(assetKey: string) {
+    setPreviewCalculation(null);
+    setPreviewFailed(false);
     setSelectedKeys((current) => {
       const next = new Set(current);
       if (next.has(assetKey)) next.delete(assetKey);
@@ -238,22 +297,30 @@ export function EmergencyReserveEditor() {
   const selectedHoldings =
     data?.holdings.filter((holding) => selectedKeys.has(holding.assetKey)) ??
     [];
-  const knownSelectedValue = selectedHoldings.reduce(
-    (total, holding) => total + (holding.value ?? 0),
-    0,
+  const hasCurrentDraft = Boolean(
+    data &&
+    monthlyExpenses === (data.monthlyExpenses?.toString() ?? "") &&
+    targetMonths === (data.targetMonths?.toString() ?? "") &&
+    selectedKeysSignature === [...data.selectedAssetKeys].sort().join("|"),
   );
+  const visibleCalculation =
+    previewCalculation ?? (hasCurrentDraft ? data!.calculation : null);
   const selectedHasIncompleteValues =
     selectedKeys.size > selectedHoldings.length ||
     selectedHoldings.some(
       (holding) => holding.value === null || holding.unvaluedPositions > 0,
     );
-  const reserveTargetAmount = Number(monthlyExpenses) * Number(targetMonths);
   const hasValidReserveTarget =
     Number(monthlyExpenses) > 0 &&
     Number.isInteger(Number(targetMonths)) &&
     Number(targetMonths) >= 1 &&
     Number(targetMonths) <= 1200 &&
-    Number.isFinite(reserveTargetAmount);
+    Number.isFinite(Number(monthlyExpenses));
+  const previewLoading =
+    hasValidReserveTarget &&
+    !hasCurrentDraft &&
+    previewCalculation === null &&
+    !previewFailed;
 
   return (
     <section className="space-y-5" data-testid="reserve-editor">
@@ -334,9 +401,11 @@ export function EmergencyReserveEditor() {
                       min="0.01"
                       step="0.01"
                       value={monthlyExpenses}
-                      onChange={(event) =>
-                        setMonthlyExpenses(event.target.value)
-                      }
+                      onChange={(event) => {
+                        setPreviewCalculation(null);
+                        setPreviewFailed(false);
+                        setMonthlyExpenses(event.target.value);
+                      }}
                       aria-describedby="reserve-cost-help"
                       required
                     />
@@ -363,6 +432,8 @@ export function EmergencyReserveEditor() {
                           }
                           aria-pressed={monthChoice === choice}
                           onClick={() => {
+                            setPreviewCalculation(null);
+                            setPreviewFailed(false);
                             if (monthChoice === "custom")
                               setCustomMonths(targetMonths);
                             setMonthChoice(choice);
@@ -392,6 +463,8 @@ export function EmergencyReserveEditor() {
                           step="1"
                           value={targetMonths}
                           onChange={(event) => {
+                            setPreviewCalculation(null);
+                            setPreviewFailed(false);
                             setTargetMonths(event.target.value);
                             setCustomMonths(event.target.value);
                           }}
@@ -434,7 +507,13 @@ export function EmergencyReserveEditor() {
                           Meta calculada pela sua escolha:{" "}
                         </span>
                         <strong className="tabular-nums">
-                          {formatCurrency(reserveTargetAmount)}
+                          {previewLoading
+                            ? "Calculando..."
+                            : visibleCalculation?.targetValueCents
+                              ? formatCurrencyCents(
+                                  visibleCalculation.targetValueCents,
+                                )
+                              : "—"}
                         </strong>
                       </div>
                     )}
@@ -450,7 +529,7 @@ export function EmergencyReserveEditor() {
                 comparisonDetails="Compara o total com valores atuais: estimativa de CDB DI/CDI quando disponível ou valor importado. Não identifica finalidade, titularidade, liquidez ou condições de resgate."
                 requestBody={{
                   reserveTargetAmount: hasValidReserveTarget
-                    ? reserveTargetAmount
+                    ? (visibleCalculation?.targetValue ?? null)
                     : null,
                 }}
                 holdings={data.holdings}
@@ -464,6 +543,8 @@ export function EmergencyReserveEditor() {
                     return false;
                   }
                   setSelectedKeys(new Set(assetKeys));
+                  setPreviewCalculation(null);
+                  setPreviewFailed(false);
                   setTransferSuccess(null);
                 }}
               />
@@ -483,7 +564,13 @@ export function EmergencyReserveEditor() {
                     Valor conhecido selecionado
                   </span>
                   <span className="font-semibold tabular-nums">
-                    {formatCurrency(knownSelectedValue)}
+                    {previewLoading
+                      ? "Calculando..."
+                      : visibleCalculation
+                        ? formatCurrencyCents(
+                            visibleCalculation.selectedValueCents ?? null,
+                          )
+                        : "—"}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -533,6 +620,8 @@ export function EmergencyReserveEditor() {
                           size="sm"
                           variant="outline"
                           onClick={() => {
+                            setPreviewCalculation(null);
+                            setPreviewFailed(false);
                             const visibleKeys = new Set(
                               data.holdings.map((holding) => holding.assetKey),
                             );

@@ -59,6 +59,31 @@ describe("PortfolioAllocationService", () => {
     );
   });
 
+  it("returns canonical concentration summaries for all allocation dimensions", async () => {
+    repository.listLatestPositions.mockResolvedValue([position]);
+    estimates.enrich.mockResolvedValue([
+      {
+        ...position,
+        canonicalValueCents: "10000",
+        totalValue: "100",
+      },
+    ]);
+    classifications.listByAssetKeys.mockResolvedValue([]);
+
+    const result = await new PortfolioAllocationService().getAllocationOverview(
+      "req-1",
+    );
+
+    expect(result.positions[0]?.canonicalValueCents).toBe("10000");
+    expect(Object.keys(result.concentrations)).toEqual([
+      "asset",
+      "assetClass",
+      "subClass",
+      "geography",
+    ]);
+    expect(result.classDistribution).toBe(result.concentrations.assetClass);
+  });
+
   it("loads and persists user allocation targets totaling 100%", async () => {
     const percentages = {
       "Renda fixa": 60,

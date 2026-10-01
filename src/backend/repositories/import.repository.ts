@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { inArray, desc, eq } from "drizzle-orm";
+import { asc, inArray, desc, eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
@@ -183,7 +183,7 @@ export class ImportRepository {
       const [snapshot] = await getDatabaseClient()
         .select()
         .from(positionSnapshots)
-        .orderBy(desc(positionSnapshots.createdAt))
+        .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
         .limit(1);
       if (!snapshot) return [];
       const referenceDate = snapshot.referenceDate;
@@ -191,7 +191,7 @@ export class ImportRepository {
         .select()
         .from(positionItems)
         .where(eq(positionItems.snapshotId, snapshot.id))
-        .orderBy(positionItems.product);
+        .orderBy(asc(positionItems.product), asc(positionItems.id));
       const positionIds = positions.flatMap((position) =>
         typeof position.id === "string" ? [position.id] : [],
       );

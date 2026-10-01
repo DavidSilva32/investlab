@@ -1,7 +1,10 @@
+import { centsToNumber, decimalToCents } from "@/lib/portfolio-money";
+
 export type EmergencyReserveCalculationInput = {
   monthlyExpenses: number | null;
   targetMonths: number | null;
   selectedValue: number;
+  selectedValueCents?: string;
   selectedGroups: number;
   unvaluedGroups: number;
   referenceDate: string | null;
@@ -11,13 +14,16 @@ export type EmergencyReserveCalculation = {
   monthlyExpenses: number | null;
   targetMonths: number | null;
   selectedValue: number;
+  selectedValueCents?: string;
   selectedGroups: number;
   unvaluedGroups: number;
   missingSelectionCount?: number;
   referenceDate: string | null;
   targetValue: number | null;
+  targetValueCents?: string | null;
   coveredMonths: number | null;
   difference: number | null;
+  differenceCents?: string | null;
   progressPercentage: number | null;
   status:
     | "not_configured"
@@ -27,13 +33,15 @@ export type EmergencyReserveCalculation = {
     | "above_target";
 };
 
-const cents = (value: number) =>
-  Math.round((value + Number.EPSILON) * 100) / 100;
-
 export function calculateEmergencyReserve(
   input: EmergencyReserveCalculationInput,
 ): EmergencyReserveCalculation {
-  const selectedValue = cents(Math.max(0, input.selectedValue));
+  const parsedSelectedCents = input.selectedValueCents
+    ? BigInt(input.selectedValueCents)
+    : (decimalToCents(input.selectedValue) ?? 0n);
+  const selectedValueCents =
+    parsedSelectedCents > 0n ? parsedSelectedCents : 0n;
+  const selectedValue = centsToNumber(selectedValueCents)!;
   const monthlyExpenses = input.monthlyExpenses;
   const targetMonths = input.targetMonths;
 
@@ -41,60 +49,86 @@ export function calculateEmergencyReserve(
     return {
       ...input,
       selectedValue,
+      selectedValueCents: selectedValueCents.toString(),
       targetValue: null,
+      targetValueCents: null,
       coveredMonths: null,
       difference: null,
+      differenceCents: null,
       progressPercentage: null,
       status: "not_configured",
     };
   }
 
   if (monthlyExpenses <= 0) {
+    const expenseCents = decimalToCents(monthlyExpenses) ?? 0n;
+    const targetCents =
+      targetMonths === null ? null : expenseCents * BigInt(targetMonths);
     const targetValue =
-      targetMonths === null ? null : cents(monthlyExpenses * targetMonths);
+      targetCents === null ? null : centsToNumber(targetCents);
+    const differenceCents =
+      targetCents === null ? null : targetCents - selectedValueCents;
     return {
       ...input,
       selectedValue,
+      selectedValueCents: selectedValueCents.toString(),
       targetValue,
+      targetValueCents: targetCents?.toString() ?? null,
       coveredMonths: null,
-      difference: targetValue === null ? null : targetValue - selectedValue,
+      difference:
+        differenceCents === null ? null : centsToNumber(differenceCents),
+      differenceCents: differenceCents?.toString() ?? null,
       progressPercentage: null,
       status: "expenses_required",
     };
   }
 
-  const coveredMonths = selectedValue / monthlyExpenses;
+  const expenseCents = decimalToCents(monthlyExpenses) ?? 0n;
+  const coveredMonths =
+    expenseCents > 0n
+      ? Number(selectedValueCents) / Number(expenseCents)
+      : null;
   if (targetMonths === null) {
     return {
       ...input,
       selectedValue,
+      selectedValueCents: selectedValueCents.toString(),
       targetValue: null,
+      targetValueCents: null,
       coveredMonths,
       difference: null,
+      differenceCents: null,
       progressPercentage: null,
       status: "not_configured",
     };
   }
 
-  const targetValue = cents(monthlyExpenses * targetMonths);
-  const difference = cents(targetValue - selectedValue);
-  const epsilon = 0.005;
+  const targetCents = expenseCents * BigInt(targetMonths);
+  const targetValue = centsToNumber(targetCents)!;
+  const differenceCents = targetCents - selectedValueCents;
+  const difference = centsToNumber(differenceCents)!;
   const status =
-    difference > epsilon
+    differenceCents > 0n
       ? "below_target"
-      : difference < -epsilon
+      : differenceCents < 0n
         ? "above_target"
         : "on_target";
 
   return {
     ...input,
     selectedValue,
+    selectedValueCents: selectedValueCents.toString(),
     targetValue,
+    targetValueCents: targetCents.toString(),
     coveredMonths,
     difference,
+    differenceCents: differenceCents.toString(),
     progressPercentage:
-      targetValue > 0
-        ? Math.min(100, (selectedValue / targetValue) * 100)
+      targetCents > 0n
+        ? Math.min(
+            100,
+            (Number(selectedValueCents) / Number(targetCents)) * 100,
+          )
         : null,
     status,
   };

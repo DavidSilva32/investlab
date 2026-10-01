@@ -48,6 +48,37 @@ describe("import repository", () => {
     ).rejects.toThrow("db");
     expect(mocks.logger.error).toHaveBeenCalled();
   });
+  it("uses explicit tie-breakers for the latest snapshot and its positions", async () => {
+    const snapshotOrdering = vi.fn();
+    const positionOrdering = vi.fn();
+    mocks.client.select
+      .mockReturnValueOnce({
+        from: () => ({
+          orderBy: (...ordering: unknown[]) => {
+            snapshotOrdering(...ordering);
+            return {
+              limit: async () => [{ id: "snapshot-1", referenceDate: null }],
+            };
+          },
+        }),
+      } as never)
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: (...ordering: unknown[]) => {
+              positionOrdering(...ordering);
+              return Promise.resolve([]);
+            },
+          }),
+        }),
+      } as never);
+
+    await expect(importRepository.listLatestPositions()).resolves.toEqual([]);
+    expect(snapshotOrdering).toHaveBeenCalledTimes(1);
+    expect(snapshotOrdering.mock.calls[0]).toHaveLength(2);
+    expect(positionOrdering).toHaveBeenCalledTimes(1);
+    expect(positionOrdering.mock.calls[0]).toHaveLength(2);
+  });
   it("creates import, snapshot and position items in one transaction", async () => {
     let persistedPositions: unknown[] = [];
     const transaction = { insert: vi.fn() };

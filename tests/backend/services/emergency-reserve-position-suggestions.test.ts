@@ -19,8 +19,20 @@ describe("suggestEmergencyReservePositions", () => {
       status: "suggestions",
       kind: "exact",
       candidates: [
-        { assetKeys: ["c"], total: 100, difference: 0 },
-        { assetKeys: ["a", "b"], total: 100, difference: 0 },
+        {
+          assetKeys: ["c"],
+          totalCents: "10000",
+          differenceCents: "0",
+          total: 100,
+          difference: 0,
+        },
+        {
+          assetKeys: ["a", "b"],
+          totalCents: "10000",
+          differenceCents: "0",
+          total: 100,
+          difference: 0,
+        },
       ],
       searchLimited: false,
       alternativesLimited: false,
@@ -72,6 +84,8 @@ describe("suggestEmergencyReservePositions", () => {
         holding("null", null),
         holding("zero", 0),
         holding("invalid", Number.NaN),
+        holding("sub-cent", 0.001),
+        { ...holding("invalid-cents", 10), valueCents: "not-cents" },
         holding("rounded", 9.995),
       ]),
     ).toMatchObject({
@@ -164,5 +178,30 @@ describe("suggestEmergencyReservePositions", () => {
       status: "too_many_positions",
       maximum: 40,
     });
+  });
+
+  it("keeps candidates and their key order stable when equal-cent inputs are permuted", () => {
+    const holdings = [
+      holding("z", 50),
+      holding("b", 50),
+      holding("a", 50),
+      holding("y", 50),
+    ];
+    const expected = suggestEmergencyReservePositions(100, holdings);
+
+    expect(
+      suggestEmergencyReservePositions(100, [...holdings].reverse()),
+    ).toEqual(expected);
+    expect(
+      expected.status === "suggestions" ? expected.candidates : [],
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetKeys: ["a", "b"],
+          totalCents: "10000",
+          differenceCents: "0",
+        }),
+      ]),
+    );
   });
 });

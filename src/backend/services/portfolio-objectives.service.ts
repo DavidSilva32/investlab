@@ -11,6 +11,13 @@ import {
   reserveObjectiveId,
   type ObjectivePosition,
 } from "@/lib/portfolio-objectives";
+import {
+  centsToNumber,
+  decimalToCents,
+  resolvePositionMoney,
+  sumMoneyCents,
+  type PortfolioMoneySource,
+} from "@/lib/portfolio-money";
 
 const maximumAmount = 1_000_000_000_000;
 const createSchema = z.object({
@@ -47,8 +54,12 @@ type RawPosition = {
   assetCode: string | null;
   institution: string | null;
   totalValue: string | number | null;
-  estimatedValue?: number | null;
+  estimatedValue?: string | number | null;
+  estimatedValueCents?: string | null;
+  canonicalValueCents?: string | null;
+  canonicalValueSource?: PortfolioMoneySource;
   convertedValueBrl?: string | number | null;
+  currency?: string | null;
   referenceDate?: string | null;
   classification?: { assetClass: string | null };
   issuer?: string | null;
@@ -59,16 +70,16 @@ type RawPosition = {
 };
 
 function valueFor(position: RawPosition) {
-  const value =
-    position.estimatedValue ??
-    position.totalValue ??
-    position.convertedValueBrl ??
-    null;
-  if (value === null) return null;
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) && numericValue >= 0
-    ? numericValue
-    : null;
+  if (position.canonicalValueCents !== undefined) {
+    return {
+      cents:
+        position.canonicalValueCents === null
+          ? null
+          : BigInt(position.canonicalValueCents),
+      source: position.canonicalValueSource ?? "UNVALUED",
+    };
+  }
+  return resolvePositionMoney(position);
 }
 
 export class PortfolioObjectivesService {
@@ -91,34 +102,58 @@ export class PortfolioObjectivesService {
       assignedByObjective.set(assignment.objectiveId, keys);
       objectiveByAssetKey.set(assignment.assetKey, assignment.objectiveId);
     }
-    const reserveTarget =
-      reserveSettings?.monthlyExpenses && reserveSettings.targetMonths
-        ? Number(reserveSettings.monthlyExpenses) * reserveSettings.targetMonths
+    const reserveExpenseCents = decimalToCents(
+      reserveSettings?.monthlyExpenses,
+    );
+    const reserveTargetCents =
+      reserveExpenseCents !== null && reserveSettings?.targetMonths
+        ? reserveExpenseCents * BigInt(reserveSettings.targetMonths)
         : null;
     const objectives = stored.objectives.map((objective) => {
       const assignedAssetKeys = assignedByObjective.get(objective.id) ?? [];
       const current = calculateObjectiveValue(assignedAssetKeys, positions);
-      const targetAmount =
+      const targetAmountCents =
         objective.kind === "RESERVE"
-          ? reserveTarget
+          ? reserveTargetCents
           : objective.targetAmount === null
             ? null
-            : Number(objective.targetAmount);
+            : decimalToCents(objective.targetAmount);
+      const targetAmount =
+        targetAmountCents === null ? null : centsToNumber(targetAmountCents);
+      const currentValueCents = current.currentValueCents;
+      const remainingAmountCents =
+        targetAmountCents === null || currentValueCents === null
+          ? null
+          : (() => {
+              const difference = targetAmountCents - BigInt(currentValueCents);
+              return (difference > 0n ? difference : 0n).toString();
+            })();
       return {
         id: objective.id,
         kind: objective.kind,
         name: objective.name,
         targetAmount,
+        targetAmountCents: targetAmountCents?.toString() ?? null,
         monthlyPlannedAmount:
           objective.monthlyPlannedAmount === null
             ? null
-            : Number(objective.monthlyPlannedAmount),
+            : centsToNumber(
+                decimalToCents(objective.monthlyPlannedAmount) ?? 0n,
+              ),
+        monthlyPlannedAmountCents:
+          objective.monthlyPlannedAmount === null
+            ? null
+            : (decimalToCents(objective.monthlyPlannedAmount)?.toString() ??
+              null),
         currentValue: current.currentValue,
+        currentValueCents,
         knownValue: current.knownValue,
+        knownValueCents: current.knownValueCents,
         remainingAmount:
           targetAmount === null || current.currentValue === null
             ? null
             : Math.max(targetAmount - current.currentValue, 0),
+        remainingAmountCents,
         progressPercent:
           targetAmount === null ||
           targetAmount <= 0 ||
@@ -141,12 +176,57 @@ export class PortfolioObjectivesService {
     const unassignedPositions = positions.filter(
       (position) => !objectiveByAssetKey.has(position.assetKey),
     );
-    const unassignedKnownValue = unassignedPositions.reduce(
-      (total, position) => total + position.knownValue,
-      0,
+    const unassignedKnownValueCents = sumMoneyCents(
+      unassignedPositions.map((position) => BigInt(position.knownValueCents!)),
     );
+    const unassignedKnownValue = centsToNumber(unassignedKnownValueCents)!;
+    const reserveKnownValueCents = BigInt(
+      objectives.find((objective) => objective.kind === "RESERVE")
+        ?.knownValueCents ?? "0",
+    );
+    const personalKnownValueCents = sumMoneyCents(
+      objectives
+        .filter((objective) => objective.kind !== "RESERVE")
+        .map((objective) => BigInt(objective.knownValueCents)),
+    );
+    const destinationsKnownTotalCents = sumMoneyCents([
+      reserveKnownValueCents,
+      personalKnownValueCents,
+      unassignedKnownValueCents,
+    ]);
+    const destinationValues = [
+      { key: "reserve", valueCents: reserveKnownValueCents },
+      { key: "personal", valueCents: personalKnownValueCents },
+      { key: "unassigned", valueCents: unassignedKnownValueCents },
+    ];
     return {
       objectives,
+      destinationSummary: {
+        categories: destinationValues.map(({ key, valueCents }) => ({
+          key,
+          value: centsToNumber(valueCents)!,
+          valueCents: valueCents.toString(),
+          percentage:
+            destinationsKnownTotalCents > 0n
+              ? (Number(valueCents) / Number(destinationsKnownTotalCents)) * 100
+              : 0,
+        })),
+        knownTotal: centsToNumber(destinationsKnownTotalCents)!,
+        knownTotalCents: destinationsKnownTotalCents.toString(),
+        missingPositionCount: objectives.reduce(
+          (total, objective) => total + objective.missingPositionCount,
+          0,
+        ),
+        unvaluedPositionCount:
+          unassignedPositions.reduce(
+            (total, position) => total + position.unvaluedPositions,
+            0,
+          ) +
+          objectives.reduce(
+            (total, objective) => total + objective.unvaluedPositionCount,
+            0,
+          ),
+      },
       positions: positions.map((position) => ({
         ...position,
         objectiveId: objectiveByAssetKey.get(position.assetKey) ?? null,
@@ -157,6 +237,7 @@ export class PortfolioObjectivesService {
           )?.name ?? null,
       })),
       unassignedKnownValue,
+      unassignedKnownValueCents: unassignedKnownValueCents.toString(),
       unassignedPositionCount: unassignedPositions.reduce(
         (total, position) => total + position.positionCount,
         0,
@@ -309,7 +390,21 @@ export class PortfolioObjectivesService {
   private groupPositions(rawPositions: RawPosition[]): ObjectivePosition[] {
     const grouped = new Map<
       string,
-      ObjectivePosition & { allValuesKnown: boolean }
+      {
+        assetKey: string;
+        product: string;
+        assetCode: string | null;
+        institution: string | null;
+        assetClass: string | null;
+        positionCount: number;
+        valueCents: bigint | null;
+        knownValueCents: bigint;
+        unvaluedPositions: number;
+        referenceDate: string | null;
+        source: string | null;
+        canonicalValueSource: PortfolioMoneySource;
+        allValuesKnown: boolean;
+      }
     >();
     for (const position of rawPositions) {
       const assetKey =
@@ -325,16 +420,16 @@ export class PortfolioObjectivesService {
               issuedAt: position.issuedAt ?? null,
               maturityAt: position.maturityAt ?? null,
             });
-      const value = valueFor(position);
+      const { cents, source } = valueFor(position);
       const existing = grouped.get(assetKey);
       if (existing) {
         existing.positionCount += 1;
-        if (value === null) {
+        if (cents === null) {
           existing.unvaluedPositions += 1;
           existing.allValuesKnown = false;
         } else {
-          existing.value = (existing.value ?? 0) + value;
-          existing.knownValue += value;
+          existing.valueCents = (existing.valueCents ?? 0n) + cents;
+          existing.knownValueCents += cents;
         }
         continue;
       }
@@ -345,18 +440,24 @@ export class PortfolioObjectivesService {
         institution: position.institution,
         assetClass: position.classification?.assetClass ?? null,
         positionCount: 1,
-        value,
-        knownValue: value ?? 0,
-        unvaluedPositions: value === null ? 1 : 0,
+        valueCents: cents,
+        knownValueCents: cents ?? 0n,
+        unvaluedPositions: cents === null ? 1 : 0,
         referenceDate: position.referenceDate ?? null,
         source: position.source ?? null,
-        allValuesKnown: value !== null,
+        canonicalValueSource: source,
+        allValuesKnown: cents !== null,
       });
     }
-    return [...grouped.values()].map(({ allValuesKnown, ...position }) => ({
-      ...position,
-      value: allValuesKnown ? position.value : null,
-    }));
+    return [...grouped.values()].map(
+      ({ allValuesKnown, valueCents, knownValueCents, ...position }) => ({
+        ...position,
+        valueCents: allValuesKnown ? valueCents!.toString() : null,
+        value: allValuesKnown ? centsToNumber(valueCents) : null,
+        knownValueCents: knownValueCents.toString(),
+        knownValue: centsToNumber(knownValueCents)!,
+      }),
+    );
   }
 }
 
