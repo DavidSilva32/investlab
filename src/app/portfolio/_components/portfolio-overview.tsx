@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CircleAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getPortfolioInsights } from "@/lib/portfolio-insights";
-import { getPortfolioConcentration } from "@/lib/portfolio-concentration";
+import type { PortfolioInsights } from "@/lib/portfolio-insights";
+import type { PortfolioConcentration } from "@/lib/portfolio-concentration";
 import { formatCurrency } from "@/lib/utils";
 import { PortfolioDistributionCharts } from "./portfolio-distribution-charts";
 
@@ -33,6 +33,10 @@ export type PortfolioPosition = {
   estimationBaseDate?: string | null;
   cdiPercentage?: string | null;
   estimatedValue?: number | null;
+  estimatedValueCents?: string | null;
+  canonicalValueCents?: string | null;
+  canonicalValueSource?: string;
+  reportedValueCents?: string | null;
   estimatedThrough?: string | null;
   cdbEstimateStatus?: "official" | "provisional" | "unavailable" | null;
 };
@@ -57,56 +61,32 @@ export type ClassifiedPosition = {
   };
 };
 
-function positionValue(position: PortfolioPosition) {
-  const value =
-    position.estimatedValue ??
-    (position.totalValue === null ? null : Number(position.totalValue));
-  return value !== null && Number.isFinite(value) ? value : null;
-}
-
 export function PortfolioOverview({
   positions,
-  classifiedPositions,
+  insights,
+  classDistribution,
   classificationStatus,
   summaryContent,
 }: {
   positions: PortfolioPosition[];
-  classifiedPositions: ClassifiedPosition[] | null;
+  insights: PortfolioInsights;
+  classDistribution: PortfolioConcentration | null;
   classificationStatus: "loading" | "loaded" | "unavailable";
   summaryContent?: React.ReactNode;
 }) {
-  const insights = getPortfolioInsights(positions);
-  const classDistribution = classifiedPositions
-    ? getPortfolioConcentration(classifiedPositions, "assetClass")
-    : null;
-  const valuedPositions = positions
-    .map((position) => ({ position, value: positionValue(position) }))
-    .filter(
-      (item): item is { position: PortfolioPosition; value: number } =>
-        item.value !== null,
-    )
-    .sort((left, right) => right.value - left.value);
-  const topPositions = valuedPositions.slice(0, 5);
-  const unvaluedCount = positions.length - valuedPositions.length;
-  const provisionalCount = positions.filter(
-    (position) => position.cdbEstimateStatus === "provisional",
-  ).length;
-  const unavailableEstimateCount = positions.filter(
-    (position) => position.cdbEstimateStatus === "unavailable",
-  ).length;
   const nextMaturity = insights.upcomingMaturities[0];
   const hasAttention =
-    unvaluedCount > 0 ||
-    provisionalCount > 0 ||
-    unavailableEstimateCount > 0 ||
+    insights.unvaluedPositions > 0 ||
+    insights.provisionalEstimates > 0 ||
+    insights.unavailableEstimates > 0 ||
     nextMaturity !== undefined;
 
-  const institutionDistribution = insights.allocations.map((item) => ({
+  const institutionDistribution = insights.chartAllocations.map((item) => ({
     label: item.institution,
     value: item.value,
     percentage: item.percentage,
   }));
-  const classItems = classDistribution?.groups.map((item) => ({
+  const classItems = classDistribution?.chartGroups.map((item) => ({
     label: item.label,
     value: item.value,
     percentage: item.percentage,
@@ -128,9 +108,11 @@ export function PortfolioOverview({
           </div>
           <div className="text-sm text-muted-foreground sm:text-right">
             <p>
-              {valuedPositions.length} de {positions.length} posições com valor
+              {insights.valuedPositions} de {positions.length} posições com
+              valor
             </p>
-            {(provisionalCount > 0 || unavailableEstimateCount > 0) && (
+            {(insights.provisionalEstimates > 0 ||
+              insights.unavailableEstimates > 0) && (
               <p className="mt-1">Alguns valores podem ser estimativas.</p>
             )}
           </div>
@@ -143,7 +125,9 @@ export function PortfolioOverview({
         institutionItems={institutionDistribution}
         classItems={classItems ?? null}
         unclassifiedValue={classDistribution?.unclassifiedValue ?? null}
-        totalValue={classDistribution?.totalValue ?? null}
+        unclassifiedPercentage={
+          classDistribution?.unclassifiedPercentage ?? null
+        }
         loading={classificationStatus === "loading"}
       />
 
@@ -167,40 +151,35 @@ export function PortfolioOverview({
             Ver todas as posições <ArrowRight className="size-4" />
           </Link>
         </div>
-        {topPositions.length ? (
+        {insights.topPositions.length ? (
           <div className="overflow-hidden rounded-xl border bg-card">
             <ul
               className="divide-y"
               aria-label="Principais posições por valor conhecido"
             >
-              {topPositions.map(({ position, value }) => (
-                <li
-                  key={position.id}
-                  className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {position.product}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {position.institution ?? "Instituição não informada"}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-medium tabular-nums">
-                      {formatCurrency(value)}
-                    </p>
-                    <p className="text-xs text-muted-foreground tabular-nums">
-                      {percentage.format(
-                        insights.totalValue > 0
-                          ? (value / insights.totalValue) * 100
-                          : 0,
-                      )}
-                      % da carteira conhecida
-                    </p>
-                  </div>
-                </li>
-              ))}
+              {insights.topPositions.map(
+                ({ product, institution, value, percentage: share }, index) => (
+                  <li
+                    key={`${product}:${institution ?? ""}:${index}`}
+                    className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{product}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {institution ?? "Instituição não informada"}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-medium tabular-nums">
+                        {formatCurrency(value)}
+                      </p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {percentage.format(share)}% da carteira conhecida
+                      </p>
+                    </div>
+                  </li>
+                ),
+              )}
             </ul>
           </div>
         ) : (
@@ -217,28 +196,30 @@ export function PortfolioOverview({
         <CardContent>
           {hasAttention ? (
             <ul className="space-y-3">
-              {unvaluedCount > 0 && (
+              {insights.unvaluedPositions > 0 && (
                 <AttentionItem>
-                  {unvaluedCount}{" "}
-                  {unvaluedCount === 1 ? "posição está" : "posições estão"} sem
-                  valor atual informado.
+                  {insights.unvaluedPositions}{" "}
+                  {insights.unvaluedPositions === 1
+                    ? "posição está"
+                    : "posições estão"}{" "}
+                  sem valor atual informado.
                 </AttentionItem>
               )}
-              {provisionalCount > 0 && (
+              {insights.provisionalEstimates > 0 && (
                 <AttentionItem>
-                  {provisionalCount}{" "}
-                  {provisionalCount === 1
+                  {insights.provisionalEstimates}{" "}
+                  {insights.provisionalEstimates === 1
                     ? "estimativa está"
                     : "estimativas estão"}{" "}
-                  provisória{provisionalCount === 1 ? "" : "s"}.
+                  provisória{insights.provisionalEstimates === 1 ? "" : "s"}.
                 </AttentionItem>
               )}
-              {unavailableEstimateCount > 0 && (
+              {insights.unavailableEstimates > 0 && (
                 <AttentionItem>
                   Não foi possível atualizar{" "}
-                  {unavailableEstimateCount === 1
+                  {insights.unavailableEstimates === 1
                     ? "uma estimativa"
-                    : `${unavailableEstimateCount} estimativas`}{" "}
+                    : `${insights.unavailableEstimates} estimativas`}{" "}
                   de CDB; a tabela mostra o último valor informado.
                 </AttentionItem>
               )}

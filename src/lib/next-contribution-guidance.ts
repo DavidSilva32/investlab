@@ -3,6 +3,7 @@ import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-ta
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 export type ContributionGuidancePosition = {
   estimatedValue?: number | null;
+  canonicalValueCents?: string | null;
   totalValue: string | null;
   classification: { assetClass: string | null };
 };
@@ -34,6 +35,11 @@ const isAssetClass = (
 ): value is (typeof portfolioAssetClassOptions)[number] =>
   portfolioAssetClassOptions.some((assetClass) => assetClass === value);
 const getValue = (position: ContributionGuidancePosition) => {
+  if (position.canonicalValueCents !== undefined) {
+    return position.canonicalValueCents === null
+      ? null
+      : Number(BigInt(position.canonicalValueCents)) / 100;
+  }
   const value =
     position.estimatedValue ??
     (position.totalValue === null ? null : Number(position.totalValue));

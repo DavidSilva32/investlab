@@ -26,7 +26,9 @@ describe("calculateObjectiveValue", () => {
   it("returns zero for an objective without assigned positions", () => {
     expect(calculateObjectiveValue([], [position()])).toEqual({
       currentValue: 0,
+      currentValueCents: "0",
       knownValue: 0,
+      knownValueCents: "0",
       missingPositionCount: 0,
       unvaluedPositionCount: 0,
     });
@@ -44,7 +46,9 @@ describe("calculateObjectiveValue", () => {
       ),
     ).toEqual({
       currentValue: 150,
+      currentValueCents: "15000",
       knownValue: 150,
+      knownValueCents: "15000",
       missingPositionCount: 0,
       unvaluedPositionCount: 0,
     });
@@ -65,7 +69,9 @@ describe("calculateObjectiveValue", () => {
       ),
     ).toEqual({
       currentValue: null,
+      currentValueCents: null,
       knownValue: 100,
+      knownValueCents: "10000",
       missingPositionCount: 1,
       unvaluedPositionCount: 1,
     });

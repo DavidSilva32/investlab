@@ -1,6 +1,7 @@
 ﻿import { describe, expect, it, vi } from "vitest";
 
 const service = vi.hoisted(() => ({
+  preview: vi.fn(),
   getEditorData: vi.fn(),
   saveSettings: vi.fn(),
   suggestPositions: vi.fn(),
@@ -27,6 +28,15 @@ describe("EmergencyReserveController", () => {
       calculation: { selectedGroups: 1 },
     });
     const controller = new EmergencyReserveController();
+
+    service.preview.mockResolvedValue({ selectedValueCents: "10000" });
+    await expect(
+      (await controller.preview({ monthlyExpenses: 100 }, "preview-1")).json(),
+    ).resolves.toEqual({ selectedValueCents: "10000" });
+    expect(service.preview).toHaveBeenCalledWith(
+      { monthlyExpenses: 100 },
+      "preview-1",
+    );
 
     await expect((await controller.get("request-1")).json()).resolves.toEqual(
       editorData,

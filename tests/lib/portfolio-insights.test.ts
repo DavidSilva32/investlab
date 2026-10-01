@@ -78,7 +78,7 @@ describe("getPortfolioInsights", () => {
         ],
         new Date("2026-01-01T00:00:00Z"),
       ),
-    ).toEqual({
+    ).toMatchObject({
       totalValue: 0,
       valuedPositions: 0,
       institutions: 0,
@@ -146,6 +146,25 @@ describe("getPortfolioInsights", () => {
           percentage: 100,
         },
       ],
+    });
+  });
+
+  it("prepares an institution chart remainder from the exact cent totals", () => {
+    const manyPositions = Array.from({ length: 7 }, (_, index) => ({
+      product: `Ativo ${index}`,
+      institution: `Banco ${index}`,
+      maturityAt: null,
+      canonicalValueCents: String((7 - index) * 100),
+      totalValue: null,
+    }));
+
+    const result = getPortfolioInsights(manyPositions);
+
+    expect(result.chartAllocations).toHaveLength(6);
+    expect(result.chartAllocations.at(-1)).toEqual({
+      institution: "Demais instituições",
+      value: 3,
+      percentage: expect.closeTo((300 / 2800) * 100),
     });
   });
 });

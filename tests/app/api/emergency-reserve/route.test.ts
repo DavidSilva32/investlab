@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const controller = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn() }));
+const controller = vi.hoisted(() => ({
+  get: vi.fn(),
+  preview: vi.fn(),
+  update: vi.fn(),
+}));
 const logger = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }));
 vi.mock("@/backend/controllers/emergency-reserve.controller", () => ({
   emergencyReserveController: controller,
@@ -8,7 +12,7 @@ vi.mock("@/backend/controllers/emergency-reserve.controller", () => ({
 vi.mock("@/infrastructure/logging/logger", () => ({ logger }));
 
 import { ApplicationError } from "@/backend/errors/application-error";
-import { GET, PUT } from "@/app/api/emergency-reserve/route";
+import { GET, PATCH, PUT } from "@/app/api/emergency-reserve/route";
 
 describe("emergency reserve route", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -41,6 +45,43 @@ describe("emergency reserve route", () => {
     await GET(new Request("http://test"));
 
     expect(controller.get).toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it("delegates reserve previews and keeps preview errors client-safe", async () => {
+    const previewResponse = Response.json({ selectedValueCents: "10000" });
+    controller.preview.mockResolvedValueOnce(previewResponse);
+    const request = new Request("http://test", {
+      method: "PATCH",
+      headers: {
+        "x-request-id": "preview-1",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        monthlyExpenses: 100,
+        targetMonths: 1,
+        selectedAssetKeys: [],
+      }),
+    });
+    expect(await PATCH(request)).toBe(previewResponse);
+    expect(controller.preview).toHaveBeenCalledWith(
+      { monthlyExpenses: 100, targetMonths: 1, selectedAssetKeys: [] },
+      "preview-1",
+    );
+
+    controller.preview.mockRejectedValueOnce(
+      new ApplicationError("Revise os valores.", 400),
+    );
+    const invalid = await PATCH(
+      new Request("http://test", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+    );
+    expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({
+      message: "Revise os valores.",
+    });
   });
 
   it("keeps read errors client-safe and records unexpected errors", async () => {

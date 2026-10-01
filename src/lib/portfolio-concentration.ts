@@ -1,3 +1,9 @@
+import {
+  centsToNumber,
+  resolvePositionMoney,
+  sumMoneyCents,
+} from "@/lib/portfolio-money";
+
 export type PortfolioConcentrationPosition = {
   id: string;
   product: string;
@@ -9,6 +15,8 @@ export type PortfolioConcentrationPosition = {
   estimatedThrough?: string | null;
   totalValue: string | null;
   estimatedValue?: number | null;
+  estimatedValueCents?: string | null;
+  canonicalValueCents?: string | null;
   classification: {
     assetClass: string | null;
     subClass: string | null;
@@ -21,33 +29,33 @@ export type ConcentrationDimension =
 
 export type PortfolioConcentration = {
   totalValue: number;
+  totalValueCents: string;
   valuedPositions: number;
   unvaluedPositions: number;
   classifiedValue: number;
+  classifiedValueCents: string;
   unclassifiedValue: number;
+  unclassifiedValueCents: string;
   classifiedPositions: number;
   unclassifiedPositions: number;
+  classifiedPercentage: number;
+  unclassifiedPercentage: number;
   largestShare: number;
   groups: Array<{
     label: string;
     value: number;
     percentage: number;
   }>;
+  chartGroups: Array<{ label: string; value: number; percentage: number }>;
   referenceDates: string[];
 };
 
-const positionValue = (position: PortfolioConcentrationPosition) => {
-  if (
-    position.estimatedValue !== undefined &&
-    position.estimatedValue !== null &&
-    Number.isFinite(position.estimatedValue)
-  ) {
-    return position.estimatedValue;
-  }
-  if (position.totalValue === null) return null;
-  const value = Number(position.totalValue);
-  return Number.isFinite(value) ? value : null;
-};
+const positionCents = (position: PortfolioConcentrationPosition) =>
+  position.canonicalValueCents !== undefined
+    ? position.canonicalValueCents === null
+      ? null
+      : BigInt(position.canonicalValueCents)
+    : resolvePositionMoney(position).cents;
 
 const unknownLabels: Record<ConcentrationDimension, string> = {
   asset: "Ativo não identificado",
@@ -85,31 +93,29 @@ export function getPortfolioConcentration(
   positions: PortfolioConcentrationPosition[],
   dimension: ConcentrationDimension,
 ): PortfolioConcentration {
-  const groups = new Map<string, { label: string; value: number }>();
+  const groups = new Map<string, { label: string; cents: bigint }>();
   const dates = new Set<string>();
-  let totalValue = 0;
   let valuedPositions = 0;
-  let classifiedValue = 0;
+  let classifiedCents = 0n;
   let classifiedPositions = 0;
 
   for (const position of positions) {
-    const value = positionValue(position);
-    if (value === null) continue;
+    const cents = positionCents(position);
+    if (cents === null) continue;
 
-    totalValue += value;
     valuedPositions += 1;
     const group = getGroup(position, dimension);
     const current = groups.get(group.key);
     groups.set(group.key, {
       label: group.label,
-      value: (current?.value ?? 0) + value,
+      cents: (current?.cents ?? 0n) + cents,
     });
     if (group.key !== "unknown") {
-      classifiedValue += value;
+      classifiedCents += cents;
       classifiedPositions += 1;
     }
     const valueDate =
-      position.estimatedValue != null
+      position.estimatedValueCents != null || position.estimatedValue != null
         ? (position.estimatedThrough ?? position.referenceDate)
         : position.referenceDate;
     if (valueDate) dates.add(valueDate);
@@ -117,26 +123,76 @@ export function getPortfolioConcentration(
   }
 
   const sortedGroups = [...groups.values()].sort(
-    (left, right) => right.value - left.value,
+    (left, right) =>
+      (left.cents === right.cents ? 0 : left.cents > right.cents ? -1 : 1) ||
+      left.label.localeCompare(right.label),
   );
-  const denominator = totalValue > 0 ? totalValue : 0;
+  const totalCents = sumMoneyCents(
+    [...groups.values()].map((group) => group.cents),
+  );
+  const totalValue = centsToNumber(totalCents) ?? 0;
+  const classifiedValue = centsToNumber(classifiedCents) ?? 0;
+  const unclassifiedCents = totalCents - classifiedCents;
+  const unclassifiedValue = centsToNumber(unclassifiedCents) ?? 0;
+  const denominator = totalCents > 0n ? totalCents : 0n;
+
+  const formattedGroups = sortedGroups.map((group) => ({
+    label: group.label,
+    value: centsToNumber(group.cents) ?? 0,
+    percentage:
+      denominator > 0n ? (Number(group.cents) / Number(denominator)) * 100 : 0,
+  }));
+  const chartGroups =
+    formattedGroups.length > 6
+      ? [
+          ...formattedGroups.slice(0, 5),
+          {
+            label: "Demais classes",
+            value:
+              centsToNumber(
+                sortedGroups
+                  .slice(5)
+                  .reduce((total, group) => total + group.cents, 0n),
+              ) ?? 0,
+            percentage:
+              denominator > 0n
+                ? (Number(
+                    sortedGroups
+                      .slice(5)
+                      .reduce((total, group) => total + group.cents, 0n),
+                  ) /
+                    Number(denominator)) *
+                  100
+                : 0,
+          },
+        ]
+      : formattedGroups;
 
   return {
     totalValue,
+    totalValueCents: totalCents.toString(),
     valuedPositions,
     unvaluedPositions: positions.length - valuedPositions,
     classifiedValue,
-    unclassifiedValue: totalValue - classifiedValue,
+    classifiedValueCents: classifiedCents.toString(),
+    unclassifiedValue,
+    unclassifiedValueCents: unclassifiedCents.toString(),
     classifiedPositions,
     unclassifiedPositions: valuedPositions - classifiedPositions,
-    largestShare:
-      denominator > 0 && sortedGroups.length > 0
-        ? (sortedGroups[0].value / denominator) * 100
+    classifiedPercentage:
+      denominator > 0n
+        ? (Number(classifiedCents) / Number(denominator)) * 100
         : 0,
-    groups: sortedGroups.map((group) => ({
-      ...group,
-      percentage: denominator > 0 ? (group.value / denominator) * 100 : 0,
-    })),
+    unclassifiedPercentage:
+      denominator > 0n
+        ? (Number(unclassifiedCents) / Number(denominator)) * 100
+        : 0,
+    largestShare:
+      denominator > 0n && sortedGroups.length > 0
+        ? (Number(sortedGroups[0].cents) / Number(denominator)) * 100
+        : 0,
+    groups: formattedGroups,
+    chartGroups,
     referenceDates: [...dates].sort(),
   };
 }

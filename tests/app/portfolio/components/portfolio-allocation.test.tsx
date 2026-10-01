@@ -7,6 +7,10 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
+import {
+  getPortfolioConcentration,
+  type ConcentrationDimension,
+} from "@/lib/portfolio-concentration";
 
 const pointerCaptureMethods = [
   "hasPointerCapture",
@@ -97,10 +101,36 @@ const positions = [
   },
 ];
 
-const response = (body: unknown, ok = true) => ({
-  ok,
-  json: async () => body,
-});
+const response = (body: unknown, ok = true) => {
+  const value = body as {
+    positions?: Parameters<typeof getPortfolioConcentration>[0];
+  };
+  const dimensions: ConcentrationDimension[] = [
+    "asset",
+    "assetClass",
+    "subClass",
+    "geography",
+  ];
+  const concentrations = value.positions
+    ? Object.fromEntries(
+        dimensions.map((dimension) => [
+          dimension,
+          getPortfolioConcentration(value.positions!, dimension),
+        ]),
+      )
+    : undefined;
+  return {
+    ok,
+    json: async () =>
+      concentrations
+        ? {
+            ...value,
+            concentrations,
+            classDistribution: concentrations.assetClass,
+          }
+        : body,
+  };
+};
 
 describe("PortfolioAllocation", () => {
   afterEach(() => {

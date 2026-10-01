@@ -2,7 +2,35 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { PortfolioConcentrationAnalysis } from "@/app/portfolio/_components/portfolio-concentration-analysis";
+import { PortfolioConcentrationAnalysis as PortfolioConcentrationAnalysisComponent } from "@/app/portfolio/_components/portfolio-concentration-analysis";
+import {
+  getPortfolioConcentration,
+  type ConcentrationDimension,
+  type PortfolioConcentrationPosition,
+} from "@/lib/portfolio-concentration";
+
+function PortfolioConcentrationAnalysis({
+  positions,
+}: {
+  positions: PortfolioConcentrationPosition[];
+}) {
+  const dimensions: ConcentrationDimension[] = [
+    "asset",
+    "assetClass",
+    "subClass",
+    "geography",
+  ];
+  const analyses = Object.fromEntries(
+    dimensions.map((dimension) => [
+      dimension,
+      getPortfolioConcentration(positions, dimension),
+    ]),
+  ) as Record<
+    ConcentrationDimension,
+    ReturnType<typeof getPortfolioConcentration>
+  >;
+  return <PortfolioConcentrationAnalysisComponent analyses={analyses} />;
+}
 
 const positions = [
   {

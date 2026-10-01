@@ -20,33 +20,18 @@ const categoryColors = [
   "#64748b",
 ];
 
-function compactItems(items: DistributionItem[], remainderLabel: string) {
-  if (items.length <= 6) return items;
-  const leading = items.slice(0, 5);
-  const others = items.slice(5).reduce(
-    (total, item) => ({
-      value: total.value + item.value,
-      percentage: total.percentage + item.percentage,
-    }),
-    { value: 0, percentage: 0 },
-  );
-  return [...leading, { label: remainderLabel, ...others }];
-}
-
 function DistributionChart({
   title,
   items,
   emptyMessage,
-  remainderLabel,
   loading = false,
 }: {
   title: string;
   items: DistributionItem[] | null;
   emptyMessage: string;
-  remainderLabel: string;
   loading?: boolean;
 }) {
-  const displayItems = items ? compactItems(items, remainderLabel) : [];
+  const displayItems = items ?? [];
   const chartData = displayItems.map((item, index) => ({
     ...item,
     color: categoryColors[index % categoryColors.length],
@@ -130,20 +115,15 @@ export function PortfolioDistributionCharts({
   institutionItems,
   classItems,
   unclassifiedValue,
-  totalValue,
+  unclassifiedPercentage,
   loading,
 }: {
   institutionItems: DistributionItem[];
   classItems: DistributionItem[] | null;
   unclassifiedValue: number | null;
-  totalValue: number | null;
+  unclassifiedPercentage: number | null;
   loading: boolean;
 }) {
-  const unclassifiedPercentage =
-    totalValue !== null && totalValue > 0 && unclassifiedValue !== null
-      ? (unclassifiedValue / totalValue) * 100
-      : 0;
-
   return (
     <section
       className="grid gap-4 lg:grid-cols-2"
@@ -153,14 +133,12 @@ export function PortfolioDistributionCharts({
         title="Onde está · por instituição"
         items={institutionItems}
         emptyMessage="Ainda não há valores conhecidos para mostrar a distribuição."
-        remainderLabel="Demais instituições"
       />
       <div className="space-y-3">
         <DistributionChart
           title="Como se distribui · por classe"
           items={classItems}
           emptyMessage="Não há valores classificados disponíveis."
-          remainderLabel="Demais classes"
           loading={loading}
         />
         {!loading &&
@@ -169,7 +147,7 @@ export function PortfolioDistributionCharts({
           unclassifiedValue > 0 && (
             <p className="px-1 text-xs text-muted-foreground">
               {formatCurrency(unclassifiedValue)} (
-              {unclassifiedPercentage.toLocaleString("pt-BR", {
+              {(unclassifiedPercentage ?? 0).toLocaleString("pt-BR", {
                 maximumFractionDigits: 1,
               })}
               %) sem classe informada.

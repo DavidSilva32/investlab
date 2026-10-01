@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/sheet";
 import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
+import type { PortfolioInsights } from "@/lib/portfolio-insights";
+import type { PortfolioConcentration } from "@/lib/portfolio-concentration";
 import { MovementDetails, PositionDetails } from "./portfolio-details";
 import {
   PortfolioOverview,
@@ -27,6 +29,7 @@ import type { PortfolioView } from "./portfolio-navigation";
 
 type Overview = {
   positions: PortfolioPosition[];
+  insights: PortfolioInsights;
   movements: Parameters<typeof MovementDetails>[0]["movements"];
   referenceRates: Parameters<typeof ReferenceRates>[0]["rates"];
   nextContributionGuidance: ContributionGuidance;
@@ -34,7 +37,11 @@ type Overview = {
 
 type ClassificationState =
   | { status: "loading" }
-  | { status: "loaded"; positions: ClassifiedPosition[] }
+  | {
+      status: "loaded";
+      positions: ClassifiedPosition[];
+      classDistribution: PortfolioConcentration;
+    }
   | { status: "unavailable" };
 
 const loadErrorMessage = "Não foi possível carregar a carteira.";
@@ -125,6 +132,7 @@ export function PortfolioClient({
               setClassification({
                 status: "loaded",
                 positions: allocation.positions ?? [],
+                classDistribution: allocation.classDistribution,
               });
             })
             .catch(() => setClassification({ status: "unavailable" }));
@@ -163,9 +171,10 @@ export function PortfolioClient({
         <div className="space-y-5">
           <PortfolioOverview
             positions={overview.positions}
-            classifiedPositions={
+            insights={overview.insights}
+            classDistribution={
               classification.status === "loaded"
-                ? classification.positions
+                ? classification.classDistribution
                 : null
             }
             classificationStatus={classification.status}

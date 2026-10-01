@@ -15,6 +15,7 @@ import {
   type PortfolioTableColumn,
 } from "@/components/portfolio-table";
 import { formatCurrency, formatQuantity } from "@/lib/utils";
+import { formatCurrencyCents } from "@/lib/portfolio-money";
 import type { PortfolioPosition } from "./portfolio-overview";
 import { CdbRateConfiguration } from "./cdb-rate-configuration";
 import { ManualPositionManager } from "./manual-position-manager";
@@ -107,14 +108,14 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
     label: "Valor atual",
     width: "18%",
     className: "text-right",
-    value: (row) => row.estimatedValue ?? numberValue(row.totalValue),
+    value: (row) => row.canonicalValueCents ?? row.reportedValueCents ?? null,
     render: (row) => {
       if (row.source === "MANUAL") {
         const reportedValue = row.reportedTotalValue ?? row.totalValue;
         return (
           <div className="space-y-1">
             <span className="font-medium">
-              {row.totalValue ? formatCurrency(Number(row.totalValue)) : "—"}
+              {formatCurrencyCents(row.canonicalValueCents ?? null)}
             </span>
             <span className="block text-xs text-muted-foreground">
               {row.currency === "BRL"
@@ -145,7 +146,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
         return (
           <div className="space-y-1">
             <span className="font-medium">
-              {formatCurrency(row.estimatedValue)}
+              {formatCurrencyCents(row.canonicalValueCents ?? null)}
             </span>
             <span className="block text-xs text-muted-foreground">
               {row.cdbEstimateStatus === "provisional" &&
@@ -167,7 +168,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
             {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3:{" "}
-              {formatCurrency(Number(row.totalValue))}
+              {formatCurrencyCents(row.reportedValueCents ?? null)}
               {row.estimationBaseDate
                 ? ` · arquivo de ${date.format(new Date(`${row.estimationBaseDate}T00:00:00Z`))}`
                 : ""}
@@ -184,7 +185,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
         return (
           <div className="space-y-1">
             <span className="block font-medium">
-              {formatCurrency(Number(row.totalValue))}
+              {formatCurrencyCents(row.reportedValueCents ?? null)}
             </span>
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3
@@ -204,7 +205,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
       return (
         <div>
           <span className="font-medium">
-            {formatCurrency(Number(row.totalValue))}
+            {formatCurrencyCents(row.reportedValueCents ?? null)}
           </span>
           <span className="block text-xs text-muted-foreground">
             Último valor informado pela B3

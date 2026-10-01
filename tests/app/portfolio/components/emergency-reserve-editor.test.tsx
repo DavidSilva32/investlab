@@ -35,12 +35,15 @@ const editorData = {
     monthlyExpenses: 2000,
     targetMonths: 6,
     selectedValue: 3000,
+    selectedValueCents: "300000",
     selectedGroups: 1,
     unvaluedGroups: 0,
     referenceDate: "2026-09-01",
     targetValue: 12000,
+    targetValueCents: "1200000",
     coveredMonths: 1.5,
     difference: 9000,
+    differenceCents: "900000",
     progressPercentage: 25,
     status: "below_target" as const,
   },
@@ -56,6 +59,7 @@ const editorData = {
       positionCount: 1,
       unvaluedPositions: 0,
       value: 3000,
+      valueCents: "300000",
       selected: true,
     },
     {
@@ -69,6 +73,7 @@ const editorData = {
       positionCount: 2,
       unvaluedPositions: 1,
       value: null,
+      valueCents: null,
       selected: false,
       assignedObjectiveId: null,
       assignedObjectiveName: null,
@@ -109,7 +114,7 @@ describe("EmergencyReserveEditor", () => {
         .getByRole("button", { name: "6 meses" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(screen.getByText("R$ 12.000,00")).toBeTruthy();
+    expect(await screen.findByText("R$ 12.000,00")).toBeTruthy();
     const layout = screen.getByTestId("reserve-editor-layout");
     expect(layout.className).toContain(
       "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]",
@@ -315,7 +320,18 @@ describe("EmergencyReserveEditor", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ ...editorData, targetMonths: 9 }),
+        json: async () => ({
+          ...editorData,
+          targetMonths: 9,
+          calculation: {
+            ...editorData.calculation,
+            targetMonths: 9,
+            targetValue: 18000,
+            targetValueCents: "1800000",
+            difference: 15000,
+            differenceCents: "1500000",
+          },
+        }),
       }),
     );
     render(<EmergencyReserveEditor />);
@@ -371,20 +387,26 @@ describe("EmergencyReserveEditor", () => {
   });
 
   it("shows the no-positions state and reports save conflicts once", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+      if (options?.method === "PUT")
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          json: async () => ({
+            message:
+              "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
+          }),
+        });
+      if (options?.method === "PATCH")
+        return Promise.resolve({
+          ok: true,
+          json: async () => editorData.calculation,
+        });
+      return Promise.resolve({
         ok: true,
         json: async () => ({ ...editorData, holdings: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 409,
-        json: async () => ({
-          message:
-            "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
-        }),
       });
+    });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
@@ -401,6 +423,35 @@ describe("EmergencyReserveEditor", () => {
       ),
     );
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the backend calculation visible when the draft preview fails", async () => {
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) =>
+      Promise.resolve(
+        options?.method === "PATCH"
+          ? {
+              ok: false,
+              json: async () => ({ message: "preview unavailable" }),
+            }
+          : { ok: true, json: async () => editorData },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EmergencyReserveEditor />);
+
+    await screen.findByLabelText("Custo mensal");
+    await vi.waitFor(
+      () =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/emergency-reserve",
+          expect.objectContaining({ method: "PATCH" }),
+        ),
+      { timeout: 1000 },
+    );
+    await vi.waitFor(() => expect(toast.error).not.toHaveBeenCalled(), {
+      timeout: 1000,
+    });
+    expect(screen.getByText(/Valor conhecido selecionado/)).toBeTruthy();
   });
 
   it("uses a generic toast for unexpected save failures without an error message", async () => {

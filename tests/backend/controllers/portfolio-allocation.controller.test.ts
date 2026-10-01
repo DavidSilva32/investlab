@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const service = vi.hoisted(() => ({
   getAllocation: vi.fn(),
+  getAllocationOverview: vi.fn(),
   getAllocationTargets: vi.fn(),
   updateAllocationTargets: vi.fn(),
   updateClassifications: vi.fn(),
@@ -28,14 +29,20 @@ describe("PortfolioAllocationController", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns allocation positions", async () => {
-    service.getAllocation.mockResolvedValue([{ id: "position-1" }]);
+    service.getAllocationOverview.mockResolvedValue({
+      positions: [{ id: "position-1" }],
+      concentrations: {},
+      classDistribution: {},
+    });
     service.getAllocationTargets.mockResolvedValue({ "Renda fixa": 100 });
     const response = await new PortfolioAllocationController().get("req-1");
     expect(await response.json()).toEqual({
       positions: [{ id: "position-1" }],
+      concentrations: {},
+      classDistribution: {},
       targetPercentages: { "Renda fixa": 100 },
     });
-    expect(service.getAllocation).toHaveBeenCalledWith("req-1");
+    expect(service.getAllocationOverview).toHaveBeenCalledWith("req-1");
   });
 
   it("accepts and forwards a complete user target allocation", async () => {

@@ -9,8 +9,36 @@ import {
 import { logger } from "@/infrastructure/logging/logger";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-target-values";
+import {
+  getPortfolioConcentration,
+  type ConcentrationDimension,
+} from "@/lib/portfolio-concentration";
 
 export class PortfolioAllocationService {
+  async getAllocationOverview(requestId?: string) {
+    const positions = await this.getAllocation(requestId);
+    const dimensions: ConcentrationDimension[] = [
+      "asset",
+      "assetClass",
+      "subClass",
+      "geography",
+    ];
+    const concentrations = Object.fromEntries(
+      dimensions.map((dimension) => [
+        dimension,
+        getPortfolioConcentration(positions, dimension),
+      ]),
+    ) as Record<
+      ConcentrationDimension,
+      ReturnType<typeof getPortfolioConcentration>
+    >;
+    return {
+      positions,
+      concentrations,
+      classDistribution: concentrations.assetClass,
+    };
+  }
+
   async getAllocation(requestId?: string) {
     const estimatedPositions =
       await portfolioPositionService.listCurrentEnriched(requestId);

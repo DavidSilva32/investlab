@@ -18,10 +18,16 @@ const isDiCdb = (position: {
     /^(DI|CDI)$/i.test(position.indexer ?? ""),
   );
 
+type CachedCdiRate = {
+  rateDate: string;
+  annualRate: string;
+  fetchedAt: Date;
+};
+
 const sortRates = <T extends { rateDate: string }>(rates: T[]) =>
   [...rates].sort((left, right) => left.rateDate.localeCompare(right.rateDate));
 
-export type CdbEstimateStatus = "official" | "provisional" | "unavailable";
+export type CdbEstimateStatus = "official" | "unavailable";
 
 const addDays = (date: string, days: number) => {
   const value = new Date(`${date}T00:00:00Z`);
@@ -34,27 +40,75 @@ const isWeekday = (date: string) => {
   return day > 0 && day < 6;
 };
 
+const easterSunday = (year: number) => {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const isBrazilCdiHoliday = (date: string) => {
+  const year = Number(date.slice(0, 4));
+  const easter = easterSunday(year);
+  const movable = new Set([
+    addDays(easter, -48), // Carnival Monday
+    addDays(easter, -47), // Carnival Tuesday
+    addDays(easter, -2), // Good Friday
+    addDays(easter, 60), // Corpus Christi
+  ]);
+  const fixed = new Set([
+    `${year}-01-01`,
+    `${year}-01-25`, // SÃ£o Paulo market holiday
+    `${year}-04-21`,
+    `${year}-05-01`,
+    `${year}-07-09`, // SÃ£o Paulo market holiday
+    `${year}-09-07`,
+    `${year}-10-12`,
+    `${year}-11-02`,
+    `${year}-11-15`,
+    `${year}-11-20`,
+    `${year}-12-25`,
+  ]);
+  return fixed.has(date) || movable.has(date);
+};
+
 const previousWeekday = (date: string) => {
   let previous = addDays(date, -1);
   while (!isWeekday(previous)) previous = addDays(previous, -1);
   return previous;
 };
 
-const missingWeekdaysAfter = (lastRateDate: string, today: string) => {
-  const missing: string[] = [];
+const missingWeekdaysAfter = (lastRateDate: string, valuationDate: string) => {
+  const dates: string[] = [];
   for (
     let date = addDays(lastRateDate, 1);
-    date < today;
+    date < valuationDate;
     date = addDays(date, 1)
   ) {
-    if (isWeekday(date)) missing.push(date);
+    if (isWeekday(date) && !isBrazilCdiHoliday(date)) dates.push(date);
   }
-  return missing;
+  return dates;
 };
+
 const logUnavailable = (phase: "configuration" | "rates" | "cache") =>
   logger.warn("cdb_estimates_unavailable", { phase });
 
 export class CdbEstimateService {
+  constructor(
+    private readonly getValuationDate: () => string = todayInSaoPaulo,
+  ) {}
+
   async enrich<
     T extends {
       product: string;
@@ -63,7 +117,8 @@ export class CdbEstimateService {
       totalValue: string | null;
       referenceDate?: string | null;
     },
-  >(positions: T[]) {
+  >(positions: T[], executionValuationDate?: string) {
+    const valuationDate = executionValuationDate ?? this.getValuationDate();
     const cdbs = positions.filter(isDiCdb);
     let configurations: Array<{ assetCode: string; cdiPercentage: string }>;
     try {
@@ -76,6 +131,7 @@ export class CdbEstimateService {
         ...position,
         cdiPercentage: null,
         estimatedValue: null,
+        estimatedValueCents: null,
       }));
     }
 
@@ -85,30 +141,34 @@ export class CdbEstimateService {
         configuration.cdiPercentage,
       ]),
     );
-    const today = todayInSaoPaulo();
     const eligible = positions.filter(
       (position) =>
         isDiCdb(position) &&
         Boolean(percentages.get(position.assetCode!)) &&
         Boolean(position.totalValue) &&
         Boolean(position.referenceDate) &&
-        position.referenceDate! < today,
+        position.referenceDate! < valuationDate,
     );
     const baseDates = [
       ...new Set(eligible.map((position) => position.referenceDate!)),
     ];
-    const cachedRatesByBaseDate = new Map<
-      string,
-      Array<{ rateDate: string; annualRate: string; fetchedAt: Date }>
-    >();
-
-    try {
+    const readCanonicalRates = async () => {
+      const ratesByBaseDate = new Map<string, CachedCdiRate[]>();
       await Promise.all(
         baseDates.map(async (baseDate) => {
-          const rates = await cdbRateRepository.listRatesFrom(baseDate, today);
-          cachedRatesByBaseDate.set(baseDate, sortRates(rates));
+          const rates = await cdbRateRepository.listRatesFrom(
+            baseDate,
+            valuationDate,
+          );
+          ratesByBaseDate.set(baseDate, sortRates(rates));
         }),
       );
+      return ratesByBaseDate;
+    };
+
+    let cachedRatesByBaseDate: Map<string, CachedCdiRate[]>;
+    try {
+      cachedRatesByBaseDate = await readCanonicalRates();
     } catch {
       logUnavailable("rates");
       return positions.map((position) => ({
@@ -117,164 +177,114 @@ export class CdbEstimateService {
           ? (percentages.get(position.assetCode) ?? null)
           : null,
         estimatedValue: null,
+        estimatedValueCents: null,
       }));
     }
 
-    const missingBaseDates = baseDates.filter((baseDate) => {
-      const lastCachedDate = cachedRatesByBaseDate
-        .get(baseDate)
-        ?.at(-1)?.rateDate;
-      return !lastCachedDate || lastCachedDate < today;
-    });
-    const unavailableBaseDates = new Set<string>();
-    let fetchedRates: Array<{ date: string; annualRate: string }> = [];
-    const provisionalRatesByBaseDate = new Map<
-      string,
-      { rateDate: string; annualRate: string; fetchedAt: Date }
-    >();
+    const missingRateDates = new Set(
+      baseDates.flatMap((baseDate) => {
+        const lastRateDate = cachedRatesByBaseDate
+          .get(baseDate)
+          ?.at(-1)?.rateDate;
+        return missingWeekdaysAfter(
+          lastRateDate ?? previousWeekday(baseDate),
+          valuationDate,
+        );
+      }),
+    );
 
-    if (missingBaseDates.length) {
-      const from = missingBaseDates
-        .map(
-          (baseDate) =>
-            cachedRatesByBaseDate.get(baseDate)?.at(-1)?.rateDate ??
-            previousWeekday(baseDate),
-        )
-        .sort()[0]!;
+    if (missingRateDates.size) {
+      const from = [...missingRateDates].sort()[0]!;
       try {
-        fetchedRates = await bcbCdiService.fetchRates(from, today);
+        const fetchedRates = await bcbCdiService.fetchRates(
+          from,
+          valuationDate,
+        );
+        const ratesToCache = Array.from(
+          new Map(
+            fetchedRates
+              .filter(
+                (rate) =>
+                  rate.date < valuationDate && missingRateDates.has(rate.date),
+              )
+              .map((rate) => [rate.date, rate]),
+          ).values(),
+        );
+        if (ratesToCache.length) {
+          try {
+            await cdbRateRepository.cacheRates(ratesToCache);
+          } catch {
+            logUnavailable("cache");
+          }
+        }
       } catch {
         logUnavailable("rates");
-        missingBaseDates.forEach((baseDate) => {
-          const lastRate = cachedRatesByBaseDate.get(baseDate)?.at(-1);
-          if (!lastRate) {
-            unavailableBaseDates.add(baseDate);
-            return;
-          }
-          const missingWeekdays = missingWeekdaysAfter(
-            lastRate.rateDate,
-            today,
-          );
-          if (missingWeekdays.length === 1) {
-            provisionalRatesByBaseDate.set(baseDate, {
-              rateDate: missingWeekdays[0]!,
-              annualRate: lastRate.annualRate,
-              fetchedAt: new Date(),
-            });
-            return;
-          }
-
-          unavailableBaseDates.add(baseDate);
-        });
       }
     }
 
-    if (fetchedRates.length) {
-      try {
-        await cdbRateRepository.cacheRates(fetchedRates);
-      } catch {
-        logUnavailable("cache");
-      }
+    try {
+      // Always calculate from the canonical persisted set, including after a concurrent insert.
+      cachedRatesByBaseDate = await readCanonicalRates();
+    } catch {
+      logUnavailable("rates");
+      return positions.map((position) => ({
+        ...position,
+        cdiPercentage: position.assetCode
+          ? (percentages.get(position.assetCode) ?? null)
+          : null,
+        estimatedValue: null,
+        estimatedValueCents: null,
+      }));
     }
-
-    missingBaseDates.forEach((baseDate) => {
-      if (unavailableBaseDates.has(baseDate)) return;
-      const confirmedRates = sortRates([
-        ...cachedRatesByBaseDate.get(baseDate)!,
-        ...fetchedRates
-          .filter((rate) => rate.date >= baseDate)
-          .map((rate) => ({
-            rateDate: rate.date,
-            annualRate: rate.annualRate,
-            fetchedAt: new Date(),
-          })),
-      ]);
-      const lastRate = confirmedRates.at(-1);
-      if (!lastRate) {
-        const seedDate = previousWeekday(baseDate);
-        const seedRate = fetchedRates.find((rate) => rate.date === seedDate);
-        const missingWeekdays = missingWeekdaysAfter(seedDate, today);
-        if (seedRate && missingWeekdays.length === 1) {
-          provisionalRatesByBaseDate.set(baseDate, {
-            rateDate: missingWeekdays[0]!,
-            annualRate: seedRate.annualRate,
-            fetchedAt: new Date(),
-          });
-          return;
-        }
-        unavailableBaseDates.add(baseDate);
-        return;
-      }
-      const missingWeekdays = missingWeekdaysAfter(lastRate.rateDate, today);
-      if (missingWeekdays.length === 1) {
-        if (!provisionalRatesByBaseDate.has(baseDate)) {
-          provisionalRatesByBaseDate.set(baseDate, {
-            rateDate: missingWeekdays[0]!,
-            annualRate: lastRate.annualRate,
-            fetchedAt: new Date(),
-          });
-        }
-        return;
-      }
-      if (missingWeekdays.length > 1) unavailableBaseDates.add(baseDate);
-    });
 
     return positions.map((position) => {
       const cdiPercentage = position.assetCode
         ? (percentages.get(position.assetCode) ?? null)
         : null;
+      const referenceDate = position.referenceDate;
       if (
         !isDiCdb(position) ||
         !cdiPercentage ||
         !position.totalValue ||
-        !position.referenceDate ||
-        position.referenceDate >= today ||
-        unavailableBaseDates.has(position.referenceDate)
+        !referenceDate ||
+        referenceDate >= valuationDate
       )
         return {
           ...position,
           cdiPercentage,
           estimatedValue: null,
-          cdbEstimateStatus:
-            isDiCdb(position) && cdiPercentage && position.totalValue
-              ? ("unavailable" as const)
-              : null,
+          estimatedValueCents: null,
+          cdbEstimateStatus: null,
         };
 
-      const rates = [
-        ...cachedRatesByBaseDate.get(position.referenceDate)!,
-        ...fetchedRates
-          .filter((rate) => rate.date >= position.referenceDate!)
-          .map((rate) => ({
-            rateDate: rate.date,
-            annualRate: rate.annualRate,
-            fetchedAt: new Date(),
-          })),
-        ...(provisionalRatesByBaseDate.get(position.referenceDate)
-          ? [provisionalRatesByBaseDate.get(position.referenceDate)!]
-          : []),
-      ];
-      const uniqueRates = Array.from(
-        new Map(sortRates(rates).map((rate) => [rate.rateDate, rate])).values(),
+      const rates = cachedRatesByBaseDate.get(referenceDate) ?? [];
+      const missingDates = missingWeekdaysAfter(
+        rates.at(-1)?.rateDate ?? previousWeekday(referenceDate),
+        valuationDate,
       );
-
-      try {
-        // Eligible positions reach this point with confirmed or provisional rates.
-        const lastRate = uniqueRates.at(-1)!;
+      if (missingDates.length) {
         return {
           ...position,
           cdiPercentage,
-          estimatedValue: estimatePostFixedCdb({
-            officialValue: position.totalValue,
-            cdiPercentage,
-            rates: uniqueRates,
-          }),
-          estimatedThrough: lastRate.rateDate,
-          cdbEstimateStatus:
-            provisionalRatesByBaseDate.has(position.referenceDate) ||
-            missingWeekdaysAfter(lastRate.rateDate, today).length
-              ? ("provisional" as const)
-              : ("official" as const),
+          estimatedValue: null,
+          estimatedValueCents: null,
+          cdbEstimateStatus: "unavailable" as const,
+        };
+      }
+
+      try {
+        const estimate = estimatePostFixedCdb({
+          officialValue: position.totalValue,
+          cdiPercentage,
+          rates,
+        });
+        const lastRate = rates.at(-1);
+        return {
+          ...position,
+          cdiPercentage,
+          ...estimate,
+          ...(lastRate ? { estimatedThrough: lastRate.rateDate } : {}),
+          cdbEstimateStatus: "official" as const,
         };
       } catch {
         logUnavailable("rates");
@@ -282,6 +292,7 @@ export class CdbEstimateService {
           ...position,
           cdiPercentage,
           estimatedValue: null,
+          estimatedValueCents: null,
           cdbEstimateStatus: "unavailable" as const,
         };
       }

@@ -184,4 +184,28 @@ describe("getPortfolioConcentration", () => {
       groups: [{ percentage: 0 }],
     });
   });
+
+  it("prepares the class chart remainder from exact canonical cents", () => {
+    const manyPositions = Array.from({ length: 7 }, (_, index) => ({
+      ...positions[0],
+      id: `chart-${index}`,
+      canonicalValueCents: String((7 - index) * 100),
+      totalValue: null,
+      estimatedValue: null,
+      classification: {
+        assetClass: `Classe ${index + 1}`,
+        subClass: null,
+        geography: null,
+      },
+    }));
+
+    const result = getPortfolioConcentration(manyPositions, "assetClass");
+
+    expect(result.chartGroups).toHaveLength(6);
+    expect(result.chartGroups.at(-1)).toEqual({
+      label: "Demais classes",
+      value: 3,
+      percentage: expect.closeTo((300 / 2800) * 100),
+    });
+  });
 });

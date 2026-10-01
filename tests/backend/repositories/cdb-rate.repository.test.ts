@@ -66,4 +66,20 @@ describe("CdbRateRepository", () => {
     await repository.cacheRates([]);
     expect(client.insert).not.toHaveBeenCalled();
   });
+
+  it("uses the date primary-key conflict rule for simultaneous cache fills", async () => {
+    const doNothing = vi.fn().mockResolvedValue(undefined);
+    client.insert.mockImplementation(() => ({
+      values: () => ({ onConflictDoNothing: doNothing }),
+    }));
+    const sameRate = [{ date: "2026-09-17", annualRate: "14.9" }];
+
+    await Promise.all([
+      repository.cacheRates(sameRate),
+      repository.cacheRates([{ date: "2026-09-17", annualRate: "15.4" }]),
+    ]);
+
+    expect(doNothing).toHaveBeenCalledTimes(2);
+    expect(client.insert).toHaveBeenCalledTimes(2);
+  });
 });

@@ -75,6 +75,24 @@ describe("PortfolioObjectivesService", () => {
     mocks.create.mockResolvedValue(customObjective);
   });
 
+  it("uses canonical cents for unassigned objective totals", async () => {
+    mocks.listCurrentEnriched.mockResolvedValue([
+      imported({
+        canonicalValueCents: "12345",
+        canonicalValueSource: "CDB_ESTIMATE",
+      }),
+    ]);
+
+    const result = await new PortfolioObjectivesService().getOverview();
+
+    expect(result.unassignedKnownValue).toBe(123.45);
+    expect(result.unassignedKnownValueCents).toBe("12345");
+    expect(result.positions[0]).toMatchObject({
+      value: 123.45,
+      valueCents: "12345",
+    });
+  });
+
   it("builds objective progress from current position values and reports unassigned wealth", async () => {
     const first = imported();
     const duplicate = imported({ totalValue: "50" });

@@ -15,6 +15,13 @@ import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 import { logger } from "@/infrastructure/logging/logger";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import {
+  centsToNumber,
+  resolvePositionMoney,
+  sumMoneyCents,
+  type PortfolioMoneySource,
+} from "@/lib/portfolio-money";
+import { withCanonicalPortfolioValue } from "@/backend/services/portfolio-position.service";
 
 const suggestionSchema = z.object({
   targetAmount: z.number().finite().positive().max(1_000_000_000_000),
@@ -42,6 +49,11 @@ const settingsSchema = z.object({
     .max(500)
     .default([]),
 });
+const previewSchema = z.object({
+  monthlyExpenses: z.number().finite().positive().max(1_000_000_000_000),
+  targetMonths: z.number().int().min(1).max(1200),
+  selectedAssetKeys: z.array(z.string().regex(/^v1:[a-f0-9]{64}$/)).max(500),
+});
 
 type Position = {
   product: string;
@@ -55,6 +67,9 @@ type Position = {
   totalValue: string | null;
   referenceDate?: string | null;
   estimatedValue?: number | null;
+  estimatedValueCents?: string | null;
+  canonicalValueCents?: string | null;
+  canonicalValueSource?: PortfolioMoneySource;
   classification?: { assetClass: string | null };
 };
 
@@ -84,13 +99,45 @@ function isReserveFixedIncomePosition(position: Position) {
 }
 
 function getPositionValue(position: Position) {
-  const value =
-    position.estimatedValue ??
-    (position.totalValue === null ? null : Number(position.totalValue));
-  return value !== null && Number.isFinite(value) ? value : null;
+  if (position.canonicalValueCents !== undefined) {
+    return position.canonicalValueCents === null
+      ? null
+      : BigInt(position.canonicalValueCents);
+  }
+  return resolvePositionMoney(position).cents;
 }
 
 export class EmergencyReserveService {
+  async preview(body: unknown, requestId?: string) {
+    const parsed = previewSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApplicationError(
+        "Revise os valores da configuração da reserva.",
+        400,
+      );
+    }
+    const data = await this.getEditorData(requestId);
+    const selected = new Set(parsed.data.selectedAssetKeys);
+    const holdings = data.holdings.filter((holding) =>
+      selected.has(holding.assetKey),
+    );
+    const selectedValueCents = sumMoneyCents(
+      holdings.map((holding) =>
+        holding.valueCents === null ? null : BigInt(holding.valueCents),
+      ),
+    );
+    return calculateEmergencyReserve({
+      monthlyExpenses: parsed.data.monthlyExpenses,
+      targetMonths: parsed.data.targetMonths,
+      selectedValue: centsToNumber(selectedValueCents) ?? 0,
+      selectedValueCents: selectedValueCents.toString(),
+      selectedGroups: holdings.length,
+      unvaluedGroups: holdings.filter((holding) => holding.valueCents === null)
+        .length,
+      referenceDate: data.calculation.referenceDate,
+    });
+  }
+
   async getEditorData(requestId?: string) {
     logger.info("emergency_reserve_editor_loading", { requestId });
     const [rawPositions, settings, objectives] = await Promise.all([
@@ -100,10 +147,11 @@ export class EmergencyReserveService {
     ]);
     const estimatedPositions = await cdbEstimateService.enrich(rawPositions);
     const normalizedPositions: Position[] = estimatedPositions.map(
-      (position): Position => ({
-        ...position,
-        estimatedValue: position.estimatedValue ?? null,
-      }),
+      (position): Position =>
+        withCanonicalPortfolioValue({
+          ...position,
+          estimatedValue: position.estimatedValue ?? null,
+        }),
     );
     const positions = await portfolioAllocationService.classifyPositions(
       normalizedPositions,
@@ -185,10 +233,11 @@ export class EmergencyReserveService {
     const rawPositions = await importRepository.listLatestPositions(requestId);
     const estimatedPositions = await cdbEstimateService.enrich(rawPositions);
     const normalizedPositions: Position[] = estimatedPositions.map(
-      (position): Position => ({
-        ...position,
-        estimatedValue: position.estimatedValue ?? null,
-      }),
+      (position): Position =>
+        withCanonicalPortfolioValue({
+          ...position,
+          estimatedValue: position.estimatedValue ?? null,
+        }),
     );
     const positions = await portfolioAllocationService.classifyPositions(
       normalizedPositions,
@@ -513,21 +562,22 @@ export class EmergencyReserveService {
         maturityAt: string | null;
         positionCount: number;
         unvaluedPositions: number;
-        value: number;
+        valueCents: bigint;
         hasValue: boolean;
+        valueSource: PortfolioMoneySource;
       }
     >();
 
     const fixedIncomePositions = positions.filter(isReserveFixedIncomePosition);
     for (const position of fixedIncomePositions) {
       const assetKey = getEmergencyReserveAssetKey(position);
-      const value = getPositionValue(position);
+      const valueCents = getPositionValue(position);
       const existing = groups.get(assetKey);
       if (existing) {
         existing.positionCount += 1;
-        if (value === null) existing.unvaluedPositions += 1;
+        if (valueCents === null) existing.unvaluedPositions += 1;
         else {
-          existing.value += value;
+          existing.valueCents += valueCents;
           existing.hasValue = true;
         }
         continue;
@@ -541,9 +591,12 @@ export class EmergencyReserveService {
         indexer: position.indexer,
         maturityAt: position.maturityAt,
         positionCount: 1,
-        unvaluedPositions: value === null ? 1 : 0,
-        value: value ?? 0,
-        hasValue: value !== null,
+        unvaluedPositions: valueCents === null ? 1 : 0,
+        valueCents: valueCents ?? 0n,
+        hasValue: valueCents !== null,
+        valueSource:
+          position.canonicalValueSource ??
+          resolvePositionMoney(position).source,
       });
     }
 
@@ -551,7 +604,8 @@ export class EmergencyReserveService {
     const holdings = [...groups.values()]
       .map((group) => ({
         ...group,
-        value: group.hasValue ? group.value : null,
+        valueCents: group.hasValue ? group.valueCents.toString() : null,
+        value: group.hasValue ? centsToNumber(group.valueCents) : null,
         selected: selected.has(group.assetKey),
         assignedObjectiveId: ownerByAssetKey.get(group.assetKey)?.id ?? null,
         assignedObjectiveName:
@@ -561,9 +615,10 @@ export class EmergencyReserveService {
         left.product.localeCompare(right.product, "pt-BR"),
       );
     const selectedHoldings = holdings.filter((holding) => holding.selected);
-    const selectedValue = selectedHoldings.reduce(
-      (total, holding) => total + (holding.value ?? 0),
-      0,
+    const selectedValueCents = sumMoneyCents(
+      selectedHoldings.map((holding) =>
+        holding.valueCents === null ? null : BigInt(holding.valueCents),
+      ),
     );
     const selectedPositionCount = selectedHoldings.reduce(
       (total, holding) => total + holding.positionCount,
@@ -580,7 +635,8 @@ export class EmergencyReserveService {
     const calculation = calculateEmergencyReserve({
       monthlyExpenses,
       targetMonths: settings.targetMonths,
-      selectedValue,
+      selectedValue: centsToNumber(selectedValueCents) ?? 0,
+      selectedValueCents: selectedValueCents.toString(),
       selectedGroups: selectedHoldings.length,
       unvaluedGroups,
       referenceDate,

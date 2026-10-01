@@ -51,3 +51,15 @@ export async function PUT(request: Request) {
     return failure(error, requestId, "save");
   }
 }
+
+export async function PATCH(request: Request) {
+  const requestId = request.headers.get("x-request-id") ?? randomUUID();
+  try {
+    return await emergencyReserveController.preview(
+      await request.json(),
+      requestId,
+    );
+  } catch (error) {
+    return failure(error, requestId, "read");
+  }
+}

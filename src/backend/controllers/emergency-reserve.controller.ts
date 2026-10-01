@@ -2,6 +2,12 @@ import { emergencyReserveService } from "@/backend/services/emergency-reserve.se
 import { logger } from "@/infrastructure/logging/logger";
 
 export class EmergencyReserveController {
+  async preview(body: unknown, requestId: string) {
+    return Response.json(
+      await emergencyReserveService.preview(body, requestId),
+    );
+  }
+
   async get(requestId: string) {
     logger.info("emergency_reserve_requested", { requestId });
     const data = await emergencyReserveService.getEditorData(requestId);

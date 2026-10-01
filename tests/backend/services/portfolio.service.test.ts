@@ -41,8 +41,8 @@ describe("PortfolioService", () => {
     portfolioPositions.listCurrent.mockImplementation((requestId) =>
       repository.listLatestPositions(requestId),
     );
-    portfolioPositions.enrichImportedPositions.mockImplementation((positions) =>
-      estimates.enrich(positions),
+    portfolioPositions.enrichImportedPositions.mockImplementation(
+      (positions, valuationDate) => estimates.enrich(positions, valuationDate),
     );
   });
   it("loads positions and estimates once, then shares them for allocation, reserve and guidance", async () => {
@@ -78,7 +78,10 @@ describe("PortfolioService", () => {
       nextContributionGuidance: { status: "no_gap" },
     });
     expect(repository.listLatestPositions).toHaveBeenCalledTimes(1);
-    expect(estimates.enrich).toHaveBeenCalledWith(rawPositions);
+    const valuationDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date());
+    expect(estimates.enrich).toHaveBeenCalledWith(rawPositions, valuationDate);
     expect(allocation.classifyPositions).toHaveBeenCalledWith(
       estimated,
       "request-1",
@@ -129,7 +132,10 @@ describe("PortfolioService", () => {
       else expect(result.emergencyReserve).toBeUndefined();
       if (failedLookup === "classification")
         expect(reserve.getSummary).not.toHaveBeenCalled();
-      expect(estimates.enrich).toHaveBeenCalledWith([{ id: "p1" }]);
+      expect(estimates.enrich).toHaveBeenCalledWith(
+        [{ id: "p1" }],
+        result.valuationDate,
+      );
     },
   );
 });
