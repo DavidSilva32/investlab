@@ -4,6 +4,7 @@ import {
   fireEvent,
   render as rtlRender,
   screen,
+  within,
 } from "@testing-library/react";
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
@@ -99,6 +100,7 @@ const positions: ObjectivePosition[] = [
     estimationBaseDate: "2026-09-16",
     estimatedThrough: "2026-09-19",
     cdbEstimateStatus: "complete",
+    cdbEstimateComparisonApproximate: true,
   },
   {
     assetKey: "already-used",
@@ -194,15 +196,20 @@ describe("PortfolioObjectiveAssignment", () => {
       screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
     ).toBeTruthy();
     expect(screen.getByText("Origem: UNRECOGNIZED_PROVIDER")).toBeTruthy();
-    expect(screen.getByText("Estimativa até 19/09/2026")).toBeTruthy();
+    expect(
+      screen.getByText("Estimativa aproximada até 19/09/2026"),
+    ).toBeTruthy();
     expect(
       screen
         .getByRole("checkbox", { name: /CDB reservado/ })
         .hasAttribute("disabled"),
     ).toBe(true);
-    fireEvent.change(screen.getByLabelText("Valor desejado"), {
-      target: { value: "R$ 100,00" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Saldo atual do objetivo no banco"),
+      {
+        target: { value: "R$ 100,00" },
+      },
+    );
     await user.click(
       screen.getByRole("button", { name: "Buscar combinações" }),
     );
@@ -211,17 +218,18 @@ describe("PortfolioObjectiveAssignment", () => {
       "/api/portfolio/objectives/suggestions",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ targetAmount: 100, instrumentType: "ALL" }),
+        body: expect.any(String),
       }),
     );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      targetAmount: 100,
+      instrumentType: "ALL",
+      objectiveId: "trip",
+      valuationDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    });
     await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
     await user.click(screen.getByRole("button", { name: "Pré-selecionar 1" }));
     expect(onSave).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(
-        "Pré-selecionar substitui a seleção atual nesta revisão; nada muda até Salvar posições. O filtro apenas limita a busca.",
-      ),
-    ).toBeTruthy();
     expect(
       screen
         .getByRole("checkbox", { name: /CDB já vinculado à Viagem/ })
@@ -234,6 +242,238 @@ describe("PortfolioObjectiveAssignment", () => {
     ).toBe("true");
     await user.click(screen.getByRole("button", { name: "Salvar posições" }));
     expect(onSave).toHaveBeenCalledWith("trip", ["cdb-free"]);
+  });
+
+  it("labels a same-date complete estimate without the approximate qualifier", () => {
+    render(
+      <PortfolioObjectiveAssignment
+        objectives={goals}
+        positions={[
+          ...positions,
+          {
+            ...positions[2],
+            assetKey: "same-date-estimate",
+            product: "CDB com avaliação na data informada",
+            cdbEstimateComparisonApproximate: false,
+          },
+        ]}
+        preferredObjectiveId="trip"
+        saving={false}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Estimativa até 19/09/2026")).toBeTruthy();
+  });
+
+  it("requires confirmation to transfer a candidate from another objective and leaves it unchanged on cancel", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "suggestions",
+          kind: "exact",
+          valuationDate: "2026-09-30",
+          candidates: [
+            {
+              assetKeys: ["owned-position"],
+              total: 100,
+              difference: 0,
+              positions: [
+                {
+                  assetKey: "owned-position",
+                  product: "CDB de Casa",
+                  institution: "Banco",
+                  value: 100,
+                  valueCents: "10000",
+                  estimatedThrough: "2026-09-29",
+                  cdbEstimateStatus: "provisional",
+                },
+              ],
+              transfers: [
+                {
+                  assetKey: "owned-position",
+                  product: "CDB de Casa",
+                  value: 100,
+                  fromObjectiveId: "home",
+                  fromObjectiveName: "Casa",
+                  toObjectiveId: "trip",
+                },
+              ],
+              impacts: [
+                {
+                  objectiveId: "home",
+                  objectiveName: "Casa",
+                  currentValue: 0,
+                  knownValue: 0,
+                  targetAmount: 500,
+                  progressPercent: 0,
+                  transferredValue: 100,
+                  transferredPositionCount: 1,
+                },
+                {
+                  objectiveId: "trip",
+                  objectiveName: "Viagem",
+                  currentValue: 100,
+                  knownValue: 100,
+                  targetAmount: 1000,
+                  progressPercent: 10,
+                  transferredValue: 100,
+                  transferredPositionCount: 1,
+                },
+                {
+                  objectiveId: "goal-no-value",
+                  objectiveName: "Casa sem meta",
+                  currentValue: null,
+                  knownValue: 0,
+                  targetAmount: null,
+                  progressPercent: null,
+                  transferredValue: 0,
+                  transferredPositionCount: 0,
+                },
+              ],
+            },
+          ],
+          searchLimited: false,
+          alternativesLimited: false,
+        }),
+      }),
+    );
+    const ownedPosition = {
+      ...positions[0],
+      assetKey: "owned-position",
+      product: "CDB de Casa",
+      objectiveId: "home",
+      objectiveName: "Casa",
+    };
+    render(
+      <PortfolioObjectiveAssignment
+        objectives={goals}
+        positions={[...positions, ownedPosition]}
+        preferredObjectiveId="trip"
+        saving={false}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Saldo atual do objetivo no banco"),
+      {
+        target: { value: "R$ 100,00" },
+      },
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Buscar combinações" }),
+    );
+    await screen.findByText(/Data informada: 30\/09\/2026/);
+    await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
+    await user.click(screen.getByRole("button", { name: "Usar e transferir" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(screen.getByText(/De Casa para Viagem/)).toBeTruthy();
+    expect(within(dialog).getByText(/Casa:.*0,00/)).toBeTruthy();
+    expect(
+      within(dialog).getByText(/Casa sem meta: total indisponível/),
+    ).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Usar e transferir" }));
+    const restoredDialog = await screen.findByRole("alertdialog");
+    await user.click(
+      within(restoredDialog).getByRole("button", { name: "Usar e transferir" }),
+    );
+    expect(onSave).toHaveBeenCalledWith(
+      "trip",
+      ["owned-position"],
+      [
+        expect.objectContaining({
+          fromObjectiveId: "home",
+          toObjectiveId: "trip",
+        }),
+      ],
+    );
+  });
+
+  it("opens transfer confirmation safely when the API omits optional impacts", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "suggestions",
+          kind: "exact",
+          valuationDate: "2026-09-30",
+          candidates: [
+            {
+              assetKeys: ["owned-without-impacts"],
+              total: 100,
+              difference: 0,
+              positions: [
+                {
+                  assetKey: "owned-without-impacts",
+                  product: "CDB de Casa",
+                  institution: "Banco",
+                  value: 100,
+                  valueCents: "10000",
+                },
+              ],
+              transfers: [
+                {
+                  assetKey: "owned-without-impacts",
+                  product: "CDB de Casa",
+                  value: 100,
+                  fromObjectiveId: "home",
+                  fromObjectiveName: "Casa",
+                  toObjectiveId: "trip",
+                },
+              ],
+            },
+          ],
+          searchLimited: false,
+          alternativesLimited: false,
+        }),
+      }),
+    );
+    render(
+      <PortfolioObjectiveAssignment
+        objectives={goals}
+        positions={[
+          ...positions,
+          {
+            ...positions[0],
+            assetKey: "owned-without-impacts",
+            product: "CDB de Casa",
+            objectiveId: "home",
+            objectiveName: "Casa",
+          },
+        ]}
+        preferredObjectiveId="trip"
+        saving={false}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Saldo atual do objetivo no banco"),
+      {
+        target: { value: "R$ 100,00" },
+      },
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Buscar combinações" }),
+    );
+    await screen.findByText(/Data informada: 30\/09\/2026/);
+    await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
+    await user.click(screen.getByRole("button", { name: "Usar e transferir" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(screen.getByText(/De Casa para Viagem/)).toBeTruthy();
+    expect(within(dialog).queryByText(/agora possui/)).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("sends the instrument filter only as a search parameter and reports an invalid target", async () => {
@@ -256,9 +496,12 @@ describe("PortfolioObjectiveAssignment", () => {
       "Informe um valor maior que zero para comparar as posições.",
     );
     expect(fetchMock).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("Valor desejado"), {
-      target: { value: "R$ 100,00" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Saldo atual do objetivo no banco"),
+      {
+        target: { value: "R$ 100,00" },
+      },
+    );
     await user.click(
       screen.getByRole("combobox", { name: "Filtrar por instrumento" }),
     );
@@ -271,9 +514,15 @@ describe("PortfolioObjectiveAssignment", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/portfolio/objectives/suggestions",
       expect.objectContaining({
-        body: JSON.stringify({ targetAmount: 100, instrumentType: "CDB" }),
+        body: expect.any(String),
       }),
     );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      targetAmount: 100,
+      instrumentType: "CDB",
+      objectiveId: "trip",
+      valuationDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    });
   });
 
   it("toggles candidate positions in the pending selection before saving", async () => {

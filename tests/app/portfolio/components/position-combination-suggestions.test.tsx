@@ -13,6 +13,7 @@ const toast = vi.hoisted(() => ({ error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
+import { todayInSaoPaulo } from "@/lib/valuation-date";
 
 const holdings = [
   {
@@ -120,7 +121,10 @@ describe("PositionCombinationSuggestions", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetAmount: 47274.91 }),
+        body: JSON.stringify({
+          targetAmount: 47274.91,
+          valuationDate: todayInSaoPaulo(),
+        }),
       },
     );
 
@@ -132,7 +136,9 @@ describe("PositionCombinationSuggestions", () => {
     expect(screen.getByText("CDB Inter daily liquidity")).toBeTruthy();
     expect(screen.getByText("Data-base CURVA não confirmada.")).toBeTruthy();
     expect(screen.getByText("Origem: UNRECOGNIZED_PROVIDER")).toBeTruthy();
-    expect(screen.getAllByText("Estimativa até 18/09/2026")).toHaveLength(1);
+    expect(
+      screen.getAllByText("Estimativa aproximada até 18/09/2026"),
+    ).toHaveLength(1);
     expect(
       screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
     ).toBeTruthy();
@@ -189,6 +195,150 @@ describe("PositionCombinationSuggestions", () => {
     ).toContain("1.000,00");
     expect(screen.queryByText("CDB Inter daily liquidity")).toBeNull();
     expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("sends the editable Sao Paulo comparison date and displays the evaluated position date", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "suggestions",
+        kind: "nearest",
+        valuationDate: "2026-09-30",
+        candidates: [
+          {
+            assetKeys: ["inter-box"],
+            total: 30_000,
+            difference: 100,
+            positions: [
+              {
+                ...holdings[0],
+                value: 30_000,
+                valueCents: "3000000",
+                estimatedThrough: "2026-09-29",
+                cdbEstimateStatus: "complete",
+                cdbEstimateComparisonApproximate: true,
+              },
+            ],
+          },
+        ],
+        searchLimited: false,
+        alternativesLimited: false,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Saldo atual da reserva"
+        holdings={holdings}
+        onApply={vi.fn()}
+      />,
+    );
+    await user.type(screen.getByLabelText("Saldo atual da reserva"), "3000000");
+    const dateInput = screen.getByLabelText("Data consultada no banco");
+    await user.clear(dateInput);
+    await user.type(dateInput, "30/09/2026");
+    await user.click(
+      screen.getByRole("button", { name: "Buscar combinações" }),
+    );
+
+    await screen.findByText(/Data informada: 30\/09\/2026/);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toMatchObject({
+      targetAmount: 30_000,
+      valuationDate: "2026-09-30",
+    });
+    await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
+    const valuationDetails = screen.getAllByText(/29\/09\/2026/);
+    expect(
+      valuationDetails.some((detail) =>
+        /aproximada/.test(detail.textContent ?? ""),
+      ),
+    ).toBe(true);
+  });
+
+  it("marks an imported reference value as approximate when no CDI estimate is available", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "suggestions",
+          kind: "nearest",
+          valuationDate: "2026-09-30",
+          candidates: [
+            {
+              assetKeys: ["inter-named"],
+              total: 17_250.9,
+              difference: 50,
+              positions: [
+                {
+                  ...holdings[1],
+                  valueCents: "1725090",
+                  canonicalValueSource: "B3_IMPORTED",
+                  referenceDate: "2026-09-29",
+                },
+              ],
+            },
+          ],
+          searchLimited: false,
+          alternativesLimited: false,
+        }),
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Saldo atual"
+        holdings={holdings}
+        onApply={vi.fn()}
+      />,
+    );
+    await user.type(screen.getByLabelText("Saldo atual"), "1725090");
+    await user.click(
+      screen.getByRole("button", { name: "Buscar combinações" }),
+    );
+    await screen.findByText(/Data informada: 30\/09\/2026/);
+    await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
+    expect(
+      screen.getByText(
+        /Comparação aproximada: valor importado com referência B3 de 29\/09\/2026/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not send a search for a comparison date in the future", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="Digite o valor para comparar."
+        amountLabel="Saldo atual"
+        holdings={holdings}
+        onApply={vi.fn()}
+      />,
+    );
+    await user.type(screen.getByLabelText("Saldo atual"), "3000000");
+    const dateInput = screen.getByLabelText("Data consultada no banco");
+    await user.clear(dateInput);
+    await user.type(dateInput, "31/12/2099");
+    await user.click(
+      screen.getByRole("button", { name: "Buscar combinações" }),
+    );
+
+    expect(
+      await screen.findByRole("alert").then((alert) => alert.textContent),
+    ).toContain("igual ou anterior a hoje");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("shows known objective value when transfer progress is unavailable", async () => {

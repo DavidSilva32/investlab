@@ -52,6 +52,7 @@ type Holding = {
   valueSource?: string;
   estimationBaseDate?: string | null;
   estimatedThrough?: string | null;
+  cdbEstimateComparisonApproximate?: boolean | null;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
   selected: boolean;
@@ -536,7 +537,7 @@ export function EmergencyReserveEditor() {
                 endpoint="/api/emergency-reserve/suggestions"
                 title="Encontrar grupos pelo valor"
                 description="Digite os números do saldo conhecido; os centavos são preenchidos automaticamente."
-                amountLabel="Valor conhecido da reserva"
+                amountLabel="Saldo atual da Reserva no banco"
                 comparisonDetails="Compara o total com valores atuais: estimativa de CDB DI/CDI quando disponível ou valor importado. Não identifica finalidade, titularidade, liquidez ou condições de resgate."
                 requestBody={{
                   reserveTargetAmount: hasValidReserveTarget
@@ -735,11 +736,11 @@ export function EmergencyReserveEditor() {
                                 )}
                                 {holding.estimatedThrough && (
                                   <span className="block text-xs text-muted-foreground">
-                                    Estimativa{" "}
-                                    {holding.cdbEstimateStatus === "provisional"
-                                      ? "parcial "
-                                      : ""}
-                                    até{" "}
+                                    {holding.cdbEstimateStatus ===
+                                      "provisional" ||
+                                    holding.cdbEstimateComparisonApproximate
+                                      ? "Estimativa aproximada até "
+                                      : "Estimativa até "}
                                     {date.format(
                                       new Date(
                                         `${holding.estimatedThrough}T00:00:00Z`,

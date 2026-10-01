@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   getObjective: vi.fn(),
   replaceAssignments: vi.fn(),
+  replaceAssignmentsWithTransfers: vi.fn(),
 }));
 
 vi.mock("@/backend/services/portfolio-position.service", () => ({
@@ -29,6 +30,7 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
     delete: mocks.delete,
     getObjective: mocks.getObjective,
     replaceAssignments: mocks.replaceAssignments,
+    replaceAssignmentsWithTransfers: mocks.replaceAssignmentsWithTransfers,
   },
 }));
 
@@ -73,6 +75,26 @@ describe("PortfolioObjectivesService", () => {
     mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
     mocks.getObjective.mockResolvedValue(customObjective);
     mocks.create.mockResolvedValue(customObjective);
+    mocks.replaceAssignmentsWithTransfers.mockResolvedValue(undefined);
+  });
+
+  it("builds the overview from a supplied evaluated position snapshot", async () => {
+    const evaluatedPositions = [
+      imported({ canonicalValueCents: "12345", estimatedValue: 123.45 }),
+    ];
+
+    const result = await new PortfolioObjectivesService().getOverview(
+      "request-1",
+      "2026-09-30",
+      evaluatedPositions,
+    );
+
+    expect(result.positions[0]).toMatchObject({
+      value: 123.45,
+      valueCents: "12345",
+    });
+    expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
+    expect(mocks.classifyPositions).not.toHaveBeenCalled();
   });
 
   it("uses canonical cents for unassigned objective totals", async () => {
@@ -279,6 +301,28 @@ describe("PortfolioObjectivesService", () => {
       cdbEstimateLimitation: "Data-base CURVA não confirmada.",
     });
     expect(result.unassignedKnownValue).toBe(300);
+  });
+
+  it("clears grouped comparison metadata when lots have different approximation states", async () => {
+    const first = imported({
+      cdbEstimateComparisonApproximate: true,
+      estimatedThrough: "2026-09-18",
+    });
+    const second = imported({
+      totalValue: "125",
+      cdbEstimateComparisonApproximate: false,
+      estimatedThrough: "2026-09-19",
+    });
+    mocks.listCurrentEnriched.mockResolvedValue([first, second]);
+
+    const result = await new PortfolioObjectivesService().getOverview();
+
+    expect(result.positions).toHaveLength(1);
+    expect(result.positions[0]).toMatchObject({
+      positionCount: 2,
+      cdbEstimateComparisonApproximate: null,
+      estimatedThrough: null,
+    });
   });
 
   it("retains the known subtotal when an unvalued lot precedes a valued lot", async () => {
@@ -607,7 +651,7 @@ describe("PortfolioObjectivesService", () => {
         targetAmount: 100,
         instrumentType: "ALL",
       }),
-    ).resolves.toEqual({ status: "no_valued_positions" });
+    ).resolves.toMatchObject({ status: "no_valued_positions" });
 
     const missingId = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
     mocks.getObjective.mockResolvedValueOnce(null);
@@ -649,6 +693,101 @@ describe("PortfolioObjectivesService", () => {
     await expect(
       service.delete(missingId, { objectiveId: missingId }),
     ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("includes owned positions as explicit transfer candidates using the requested valuation date", async () => {
+    const targetPosition = imported({
+      assetCode: "TARGET",
+      totalValue: "30.00",
+      canonicalValueCents: "3000",
+    });
+    const freePosition = imported({
+      assetCode: "FREE",
+      totalValue: "10.00",
+      canonicalValueCents: "1000",
+    });
+    const sourcePosition = imported({
+      assetCode: "SOURCE",
+      totalValue: "60.00",
+      canonicalValueCents: "6000",
+    });
+    const sourceRemainder = imported({
+      assetCode: "SOURCE-REMAINDER",
+      totalValue: "30.00",
+      canonicalValueCents: "3000",
+    });
+    const targetKey = getEmergencyReserveAssetKey(targetPosition);
+    const sourceKey = getEmergencyReserveAssetKey(sourcePosition);
+    mocks.listCurrentEnriched.mockResolvedValue([
+      targetPosition,
+      freePosition,
+      sourcePosition,
+      sourceRemainder,
+    ]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: "objective-home", name: "Casa" },
+      ],
+      assignments: [
+        { objectiveId: customObjective.id, assetKey: targetKey },
+        { objectiveId: "objective-home", assetKey: sourceKey },
+        {
+          objectiveId: "objective-home",
+          assetKey: getEmergencyReserveAssetKey(sourceRemainder),
+        },
+      ],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 90,
+        objectiveId: customObjective.id,
+        valuationDate: "2026-09-30",
+      });
+
+    expect(mocks.listCurrentEnriched).toHaveBeenCalledWith(
+      undefined,
+      "2026-09-30",
+    );
+    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    const transferred = result.candidates.find(
+      (candidate) =>
+        candidate.assetKeys.includes(targetKey) &&
+        candidate.transfers?.some(
+          (transfer) => transfer.assetKey === sourceKey,
+        ),
+    );
+    expect(transferred?.assetKeys).toEqual(
+      expect.arrayContaining([targetKey, sourceKey]),
+    );
+    expect(transferred?.transfers).toEqual([
+      expect.objectContaining({
+        assetKey: sourceKey,
+        fromObjectiveId: "objective-home",
+        fromObjectiveName: "Casa",
+        toObjectiveId: customObjective.id,
+      }),
+    ]);
+    expect(transferred?.impacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          objectiveId: "objective-home",
+          currentValue: 30,
+          knownValue: 30,
+        }),
+        expect.objectContaining({
+          objectiveId: customObjective.id,
+          currentValue: 90,
+        }),
+      ]),
+    );
+    expect(transferred?.positions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ assetKey: sourceKey, valueCents: "6000" }),
+      ]),
+    );
   });
 
   it("rejects deletion requests with an invalid objective id", async () => {
@@ -715,8 +854,405 @@ describe("PortfolioObjectivesService", () => {
     await expect(
       service.updateAssignments("objective-trip", { assetKeys: [key, key] }),
     ).resolves.toBeUndefined();
-    expect(mocks.replaceAssignments).toHaveBeenCalledWith("objective-trip", [
-      key,
+    expect(mocks.replaceAssignmentsWithTransfers).toHaveBeenCalledWith(
+      "objective-trip",
+      [key],
+      [],
+    );
+  });
+
+  it("requires and forwards the explicitly confirmed current-owner transfer", async () => {
+    const targetId = "00000000-0000-4000-8000-000000000010";
+    const sourceId = "00000000-0000-4000-8000-000000000011";
+    const position = imported({ totalValue: "100.00" });
+    const key = getEmergencyReserveAssetKey(position);
+    mocks.listCurrentEnriched.mockResolvedValue([position]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        { ...customObjective, id: targetId },
+        { ...customObjective, id: sourceId, name: "Casa" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: key }],
+    });
+    const service = new PortfolioObjectivesService();
+
+    await expect(
+      service.updateAssignments(targetId, { assetKeys: [key] }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.replaceAssignmentsWithTransfers).not.toHaveBeenCalled();
+
+    await expect(
+      service.updateAssignments(targetId, {
+        assetKeys: [key],
+        transfers: [
+          {
+            assetKey: key,
+            fromObjectiveId: sourceId,
+            toObjectiveId: targetId,
+          },
+        ],
+      }),
+    ).resolves.toBeUndefined();
+    expect(mocks.replaceAssignmentsWithTransfers).toHaveBeenCalledWith(
+      targetId,
+      [key],
+      [
+        {
+          assetKey: key,
+          fromObjectiveId: sourceId,
+          toObjectiveId: targetId,
+        },
+      ],
+    );
+  });
+
+  it("returns readable feedback for an invalid valuation date", async () => {
+    await expect(
+      new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 100,
+        valuationDate: "not-a-date",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Informe um valor válido para comparar.",
+    });
+  });
+
+  it("returns readable feedback when a transfer source no longer owns the position", async () => {
+    const targetId = "00000000-0000-4000-8000-000000000011";
+    const sourceId = "00000000-0000-4000-8000-000000000012";
+    const position = imported({ totalValue: "100.00" });
+    const key = getEmergencyReserveAssetKey(position);
+    mocks.getObjective.mockResolvedValue({ ...customObjective, id: targetId });
+    mocks.listCurrentEnriched.mockResolvedValue([position]);
+    mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
+    mocks.classifyPositions.mockResolvedValue([
+      { ...position, assetKey: key, objectiveId: null, objectiveName: null },
+    ]);
+
+    await expect(
+      new PortfolioObjectivesService().updateAssignments(targetId, {
+        assetKeys: [key],
+        transfers: [
+          {
+            assetKey: key,
+            fromObjectiveId: sourceId,
+            toObjectiveId: targetId,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "Uma posição mudou de destino desde a busca. Atualize os objetivos e tente novamente.",
+    });
+    expect(mocks.replaceAssignmentsWithTransfers).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      assetKeys: ["asset-a"],
+      transfers: [
+        {
+          assetKey: "asset-a",
+          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
+          toObjectiveId: "00000000-0000-4000-8000-000000000020",
+        },
+        {
+          assetKey: "asset-a",
+          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
+          toObjectiveId: "00000000-0000-4000-8000-000000000020",
+        },
+      ],
+    },
+    {
+      assetKeys: ["asset-a"],
+      transfers: [
+        {
+          assetKey: "asset-b",
+          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
+          toObjectiveId: "00000000-0000-4000-8000-000000000020",
+        },
+      ],
+    },
+    {
+      assetKeys: ["asset-a"],
+      transfers: [
+        {
+          assetKey: "asset-a",
+          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
+          toObjectiveId: "00000000-0000-4000-8000-000000000022",
+        },
+      ],
+    },
+  ])(
+    "rejects duplicate, unselected, or misdirected transfer confirmations",
+    async (body) => {
+      await expect(
+        new PortfolioObjectivesService().updateAssignments(
+          "00000000-0000-4000-8000-000000000020",
+          body,
+        ),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
+      expect(mocks.replaceAssignmentsWithTransfers).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports candidate transfer impacts for known and orphaned source objectives", async () => {
+    const targetId = customObjective.id;
+    const homeId = "objective-home";
+    const free = imported({
+      assetCode: "FREE-20",
+      totalValue: "20.00",
+      canonicalValueCents: "2000",
+    });
+    const homeTransfer = imported({
+      assetCode: "HOME-70",
+      totalValue: "70.00",
+      canonicalValueCents: "7000",
+    });
+    const homeRemaining = imported({
+      assetCode: "HOME-5",
+      totalValue: "5.00",
+      canonicalValueCents: "500",
+    });
+    const orphanTransfer = imported({
+      assetCode: "ORPHAN-10",
+      totalValue: "10.00",
+      canonicalValueCents: "1000",
+      referenceDate: null,
+    });
+    const freeKey = getEmergencyReserveAssetKey(free);
+    const homeTransferKey = getEmergencyReserveAssetKey(homeTransfer);
+    const homeRemainingKey = getEmergencyReserveAssetKey(homeRemaining);
+    const orphanTransferKey = getEmergencyReserveAssetKey(orphanTransfer);
+    mocks.listCurrentEnriched.mockResolvedValue([
+      free,
+      homeTransfer,
+      homeRemaining,
+      orphanTransfer,
+    ]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        { ...customObjective, targetAmount: null },
+        { ...customObjective, id: homeId, name: "Casa", targetAmount: null },
+      ],
+      assignments: [
+        { objectiveId: homeId, assetKey: homeTransferKey },
+        { objectiveId: homeId, assetKey: homeRemainingKey },
+        {
+          objectiveId: homeId,
+          assetKey: getEmergencyReserveAssetKey(
+            imported({
+              assetCode: "HOME-UNVALUED",
+              totalValue: null,
+              issuer: "Banco C S.A.",
+              institution: "Banco C",
+            }),
+          ),
+        },
+        { objectiveId: "deleted-objective", assetKey: orphanTransferKey },
+      ],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 100,
+        objectiveId: targetId,
+        valuationDate: "2026-09-30",
+      });
+
+    expect(mocks.listCurrentEnriched).toHaveBeenCalledWith(
+      undefined,
+      "2026-09-30",
+    );
+    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    const transferCandidate = result.candidates.find((candidate) =>
+      candidate.assetKeys.includes(orphanTransferKey),
+    );
+    expect(transferCandidate?.assetKeys).toEqual(
+      expect.arrayContaining([freeKey, homeTransferKey, orphanTransferKey]),
+    );
+    expect(transferCandidate?.transfers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetKey: homeTransferKey,
+          fromObjectiveName: "Casa",
+          toObjectiveId: targetId,
+          value: 70,
+        }),
+        expect.objectContaining({
+          assetKey: orphanTransferKey,
+          fromObjectiveName: "Outro objetivo",
+          toObjectiveId: targetId,
+          value: 10,
+        }),
+      ]),
+    );
+    expect(transferCandidate?.positions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetKey: orphanTransferKey,
+          referenceDate: null,
+        }),
+      ]),
+    );
+    expect(transferCandidate?.impacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          objectiveId: targetId,
+          currentValue: 100,
+          transferredValue: 80,
+          targetAmount: null,
+          progressPercent: null,
+        }),
+        expect.objectContaining({
+          objectiveId: homeId,
+          objectiveName: "Casa",
+          currentValue: null,
+          knownValue: 5,
+          targetAmount: null,
+          progressPercent: null,
+        }),
+        expect.objectContaining({
+          objectiveId: "deleted-objective",
+          objectiveName: "Outro objetivo",
+          currentValue: null,
+          knownValue: 0,
+          progressPercent: null,
+        }),
+      ]),
+    );
+  });
+
+  it("uses the CDB-only expanded pool to find an exact candidate requiring transfer", async () => {
+    const targetId = customObjective.id;
+    const sourceId = "objective-home-cdb";
+    const free = imported({ assetCode: "FREE-CDB-20", totalValue: "20.00" });
+    const owned = imported({
+      assetCode: "OWNED-CDB-30",
+      totalValue: "30.00",
+      institution: "Banco B",
+      issuer: "Banco B S.A.",
+    });
+    const freeKey = getEmergencyReserveAssetKey(free);
+    const ownedKey = getEmergencyReserveAssetKey(owned);
+    mocks.listCurrentEnriched.mockResolvedValue([free, owned]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: sourceId, name: "Casa" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: ownedKey }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 55,
+        objectiveId: targetId,
+        instrumentType: "CDB",
+      });
+
+    expect(result).toMatchObject({ status: "suggestions", kind: "nearest" });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    expect(result.candidates[0].assetKeys).toEqual(
+      expect.arrayContaining([freeKey, ownedKey]),
+    );
+    expect(result.candidates[0].transfers).toEqual([
+      expect.objectContaining({
+        assetKey: ownedKey,
+        fromObjectiveId: sourceId,
+      }),
+    ]);
+  });
+
+  it("keeps the baseline when an expanded transfer candidate is not closer", async () => {
+    const targetId = customObjective.id;
+    const sourceId = "objective-home-not-closer";
+    const free = imported({ assetCode: "FREE-90", totalValue: "90.00" });
+    const owned = imported({
+      assetCode: "OWNED-90",
+      totalValue: "90.00",
+      institution: "Banco B",
+      issuer: "Banco B S.A.",
+    });
+    const freeKey = getEmergencyReserveAssetKey(free);
+    const ownedKey = getEmergencyReserveAssetKey(owned);
+    mocks.listCurrentEnriched.mockResolvedValue([free, owned]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: sourceId, name: "Casa" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: ownedKey }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 100,
+        objectiveId: targetId,
+      });
+
+    expect(result).toMatchObject({ status: "suggestions", kind: "nearest" });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    expect(result.candidates[0].assetKeys).toContain(freeKey);
+    expect(result.candidates[0].assetKeys).not.toContain(ownedKey);
+    expect(result.candidates[0].transfers).toBeUndefined();
+  });
+
+  it("retains the no-valued-positions result when an expanded pool has no candidates", async () => {
+    const targetId = customObjective.id;
+    const sourceId = "objective-home-unvalued";
+    const unvalued = imported({
+      assetCode: "OWNED-UNVALUED",
+      totalValue: "not available",
+      canonicalValueCents: null,
+    });
+    const key = getEmergencyReserveAssetKey(unvalued);
+    mocks.listCurrentEnriched.mockResolvedValue([unvalued]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: sourceId, name: "Casa" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: key }],
+    });
+
+    await expect(
+      new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 100,
+        objectiveId: targetId,
+      }),
+    ).resolves.toMatchObject({ status: "no_valued_positions" });
+  });
+
+  it("uses a source-only candidate when no free baseline exists", async () => {
+    const targetId = customObjective.id;
+    const sourceId = "objective-home-source-only";
+    const owned = imported({ assetCode: "OWNED-ONLY", totalValue: "80.00" });
+    const key = getEmergencyReserveAssetKey(owned);
+    mocks.listCurrentEnriched.mockResolvedValue([owned]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: sourceId, name: "Casa" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: key }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 100,
+        objectiveId: targetId,
+      });
+
+    expect(result).toMatchObject({ status: "suggestions", kind: "nearest" });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    expect(result.candidates[0].assetKeys).toContain(key);
+    expect(result.candidates[0].transfers).toEqual([
+      expect.objectContaining({ assetKey: key, fromObjectiveId: sourceId }),
     ]);
   });
 });

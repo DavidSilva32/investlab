@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
@@ -80,6 +80,89 @@ export class PortfolioObjectivesRepository {
           .values(assetKeys.map((assetKey) => ({ objectiveId, assetKey })));
       }
     });
+  }
+
+  async replaceAssignmentsWithTransfers(
+    objectiveId: string,
+    assetKeys: string[],
+    transfers: ObjectiveAssignmentTransfer[],
+  ) {
+    try {
+      return await getDatabaseClient().transaction(async (transaction) => {
+        if (assetKeys.length) {
+          await transaction
+            .delete(portfolioObjectivePositions)
+            .where(
+              and(
+                eq(portfolioObjectivePositions.objectiveId, objectiveId),
+                notInArray(portfolioObjectivePositions.assetKey, assetKeys),
+              ),
+            );
+        } else {
+          await transaction
+            .delete(portfolioObjectivePositions)
+            .where(eq(portfolioObjectivePositions.objectiveId, objectiveId));
+        }
+        await this.transferAssignments(transaction, transfers);
+        if (!assetKeys.length) return;
+        const assignments = await transaction
+          .select()
+          .from(portfolioObjectivePositions)
+          .where(inArray(portfolioObjectivePositions.assetKey, assetKeys))
+          .for("update");
+        const assignedByKey = new Map(
+          assignments.map((assignment) => [
+            assignment.assetKey,
+            assignment.objectiveId,
+          ]),
+        );
+        const conflict = assignments.find(
+          (assignment) => assignment.objectiveId !== objectiveId,
+        );
+        if (conflict) {
+          const [currentObjective] = await transaction
+            .select({ name: portfolioObjectives.name })
+            .from(portfolioObjectives)
+            .where(eq(portfolioObjectives.id, conflict.objectiveId))
+            .limit(1);
+          throw new ApplicationError(
+            currentObjective?.name
+              ? `A posição já está vinculada a ${currentObjective.name}. Atualize os objetivos e tente novamente.`
+              : "A posição já está vinculada a outro objetivo. Atualize os objetivos e tente novamente.",
+            409,
+          );
+        }
+        const unassigned = assetKeys.filter(
+          (assetKey) => !assignedByKey.has(assetKey),
+        );
+        if (unassigned.length) {
+          await transaction
+            .insert(portfolioObjectivePositions)
+            .values(unassigned.map((assetKey) => ({ objectiveId, assetKey })));
+        }
+      });
+    } catch (error) {
+      const postgresError = error as { code?: string; constraint?: string };
+      if (
+        postgresError.code === "23505" &&
+        postgresError.constraint ===
+          "portfolio_objective_positions_assetKey_unique"
+      ) {
+        const assignments = await Promise.all(
+          assetKeys.map((assetKey) => this.findAssignment(assetKey)),
+        );
+        const conflict = assignments.find(
+          (assignment) => assignment && assignment.objectiveId !== objectiveId,
+        );
+        throw new ApplicationError(
+          conflict?.objectiveName
+            ? `A posição já está vinculada a ${conflict.objectiveName}. Atualize os objetivos e tente novamente.`
+            : "Uma posição mudou de destino durante esta atualização. Atualize os objetivos e tente novamente.",
+          409,
+        );
+      }
+      throw error;
+    }
   }
 
   async transferAssignments(

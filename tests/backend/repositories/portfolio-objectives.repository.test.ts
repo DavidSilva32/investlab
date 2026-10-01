@@ -138,6 +138,198 @@ describe("PortfolioObjectivesRepository", () => {
     expect(transaction.insert).toHaveBeenCalledTimes(1);
   });
 
+  it("replaces assignment rows and inserts newly selected free positions transactionally", async () => {
+    const assetKeys = ["asset-current", "asset-new"];
+    const deleteWhere = vi.fn().mockResolvedValue(undefined);
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    const lockRows = vi
+      .fn()
+      .mockResolvedValue([
+        { objectiveId: "goal-1", assetKey: "asset-current" },
+      ]);
+    const transaction = {
+      delete: vi.fn(() => ({ where: deleteWhere })),
+      select: vi.fn(() => ({
+        from: () => ({ where: () => ({ for: lockRows }) }),
+      })),
+      insert: vi.fn(() => ({ values: insertValues })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+      "goal-1",
+      assetKeys,
+      [],
+    );
+
+    expect(database.transaction).toHaveBeenCalledOnce();
+    expect(transaction.delete).toHaveBeenCalledOnce();
+    expect(transaction.select).toHaveBeenCalledOnce();
+    expect(insertValues).toHaveBeenCalledWith([
+      { objectiveId: "goal-1", assetKey: "asset-new" },
+    ]);
+  });
+
+  it("clears assignments inside the transaction when no positions remain", async () => {
+    const deleteWhere = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      delete: vi.fn(() => ({ where: deleteWhere })),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+        "goal-1",
+        [],
+        [],
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(transaction.delete).toHaveBeenCalledOnce();
+    expect(deleteWhere).toHaveBeenCalledOnce();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("does not reinsert positions already owned by the destination", async () => {
+    const lockRows = vi
+      .fn()
+      .mockResolvedValue([
+        { objectiveId: "goal-1", assetKey: "asset-current" },
+      ]);
+    const transaction = {
+      delete: vi.fn(() => ({ where: vi.fn() })),
+      select: vi.fn(() => ({
+        from: () => ({ where: () => ({ for: lockRows }) }),
+      })),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+      "goal-1",
+      ["asset-current"],
+      [],
+    );
+
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { rows: [{ name: "Viagem" }], message: "Viagem" },
+    { rows: [], message: "outro objetivo" },
+  ])(
+    "preserves exclusive ownership when a selected position belongs to another objective ($message)",
+    async ({ rows, message }) => {
+      const ownerId = "goal-owner";
+      const lockRows = vi
+        .fn()
+        .mockResolvedValue([{ objectiveId: ownerId, assetKey: "asset-owned" }]);
+      const ownerName = vi.fn().mockResolvedValue(rows);
+      const select = vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ for: lockRows }) }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: ownerName }) }),
+        });
+      const transaction = {
+        delete: vi.fn(() => ({ where: vi.fn() })),
+        select,
+        insert: vi.fn(),
+      };
+      database.transaction.mockImplementation(async (callback) =>
+        callback(transaction),
+      );
+
+      await expect(
+        new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+          "goal-target",
+          ["asset-owned"],
+          [],
+        ),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: expect.stringContaining(message),
+      } satisfies Partial<ApplicationError>);
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports a concurrent uniqueness conflict using the current owner's name", async () => {
+    const assignment = { objectiveId: "goal-current", assetKey: "asset-a" };
+    const row = vi.fn().mockResolvedValue([assignment]);
+    const name = vi.fn().mockResolvedValue([{ name: "Casa" }]);
+    database.transaction.mockRejectedValue({
+      code: "23505",
+      constraint: "portfolio_objective_positions_assetKey_unique",
+    });
+    database.select
+      .mockReturnValueOnce({ from: () => ({ where: () => ({ limit: row }) }) })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: name }) }),
+      });
+
+    await expect(
+      new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+        "goal-target",
+        ["asset-a"],
+        [],
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Casa"),
+    } satisfies Partial<ApplicationError>);
+  });
+
+  it("reports a concurrent uniqueness conflict when the row is now unassigned", async () => {
+    const row = vi.fn().mockResolvedValue([]);
+    database.transaction.mockRejectedValue({
+      code: "23505",
+      constraint: "portfolio_objective_positions_assetKey_unique",
+    });
+    database.select.mockReturnValue({
+      from: () => ({ where: () => ({ limit: row }) }),
+    });
+
+    await expect(
+      new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+        "goal-target",
+        ["asset-a"],
+        [],
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("mudou de destino"),
+    } satisfies Partial<ApplicationError>);
+  });
+
+  it.each([
+    new Error("database unavailable"),
+    { code: "23505", constraint: "another_unique_constraint" },
+  ])(
+    "propagates database failures unrelated to asset ownership",
+    async (error) => {
+      database.transaction.mockRejectedValue(error);
+
+      await expect(
+        new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+          "goal-target",
+          ["asset-a"],
+          [],
+        ),
+      ).rejects.toBe(error);
+      expect(database.select).not.toHaveBeenCalled();
+    },
+  );
+
   it("reads and replaces the reserve assignments through the same table", async () => {
     const rows = [
       { objectiveId: "00000000-0000-4000-8000-000000000010", assetKey: "v1:a" },
@@ -188,6 +380,154 @@ describe("PortfolioObjectivesRepository", () => {
     expect(transaction.update).toHaveBeenCalledTimes(1);
     expect(transaction.insert).not.toHaveBeenCalled();
     expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it("replaces the destination selection and transfers rows exclusively in one transaction", async () => {
+    const sourceId = "00000000-0000-4000-8000-000000000099";
+    const destinationId = "00000000-0000-4000-8000-000000000010";
+    const rows = [
+      { objectiveId: destinationId, assetKey: "asset-keep" },
+      { objectiveId: sourceId, assetKey: "asset-move" },
+      { objectiveId: destinationId, assetKey: "asset-remove" },
+    ];
+    const events: string[] = [];
+    const transferKeys = ["asset-move"];
+    const selectedKeys = ["asset-move", "asset-keep"];
+    let selectCount = 0;
+    const transaction = {
+      delete: vi.fn(() => ({
+        where: vi.fn(async () => {
+          events.push("replace destination selection");
+          for (let index = rows.length - 1; index >= 0; index -= 1) {
+            if (
+              rows[index].objectiveId === destinationId &&
+              !selectedKeys.includes(rows[index].assetKey)
+            ) {
+              rows.splice(index, 1);
+            }
+          }
+        }),
+      })),
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => {
+            selectCount += 1;
+            const selected = rows.filter((row) =>
+              (selectCount === 1 ? transferKeys : selectedKeys).includes(
+                row.assetKey,
+              ),
+            );
+            return { for: async () => selected };
+          },
+        }),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn((values: { objectiveId: string }) => ({
+          where: vi.fn(async () => {
+            events.push("transfer assignment row");
+            const assignment = rows.find(
+              (row) => row.assetKey === "asset-move",
+            );
+            if (assignment) assignment.objectiveId = values.objectiveId;
+          }),
+        })),
+      })),
+      insert: vi.fn(() => ({ values: vi.fn() })),
+    };
+    database.transaction.mockImplementation(async (callback) => {
+      events.push("begin transaction");
+      const result = await callback(transaction);
+      events.push("commit transaction");
+      return result;
+    });
+
+    await new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+      destinationId,
+      selectedKeys,
+      [
+        {
+          assetKey: "asset-move",
+          fromObjectiveId: sourceId,
+          toObjectiveId: destinationId,
+        },
+      ],
+    );
+
+    expect(events).toEqual([
+      "begin transaction",
+      "replace destination selection",
+      "transfer assignment row",
+      "commit transaction",
+    ]);
+    expect(rows).toEqual([
+      { objectiveId: destinationId, assetKey: "asset-keep" },
+      { objectiveId: destinationId, assetKey: "asset-move" },
+    ]);
+    expect(rows.filter((row) => row.assetKey === "asset-move")).toHaveLength(1);
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("rolls back selection replacement when a transfer conflicts and returns readable Portuguese", async () => {
+    const destinationId = "00000000-0000-4000-8000-000000000010";
+    const sourceId = "00000000-0000-4000-8000-000000000099";
+    const actualOwnerId = "00000000-0000-4000-8000-000000000088";
+    const persistedRows = [
+      { objectiveId: destinationId, assetKey: "old-selection" },
+      { objectiveId: actualOwnerId, assetKey: "asset-move" },
+    ];
+    const workingRows = persistedRows.map((row) => ({ ...row }));
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            for: async () =>
+              workingRows.filter((row) => row.assetKey === "asset-move"),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ limit: async () => [{ name: "Viagem" }] }),
+        }),
+      });
+    const transaction = {
+      delete: vi.fn(() => ({
+        where: vi.fn(async () => {
+          workingRows.splice(
+            0,
+            workingRows.length,
+            ...workingRows.filter((row) => row.objectiveId !== destinationId),
+          );
+        }),
+      })),
+      select,
+      update: vi.fn(),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) => {
+      try {
+        return await callback(transaction);
+      } catch (error) {
+        workingRows.splice(0, workingRows.length, ...persistedRows);
+        throw error;
+      }
+    });
+
+    await expect(
+      new PortfolioObjectivesRepository().replaceAssignmentsWithTransfers(
+        destinationId,
+        ["asset-move"],
+        [],
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "A posição já está vinculada a Viagem. Atualize os objetivos e tente novamente.",
+    } satisfies Partial<ApplicationError>);
+    expect(workingRows).toEqual(persistedRows);
+    expect(transaction.update).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
   });
 
   it("accepts no transfers and rejects duplicate or same-destination moves", async () => {

@@ -91,17 +91,20 @@ const expectedRateDates = (fromDate: string, toDateExclusive: string) => {
   return dates;
 };
 
-const hasContiguousRates = (baseDate: string, rates: CachedCdiRate[]) => {
-  const lastRateDate = rates.at(-1)?.rateDate;
-  if (!lastRateDate) return false;
-  const expectedDates = expectedRateDates(
-    addDays(baseDate, 1),
-    addDays(lastRateDate, 1),
-  );
-  return (
-    expectedDates.length === rates.length &&
-    expectedDates.every((date, index) => rates[index]?.rateDate === date)
-  );
+const getTrustedRatePrefix = (
+  baseDate: string,
+  valuationDate: string,
+  rates: CachedCdiRate[],
+) => {
+  const ratesByDate = new Map(rates.map((rate) => [rate.rateDate, rate]));
+  const expectedDates = expectedRateDates(addDays(baseDate, 1), valuationDate);
+  const prefix: CachedCdiRate[] = [];
+  for (const date of expectedDates) {
+    const rate = ratesByDate.get(date);
+    if (!rate) return { rates: prefix, missingDate: date };
+    prefix.push(rate);
+  }
+  return { rates: prefix, missingDate: null };
 };
 
 const logUnavailable = (phase: "configuration" | "rates" | "cache") =>
@@ -304,14 +307,18 @@ export class CdbEstimateService {
         };
 
       const rates = cachedRatesByBaseDate.get(estimationBaseDate)!;
-      const lastRateDate = rates.at(-1)?.rateDate;
       const expectedAccrualDates = expectedRateDates(
         addDays(estimationBaseDate, 1),
         valuationDate,
       );
       const noAccrualDateAvailable = expectedAccrualDates.length === 0;
-      const contiguous = hasContiguousRates(estimationBaseDate, rates);
-      if (!noAccrualDateAvailable && !contiguous) {
+      const trustedPrefix = getTrustedRatePrefix(
+        estimationBaseDate,
+        valuationDate,
+        rates,
+      );
+      const lastRateDate = trustedPrefix.rates.at(-1)?.rateDate;
+      if (!noAccrualDateAvailable && trustedPrefix.rates.length === 0) {
         return {
           ...position,
           cdiPercentage,
@@ -328,23 +335,23 @@ export class CdbEstimateService {
         const estimate = estimatePostFixedCdb({
           officialValue: position.totalValue,
           cdiPercentage,
-          rates,
+          rates: trustedPrefix.rates,
         });
-        const incompleteDates = expectedRateDates(
-          addDays(lastRateDate!, 1),
-          valuationDate,
-        );
+        const incompleteDates = trustedPrefix.missingDate
+          ? [trustedPrefix.missingDate]
+          : [];
         return {
           ...position,
           cdiPercentage,
           ...estimate,
-          estimatedThrough: lastRateDate!,
+          estimatedThrough: lastRateDate ?? estimationBaseDate,
           cdbEstimateStatus: incompleteDates.length
             ? ("provisional" as const)
             : ("complete" as const),
+          cdbEstimateComparisonApproximate: true,
           cdbEstimateLimitation: incompleteDates.length
             ? "Estimativa parcial: ainda não há taxa CDI oficial para as datas seguintes."
-            : null,
+            : "Comparação aproximada: a última avaliação confiável disponível é anterior à data informada.",
         };
       } catch {
         logUnavailable("rates");
