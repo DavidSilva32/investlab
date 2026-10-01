@@ -1,6 +1,7 @@
 import { and, eq, lt, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -191,6 +192,45 @@ export const portfolioObjectivePositions = pgTable(
   },
   (table) => [
     index("portfolio_objective_positions_objective_idx").on(table.objectiveId),
+  ],
+);
+/* v8 ignore stop */
+/* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
+export const portfolioObjectiveReferenceBatches = pgTable(
+  "portfolio_objective_reference_batches",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    observedOn: date().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+);
+export const portfolioObjectiveBalanceReferences = pgTable(
+  "portfolio_objective_balance_references",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    batchId: uuid()
+      .notNull()
+      .references(() => portfolioObjectiveReferenceBatches.id, {
+        onDelete: "cascade",
+      }),
+    objectiveId: uuid()
+      .notNull()
+      .references(() => portfolioObjectives.id, { onDelete: "cascade" }),
+    amountCents: numeric({ precision: 20, scale: 0 }).notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "portfolio_objective_balance_reference_amount_nonnegative_chk",
+      sql`${table.amountCents} >= 0`,
+    ),
+    uniqueIndex(
+      "portfolio_objective_balance_reference_batch_objective_uidx",
+    ).on(table.batchId, table.objectiveId),
+    index("portfolio_objective_balance_reference_objective_created_idx").on(
+      table.objectiveId,
+      table.createdAt,
+    ),
   ],
 );
 /* v8 ignore stop */

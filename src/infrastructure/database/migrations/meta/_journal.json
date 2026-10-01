@@ -169,6 +169,13 @@
       "when": 1790797336471,
       "tag": "0023_silly_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790891213294,
+      "tag": "0024_objective_balance_references",
+      "breakpoints": true
     }
   ]
 }

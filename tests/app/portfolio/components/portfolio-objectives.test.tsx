@@ -166,6 +166,43 @@ describe("PortfolioObjectives", () => {
           candidates: [{ assetKeys: [freeKey], total: 250, difference: 0 }],
         });
       }
+      if (url === "/api/portfolio/objectives/allocation/preview") {
+        return response({
+          valuationDate: "2026-10-01",
+          effectiveValuationDates: ["2026-10-01"],
+          optimal: true,
+          exploredStates: 10,
+          stateLimit: 1000,
+          canConfirm: true,
+          allocation: { [reserveKey]: reserveObjectiveId, [freeKey]: null },
+          expectedOwners: {
+            [reserveKey]: reserveObjectiveId,
+            [freeKey]: null,
+          },
+          objectives: [
+            {
+              objectiveId: reserveObjectiveId,
+              name: "Reserva",
+              observedBalanceCents: "1000",
+              proposedValueCents: "40000",
+              differenceCents: "39000",
+              assetKeys: [reserveKey],
+            },
+          ],
+          transfers: [],
+          unassignedPositions: [
+            {
+              assetKey: freeKey,
+              product: "Tesouro Selic",
+              valueCents: "25000",
+            },
+          ],
+          limitations: [],
+        });
+      }
+      if (url === "/api/portfolio/objectives/allocation/confirm") {
+        return response({ message: "Distribuição confirmada." });
+      }
       if (init?.method === "POST") {
         const body = JSON.parse(String(init.body));
         const created = objective({
@@ -322,6 +359,44 @@ describe("PortfolioObjectives", () => {
     ).toBeTruthy();
     expect(screen.getByText("61,5%")).toBeTruthy();
     expect(screen.getByText("38,5%")).toBeTruthy();
+  });
+
+  it("opens the joint organizer from the objectives overview and returns without changing assignments", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Organizar objetivos" }),
+    );
+    expect(await screen.findByText("Saldos observados no banco")).toBeTruthy();
+    expect(screen.getByLabelText("Reserva")).toBeTruthy();
+    expect(screen.getByLabelText("Viagem")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getAllByRole("button", { name: "Voltar" })[1]);
+    expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns to the overview after confirming an organized distribution", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Organizar objetivos" }),
+    );
+    await user.type(screen.getByLabelText("Reserva"), "1000");
+    await user.click(
+      screen.getByRole("button", { name: "Buscar distribuição" }),
+    );
+    await screen.findByText("Revise a distribuição");
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar distribuição" }),
+    );
+    expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Distribuição confirmada."),
+    );
   });
 
   it("creates an objective only from the requested form and opens its detail", async () => {

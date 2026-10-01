@@ -49,6 +49,35 @@ export class PortfolioObjectivesController {
     return Response.json(data);
   }
 
+  async previewAllocation(body: unknown, requestId: string) {
+    const data = await portfolioObjectivesService.previewGlobalAllocation(
+      body,
+      requestId,
+    );
+    logger.info("portfolio_objective_allocation_previewed", {
+      requestId,
+      objectives: data.objectives.length,
+      positions: Object.keys(data.allocation).length,
+      optimal: data.optimal,
+    });
+    return Response.json(data);
+  }
+
+  async confirmAllocation(body: unknown, requestId: string) {
+    const data = await portfolioObjectivesService.confirmGlobalAllocation(
+      body,
+      requestId,
+    );
+    logger.info("portfolio_objective_allocation_confirmed", {
+      requestId,
+      batchId: data.batchId,
+    });
+    return Response.json({
+      message: "A distribuição foi salva.",
+      batchId: data.batchId,
+    });
+  }
+
   async update(body: unknown, requestId: string) {
     const input = body as { objectiveId?: unknown };
     if (typeof input?.objectiveId !== "string") {

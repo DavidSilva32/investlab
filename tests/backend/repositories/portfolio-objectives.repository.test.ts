@@ -653,4 +653,283 @@ describe("PortfolioObjectivesRepository", () => {
       objectiveName: null,
     });
   });
+
+  it("lists only the latest reference for each objective", async () => {
+    const rows = [
+      {
+        objectiveId: "goal-a",
+        amountCents: "500",
+        observedDate: "2026-10-01",
+        createdAt: new Date("2026-10-02"),
+      },
+      {
+        objectiveId: "goal-a",
+        amountCents: "400",
+        observedDate: "2026-09-30",
+        createdAt: new Date("2026-10-01"),
+      },
+      {
+        objectiveId: "goal-b",
+        amountCents: "900",
+        observedDate: "2026-10-01",
+        createdAt: new Date("2026-10-02"),
+      },
+    ];
+    const orderBy = vi.fn().mockResolvedValue(rows);
+    const innerJoin = vi.fn().mockReturnValue({ orderBy });
+    database.select.mockReturnValue({ from: () => ({ innerJoin }) });
+    await expect(
+      new PortfolioObjectivesRepository().listLatestBalanceReferences(),
+    ).resolves.toEqual([
+      { objectiveId: "goal-a", amountCents: "500", observedDate: "2026-10-01" },
+      { objectiveId: "goal-b", amountCents: "900", observedDate: "2026-10-01" },
+    ]);
+  });
+
+  it("saves references and the complete owner partition in one serializable transaction", async () => {
+    const events: string[] = [];
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              for: async () => [{ assetKey: "owned", objectiveId: "goal-a" }],
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            for: async () => [{ id: "goal-a" }, { id: "goal-b" }],
+          }),
+        }),
+      });
+    const transaction = {
+      select,
+      insert: vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((value) => {
+          events.push("insert");
+          if (
+            !Array.isArray(value) &&
+            value &&
+            typeof value === "object" &&
+            "observedOn" in value
+          ) {
+            return { returning: async () => [{ id: "batch-1" }] };
+          }
+          return Promise.resolve();
+        }),
+      })),
+      delete: vi.fn().mockReturnValue({
+        where: async () => {
+          events.push("delete");
+        },
+      }),
+      update: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback, options) => {
+      expect(options).toEqual({ isolationLevel: "serializable" });
+      events.push("begin");
+      const result = await callback(transaction);
+      events.push("commit");
+      return result;
+    });
+    const repository = new PortfolioObjectivesRepository();
+    await repository.saveGlobalAllocation({
+      observedOn: "2026-10-01",
+      expectedOwners: { owned: "goal-a", free: null },
+      allocation: { owned: "goal-b", free: "goal-a" },
+      references: [
+        { objectiveId: "goal-a", amountCents: "10000" },
+        { objectiveId: "goal-b", amountCents: "20000" },
+      ],
+    });
+    expect(events[0]).toBe("begin");
+    expect(events.at(-1)).toBe("commit");
+    expect(transaction.delete).toHaveBeenCalledTimes(1);
+    expect(transaction.insert).toHaveBeenCalledTimes(4);
+  });
+
+  it("rejects an assignment snapshot that omits an allocation key", async () => {
+    database.transaction.mockImplementation(async (callback) => callback({}));
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedOwners: { a: null },
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "0" }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("rejects a concurrent owner change before writing the reference batch", async () => {
+    const select = vi.fn().mockReturnValue({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            for: async () => [{ assetKey: "asset-a", objectiveId: "goal-b" }],
+          }),
+        }),
+      }),
+    });
+    const transaction = { select, insert: vi.fn() };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedOwners: { "asset-a": "goal-a" },
+        allocation: { "asset-a": "goal-c" },
+        references: [{ objectiveId: "goal-c", amountCents: "1" }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects references to a destination that was deleted before confirmation", async () => {
+    const select = vi.fn().mockReturnValueOnce({
+      from: () => ({
+        where: () => ({ for: async () => [] }),
+      }),
+    });
+    const transaction = { select, insert: vi.fn() };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "deleted-goal", amountCents: "1" }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("lets a failed assignment write roll back the references in its transaction", async () => {
+    const events: string[] = [];
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ orderBy: () => ({ for: async () => [] }) }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ for: async () => [{ id: "goal-a" }] }),
+        }),
+      });
+    const transaction = {
+      select,
+      insert: vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockImplementation((value) => {
+          if (
+            !Array.isArray(value) &&
+            value &&
+            typeof value === "object" &&
+            "observedOn" in value
+          ) {
+            return { returning: async () => [{ id: "batch-1" }] };
+          }
+          if (Array.isArray(value) && "amountCents" in value[0])
+            return Promise.resolve();
+          throw new Error("simulated unique conflict");
+        }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) => {
+      events.push("begin");
+      try {
+        const result = await callback(transaction);
+        events.push("commit");
+        return result;
+      } catch (error) {
+        events.push("rollback");
+        throw error;
+      }
+    });
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedOwners: { "asset-a": null },
+        allocation: { "asset-a": "goal-a" },
+        references: [{ objectiveId: "goal-a", amountCents: "1" }],
+      }),
+    ).rejects.toThrow("simulated unique conflict");
+    expect(events).toEqual(["begin", "rollback"]);
+  });
+
+  it("converts serialization failures into a retryable conflict", async () => {
+    database.transaction.mockRejectedValue({ code: "40001" });
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "1" }],
+      }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+  });
+
+  it("skips unchanged assignments and permits an empty optional reference list", async () => {
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              for: async () => [
+                { assetKey: "asset-a", objectiveId: "goal-a" },
+                { assetKey: "asset-b", objectiveId: "goal-a" },
+              ],
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ for: async () => [{ id: "goal-a" }] }),
+        }),
+      });
+    const returning = vi.fn().mockResolvedValue([{ id: "batch-1" }]);
+    const values = vi.fn().mockReturnValue({ returning });
+    const transaction = {
+      select,
+      insert: vi.fn().mockReturnValue({ values }),
+      delete: vi
+        .fn()
+        .mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    await new PortfolioObjectivesRepository().saveGlobalAllocation({
+      observedOn: "2026-10-01",
+      expectedOwners: { "asset-a": "goal-a", "asset-b": "goal-a" },
+      allocation: { "asset-a": "goal-a", "asset-b": null },
+      references: [],
+    });
+    expect(transaction.insert).toHaveBeenCalledOnce();
+    expect(transaction.delete).toHaveBeenCalledOnce();
+  });
+
+  it("maps the exclusive asset constraint to a conflict", async () => {
+    database.transaction.mockRejectedValue({
+      code: "23505",
+      constraint: "portfolio_objective_positions_assetKey_unique",
+    });
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "1" }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
 });
