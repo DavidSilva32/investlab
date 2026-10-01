@@ -3,7 +3,18 @@ export type PortfolioMoneySource =
   | "B3_IMPORTED"
   | "MANUAL_REPORTED"
   | "MANUAL_CONVERTED"
+  | "MIXED"
   | "UNVALUED";
+
+export const portfolioMoneySourceLabels: Record<PortfolioMoneySource, string> =
+  {
+    CDB_ESTIMATE: "Estimativa CDI",
+    B3_IMPORTED: "Valor importado da B3",
+    MANUAL_REPORTED: "Valor informado manualmente",
+    MANUAL_CONVERTED: "Conversão manual para reais",
+    MIXED: "Valores de origens diferentes",
+    UNVALUED: "Sem valor disponível",
+  };
 
 export type PortfolioMoney = {
   cents: bigint | null;

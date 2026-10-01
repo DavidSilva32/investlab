@@ -21,6 +21,10 @@ import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { formatCurrency } from "@/lib/utils";
 import {
+  formatCurrencyCents,
+  portfolioMoneySourceLabels,
+} from "@/lib/portfolio-money";
+import {
   formatAmountInput,
   getCurrencyInputSelection,
   parseBrazilianAmount,
@@ -33,12 +37,22 @@ export type PositionCombinationSuggestionHolding = {
   product: string;
   institution: string | null;
   value: number | null;
+  valueCents?: string | null;
+  valueSource?: string;
+  canonicalValueSource?: string;
+  estimationBaseDate?: string | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
 };
+
+const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 type SuggestionCandidate = {
   assetKeys: string[];
   total: number;
   difference: number;
+  positions?: PositionCombinationSuggestionHolding[];
   transfers?: {
     assetKey: string;
     product: string;
@@ -417,14 +431,16 @@ function SuggestionResults({
       </div>
       <ol className="grid gap-2 sm:grid-cols-2">
         {result.candidates.map((candidate, index) => {
-          const included = candidate.assetKeys
-            .map((assetKey) =>
-              holdings.find((holding) => holding.assetKey === assetKey),
-            )
-            .filter(
-              (holding): holding is PositionCombinationSuggestionHolding =>
-                Boolean(holding),
-            );
+          const included = candidate.positions?.length
+            ? candidate.positions
+            : candidate.assetKeys
+                .map((assetKey) =>
+                  holdings.find((holding) => holding.assetKey === assetKey),
+                )
+                .filter(
+                  (holding): holding is PositionCombinationSuggestionHolding =>
+                    Boolean(holding),
+                );
 
           return (
             <CandidateSummary
@@ -531,8 +547,46 @@ function CandidateSummary({
                   <span className="mt-2 block text-sm tabular-nums">
                     {holding.value === null
                       ? "Sem valor informado"
-                      : formatCurrency(holding.value)}
+                      : holding.valueCents
+                        ? formatCurrencyCents(holding.valueCents)
+                        : formatCurrency(holding.value)}
                   </span>
+                  {(holding.canonicalValueSource ?? holding.valueSource) && (
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Origem:{" "}
+                      {portfolioMoneySourceLabels[
+                        (holding.canonicalValueSource ??
+                          holding.valueSource) as keyof typeof portfolioMoneySourceLabels
+                      ] ??
+                        holding.canonicalValueSource ??
+                        holding.valueSource}
+                    </span>
+                  )}
+                  {holding.estimationBaseDate && (
+                    <span className="block text-xs text-muted-foreground">
+                      Data-base CURVA:{" "}
+                      {date.format(
+                        new Date(`${holding.estimationBaseDate}T00:00:00Z`),
+                      )}
+                    </span>
+                  )}
+                  {holding.estimatedThrough && (
+                    <span className="block text-xs text-muted-foreground">
+                      Estimativa{" "}
+                      {holding.cdbEstimateStatus === "provisional"
+                        ? "parcial "
+                        : ""}
+                      até{" "}
+                      {date.format(
+                        new Date(`${holding.estimatedThrough}T00:00:00Z`),
+                      )}
+                    </span>
+                  )}
+                  {holding.cdbEstimateLimitation && (
+                    <span className="block text-xs text-muted-foreground">
+                      {holding.cdbEstimateLimitation}
+                    </span>
+                  )}
                 </li>
               );
             })}

@@ -67,6 +67,10 @@ type RawPosition = {
   regimeType?: string | null;
   issuedAt?: string | null;
   maturityAt?: string | null;
+  estimationBaseDate?: string | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
 };
 
 function valueFor(position: RawPosition) {
@@ -329,11 +333,17 @@ export class PortfolioObjectivesService {
         : available;
     return suggestEmergencyReservePositions(
       targetAmount,
-      candidates.map(({ assetKey, product, institution, value }) => ({
-        assetKey,
-        product,
-        institution,
-        value,
+      candidates.map((position) => ({
+        assetKey: position.assetKey,
+        product: position.product,
+        institution: position.institution,
+        value: position.value,
+        valueCents: position.valueCents ?? null,
+        canonicalValueSource: position.canonicalValueSource,
+        estimationBaseDate: position.estimationBaseDate ?? null,
+        estimatedThrough: position.estimatedThrough ?? null,
+        cdbEstimateStatus: position.cdbEstimateStatus ?? null,
+        cdbEstimateLimitation: position.cdbEstimateLimitation ?? null,
       })),
     );
   }
@@ -401,6 +411,10 @@ export class PortfolioObjectivesService {
         knownValueCents: bigint;
         unvaluedPositions: number;
         referenceDate: string | null;
+        estimationBaseDate: string | null;
+        estimatedThrough: string | null;
+        cdbEstimateStatus: "complete" | "provisional" | "unavailable" | null;
+        cdbEstimateLimitation: string | null;
         source: string | null;
         canonicalValueSource: PortfolioMoneySource;
         allValuesKnown: boolean;
@@ -423,6 +437,28 @@ export class PortfolioObjectivesService {
       const { cents, source } = valueFor(position);
       const existing = grouped.get(assetKey);
       if (existing) {
+        if (
+          existing.estimationBaseDate !== (position.estimationBaseDate ?? null)
+        )
+          existing.estimationBaseDate = null;
+        if (existing.estimatedThrough !== (position.estimatedThrough ?? null))
+          existing.estimatedThrough = null;
+        if (existing.cdbEstimateStatus !== (position.cdbEstimateStatus ?? null))
+          existing.cdbEstimateStatus = null;
+        if (
+          position.cdbEstimateLimitation &&
+          !existing.cdbEstimateLimitation?.includes(
+            position.cdbEstimateLimitation,
+          )
+        )
+          existing.cdbEstimateLimitation = [
+            existing.cdbEstimateLimitation,
+            position.cdbEstimateLimitation,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+        if (existing.canonicalValueSource !== source)
+          existing.canonicalValueSource = "MIXED";
         existing.positionCount += 1;
         if (cents === null) {
           existing.unvaluedPositions += 1;
@@ -444,6 +480,10 @@ export class PortfolioObjectivesService {
         knownValueCents: cents ?? 0n,
         unvaluedPositions: cents === null ? 1 : 0,
         referenceDate: position.referenceDate ?? null,
+        estimationBaseDate: position.estimationBaseDate ?? null,
+        estimatedThrough: position.estimatedThrough ?? null,
+        cdbEstimateStatus: position.cdbEstimateStatus ?? null,
+        cdbEstimateLimitation: position.cdbEstimateLimitation ?? null,
         source: position.source ?? null,
         canonicalValueSource: source,
         allValuesKnown: cents !== null,

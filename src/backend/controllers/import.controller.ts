@@ -22,7 +22,10 @@ export class ImportController {
     logger.info("b3_import_preview_started", { requestId });
     const { referenceDate: _referenceDate, ...file } =
       await this.readFile(request);
-    const preview = importService.preview(file);
+    const preview = await importService.previewWithIdentityConflicts(
+      file,
+      requestId,
+    );
     const count =
       preview.documentType === "B3_POSITION_XLSX"
         ? preview.positions.length
@@ -38,7 +41,12 @@ export class ImportController {
   async confirm(request: Request, requestId: string) {
     logger.info("b3_import_confirm_started", { requestId });
     const { referenceDate, ...file } = await this.readFile(request);
-    const { preview, result, duplicate } = await importService.confirm(
+    const {
+      preview,
+      result,
+      duplicate,
+      referenceDateUpdated = false,
+    } = await importService.confirm(
       file,
       requestId,
       typeof referenceDate === "string" ? referenceDate : null,
@@ -58,8 +66,9 @@ export class ImportController {
         importId: result.importId,
         count,
         documentType: preview.documentType,
-        message:
-          preview.documentType === "B3_POSITION_XLSX"
+        message: referenceDateUpdated
+          ? "Data exibida na B3 atualizada para as posições já importadas."
+          : preview.documentType === "B3_POSITION_XLSX"
             ? `${count} posição(ões) importada(s) com sucesso.`
             : `${count} movimentação(ões) importada(s) com sucesso.`,
       },

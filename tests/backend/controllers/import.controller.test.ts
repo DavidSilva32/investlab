@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { service } = vi.hoisted(() => ({
-  service: { preview: vi.fn(), confirm: vi.fn(), delete: vi.fn() },
+  service: {
+    preview: vi.fn(),
+    previewWithIdentityConflicts: vi.fn(),
+    confirm: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 vi.mock("@/backend/services/import.service", () => ({
   importService: service,
@@ -33,6 +38,7 @@ describe("ImportController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     service.preview.mockReturnValue(preview);
+    service.previewWithIdentityConflicts.mockResolvedValue(preview);
     service.confirm.mockResolvedValue({
       preview,
       result: { importId: "import-1" },
@@ -77,6 +83,24 @@ describe("ImportController", () => {
     expect(service.confirm).toHaveBeenCalled();
   });
 
+  it("reports when duplicate positions receive a confirmed CURVA base date", async () => {
+    service.confirm.mockResolvedValue({
+      preview,
+      result: { importId: "import-1" },
+      duplicate: true,
+      referenceDateUpdated: true,
+    });
+
+    const response = await importController.confirm(
+      requestWithFile(),
+      "request-1",
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      message: "Data exibida na B3 atualizada para as posições já importadas.",
+    });
+  });
+
   it("rejects requests without a file and counts movement records", async () => {
     await expect(
       importController.preview(
@@ -87,7 +111,7 @@ describe("ImportController", () => {
         "request-1",
       ),
     ).rejects.toMatchObject({ statusCode: 400 });
-    service.preview.mockReturnValue({
+    service.previewWithIdentityConflicts.mockResolvedValue({
       hash: "b".repeat(64),
       documentType: "B3_MOVEMENT_XLSX",
       movements: [{ product: "CDB" }, { product: "LCI" }],

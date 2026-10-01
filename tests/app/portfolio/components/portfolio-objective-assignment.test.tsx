@@ -8,7 +8,10 @@ import {
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PortfolioObjectiveAssignment } from "@/app/portfolio/_components/portfolio-objective-assignment";
+import {
+  PortfolioObjectiveAssignment,
+  type ObjectivePosition,
+} from "@/app/portfolio/_components/portfolio-objective-assignment";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
@@ -46,7 +49,7 @@ const goals: PortfolioObjective[] = [
     canEditAssignments: true,
   },
 ];
-const positions = [
+const positions: ObjectivePosition[] = [
   {
     assetKey: "cdb-free",
     product: "CDB",
@@ -55,9 +58,16 @@ const positions = [
     assetClass: "Renda fixa",
     positionCount: 1,
     value: 100,
+    valueCents: "10000",
     unvaluedPositions: 0,
     objectiveId: null,
     objectiveName: null,
+    estimationBaseDate: "2026-09-16",
+    estimatedThrough: "2026-09-18",
+    cdbEstimateStatus: "provisional" as const,
+    cdbEstimateLimitation:
+      "Ainda não há taxa CDI oficial para os dias seguintes.",
+    canonicalValueSource: "CDB_ESTIMATE",
   },
   {
     assetKey: "equity-free",
@@ -67,9 +77,28 @@ const positions = [
     assetClass: "Renda variável",
     positionCount: 1,
     value: 200,
+    valueCents: "20000",
     unvaluedPositions: 0,
     objectiveId: null,
     objectiveName: null,
+    canonicalValueSource: "UNRECOGNIZED_PROVIDER",
+  },
+  {
+    assetKey: "cdb-complete",
+    product: "CDB com avaliação completa",
+    assetCode: "CDB2",
+    institution: "Banco B",
+    assetClass: "Renda fixa",
+    positionCount: 1,
+    value: 25,
+    valueCents: "2500",
+    unvaluedPositions: 0,
+    objectiveId: null,
+    objectiveName: null,
+    canonicalValueSource: "B3_IMPORTED",
+    estimationBaseDate: "2026-09-16",
+    estimatedThrough: "2026-09-19",
+    cdbEstimateStatus: "complete",
   },
   {
     assetKey: "already-used",
@@ -161,6 +190,11 @@ describe("PortfolioObjectiveAssignment", () => {
         onSave={onSave}
       />,
     );
+    expect(
+      screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
+    ).toBeTruthy();
+    expect(screen.getByText("Origem: UNRECOGNIZED_PROVIDER")).toBeTruthy();
+    expect(screen.getByText("Estimativa até 19/09/2026")).toBeTruthy();
     expect(
       screen
         .getByRole("checkbox", { name: /CDB reservado/ })
@@ -296,7 +330,7 @@ describe("PortfolioObjectiveAssignment", () => {
       screen.getByRole("combobox", { name: /Objetivo para associar/ }),
     );
     await user.click(await screen.findByRole("option", { name: "Viagem" }));
-    await user.click(screen.getByRole("button", { name: "Ver 5 posições" }));
+    await user.click(screen.getByRole("button", { name: "Ver 6 posições" }));
     expect(
       screen
         .getByRole("checkbox", { name: /CDB j.*vinculado.*Viagem/ })

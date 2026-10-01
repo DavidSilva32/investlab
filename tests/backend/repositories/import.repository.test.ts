@@ -11,6 +11,7 @@ vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
 import { importRepository } from "@/backend/repositories/import.repository";
 import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
+import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 
 const positions = [
   {
@@ -29,6 +30,12 @@ const chain = (result: unknown) => ({
     orderBy: () => ({ limit: async () => result }),
   }),
 });
+const emptyImportGuard = () => ({
+  execute: vi.fn().mockResolvedValue(undefined),
+  select: vi.fn().mockReturnValue({
+    from: () => ({ orderBy: () => ({ limit: async () => [] }) }),
+  }),
+});
 
 describe("import repository", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -38,6 +45,113 @@ describe("import repository", () => {
       .mockReturnValueOnce(chain([]));
     await expect(importRepository.existsByHash("hash")).resolves.toBe(true);
     await expect(importRepository.existsByHash("hash")).resolves.toBe(false);
+  });
+  it("updates one B3 reference date as both snapshot and estimation metadata", async () => {
+    const changes: unknown[] = [];
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({ limit: async () => [{ id: "import-1" }] }),
+        }),
+      }),
+      update: vi
+        .fn()
+        .mockImplementationOnce(() => ({
+          set: (values: unknown) => {
+            changes.push(values);
+            return {
+              where: () => ({
+                returning: async () => [{ id: "snapshot-1" }],
+              }),
+            };
+          },
+        }))
+        .mockImplementationOnce(() => ({
+          set: (values: unknown) => {
+            changes.push(values);
+            return { where: async () => undefined };
+          },
+        })),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+
+    await expect(
+      importRepository.updatePositionReferenceDate(
+        "same-file-hash",
+        "2026-09-18",
+        "request-1",
+      ),
+    ).resolves.toEqual({ importId: "import-1", snapshotId: "snapshot-1" });
+    expect(changes).toEqual([
+      { referenceDate: "2026-09-18", estimationBaseDate: "2026-09-18" },
+      { referenceDate: "2026-09-18", estimationBaseDate: "2026-09-18" },
+    ]);
+  });
+
+  it("does not update metadata when a duplicate has no position snapshot", async () => {
+    const update = vi.fn(() => ({
+      set: () => ({
+        where: () => ({ returning: async () => [] }),
+      }),
+    }));
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({ limit: async () => [{ id: "import-1" }] }),
+        }),
+      }),
+      update,
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+
+    await expect(
+      importRepository.updatePositionReferenceDate(
+        "same-file-hash",
+        "2026-09-18",
+      ),
+    ).resolves.toBeNull();
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("does not backfill a hash that is not a position import", async () => {
+    const update = vi.fn();
+    const tx = {
+      select: () => ({
+        from: () => ({ where: () => ({ limit: async () => [] }) }),
+      }),
+      update,
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+
+    await expect(
+      importRepository.updatePositionReferenceDate(
+        "movement-hash",
+        "2026-09-18",
+      ),
+    ).resolves.toBeNull();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("logs and rethrows duplicate metadata update failures", async () => {
+    mocks.client.transaction.mockRejectedValue(new Error("database failed"));
+
+    await expect(
+      importRepository.updatePositionReferenceDate(
+        "same-file-hash",
+        "2026-09-18",
+        "request-2",
+      ),
+    ).rejects.toThrow("database failed");
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_import_reference_date_update_failed",
+      expect.objectContaining({ requestId: "request-2" }),
+    );
   });
   it("logs database failures", async () => {
     mocks.client.select.mockImplementation(() => {
@@ -81,15 +195,22 @@ describe("import repository", () => {
   });
   it("creates import, snapshot and position items in one transaction", async () => {
     let persistedPositions: unknown[] = [];
-    const transaction = { insert: vi.fn() };
+    const persistedInputs: unknown[] = [];
+    const transaction = { ...emptyImportGuard(), insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
-        values: () => ({ returning: async () => [{ id: "import-1" }] }),
+        values: (input: unknown) => {
+          persistedInputs.push(input);
+          return { returning: async () => [{ id: "import-1" }] };
+        },
       })
       .mockReturnValueOnce({
-        values: () => ({
-          returning: async () => [{ id: "snapshot-1", importId: "import-1" }],
-        }),
+        values: (input: unknown) => {
+          persistedInputs.push(input);
+          return {
+            returning: async () => [{ id: "snapshot-1", importId: "import-1" }],
+          };
+        },
       })
       .mockReturnValueOnce({
         values: (items: unknown[]) => ({
@@ -108,9 +229,20 @@ describe("import repository", () => {
         fileHash: "hash",
         documentType: "B3_POSITION_XLSX",
         referenceDate: "2026-09-18",
+        estimationBaseDate: "2026-09-18",
         positions,
       }),
     ).resolves.toMatchObject({ snapshotId: "snapshot-1" });
+    expect(persistedInputs).toEqual([
+      expect.objectContaining({
+        estimationBaseDate: "2026-09-18",
+        referenceDate: "2026-09-18",
+      }),
+      expect.objectContaining({
+        estimationBaseDate: "2026-09-18",
+        referenceDate: "2026-09-18",
+      }),
+    ]);
     expect(persistedPositions).toEqual([
       expect.objectContaining({
         snapshotId: "snapshot-1",
@@ -121,9 +253,278 @@ describe("import repository", () => {
     ]);
   });
 
+  it("locks assignments and rejects an identity conflict that appeared after preview", async () => {
+    const currentPosition = {
+      product: "CDB Viagem",
+      assetCode: "CDB-TRIP",
+      institution: "Banco A",
+      issuer: "Banco A",
+      indexer: "CDI",
+      regimeType: "PÃ“S",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+    };
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "snapshot-latest" }] }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [currentPosition] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: async () => [
+              {
+                assetKey: getEmergencyReserveAssetKey(currentPosition),
+                objectiveId: "trip",
+              },
+            ],
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "trip", name: "Viagem" }] }),
+        }),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "new.xlsx",
+        fileHash: "new-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-09-30",
+        positions: [],
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Viagem"),
+    });
+    expect(transaction.execute).toHaveBeenCalledTimes(1);
+    expect(transaction.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.select.mock.invocationCallOrder[0],
+    );
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("allows import when the latest snapshot contains no positions", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "snapshot-empty" }] }),
+          }),
+        })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+      insert: vi.fn(),
+    };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "import-2" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "snapshot-2" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [] }),
+      });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "empty.xlsx",
+        fileHash: "empty-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-09-30",
+        positions: [],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot-2" });
+    expect(transaction.insert).toHaveBeenCalledTimes(3);
+  });
+
+  it("allows import when prior positions have no objective assignments", async () => {
+    const existingPosition = {
+      product: "CDB livre",
+      assetCode: "CDB-FREE",
+      institution: "Banco A",
+      issuer: "Banco A",
+      indexer: "CDI",
+      regimeType: "PÃ“S",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+    };
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "snapshot-old" }] }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [existingPosition] }),
+        })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+      insert: vi.fn(),
+    };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "import-3" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "snapshot-3" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [] }),
+      });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "free.xlsx",
+        fileHash: "free-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-09-30",
+        positions: [],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot-3" });
+    expect(transaction.insert).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns a safe generic conflict when an assignment has no objective name", async () => {
+    const currentPosition = {
+      product: "CDB órfão",
+      assetCode: "CDB-ORPHAN",
+      institution: "Banco A",
+      issuer: "Banco A",
+      indexer: "CDI",
+      regimeType: "PÃ“S",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+    };
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "snapshot-old" }] }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [currentPosition] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: async () => [
+              {
+                assetKey: getEmergencyReserveAssetKey(currentPosition),
+                objectiveId: "deleted-objective",
+              },
+            ],
+          }),
+        })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "conflict.xlsx",
+        fileHash: "conflict-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-09-30",
+        positions: [],
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("um objetivo"),
+    });
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("appends a new dated snapshot and retains the previous snapshot", async () => {
+    const insertedSnapshots: Array<Record<string, unknown>> = [];
+    let importSequence = 0;
+    let insertSequence = 0;
+    const transaction = {
+      ...emptyImportGuard(),
+      insert: vi.fn(() => {
+        insertSequence += 1;
+        const insertKind = ((insertSequence - 1) % 3) + 1;
+        return {
+          values: (value: unknown) => {
+            if (insertKind === 2)
+              insertedSnapshots.push(value as Record<string, unknown>);
+            return {
+              returning: async () => {
+                if (insertKind === 1) {
+                  importSequence += 1;
+                  return [{ id: `import-${importSequence}` }];
+                }
+                if (insertKind === 2)
+                  return [{ id: `snapshot-${importSequence}` }];
+                return [{ id: `position-${importSequence}` }];
+              },
+            };
+          },
+        };
+      }),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+
+    await importRepository.create({
+      fileName: "b3.xlsx",
+      fileHash: "first-hash",
+      documentType: "B3_POSITION_XLSX",
+      referenceDate: "2026-09-28",
+      estimationBaseDate: "2026-09-28",
+      positions,
+    });
+    await importRepository.create({
+      fileName: "b3-updated.xlsx",
+      fileHash: "second-hash",
+      documentType: "B3_POSITION_XLSX",
+      referenceDate: "2026-09-29",
+      estimationBaseDate: "2026-09-29",
+      positions,
+    });
+
+    expect(insertedSnapshots).toEqual([
+      expect.objectContaining({
+        referenceDate: "2026-09-28",
+        estimationBaseDate: "2026-09-28",
+      }),
+      expect.objectContaining({
+        referenceDate: "2026-09-29",
+        estimationBaseDate: "2026-09-29",
+      }),
+    ]);
+    expect(mocks.client.transaction).toHaveBeenCalledTimes(2);
+  });
+
   it("persists a new liquidity fact with its source position and snapshot", async () => {
     const persistedFacts: unknown[][] = [];
-    const transaction = { insert: vi.fn() };
+    const transaction = { ...emptyImportGuard(), insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
         values: () => ({ returning: async () => [{ id: "import-1" }] }),
@@ -183,7 +584,7 @@ describe("import repository", () => {
   it("links multiple liquidity facts to their positions when RETURNING order differs", async () => {
     const insertedPositions: Array<Record<string, unknown>> = [];
     const persistedFacts: Array<Record<string, unknown>> = [];
-    const transaction = { insert: vi.fn() };
+    const transaction = { ...emptyImportGuard(), insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
         values: () => ({ returning: async () => [{ id: "import-1" }] }),
@@ -353,7 +754,7 @@ describe("import repository", () => {
   it("persists movement items without creating a position snapshot", async () => {
     const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
     const persistMovements = vi.fn().mockReturnValue({ onConflictDoNothing });
-    const transaction = { insert: vi.fn() };
+    const transaction = { ...emptyImportGuard(), insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
         values: () => ({ returning: async () => [{ id: "import-1" }] }),
@@ -501,7 +902,7 @@ describe("import repository", () => {
     mocks.client.transaction.mockImplementation(
       async (callback: (tx: unknown) => unknown) => {
         importNumber += 1;
-        const transaction = { insert: vi.fn() };
+        const transaction = { ...emptyImportGuard(), insert: vi.fn() };
         transaction.insert
           .mockReturnValueOnce({
             values: () => ({

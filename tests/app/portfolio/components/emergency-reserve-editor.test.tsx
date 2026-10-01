@@ -24,6 +24,7 @@ async function openReservePositions(user = userEvent.setup()) {
 
 const keyA = `v1:${"a".repeat(64)}`;
 const keyB = `v1:${"b".repeat(64)}`;
+const keyC = `v1:${"c".repeat(64)}`;
 const editorData = {
   monthlyExpenses: 2000,
   targetMonths: 6,
@@ -60,6 +61,12 @@ const editorData = {
       unvaluedPositions: 0,
       value: 3000,
       valueCents: "300000",
+      valueSource: "CDB_ESTIMATE",
+      estimationBaseDate: "2026-09-16",
+      estimatedThrough: "2026-09-18",
+      cdbEstimateStatus: "provisional" as const,
+      cdbEstimateLimitation:
+        "Ainda não há taxa CDI oficial para os dias seguintes.",
       selected: true,
     },
     {
@@ -77,6 +84,26 @@ const editorData = {
       selected: false,
       assignedObjectiveId: null,
       assignedObjectiveName: null,
+      valueSource: "UNRECOGNIZED_PROVIDER",
+    },
+    {
+      assetKey: keyC,
+      product: "CDB DI taxa completa",
+      assetCode: "CDB2",
+      institution: "Banco B",
+      issuer: "Banco B",
+      indexer: "DI",
+      maturityAt: "2029-01-01",
+      positionCount: 1,
+      unvaluedPositions: 0,
+      value: 1000,
+      valueCents: null,
+      valueSource: "B3_IMPORTED",
+      estimationBaseDate: "2026-09-16",
+      estimatedThrough: "2026-09-19",
+      cdbEstimateStatus: "complete" as const,
+      cdbEstimateLimitation: null,
+      selected: false,
     },
   ],
 };
@@ -128,6 +155,13 @@ describe("EmergencyReserveEditor", () => {
     expect(saveFooter.className).toContain("w-full min-w-0");
     expect(saveFooter.className).not.toContain("-mx-");
     expect(screen.getByLabelText(/CDB liquidez/)).toBeTruthy();
+    expect(screen.getByText("Origem: Estimativa CDI")).toBeTruthy();
+    expect(screen.getByText("Origem: UNRECOGNIZED_PROVIDER")).toBeTruthy();
+    expect(screen.getByText("R$ 1.000,00")).toBeTruthy();
+    expect(screen.getByText("Estimativa até 19/09/2026")).toBeTruthy();
+    expect(
+      screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
+    ).toBeTruthy();
     expect(screen.getByLabelText(/Tesouro Selic/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Salvar configuração" }),
@@ -351,7 +385,7 @@ describe("EmergencyReserveEditor", () => {
   });
 
   it("allows removing unmatched selections before saving", async () => {
-    const staleKey = "v1:" + "c".repeat(64);
+    const staleKey = "v1:" + "d".repeat(64);
     const initial = {
       ...editorData,
       selectedAssetKeys: [keyA, staleKey],

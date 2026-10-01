@@ -19,7 +19,11 @@ describe("CdbRateRepository", () => {
   });
 
   it("queries configurations and cached rates", async () => {
-    const where = vi.fn().mockResolvedValue([{ assetCode: "CDB1" }]);
+    const conditions: unknown[] = [];
+    const where = vi.fn((condition: unknown) => {
+      conditions.push(condition);
+      return Promise.resolve([{ assetCode: "CDB1" }]);
+    });
     client.select.mockReturnValue({ from: () => ({ where }) });
     await expect(repository.listConfigurations(["CDB1"])).resolves.toEqual([
       { assetCode: "CDB1" },
@@ -28,6 +32,27 @@ describe("CdbRateRepository", () => {
       repository.listRatesFrom("2026-09-16", "2026-09-20"),
     ).resolves.toEqual([{ assetCode: "CDB1" }]);
     expect(where).toHaveBeenCalledTimes(2);
+    const collectSqlText = (chunks: unknown[]): string =>
+      chunks
+        .map((chunk) => {
+          if (typeof chunk !== "object" || chunk === null) return "";
+          if ("value" in chunk) {
+            const value = (chunk as { value: unknown }).value;
+            return Array.isArray(value) ? value.join("") : String(value);
+          }
+          if ("queryChunks" in chunk) {
+            const queryChunks = (chunk as { queryChunks: unknown[] })
+              .queryChunks;
+            return collectSqlText(queryChunks);
+          }
+          return "";
+        })
+        .join("");
+    const conditionText = collectSqlText(
+      (conditions[1] as { queryChunks: unknown[] }).queryChunks,
+    );
+    expect(conditionText).toContain("> ");
+    expect(conditionText).not.toContain(">= ");
   });
 
   it("upserts one configuration", async () => {

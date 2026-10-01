@@ -25,6 +25,15 @@ describe("suggestEmergencyReservePositions", () => {
           differenceCents: "0",
           total: 100,
           difference: 0,
+          positions: [
+            {
+              assetKey: "c",
+              institution: "Banco Inter",
+              product: "CDB c",
+              value: 100,
+              valueCents: "10000",
+            },
+          ],
         },
         {
           assetKeys: ["a", "b"],
@@ -32,6 +41,22 @@ describe("suggestEmergencyReservePositions", () => {
           differenceCents: "0",
           total: 100,
           difference: 0,
+          positions: [
+            {
+              assetKey: "a",
+              institution: "Banco Inter",
+              product: "CDB a",
+              value: 70,
+              valueCents: "7000",
+            },
+            {
+              assetKey: "b",
+              institution: "Banco Inter",
+              product: "CDB b",
+              value: 30,
+              valueCents: "3000",
+            },
+          ],
         },
       ],
       searchLimited: false,

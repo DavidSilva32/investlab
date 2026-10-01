@@ -19,6 +19,7 @@ export type PortfolioPosition = {
   assetCode: string | null;
   institution: string | null;
   indexer: string | null;
+  valuationSource?: "MTM" | "CURVA" | "FECHAMENTO" | "INFORMADO" | null;
   issuedAt: string | null;
   maturityAt: string | null;
   quantity: string;
@@ -38,7 +39,8 @@ export type PortfolioPosition = {
   canonicalValueSource?: string;
   reportedValueCents?: string | null;
   estimatedThrough?: string | null;
-  cdbEstimateStatus?: "official" | "provisional" | "unavailable" | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
 };
 
 export type ClassifiedPosition = {

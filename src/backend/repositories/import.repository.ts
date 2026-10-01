@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { asc, inArray, desc, eq } from "drizzle-orm";
+import { and, asc, inArray, desc, eq, sql } from "drizzle-orm";
+import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
@@ -7,12 +8,15 @@ import {
   movementItems,
   positionItems,
   positionSnapshots,
+  portfolioObjectivePositions,
+  portfolioObjectives,
   treasuryPositionLiquidityFacts,
   treasuryLiquidityRules,
 } from "@/infrastructure/database/schema";
 import type { TreasurySelicLiquidityFact } from "@/backend/types/treasury-selic-liquidity";
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
+import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 
 export type B3DocumentType = ParsedB3Import["documentType"];
 type ImportCreateInput =
@@ -20,6 +24,7 @@ type ImportCreateInput =
       fileName: string;
       fileHash: string;
       referenceDate: string;
+      estimationBaseDate?: string | null;
       liquidityFacts?: Array<TreasurySelicLiquidityFact | null>;
     } & Extract<ParsedB3Import, { documentType: "B3_POSITION_XLSX" }>)
   | {
@@ -49,9 +54,119 @@ export class ImportRepository {
     }
   }
 
+  async updatePositionReferenceDate(
+    fileHash: string,
+    referenceDate: string,
+    requestId?: string,
+  ) {
+    try {
+      return await getDatabaseClient().transaction(async (transaction) => {
+        const [importRecord] = await transaction
+          .select({ id: imports.id })
+          .from(imports)
+          .where(
+            and(
+              eq(imports.fileHash, fileHash),
+              eq(imports.documentType, "B3_POSITION_XLSX"),
+            ),
+          )
+          .limit(1);
+        if (!importRecord) return null;
+        const [snapshot] = await transaction
+          .update(positionSnapshots)
+          .set({ referenceDate, estimationBaseDate: referenceDate })
+          .where(eq(positionSnapshots.importId, importRecord.id))
+          .returning({ id: positionSnapshots.id });
+        if (!snapshot) return null;
+        await transaction
+          .update(imports)
+          .set({ referenceDate, estimationBaseDate: referenceDate })
+          .where(eq(imports.id, importRecord.id));
+        return { importId: importRecord.id, snapshotId: snapshot.id };
+      });
+    } catch (error) {
+      logger.error("database_import_reference_date_update_failed", {
+        requestId,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  private async lockAndValidateAssignedPositionIdentities(
+    transaction: Parameters<
+      Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
+    >[0],
+    incomingPositions: Extract<
+      ParsedB3Import,
+      { documentType: "B3_POSITION_XLSX" }
+    >["positions"],
+  ) {
+    await transaction.execute(
+      sql`LOCK TABLE ${positionSnapshots}, ${portfolioObjectivePositions} IN SHARE MODE`,
+    );
+    const [latestSnapshot] = await transaction
+      .select({ id: positionSnapshots.id })
+      .from(positionSnapshots)
+      .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
+      .limit(1);
+    if (!latestSnapshot) return;
+
+    const currentPositions = await transaction
+      .select()
+      .from(positionItems)
+      .where(eq(positionItems.snapshotId, latestSnapshot.id));
+    const positionByAssetKey = new Map(
+      currentPositions.map((position) => [
+        getEmergencyReserveAssetKey(position),
+        position,
+      ]),
+    );
+    if (positionByAssetKey.size === 0) return;
+
+    const assignments = await transaction
+      .select()
+      .from(portfolioObjectivePositions)
+      .where(
+        inArray(portfolioObjectivePositions.assetKey, [
+          ...positionByAssetKey.keys(),
+        ]),
+      );
+    const incomingAssetKeys = new Set(
+      incomingPositions.map(getEmergencyReserveAssetKey),
+    );
+    const conflicts = assignments.filter(
+      (assignment) => !incomingAssetKeys.has(assignment.assetKey),
+    );
+    if (!conflicts.length) return;
+
+    const affectedObjectiveIds = [
+      ...new Set(conflicts.map(({ objectiveId }) => objectiveId)),
+    ];
+    const affectedObjectives = await transaction
+      .select({ id: portfolioObjectives.id, name: portfolioObjectives.name })
+      .from(portfolioObjectives)
+      .where(inArray(portfolioObjectives.id, affectedObjectiveIds));
+    const objectiveNameById = new Map(
+      affectedObjectives.map((objective) => [objective.id, objective.name]),
+    );
+    const conflict = conflicts[0]!;
+    const position = positionByAssetKey.get(conflict.assetKey)!;
+    throw new ApplicationError(
+      `A posição ${position.product} atribuída a ${objectiveNameById.get(conflict.objectiveId) ?? "um objetivo"} mudou enquanto a importação era preparada. Atualize a prévia e investigue a identidade antes de confirmar.`,
+      409,
+    );
+  }
+
   async create(input: ImportCreateInput, requestId?: string) {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        if (input.documentType === "B3_POSITION_XLSX") {
+          await this.lockAndValidateAssignedPositionIdentities(
+            transaction,
+            input.positions,
+          );
+        }
         const [importRecord] = await transaction
           .insert(imports)
           .values({
@@ -61,6 +176,10 @@ export class ImportRepository {
             referenceDate:
               input.documentType === "B3_POSITION_XLSX"
                 ? input.referenceDate
+                : null,
+            estimationBaseDate:
+              input.documentType === "B3_POSITION_XLSX"
+                ? (input.estimationBaseDate ?? null)
                 : null,
           })
           .returning();
@@ -81,6 +200,7 @@ export class ImportRepository {
           .values({
             importId: importRecord.id,
             referenceDate: input.referenceDate,
+            estimationBaseDate: input.estimationBaseDate ?? null,
           })
           .returning();
         const positionRows = input.positions.map((position, index) => ({
@@ -187,6 +307,7 @@ export class ImportRepository {
         .limit(1);
       if (!snapshot) return [];
       const referenceDate = snapshot.referenceDate;
+      const estimationBaseDate = snapshot.estimationBaseDate;
       const positions = await getDatabaseClient()
         .select()
         .from(positionItems)
@@ -222,6 +343,7 @@ export class ImportRepository {
         return {
           ...position,
           referenceDate,
+          estimationBaseDate,
           ...(fact
             ? {
                 liquidityProfile: {

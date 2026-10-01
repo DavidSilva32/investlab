@@ -41,35 +41,55 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
 import { EmergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import { resolvePositionMoney } from "@/lib/portfolio-money";
 
-const position = (overrides: Record<string, unknown> = {}) => ({
-  id: "snapshot-row-1",
-  snapshotId: "snapshot-1",
-  product: "CDB DI",
-  institution: "Banco A",
-  issuer: "Banco A S.A.",
-  assetCode: "CDB123",
-  indexer: "DI",
-  regimeType: "PÓS-FIXADO",
-  issuedAt: "2025-01-01",
-  maturityAt: "2028-01-01",
-  quantity: "1",
-  availableQuantity: null,
-  unavailableQuantity: null,
-  unitPrice: "100",
-  totalValue: "100",
-  valuationSource: "imported",
-  mtmUnitPrice: null,
-  mtmTotalValue: null,
-  curveUnitPrice: null,
-  curveTotalValue: null,
-  closingUnitPrice: null,
-  closingTotalValue: null,
-  source: "B3",
-  createdAt: new Date("2026-09-01T00:00:00Z"),
-  referenceDate: "2026-09-01",
-  ...overrides,
-});
+const position = (overrides: Record<string, unknown> = {}) => {
+  const values = {
+    id: "snapshot-row-1",
+    snapshotId: "snapshot-1",
+    product: "CDB DI",
+    institution: "Banco A",
+    issuer: "Banco A S.A.",
+    assetCode: "CDB123",
+    indexer: "DI",
+    regimeType: "PÓS-FIXADO",
+    issuedAt: "2025-01-01",
+    maturityAt: "2028-01-01",
+    quantity: "1",
+    availableQuantity: null,
+    unavailableQuantity: null,
+    unitPrice: "100",
+    totalValue: "100",
+    valuationSource: "imported",
+    mtmUnitPrice: null,
+    mtmTotalValue: null,
+    curveUnitPrice: null,
+    curveTotalValue: null,
+    closingUnitPrice: null,
+    closingTotalValue: null,
+    source: "B3",
+    createdAt: new Date("2026-09-01T00:00:00Z"),
+    referenceDate: "2026-09-01",
+    ...overrides,
+  };
+  const resolved = resolvePositionMoney(values);
+  return {
+    ...values,
+    canonicalValueCents:
+      typeof overrides.canonicalValueCents === "string" ||
+      overrides.canonicalValueCents === null
+        ? overrides.canonicalValueCents
+        : (resolved.cents?.toString() ?? null),
+    canonicalValueSource:
+      (overrides.canonicalValueSource as
+        | "CDB_ESTIMATE"
+        | "B3_IMPORTED"
+        | "MANUAL_REPORTED"
+        | "MANUAL_CONVERTED"
+        | "MIXED"
+        | "UNVALUED") ?? resolved.source,
+  };
+};
 
 describe("EmergencyReserveService", () => {
   beforeEach(() => {
@@ -225,11 +245,22 @@ describe("EmergencyReserveService", () => {
   });
 
   it("groups indistinguishable positions and counts only selected known values", async () => {
-    const first = position({ totalValue: "100", estimatedValue: 125 });
+    const first = position({
+      totalValue: "100",
+      estimatedValue: 125,
+      estimationBaseDate: "2026-08-29",
+      estimatedThrough: "2026-09-18",
+      cdbEstimateStatus: "complete",
+      canonicalValueSource: "CDB_ESTIMATE",
+    });
     const duplicate = position({
       id: "snapshot-row-2",
       totalValue: "50",
       estimatedValue: null,
+      estimationBaseDate: "2026-08-30",
+      cdbEstimateStatus: "unavailable",
+      cdbEstimateLimitation: "Data-base CURVA não confirmada.",
+      canonicalValueSource: "B3_IMPORTED",
     });
     const unvaluedDuplicate = position({
       id: "snapshot-row-4",
@@ -268,6 +299,11 @@ describe("EmergencyReserveService", () => {
       value: 175,
       unvaluedPositions: 1,
       selected: true,
+      estimationBaseDate: null,
+      estimatedThrough: null,
+      cdbEstimateStatus: null,
+      cdbEstimateLimitation: "Data-base CURVA não confirmada.",
+      valueSource: "MIXED",
     });
     expect(data.calculation).toMatchObject({
       selectedValue: 175,
@@ -278,6 +314,30 @@ describe("EmergencyReserveService", () => {
     });
     expect(data.selectedPositionCount).toBe(3);
     expect(data.missingSelectionCount).toBe(0);
+  });
+
+  it("preserves the canonical source when grouped lots share the same source", async () => {
+    const first = position({
+      totalValue: "100",
+      estimatedValue: 110,
+      canonicalValueSource: "CDB_ESTIMATE",
+    });
+    const duplicate = position({
+      id: "snapshot-row-2",
+      totalValue: "50",
+      estimatedValue: 55,
+      canonicalValueSource: "CDB_ESTIMATE",
+    });
+    mocks.listLatestPositions.mockResolvedValue([first, duplicate]);
+    mocks.enrich.mockResolvedValue([first, duplicate]);
+
+    const data = await new EmergencyReserveService().getEditorData();
+
+    expect(data.holdings[0]).toMatchObject({
+      positionCount: 2,
+      value: 165,
+      valueSource: "CDB_ESTIMATE",
+    });
   });
 
   it("shows the objective assignment owner for matching reserve holdings", async () => {
