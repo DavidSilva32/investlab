@@ -17,6 +17,10 @@ export type ObjectivePosition = {
   referenceDate: string | null;
   source: string | null;
   canonicalValueSource?: string;
+  estimationBaseDate?: string | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
 };
 
 export function calculateObjectiveValue(

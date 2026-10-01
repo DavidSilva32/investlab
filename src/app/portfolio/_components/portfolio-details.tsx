@@ -149,20 +149,20 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
               {formatCurrencyCents(row.canonicalValueCents ?? null)}
             </span>
             <span className="block text-xs text-muted-foreground">
-              {row.cdbEstimateStatus === "provisional" &&
-              row.estimatedThrough ? (
+              {row.estimatedThrough ? (
                 <>
-                  Estimativa provisória até{" "}
+                  {row.cdbEstimateStatus === "provisional"
+                    ? "Estimativa parcial até "
+                    : "Estimativa até "}
                   {date.format(new Date(`${row.estimatedThrough}T00:00:00Z`))}
                 </>
               ) : (
-                "Valor estimado hoje"
+                "Valor estimado"
               )}
             </span>
-            {row.cdbEstimateStatus === "provisional" && (
+            {row.cdbEstimateLimitation && (
               <span className="block text-xs text-amber-700 dark:text-amber-400">
-                Não foi possível confirmar o CDI oficial agora. Sujeita a
-                ajuste.
+                {row.cdbEstimateLimitation}
               </span>
             )}
             {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}
@@ -170,7 +170,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
               Último valor informado pela B3:{" "}
               {formatCurrencyCents(row.reportedValueCents ?? null)}
               {row.estimationBaseDate
-                ? ` · arquivo de ${date.format(new Date(`${row.estimationBaseDate}T00:00:00Z`))}`
+                ? ` · data-base CURVA de ${date.format(new Date(`${row.estimationBaseDate}T00:00:00Z`))}`
                 : ""}
             </span>
             {isDiCdb && row.assetCode && (
@@ -192,7 +192,8 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
             </span>
             {row.cdbEstimateStatus === "unavailable" && (
               <span className="block text-xs text-amber-700 dark:text-amber-400">
-                Não foi possível atualizar a estimativa com o CDI oficial.
+                {row.cdbEstimateLimitation ??
+                  "A estimativa com taxas CDI oficiais não está disponível."}
               </span>
             )}
             {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}

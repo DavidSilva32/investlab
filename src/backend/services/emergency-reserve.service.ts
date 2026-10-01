@@ -17,7 +17,6 @@ import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import {
   centsToNumber,
-  resolvePositionMoney,
   sumMoneyCents,
   type PortfolioMoneySource,
 } from "@/lib/portfolio-money";
@@ -66,10 +65,14 @@ type Position = {
   maturityAt: string | null;
   totalValue: string | null;
   referenceDate?: string | null;
+  estimationBaseDate?: string | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
   estimatedValue?: number | null;
   estimatedValueCents?: string | null;
-  canonicalValueCents?: string | null;
-  canonicalValueSource?: PortfolioMoneySource;
+  canonicalValueCents: string | null;
+  canonicalValueSource: PortfolioMoneySource;
   classification?: { assetClass: string | null };
 };
 
@@ -89,7 +92,18 @@ type ReserveImpactObjective = {
   targetAmount: number | null;
 };
 
-function isReserveFixedIncomePosition(position: Position) {
+function isReserveFixedIncomePosition(
+  position: Pick<
+    Position,
+    | "product"
+    | "assetCode"
+    | "issuer"
+    | "institution"
+    | "indexer"
+    | "regimeType"
+    | "classification"
+  >,
+) {
   const inferredClass = inferPortfolioAssetClassification(position).assetClass;
   return (
     position.classification?.assetClass === "Renda fixa" &&
@@ -99,12 +113,9 @@ function isReserveFixedIncomePosition(position: Position) {
 }
 
 function getPositionValue(position: Position) {
-  if (position.canonicalValueCents !== undefined) {
-    return position.canonicalValueCents === null
-      ? null
-      : BigInt(position.canonicalValueCents);
-  }
-  return resolvePositionMoney(position).cents;
+  return position.canonicalValueCents === null
+    ? null
+    : BigInt(position.canonicalValueCents);
 }
 
 export class EmergencyReserveService {
@@ -565,6 +576,10 @@ export class EmergencyReserveService {
         valueCents: bigint;
         hasValue: boolean;
         valueSource: PortfolioMoneySource;
+        estimationBaseDate: string | null;
+        estimatedThrough: string | null;
+        cdbEstimateStatus: "complete" | "provisional" | "unavailable" | null;
+        cdbEstimateLimitation: string | null;
       }
     >();
 
@@ -574,6 +589,29 @@ export class EmergencyReserveService {
       const valueCents = getPositionValue(position);
       const existing = groups.get(assetKey);
       if (existing) {
+        if (
+          existing.estimationBaseDate !== (position.estimationBaseDate ?? null)
+        )
+          existing.estimationBaseDate = null;
+        if (existing.estimatedThrough !== (position.estimatedThrough ?? null))
+          existing.estimatedThrough = null;
+        if (existing.cdbEstimateStatus !== (position.cdbEstimateStatus ?? null))
+          existing.cdbEstimateStatus = null;
+        if (
+          position.cdbEstimateLimitation &&
+          !existing.cdbEstimateLimitation?.includes(
+            position.cdbEstimateLimitation,
+          )
+        )
+          existing.cdbEstimateLimitation = [
+            existing.cdbEstimateLimitation,
+            position.cdbEstimateLimitation,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+        const currentSource = position.canonicalValueSource;
+        if (existing.valueSource !== currentSource)
+          existing.valueSource = "MIXED";
         existing.positionCount += 1;
         if (valueCents === null) existing.unvaluedPositions += 1;
         else {
@@ -594,9 +632,11 @@ export class EmergencyReserveService {
         unvaluedPositions: valueCents === null ? 1 : 0,
         valueCents: valueCents ?? 0n,
         hasValue: valueCents !== null,
-        valueSource:
-          position.canonicalValueSource ??
-          resolvePositionMoney(position).source,
+        valueSource: position.canonicalValueSource,
+        estimationBaseDate: position.estimationBaseDate ?? null,
+        estimatedThrough: position.estimatedThrough ?? null,
+        cdbEstimateStatus: position.cdbEstimateStatus ?? null,
+        cdbEstimateLimitation: position.cdbEstimateLimitation ?? null,
       });
     }
 

@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import {
   cleanup,
   fireEvent,
@@ -81,9 +81,12 @@ describe("PortfolioImport", () => {
     expect(await screen.findByText("Compra")).toBeTruthy();
     expect(screen.getAllByText("18/09/2026")).toHaveLength(1);
     expect(screen.getByText(/20,00/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText(/Data de refer/), {
-      target: { value: "2026-09-18" },
-    });
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /^Data exibida na B3/ }),
+      {
+        target: { value: "18/09/2026" },
+      },
+    );
     expect(fetch).toHaveBeenCalledTimes(2);
   });
   it("renders movement previews with the shared table component", async () => {
@@ -145,7 +148,11 @@ describe("PortfolioImport", () => {
       target: { files: [spreadsheet("posicoes.xlsx")] },
     });
 
-    expect(await screen.findByLabelText(/Data de refer/)).toBeTruthy();
+    expect(
+      await screen.findByRole("textbox", {
+        name: /^Data exibida na B3/,
+      }),
+    ).toBeTruthy();
     expect(screen.getAllByText("R$ 1.000,50")).toHaveLength(3);
     expect(screen.getByText("Banco A")).toBeTruthy();
     expect(screen.getByText("CDB1")).toBeTruthy();
@@ -203,9 +210,14 @@ describe("PortfolioImport", () => {
     fireEvent.change(container.querySelector("input[type=file]")!, {
       target: { files: [spreadsheet("posicoes.xlsx")] },
     });
-    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
-      target: { value: "2026-09-18" },
-    });
+    fireEvent.change(
+      await screen.findByRole("textbox", {
+        name: /^Data exibida na B3/,
+      }),
+      {
+        target: { value: "18/09/2026" },
+      },
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
@@ -216,6 +228,126 @@ describe("PortfolioImport", () => {
     );
     expect(screen.queryByText("ETF")).toBeNull();
     window.removeEventListener("portfolio:updated", portfolioUpdated);
+  });
+
+  it("uses the one B3 date for the import and does not send a separate base date", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => positionPreview })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+    fireEvent.change(
+      await screen.findByRole("textbox", {
+        name: /^Data exibida na B3/,
+      }),
+      {
+        target: { value: "18/09/2026" },
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    const confirmBody = fetch.mock.calls[1]?.[1]?.body as FormData;
+    expect(confirmBody.get("referenceDate")).toBe("2026-09-18");
+    expect(confirmBody.has("estimationBaseDate")).toBe(false);
+  });
+
+  it("shows identity differences and blocks confirmation for an assigned position missing from the import", async () => {
+    const preview = {
+      ...positionPreview,
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB Banco A",
+            institution: "Banco A",
+            assetCode: "CDB1",
+            quantity: "1",
+            totalValue: "100",
+            indexer: "CDI",
+            unitPrice: "100",
+            valuationSource: "CURVA" as const,
+          },
+          possibleIncomingDifferences: [
+            {
+              position: {
+                product: "CDB Banco A",
+                institution: "Banco B",
+                assetCode: "CDB1",
+                quantity: "1",
+                totalValue: "100",
+                indexer: "CDI",
+                unitPrice: "100",
+                valuationSource: "CURVA" as const,
+              },
+              changedFields: ["instituição: Banco A → Banco B"],
+            },
+          ],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => preview }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+    expect(await screen.findByText(/CDB Banco A — Viagem/)).toBeTruthy();
+    expect(screen.getByText(/instituição: Banco A → Banco B/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("shows an identity conflict without suggesting an unanchored replacement", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...positionPreview,
+          identityConflicts: [
+            {
+              assetKey: "v1:assigned-position",
+              objectiveName: "Reserva",
+              position: {
+                product: "CDB antigo",
+                institution: "Banco A",
+                assetCode: "CDB1",
+                quantity: "1",
+                totalValue: "100",
+                indexer: "CDI",
+                unitPrice: "100",
+                valuationSource: "CURVA",
+              },
+              possibleIncomingDifferences: [],
+            },
+          ],
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+
+    expect(await screen.findByText(/CDB antigo — Reserva/)).toBeTruthy();
+    expect(screen.queryByText(/Possível posição correspondente/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
+    ).toHaveProperty("disabled", true);
   });
 
   it("keeps a preview visible when confirmation fails and can cancel it", async () => {
@@ -234,9 +366,14 @@ describe("PortfolioImport", () => {
     fireEvent.change(container.querySelector("input[type=file]")!, {
       target: { files: [spreadsheet("posicoes.xlsx")] },
     });
-    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
-      target: { value: "2026-09-18" },
-    });
+    fireEvent.change(
+      await screen.findByRole("textbox", {
+        name: /^Data exibida na B3/,
+      }),
+      {
+        target: { value: "18/09/2026" },
+      },
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
@@ -277,9 +414,14 @@ describe("PortfolioImport", () => {
         files: [spreadsheet("posicoes.xlsx"), spreadsheet("movimentos.xlsx")],
       },
     });
-    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
-      target: { value: "2026-09-18" },
-    });
+    fireEvent.change(
+      await screen.findByRole("textbox", {
+        name: /^Data exibida na B3/,
+      }),
+      {
+        target: { value: "18/09/2026" },
+      },
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: /Confirmar 2 arquivo/ }),
     );
@@ -396,9 +538,14 @@ describe("PortfolioImport", () => {
     fireEvent.change(container.querySelector("input[type=file]")!, {
       target: { files: [spreadsheet("offline.xlsx")] },
     });
-    fireEvent.change(await screen.findByLabelText(/Data de refer/), {
-      target: { value: "2026-09-18" },
-    });
+    fireEvent.change(
+      await screen.findByRole("textbox", {
+        name: /^Data exibida na B3/,
+      }),
+      {
+        target: { value: "18/09/2026" },
+      },
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
     );

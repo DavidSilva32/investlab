@@ -19,8 +19,13 @@ import {
 } from "@/components/ui/select";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
-import { formatCurrency } from "@/lib/utils";
+import {
+  formatCurrencyCents,
+  portfolioMoneySourceLabels,
+} from "@/lib/portfolio-money";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+
+const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 export type ObjectivePosition = {
   assetKey: string;
@@ -30,9 +35,15 @@ export type ObjectivePosition = {
   assetClass: string | null;
   positionCount: number;
   value: number | null;
+  valueCents?: string | null;
   unvaluedPositions: number;
   objectiveId: string | null;
   objectiveName: string | null;
+  canonicalValueSource?: string;
+  estimationBaseDate?: string | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
 };
 
 type Props = {
@@ -169,6 +180,12 @@ export function PortfolioObjectiveAssignment({
                   product: position.product,
                   institution: position.institution,
                   value: position.value,
+                  valueCents: position.valueCents,
+                  canonicalValueSource: position.canonicalValueSource,
+                  estimationBaseDate: position.estimationBaseDate,
+                  estimatedThrough: position.estimatedThrough,
+                  cdbEstimateStatus: position.cdbEstimateStatus,
+                  cdbEstimateLimitation: position.cdbEstimateLimitation,
                 }))}
               requestFilter={{
                 label: "Filtrar por instrumento",
@@ -245,7 +262,9 @@ export function PortfolioObjectiveAssignment({
                           <span className="block text-xs tabular-nums text-muted-foreground">
                             {position.value === null
                               ? "Valor indisponível"
-                              : formatCurrency(position.value)}
+                              : formatCurrencyCents(
+                                  position.valueCents ?? null,
+                                )}
                             {position.positionCount > 1 &&
                               " · " +
                                 position.positionCount +
@@ -253,6 +272,43 @@ export function PortfolioObjectiveAssignment({
                             {position.unvaluedPositions > 0 &&
                               " · " + position.unvaluedPositions + " sem valor"}
                           </span>
+                          {position.canonicalValueSource && (
+                            <span className="block text-xs text-muted-foreground">
+                              Origem:{" "}
+                              {portfolioMoneySourceLabels[
+                                position.canonicalValueSource as keyof typeof portfolioMoneySourceLabels
+                              ] ?? position.canonicalValueSource}
+                            </span>
+                          )}
+                          {position.estimationBaseDate && (
+                            <span className="block text-xs text-muted-foreground">
+                              Data-base CURVA:{" "}
+                              {date.format(
+                                new Date(
+                                  `${position.estimationBaseDate}T00:00:00Z`,
+                                ),
+                              )}
+                            </span>
+                          )}
+                          {position.estimatedThrough && (
+                            <span className="block text-xs text-muted-foreground">
+                              Estimativa{" "}
+                              {position.cdbEstimateStatus === "provisional"
+                                ? "parcial "
+                                : ""}
+                              até{" "}
+                              {date.format(
+                                new Date(
+                                  `${position.estimatedThrough}T00:00:00Z`,
+                                ),
+                              )}
+                            </span>
+                          )}
+                          {position.cdbEstimateLimitation && (
+                            <span className="block text-xs text-muted-foreground">
+                              {position.cdbEstimateLimitation}
+                            </span>
+                          )}
                           {assignedElsewhere && (
                             <span className="mt-1 block text-xs text-muted-foreground">
                               Já vinculada a{" "}

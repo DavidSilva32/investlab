@@ -27,7 +27,7 @@ type CachedCdiRate = {
 const sortRates = <T extends { rateDate: string }>(rates: T[]) =>
   [...rates].sort((left, right) => left.rateDate.localeCompare(right.rateDate));
 
-export type CdbEstimateStatus = "official" | "unavailable";
+export type CdbEstimateStatus = "complete" | "provisional" | "unavailable";
 
 const addDays = (date: string, days: number) => {
   const value = new Date(`${date}T00:00:00Z`);
@@ -69,10 +69,10 @@ const isBrazilCdiHoliday = (date: string) => {
   ]);
   const fixed = new Set([
     `${year}-01-01`,
-    `${year}-01-25`, // SÃ£o Paulo market holiday
+    `${year}-01-25`, // São Paulo market holiday
     `${year}-04-21`,
     `${year}-05-01`,
-    `${year}-07-09`, // SÃ£o Paulo market holiday
+    `${year}-07-09`, // São Paulo market holiday
     `${year}-09-07`,
     `${year}-10-12`,
     `${year}-11-02`,
@@ -83,26 +83,50 @@ const isBrazilCdiHoliday = (date: string) => {
   return fixed.has(date) || movable.has(date);
 };
 
-const previousWeekday = (date: string) => {
-  let previous = addDays(date, -1);
-  while (!isWeekday(previous)) previous = addDays(previous, -1);
-  return previous;
-};
-
-const missingWeekdaysAfter = (lastRateDate: string, valuationDate: string) => {
+const expectedRateDates = (fromDate: string, toDateExclusive: string) => {
   const dates: string[] = [];
-  for (
-    let date = addDays(lastRateDate, 1);
-    date < valuationDate;
-    date = addDays(date, 1)
-  ) {
+  for (let date = fromDate; date < toDateExclusive; date = addDays(date, 1)) {
     if (isWeekday(date) && !isBrazilCdiHoliday(date)) dates.push(date);
   }
   return dates;
 };
 
+const hasContiguousRates = (baseDate: string, rates: CachedCdiRate[]) => {
+  const lastRateDate = rates.at(-1)?.rateDate;
+  if (!lastRateDate) return false;
+  const expectedDates = expectedRateDates(
+    addDays(baseDate, 1),
+    addDays(lastRateDate, 1),
+  );
+  return (
+    expectedDates.length === rates.length &&
+    expectedDates.every((date, index) => rates[index]?.rateDate === date)
+  );
+};
+
 const logUnavailable = (phase: "configuration" | "rates" | "cache") =>
   logger.warn("cdb_estimates_unavailable", { phase });
+
+const markUnavailable = <
+  T extends Parameters<typeof isDiCdb>[0] & {
+    totalValue: string | null;
+  },
+>(
+  position: T,
+  cdiPercentage: string | null,
+  limitation: string,
+) => ({
+  ...position,
+  cdiPercentage,
+  estimatedValue: null,
+  estimatedValueCents: null,
+  ...(isDiCdb(position) && position.totalValue
+    ? {
+        cdbEstimateStatus: "unavailable" as const,
+        cdbEstimateLimitation: limitation,
+      }
+    : {}),
+});
 
 export class CdbEstimateService {
   constructor(
@@ -114,8 +138,10 @@ export class CdbEstimateService {
       product: string;
       assetCode: string | null;
       indexer: string | null;
+      valuationSource?: string | null;
       totalValue: string | null;
       referenceDate?: string | null;
+      estimationBaseDate?: string | null;
     },
   >(positions: T[], executionValuationDate?: string) {
     const valuationDate = executionValuationDate ?? this.getValuationDate();
@@ -127,12 +153,13 @@ export class CdbEstimateService {
       );
     } catch {
       logUnavailable("configuration");
-      return positions.map((position) => ({
-        ...position,
-        cdiPercentage: null,
-        estimatedValue: null,
-        estimatedValueCents: null,
-      }));
+      return positions.map((position) =>
+        markUnavailable(
+          position,
+          null,
+          "Não foi possível carregar a configuração da taxa CDI.",
+        ),
+      );
     }
 
     const percentages = new Map(
@@ -144,13 +171,14 @@ export class CdbEstimateService {
     const eligible = positions.filter(
       (position) =>
         isDiCdb(position) &&
+        position.valuationSource === "CURVA" &&
         Boolean(percentages.get(position.assetCode!)) &&
         Boolean(position.totalValue) &&
-        Boolean(position.referenceDate) &&
-        position.referenceDate! < valuationDate,
+        Boolean(position.estimationBaseDate) &&
+        position.estimationBaseDate! < valuationDate,
     );
     const baseDates = [
-      ...new Set(eligible.map((position) => position.referenceDate!)),
+      ...new Set(eligible.map((position) => position.estimationBaseDate!)),
     ];
     const readCanonicalRates = async () => {
       const ratesByBaseDate = new Map<string, CachedCdiRate[]>();
@@ -160,7 +188,10 @@ export class CdbEstimateService {
             baseDate,
             valuationDate,
           );
-          ratesByBaseDate.set(baseDate, sortRates(rates));
+          ratesByBaseDate.set(
+            baseDate,
+            sortRates(rates.filter((rate) => rate.rateDate > baseDate)),
+          );
         }),
       );
       return ratesByBaseDate;
@@ -171,24 +202,24 @@ export class CdbEstimateService {
       cachedRatesByBaseDate = await readCanonicalRates();
     } catch {
       logUnavailable("rates");
-      return positions.map((position) => ({
-        ...position,
-        cdiPercentage: position.assetCode
-          ? (percentages.get(position.assetCode) ?? null)
-          : null,
-        estimatedValue: null,
-        estimatedValueCents: null,
-      }));
+      return positions.map((position) =>
+        markUnavailable(
+          position,
+          position.assetCode
+            ? (percentages.get(position.assetCode) ?? null)
+            : null,
+          "Não foi possível acessar as taxas CDI salvas.",
+        ),
+      );
     }
 
     const missingRateDates = new Set(
       baseDates.flatMap((baseDate) => {
-        const lastRateDate = cachedRatesByBaseDate
-          .get(baseDate)
-          ?.at(-1)?.rateDate;
-        return missingWeekdaysAfter(
-          lastRateDate ?? previousWeekday(baseDate),
-          valuationDate,
+        const cachedDates = new Set(
+          cachedRatesByBaseDate.get(baseDate)!.map((rate) => rate.rateDate),
+        );
+        return expectedRateDates(addDays(baseDate, 1), valuationDate).filter(
+          (date) => !cachedDates.has(date),
         );
       }),
     );
@@ -227,48 +258,69 @@ export class CdbEstimateService {
       cachedRatesByBaseDate = await readCanonicalRates();
     } catch {
       logUnavailable("rates");
-      return positions.map((position) => ({
-        ...position,
-        cdiPercentage: position.assetCode
-          ? (percentages.get(position.assetCode) ?? null)
-          : null,
-        estimatedValue: null,
-        estimatedValueCents: null,
-      }));
+      return positions.map((position) =>
+        markUnavailable(
+          position,
+          position.assetCode
+            ? (percentages.get(position.assetCode) ?? null)
+            : null,
+          "Não foi possível acessar as taxas CDI salvas.",
+        ),
+      );
     }
 
     return positions.map((position) => {
       const cdiPercentage = position.assetCode
         ? (percentages.get(position.assetCode) ?? null)
         : null;
-      const referenceDate = position.referenceDate;
+      const estimationBaseDate = position.estimationBaseDate;
       if (
         !isDiCdb(position) ||
         !cdiPercentage ||
         !position.totalValue ||
-        !referenceDate ||
-        referenceDate >= valuationDate
+        position.valuationSource !== "CURVA" ||
+        !estimationBaseDate ||
+        estimationBaseDate >= valuationDate
       )
         return {
           ...position,
           cdiPercentage,
           estimatedValue: null,
           estimatedValueCents: null,
-          cdbEstimateStatus: null,
+          cdbEstimateStatus:
+            isDiCdb(position) && position.totalValue
+              ? ("unavailable" as const)
+              : null,
+          cdbEstimateLimitation:
+            isDiCdb(position) && position.totalValue
+              ? !cdiPercentage
+                ? "Percentual do CDI não configurado para esta posição."
+                : !estimationBaseDate
+                  ? "A data-base do valor CURVA ainda não foi confirmada."
+                  : position.valuationSource !== "CURVA"
+                    ? "O valor selecionado não é CURVA; a estimativa CDI não foi aplicada."
+                    : "A data-base CURVA precisa ser anterior à data da avaliação."
+              : null,
         };
 
-      const rates = cachedRatesByBaseDate.get(referenceDate)!;
-      const missingDates = missingWeekdaysAfter(
-        rates.at(-1)?.rateDate ?? previousWeekday(referenceDate),
+      const rates = cachedRatesByBaseDate.get(estimationBaseDate)!;
+      const lastRateDate = rates.at(-1)?.rateDate;
+      const expectedAccrualDates = expectedRateDates(
+        addDays(estimationBaseDate, 1),
         valuationDate,
       );
-      if (missingDates.length) {
+      const noAccrualDateAvailable = expectedAccrualDates.length === 0;
+      const contiguous = hasContiguousRates(estimationBaseDate, rates);
+      if (!noAccrualDateAvailable && !contiguous) {
         return {
           ...position,
           cdiPercentage,
           estimatedValue: null,
           estimatedValueCents: null,
           cdbEstimateStatus: "unavailable" as const,
+          cdbEstimateLimitation: rates.length
+            ? "Há lacunas nas taxas CDI do período; a estimativa não foi calculada."
+            : "Não há taxas CDI oficiais persistidas para a data-base informada.",
         };
       }
 
@@ -278,13 +330,21 @@ export class CdbEstimateService {
           cdiPercentage,
           rates,
         });
-        const lastRate = rates.at(-1);
+        const incompleteDates = expectedRateDates(
+          addDays(lastRateDate!, 1),
+          valuationDate,
+        );
         return {
           ...position,
           cdiPercentage,
           ...estimate,
-          ...(lastRate ? { estimatedThrough: lastRate.rateDate } : {}),
-          cdbEstimateStatus: "official" as const,
+          estimatedThrough: lastRateDate!,
+          cdbEstimateStatus: incompleteDates.length
+            ? ("provisional" as const)
+            : ("complete" as const),
+          cdbEstimateLimitation: incompleteDates.length
+            ? "Estimativa parcial: ainda não há taxa CDI oficial para as datas seguintes."
+            : null,
         };
       } catch {
         logUnavailable("rates");
@@ -294,6 +354,8 @@ export class CdbEstimateService {
           estimatedValue: null,
           estimatedValueCents: null,
           cdbEstimateStatus: "unavailable" as const,
+          cdbEstimateLimitation:
+            "Não foi possível calcular com as taxas CDI disponíveis.",
         };
       }
     });

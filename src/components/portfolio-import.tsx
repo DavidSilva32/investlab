@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import {
   Table,
   TableBody,
@@ -27,6 +27,31 @@ type Position = {
   indexer: string | null;
   unitPrice: string | null;
   valuationSource: "MTM" | "CURVA" | "FECHAMENTO" | "INFORMADO" | null;
+  issuer?: string | null;
+  regimeType?: string | null;
+  issuedAt?: string | null;
+  maturityAt?: string | null;
+};
+type IdentityConflict = {
+  assetKey: string;
+  objectiveName: string;
+  position: Pick<Position, "product" | "assetCode" | "institution"> &
+    Partial<
+      Pick<
+        Position,
+        "issuer" | "indexer" | "regimeType" | "issuedAt" | "maturityAt"
+      >
+    >;
+  possibleIncomingDifferences: Array<{
+    position: Pick<Position, "product" | "assetCode" | "institution"> &
+      Partial<
+        Pick<
+          Position,
+          "issuer" | "indexer" | "regimeType" | "issuedAt" | "maturityAt"
+        >
+      >;
+    changedFields: string[];
+  }>;
 };
 type Movement = {
   occurredAt: string;
@@ -40,6 +65,7 @@ type Preview =
       documentType: "B3_POSITION_XLSX";
       positions: Position[];
       count: number;
+      identityConflicts?: IdentityConflict[];
     }
   | { documentType: "B3_MOVEMENT_XLSX"; movements: Movement[]; count: number };
 type Item = {
@@ -183,6 +209,11 @@ export function PortfolioImport() {
     (item) =>
       item.preview?.documentType === "B3_POSITION_XLSX" && !item.referenceDate,
   );
+  const hasIdentityConflicts = items.some(
+    (item) =>
+      item.preview?.documentType === "B3_POSITION_XLSX" &&
+      Boolean(item.preview.identityConflicts?.length),
+  );
 
   function updateReferenceDate(file: File, referenceDate: string) {
     setItems((current) =>
@@ -237,7 +268,9 @@ export function PortfolioImport() {
       {items.some((item) => item.preview) && (
         <div className="mt-5 flex gap-3">
           <Button
-            disabled={loading || hasMissingPositionReferenceDate}
+            disabled={
+              loading || hasMissingPositionReferenceDate || hasIdentityConflicts
+            }
             onClick={confirm}
           >
             {loading
@@ -352,24 +385,56 @@ function PositionPreview({
           </Badge>
         </div>
         <div className="max-w-xs space-y-2">
-          <label
-            className="text-sm font-medium"
-            htmlFor={`reference-date-${fileName}`}
-          >
-            Data de referência da posição
-          </label>
-          <Input
+          <DatePickerField
             id={`reference-date-${fileName}`}
-            type="date"
-            required
+            label="Data exibida na B3 para estas posições"
             value={referenceDate}
-            onChange={(event) => onReferenceDateChange(event.target.value)}
+            required
+            onChange={onReferenceDateChange}
           />
           <p className="text-xs text-muted-foreground">
-            Informe a data exibida pela B3 para esta posição, não a data do nome
-            do arquivo.
+            Informe a data mostrada pela B3. Ela será usada para registrar os
+            valores importados e para iniciar a estimativa dos CDBs no próximo
+            dia CDI aplicável.
           </p>
         </div>
+        {preview.identityConflicts?.length ? (
+          <Alert variant="destructive" role="alert">
+            <AlertTitle>
+              Importação bloqueada por divergência de identidade
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                As posições atribuídas abaixo não aparecem com a mesma
+                identidade no arquivo. Revise as diferenças antes de importar;
+                nenhuma atribuição será transferida automaticamente.
+              </p>
+              <ul className="mt-2 list-disc space-y-2 pl-5">
+                {preview.identityConflicts.map((conflict) => (
+                  <li key={conflict.assetKey}>
+                    <span className="font-medium">
+                      {conflict.position.product} — {conflict.objectiveName}
+                    </span>
+                    {conflict.possibleIncomingDifferences.length ? (
+                      <ul className="mt-1 list-[circle] pl-5">
+                        {conflict.possibleIncomingDifferences.map(
+                          (candidate, index) => (
+                            <li key={index}>
+                              Possível posição correspondente (não vinculada):{" "}
+                              {candidate.changedFields.join("; ")}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    ) : (
+                      <span> — sem identidade correspondente no arquivo.</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <SummaryItem
             label="Total reconhecido"

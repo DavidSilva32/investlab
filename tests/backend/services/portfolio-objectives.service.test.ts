@@ -233,8 +233,18 @@ describe("PortfolioObjectivesService", () => {
   });
 
   it("retains known subtotal for a mixed-valued position group without claiming full progress", async () => {
-    const valued = imported();
-    const unvalued = imported({ totalValue: null });
+    const valued = imported({
+      estimationBaseDate: "2026-09-16",
+      estimatedThrough: "2026-09-21",
+      cdbEstimateStatus: "provisional",
+    });
+    const unvalued = imported({
+      totalValue: null,
+      estimationBaseDate: null,
+      estimatedThrough: null,
+      cdbEstimateStatus: "unavailable",
+      cdbEstimateLimitation: "Data-base CURVA não confirmada.",
+    });
     const other = imported({
       assetCode: "CDB2",
       totalValue: "300",
@@ -263,6 +273,10 @@ describe("PortfolioObjectivesService", () => {
       value: null,
       knownValue: 100,
       unvaluedPositions: 1,
+      estimationBaseDate: null,
+      estimatedThrough: null,
+      cdbEstimateStatus: null,
+      cdbEstimateLimitation: "Data-base CURVA não confirmada.",
     });
     expect(result.unassignedKnownValue).toBe(300);
   });
@@ -464,12 +478,25 @@ describe("PortfolioObjectivesService", () => {
   });
 
   it("searches only unassigned positions and limits confident CDB search by classification and product", async () => {
-    const cdb1 = imported({ totalValue: "40" });
+    const cdb1 = imported({
+      totalValue: "40",
+      canonicalValueCents: "4000",
+      canonicalValueSource: "CDB_ESTIMATE",
+      estimationBaseDate: "2026-09-16",
+      estimatedThrough: "2026-09-18",
+      cdbEstimateStatus: "provisional",
+      cdbEstimateLimitation: "Taxa CDI ainda não publicada.",
+    });
     const cdb2 = imported({
       assetCode: "CDB2",
       issuer: "Banco B S.A.",
       institution: "Banco B",
       totalValue: "60",
+      canonicalValueCents: "6000",
+      canonicalValueSource: "B3_IMPORTED",
+      estimationBaseDate: "2026-09-16",
+      estimatedThrough: "2026-09-18",
+      cdbEstimateStatus: "complete",
     });
     const unknownFixedIncome = imported({
       assetCode: "UNKNOWN",
@@ -529,6 +556,21 @@ describe("PortfolioObjectivesService", () => {
       );
       expect(result.candidates[0].assetKeys).not.toContain(assignedKey);
       expect(result.candidates[0].assetKeys).not.toContain(reserveAssignedKey);
+      expect(result.candidates[0].positions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            assetKey: getEmergencyReserveAssetKey(cdb1),
+            valueCents: "4000",
+            canonicalValueSource: "CDB_ESTIMATE",
+            cdbEstimateLimitation: "Taxa CDI ainda não publicada.",
+          }),
+          expect.objectContaining({
+            assetKey: getEmergencyReserveAssetKey(cdb2),
+            valueCents: "6000",
+            canonicalValueSource: "B3_IMPORTED",
+          }),
+        ]),
+      );
     }
   });
 
@@ -556,6 +598,16 @@ describe("PortfolioObjectivesService", () => {
         instrumentType: "ALL",
       }),
     ).resolves.toMatchObject({ status: "suggestions", kind: "exact" });
+
+    mocks.listCurrentEnriched.mockResolvedValue([
+      imported({ totalValue: null }),
+    ]);
+    await expect(
+      service.findPositionCombinations({
+        targetAmount: 100,
+        instrumentType: "ALL",
+      }),
+    ).resolves.toEqual({ status: "no_valued_positions" });
 
     const missingId = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
     mocks.getObjective.mockResolvedValueOnce(null);

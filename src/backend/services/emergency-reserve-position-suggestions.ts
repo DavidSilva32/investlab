@@ -6,6 +6,16 @@ export type ReserveSuggestionHolding = {
   institution: string | null;
   value: number | null;
   valueCents?: string | null;
+  valueSource?: string;
+  canonicalValueSource?: string;
+  estimationBaseDate?: string | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
+};
+
+export type ReserveSuggestionPosition = ReserveSuggestionHolding & {
+  valueCents: string;
 };
 
 export type ReservePositionSuggestion = {
@@ -16,6 +26,7 @@ export type ReservePositionSuggestion = {
   difference: number;
   transfers?: ReservePositionTransfer[];
   impacts?: ReservePositionImpact[];
+  positions: ReserveSuggestionPosition[];
 };
 
 export type ReservePositionTransfer = {
@@ -103,8 +114,9 @@ export function suggestEmergencyReservePositions(
     return { status: "too_many_positions", maximum: MAX_GROUPS };
   }
 
-  const exactCandidates: ReservePositionSuggestion[] = [];
-  const nearestCandidates: ReservePositionSuggestion[] = [];
+  type CandidateWithoutPositions = Omit<ReservePositionSuggestion, "positions">;
+  const exactCandidates: CandidateWithoutPositions[] = [];
+  const nearestCandidates: CandidateWithoutPositions[] = [];
   let nearestDifference: bigint | null = null;
   let visitedNodes = 0;
   let searchLimited = false;
@@ -189,10 +201,26 @@ export function suggestEmergencyReservePositions(
       left.assetKeys.length - right.assetKeys.length ||
       compareText(left.assetKeys.join("|"), right.assetKeys.join("|")),
   );
+  const holdingsByKey = new Map(
+    holdings.map((holding) => [holding.assetKey, holding]),
+  );
+  const valuedByKey = new Map(
+    valued.map((holding) => [holding.assetKey, holding.cents]),
+  );
+  const candidatesWithPositions = candidates.map((candidate) => ({
+    ...candidate,
+    positions: candidate.assetKeys.map((assetKey) => {
+      const holding = holdingsByKey.get(assetKey)!;
+      return {
+        ...holding,
+        valueCents: valuedByKey.get(assetKey)!.toString(),
+      };
+    }),
+  }));
   return {
     status: "suggestions",
     kind: exactCandidates.length ? "exact" : "nearest",
-    candidates,
+    candidates: candidatesWithPositions,
     searchLimited,
     alternativesLimited: exactCandidates.length
       ? exactAlternativesLimited

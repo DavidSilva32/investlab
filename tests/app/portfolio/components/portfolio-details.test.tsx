@@ -55,24 +55,35 @@ const position = {
   estimatedValue: 1000.55,
   cdbEstimateStatus: "provisional" as const,
   estimatedThrough: "2026-09-18",
+  cdbEstimateLimitation: "Estimativa parcial: ainda não há taxa CDI oficial.",
 };
 
 describe("portfolio detail components", () => {
   it("renders estimated and official values with their management action", () => {
     const html = renderToStaticMarkup(
-      <PositionDetails positions={[position]} />,
+      <PositionDetails
+        positions={[
+          position,
+          {
+            ...position,
+            id: "complete",
+            cdbEstimateStatus: "complete",
+            cdbEstimateLimitation: null,
+          },
+        ]}
+      />,
     );
     expect(html).toContain("Posições atuais");
-    expect(html).toContain("Estimativa provis");
+    expect(html).toContain("Estimativa parcial até");
+    expect(html).toContain("Estimativa até");
     expect(html).toContain("100% do CDI");
-    expect(html).toContain("arquivo de");
-    expect(html).toContain("Estimativa provis");
+    expect(html).toContain("data-base CURVA de");
     expect(html).toContain("18/09/2026");
-    expect(html).toContain("Não foi possível confirmar o CDI oficial agora");
+    expect(html).toContain("Estimativa parcial: ainda não há taxa CDI oficial");
     expect(html).toContain("posições");
   });
 
-  it("renders unconfigured and ordinary official values", () => {
+  it("renders the frontend limitation fallback and ordinary official values", () => {
     const html = renderToStaticMarkup(
       <PositionDetails
         positions={[
@@ -83,6 +94,7 @@ describe("portfolio detail components", () => {
             cdiPercentage: "110",
             estimationBaseDate: null,
             cdbEstimateStatus: "unavailable",
+            cdbEstimateLimitation: undefined,
           },
           {
             ...position,
@@ -114,9 +126,12 @@ describe("portfolio detail components", () => {
       />,
     );
     expect(html).toContain("Configurar taxa");
+    expect(html).toContain(
+      "A estimativa com taxas CDI oficiais não está disponível.",
+    );
     expect(html).toContain("110% do CDI");
     expect(html).toContain("Último valor informado pela B3");
-    expect(html).toContain("atualizar a estimativa");
+    expect(html).toContain("estimativa com taxas CDI oficiais");
     expect(html).not.toContain("Nenhuma posição importada");
   });
 
@@ -171,7 +186,7 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(html).toContain("Estimativa provis");
+    expect(html).toContain("Estimativa parcial até");
     expect(html).not.toContain("% do CDI");
   });
   it("renders the empty movement state", () => {
@@ -181,7 +196,7 @@ describe("portfolio detail components", () => {
   });
 });
 
-it("shows the same-day estimate label when provisional data has no through date", () => {
+it("does not claim a current valuation when no covered-through date is returned", () => {
   const html = renderToStaticMarkup(
     <PositionDetails
       positions={[
@@ -194,7 +209,8 @@ it("shows the same-day estimate label when provisional data has no through date"
       ]}
     />,
   );
-  expect(html).toContain("Valor estimado hoje");
+  expect(html).toContain("Valor estimado");
+  expect(html).not.toContain("Valor estimado hoje");
 });
 
 it("shows the manual valuation source, dates, and missing BRL conversion", () => {

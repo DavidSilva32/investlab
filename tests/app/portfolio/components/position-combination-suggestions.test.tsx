@@ -20,6 +20,12 @@ const holdings = [
     product: "CDB Inter daily liquidity",
     institution: "Banco Inter",
     value: 30_000,
+    canonicalValueSource: "CDB_ESTIMATE",
+    estimationBaseDate: "2026-09-16",
+    estimatedThrough: "2026-09-18",
+    cdbEstimateStatus: "provisional" as const,
+    cdbEstimateLimitation:
+      "Ainda não há taxa CDI oficial para os dias seguintes.",
   },
   {
     assetKey: "inter-named",
@@ -62,6 +68,21 @@ describe("PositionCombinationSuggestions", () => {
             assetKeys: ["inter-box", "inter-named"],
             total: 47_274.91,
             difference: 0,
+            positions: [
+              {
+                ...holdings[0],
+                valueCents: "3000000",
+              },
+              {
+                ...holdings[1],
+                valueCents: "1725090",
+                canonicalValueSource: "UNRECOGNIZED_PROVIDER",
+                estimationBaseDate: "2026-09-16",
+                estimatedThrough: "2026-09-18",
+                cdbEstimateStatus: "complete",
+                cdbEstimateLimitation: "Data-base CURVA não confirmada.",
+              },
+            ],
           },
         ],
         searchLimited: false,
@@ -109,6 +130,12 @@ describe("PositionCombinationSuggestions", () => {
       "group-data-[state=open]:rotate-180",
     );
     expect(screen.getByText("CDB Inter daily liquidity")).toBeTruthy();
+    expect(screen.getByText("Data-base CURVA não confirmada.")).toBeTruthy();
+    expect(screen.getByText("Origem: UNRECOGNIZED_PROVIDER")).toBeTruthy();
+    expect(screen.getAllByText("Estimativa até 18/09/2026")).toHaveLength(1);
+    expect(
+      screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
+    ).toBeTruthy();
     expect(screen.getByText("CDB 115% CDI")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Usar esta/ }));
     expect(screen.getByRole("status").textContent).toContain("rascunho");

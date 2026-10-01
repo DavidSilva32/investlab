@@ -30,7 +30,10 @@ import {
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
-import { formatCurrencyCents } from "@/lib/portfolio-money";
+import {
+  formatCurrencyCents,
+  portfolioMoneySourceLabels,
+} from "@/lib/portfolio-money";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { getApiMessage } from "@/lib/api-message";
 
@@ -45,10 +48,18 @@ type Holding = {
   positionCount: number;
   unvaluedPositions: number;
   value: number | null;
+  valueCents?: string | null;
+  valueSource?: string;
+  estimationBaseDate?: string | null;
+  estimatedThrough?: string | null;
+  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
+  cdbEstimateLimitation?: string | null;
   selected: boolean;
   assignedObjectiveId?: string | null;
   assignedObjectiveName?: string | null;
 };
+
+const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 type EditorData = {
   monthlyExpenses: number | null;
@@ -698,10 +709,49 @@ export function EmergencyReserveEditor() {
                                 <span className="block text-xs text-muted-foreground">
                                   {holding.value === null
                                     ? "Sem valor informado"
-                                    : formatCurrency(holding.value)}
+                                    : holding.valueCents
+                                      ? formatCurrencyCents(holding.valueCents)
+                                      : formatCurrency(holding.value)}
                                   {holding.unvaluedPositions > 0 &&
                                     ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
                                 </span>
+                                {holding.valueSource && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    Origem:{" "}
+                                    {portfolioMoneySourceLabels[
+                                      holding.valueSource as keyof typeof portfolioMoneySourceLabels
+                                    ] ?? holding.valueSource}
+                                  </span>
+                                )}
+                                {holding.estimationBaseDate && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    Data-base CURVA:{" "}
+                                    {date.format(
+                                      new Date(
+                                        `${holding.estimationBaseDate}T00:00:00Z`,
+                                      ),
+                                    )}
+                                  </span>
+                                )}
+                                {holding.estimatedThrough && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    Estimativa{" "}
+                                    {holding.cdbEstimateStatus === "provisional"
+                                      ? "parcial "
+                                      : ""}
+                                    até{" "}
+                                    {date.format(
+                                      new Date(
+                                        `${holding.estimatedThrough}T00:00:00Z`,
+                                      ),
+                                    )}
+                                  </span>
+                                )}
+                                {holding.cdbEstimateLimitation && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    {holding.cdbEstimateLimitation}
+                                  </span>
+                                )}
                               </label>
                             </div>
                           </li>
