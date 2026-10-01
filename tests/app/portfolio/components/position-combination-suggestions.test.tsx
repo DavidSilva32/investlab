@@ -189,7 +189,21 @@ describe("PositionCombinationSuggestions", () => {
           status: "suggestions",
           kind: "nearest",
           candidates: [
-            { assetKeys: ["inter-box"], total: 30_000, difference: 1_000 },
+            {
+              assetKeys: ["inter-box"],
+              total: 30_000,
+              difference: 1_000,
+              transfers: [
+                {
+                  assetKey: "inter-box",
+                  product: "CDB Inter daily liquidity",
+                  value: 30_000,
+                  fromObjectiveId: "trip",
+                  fromObjectiveName: "Viagem",
+                  toObjectiveId: "reserve",
+                },
+              ],
+            },
           ],
           searchLimited: false,
         }),
@@ -539,7 +553,21 @@ describe("PositionCombinationSuggestions", () => {
           status: "suggestions",
           kind: "nearest",
           candidates: [
-            { assetKeys: ["inter-box"], total: 30_000, difference: 1_000 },
+            {
+              assetKeys: ["inter-box"],
+              total: 30_000,
+              difference: 1_000,
+              transfers: [
+                {
+                  assetKey: "inter-box",
+                  product: "CDB Inter daily liquidity",
+                  value: 30_000,
+                  fromObjectiveId: "trip",
+                  fromObjectiveName: "Viagem",
+                  toObjectiveId: "reserve",
+                },
+              ],
+            },
           ],
           searchLimited: true,
           alternativesLimited: true,
@@ -566,7 +594,10 @@ describe("PositionCombinationSuggestions", () => {
     expect(
       await screen.findByRole("heading", { name: /Busca parcial/ }),
     ).toBeTruthy();
-    expect(screen.getByText(/A busca atingiu/)).toBeTruthy();
+    expect(screen.getByText(/A busca foi interrompida/)).toBeTruthy();
+    expect(
+      screen.getByText(/Esta opção inclui transferência; a busca foi parcial/),
+    ).toBeTruthy();
     expect(screen.getByText(/outras alternativas/)).toBeTruthy();
   });
 
@@ -610,6 +641,7 @@ describe("PositionCombinationSuggestions", () => {
     expect(await screen.findByText(/Informe um valor/)).toBeTruthy();
     await user.click(search);
     expect(await screen.findByText(/comporta/)).toBeTruthy();
+    expect(screen.getByText(/Selecione os grupos manualmente/)).toBeTruthy();
     await user.click(search);
     expect(
       await screen.findByText(/selecionar os grupos manualmente/),

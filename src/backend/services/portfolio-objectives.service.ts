@@ -4,7 +4,10 @@ import { emergencyReserveRepository } from "@/backend/repositories/emergency-res
 import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
-import { suggestEmergencyReservePositions } from "@/backend/services/emergency-reserve-position-suggestions";
+import {
+  mergePartialPositionCandidates,
+  suggestEmergencyReservePositions,
+} from "@/backend/services/emergency-reserve-position-suggestions";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import {
   calculateObjectiveValue,
@@ -420,150 +423,174 @@ export class PortfolioObjectivesService {
         ...toHolding(position),
       })),
     );
+    const eligibleKeys = new Set(
+      candidates.map((position) => position.assetKey),
+    );
+    const expandedPositions = overview.positions.filter((position) =>
+      instrumentType === "CDB"
+        ? position.assetClass === "Renda fixa" &&
+          /^CDB(?:\b|\s|-)/i.test(position.product.trim())
+        : true,
+    );
+    const hasTransferCandidates = expandedPositions.some(
+      (position) => !eligibleKeys.has(position.assetKey),
+    );
     if (
       objectiveId &&
-      !(result.status === "suggestions" && result.kind === "exact") &&
-      !(result.status === "suggestions" && result.searchLimited)
+      hasTransferCandidates &&
+      !(result.status === "suggestions" && result.kind === "exact")
     ) {
-      const expandedPositions = overview.positions.filter((position) =>
-        instrumentType === "CDB"
-          ? position.assetClass === "Renda fixa" &&
-            /^CDB(?:\b|\s|-)/i.test(position.product.trim())
-          : true,
-      );
       const expanded = suggestEmergencyReservePositions(
         targetAmount,
         expandedPositions.map(toHolding),
       );
       if (expanded.status === "suggestions") {
-        const baselineDifference =
-          result.status === "suggestions"
-            ? Math.min(
-                ...result.candidates.map((candidate) =>
-                  Math.abs(candidate.difference),
-                ),
-              )
-            : Number.POSITIVE_INFINITY;
-        const better = expanded.candidates.filter(
-          (candidate) =>
-            candidate.difference === 0 ||
-            Math.abs(candidate.difference) < baselineDifference,
-        );
-        if (better.length) {
+        const baselineDifference = closestDifferenceCents(result);
+        // A suggestions result from the shared search always has candidates.
+        const expandedDifference = closestDifferenceCents(expanded)!;
+        const baselineWasPartial =
+          result.status === "suggestions" && result.searchLimited;
+        if (result.status === "suggestions") {
+          result = {
+            ...result,
+            searchLimited: result.searchLimited || expanded.searchLimited,
+          };
+        }
+        if (
+          baselineDifference === null ||
+          expandedDifference < baselineDifference ||
+          (baselineWasPartial && expandedDifference === baselineDifference)
+        ) {
           const positionByKey = new Map(
             overview.positions.map((position) => [position.assetKey, position]),
           );
           const objectivesById = new Map(
             overview.objectives.map((objective) => [objective.id, objective]),
           );
+          const expandedCandidates = expanded.candidates.map((candidate) => {
+            const candidateCentsByKey = new Map(
+              candidate.positions.map((position) => [
+                position.assetKey,
+                BigInt(position.valueCents),
+              ]),
+            );
+            const transfers = candidate.assetKeys.flatMap((assetKey) => {
+              const position = positionByKey.get(assetKey)!;
+              if (!position.objectiveId || position.objectiveId === objectiveId)
+                return [];
+              return [
+                {
+                  assetKey,
+                  product: position.product,
+                  value: centsToNumber(candidateCentsByKey.get(assetKey)!)!,
+                  fromObjectiveId: position.objectiveId,
+                  fromObjectiveName: position.objectiveName ?? "Outro objetivo",
+                  toObjectiveId: objectiveId,
+                },
+              ];
+            });
+            const removedByObjective = new Map<string, bigint>();
+            for (const transfer of transfers) {
+              const transferredCents = candidateCentsByKey.get(
+                transfer.assetKey,
+              )!;
+              removedByObjective.set(
+                transfer.fromObjectiveId,
+                (removedByObjective.get(transfer.fromObjectiveId) ?? 0n) +
+                  transferredCents,
+              );
+            }
+            const impacts = [
+              {
+                objectiveId,
+                objectiveName: targetObjective!.name,
+                currentValue: centsToNumber(BigInt(candidate.totalCents)),
+                knownValue: centsToNumber(BigInt(candidate.totalCents))!,
+                targetAmount: targetObjective!.targetAmount,
+                progressPercent: targetObjective!.targetAmount
+                  ? Math.min(
+                      (candidate.total / targetObjective!.targetAmount!) * 100,
+                      100,
+                    )
+                  : null,
+                transferredValue: centsToNumber(
+                  transfers.reduce(
+                    (sum, transfer) =>
+                      sum + candidateCentsByKey.get(transfer.assetKey)!,
+                    0n,
+                  ),
+                )!,
+                transferredPositionCount: transfers.length,
+              },
+              ...[...removedByObjective].map(([sourceId, removedCents]) => {
+                const source = objectivesById.get(sourceId);
+                const sourceCurrentCents = source?.currentValueCents ?? null;
+                const sourceKnownCents = BigInt(source?.knownValueCents ?? "0");
+                const currentValue =
+                  sourceCurrentCents === null ||
+                  sourceCurrentCents === undefined
+                    ? null
+                    : centsToNumber(
+                        BigInt(sourceCurrentCents) > removedCents
+                          ? BigInt(sourceCurrentCents) - removedCents
+                          : 0n,
+                      );
+                return {
+                  objectiveId: sourceId,
+                  objectiveName: source?.name ?? "Outro objetivo",
+                  currentValue,
+                  knownValue: centsToNumber(
+                    sourceKnownCents > removedCents
+                      ? sourceKnownCents - removedCents
+                      : 0n,
+                  )!,
+                  targetAmount: source?.targetAmount ?? null,
+                  progressPercent:
+                    currentValue === null || !source?.targetAmount
+                      ? null
+                      : Math.min(
+                          (currentValue / source.targetAmount) * 100,
+                          100,
+                        ),
+                  transferredValue: centsToNumber(removedCents)!,
+                  transferredPositionCount: transfers.filter(
+                    (transfer) => transfer.fromObjectiveId === sourceId,
+                  ).length,
+                };
+              }),
+            ];
+            return { ...candidate, transfers, impacts };
+          });
+          const merged =
+            baselineWasPartial && result.status === "suggestions"
+              ? mergePartialPositionCandidates(
+                  result.candidates,
+                  expandedCandidates,
+                  result.alternativesLimited || expanded.alternativesLimited,
+                )
+              : {
+                  candidates: expandedCandidates,
+                  alternativesLimited: expanded.alternativesLimited,
+                };
           result = {
             ...expanded,
-            kind: better.some((candidate) => candidate.difference === 0)
+            searchLimited:
+              expanded.searchLimited ||
+              (result.status === "suggestions" && result.searchLimited),
+            kind: merged.candidates.some(
+              (candidate) => BigInt(candidate.differenceCents) === 0n,
+            )
               ? "exact"
               : "nearest",
-            candidates: better.map((candidate) => {
-              const candidateCentsByKey = new Map(
-                candidate.positions.map((position) => [
-                  position.assetKey,
-                  BigInt(position.valueCents),
-                ]),
-              );
-              const transfers = candidate.assetKeys.flatMap((assetKey) => {
-                const position = positionByKey.get(assetKey)!;
-                if (
-                  !position.objectiveId ||
-                  position.objectiveId === objectiveId
-                )
-                  return [];
-                return [
-                  {
-                    assetKey,
-                    product: position.product,
-                    value: centsToNumber(candidateCentsByKey.get(assetKey)!)!,
-                    fromObjectiveId: position.objectiveId,
-                    fromObjectiveName:
-                      position.objectiveName ?? "Outro objetivo",
-                    toObjectiveId: objectiveId,
-                  },
-                ];
-              });
-              const removedByObjective = new Map<string, bigint>();
-              for (const transfer of transfers) {
-                const transferredCents = candidateCentsByKey.get(
-                  transfer.assetKey,
-                )!;
-                removedByObjective.set(
-                  transfer.fromObjectiveId,
-                  (removedByObjective.get(transfer.fromObjectiveId) ?? 0n) +
-                    transferredCents,
-                );
-              }
-              const impacts = [
-                {
-                  objectiveId,
-                  objectiveName: targetObjective!.name,
-                  currentValue: centsToNumber(BigInt(candidate.totalCents)),
-                  knownValue: centsToNumber(BigInt(candidate.totalCents))!,
-                  targetAmount: targetObjective!.targetAmount,
-                  progressPercent: targetObjective!.targetAmount
-                    ? Math.min(
-                        (candidate.total / targetObjective!.targetAmount!) *
-                          100,
-                        100,
-                      )
-                    : null,
-                  transferredValue: centsToNumber(
-                    transfers.reduce(
-                      (sum, transfer) =>
-                        sum + candidateCentsByKey.get(transfer.assetKey)!,
-                      0n,
-                    ),
-                  )!,
-                  transferredPositionCount: transfers.length,
-                },
-                ...[...removedByObjective].map(([sourceId, removedCents]) => {
-                  const source = objectivesById.get(sourceId);
-                  const sourceCurrentCents = source?.currentValueCents ?? null;
-                  const sourceKnownCents = BigInt(
-                    source?.knownValueCents ?? "0",
-                  );
-                  const currentValue =
-                    sourceCurrentCents === null ||
-                    sourceCurrentCents === undefined
-                      ? null
-                      : centsToNumber(
-                          BigInt(sourceCurrentCents) > removedCents
-                            ? BigInt(sourceCurrentCents) - removedCents
-                            : 0n,
-                        );
-                  return {
-                    objectiveId: sourceId,
-                    objectiveName: source?.name ?? "Outro objetivo",
-                    currentValue,
-                    knownValue: centsToNumber(
-                      sourceKnownCents > removedCents
-                        ? sourceKnownCents - removedCents
-                        : 0n,
-                    )!,
-                    targetAmount: source?.targetAmount ?? null,
-                    progressPercent:
-                      currentValue === null || !source?.targetAmount
-                        ? null
-                        : Math.min(
-                            (currentValue / source.targetAmount) * 100,
-                            100,
-                          ),
-                    transferredValue: centsToNumber(removedCents)!,
-                    transferredPositionCount: transfers.filter(
-                      (transfer) => transfer.fromObjectiveId === sourceId,
-                    ).length,
-                  };
-                }),
-              ];
-              return { ...candidate, transfers, impacts };
-            }),
+            candidates: merged.candidates,
+            alternativesLimited: merged.alternativesLimited,
           };
         }
+      } else if (expanded.status === "too_many_positions") {
+        result =
+          result.status === "suggestions"
+            ? { ...result, searchLimited: true }
+            : expanded;
       }
     }
     return { ...result, valuationDate };
@@ -731,3 +758,16 @@ export class PortfolioObjectivesService {
 }
 
 export const portfolioObjectivesService = new PortfolioObjectivesService();
+
+function closestDifferenceCents(
+  result: ReturnType<typeof suggestEmergencyReservePositions>,
+) {
+  if (result.status !== "suggestions") return null;
+  return result.candidates.reduce<bigint | null>((closest, candidate) => {
+    const difference = BigInt(candidate.differenceCents);
+    const absoluteDifference = difference < 0n ? -difference : difference;
+    return closest === null || absoluteDifference < closest
+      ? absoluteDifference
+      : closest;
+  }, null);
+}
