@@ -8,6 +8,7 @@ import { portfolioAllocationService } from "@/backend/services/portfolio-allocat
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
 import {
+  mergePartialPositionCandidates,
   suggestEmergencyReservePositions,
   type ReservePositionSuggestion,
 } from "@/backend/services/emergency-reserve-position-suggestions";
@@ -308,29 +309,37 @@ export class EmergencyReserveService {
       withoutTransfers,
     );
     let result = baseline;
+    const baselineKeys = new Set(
+      withoutTransfers.map((holding) => holding.assetKey),
+    );
+    const hasTransferCandidates = holdings.some(
+      (holding) => !baselineKeys.has(holding.assetKey),
+    );
     if (
-      !(baseline.status === "suggestions" && baseline.kind === "exact") &&
-      !(baseline.status === "suggestions" && baseline.searchLimited)
+      hasTransferCandidates &&
+      !(baseline.status === "suggestions" && baseline.kind === "exact")
     ) {
       const expanded = suggestEmergencyReservePositions(
         parsed.data.targetAmount,
         holdings,
       );
       if (expanded.status === "suggestions") {
-        const baselineDifference =
-          baseline.status === "suggestions"
-            ? Math.min(
-                ...baseline.candidates.map((candidate) =>
-                  Math.abs(candidate.difference),
-                ),
-              )
-            : Number.POSITIVE_INFINITY;
-        const better = expanded.candidates.filter(
-          (candidate) =>
-            candidate.difference === 0 ||
-            Math.abs(candidate.difference) < baselineDifference,
-        );
-        if (better.length > 0) {
+        const baselineDifference = closestDifferenceCents(baseline);
+        // A suggestions result from the shared search always has candidates.
+        const expandedDifference = closestDifferenceCents(expanded)!;
+        if (baseline.status === "suggestions") {
+          result = {
+            ...baseline,
+            searchLimited: baseline.searchLimited || expanded.searchLimited,
+          };
+        }
+        if (
+          baselineDifference === null ||
+          expandedDifference < baselineDifference ||
+          (baseline.status === "suggestions" &&
+            baseline.searchLimited &&
+            expandedDifference === baselineDifference)
+        ) {
           const [overview, reserveSettings] = await Promise.all([
             portfolioObjectivesService.getOverview(
               requestId,
@@ -354,21 +363,46 @@ export class EmergencyReserveService {
           const holdingByAsset = new Map(
             holdings.map((holding) => [holding.assetKey, holding]),
           );
+          const expandedCandidates = expanded.candidates.map((candidate) =>
+            this.addTransferDetails(
+              candidate,
+              holdingByAsset,
+              objectiveById,
+              reserveTarget,
+            ),
+          );
+          const partialBaseline =
+            baseline.status === "suggestions" && baseline.searchLimited;
+          const merged =
+            partialBaseline && baselineDifference !== null
+              ? mergePartialPositionCandidates(
+                  baseline.candidates,
+                  expandedCandidates,
+                  baseline.alternativesLimited || expanded.alternativesLimited,
+                )
+              : {
+                  candidates: expandedCandidates,
+                  alternativesLimited: expanded.alternativesLimited,
+                };
           result = {
             ...expanded,
-            kind: better.some((candidate) => candidate.difference === 0)
+            searchLimited:
+              expanded.searchLimited ||
+              (baseline.status === "suggestions" && baseline.searchLimited),
+            kind: merged.candidates.some(
+              (candidate) => BigInt(candidate.differenceCents) === 0n,
+            )
               ? "exact"
               : "nearest",
-            candidates: better.map((candidate) =>
-              this.addTransferDetails(
-                candidate,
-                holdingByAsset,
-                objectiveById,
-                reserveTarget,
-              ),
-            ),
+            candidates: merged.candidates,
+            alternativesLimited: merged.alternativesLimited,
           };
         }
+      } else if (expanded.status === "too_many_positions") {
+        result =
+          baseline.status === "suggestions"
+            ? { ...baseline, searchLimited: true }
+            : expanded;
       }
     }
     logger.info("emergency_reserve_suggestions_generated", {
@@ -738,3 +772,16 @@ export class EmergencyReserveService {
 }
 
 export const emergencyReserveService = new EmergencyReserveService();
+
+function closestDifferenceCents(
+  result: ReturnType<typeof suggestEmergencyReservePositions>,
+) {
+  if (result.status !== "suggestions") return null;
+  return result.candidates.reduce<bigint | null>((closest, candidate) => {
+    const difference = BigInt(candidate.differenceCents);
+    const absoluteDifference = difference < 0n ? -difference : difference;
+    return closest === null || absoluteDifference < closest
+      ? absoluteDifference
+      : closest;
+  }, null);
+}

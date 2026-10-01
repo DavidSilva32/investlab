@@ -419,7 +419,7 @@ function SuggestionResults({
     return (
       <p role="status" className="rounded-lg border p-4 text-sm">
         Esta busca comporta até {result.maximum} grupos valorizados por vez.
-        Reduza os grupos da importação para comparar com segurança.
+        Selecione os grupos manualmente na lista abaixo.
       </p>
     );
   }
@@ -452,12 +452,17 @@ function SuggestionResults({
           {exact
             ? "Abra cada opção para revisar os grupos antes de aplicar."
             : result.searchLimited
-              ? "Alternativa mais próxima entre as combinações avaliadas."
+              ? "Esta é a melhor alternativa entre as combinações avaliadas; a busca é parcial e pode haver opções melhores."
               : `Não encontramos combinação exata. Compare a diferença para ${formatCurrency(target)}.`}
           {result.alternativesLimited &&
             " Há outras alternativas com resultado equivalente."}
           {result.searchLimited &&
-            " A busca atingiu o limite de combinações avaliadas."}
+            " A busca foi interrompida antes de avaliar todas as combinações."}
+          {result.searchLimited &&
+            result.candidates.some(
+              (candidate) => candidate.transfers?.length,
+            ) &&
+            " Esta opção inclui transferência; a busca foi parcial e outras combinações podem não ter sido avaliadas."}
         </p>
         {result.valuationDate && (
           <p className="text-xs text-muted-foreground">

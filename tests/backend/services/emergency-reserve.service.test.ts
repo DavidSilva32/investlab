@@ -826,6 +826,150 @@ describe("EmergencyReserveService", () => {
     );
   });
 
+  it("finds an exact transfer missed by the former 50,000-node baseline and expanded search", async () => {
+    const freePositions = [
+      ...Array.from({ length: 18 }, (_, index) =>
+        position({
+          assetCode: `FREE-HIGH-${String(index).padStart(2, "0")}`,
+          totalValue: "19",
+        }),
+      ),
+      ...Array.from({ length: 17 }, (_, index) =>
+        position({
+          assetCode: `FREE-LOW-${String(index).padStart(2, "0")}`,
+          totalValue: "5",
+        }),
+      ),
+    ];
+    const assignedPositions = [
+      position({
+        assetCode: "TRIP-LOW-TRANSFER",
+        totalValue: "5",
+      }),
+    ];
+    expect(
+      simulateOldSearchForExact(
+        90,
+        [...freePositions, ...assignedPositions].map((item) =>
+          Number(item.totalValue),
+        ),
+      ),
+    ).toEqual({ visited: 50_000, foundExact: false });
+    const sourceId = "goal-transfer-search";
+    const assignments = assignedPositions.map((item) => ({
+      objectiveId: sourceId,
+      assetKey: getEmergencyReserveAssetKey(item),
+    }));
+    mocks.listLatestPositions.mockResolvedValue([
+      ...freePositions,
+      ...assignedPositions,
+    ]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: sourceId, name: "Viagem" }],
+      assignments,
+    });
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [
+        {
+          id: sourceId,
+          name: "Viagem",
+          currentValue: 90,
+          currentValueCents: "9000",
+          knownValue: 90,
+          knownValueCents: "9000",
+          targetAmount: 200,
+        },
+      ],
+      positions: [],
+    });
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 90,
+    });
+
+    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
+    if (result.status !== "suggestions")
+      throw new Error("Expected suggestions");
+    expect(result.searchLimited).toBe(false);
+    expect(result.candidates[0].transfers).toHaveLength(1);
+    expect(result.candidates[0].transfers?.[0]).toMatchObject({
+      fromObjectiveId: sourceId,
+      fromObjectiveName: "Viagem",
+      toObjectiveId: expect.any(String),
+    });
+    expect(result.candidates[0].totalCents).toBe("9000");
+  });
+
+  it("reports the expanded position cap when reserve has no valued baseline candidate", async () => {
+    const free = position({ assetCode: "FREE-90", totalValue: "90" });
+    const assigned = Array.from({ length: 40 }, (_, index) =>
+      position({
+        assetCode: `GOAL-${String(index).padStart(2, "0")}`,
+        totalValue: "1",
+      }),
+    );
+    const sourceId = "goal-many-positions";
+    mocks.listLatestPositions.mockResolvedValue([free, ...assigned]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: sourceId, name: "Viagem" }],
+      assignments: assigned.map((item) => ({
+        objectiveId: sourceId,
+        assetKey: getEmergencyReserveAssetKey(item),
+      })),
+    });
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 100,
+    });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      kind: "nearest",
+      candidates: [{ total: 90, difference: 10 }],
+      searchLimited: true,
+    });
+    expect(mocks.getObjectivesOverview).not.toHaveBeenCalled();
+  });
+
+  it("returns the manual-selection limit when every reserve candidate belongs elsewhere", async () => {
+    const assigned = Array.from({ length: 41 }, (_, index) =>
+      position({
+        assetCode: `OTHER-${String(index).padStart(2, "0")}`,
+        totalValue: "1",
+      }),
+    );
+    mocks.listLatestPositions.mockResolvedValue(assigned);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: "goal-all", name: "Viagem" }],
+      assignments: assigned.map((item) => ({
+        objectiveId: "goal-all",
+        assetKey: getEmergencyReserveAssetKey(item),
+      })),
+    });
+
+    await expect(
+      new EmergencyReserveService().suggestPositions({ targetAmount: 100 }),
+    ).resolves.toMatchObject({ status: "too_many_positions", maximum: 40 });
+  });
+
+  it("retains the empty result when transfer candidates also have no values", async () => {
+    const assigned = position({
+      assetCode: "UNVALUED-TRANSFER",
+      totalValue: "not available",
+      canonicalValueCents: null,
+    });
+    const assetKey = getEmergencyReserveAssetKey(assigned);
+    mocks.listLatestPositions.mockResolvedValue([assigned]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: "goal-unvalued", name: "Viagem" }],
+      assignments: [{ objectiveId: "goal-unvalued", assetKey }],
+    });
+
+    await expect(
+      new EmergencyReserveService().suggestPositions({ targetAmount: 100 }),
+    ).resolves.toMatchObject({ status: "no_valued_positions" });
+  });
+
   it("keeps an exact free and reserve combination ahead of transfer candidates", async () => {
     const free = position({ assetCode: "FREE", totalValue: "40" });
     const assigned = position({ assetCode: "ASSIGNED", totalValue: "60" });
@@ -850,11 +994,14 @@ describe("EmergencyReserveService", () => {
   });
 
   it("preserves the baseline when an expanded candidate only ties its difference", async () => {
-    const free = position({ assetCode: "FREE-TIE", totalValue: "80" });
-    const assigned = position({ assetCode: "GOAL-TIE", totalValue: "80" });
-    const freeKey = getEmergencyReserveAssetKey(free);
+    const free = [
+      position({ assetCode: "FREE-TIE-LOW", totalValue: "99" }),
+      position({ assetCode: "FREE-TIE-HIGH", totalValue: "101" }),
+    ];
+    const assigned = position({ assetCode: "GOAL-TIE", totalValue: "500" });
+    const freeKeys = free.map(getEmergencyReserveAssetKey);
     const assignedKey = getEmergencyReserveAssetKey(assigned);
-    mocks.listLatestPositions.mockResolvedValue([free, assigned]);
+    mocks.listLatestPositions.mockResolvedValue([...free, assigned]);
     mocks.listObjectives.mockResolvedValue({
       objectives: [{ id: "goal-trip", name: "Viagem" }],
       assignments: [{ objectiveId: "goal-trip", assetKey: assignedKey }],
@@ -867,12 +1014,47 @@ describe("EmergencyReserveService", () => {
     expect(result).toMatchObject({
       status: "suggestions",
       kind: "nearest",
-      candidates: [{ assetKeys: [freeKey], total: 80, difference: 20 }],
     });
     if (result.status !== "suggestions")
       throw new Error("Expected suggestions");
-    expect(result.candidates[0]).not.toHaveProperty("transfers");
+    expect(
+      result.candidates.map((candidate) => candidate.assetKeys[0]).sort(),
+    ).toEqual([...freeKeys].sort());
+    expect(result.candidates.every((candidate) => !candidate.transfers)).toBe(
+      true,
+    );
     expect(mocks.getObjectivesOverview).not.toHaveBeenCalled();
+  });
+
+  it("keeps a no-baseline transfer pool with equally close overshoots", async () => {
+    const assigned = [
+      position({ assetCode: "GOAL-LOW", totalValue: "99" }),
+      position({ assetCode: "GOAL-HIGH", totalValue: "101" }),
+    ];
+    const sourceId = "goal-only-transfer-pool";
+    const assetKeys = assigned.map(getEmergencyReserveAssetKey);
+    mocks.listLatestPositions.mockResolvedValue(assigned);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: sourceId, name: "Viagem" }],
+      assignments: assetKeys.map((assetKey) => ({
+        objectiveId: sourceId,
+        assetKey,
+      })),
+    });
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 100,
+    });
+
+    expect(result).toMatchObject({ status: "suggestions", kind: "nearest" });
+    if (result.status !== "suggestions")
+      throw new Error("Expected suggestions");
+    expect(
+      result.candidates.map((candidate) => candidate.assetKeys[0]).sort(),
+    ).toEqual([...assetKeys].sort());
+    expect(
+      result.candidates.every((candidate) => candidate.transfers?.length === 1),
+    ).toBe(true);
   });
 
   it("rejects an invalid suggestion target before loading positions", async () => {
@@ -892,6 +1074,125 @@ describe("EmergencyReserveService", () => {
       statusCode: 400,
       message: "Informe um valor maior que zero para comparar as posições.",
     });
+  });
+
+  it("retains partial baseline candidates beside an exact transfer candidate", async () => {
+    const free = Array.from({ length: 37 }, (_, index) =>
+      position({ assetCode: `PARTIAL-${index}`, totalValue: "700" }),
+    );
+    const assigned = position({
+      assetCode: "TRANSFER-EXACT",
+      totalValue: "1000",
+    });
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    mocks.listLatestPositions.mockResolvedValue([...free, assigned]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: "goal-trip", name: "Viagem" }],
+      assignments: [{ objectiveId: "goal-trip", assetKey: assignedKey }],
+    });
+    mocks.getObjectivesOverview.mockImplementation(
+      async (_requestId, _valuationDate, evaluatedPositions) => ({
+        objectives: [
+          {
+            id: "goal-trip",
+            name: "Viagem",
+            currentValue: 1000,
+            currentValueCents: "100000",
+            targetAmount: 2000,
+          },
+        ],
+        positions: (
+          evaluatedPositions as Array<ReturnType<typeof position>>
+        ).map((evaluated) => {
+          const assetKey = getEmergencyReserveAssetKey(evaluated);
+          const valueCents = evaluated.canonicalValueCents;
+          return {
+            assetKey,
+            valueCents,
+            value: valueCents === null ? null : Number(valueCents) / 100,
+          };
+        }),
+      }),
+    );
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 1000,
+    });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      kind: "exact",
+      searchLimited: true,
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ assetKeys: [assignedKey], difference: 0 }),
+        expect.objectContaining({ difference: 300 }),
+      ]),
+    });
+    if (result.status !== "suggestions")
+      throw new Error("Expected suggestions");
+    expect(result.candidates.some((candidate) => !candidate.transfers)).toBe(
+      true,
+    );
+  });
+
+  it("prefers an observed no-transfer candidate when a partial baseline ties a transfer", async () => {
+    const free = Array.from({ length: 37 }, (_, index) =>
+      position({ assetCode: `TIE-PARTIAL-${index}`, totalValue: "700" }),
+    );
+    const assigned = position({
+      assetCode: "TIE-TRANSFER",
+      totalValue: "1300",
+    });
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    mocks.listLatestPositions.mockResolvedValue([...free, assigned]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: "goal-tie-partial", name: "Viagem" }],
+      assignments: [{ objectiveId: "goal-tie-partial", assetKey: assignedKey }],
+    });
+    mocks.getObjectivesOverview.mockImplementation(
+      async (_requestId, _valuationDate, evaluatedPositions) => ({
+        objectives: [
+          {
+            id: "goal-tie-partial",
+            name: "Viagem",
+            currentValue: 1300,
+            currentValueCents: "130000",
+            targetAmount: 2000,
+          },
+        ],
+        positions: (
+          evaluatedPositions as Array<ReturnType<typeof position>>
+        ).map((evaluated) => {
+          const assetKey = getEmergencyReserveAssetKey(evaluated);
+          const valueCents = evaluated.canonicalValueCents;
+          return {
+            assetKey,
+            valueCents,
+            value: valueCents === null ? null : Number(valueCents) / 100,
+          };
+        }),
+      }),
+    );
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 1000,
+    });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      searchLimited: true,
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ difference: 300 }),
+        expect.objectContaining({
+          difference: -300,
+          transfers: expect.any(Array),
+        }),
+      ]),
+    });
+    if (result.status !== "suggestions")
+      throw new Error("Expected suggestions");
+    expect(result.candidates[0].difference).toBe(300);
+    expect(result.candidates[0].transfers).toBeUndefined();
   });
 
   it("returns no suggestions when current positions are not fixed income", async () => {
@@ -1148,3 +1449,20 @@ describe("EmergencyReserveService", () => {
     expect(mocks.listLatestPositions).toHaveBeenCalledWith("request-3");
   });
 });
+
+function simulateOldSearchForExact(target: number, amounts: number[]) {
+  const ordered = [...amounts].sort((left, right) => right - left);
+  const targetCents = BigInt(target * 100);
+  let visited = 0;
+  let foundExact = false;
+  function visit(index: number, total: bigint) {
+    if (visited >= 50_000) return;
+    visited += 1;
+    if (total > 0n && total === targetCents) foundExact = true;
+    if (total >= targetCents || index >= ordered.length) return;
+    visit(index + 1, total + BigInt(Math.round(ordered[index] * 100)));
+    visit(index + 1, total);
+  }
+  visit(0, 0n);
+  return { visited, foundExact };
+}

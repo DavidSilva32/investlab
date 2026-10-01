@@ -790,6 +790,180 @@ describe("PortfolioObjectivesService", () => {
     );
   });
 
+  it("finds an exact objective transfer missed by the former 50,000-node search", async () => {
+    const free = [
+      ...Array.from({ length: 18 }, (_, index) =>
+        imported({
+          assetCode: `FREE-HIGH-${String(index).padStart(2, "0")}`,
+          totalValue: "19",
+          canonicalValueCents: "1900",
+        }),
+      ),
+      ...Array.from({ length: 17 }, (_, index) =>
+        imported({
+          assetCode: `FREE-LOW-${String(index).padStart(2, "0")}`,
+          totalValue: "5",
+          canonicalValueCents: "500",
+        }),
+      ),
+    ];
+    const assigned = [
+      imported({
+        assetCode: "TRIP-LOW-TRANSFER",
+        totalValue: "5",
+        canonicalValueCents: "500",
+      }),
+    ];
+    const sourceId = "objective-source";
+    const sourceObjective = {
+      ...customObjective,
+      id: sourceId,
+      name: "Viagem",
+    };
+    const transferredKeys = assigned.map(getEmergencyReserveAssetKey);
+    mocks.listCurrentEnriched.mockResolvedValue([...free, ...assigned]);
+    mocks.list.mockResolvedValue({
+      objectives: [customObjective, sourceObjective],
+      assignments: transferredKeys.map((assetKey) => ({
+        objectiveId: sourceId,
+        assetKey,
+      })),
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        targetAmount: 90,
+        objectiveId: customObjective.id,
+        instrumentType: "ALL",
+      });
+
+    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    expect(result.searchLimited).toBe(false);
+    expect(result.candidates[0].transfers).toHaveLength(1);
+    expect(result.candidates[0].transfers?.[0]).toMatchObject({
+      fromObjectiveId: sourceId,
+      fromObjectiveName: "Viagem",
+      toObjectiveId: customObjective.id,
+    });
+    expect(result.candidates[0].totalCents).toBe("9000");
+  });
+
+  it("reports expanded search limits for valued and empty objective baselines", async () => {
+    const assigned = Array.from({ length: 40 }, (_, index) =>
+      imported({
+        assetCode: `OTHER-${String(index).padStart(2, "0")}`,
+        totalValue: "1",
+        canonicalValueCents: "100",
+      }),
+    );
+    const sourceId = "objective-many";
+    const source = { ...customObjective, id: sourceId, name: "Viagem" };
+    const assignments = assigned.map((position) => ({
+      objectiveId: sourceId,
+      assetKey: getEmergencyReserveAssetKey(position),
+    }));
+    const service = new PortfolioObjectivesService();
+    mocks.list.mockResolvedValue({
+      objectives: [customObjective, source],
+      assignments,
+    });
+    mocks.listCurrentEnriched.mockResolvedValue([
+      imported({
+        assetCode: "FREE-90",
+        totalValue: "90",
+        canonicalValueCents: "9000",
+      }),
+      ...assigned,
+    ]);
+
+    await expect(
+      service.findPositionCombinations({
+        objectiveId: customObjective.id,
+        targetAmount: 100,
+        instrumentType: "ALL",
+      }),
+    ).resolves.toMatchObject({
+      status: "suggestions",
+      searchLimited: true,
+      candidates: [{ total: 90, difference: 10 }],
+    });
+
+    const onlyAssigned = Array.from({ length: 41 }, (_, index) =>
+      imported({
+        assetCode: `ALL-OTHER-${String(index).padStart(2, "0")}`,
+        totalValue: "1",
+        canonicalValueCents: "100",
+      }),
+    );
+    mocks.list.mockResolvedValue({
+      objectives: [customObjective, source],
+      assignments: onlyAssigned.map((position) => ({
+        objectiveId: sourceId,
+        assetKey: getEmergencyReserveAssetKey(position),
+      })),
+    });
+    mocks.listCurrentEnriched.mockResolvedValue(onlyAssigned);
+
+    await expect(
+      service.findPositionCombinations({
+        objectiveId: customObjective.id,
+        targetAmount: 100,
+        instrumentType: "ALL",
+      }),
+    ).resolves.toMatchObject({ status: "too_many_positions", maximum: 40 });
+  });
+
+  it("keeps the objective baseline when a transfer candidate only ties its difference", async () => {
+    const free = [
+      imported({
+        assetCode: "FREE-TIE-LOW",
+        totalValue: "99",
+        canonicalValueCents: "9900",
+      }),
+      imported({
+        assetCode: "FREE-TIE-HIGH",
+        totalValue: "101",
+        canonicalValueCents: "10100",
+      }),
+    ];
+    const assigned = imported({
+      assetCode: "SOURCE-TIE",
+      totalValue: "500",
+      canonicalValueCents: "50000",
+    });
+    const sourceId = "objective-tie-source";
+    const freeKeys = free.map(getEmergencyReserveAssetKey);
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    mocks.listCurrentEnriched.mockResolvedValue([...free, assigned]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: sourceId, name: "Viagem" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: assignedKey }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        objectiveId: customObjective.id,
+        targetAmount: 100,
+        instrumentType: "ALL",
+      });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      kind: "nearest",
+    });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    expect(
+      result.candidates.map((candidate) => candidate.assetKeys[0]).sort(),
+    ).toEqual([...freeKeys].sort());
+    expect(result.candidates.every((candidate) => !candidate.transfers)).toBe(
+      true,
+    );
+  });
+
   it("rejects deletion requests with an invalid objective id", async () => {
     await expect(
       new PortfolioObjectivesService().delete("not-a-uuid", {}),
@@ -916,6 +1090,99 @@ describe("PortfolioObjectivesService", () => {
       statusCode: 400,
       message: "Informe um valor válido para comparar.",
     });
+  });
+
+  it("retains a partial objective baseline beside an exact transfer candidate", async () => {
+    const free = Array.from({ length: 37 }, (_, index) =>
+      imported({
+        assetCode: `PARTIAL-${index}`,
+        totalValue: "700",
+        canonicalValueCents: "70000",
+      }),
+    );
+    const assigned = imported({
+      assetCode: "TRANSFER-EXACT",
+      totalValue: "1000",
+      canonicalValueCents: "100000",
+    });
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    const sourceId = "objective-partial-source";
+    mocks.listCurrentEnriched.mockResolvedValue([...free, assigned]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: sourceId, name: "Viagem" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: assignedKey }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        objectiveId: customObjective.id,
+        targetAmount: 1000,
+        instrumentType: "ALL",
+      });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      kind: "exact",
+      searchLimited: true,
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ assetKeys: [assignedKey], difference: 0 }),
+        expect.objectContaining({ difference: 300 }),
+      ]),
+    });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    expect(result.candidates.some((candidate) => !candidate.transfers)).toBe(
+      true,
+    );
+  });
+
+  it("prefers an observed no-transfer objective candidate on a partial tie", async () => {
+    const free = Array.from({ length: 37 }, (_, index) =>
+      imported({
+        assetCode: `TIE-PARTIAL-${index}`,
+        totalValue: "700",
+        canonicalValueCents: "70000",
+      }),
+    );
+    const assigned = imported({
+      assetCode: "TIE-TRANSFER",
+      totalValue: "1300",
+      canonicalValueCents: "130000",
+    });
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    const sourceId = "objective-partial-tie-source";
+    mocks.listCurrentEnriched.mockResolvedValue([...free, assigned]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        customObjective,
+        { ...customObjective, id: sourceId, name: "Viagem" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: assignedKey }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().findPositionCombinations({
+        objectiveId: customObjective.id,
+        targetAmount: 1000,
+        instrumentType: "ALL",
+      });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      searchLimited: true,
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ difference: 300 }),
+        expect.objectContaining({
+          difference: -300,
+          transfers: expect.any(Array),
+        }),
+      ]),
+    });
+    if (result.status !== "suggestions") throw new Error("Expected candidates");
+    expect(result.candidates[0].difference).toBe(300);
+    expect(result.candidates[0].transfers).toBeUndefined();
   });
 
   it("returns readable feedback when a transfer source no longer owns the position", async () => {
