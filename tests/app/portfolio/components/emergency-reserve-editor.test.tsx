@@ -490,6 +490,36 @@ describe("EmergencyReserveEditor", () => {
     expect(await screen.findAllByText("—")).toHaveLength(2);
   });
 
+  it("accepts a successful preview with a null body without showing an error", async () => {
+    const previewJson = vi.fn(async () => null);
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) =>
+      Promise.resolve(
+        options?.method === "PATCH"
+          ? { ok: true, json: previewJson }
+          : { ok: true, json: async () => editorData },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EmergencyReserveEditor />);
+
+    fireEvent.change(await screen.findByLabelText("Custo mensal"), {
+      target: { value: "3000" },
+    });
+    await vi.waitFor(
+      () =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/emergency-reserve",
+          expect.objectContaining({ method: "PATCH" }),
+        ),
+      { timeout: 1000 },
+    );
+
+    await vi.waitFor(() => expect(previewJson).toHaveBeenCalledOnce(), {
+      timeout: 5000,
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it("aborts a pending preview when its editor unmounts", async () => {
     let rejectPreview: (reason: unknown) => void = () => {};
     const pendingPreview = new Promise<never>((_resolve, reject) => {
