@@ -36,6 +36,17 @@ const emptyImportGuard = () => ({
     from: () => ({ orderBy: () => ({ limit: async () => [] }) }),
   }),
 });
+const sqlChunksText = (chunks: unknown[]) =>
+  chunks
+    .map((chunk) => {
+      if (typeof chunk === "string") return chunk;
+      if (chunk && typeof chunk === "object" && "value" in chunk) {
+        const value = (chunk as { value: unknown }).value;
+        return Array.isArray(value) ? value.join("") : String(value);
+      }
+      return "";
+    })
+    .join("");
 
 describe("import repository", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -49,6 +60,7 @@ describe("import repository", () => {
   it("updates one B3 reference date as both snapshot and estimation metadata", async () => {
     const changes: unknown[] = [];
     const tx = {
+      execute: vi.fn().mockResolvedValue(undefined),
       select: () => ({
         from: () => ({
           where: () => ({ limit: async () => [{ id: "import-1" }] }),
@@ -97,6 +109,7 @@ describe("import repository", () => {
       }),
     }));
     const tx = {
+      execute: vi.fn().mockResolvedValue(undefined),
       select: () => ({
         from: () => ({
           where: () => ({ limit: async () => [{ id: "import-1" }] }),
@@ -308,6 +321,12 @@ describe("import repository", () => {
       message: expect.stringContaining("Viagem"),
     });
     expect(transaction.execute).toHaveBeenCalledTimes(1);
+    const importLock = transaction.execute.mock.calls[0][0] as unknown as {
+      queryChunks: unknown[];
+    };
+    expect(sqlChunksText(importLock.queryChunks)).toContain(
+      "SHARE ROW EXCLUSIVE",
+    );
     expect(transaction.execute.mock.invocationCallOrder[0]).toBeLessThan(
       transaction.select.mock.invocationCallOrder[0],
     );
@@ -684,9 +703,17 @@ describe("import repository", () => {
     mocks.client.select
       .mockReturnValueOnce(chain([{ id: "snapshot-1" }]))
       .mockReturnValueOnce(chain([{ product: "Ativo", quantity: "1" }]));
-    await expect(importRepository.listLatestPositions()).resolves.toEqual([
-      { product: "Ativo", quantity: "1" },
-    ]);
+    await expect(importRepository.listLatestPositions()).resolves.toMatchObject(
+      [
+        {
+          product: "Ativo",
+          quantity: "1",
+          referenceDate: undefined,
+          estimationBaseDate: undefined,
+          [Symbol.for("investlab.positionSnapshotId")]: "snapshot-1",
+        },
+      ],
+    );
   });
   it("returns the latest position fact with its versioned general rule", async () => {
     const position = { id: "position-1", product: "Tesouro Selic 2029" };
@@ -707,13 +734,17 @@ describe("import repository", () => {
       .mockReturnValueOnce({ from: () => ({ where: async () => [fact] }) })
       .mockReturnValueOnce({ from: () => ({ where: async () => [rule] }) });
 
-    await expect(importRepository.listLatestPositions()).resolves.toEqual([
-      {
-        ...position,
-        referenceDate: "2026-09-28",
-        liquidityProfile: { ...fact, rule },
-      },
-    ]);
+    await expect(importRepository.listLatestPositions()).resolves.toMatchObject(
+      [
+        {
+          ...position,
+          referenceDate: "2026-09-28",
+          estimationBaseDate: undefined,
+          [Symbol.for("investlab.positionSnapshotId")]: "snapshot-1",
+          liquidityProfile: { ...fact, rule },
+        },
+      ],
+    );
   });
   it("returns a null rule when its recorded rule version is unavailable", async () => {
     const position = { id: "position-1", product: "Tesouro Selic 2029" };
@@ -730,13 +761,17 @@ describe("import repository", () => {
       .mockReturnValueOnce({ from: () => ({ where: async () => [fact] }) })
       .mockReturnValueOnce({ from: () => ({ where: async () => [] }) });
 
-    await expect(importRepository.listLatestPositions()).resolves.toEqual([
-      {
-        ...position,
-        referenceDate: "2026-09-28",
-        liquidityProfile: { ...fact, rule: null },
-      },
-    ]);
+    await expect(importRepository.listLatestPositions()).resolves.toMatchObject(
+      [
+        {
+          ...position,
+          referenceDate: "2026-09-28",
+          estimationBaseDate: undefined,
+          [Symbol.for("investlab.positionSnapshotId")]: "snapshot-1",
+          liquidityProfile: { ...fact, rule: null },
+        },
+      ],
+    );
   });
 
   it("logs failures while loading positions", async () => {
@@ -834,6 +869,7 @@ describe("import repository", () => {
   it("deletes position items, snapshots and imports", async () => {
     const where = vi.fn().mockResolvedValue(undefined);
     const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
       select: vi
         .fn()
         .mockReturnValueOnce({
@@ -855,6 +891,7 @@ describe("import repository", () => {
 
   it("removes a position import even when its snapshot is absent", async () => {
     const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
       select: vi
         .fn()
         .mockReturnValueOnce({
@@ -962,8 +999,13 @@ describe("import repository", () => {
     mocks.client.select
       .mockReturnValueOnce(chain([{ id: "snapshot-2" }]))
       .mockReturnValueOnce(chain(secondSnapshot));
-    await expect(importRepository.listLatestPositions()).resolves.toEqual(
-      secondSnapshot,
+    await expect(importRepository.listLatestPositions()).resolves.toMatchObject(
+      secondSnapshot.map((position) => ({
+        ...position,
+        referenceDate: undefined,
+        estimationBaseDate: undefined,
+        [Symbol.for("investlab.positionSnapshotId")]: "snapshot-2",
+      })),
     );
   });
 });

@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
-import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
+import {
+  createAllocationSourceFingerprint,
+  portfolioObjectivesRepository,
+} from "@/backend/repositories/portfolio-objectives.repository";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import {
@@ -96,7 +99,7 @@ const allocationSchema = z.object({
     .max(50),
 });
 
-type RawPosition = {
+type RawPosition = Record<string, unknown> & {
   assetKey?: string;
   source?: string | null;
   product: string;
@@ -121,6 +124,12 @@ type RawPosition = {
   cdbEstimateComparisonApproximate?: boolean;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
+  sourceSnapshotId?: string;
+  allocationCdiInputs?: {
+    assetCode: string | null;
+    cdiPercentage: string | null;
+    rates: Array<{ rateDate: string; annualRate: string; fetchedAt?: Date }>;
+  };
 };
 
 function valueFor(position: RawPosition) {
@@ -145,6 +154,7 @@ export class PortfolioObjectivesService {
     requestId?: string,
     valuationDate?: string,
     evaluatedPositions?: RawPosition[],
+    includeAllocationFingerprint = false,
   ) {
     const [stored, reserveSettings, balanceReferences] = await Promise.all([
       portfolioObjectivesRepository.list(),
@@ -266,7 +276,7 @@ export class PortfolioObjectivesService {
       { key: "personal", valueCents: personalKnownValueCents },
       { key: "unassigned", valueCents: unassignedKnownValueCents },
     ];
-    return {
+    const overview = {
       objectives,
       balanceReferences,
       destinationSummary: {
@@ -315,6 +325,23 @@ export class PortfolioObjectivesService {
         0,
       ),
     };
+    if (!includeAllocationFingerprint) return overview;
+    return {
+      ...overview,
+      allocationSourceFingerprint: createAllocationSourceFingerprint({
+        valuationDate: valuationDate ?? todayInSaoPaulo(),
+        positions: classified as RawPosition[],
+        assignments: stored.assignments.map(({ assetKey, objectiveId }) => ({
+          assetKey,
+          objectiveId,
+        })),
+        objectives: stored.objectives.map(({ id, name, kind }) => ({
+          id,
+          name,
+          kind,
+        })),
+      }),
+    };
   }
 
   async create(body: unknown) {
@@ -354,6 +381,8 @@ export class PortfolioObjectivesService {
     const overview = await this.getOverview(
       requestId,
       parsed.data.valuationDate,
+      undefined,
+      true,
     );
     const balances = parsed.data.balances.map((balance) => {
       if (
@@ -528,6 +557,9 @@ export class PortfolioObjectivesService {
       expectedOwners,
       expectedValueCents,
       expectedValuationDates,
+      expectedSourceFingerprint: (
+        overview as typeof overview & { allocationSourceFingerprint: string }
+      ).allocationSourceFingerprint,
       objectives: totals,
       transfers,
       unassignedPositions,
@@ -550,6 +582,7 @@ export class PortfolioObjectivesService {
           z.string(),
           z.string().refine(isValidValuationDate).nullable(),
         ),
+        expectedSourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
         acceptPartial: z.boolean().optional().default(false),
       })
       .safeParse(body);
@@ -577,7 +610,9 @@ export class PortfolioObjectivesService {
       !sameRecord(
         parsed.data.expectedValuationDates,
         preview.expectedValuationDates,
-      )
+      ) ||
+      parsed.data.expectedSourceFingerprint !==
+        preview.expectedSourceFingerprint
     ) {
       throw new ApplicationError(
         "A prévia mudou desde a busca. Faça uma nova busca antes de confirmar.",
@@ -593,6 +628,7 @@ export class PortfolioObjectivesService {
       expectedOwners: preview.expectedOwners,
       allocation: preview.allocation,
       references,
+      expectedSourceFingerprint: parsed.data.expectedSourceFingerprint,
     });
   }
 
