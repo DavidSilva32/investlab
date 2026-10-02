@@ -91,4 +91,60 @@ describe("PersonalInvestmentStrategyRepository", () => {
       { requestId: "req-write", error },
     );
   });
+
+  it("upserts composition without replacing legacy answers", async () => {
+    const record = { allocationPercentages: { fixed_income: 100 } };
+    const returning = vi.fn().mockResolvedValue([record]);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    database.insert.mockReturnValue({ values });
+    const percentages = {
+      fixed_income: 60,
+      brazilian_equities: 40,
+      international_etfs: 0,
+      fiis: 0,
+    };
+    await expect(
+      new PersonalInvestmentStrategyRepository().saveAllocationPercentages(
+        percentages,
+        "req-allocation",
+      ),
+    ).resolves.toEqual(record);
+    expect(values).toHaveBeenCalledWith({
+      id: "default",
+      allocationPercentages: percentages,
+      updatedAt: expect.any(Date),
+    });
+    expect(onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: {
+          allocationPercentages: percentages,
+          updatedAt: expect.any(Date),
+        },
+      }),
+    );
+  });
+
+  it("logs and rethrows composition write errors", async () => {
+    const error = new Error("database unavailable");
+    const returning = vi.fn().mockRejectedValue(error);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    database.insert.mockReturnValue({ values });
+    await expect(
+      new PersonalInvestmentStrategyRepository().saveAllocationPercentages(
+        {
+          fixed_income: 100,
+          brazilian_equities: 0,
+          international_etfs: 0,
+          fiis: 0,
+        },
+        "req-allocation-error",
+      ),
+    ).rejects.toBe(error);
+    expect(logger.error).toHaveBeenCalledWith(
+      "personal_investment_strategy_allocation_update_failed",
+      { requestId: "req-allocation-error", error },
+    );
+  });
 });

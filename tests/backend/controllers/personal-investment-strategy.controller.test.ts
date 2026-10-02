@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const service = vi.hoisted(() => ({
   getOverview: vi.fn(),
   save: vi.fn(),
+  saveComposition: vi.fn(),
+  simulateContribution: vi.fn(),
 }));
 const logger = vi.hoisted(() => ({ info: vi.fn() }));
 vi.mock("@/backend/services/personal-investment-strategy.service", () => ({
@@ -58,6 +60,53 @@ describe("PersonalInvestmentStrategyController", () => {
         requestId: "req-save",
         selectedDirection: "review_horizon",
       },
+    );
+  });
+
+  it("saves the chosen composition without returning legacy survey fields", async () => {
+    const allocationPercentages = {
+      fixed_income: 60,
+      brazilian_equities: 40,
+      international_etfs: 0,
+      fiis: 0,
+    };
+    service.saveComposition.mockResolvedValue(allocationPercentages);
+    const response = await new PersonalInvestmentStrategyController().save(
+      { allocationPercentages },
+      "req-composition",
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      message: "Sua composição de longo prazo foi salva.",
+      allocationPercentages,
+    });
+    expect(service.saveComposition).toHaveBeenCalledWith(
+      { allocationPercentages },
+      "req-composition",
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      "personal_investment_strategy_allocation_saved",
+      { requestId: "req-composition" },
+    );
+  });
+
+  it("returns a contribution simulation and logs completeness", async () => {
+    const simulation = { completeness: { complete: false } };
+    service.simulateContribution.mockResolvedValue(simulation);
+    const response =
+      await new PersonalInvestmentStrategyController().simulateContribution(
+        { contributionAmount: 100 },
+        "req-simulation",
+      );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(simulation);
+    expect(service.simulateContribution).toHaveBeenCalledWith(
+      { contributionAmount: 100 },
+      "req-simulation",
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      "personal_investment_strategy_contribution_simulated",
+      { requestId: "req-simulation", complete: false },
     );
   });
 });

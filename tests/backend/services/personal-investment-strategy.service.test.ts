@@ -42,6 +42,9 @@ function makeService(positions: ReturnType<typeof position>[] = []) {
   const repository = {
     get: vi.fn().mockResolvedValue(null),
     save: vi.fn().mockResolvedValue(saved),
+    saveAllocationPercentages: vi.fn().mockResolvedValue({
+      allocationPercentages: null,
+    }),
   };
   const service = new PersonalInvestmentStrategyService(
     positionService as never,
@@ -70,6 +73,7 @@ describe("PersonalInvestmentStrategyService", () => {
         assetClass: "Renda variável",
         geography: "Brasil",
         maturityAt: "2032-10-02",
+        estimatedThrough: "2026-10-01",
       }),
       position("ETF Exterior", "300", "LONG_TERM_INVESTMENT", {
         geography: "Exterior",
@@ -79,7 +83,9 @@ describe("PersonalInvestmentStrategyService", () => {
       position("Outro ativo", "500", "LONG_TERM_INVESTMENT"),
       position("Sem valor", null, "LONG_TERM_INVESTMENT"),
       position("Meta pessoal", "600", "PERSONAL_GOAL"),
-      position("Reserva", "700", "RESERVE"),
+      position("Reserva", "700", "RESERVE", {
+        estimatedThrough: "2026-10-02",
+      }),
       position("Objetivo antigo", "800", null, { objectiveId: "legacy" }),
       position("Sem destino", "900", null, { objectiveId: null }),
     ];
@@ -114,22 +120,39 @@ describe("PersonalInvestmentStrategyService", () => {
       positionCount: 10,
     });
     expect(result.longTermWealth.knownValueCents).toBe("1500");
+    expect(result.valuationDates).toEqual(["2026-09-30", "2026-10-01"]);
     expect(result.longTermWealth.positionCount).toBe(6);
     expect(result.longTermWealth.assignedPositionCount).toBe(6);
     expect(result.longTermWealth.unvaluedPositionCount).toBe(1);
     expect(result.longTermWealth.classes).toEqual([
-      { id: "fixed_income", label: "Renda fixa", knownValueCents: "100" },
+      {
+        id: "fixed_income",
+        label: "Renda fixa",
+        knownValueCents: "100",
+        percentageBasisPoints: 667,
+        currentPercentage: 6.67,
+      },
       {
         id: "brazilian_equities",
         label: "Ações brasileiras",
         knownValueCents: "200",
+        percentageBasisPoints: 1333,
+        currentPercentage: 13.33,
       },
       {
         id: "international_etfs",
         label: "ETFs internacionais",
         knownValueCents: "300",
+        percentageBasisPoints: 2000,
+        currentPercentage: 20,
       },
-      { id: "fiis", label: "FIIs", knownValueCents: "400" },
+      {
+        id: "fiis",
+        label: "FIIs",
+        knownValueCents: "400",
+        percentageBasisPoints: 2667,
+        currentPercentage: 26.67,
+      },
     ]);
     expect(result.longTermWealth.unclassifiedKnownValueCents).toBe("500");
     expect(result.longTermMaturityDates).toEqual([
@@ -159,6 +182,29 @@ describe("PersonalInvestmentStrategyService", () => {
     });
     expect(result.longTermMaturityDates).toEqual([]);
     expect(result.savedStrategy).toBeNull();
+  });
+
+  it("allocates rounding residue so a complete current composition totals 100%", async () => {
+    const { service } = makeService([
+      position("CDB", "1", "LONG_TERM_INVESTMENT", {
+        assetClass: "Renda fixa",
+      }),
+      position("Ação Brasil", "1", "LONG_TERM_INVESTMENT", {
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+      position("ETF Exterior", "1", "LONG_TERM_INVESTMENT", {
+        geography: "Exterior",
+      }),
+    ]);
+    const result = await service.getOverview();
+    const percentages = result.longTermWealth.classes.map(
+      ({ percentageBasisPoints }) => percentageBasisPoints,
+    );
+    expect(percentages).toEqual([3334, 3333, 3333, 0]);
+    expect(percentages.reduce((sum, percentage) => sum + percentage, 0)).toBe(
+      10000,
+    );
   });
 
   it("counts underlying lots when an objective overview groups positions by asset", async () => {
@@ -211,6 +257,250 @@ describe("PersonalInvestmentStrategyService", () => {
       saved.selectedDirection,
       "request-save",
     );
+  });
+
+  it("returns the saved composition separately from legacy strategy answers", async () => {
+    const { service, repository } = makeService([]);
+    repository.get.mockResolvedValue({
+      ...saved,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+    const result = await service.getOverview();
+    expect(result.savedAllocationPercentages).toEqual({
+      fixed_income: 100,
+      brazilian_equities: 0,
+      international_etfs: 0,
+      fiis: 0,
+    });
+  });
+
+  it("does not expose an empty legacy profile for a composition-only record", async () => {
+    const { service, repository } = makeService([]);
+    repository.get.mockResolvedValue({
+      answers: null,
+      selectedDirection: null,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+      updatedAt: new Date("2026-10-02T10:00:00.000Z"),
+    });
+    const result = await service.getOverview();
+    expect(result.savedStrategy).toBeNull();
+    expect(result.savedAllocationPercentages).toEqual({
+      fixed_income: 100,
+      brazilian_equities: 0,
+      international_etfs: 0,
+      fiis: 0,
+    });
+  });
+
+  it("saves a four-class composition including zero-weight classes", async () => {
+    const { service, repository } = makeService();
+    const percentages = {
+      fixed_income: 60,
+      brazilian_equities: 40,
+      international_etfs: 0,
+      fiis: 0,
+    };
+    await expect(
+      service.saveComposition(
+        { allocationPercentages: percentages },
+        "req-allocation",
+      ),
+    ).resolves.toEqual(percentages);
+    expect(repository.saveAllocationPercentages).toHaveBeenCalledWith(
+      percentages,
+      "req-allocation",
+    );
+  });
+
+  it.each([
+    null,
+    {},
+    {
+      fixed_income: 90,
+      brazilian_equities: 10,
+      international_etfs: 0,
+      fiis: 0,
+      other: 0,
+    },
+    {
+      fixed_income: 90.001,
+      brazilian_equities: 9.999,
+      international_etfs: 0,
+      fiis: 0,
+    },
+    {
+      fixed_income: -1,
+      brazilian_equities: 101,
+      international_etfs: 0,
+      fiis: 0,
+    },
+    {
+      fixed_income: 30,
+      brazilian_equities: 30,
+      international_etfs: 20,
+      fiis: 19,
+    },
+  ])(
+    "rejects malformed saved compositions %j",
+    async (allocationPercentages) => {
+      const { service, repository } = makeService();
+      await expect(
+        service.saveComposition({ allocationPercentages }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(repository.saveAllocationPercentages).not.toHaveBeenCalled();
+    },
+  );
+
+  it("simulates an aporte against the draft composition using only long-term positions", async () => {
+    const positions = [
+      position("CDB", "6000", "LONG_TERM_INVESTMENT", {
+        assetClass: "Renda fixa",
+      }),
+      position("Ação Brasil", "4000", "LONG_TERM_INVESTMENT", {
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+      position("Reserva", "5000", "RESERVE", { assetClass: "Renda fixa" }),
+      position("Sem destino", "8000", null, { objectiveId: null }),
+    ];
+    const { service, positionService, allocationService, objectivesService } =
+      makeService(positions);
+    const result = await service.simulateContribution(
+      {
+        contributionAmount: 20,
+        allocationPercentages: {
+          fixed_income: 50,
+          brazilian_equities: 50,
+          international_etfs: 0,
+          fiis: 0,
+        },
+      },
+      "req-simulate",
+    );
+
+    expect(positionService.listCurrentEnriched).toHaveBeenCalledWith(
+      "req-simulate",
+      "2026-10-02",
+    );
+    expect(allocationService.classifyPositions).toHaveBeenCalledWith(
+      evaluated,
+      "req-simulate",
+    );
+    expect(objectivesService.getOverview).toHaveBeenCalledWith(
+      "req-simulate",
+      "2026-10-02",
+      [{ classification: {} }],
+    );
+    expect(result).toMatchObject({
+      totalCents: "10000",
+      contributionCents: "2000",
+      allocations: [
+        {
+          id: "fixed_income",
+          currentValueCents: "6000",
+          targetPercentage: 50,
+          contributionValueCents: "0",
+          projectedValueCents: "6000",
+        },
+        {
+          id: "brazilian_equities",
+          currentValueCents: "4000",
+          targetPercentage: 50,
+          contributionValueCents: "2000",
+          projectedValueCents: "6000",
+        },
+        { id: "international_etfs" },
+        { id: "fiis" },
+      ],
+      completeness: {
+        complete: true,
+        unvaluedPositionCount: 0,
+        unclassifiedKnownValueCents: "0",
+        valuationDate: "2026-10-02",
+      },
+    });
+  });
+
+  it("accepts a cent-precise decimal whose binary representation is inexact", async () => {
+    const { service } = makeService([]);
+    const result = await service.simulateContribution({
+      contributionAmount: 0.29,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+    expect(result.contributionCents).toBe("29");
+  });
+
+  it.each([
+    {
+      contributionAmount: 0,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    },
+    {
+      contributionAmount: 1.001,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    },
+    { contributionAmount: 1, allocationPercentages: {} },
+    {
+      contributionAmount: 1,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+        extra: 0,
+      },
+    },
+  ])("rejects invalid contribution simulations %j", async (body) => {
+    const { service } = makeService();
+    await expect(service.simulateContribution(body)).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it("marks contribution projections incomplete when long-term values lack coverage", async () => {
+    const { service } = makeService([
+      position("Unknown long-term asset", "250", "LONG_TERM_INVESTMENT"),
+      position("Unvalued CDB", null, "LONG_TERM_INVESTMENT"),
+    ]);
+    const result = await service.simulateContribution({
+      contributionAmount: 10,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+    expect(result.completeness).toMatchObject({
+      complete: false,
+      unvaluedPositionCount: 1,
+      unclassifiedKnownValueCents: "250",
+    });
   });
 
   it("rejects a direction hidden by the user's international preference", async () => {

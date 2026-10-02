@@ -197,6 +197,13 @@
       "when": 1790950445997,
       "tag": "0027_big_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790963298330,
+      "tag": "0028_certain_leech",
+      "breakpoints": true
     }
   ]
 }
