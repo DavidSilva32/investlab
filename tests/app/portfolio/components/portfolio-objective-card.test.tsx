@@ -119,6 +119,48 @@ describe("PortfolioObjectiveCard", () => {
     ).toBeNull();
   });
 
+  it("labels long-term destinations and asks legacy goals to be classified", () => {
+    const { rerender } = render(
+      <PortfolioObjectiveCard
+        objective={{ ...objective, purpose: "LONG_TERM_INVESTMENT" }}
+        deleteDialogOpen={false}
+        deleting={false}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Investimento de longo prazo")).toBeTruthy();
+    expect(screen.queryByText(/Classifique este destino ao editar/)).toBeNull();
+
+    rerender(
+      <PortfolioObjectiveCard
+        objective={objective}
+        deleteDialogOpen={false}
+        deleting={false}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Classificação pendente")).toBeTruthy();
+    expect(screen.getByText(/Classifique este destino ao editar/)).toBeTruthy();
+    rerender(
+      <PortfolioObjectiveCard
+        objective={{ ...objective, purpose: "PERSONAL_GOAL" }}
+        deleteDialogOpen={false}
+        deleting={false}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Objetivo pessoal")).toBeTruthy();
+  });
+
   it("keeps the reserve target label when its personal target is not configured", () => {
     render(
       <PortfolioObjectiveCard

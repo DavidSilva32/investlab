@@ -72,6 +72,7 @@ const imported = (overrides: Record<string, unknown> = {}) => ({
 const customObjective = {
   id: "objective-trip",
   kind: "CUSTOM",
+  purpose: null,
   name: "Viagem",
   targetAmount: "500.00",
   monthlyPlannedAmount: "100.00",
@@ -109,6 +110,89 @@ describe("PortfolioObjectivesService", () => {
     });
     expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
     expect(mocks.classifyPositions).not.toHaveBeenCalled();
+  });
+
+  it("separates long-term destination values and keeps legacy goals unclassified until confirmed", async () => {
+    const reserve = {
+      ...customObjective,
+      id: reserveObjectiveId,
+      kind: "RESERVE",
+      purpose: "RESERVE",
+      name: "Reserva",
+    };
+    const longTerm = {
+      ...customObjective,
+      id: "objective-long",
+      purpose: "LONG_TERM_INVESTMENT",
+      name: "Longo prazo",
+    };
+    const personal = {
+      ...customObjective,
+      id: "objective-trip",
+      purpose: "PERSONAL_GOAL",
+      name: "Viagem",
+    };
+    const legacy = {
+      ...customObjective,
+      id: "objective-legacy",
+      purpose: null,
+      name: "Meta antiga",
+    };
+    const reservePosition = imported({
+      product: "CDB Reserva",
+      canonicalValueCents: "1000",
+    });
+    const longTermPosition = imported({
+      product: "CDB Long",
+      canonicalValueCents: "2000",
+    });
+    const personalPosition = imported({
+      product: "CDB Viagem",
+      canonicalValueCents: "3000",
+    });
+    const legacyPosition = imported({
+      product: "CDB Legado",
+      canonicalValueCents: "4000",
+    });
+    const keys = [
+      reservePosition,
+      longTermPosition,
+      personalPosition,
+      legacyPosition,
+    ].map((position) => getEmergencyReserveAssetKey(position));
+    mocks.list.mockResolvedValue({
+      objectives: [reserve, longTerm, personal, legacy],
+      assignments: [reserve, longTerm, personal, legacy].map(
+        (objective, index) => ({
+          objectiveId: objective.id,
+          assetKey: keys[index],
+        }),
+      ),
+    });
+
+    const result = await new PortfolioObjectivesService().getOverview(
+      undefined,
+      "2026-09-30",
+      [reservePosition, longTermPosition, personalPosition, legacyPosition],
+    );
+
+    expect(result.destinationSummary.categories).toEqual([
+      { key: "reserve", value: 10, valueCents: "1000", percentage: 10 },
+      { key: "personal", value: 30, valueCents: "3000", percentage: 30 },
+      { key: "long_term", value: 20, valueCents: "2000", percentage: 20 },
+      { key: "purpose_unknown", value: 40, valueCents: "4000", percentage: 40 },
+      { key: "unassigned", value: 0, valueCents: "0", percentage: 0 },
+    ]);
+    expect(result.destinationSummary.knownTotalCents).toBe("10000");
+    expect(
+      result.destinationSummary.categories.reduce(
+        (total, category) => total + category.percentage,
+        0,
+      ),
+    ).toBe(100);
+    expect(
+      result.positions.map(({ objectivePurpose }) => objectivePurpose),
+    ).toEqual(["RESERVE", "LONG_TERM_INVESTMENT", "PERSONAL_GOAL", null]);
   });
 
   it("uses the Sao Paulo valuation date when an allocation fingerprint is requested without a date", async () => {
@@ -289,7 +373,10 @@ describe("PortfolioObjectivesService", () => {
 
   it("builds objective progress from current position values and reports unassigned wealth", async () => {
     const first = imported();
-    const duplicate = imported({ totalValue: "50" });
+    const duplicate = imported({
+      totalValue: "50",
+      classification: { assetClass: "Renda fixa", geography: "Exterior" },
+    });
     const manual = imported({
       assetKey: "manual:asset",
       source: "MANUAL",
@@ -342,6 +429,7 @@ describe("PortfolioObjectivesService", () => {
     });
     expect(result.positions[0]).toMatchObject({
       objectiveId: customObjective.id,
+      geography: null,
     });
     expect(result.unassignedKnownValue).toBe(300);
     expect(result.unassignedPositionCount).toBe(1);
@@ -528,12 +616,14 @@ describe("PortfolioObjectivesService", () => {
     await expect(
       new PortfolioObjectivesService().create({
         name: " Viagem ",
+        purpose: "PERSONAL_GOAL",
         targetAmount: 12000,
         monthlyPlannedAmount: 500,
       }),
     ).resolves.toEqual(customObjective);
     expect(mocks.create).toHaveBeenCalledWith({
       name: "Viagem",
+      purpose: "PERSONAL_GOAL",
       targetAmount: "12000.00",
       monthlyPlannedAmount: "500.00",
     });
@@ -542,21 +632,27 @@ describe("PortfolioObjectivesService", () => {
   it("stores an omitted monthly plan as null", async () => {
     await new PortfolioObjectivesService().create({
       name: "Longo prazo",
+      purpose: "LONG_TERM_INVESTMENT",
       targetAmount: 5000,
     });
 
     expect(mocks.create).toHaveBeenCalledWith({
       name: "Longo prazo",
+      purpose: "LONG_TERM_INVESTMENT",
       targetAmount: "5000.00",
       monthlyPlannedAmount: null,
     });
   });
 
   it("creates a destination without a target or monthly plan", async () => {
-    await new PortfolioObjectivesService().create({ name: "Longo prazo" });
+    await new PortfolioObjectivesService().create({
+      name: "Longo prazo",
+      purpose: "LONG_TERM_INVESTMENT",
+    });
 
     expect(mocks.create).toHaveBeenCalledWith({
       name: "Longo prazo",
+      purpose: "LONG_TERM_INVESTMENT",
       targetAmount: null,
       monthlyPlannedAmount: null,
     });
@@ -574,11 +670,13 @@ describe("PortfolioObjectivesService", () => {
     await expect(
       new PortfolioObjectivesService().update(id, {
         name: "Viagem",
+        purpose: "PERSONAL_GOAL",
       }),
     ).resolves.toMatchObject({ targetAmount: null });
 
     expect(mocks.update).toHaveBeenCalledWith(id, {
       name: "Viagem",
+      purpose: "PERSONAL_GOAL",
       targetAmount: null,
       monthlyPlannedAmount: null,
     });
@@ -593,16 +691,82 @@ describe("PortfolioObjectivesService", () => {
     await expect(
       new PortfolioObjectivesService().update(id, {
         name: " Carro ",
+        purpose: "LONG_TERM_INVESTMENT",
         targetAmount: 25000,
         monthlyPlannedAmount: null,
       }),
     ).resolves.toMatchObject({ name: "Carro" });
     expect(mocks.update).toHaveBeenCalledWith(id, {
       name: "Carro",
+      purpose: "LONG_TERM_INVESTMENT",
       targetAmount: "25000.00",
       monthlyPlannedAmount: null,
     });
     expect(mocks.replaceAssignments).not.toHaveBeenCalled();
+  });
+
+  it("classifies an existing goal in place without changing its financial details or assignments", async () => {
+    const existing = {
+      ...customObjective,
+      id: "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0",
+      purpose: null,
+      targetAmount: "100000.00",
+      monthlyPlannedAmount: "8000.00",
+    };
+    mocks.getObjective.mockResolvedValueOnce(existing);
+    mocks.update.mockResolvedValueOnce({
+      ...existing,
+      purpose: "LONG_TERM_INVESTMENT",
+    });
+
+    await expect(
+      new PortfolioObjectivesService().update(existing.id, {
+        name: "Longo prazo",
+        purpose: "LONG_TERM_INVESTMENT",
+        targetAmount: 100000,
+        monthlyPlannedAmount: 8000,
+      }),
+    ).resolves.toMatchObject({
+      id: existing.id,
+      purpose: "LONG_TERM_INVESTMENT",
+      targetAmount: "100000.00",
+      monthlyPlannedAmount: "8000.00",
+    });
+    expect(mocks.update).toHaveBeenCalledWith(existing.id, {
+      name: "Longo prazo",
+      purpose: "LONG_TERM_INVESTMENT",
+      targetAmount: "100000.00",
+      monthlyPlannedAmount: "8000.00",
+    });
+    expect(mocks.replaceAssignments).not.toHaveBeenCalled();
+  });
+
+  it("preserves a known destination purpose when an older update omits it", async () => {
+    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id,
+      purpose: "LONG_TERM_INVESTMENT",
+    });
+    mocks.update.mockResolvedValueOnce({
+      ...customObjective,
+      id,
+      purpose: "LONG_TERM_INVESTMENT",
+      name: "Investimento",
+    });
+
+    await new PortfolioObjectivesService().update(id, {
+      name: "Investimento",
+      targetAmount: 100000,
+      monthlyPlannedAmount: 8000,
+    });
+
+    expect(mocks.update).toHaveBeenCalledWith(id, {
+      name: "Investimento",
+      purpose: "LONG_TERM_INVESTMENT",
+      targetAmount: "100000.00",
+      monthlyPlannedAmount: "8000.00",
+    });
   });
 
   it.each(["update", "delete"] as const)(
@@ -743,7 +907,11 @@ describe("PortfolioObjectivesService", () => {
       service.findPositionCombinations({ targetAmount: 0 }),
     ).rejects.toBeInstanceOf(ApplicationError);
     await expect(
-      service.update("objective-trip", { name: "", targetAmount: -1 }),
+      service.update("objective-trip", {
+        name: "",
+        purpose: "PERSONAL_GOAL",
+        targetAmount: -1,
+      }),
     ).rejects.toBeInstanceOf(ApplicationError);
     expect(mocks.getObjective).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
@@ -795,6 +963,7 @@ describe("PortfolioObjectivesService", () => {
     ).rejects.toMatchObject({ statusCode: 404 });
     expect(mocks.update).toHaveBeenCalledWith(missingId, {
       name: "Viagem",
+      purpose: null,
       targetAmount: "100.00",
       monthlyPlannedAmount: "5.00",
     });

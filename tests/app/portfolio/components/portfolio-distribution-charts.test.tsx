@@ -13,8 +13,12 @@ vi.mock("@/components/ui/chart", () => ({
 }));
 
 vi.mock("recharts", () => ({
-  Bar: () => null,
-  BarChart: () => <div data-testid="bar-chart" />,
+  Bar: ({ background }: { background: { fill: string } }) => (
+    <span data-testid="bar-track" data-fill={background.fill} />
+  ),
+  BarChart: ({ children }: React.PropsWithChildren) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
   Cell: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -58,6 +62,11 @@ describe("PortfolioDistributionCharts", () => {
     expect(screen.getByText("Demais classes")).toBeTruthy();
     expect(screen.getByText(/sem classe informada/)).toBeTruthy();
     expect(screen.getAllByTestId("bar-chart")).toHaveLength(12);
+    expect(
+      screen
+        .getAllByTestId("bar-track")
+        .every((track) => track.getAttribute("data-fill") === "var(--muted)"),
+    ).toBe(true);
   });
 
   it("keeps the class chart loading, unavailable and empty states distinct", () => {

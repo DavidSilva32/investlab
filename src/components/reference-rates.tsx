@@ -8,7 +8,7 @@ export function ReferenceRates({ rates }: { rates: BcbReferenceRates }) {
   return (
     <section
       aria-label="Indicadores de mercado"
-      className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border bg-muted/20 px-3 py-2.5 text-sm"
+      className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border bg-muted px-3 py-2.5 text-sm"
     >
       <span className="flex items-center gap-2 font-medium text-muted-foreground">
         <Percent className="size-3.5 text-primary" />
@@ -35,7 +35,7 @@ function Rate({
   return (
     <span className="inline-flex items-baseline gap-1.5 tabular-nums">
       <span className="text-sm font-semibold text-foreground">{label}</span>
-      <span className="font-medium text-muted-foreground">
+      <span className="font-medium text-foreground">
         {rate ? `${Number(rate.annualRate).toLocaleString("pt-BR")}%` : "—"}
       </span>
       {rate && (

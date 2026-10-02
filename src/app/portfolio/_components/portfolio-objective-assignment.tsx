@@ -48,6 +48,7 @@ export type ObjectivePosition = {
   assetCode: string | null;
   institution: string | null;
   assetClass: string | null;
+  geography?: string | null;
   positionCount: number;
   value: number | null;
   valueCents?: string | null;
@@ -55,6 +56,8 @@ export type ObjectivePosition = {
   unvaluedPositions: number;
   objectiveId: string | null;
   objectiveName: string | null;
+  objectivePurpose?:
+    "RESERVE" | "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT" | null;
   canonicalValueSource?: string;
   estimationBaseDate?: string | null;
   estimatedThrough?: string | null;

@@ -94,7 +94,7 @@ function DistributionChart({
                     <YAxis type="category" dataKey="label" hide />
                     <Bar
                       dataKey="percentage"
-                      background={{ fill: "hsl(var(--muted))" }}
+                      background={{ fill: "var(--muted)" }}
                       radius={[0, 4, 4, 0]}
                       maxBarSize={10}
                     >

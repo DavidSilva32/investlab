@@ -296,6 +296,7 @@ export class PortfolioObjectivesRepository {
           id: portfolioObjectives.id,
           name: portfolioObjectives.name,
           kind: portfolioObjectives.kind,
+          purpose: portfolioObjectives.purpose,
         })
         .from(portfolioObjectives),
     ]);
@@ -325,6 +326,7 @@ export class PortfolioObjectivesRepository {
 
   async create(input: {
     name: string;
+    purpose: "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT";
     targetAmount: string | null;
     monthlyPlannedAmount: string | null;
   }) {
@@ -339,6 +341,7 @@ export class PortfolioObjectivesRepository {
     objectiveId: string,
     input: {
       name: string;
+      purpose: "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT" | null;
       targetAmount: string | null;
       monthlyPlannedAmount: string | null;
     },

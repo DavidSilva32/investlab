@@ -27,7 +27,8 @@ type ObjectivesData = {
   }>;
   destinationSummary: {
     categories: Array<{
-      key: "reserve" | "personal" | "unassigned";
+      key:
+        "reserve" | "personal" | "long_term" | "purpose_unknown" | "unassigned";
       value: number;
       valueCents: string;
       percentage: number;
@@ -138,6 +139,7 @@ export function PortfolioObjectives({
 
   async function saveObjective(values: {
     name: string;
+    purpose: "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT" | null;
     targetAmount: number | null;
     monthlyPlannedAmount: number | null;
   }) {

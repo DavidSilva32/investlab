@@ -127,6 +127,8 @@ const baseData = {
     categories: [
       { key: "reserve" as const, value: 400, percentage: 61.5 },
       { key: "personal" as const, value: 0, percentage: 0 },
+      { key: "long_term" as const, value: 0, percentage: 0 },
+      { key: "purpose_unknown" as const, value: 0, percentage: 0 },
       { key: "unassigned" as const, value: 250, percentage: 38.5 },
     ],
     knownTotal: 650,
@@ -209,6 +211,7 @@ describe("PortfolioObjectives", () => {
           id: "objective-new",
           kind: "CUSTOM",
           name: body.name,
+          purpose: body.purpose,
           targetAmount: body.targetAmount,
           currentValue: 0,
           knownValue: 0,
@@ -406,6 +409,10 @@ describe("PortfolioObjectives", () => {
     await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
     expect(screen.getByRole("heading", { name: "Novo objetivo" })).toBeTruthy();
     await user.type(screen.getByLabelText("Nome"), "Carro");
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Objetivo pessoal" }));
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
       target: { value: "R$ 12.500,00" },
     });
@@ -420,6 +427,7 @@ describe("PortfolioObjectives", () => {
         method: "POST",
         body: JSON.stringify({
           name: "Carro",
+          purpose: "PERSONAL_GOAL",
           targetAmount: 12500,
           monthlyPlannedAmount: null,
         }),
@@ -747,6 +755,10 @@ describe("PortfolioObjectives", () => {
     await screen.findByText("Patrimônio por destino");
     await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome"), "Casa");
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Objetivo pessoal" }));
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
       target: { value: "R$ 100.000,00" },
     });
@@ -766,6 +778,10 @@ describe("PortfolioObjectives", () => {
     await screen.findByText("Patrimônio por destino");
     await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome"), "Casa");
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Objetivo pessoal" }));
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
       target: { value: "R$ 100.000,00" },
     });
@@ -975,6 +991,10 @@ describe("PortfolioObjectives", () => {
     await screen.findByText("Patrimônio por destino");
     await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome"), "Casa");
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Objetivo pessoal" }));
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
       target: { value: "R$ 100.000,00" },
     });

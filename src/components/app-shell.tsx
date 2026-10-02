@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Compass,
   Download,
   LayoutDashboard,
   Menu,
@@ -18,6 +19,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 const navigation = [
   { href: "/", label: "Dashboard", Icon: LayoutDashboard },
   { href: "/portfolio", label: "Carteira", Icon: WalletCards },
+  { href: "/strategy", label: "Estratégia", Icon: Compass },
   { href: "/imports", label: "Importações", Icon: Download },
   { href: "/analyses", label: "Análises", Icon: BarChart3 },
   { href: "/settings", label: "Configurações", Icon: Settings },

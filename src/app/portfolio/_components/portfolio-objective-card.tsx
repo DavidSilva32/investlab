@@ -20,6 +20,7 @@ import type { ObjectiveBalanceTrackingData } from "./portfolio-objective-balance
 export type PortfolioObjective = {
   id: string;
   kind: string;
+  purpose?: "RESERVE" | "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT" | null;
   name: string;
   targetAmount: number | null;
   monthlyPlannedAmount: number | null;
@@ -86,7 +87,13 @@ export function PortfolioObjectiveCard({
                 {objective.name}
               </span>
               <Badge variant={isReserve ? "secondary" : "outline"}>
-                {isReserve ? "Reserva" : "Objetivo pessoal"}
+                {isReserve
+                  ? "Reserva"
+                  : objective.purpose === "LONG_TERM_INVESTMENT"
+                    ? "Investimento de longo prazo"
+                    : objective.purpose === "PERSONAL_GOAL"
+                      ? "Objetivo pessoal"
+                      : "Classificação pendente"}
               </Badge>
             </span>
             <span className="shrink-0 text-right">
@@ -175,6 +182,12 @@ export function PortfolioObjectiveCard({
           )}
         </CardContent>
       </Button>
+      {!isReserve && !objective.purpose && (
+        <p className="px-4 pb-3 text-xs text-muted-foreground">
+          Classifique este destino ao editar para decidir se entra na
+          Estratégia.
+        </p>
+      )}
       {!isReserve && (
         <div className="absolute right-2 top-2">
           <DropdownMenu>

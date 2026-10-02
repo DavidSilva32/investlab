@@ -26,7 +26,8 @@ type Data = {
   objectives: PortfolioObjective[];
   destinationSummary: {
     categories: Array<{
-      key: "reserve" | "personal" | "unassigned";
+      key:
+        "reserve" | "personal" | "long_term" | "purpose_unknown" | "unassigned";
       value: number;
       percentage: number;
     }>;
@@ -52,9 +53,20 @@ type Props = {
 };
 
 const chartConfig = {
-  reserve: { label: "Reserva", color: "var(--primary)" },
-  personal: { label: "Objetivos pessoais", color: "var(--accent-foreground)" },
-  unassigned: { label: "Sem destino", color: "var(--muted-foreground)" },
+  reserve: { label: "Reserva", color: "#2563eb" },
+  personal: {
+    label: "Objetivos pessoais",
+    color: "#9333ea",
+  },
+  long_term: {
+    label: "Investimento de longo prazo",
+    color: "#059669",
+  },
+  purpose_unknown: {
+    label: "Finalidade não definida",
+    color: "#d97706",
+  },
+  unassigned: { label: "Sem destino", color: "#64748b" },
 } satisfies ChartConfig;
 
 const percent = new Intl.NumberFormat("pt-BR", {
@@ -75,6 +87,8 @@ export function PortfolioObjectivesOverview({
   const labels = {
     reserve: "Reserva",
     personal: "Objetivos pessoais",
+    long_term: "Investimento de longo prazo",
+    purpose_unknown: "Finalidade não definida",
     unassigned: "Sem destino",
   } as const;
   const categories = data.destinationSummary.categories.map((category) => ({
@@ -158,7 +172,7 @@ export function PortfolioObjectivesOverview({
             aria-label="Valores e proporções por destino"
             className="space-y-3"
           >
-            {categories.map((category) => {
+            {chartData.map((category) => {
               return (
                 <li
                   key={category.key}
