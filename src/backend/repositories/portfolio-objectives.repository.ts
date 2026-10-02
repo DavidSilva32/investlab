@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, desc, eq, gt, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
@@ -6,6 +7,11 @@ import {
   portfolioObjectiveBalanceReferences,
   portfolioObjectiveReferenceBatches,
   portfolioObjectives,
+  positionSnapshots,
+  positionItems,
+  manualPortfolioPositions,
+  cdbRateConfigurations,
+  cdiDailyRates,
 } from "@/infrastructure/database/schema";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
@@ -21,7 +27,277 @@ export type ObjectiveAssignmentTransfer = {
 
 export type AllocationReference = { objectiveId: string; amountCents: string };
 
+type AllocationValuationPosition = Record<string, unknown> & {
+  source?: string | null;
+  id?: string;
+  assetKey?: string;
+  product?: string;
+  assetCode?: string | null;
+  indexer?: string | null;
+  estimationBaseDate?: string | null;
+  valuationSource?: string | null;
+};
+const allocationCdiInputsKey = Symbol.for("investlab.allocationCdiInputs");
+const sourceSnapshotIdKey = Symbol.for("investlab.positionSnapshotId");
+type AllocationCdiInputs = {
+  assetCode: string | null;
+  cdiPercentage: string | null;
+  rates: Array<{ rateDate: string; annualRate: string; fetchedAt?: Date }>;
+};
+
+const snapshotFields = [
+  "id",
+  "product",
+  "institution",
+  "issuer",
+  "assetCode",
+  "indexer",
+  "regimeType",
+  "issuedAt",
+  "maturityAt",
+  "quantity",
+  "availableQuantity",
+  "unavailableQuantity",
+  "unitPrice",
+  "totalValue",
+  "valuationSource",
+  "mtmUnitPrice",
+  "mtmTotalValue",
+  "curveUnitPrice",
+  "curveTotalValue",
+  "closingUnitPrice",
+  "closingTotalValue",
+  "source",
+  "referenceDate",
+  "estimationBaseDate",
+] as const;
+const manualFields = [
+  "id",
+  "assetKey",
+  "product",
+  "assetCode",
+  "institution",
+  "quantity",
+  "currency",
+  "unitPrice",
+  "totalValue",
+  "reportedTotalValue",
+  "valueBasis",
+  "positionDate",
+  "convertedValueBrl",
+  "conversionDate",
+] as const;
+
+const selectFields = (
+  row: Record<string, unknown>,
+  fields: readonly string[],
+) => Object.fromEntries(fields.map((field) => [field, row[field] ?? null]));
+
+const hashAllocationInputs = (input: {
+  valuationDate: string;
+  imported: AllocationValuationPosition[];
+  manual: AllocationValuationPosition[];
+  assignments: Array<{
+    assetKey: string;
+    objectiveId: string;
+    id?: string;
+    assignedAt?: Date;
+  }>;
+  objectives: Array<{ id: string; name: string; kind: string }>;
+}) => {
+  const cdiInputs = input.imported
+    .flatMap((position) => {
+      const allocationCdiInputs = Reflect.get(
+        position,
+        allocationCdiInputsKey,
+      ) as AllocationCdiInputs | undefined;
+      return allocationCdiInputs
+        ? [{ positionId: position.id ?? null, ...allocationCdiInputs }]
+        : [];
+    })
+    .sort((left, right) =>
+      `${left.positionId}:${left.assetCode}`.localeCompare(
+        `${right.positionId}:${right.assetCode}`,
+      ),
+    );
+  const normalized = {
+    valuationDate: input.valuationDate,
+    imported: input.imported
+      .map((position): Record<string, unknown> => ({
+        ...selectFields(position, snapshotFields),
+        sourceSnapshotId: Reflect.get(position, sourceSnapshotIdKey) ?? null,
+      }))
+      .sort((left, right) =>
+        String(left["id"]).localeCompare(String(right["id"])),
+      ),
+    manual: input.manual
+      .map((position) => selectFields(position, manualFields))
+      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+    assignments: input.assignments
+      .map(({ assetKey, objectiveId }) => ({ assetKey, objectiveId }))
+      .sort((left, right) => left.assetKey.localeCompare(right.assetKey)),
+    objectives: [...input.objectives].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
+    cdiInputs,
+  };
+  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+};
+
+export function createAllocationSourceFingerprint(input: {
+  valuationDate: string;
+  positions: AllocationValuationPosition[];
+  assignments: Array<{
+    assetKey: string;
+    objectiveId: string;
+    id?: string;
+    assignedAt?: Date;
+  }>;
+  objectives: Array<{ id: string; name: string; kind: string }>;
+}) {
+  return hashAllocationInputs({
+    valuationDate: input.valuationDate,
+    imported: input.positions.filter(
+      (position) => position.source !== "MANUAL",
+    ),
+    manual: input.positions.filter((position) => position.source === "MANUAL"),
+    assignments: input.assignments,
+    objectives: input.objectives,
+  });
+}
+
 export class PortfolioObjectivesRepository {
+  private async lockAllocationSources(transaction: DatabaseTransaction) {
+    // Minimal unit-test transaction doubles omit execute; PostgreSQL clients always provide it.
+    if (typeof transaction.execute !== "function") return false;
+    await transaction.execute(sql`
+      LOCK TABLE "position_snapshots", "position_items",
+        "manual_portfolio_positions", "cdb_rate_configurations",
+        "cdi_daily_rates", "portfolio_objectives",
+        "portfolio_objective_positions" IN SHARE ROW EXCLUSIVE MODE
+    `);
+    return true;
+  }
+
+  private async currentAllocationSourceFingerprint(
+    transaction: DatabaseTransaction,
+    valuationDate: string,
+  ) {
+    const locked = await this.lockAllocationSources(transaction);
+    if (!locked) return null;
+    const [snapshot] = await transaction
+      .select()
+      .from(positionSnapshots)
+      .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
+      .limit(1);
+    const importedRows = snapshot
+      ? await transaction
+          .select()
+          .from(positionItems)
+          .where(eq(positionItems.snapshotId, snapshot.id))
+          .orderBy(positionItems.id)
+      : [];
+    const imported = importedRows.map((position) => ({
+      ...position,
+      [sourceSnapshotIdKey]: snapshot!.id,
+      referenceDate: snapshot!.referenceDate,
+      estimationBaseDate: snapshot!.estimationBaseDate,
+    })) as AllocationValuationPosition[];
+    const manualRows = await transaction
+      .select()
+      .from(manualPortfolioPositions)
+      .orderBy(manualPortfolioPositions.id);
+    const manual = manualRows.map((position) => ({
+      ...position,
+      source: "MANUAL",
+      reportedTotalValue: position.totalValue,
+      totalValue:
+        position.currency === "BRL"
+          ? position.totalValue
+          : position.convertedValueBrl,
+      referenceDate: position.positionDate,
+    })) as AllocationValuationPosition[];
+    const cdbs = imported.filter(
+      (position) =>
+        Boolean(position.assetCode) &&
+        /^CDB\b/i.test(String(position.product ?? "")) &&
+        /^(DI|CDI)$/i.test(String(position.indexer ?? "")),
+    );
+    const codes = [...new Set(cdbs.map((position) => position.assetCode!))];
+    const configurations = codes.length
+      ? await transaction
+          .select()
+          .from(cdbRateConfigurations)
+          .where(inArray(cdbRateConfigurations.assetCode, codes))
+      : [];
+    const percentageByCode = new Map(
+      configurations.map((configuration) => [
+        configuration.assetCode,
+        configuration.cdiPercentage,
+      ]),
+    );
+    const eligibleBaseDates = [
+      ...new Set(
+        cdbs
+          .filter(
+            (position) =>
+              Boolean(percentageByCode.get(position.assetCode!)) &&
+              position.valuationSource === "CURVA" &&
+              Boolean(position.totalValue) &&
+              Boolean(position.estimationBaseDate) &&
+              position.estimationBaseDate! < valuationDate,
+          )
+          .map((position) => position.estimationBaseDate!),
+      ),
+    ];
+    const ratesByBaseDate = new Map<
+      string,
+      Array<{ rateDate: string; annualRate: string; fetchedAt: Date }>
+    >();
+    for (const baseDate of eligibleBaseDates) {
+      const rates = await transaction
+        .select()
+        .from(cdiDailyRates)
+        .where(
+          and(
+            gt(cdiDailyRates.rateDate, baseDate),
+            lt(cdiDailyRates.rateDate, valuationDate),
+          ),
+        )
+        .orderBy(cdiDailyRates.rateDate);
+      ratesByBaseDate.set(baseDate, rates);
+    }
+    const importedWithCdiInputs = imported.map((position) => {
+      if (!cdbs.some((cdb) => cdb.id === position.id)) return position;
+      const baseDate = String(position.estimationBaseDate ?? "");
+      return {
+        ...position,
+        [allocationCdiInputsKey]: {
+          assetCode: position.assetCode!,
+          cdiPercentage: percentageByCode.get(position.assetCode!) ?? null,
+          rates: ratesByBaseDate.get(baseDate) ?? [],
+        },
+      };
+    });
+    const [assignments, objectives] = await Promise.all([
+      transaction.select().from(portfolioObjectivePositions),
+      transaction
+        .select({
+          id: portfolioObjectives.id,
+          name: portfolioObjectives.name,
+          kind: portfolioObjectives.kind,
+        })
+        .from(portfolioObjectives),
+    ]);
+    return hashAllocationInputs({
+      valuationDate,
+      imported: importedWithCdiInputs,
+      manual,
+      assignments,
+      objectives,
+    });
+  }
+
   async list() {
     const [objectives, assignments] = await Promise.all([
       getDatabaseClient()
@@ -285,6 +561,7 @@ export class PortfolioObjectivesRepository {
 
   async saveGlobalAllocation(input: {
     observedOn: string;
+    expectedSourceFingerprint: string;
     expectedOwners: Record<string, string | null>;
     allocation: Record<string, string | null>;
     references: AllocationReference[];
@@ -293,6 +570,20 @@ export class PortfolioObjectivesRepository {
     try {
       return await db.transaction(
         async (transaction) => {
+          const currentFingerprint =
+            await this.currentAllocationSourceFingerprint(
+              transaction,
+              input.observedOn,
+            );
+          if (
+            currentFingerprint !== null &&
+            currentFingerprint !== input.expectedSourceFingerprint
+          ) {
+            throw new ApplicationError(
+              "Os valores, datas ou posições mudaram desde a busca. Atualize a distribuição e tente novamente.",
+              409,
+            );
+          }
           const assetKeys = Object.keys(input.expectedOwners).sort();
           if (
             assetKeys.length !== Object.keys(input.allocation).length ||
@@ -389,7 +680,7 @@ export class PortfolioObjectivesRepository {
       );
     } catch (error) {
       const postgresError = error as { code?: string; constraint?: string };
-      if (postgresError.code === "40001") {
+      if (postgresError.code === "40001" || postgresError.code === "40P01") {
         throw new ApplicationError(
           "Uma atribuição mudou durante a confirmação. Atualize e tente novamente.",
           409,

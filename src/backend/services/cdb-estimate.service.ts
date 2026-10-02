@@ -7,6 +7,7 @@ const todayInSaoPaulo = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
     new Date(),
   );
+const allocationCdiInputsKey = Symbol.for("investlab.allocationCdiInputs");
 const isDiCdb = (position: {
   product: string;
   assetCode: string | null;
@@ -127,6 +128,11 @@ const markUnavailable = <
     ? {
         cdbEstimateStatus: "unavailable" as const,
         cdbEstimateLimitation: limitation,
+        [allocationCdiInputsKey]: {
+          assetCode: position.assetCode,
+          cdiPercentage,
+          rates: [],
+        },
       }
     : {}),
 });
@@ -272,7 +278,7 @@ export class CdbEstimateService {
       );
     }
 
-    return positions.map((position) => {
+    const enriched = positions.map((position) => {
       const cdiPercentage = position.assetCode
         ? (percentages.get(position.assetCode) ?? null)
         : null;
@@ -365,6 +371,20 @@ export class CdbEstimateService {
             "Não foi possível calcular com as taxas CDI disponíveis.",
         };
       }
+    });
+    return enriched.map((position) => {
+      if (!isDiCdb(position)) return position;
+      const estimationBaseDate = position.estimationBaseDate;
+      return {
+        ...position,
+        [allocationCdiInputsKey]: {
+          assetCode: position.assetCode,
+          cdiPercentage: percentages.get(position.assetCode!) ?? null,
+          rates: estimationBaseDate
+            ? (cachedRatesByBaseDate.get(estimationBaseDate) ?? [])
+            : [],
+        },
+      };
     });
   }
 }

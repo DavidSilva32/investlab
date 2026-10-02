@@ -38,6 +38,7 @@ const preview = {
     positionB: "2026-09-30",
     positionC: null,
   },
+  expectedSourceFingerprint: "a".repeat(64),
   objectives: [
     {
       objectiveId: "reserve",
@@ -331,6 +332,7 @@ describe("PortfolioObjectiveOrganizer", () => {
       expectedOwners: preview.expectedOwners,
       expectedValueCents: preview.expectedValueCents,
       expectedValuationDates: preview.expectedValuationDates,
+      expectedSourceFingerprint: preview.expectedSourceFingerprint,
       balances: [
         { objectiveId: "reserve", amount: 1000 },
         { objectiveId: "trip", amount: 500 },
@@ -441,6 +443,7 @@ describe("PortfolioObjectiveOrganizer", () => {
       expectedOwners: preview.expectedOwners,
       expectedValueCents: preview.expectedValueCents,
       expectedValuationDates: preview.expectedValuationDates,
+      expectedSourceFingerprint: preview.expectedSourceFingerprint,
     });
   });
 

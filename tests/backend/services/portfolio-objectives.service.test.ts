@@ -13,6 +13,13 @@ const mocks = vi.hoisted(() => ({
   replaceAssignmentsWithTransfers: vi.fn(),
   listLatestBalanceReferences: vi.fn(),
   saveGlobalAllocation: vi.fn(),
+  fingerprint: vi.fn((input: unknown) => {
+    const serialized = JSON.stringify(input);
+    let value = 0;
+    for (const character of serialized)
+      value = (value * 31 + character.charCodeAt(0)) >>> 0;
+    return value.toString(16).padStart(64, "0");
+  }),
 }));
 
 vi.mock("@/backend/services/portfolio-position.service", () => ({
@@ -25,6 +32,7 @@ vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
   emergencyReserveRepository: { getSettings: mocks.getSettings },
 }));
 vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
+  createAllocationSourceFingerprint: mocks.fingerprint,
   portfolioObjectivesRepository: {
     list: mocks.list,
     create: mocks.create,
@@ -100,6 +108,25 @@ describe("PortfolioObjectivesService", () => {
     });
     expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
     expect(mocks.classifyPositions).not.toHaveBeenCalled();
+  });
+
+  it("uses the Sao Paulo valuation date when an allocation fingerprint is requested without a date", async () => {
+    const result = await new PortfolioObjectivesService().getOverview(
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(
+      (result as typeof result & { allocationSourceFingerprint: string })
+        .allocationSourceFingerprint,
+    ).toMatch(/^[a-f0-9]{64}$/);
+    expect(mocks.fingerprint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        valuationDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    );
   });
 
   it("uses canonical cents for unassigned objective totals", async () => {
@@ -1610,6 +1637,7 @@ describe("PortfolioObjectivesService", () => {
         expectedValuationDates: Object.fromEntries(
           Object.entries(preview.expectedValuationDates).reverse(),
         ),
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
       }),
     ).resolves.toEqual({ batchId: "batch-1" });
     expect(mocks.saveGlobalAllocation).toHaveBeenCalledWith(
@@ -1640,6 +1668,7 @@ describe("PortfolioObjectivesService", () => {
         expectedOwners: preview.expectedOwners,
         expectedValueCents: preview.expectedValueCents,
         expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
@@ -1682,6 +1711,7 @@ describe("PortfolioObjectivesService", () => {
         expectedOwners: preview.expectedOwners,
         expectedValueCents: preview.expectedValueCents,
         expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
@@ -1716,6 +1746,43 @@ describe("PortfolioObjectivesService", () => {
         expectedOwners: preview.expectedOwners,
         expectedValueCents: preview.expectedValueCents,
         expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a changed position identity even when its cents and allocation stay the same", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000024";
+    const position = imported({
+      id: "position-identity",
+      assetKey: "stable-asset-key",
+      assetCode: "CDB-OLD",
+      canonicalValueCents: "2500",
+    });
+    const changedPosition = { ...position, assetCode: "CDB-NEW" };
+    mocks.listCurrentEnriched
+      .mockResolvedValueOnce([position])
+      .mockResolvedValueOnce([changedPosition]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    const service = new PortfolioObjectivesService();
+    const preview = await service.previewGlobalAllocation({
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 25 }],
+    });
+
+    await expect(
+      service.confirmGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 25 }],
+        allocation: preview.allocation,
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
@@ -1921,6 +1988,7 @@ describe("PortfolioObjectivesService", () => {
         expectedOwners: preview.expectedOwners,
         expectedValueCents: preview.expectedValueCents,
         expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
@@ -2008,6 +2076,7 @@ describe("PortfolioObjectivesService", () => {
         expectedOwners: preview.expectedOwners,
         expectedValueCents: preview.expectedValueCents,
         expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
         acceptPartial: true,
       }),
     ).resolves.toEqual({ batchId: "partial-batch" });
@@ -2044,6 +2113,7 @@ describe("PortfolioObjectivesService", () => {
         expectedOwners: preview.expectedOwners,
         expectedValueCents: preview.expectedValueCents,
         expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
         acceptPartial: true,
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
@@ -2069,6 +2139,7 @@ describe("PortfolioObjectivesService", () => {
         expectedOwners: { stale: null },
         expectedValueCents: preview.expectedValueCents,
         expectedValuationDates: preview.expectedValuationDates,
+        expectedSourceFingerprint: preview.expectedSourceFingerprint,
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
   });

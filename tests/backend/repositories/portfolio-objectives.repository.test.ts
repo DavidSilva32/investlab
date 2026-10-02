@@ -11,8 +11,23 @@ vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => database,
 }));
 
-import { PortfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
+import {
+  createAllocationSourceFingerprint,
+  PortfolioObjectivesRepository,
+} from "@/backend/repositories/portfolio-objectives.repository";
 import { ApplicationError } from "@/backend/errors/application-error";
+
+const sqlChunksText = (chunks: unknown[]) =>
+  chunks
+    .map((chunk) => {
+      if (typeof chunk === "string") return chunk;
+      if (chunk && typeof chunk === "object" && "value" in chunk) {
+        const value = (chunk as { value: unknown }).value;
+        return Array.isArray(value) ? value.join("") : String(value);
+      }
+      return "";
+    })
+    .join("");
 
 describe("PortfolioObjectivesRepository", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -738,6 +753,7 @@ describe("PortfolioObjectivesRepository", () => {
     });
     const repository = new PortfolioObjectivesRepository();
     await repository.saveGlobalAllocation({
+      expectedSourceFingerprint: "a".repeat(64),
       observedOn: "2026-10-01",
       expectedOwners: { owned: "goal-a", free: null },
       allocation: { owned: "goal-b", free: "goal-a" },
@@ -756,12 +772,541 @@ describe("PortfolioObjectivesRepository", () => {
     database.transaction.mockImplementation(async (callback) => callback({}));
     await expect(
       new PortfolioObjectivesRepository().saveGlobalAllocation({
+        expectedSourceFingerprint: "a".repeat(64),
         observedOn: "2026-10-01",
         expectedOwners: { a: null },
         allocation: {},
         references: [{ objectiveId: "goal-a", amountCents: "0" }],
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("locks valuation sources and rejects a position set addition before any write", async () => {
+    const events: string[] = [];
+    const tables = new Map<string, unknown[]>([
+      [
+        "manual_portfolio_positions",
+        [
+          {
+            id: "manual-position-1",
+            assetKey: "manual:new",
+            product: "CDB manual",
+            assetCode: "MANUAL-1",
+            institution: "Banco A",
+            quantity: "1.00000000",
+            currency: "BRL",
+            unitPrice: "10.00",
+            totalValue: "10.00",
+            valueBasis: "total_value",
+            positionDate: "2026-09-30",
+            convertedValueBrl: null,
+            conversionDate: null,
+          },
+        ],
+      ],
+    ]);
+    const queryFor = (rows: unknown[]) => {
+      const query = {
+        where: () => query,
+        orderBy: () => query,
+        limit: () => query,
+        for: async () => rows,
+        then: (
+          resolve: (value: unknown[]) => unknown,
+          reject: (reason: unknown) => unknown,
+        ) => Promise.resolve(rows).then(resolve, reject),
+      };
+      return query;
+    };
+    const transaction = {
+      execute: vi.fn(async (_statement: unknown) => {
+        events.push("lock-sources");
+      }),
+      select: vi.fn(() => ({
+        from: (table: Record<PropertyKey, unknown>) => {
+          events.push(`read-${String(table[Symbol.for("drizzle:Name")])}`);
+          return queryFor(
+            tables.get(String(table[Symbol.for("drizzle:Name")])) ?? [],
+          );
+        },
+      })),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    const expectedSourceFingerprint = createAllocationSourceFingerprint({
+      valuationDate: "2026-10-01",
+      positions: [],
+      assignments: [],
+      objectives: [],
+    });
+
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedSourceFingerprint,
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "1000" }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(events[0]).toBe("lock-sources");
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    const lockStatement = transaction.execute.mock.calls[0][0] as unknown as {
+      queryChunks: unknown[];
+    };
+    expect(sqlChunksText(lockStatement.queryChunks)).toContain(
+      "SHARE ROW EXCLUSIVE",
+    );
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("revalidates symbol snapshot identity and projects existing assignment rows", async () => {
+    const snapshotIdKey = Symbol.for("investlab.positionSnapshotId");
+    const cdiInputsKey = Symbol.for("investlab.allocationCdiInputs");
+    const position = {
+      id: "position-a",
+      source: "B3",
+      product: "Tesouro Selic",
+      institution: "Banco A",
+      issuer: null,
+      assetCode: "LFT-2029",
+      indexer: null,
+      regimeType: null,
+      issuedAt: null,
+      maturityAt: null,
+      quantity: "1.00000000",
+      availableQuantity: null,
+      unavailableQuantity: null,
+      unitPrice: null,
+      totalValue: "100.00",
+      valuationSource: "CURVA",
+      mtmUnitPrice: null,
+      mtmTotalValue: null,
+      curveUnitPrice: null,
+      curveTotalValue: null,
+      closingUnitPrice: null,
+      closingTotalValue: null,
+      referenceDate: "2026-09-30",
+      estimationBaseDate: "2026-09-30",
+    };
+    Object.defineProperty(position, snapshotIdKey, { value: "snapshot-a" });
+    const expectedSourceFingerprint = createAllocationSourceFingerprint({
+      valuationDate: "2026-10-01",
+      positions: [position],
+      assignments: [{ assetKey: "position-a", objectiveId: "goal-a" }],
+      objectives: [{ id: "goal-a", name: "Viagem", kind: "CUSTOM" }],
+    });
+    const withoutSnapshot = { ...position };
+    Object.defineProperty(withoutSnapshot, snapshotIdKey, {
+      value: "snapshot-b",
+    });
+    expect(
+      createAllocationSourceFingerprint({
+        valuationDate: "2026-10-01",
+        positions: [withoutSnapshot],
+        assignments: [
+          {
+            assetKey: "position-a",
+            objectiveId: "goal-a",
+            id: "assignment-row",
+            assignedAt: new Date("2026-09-30T00:00:00Z"),
+          },
+        ],
+        objectives: [{ id: "goal-a", name: "Viagem", kind: "CUSTOM" }],
+      }),
+    ).not.toBe(expectedSourceFingerprint);
+    const cdiInputsWithoutIdentity = {
+      source: "B3",
+      product: "CDB DI",
+      assetCode: "CDB-UNIDENTIFIED",
+      indexer: "DI",
+    };
+    Object.defineProperty(cdiInputsWithoutIdentity, cdiInputsKey, {
+      value: {
+        assetCode: "CDB-UNIDENTIFIED",
+        cdiPercentage: "100.0000",
+        rates: [],
+      },
+    });
+    expect(
+      createAllocationSourceFingerprint({
+        valuationDate: "2026-10-01",
+        positions: [cdiInputsWithoutIdentity],
+        assignments: [],
+        objectives: [],
+      }),
+    ).toMatch(/^[a-f0-9]{64}$/);
+
+    const rows = new Map<string, unknown[]>([
+      [
+        "position_snapshots",
+        [
+          {
+            id: "snapshot-a",
+            referenceDate: "2026-09-30",
+            estimationBaseDate: "2026-09-30",
+            createdAt: new Date(),
+          },
+        ],
+      ],
+      ["position_items", [{ ...position, snapshotId: "snapshot-a" }]],
+      ["manual_portfolio_positions", []],
+      [
+        "portfolio_objective_positions",
+        [
+          {
+            assetKey: "position-a",
+            objectiveId: "goal-a",
+            id: "assignment-row",
+            assignedAt: new Date("2026-09-30T00:00:00Z"),
+          },
+        ],
+      ],
+      [
+        "portfolio_objectives",
+        [{ id: "goal-a", name: "Viagem", kind: "CUSTOM" }],
+      ],
+    ]);
+    const queryFor = (result: unknown[]) => {
+      const query = {
+        where: () => query,
+        orderBy: () => query,
+        limit: () => query,
+        for: async () => result,
+        then: (
+          resolve: (value: unknown[]) => unknown,
+          reject: (reason: unknown) => unknown,
+        ) => Promise.resolve(result).then(resolve, reject),
+      };
+      return query;
+    };
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: (table: Record<PropertyKey, unknown>) =>
+          queryFor(rows.get(String(table[Symbol.for("drizzle:Name")])) ?? []),
+      })),
+      insert: vi.fn(() => ({
+        values: () => ({ returning: async () => [{ id: "batch-1" }] }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedSourceFingerprint,
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "100" }],
+      }),
+    ).resolves.toEqual({ batchId: "batch-1" });
+  });
+
+  it("revalidates multiple imported, manual, CDI, assignment, and objective inputs", async () => {
+    const snapshotIdKey = Symbol.for("investlab.positionSnapshotId");
+    const cdiInputsKey = Symbol.for("investlab.allocationCdiInputs");
+    const cdb = {
+      id: "cdb-a",
+      source: "B3",
+      product: "CDB DI",
+      institution: "Banco A",
+      issuer: "Banco A S.A.",
+      assetCode: "CDB-A",
+      indexer: "DI",
+      regimeType: "PÓS-FIXADO",
+      issuedAt: "2025-01-01",
+      maturityAt: "2028-01-01",
+      quantity: "1.00000000",
+      availableQuantity: "1.00000000",
+      unavailableQuantity: "0.00000000",
+      unitPrice: "100.00000000",
+      totalValue: "100.00",
+      valuationSource: "CURVA",
+      mtmUnitPrice: null,
+      mtmTotalValue: null,
+      curveUnitPrice: "100.00000000",
+      curveTotalValue: "100.00",
+      closingUnitPrice: null,
+      closingTotalValue: null,
+      referenceDate: "2026-09-30",
+      estimationBaseDate: "2026-09-30",
+    };
+    const other = {
+      ...cdb,
+      id: "other-b",
+      product: "Tesouro Selic",
+      assetCode: "LFT-2029",
+      indexer: null,
+      valuationSource: "CURVA",
+      totalValue: "50.00",
+    };
+    const secondCdb = {
+      ...cdb,
+      id: "cdb-b",
+      assetCode: "CDB-B",
+    };
+    const noIndexerCdb = {
+      ...cdb,
+      id: "cdb-no-indexer",
+      assetCode: "CDB-NO-INDEXER",
+      indexer: null,
+    };
+    const imported = [cdb, secondCdb, other, noIndexerCdb].map((position) => ({
+      ...position,
+      [snapshotIdKey]: "snapshot-current",
+    }));
+    [imported[0], imported[1]].forEach((position, index) => {
+      Object.defineProperty(position, cdiInputsKey, {
+        value: {
+          assetCode: index === 0 ? "CDB-A" : "CDB-B",
+          cdiPercentage: "110.0000",
+          rates: [
+            {
+              rateDate: "2026-10-01",
+              annualRate: "14.900000",
+              fetchedAt: new Date("2026-10-01T12:00:00Z"),
+            },
+          ],
+        },
+      });
+    });
+    const manualRecords = [
+      {
+        id: "manual-brl",
+        assetKey: "manual-brl",
+        product: "Renda fixa manual",
+        assetCode: null,
+        institution: "Banco B",
+        quantity: "1.00000000",
+        currency: "BRL",
+        unitPrice: null,
+        totalValue: "30.00",
+        valueBasis: "total_value",
+        positionDate: "2026-09-30",
+        convertedValueBrl: null,
+        conversionDate: null,
+      },
+      {
+        id: "manual-fx",
+        assetKey: "manual-fx",
+        product: "ETF internacional",
+        assetCode: "ETF-X",
+        institution: "Broker",
+        quantity: "1.00000000",
+        currency: "USD",
+        unitPrice: "20.00",
+        totalValue: "20.00",
+        valueBasis: "total_value",
+        positionDate: "2026-09-30",
+        convertedValueBrl: "105.00",
+        conversionDate: "2026-09-30",
+      },
+    ];
+    const assignments = [
+      { assetKey: "manual-brl", objectiveId: "goal-a" },
+      { assetKey: "manual-fx", objectiveId: "goal-b" },
+    ];
+    const objectives = [
+      { id: "goal-a", name: "Reserva", kind: "RESERVE" },
+      { id: "goal-b", name: "Viagem", kind: "CUSTOM" },
+    ];
+    const previewManual = manualRecords.map((position) => ({
+      ...position,
+      source: "MANUAL",
+      reportedTotalValue: position.totalValue,
+      totalValue:
+        position.currency === "BRL"
+          ? position.totalValue
+          : position.convertedValueBrl,
+      referenceDate: position.positionDate,
+    }));
+    const expectedSourceFingerprint = createAllocationSourceFingerprint({
+      valuationDate: "2026-10-02",
+      positions: [...imported, ...previewManual],
+      assignments: [
+        ...assignments.map((assignment) => ({
+          ...assignment,
+          id: "ignored-id",
+          assignedAt: new Date("2026-09-30T00:00:00Z"),
+        })),
+      ],
+      objectives,
+    });
+    const rows = new Map<string, unknown[]>([
+      [
+        "position_snapshots",
+        [
+          {
+            id: "snapshot-current",
+            referenceDate: "2026-09-30",
+            estimationBaseDate: "2026-09-30",
+            createdAt: new Date("2026-09-30T12:00:00Z"),
+          },
+        ],
+      ],
+      [
+        "position_items",
+        [cdb, secondCdb, other, noIndexerCdb].map((position) => ({
+          ...position,
+          snapshotId: "snapshot-current",
+        })),
+      ],
+      ["manual_portfolio_positions", manualRecords],
+      [
+        "cdb_rate_configurations",
+        ["CDB-A", "CDB-B"].map((assetCode) => ({
+          assetCode,
+          cdiPercentage: "110.0000",
+        })),
+      ],
+      [
+        "cdi_daily_rates",
+        [
+          {
+            rateDate: "2026-10-01",
+            annualRate: "14.900000",
+            fetchedAt: new Date("2026-10-01T12:00:00Z"),
+          },
+        ],
+      ],
+      [
+        "portfolio_objective_positions",
+        assignments.map((assignment, index) => ({
+          ...assignment,
+          id: `assignment-${index}`,
+          assignedAt: new Date("2026-09-30T00:00:00Z"),
+        })),
+      ],
+      ["portfolio_objectives", objectives],
+    ]);
+    const queryFor = (result: unknown[]) => {
+      const query = {
+        where: () => query,
+        orderBy: () => query,
+        limit: () => query,
+        for: async () => result,
+        then: (
+          resolve: (value: unknown[]) => unknown,
+          reject: (reason: unknown) => unknown,
+        ) => Promise.resolve(result).then(resolve, reject),
+      };
+      return query;
+    };
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: (table: Record<PropertyKey, unknown>) =>
+          queryFor(rows.get(String(table[Symbol.for("drizzle:Name")])) ?? []),
+      })),
+      insert: vi.fn(() => ({
+        values: () => ({ returning: async () => [{ id: "batch-cdi" }] }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-02",
+        expectedSourceFingerprint,
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "10000" }],
+      }),
+    ).resolves.toEqual({ batchId: "batch-cdi" });
+  });
+
+  it("revalidates a CDI position without a trusted base, configuration, or rate set", async () => {
+    const snapshotKey = Symbol.for("investlab.positionSnapshotId");
+    const cdiInputsKey = Symbol.for("investlab.allocationCdiInputs");
+    const item = {
+      id: "cdb-no-base",
+      source: "B3",
+      product: "CDB DI",
+      assetCode: "CDB-NO-BASE",
+      indexer: "DI",
+      totalValue: "100.00",
+      valuationSource: "CURVA",
+      referenceDate: "2026-09-30",
+      estimationBaseDate: null,
+    };
+    const previewPosition = { ...item };
+    Object.defineProperty(previewPosition, snapshotKey, {
+      value: "snapshot-no-base",
+    });
+    Object.defineProperty(previewPosition, cdiInputsKey, {
+      value: {
+        assetCode: "CDB-NO-BASE",
+        cdiPercentage: null,
+        rates: [],
+      },
+    });
+    const objectives = [{ id: "goal-a", name: "Reserva", kind: "RESERVE" }];
+    const expectedSourceFingerprint = createAllocationSourceFingerprint({
+      valuationDate: "2026-10-01",
+      positions: [previewPosition],
+      assignments: [],
+      objectives,
+    });
+    const rows = new Map<string, unknown[]>([
+      [
+        "position_snapshots",
+        [
+          {
+            id: "snapshot-no-base",
+            referenceDate: "2026-09-30",
+            estimationBaseDate: null,
+          },
+        ],
+      ],
+      ["position_items", [{ ...item, snapshotId: "snapshot-no-base" }]],
+      ["manual_portfolio_positions", []],
+      ["cdb_rate_configurations", []],
+      ["portfolio_objective_positions", []],
+      ["portfolio_objectives", objectives],
+    ]);
+    const queryFor = (result: unknown[]) => {
+      const query = {
+        where: () => query,
+        orderBy: () => query,
+        limit: () => query,
+        for: async () => result,
+        then: (
+          resolve: (value: unknown[]) => unknown,
+          reject: (reason: unknown) => unknown,
+        ) => Promise.resolve(result).then(resolve, reject),
+      };
+      return query;
+    };
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: (table: Record<PropertyKey, unknown>) =>
+          queryFor(rows.get(String(table[Symbol.for("drizzle:Name")])) ?? []),
+      })),
+      insert: vi.fn(() => ({
+        values: () => ({ returning: async () => [{ id: "batch-no-base" }] }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        observedOn: "2026-10-01",
+        expectedSourceFingerprint,
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "10000" }],
+      }),
+    ).resolves.toEqual({ batchId: "batch-no-base" });
   });
 
   it("rejects a concurrent owner change before writing the reference batch", async () => {
@@ -780,6 +1325,7 @@ describe("PortfolioObjectivesRepository", () => {
     );
     await expect(
       new PortfolioObjectivesRepository().saveGlobalAllocation({
+        expectedSourceFingerprint: "a".repeat(64),
         observedOn: "2026-10-01",
         expectedOwners: { "asset-a": "goal-a" },
         allocation: { "asset-a": "goal-c" },
@@ -801,6 +1347,7 @@ describe("PortfolioObjectivesRepository", () => {
     );
     await expect(
       new PortfolioObjectivesRepository().saveGlobalAllocation({
+        expectedSourceFingerprint: "a".repeat(64),
         observedOn: "2026-10-01",
         expectedOwners: {},
         allocation: {},
@@ -855,6 +1402,7 @@ describe("PortfolioObjectivesRepository", () => {
     });
     await expect(
       new PortfolioObjectivesRepository().saveGlobalAllocation({
+        expectedSourceFingerprint: "a".repeat(64),
         observedOn: "2026-10-01",
         expectedOwners: { "asset-a": null },
         allocation: { "asset-a": "goal-a" },
@@ -868,12 +1416,26 @@ describe("PortfolioObjectivesRepository", () => {
     database.transaction.mockRejectedValue({ code: "40001" });
     await expect(
       new PortfolioObjectivesRepository().saveGlobalAllocation({
+        expectedSourceFingerprint: "a".repeat(64),
         observedOn: "2026-10-01",
         expectedOwners: {},
         allocation: {},
         references: [{ objectiveId: "goal-a", amountCents: "1" }],
       }),
     ).rejects.toBeInstanceOf(ApplicationError);
+  });
+
+  it("converts a PostgreSQL deadlock into a retryable conflict", async () => {
+    database.transaction.mockRejectedValue({ code: "40P01" });
+    await expect(
+      new PortfolioObjectivesRepository().saveGlobalAllocation({
+        expectedSourceFingerprint: "a".repeat(64),
+        observedOn: "2026-10-01",
+        expectedOwners: {},
+        allocation: {},
+        references: [{ objectiveId: "goal-a", amountCents: "1" }],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it("skips unchanged assignments and permits an empty optional reference list", async () => {
@@ -909,6 +1471,7 @@ describe("PortfolioObjectivesRepository", () => {
       callback(transaction),
     );
     await new PortfolioObjectivesRepository().saveGlobalAllocation({
+      expectedSourceFingerprint: "a".repeat(64),
       observedOn: "2026-10-01",
       expectedOwners: { "asset-a": "goal-a", "asset-b": "goal-a" },
       allocation: { "asset-a": "goal-a", "asset-b": null },
@@ -925,6 +1488,7 @@ describe("PortfolioObjectivesRepository", () => {
     });
     await expect(
       new PortfolioObjectivesRepository().saveGlobalAllocation({
+        expectedSourceFingerprint: "a".repeat(64),
         observedOn: "2026-10-01",
         expectedOwners: {},
         allocation: {},

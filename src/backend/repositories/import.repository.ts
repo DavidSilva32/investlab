@@ -17,6 +17,7 @@ import type { TreasurySelicLiquidityFact } from "@/backend/types/treasury-selic-
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+const sourceSnapshotIdKey = Symbol.for("investlab.positionSnapshotId");
 
 export type B3DocumentType = ParsedB3Import["documentType"];
 type ImportCreateInput =
@@ -72,6 +73,9 @@ export class ImportRepository {
           )
           .limit(1);
         if (!importRecord) return null;
+        await transaction.execute(
+          sql`LOCK TABLE ${positionSnapshots} IN SHARE ROW EXCLUSIVE MODE`,
+        );
         const [snapshot] = await transaction
           .update(positionSnapshots)
           .set({ referenceDate, estimationBaseDate: referenceDate })
@@ -103,7 +107,7 @@ export class ImportRepository {
     >["positions"],
   ) {
     await transaction.execute(
-      sql`LOCK TABLE ${positionSnapshots}, ${portfolioObjectivePositions} IN SHARE MODE`,
+      sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions} IN SHARE ROW EXCLUSIVE MODE`,
     );
     const [latestSnapshot] = await transaction
       .select({ id: positionSnapshots.id })
@@ -271,6 +275,9 @@ export class ImportRepository {
             .delete(movementItems)
             .where(inArray(movementItems.importId, importIds));
         } else {
+          await transaction.execute(
+            sql`LOCK TABLE ${positionSnapshots}, ${positionItems} IN SHARE ROW EXCLUSIVE MODE`,
+          );
           const snapshots = await transaction
             .select({ id: positionSnapshots.id })
             .from(positionSnapshots)
@@ -342,6 +349,7 @@ export class ImportRepository {
         const fact = factByPositionId.get(position.id);
         return {
           ...position,
+          [sourceSnapshotIdKey]: snapshot.id,
           referenceDate,
           estimationBaseDate,
           ...(fact

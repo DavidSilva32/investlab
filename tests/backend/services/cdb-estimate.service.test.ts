@@ -32,17 +32,19 @@ describe("CdbEstimateService.enrich", () => {
   afterEach(() => vi.useRealTimers());
   it("explains when the CDI percentage is not configured for a CURVA CDB", async () => {
     repository.listConfigurations.mockResolvedValue([]);
-    await expect(new CdbEstimateService().enrich([cdb])).resolves.toEqual([
-      {
-        ...cdb,
-        cdiPercentage: null,
-        estimatedValue: null,
-        estimatedValueCents: null,
-        cdbEstimateStatus: "unavailable",
-        cdbEstimateLimitation:
-          "Percentual do CDI não configurado para esta posição.",
-      },
-    ]);
+    await expect(new CdbEstimateService().enrich([cdb])).resolves.toMatchObject(
+      [
+        {
+          ...cdb,
+          cdiPercentage: null,
+          estimatedValue: null,
+          estimatedValueCents: null,
+          cdbEstimateStatus: "unavailable",
+          cdbEstimateLimitation:
+            "Percentual do CDI não configurado para esta posição.",
+        },
+      ],
+    );
     expect(repository.listRatesFrom).not.toHaveBeenCalled();
   });
   it("uses cached rates and preserves the imported official value", async () => {
@@ -731,16 +733,18 @@ describe("CdbEstimateService dependency failures", () => {
       new Error("db unavailable"),
     );
 
-    await expect(new CdbEstimateService().enrich([cdb])).resolves.toEqual([
-      {
-        ...cdb,
-        cdiPercentage: null,
-        estimatedValue: null,
-        estimatedValueCents: null,
-        cdbEstimateStatus: "unavailable",
-        cdbEstimateLimitation: expect.stringContaining("carregar a"),
-      },
-    ]);
+    await expect(new CdbEstimateService().enrich([cdb])).resolves.toMatchObject(
+      [
+        {
+          ...cdb,
+          cdiPercentage: null,
+          estimatedValue: null,
+          estimatedValueCents: null,
+          cdbEstimateStatus: "unavailable",
+          cdbEstimateLimitation: expect.stringContaining("carregar a"),
+        },
+      ],
+    );
     expect(repository.listRatesFrom).not.toHaveBeenCalled();
   });
 

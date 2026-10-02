@@ -47,6 +47,7 @@ type Preview = {
   expectedOwners: Record<string, string | null>;
   expectedValueCents: Record<string, string>;
   expectedValuationDates: Record<string, string | null>;
+  expectedSourceFingerprint: string;
   objectives: Array<{
     objectiveId: string;
     name: string;
@@ -222,6 +223,8 @@ export function PortfolioObjectiveOrganizer({
             expectedOwners: confirmedPreview.expectedOwners,
             expectedValueCents: confirmedPreview.expectedValueCents,
             expectedValuationDates: confirmedPreview.expectedValuationDates,
+            expectedSourceFingerprint:
+              confirmedPreview.expectedSourceFingerprint,
             ...(acceptPartial ? { acceptPartial: true } : {}),
           }),
         },
