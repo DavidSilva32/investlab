@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -58,6 +59,9 @@ const preview = {
   transfers: [
     {
       assetKey: "positionB",
+      product: "CDB Banco A",
+      assetCode: "CDB-123",
+      maturityAt: "2028-01-01",
       fromObjectiveId: "reserve",
       fromObjectiveName: "Reserva",
       toObjectiveId: "trip",
@@ -68,6 +72,7 @@ const preview = {
   unassignedPositions: [
     { assetKey: "positionC", product: "CDB sem destino", valueCents: "2500" },
   ],
+  unassignmentTransfers: [],
   preservedPositions: [],
   limitations: ["Uma posição usa uma avaliação CDI parcial."],
 };
@@ -334,10 +339,39 @@ describe("PortfolioObjectiveOrganizer", () => {
     expect(toast.success).toHaveBeenCalledWith("Distribuição salva.");
   });
 
-  it("never offers confirmation for a partial result", async () => {
+  it("requires explicit review before confirming a partial result", async () => {
     const user = userEvent.setup();
     fetchMock.mockResolvedValueOnce(
-      response({ ...preview, optimal: false, canConfirm: false }),
+      response({
+        ...preview,
+        optimal: false,
+        canConfirm: true,
+        transfers: preview.transfers.map((transfer) => ({
+          ...transfer,
+          assetCode: null,
+          maturityAt: null,
+        })),
+        unassignmentTransfers: [
+          {
+            assetKey: "owned-position-c",
+            product: "CDB Banco B",
+            assetCode: null,
+            maturityAt: null,
+            fromObjectiveId: "trip",
+            fromObjectiveName: "Viagem",
+            valueCents: "2500",
+          },
+          {
+            assetKey: "owned-position-d",
+            product: "CDB Banco C",
+            assetCode: "CDB-789",
+            maturityAt: "2029-02-01",
+            fromObjectiveId: "trip",
+            fromObjectiveName: "Viagem",
+            valueCents: "3500",
+          },
+        ],
+      }),
     );
     renderOrganizer();
     await user.type(screen.getByLabelText("Reserva"), "10000");
@@ -348,9 +382,88 @@ describe("PortfolioObjectiveOrganizer", () => {
       await screen.findByRole("heading", { name: "Busca parcial" }),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Confirmar distribuição" }),
-    ).toBeNull();
-    expect(screen.getByText(/não pode ser confirmada/)).toBeTruthy();
+      screen.getByRole("button", { name: "Revisar confirmação parcial" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/a confirmação exige sua autorização explícita/i),
+    ).toBeTruthy();
+    expect(screen.getByText("CDB Banco A")).toBeTruthy();
+    expect(screen.getByText(/Código não informado/)).toBeTruthy();
+    expect(screen.getByText(/vencimento não informado/)).toBeTruthy();
+    expect(screen.queryByText("positionB")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await user.click(
+      screen.getByRole("button", { name: "Revisar confirmação parcial" }),
+    );
+    const partialDialog = await screen.findByRole("alertdialog", {
+      name: "Aplicar esta candidata parcial?",
+    });
+    expect(screen.getByText("Transferências autorizadas")).toBeTruthy();
+    expect(within(partialDialog).getByText(/diferença -R\$ 0,01/)).toBeTruthy();
+    expect(
+      within(partialDialog).getByText("Posições que ficarão sem objetivo"),
+    ).toBeTruthy();
+    expect(
+      within(partialDialog).getAllByText(/Viagem → Sem objetivo/),
+    ).toBeTruthy();
+    expect(
+      within(partialDialog).getByText(/vence em 01\/02\/2029/),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Voltar e revisar" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends explicit consent when confirming the reviewed partial candidate", async () => {
+    const user = userEvent.setup();
+    const onCompleted = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(
+        response({ ...preview, optimal: false, canConfirm: true }),
+      )
+      .mockResolvedValueOnce(response({ message: "Distribuição salva." }));
+    renderOrganizer({ onCompleted });
+    await user.type(screen.getByLabelText("Reserva"), "10000");
+    await user.click(
+      screen.getByRole("button", { name: "Buscar distribuição" }),
+    );
+    await screen.findByRole("heading", { name: "Busca parcial" });
+    await user.click(
+      screen.getByRole("button", { name: "Revisar confirmação parcial" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar candidata parcial" }),
+    );
+    await waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toMatchObject({
+      acceptPartial: true,
+      allocation: preview.allocation,
+      expectedOwners: preview.expectedOwners,
+      expectedValueCents: preview.expectedValueCents,
+      expectedValuationDates: preview.expectedValuationDates,
+    });
+  });
+
+  it("shows when a partial candidate has no transfers", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValueOnce(
+      response({
+        ...preview,
+        optimal: false,
+        canConfirm: true,
+        transfers: [],
+      }),
+    );
+    renderOrganizer();
+    await user.type(screen.getByLabelText("Reserva"), "10000");
+    await user.click(
+      screen.getByRole("button", { name: "Buscar distribuição" }),
+    );
+    await screen.findByRole("heading", { name: "Busca parcial" });
+    await user.click(
+      screen.getByRole("button", { name: "Revisar confirmação parcial" }),
+    );
+    expect(await screen.findByText("Nenhuma transferência")).toBeTruthy();
   });
 
   it("explains an optimal result that is not eligible for confirmation", async () => {

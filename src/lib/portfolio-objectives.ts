@@ -6,6 +6,7 @@ export type ObjectivePosition = {
   assetKey: string;
   product: string;
   assetCode: string | null;
+  maturityAt?: string | null;
   institution: string | null;
   assetClass: string | null;
   positionCount: number;

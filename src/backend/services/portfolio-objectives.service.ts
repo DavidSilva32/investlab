@@ -391,6 +391,9 @@ export class PortfolioObjectivesService {
     const objectiveById = new Map(
       overview.objectives.map((objective) => [objective.id, objective]),
     );
+    const eligiblePositionByKey = new Map(
+      eligiblePositions.map((position) => [position.assetKey, position]),
+    );
     const allocation = result.allocation;
     const expectedOwners = Object.fromEntries(
       positions.map((position) => [position.assetKey, position.objectiveId]),
@@ -415,9 +418,13 @@ export class PortfolioObjectivesService {
         position.objectiveId === toObjectiveId
       )
         return [];
+      const positionDetails = eligiblePositionByKey.get(position.assetKey)!;
       return [
         {
           assetKey: position.assetKey,
+          product: positionDetails.product,
+          assetCode: positionDetails.assetCode,
+          maturityAt: positionDetails.maturityAt ?? null,
           fromObjectiveId: position.objectiveId,
           fromObjectiveName: objectiveById.get(position.objectiveId)!.name,
           toObjectiveId,
@@ -446,6 +453,21 @@ export class PortfolioObjectivesService {
       .map((position) => ({
         assetKey: position.assetKey,
         product: position.product,
+        valueCents: position.valueCents!,
+      }));
+    const unassignmentTransfers = eligiblePositions
+      .filter(
+        (position) =>
+          position.objectiveId !== null &&
+          allocation[position.assetKey] === null,
+      )
+      .map((position) => ({
+        assetKey: position.assetKey,
+        product: position.product,
+        assetCode: position.assetCode,
+        maturityAt: position.maturityAt ?? null,
+        fromObjectiveId: position.objectiveId!,
+        fromObjectiveName: objectiveById.get(position.objectiveId!)!.name,
         valueCents: position.valueCents!,
       }));
     const preservedPositions = overview.positions.flatMap((position) => {
@@ -501,7 +523,7 @@ export class PortfolioObjectivesService {
       optimal: result.optimal,
       exploredStates: result.exploredStates,
       stateLimit: this.allocationStateLimit,
-      canConfirm: result.optimal,
+      canConfirm: true,
       allocation,
       expectedOwners,
       expectedValueCents,
@@ -509,6 +531,7 @@ export class PortfolioObjectivesService {
       objectives: totals,
       transfers,
       unassignedPositions,
+      unassignmentTransfers,
       preservedPositions,
       preservedPositionCount: preservedPositions.length,
       limitations,
@@ -527,6 +550,7 @@ export class PortfolioObjectivesService {
           z.string(),
           z.string().refine(isValidValuationDate).nullable(),
         ),
+        acceptPartial: z.boolean().optional().default(false),
       })
       .safeParse(body);
     if (!parsed.success)
@@ -541,9 +565,9 @@ export class PortfolioObjectivesService {
       },
       requestId,
     );
-    if (!preview.optimal)
+    if (!preview.optimal && !parsed.data.acceptPartial)
       throw new ApplicationError(
-        "A busca não encontrou uma distribuição global concluída. Use a seleção manual.",
+        "A busca foi parcial. Revise as diferenças e transferências e confirme explicitamente esta candidata.",
         409,
       );
     if (
@@ -917,6 +941,7 @@ export class PortfolioObjectivesService {
         assetKey: string;
         product: string;
         assetCode: string | null;
+        maturityAt: string | null;
         institution: string | null;
         assetClass: string | null;
         positionCount: number;
@@ -951,6 +976,8 @@ export class PortfolioObjectivesService {
       const { cents, source } = valueFor(position);
       const existing = grouped.get(assetKey);
       if (existing) {
+        if (existing.maturityAt !== (position.maturityAt ?? null))
+          existing.maturityAt = null;
         if (
           existing.estimationBaseDate !== (position.estimationBaseDate ?? null)
         )
@@ -992,6 +1019,7 @@ export class PortfolioObjectivesService {
         assetKey,
         product: position.product,
         assetCode: position.assetCode,
+        maturityAt: position.maturityAt ?? null,
         institution: position.institution,
         assetClass: position.classification?.assetClass ?? null,
         positionCount: 1,

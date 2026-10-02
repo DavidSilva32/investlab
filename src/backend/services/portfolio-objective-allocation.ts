@@ -76,9 +76,11 @@ type HalfCollection = {
   x: BigInt64Array;
   y: BigInt64Array;
   codes: Uint32Array;
+  lexCodes: Uint32Array;
   transfers: Uint8Array;
   changes: Uint8Array;
   count: number;
+  truncated: boolean;
 };
 
 function collectHalf(
@@ -88,14 +90,19 @@ function collectHalf(
   end: number,
   stateLimit: number,
 ): HalfCollection {
-  const capacity = 3 ** (end - start);
+  const capacity = Math.min(
+    3 ** (end - start),
+    Math.max(0, Math.floor(stateLimit)),
+  );
   const collection: HalfCollection = {
     x: new BigInt64Array(capacity),
     y: new BigInt64Array(capacity),
     codes: new Uint32Array(capacity),
+    lexCodes: new Uint32Array(capacity),
     transfers: new Uint8Array(capacity),
     changes: new Uint8Array(capacity),
     count: 0,
+    truncated: false,
   };
   const targetIndex = new Map(
     targets.map((target, index) => [target.objectiveId, index]),
@@ -106,15 +113,20 @@ function collectHalf(
     x: bigint,
     y: bigint,
     code: number,
+    lexCode: number,
     transfers: number,
     changes: number,
   ) => {
-    if (collection.count >= stateLimit) return;
+    if (collection.count >= stateLimit) {
+      collection.truncated = true;
+      return;
+    }
     if (index === end) {
       const slot = collection.count++;
       collection.x[slot] = x;
       collection.y[slot] = y;
       collection.codes[slot] = code;
+      collection.lexCodes[slot] = lexCode;
       collection.transfers[slot] = transfers;
       collection.changes[slot] = changes;
       return;
@@ -146,12 +158,13 @@ function collectHalf(
         nextX,
         nextY,
         code + choice.digit * powers[index - start],
+        lexCode * 3 + choice.digit,
         transfers + Number(transfer),
         changes + Number(changed),
       );
     }
   };
-  visit(start, 0n, 0n, 0, 0, 0);
+  visit(start, 0n, 0n, 0, 0, 0, 0);
   return collection;
 }
 
@@ -196,11 +209,314 @@ function solveTwoTargetMeetInMiddle(
     positions.length,
     stateLimit,
   );
+  let exploredStates = right.count;
+  let hitLimit = right.truncated;
+  if (hitLimit) {
+    const allocation = Object.fromEntries(
+      positions.map((position) => [position.assetKey, position.objectiveId]),
+    );
+    return {
+      optimal: false,
+      exploredStates: stateLimit,
+      allocation,
+      ...allocationScore(allocation, positions, targets),
+    };
+  }
+  let bestAllocation: Record<string, string | null> = Object.fromEntries(
+    positions.map((position) => [position.assetKey, position.objectiveId]),
+  );
+  let bestScore = allocationScore(bestAllocation, positions, targets);
   const order = new Uint32Array(right.count);
+  for (let index = 0; index < right.count; index += 1) order[index] = index;
+  const compareCoordinates = (left: number, rightIndex: number) => {
+    if (right.x[left] !== right.x[rightIndex])
+      return right.x[left] < right.x[rightIndex] ? -1 : 1;
+    if (right.y[left] !== right.y[rightIndex])
+      return right.y[left] < right.y[rightIndex] ? -1 : 1;
+    return 0;
+  };
+  order.sort(compareCoordinates);
+  let uniqueCount = 0;
+  for (let index = 0; index < right.count;) {
+    let end = index + 1;
+    let bestPoint = order[index];
+    while (
+      end < right.count &&
+      compareCoordinates(bestPoint, order[end]) === 0
+    ) {
+      const candidate = order[end];
+      if (
+        right.transfers[candidate] < right.transfers[bestPoint] ||
+        (right.transfers[candidate] === right.transfers[bestPoint] &&
+          (right.changes[candidate] < right.changes[bestPoint] ||
+            (right.changes[candidate] === right.changes[bestPoint] &&
+              right.lexCodes[candidate] < right.lexCodes[bestPoint])))
+      ) {
+        bestPoint = candidate;
+      }
+      end += 1;
+    }
+    order[uniqueCount++] = bestPoint;
+    index = end;
+  }
+  const xGroupCapacity = Math.min(
+    2 ** (positions.length - splitIndex),
+    uniqueCount,
+  );
+  const xGroupValues = new BigInt64Array(xGroupCapacity);
+  const xGroupStarts = new Int32Array(xGroupCapacity);
+  const xGroupEnds = new Int32Array(xGroupCapacity);
+  let xGroupCount = 0;
+  for (let index = 0; index < uniqueCount; index += 1) {
+    const point = order[index];
+    if (xGroupCount === 0 || right.x[point] !== xGroupValues[xGroupCount - 1]) {
+      if (xGroupCount > 0) xGroupEnds[xGroupCount - 1] = index;
+      xGroupValues[xGroupCount] = right.x[point];
+      xGroupStarts[xGroupCount] = index;
+      xGroupCount += 1;
+    }
+  }
+  xGroupEnds[xGroupCount - 1] = uniqueCount;
+  const lookupExact = (x: bigint, y: bigint) => {
+    let low = 0;
+    let high = uniqueCount;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      const point = order[middle];
+      if (right.x[point] < x || (right.x[point] === x && right.y[point] < y))
+        low = middle + 1;
+      else high = middle;
+    }
+    if (low >= uniqueCount) return -1;
+    const point = order[low];
+    return right.x[point] === x && right.y[point] === y ? point : -1;
+  };
+  let exactSearchStates = 0;
+  let exactFound = false;
+  const visitLeftForExact = (
+    index: number,
+    x: bigint,
+    y: bigint,
+    code: number,
+  ) => {
+    if (exploredStates + exactSearchStates >= stateLimit) {
+      hitLimit = true;
+      return;
+    }
+    if (index === splitIndex) {
+      exactSearchStates += 1;
+      const point = lookupExact(
+        targets[0].amountCents - x,
+        targets[1].amountCents - y,
+      );
+      if (point < 0) return;
+      exactFound = true;
+      const allocation = buildAllocationFromCodes(
+        positions,
+        splitIndex,
+        code,
+        right.codes[point],
+        targets,
+      );
+      const score = allocationScore(allocation, positions, targets);
+      if (
+        score.differenceCents < bestScore.differenceCents ||
+        (score.differenceCents === bestScore.differenceCents &&
+          (score.transferCount < bestScore.transferCount ||
+            (score.transferCount === bestScore.transferCount &&
+              (score.changedAssignmentCount <
+                bestScore.changedAssignmentCount ||
+                (score.changedAssignmentCount ===
+                  bestScore.changedAssignmentCount &&
+                  compareAllocationKeys(allocation, bestAllocation, positions) <
+                    0)))))
+      ) {
+        bestAllocation = allocation;
+        bestScore = score;
+      }
+      return;
+    }
+    const position = positions[index];
+    const choices = [
+      { id: targets[0].objectiveId, digit: 1 },
+      { id: targets[1].objectiveId, digit: 2 },
+      { id: null, digit: 0 },
+    ];
+    choices.sort(
+      (left, rightChoice) =>
+        Number(rightChoice.id === position.objectiveId) -
+        Number(left.id === position.objectiveId),
+    );
+    for (const choice of choices) {
+      const nextX =
+        x + (choice.id === targets[0].objectiveId ? position.valueCents : 0n);
+      const nextY =
+        y + (choice.id === targets[1].objectiveId ? position.valueCents : 0n);
+      visitLeftForExact(
+        index + 1,
+        nextX,
+        nextY,
+        code + choice.digit * 3 ** index,
+      );
+      if (hitLimit) return;
+    }
+  };
+  visitLeftForExact(0, 0n, 0n, 0);
+  exploredStates += exactSearchStates;
+  if (exactFound && !hitLimit) {
+    return {
+      optimal: true,
+      exploredStates,
+      allocation: bestAllocation,
+      ...bestScore,
+    };
+  }
+  // For tiny known gaps, enumerate the complete Manhattan shell in cents.
+  // This is only a search optimization; no amount is accepted as "close enough".
+  const smallDifferenceRadius = 2n;
+  if (!hitLimit && bestScore.differenceCents <= smallDifferenceRadius) {
+    let radiusSearchStates = 0;
+    const findXGroup = (x: bigint) => {
+      let low = 0;
+      let high = xGroupCount;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (xGroupValues[middle] < x) low = middle + 1;
+        else high = middle;
+      }
+      return low < xGroupCount && xGroupValues[low] === x ? low : -1;
+    };
+    const visitLeftForRadius = (
+      index: number,
+      x: bigint,
+      y: bigint,
+      code: number,
+      transfers: number,
+      changes: number,
+    ) => {
+      if (exploredStates + radiusSearchStates >= stateLimit) {
+        hitLimit = true;
+        return;
+      }
+      if (index === splitIndex) {
+        radiusSearchStates += 1;
+        const wantedX = targets[0].amountCents - x;
+        const wantedY = targets[1].amountCents - y;
+        const radius = Number(bestScore.differenceCents);
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          const remaining = radius - Math.abs(dx);
+          const groupIndex = findXGroup(wantedX + BigInt(dx));
+          if (groupIndex < 0) continue;
+          const start = xGroupStarts[groupIndex];
+          const end = xGroupEnds[groupIndex];
+          let low = start;
+          let high = end;
+          const minimumY = wantedY - BigInt(remaining);
+          while (low < high) {
+            const middle = Math.floor((low + high) / 2);
+            if (right.y[order[middle]] < minimumY) low = middle + 1;
+            else high = middle;
+          }
+          for (let pointIndex = low; pointIndex < end; pointIndex += 1) {
+            const point = order[pointIndex];
+            const deltaY = right.y[point] - wantedY;
+            if (deltaY > BigInt(remaining)) break;
+            if (exploredStates + radiusSearchStates >= stateLimit) {
+              hitLimit = true;
+              return;
+            }
+            radiusSearchStates += 1;
+            const allocation = buildAllocationFromCodes(
+              positions,
+              splitIndex,
+              code,
+              right.codes[point],
+              targets,
+            );
+            const score = allocationScore(allocation, positions, targets);
+            if (
+              score.differenceCents < bestScore.differenceCents ||
+              (score.differenceCents === bestScore.differenceCents &&
+                (score.transferCount < bestScore.transferCount ||
+                  (score.transferCount === bestScore.transferCount &&
+                    (score.changedAssignmentCount <
+                      bestScore.changedAssignmentCount ||
+                      (score.changedAssignmentCount ===
+                        bestScore.changedAssignmentCount &&
+                        compareAllocationKeys(
+                          allocation,
+                          bestAllocation,
+                          positions,
+                        ) < 0)))))
+            ) {
+              bestAllocation = allocation;
+              bestScore = score;
+            }
+          }
+        }
+        return;
+      }
+      const position = positions[index];
+      const choices = [
+        { id: targets[0].objectiveId, digit: 1 },
+        { id: targets[1].objectiveId, digit: 2 },
+        { id: null, digit: 0 },
+      ];
+      choices.sort(
+        (left, rightChoice) =>
+          Number(rightChoice.id === position.objectiveId) -
+          Number(left.id === position.objectiveId),
+      );
+      for (const choice of choices) {
+        const nextX =
+          x + (choice.id === targets[0].objectiveId ? position.valueCents : 0n);
+        const nextY =
+          y + (choice.id === targets[1].objectiveId ? position.valueCents : 0n);
+        const changed = choice.id !== position.objectiveId;
+        const transfer = Boolean(
+          position.objectiveId &&
+          choice.id &&
+          position.objectiveId !== choice.id,
+        );
+        visitLeftForRadius(
+          index + 1,
+          nextX,
+          nextY,
+          code + choice.digit * 3 ** index,
+          transfers + Number(transfer),
+          changes + Number(changed),
+        );
+        if (hitLimit) return;
+      }
+    };
+    visitLeftForRadius(0, 0n, 0n, 0, 0, 0);
+    exploredStates += radiusSearchStates;
+    if (!hitLimit) {
+      return {
+        optimal: true,
+        exploredStates,
+        allocation: bestAllocation,
+        ...bestScore,
+      };
+    }
+  }
+  if (hitLimit) {
+    return {
+      optimal: false,
+      exploredStates: Math.min(exploredStates, stateLimit),
+      allocation: bestAllocation,
+      ...bestScore,
+    };
+  }
   for (let index = 0; index < right.count; index += 1) order[index] = index;
   const leftChild = new Int32Array(right.count).fill(-1);
   const rightChild = new Int32Array(right.count).fill(-1);
-  let buildNodes = 0;
+  const xMin = new BigInt64Array(right.count);
+  const xMax = new BigInt64Array(right.count);
+  const yMin = new BigInt64Array(right.count);
+  const yMax = new BigInt64Array(right.count);
+  const minTransfers = new Uint8Array(right.count);
+  const minChanges = new Uint8Array(right.count);
   const comparePoint = (a: number, b: number, axis: number) => {
     const primaryA = axis === 0 ? right.x[a] : right.y[a];
     const primaryB = axis === 0 ? right.x[b] : right.y[b];
@@ -240,42 +556,59 @@ function solveTwoTargetMeetInMiddle(
   };
   const build = (low: number, high: number, depth: number): number => {
     if (low >= high) return -1;
-    buildNodes += 1;
+    if (exploredStates >= stateLimit) {
+      hitLimit = true;
+      return -1;
+    }
+    exploredStates += 1;
     const median = Math.floor((low + high) / 2);
     selectMedian(low, high, median, depth % 2);
     const point = order[median];
     leftChild[point] = build(low, median, depth + 1);
     rightChild[point] = build(median + 1, high, depth + 1);
+    xMin[point] = right.x[point];
+    xMax[point] = right.x[point];
+    yMin[point] = right.y[point];
+    yMax[point] = right.y[point];
+    minTransfers[point] = right.transfers[point];
+    minChanges[point] = right.changes[point];
+    for (const child of [leftChild[point], rightChild[point]]) {
+      if (child < 0) continue;
+      if (xMin[child] < xMin[point]) xMin[point] = xMin[child];
+      if (xMax[child] > xMax[point]) xMax[point] = xMax[child];
+      if (yMin[child] < yMin[point]) yMin[point] = yMin[child];
+      if (yMax[child] > yMax[point]) yMax[point] = yMax[child];
+      if (minTransfers[child] < minTransfers[point]) {
+        minTransfers[point] = minTransfers[child];
+        minChanges[point] = minChanges[child];
+      } else if (minTransfers[child] === minTransfers[point]) {
+        if (minChanges[child] < minChanges[point]) {
+          minChanges[point] = minChanges[child];
+        }
+      }
+    }
     return point;
   };
   const root = build(0, right.count, 0);
-  let bestAllocation: Record<string, string | null> = Object.fromEntries(
-    positions.map((position) => [position.assetKey, null]),
-  );
-  let bestScore = allocationScore(bestAllocation, positions, targets);
-  let exploredStates = right.count;
-  let hitLimit = right.count >= stateLimit;
+  if (hitLimit) {
+    return {
+      optimal: false,
+      exploredStates: stateLimit,
+      allocation: bestAllocation,
+      ...bestScore,
+    };
+  }
   const absoluteBig = (value: bigint) => (value < 0n ? -value : value);
   const distanceToBounds = (
     x: bigint,
     y: bigint,
-    xMin: bigint | null,
-    xMax: bigint | null,
-    yMin: bigint | null,
-    yMax: bigint | null,
+    xMin: bigint,
+    xMax: bigint,
+    yMin: bigint,
+    yMax: bigint,
   ) => {
-    const dx =
-      xMin !== null && x < xMin
-        ? xMin - x
-        : xMax !== null && x > xMax
-          ? x - xMax
-          : 0n;
-    const dy =
-      yMin !== null && y < yMin
-        ? yMin - y
-        : yMax !== null && y > yMax
-          ? y - yMax
-          : 0n;
+    const dx = x < xMin ? xMin - x : x > xMax ? x - xMax : 0n;
+    const dy = y < yMin ? yMin - y : y > yMax ? y - yMax : 0n;
     return dx + dy;
   };
   const visitLeft = (
@@ -286,32 +619,37 @@ function solveTwoTargetMeetInMiddle(
     transfers: number,
     changes: number,
   ) => {
-    if (hitLimit) return;
     if (index === splitIndex) {
-      exploredStates += 1;
       if (exploredStates >= stateLimit) {
         hitLimit = true;
         return;
       }
+      exploredStates += 1;
       const wantedX = targets[0].amountCents - x;
       const wantedY = targets[1].amountCents - y;
-      const search = (
-        node: number,
-        depth: number,
-        xMin: bigint | null,
-        xMax: bigint | null,
-        yMin: bigint | null,
-        yMax: bigint | null,
-      ) => {
+      const search = (node: number) => {
         if (node < 0 || hitLimit) return;
-        exploredStates += 1;
-        if (exploredStates > stateLimit) {
+        if (exploredStates >= stateLimit) {
           hitLimit = true;
           return;
         }
+        exploredStates += 1;
+        const lowerDifference = distanceToBounds(
+          wantedX,
+          wantedY,
+          xMin[node],
+          xMax[node],
+          yMin[node],
+          yMax[node],
+        );
+        const lowerTransfers = transfers + minTransfers[node];
+        const lowerChanges = changes + minChanges[node];
         if (
-          distanceToBounds(wantedX, wantedY, xMin, xMax, yMin, yMax) >
-          bestScore.differenceCents
+          lowerDifference > bestScore.differenceCents ||
+          (lowerDifference === bestScore.differenceCents &&
+            (lowerTransfers > bestScore.transferCount ||
+              (lowerTransfers === bestScore.transferCount &&
+                lowerChanges > bestScore.changedAssignmentCount)))
         )
           return;
         const difference =
@@ -353,53 +691,43 @@ function solveTwoTargetMeetInMiddle(
             bestScore = score;
           }
         }
-        const axis = depth % 2;
-        const split = axis === 0 ? right.x[node] : right.y[node];
-        const leftBounds =
-          axis === 0
-            ? ([xMin, split, yMin, yMax] as const)
-            : ([xMin, xMax, yMin, split] as const);
-        const rightBounds =
-          axis === 0
-            ? ([split, xMax, yMin, yMax] as const)
-            : ([xMin, xMax, split, yMax] as const);
-        const leftDistance = distanceToBounds(
-          wantedX,
-          wantedY,
-          leftBounds[0],
-          leftBounds[1],
-          leftBounds[2],
-          leftBounds[3],
-        );
-        const rightDistance = distanceToBounds(
-          wantedX,
-          wantedY,
-          rightBounds[0],
-          rightBounds[1],
-          rightBounds[2],
-          rightBounds[3],
-        );
-        const nearIsLeft = leftDistance <= rightDistance;
-        const nearBounds = nearIsLeft ? leftBounds : rightBounds;
-        const farBounds = nearIsLeft ? rightBounds : leftBounds;
-        search(
-          nearIsLeft ? leftChild[node] : rightChild[node],
-          depth + 1,
-          nearBounds[0],
-          nearBounds[1],
-          nearBounds[2],
-          nearBounds[3],
-        );
-        search(
-          nearIsLeft ? rightChild[node] : leftChild[node],
-          depth + 1,
-          farBounds[0],
-          farBounds[1],
-          farBounds[2],
-          farBounds[3],
-        );
+        const leftNode = leftChild[node];
+        const rightNode = rightChild[node];
+        const leftDistance =
+          leftNode < 0
+            ? null
+            : distanceToBounds(
+                wantedX,
+                wantedY,
+                xMin[leftNode],
+                xMax[leftNode],
+                yMin[leftNode],
+                yMax[leftNode],
+              );
+        const rightDistance =
+          rightNode < 0
+            ? null
+            : distanceToBounds(
+                wantedX,
+                wantedY,
+                xMin[rightNode],
+                xMax[rightNode],
+                yMin[rightNode],
+                yMax[rightNode],
+              );
+        if (
+          leftDistance !== null &&
+          rightDistance !== null &&
+          leftDistance <= rightDistance
+        ) {
+          search(leftNode);
+          search(rightNode);
+        } else {
+          search(rightNode);
+          search(leftNode);
+        }
       };
-      search(root, 0, null, null, null, null);
+      search(root);
       return;
     }
     const position = positions[index];
@@ -449,7 +777,7 @@ export function solvePortfolioObjectiveAllocation(
   stateLimit = defaultStateLimit,
 ): AllocationResult {
   const targets = [...inputTargets].sort((a, b) =>
-    a.objectiveId.localeCompare(b.objectiveId),
+    a.objectiveId < b.objectiveId ? -1 : a.objectiveId > b.objectiveId ? 1 : 0,
   );
   const positions = [...inputPositions].sort(
     (a, b) =>
@@ -497,7 +825,7 @@ export function solvePortfolioObjectiveAllocation(
     return { optimal: true, exploredStates: 1, allocation, ...score };
   }
 
-  let bestAllocation = Object.fromEntries(
+  let bestAllocation: Record<string, string | null> = Object.fromEntries(
     positions.map((position) => [position.assetKey, position.objectiveId]),
   );
   let bestScore = allocationScore(bestAllocation, positions, targets);
