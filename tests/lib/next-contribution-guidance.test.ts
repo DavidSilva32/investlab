@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getNextContributionGuidance,
+  getStrategyContributionGuidance,
   type ContributionGuidancePosition,
 } from "@/lib/next-contribution-guidance";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
@@ -279,4 +280,117 @@ describe("getNextContributionGuidance", () => {
       ).not.toBe("reserve_below_target");
     },
   );
+});
+
+describe("getStrategyContributionGuidance", () => {
+  const classes = [
+    { id: "fixed_income", label: "Renda fixa", currentPercentage: 50 },
+    {
+      id: "brazilian_equities",
+      label: "Ações brasileiras",
+      currentPercentage: 25,
+    },
+    {
+      id: "international_etfs",
+      label: "ETFs internacionais",
+      currentPercentage: 25,
+    },
+    { id: "fiis", label: "FIIs", currentPercentage: 0 },
+  ];
+  const input = {
+    classes,
+    allocationPercentages: {
+      fixed_income: 40,
+      brazilian_equities: 30,
+      international_etfs: 20,
+      fiis: 10,
+    },
+    positionCount: 4,
+    unvaluedPositionCount: 0,
+    unclassifiedKnownValueCents: "0",
+    emergencyReserve: reserve({ status: "not_configured", difference: null }),
+  };
+
+  it("keeps reserve priority and limits the comparison to complete long-term data", () => {
+    expect(
+      getStrategyContributionGuidance({
+        ...input,
+        emergencyReserve: reserve(),
+      }),
+    ).toMatchObject({
+      status: "reserve_below_target",
+      allocationMode: "strategy",
+    });
+    expect(
+      getStrategyContributionGuidance({
+        ...input,
+        emergencyReserve: reserve({ unvaluedGroups: 1 }),
+      }),
+    ).toMatchObject({
+      status: "reserve_incomplete",
+      allocationMode: "strategy",
+    });
+    expect(
+      getStrategyContributionGuidance({ ...input, positionCount: 0 }),
+    ).toMatchObject({ status: "needs_values", allocationMode: "strategy" });
+    expect(
+      getStrategyContributionGuidance({ ...input, unvaluedPositionCount: 1 }),
+    ).toMatchObject({ status: "incomplete_data", allocationMode: "strategy" });
+    expect(
+      getStrategyContributionGuidance({
+        ...input,
+        unclassifiedKnownValueCents: "1",
+      }),
+    ).toMatchObject({ status: "incomplete_data", allocationMode: "strategy" });
+  });
+
+  it("handles a missing composition, no gap, ties, and a single largest gap", () => {
+    expect(
+      getStrategyContributionGuidance({
+        ...input,
+        allocationPercentages: null,
+      }),
+    ).toMatchObject({ status: "needs_targets", allocationMode: "strategy" });
+    expect(
+      getStrategyContributionGuidance({
+        ...input,
+        allocationPercentages: {
+          fixed_income: 50,
+          brazilian_equities: 25,
+          international_etfs: 25,
+          fiis: 0,
+        },
+      }),
+    ).toMatchObject({ status: "no_gap" });
+    expect(
+      getStrategyContributionGuidance({
+        ...input,
+        allocationPercentages: {
+          fixed_income: 45,
+          brazilian_equities: 30,
+          international_etfs: 20,
+          fiis: 5,
+        },
+      }),
+    ).toMatchObject({
+      status: "tie",
+      allocationMode: "strategy",
+    });
+    expect(
+      getStrategyContributionGuidance({
+        ...input,
+        allocationPercentages: {
+          fixed_income: 45,
+          brazilian_equities: 35,
+          international_etfs: 15,
+          fiis: 5,
+        },
+      }),
+    ).toMatchObject({
+      status: "target_gap",
+      assetClass: "Ações brasileiras",
+      targetPercentage: 35,
+      allocationMode: "strategy",
+    });
+  });
 });

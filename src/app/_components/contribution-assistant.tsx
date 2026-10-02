@@ -29,6 +29,10 @@ import { formatCurrency } from "@/lib/utils";
 import { getApiMessage } from "@/lib/api-message";
 import type { ContributionAllocationResult } from "@/lib/contribution-allocation";
 import {
+  getPortfolioAssetClassColor,
+  portfolioAssetClassColors,
+} from "@/lib/portfolio-asset-class-colors";
+import {
   formatAmountInput,
   getCurrencyInputSelection,
   parseBrazilianAmount,
@@ -44,7 +48,11 @@ function isValidContributionAmount(value: number) {
   );
 }
 
-export function ContributionAssistant() {
+export function ContributionAssistant({
+  allocationMode = "legacy",
+}: {
+  allocationMode?: "legacy" | "strategy" | "unavailable";
+}) {
   const [amount, setAmount] = useState("");
   const amountInputRef = useRef<HTMLInputElement>(null);
   const selectionRef = useRef<CurrencyInputSelection | null>(null);
@@ -139,7 +147,12 @@ export function ContributionAssistant() {
             Planejar aporte do mês
           </CardTitle>
           <CardDescription>
-            Suas metas pessoais orientam esta simulação.
+            {result?.allocationMode === "strategy" ||
+            allocationMode === "strategy"
+              ? "A Estratégia orienta este planejamento usando somente posições destinadas a Longo Prazo. Reserva e objetivos pessoais ficam fora."
+              : allocationMode === "unavailable"
+                ? "Não foi possível verificar qual composição orienta os aportes. Atualize a Carteira antes de tomar uma decisão."
+                : "Até você ativar a Estratégia, esta simulação continua usando as metas pessoais legadas já salvas."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -250,9 +263,11 @@ export function ContributionAssistant() {
                   <div>
                     <h3 className="font-semibold">Distribuição por classe</h3>
                     <p className="text-sm text-muted-foreground">
-                      {result.strategySource === "user_defined"
-                        ? "Metas definidas por você"
-                        : "Estratégia calculada pelo InvestLab"}{" "}
+                      {result.allocationMode === "strategy"
+                        ? "Composição salva na Estratégia"
+                        : result.strategySource === "user_defined"
+                          ? "Metas pessoais legadas"
+                          : "Estratégia calculada pelo InvestLab"}{" "}
                       · distribuição por classe
                     </p>
                     {result.longTermPortfolioValue !== null && (
@@ -272,8 +287,9 @@ export function ContributionAssistant() {
                   </Limitation>
                 ) : result.status === "needs_targets" ? (
                   <Limitation>
-                    Defina suas metas pessoais de alocação para comparar a
-                    carteira e distribuir o aporte.
+                    {result.allocationMode === "strategy"
+                      ? "Salve uma composição na Estratégia antes de distribuir o aporte."
+                      : "Defina suas metas pessoais de alocação para comparar a carteira e distribuir o aporte."}
                   </Limitation>
                 ) : result.status === "incomplete_data" ? (
                   <Limitation>
@@ -315,8 +331,36 @@ export function ContributionAssistant() {
                       <span className="inline-flex items-center gap-1.5">
                         <span
                           aria-hidden="true"
-                          className="size-2.5 rounded-full bg-primary"
-                        />
+                          className="inline-flex size-2.5 overflow-hidden rounded-full"
+                        >
+                          <span
+                            className="h-full w-1/4"
+                            style={{
+                              backgroundColor:
+                                portfolioAssetClassColors.fixedIncome,
+                            }}
+                          />
+                          <span
+                            className="h-full w-1/4"
+                            style={{
+                              backgroundColor:
+                                portfolioAssetClassColors.brazilianEquities,
+                            }}
+                          />
+                          <span
+                            className="h-full w-1/4"
+                            style={{
+                              backgroundColor:
+                                portfolioAssetClassColors.internationalEtfs,
+                            }}
+                          />
+                          <span
+                            className="h-full w-1/4"
+                            style={{
+                              backgroundColor: portfolioAssetClassColors.fiis,
+                            }}
+                          />
+                        </span>
                         Após aporte
                       </span>
                       <span className="inline-flex items-center gap-1.5">
@@ -343,6 +387,15 @@ export function ContributionAssistant() {
                         >
                           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
                             <span className="font-medium">
+                              <span
+                                aria-hidden="true"
+                                className="mr-2 inline-block size-2.5 rounded-full align-middle"
+                                style={{
+                                  backgroundColor: getPortfolioAssetClassColor(
+                                    allocation.assetClass,
+                                  ),
+                                }}
+                              />
                               {allocation.assetClass}
                             </span>
                             <Badge
@@ -377,10 +430,11 @@ export function ContributionAssistant() {
                             >
                               <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted" />
                               <div
-                                className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-primary/30"
+                                className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full"
                                 style={{
                                   left: `${Math.min(allocation.currentPercentage, projectedPercentage)}%`,
                                   width: `${Math.abs(projectedPercentage - allocation.currentPercentage)}%`,
+                                  backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(allocation.assetClass)} 36%, transparent)`,
                                 }}
                               />
                               <span
@@ -390,9 +444,12 @@ export function ContributionAssistant() {
                                 }}
                               />
                               <span
-                                className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-card"
+                                className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card"
                                 style={{
                                   left: `${Math.min(100, projectedPercentage)}%`,
+                                  backgroundColor: getPortfolioAssetClassColor(
+                                    allocation.assetClass,
+                                  ),
                                 }}
                               />
                               <span
@@ -406,7 +463,14 @@ export function ContributionAssistant() {
                               <span className="tabular-nums">
                                 Hoje {allocation.currentPercentage.toFixed(1)}%
                               </span>
-                              <span className="text-center tabular-nums text-primary">
+                              <span
+                                className="text-center tabular-nums"
+                                style={{
+                                  color: getPortfolioAssetClassColor(
+                                    allocation.assetClass,
+                                  ),
+                                }}
+                              >
                                 Após {projectedPercentage.toFixed(1)}%
                               </span>
                               <span className="text-right tabular-nums">

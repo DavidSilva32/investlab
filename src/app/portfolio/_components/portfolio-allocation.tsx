@@ -15,18 +15,14 @@ import {
   type BulkClassification,
   type PortfolioPosition,
 } from "@/app/portfolio/_components/portfolio-classification-list";
-import { PortfolioAllocationTargets } from "@/app/portfolio/_components/portfolio-allocation-targets";
 import { StrategyGuidance } from "@/app/portfolio/_components/strategy-guidance";
 import { PortfolioConcentrationAnalysis } from "@/app/portfolio/_components/portfolio-concentration-analysis";
-import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 import type {
   ConcentrationDimension,
   PortfolioConcentration,
 } from "@/lib/portfolio-concentration";
 import { getApiMessage } from "@/lib/api-message";
-
-type AssetClass = (typeof portfolioAssetClassOptions)[number];
 
 const loadErrorMessage = "Não foi possível carregar a alocação.";
 
@@ -36,9 +32,6 @@ export function PortfolioAllocation({
   nextContributionGuidance?: ContributionGuidance;
 }) {
   const [positions, setPositions] = useState<PortfolioPosition[] | null>(null);
-  const [targetPercentages, setTargetPercentages] = useState<
-    Partial<Record<AssetClass, number>>
-  >({});
   const [concentrations, setConcentrations] = useState<Record<
     ConcentrationDimension,
     PortfolioConcentration
@@ -56,7 +49,6 @@ export function PortfolioAllocation({
         }
         const data = body as {
           positions: PortfolioPosition[];
-          targetPercentages?: Partial<Record<AssetClass, number>>;
           concentrations: Record<
             ConcentrationDimension,
             PortfolioConcentration
@@ -64,7 +56,6 @@ export function PortfolioAllocation({
         };
         setPositions(data.positions);
         setConcentrations(data.concentrations);
-        setTargetPercentages(data.targetPercentages ?? {});
         setError(null);
       })
       .catch(() => setError(failureMessage));
@@ -110,34 +101,6 @@ export function PortfolioAllocation({
     }
   }
 
-  async function saveTargets(targets: Record<AssetClass, number>) {
-    setSaving(true);
-    try {
-      const response = await fetch("/api/portfolio/allocation", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetPercentages: targets }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        toast.error(
-          getApiMessage(
-            result,
-            "Não foi possível salvar as metas de alocação.",
-          ),
-        );
-        return false;
-      }
-      toast.success(getApiMessage(result, "Metas de alocação salvas."));
-      load();
-      return true;
-    } catch {
-      toast.error("Não foi possível salvar as metas de alocação.");
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }
   async function saveSingle(position: PortfolioPosition, formData: FormData) {
     const assetClass = formData.get("assetClass") as string | null;
     const geography = formData.get("geography") as string | null;
@@ -163,11 +126,16 @@ export function PortfolioAllocation({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Metas pessoais e detalhes da carteira</CardTitle>
+        <CardTitle>Detalhes da carteira</CardTitle>
         <CardDescription>
-          As metas são definidas por você. A comparação e a orientação abaixo
-          refletem essas metas pessoais; não representam uma estratégia criada
-          pelo InvestLab. A classificação pode ser ajustada quando necessário.
+          A classificação pode ser ajustada quando necessário. A orientação de
+          aportes usa{" "}
+          {nextContributionGuidance?.allocationMode === "strategy"
+            ? "a Estratégia e apenas posições de Longo Prazo"
+            : nextContributionGuidance?.allocationMode === "legacy"
+              ? "as metas pessoais legadas salvas anteriormente"
+              : "a fonte atualmente configurada no planejamento de aportes"}
+          .
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -187,18 +155,8 @@ export function PortfolioAllocation({
             <p className="text-sm text-muted-foreground">
               Importe posições para visualizar a classificação e a alocação.
             </p>
-            <p className="text-sm text-muted-foreground">
-              Metas são pessoais e não representam uma estratégia criada pelo
-              InvestLab.
-            </p>
             <StrategyGuidance
               nextContributionGuidance={nextContributionGuidance}
-            />
-            <PortfolioAllocationTargets
-              classSummary={concentrations?.assetClass ?? null}
-              targetPercentages={targetPercentages}
-              saving={saving}
-              onSave={saveTargets}
             />
           </>
         ) : (
@@ -206,17 +164,8 @@ export function PortfolioAllocation({
             {concentrations && (
               <PortfolioConcentrationAnalysis analyses={concentrations} />
             )}
-            <p className="text-sm text-muted-foreground">
-              Orientação comparada às metas pessoais que você registrou.
-            </p>
             <StrategyGuidance
               nextContributionGuidance={nextContributionGuidance}
-            />
-            <PortfolioAllocationTargets
-              classSummary={concentrations?.assetClass ?? null}
-              targetPercentages={targetPercentages}
-              saving={saving}
-              onSave={saveTargets}
             />
             <PortfolioClassificationList
               positions={positions}

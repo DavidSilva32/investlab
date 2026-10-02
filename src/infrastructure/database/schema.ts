@@ -254,6 +254,7 @@ export const personalInvestmentStrategy = pgTable(
     }>(),
     selectedDirection: varchar({ length: 40 }),
     allocationPercentages: jsonb().$type<Record<string, number> | null>(),
+    allocationActive: boolean().notNull().default(false),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
 );
@@ -297,6 +298,7 @@ export const stockFundamentals = pgTable("stock_fundamentals", {
   sourceVersion: varchar({ length: 32 }).notNull(),
   fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+
 export const screenerMarketRefreshRuns = pgTable(
   "screener_market_refresh_runs",
   {

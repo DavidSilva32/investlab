@@ -81,6 +81,30 @@ export class PersonalInvestmentStrategyRepository {
       throw error;
     }
   }
+
+  async activateAllocation(requestId?: string) {
+    try {
+      const [record] = await getDatabaseClient()
+        .insert(personalInvestmentStrategy)
+        .values({
+          id: singletonId,
+          allocationActive: true,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: personalInvestmentStrategy.id,
+          set: { allocationActive: true, updatedAt: new Date() },
+        })
+        .returning();
+      return record;
+    } catch (error) {
+      logger.error("personal_investment_strategy_activation_failed", {
+        requestId,
+        error,
+      });
+      throw error;
+    }
+  }
 }
 
 export const personalInvestmentStrategyRepository =

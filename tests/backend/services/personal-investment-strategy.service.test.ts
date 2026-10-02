@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { PersonalInvestmentStrategyService } from "@/backend/services/personal-investment-strategy.service";
+import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 
 const evaluated = [{ id: "evaluated" }];
 const position = (
@@ -29,7 +30,24 @@ const saved = {
   updatedAt: new Date("2026-10-02T10:00:00.000Z"),
 };
 
-function makeService(positions: ReturnType<typeof position>[] = []) {
+const notConfiguredReserve = {
+  monthlyExpenses: null,
+  targetMonths: null,
+  selectedValue: 0,
+  selectedGroups: 0,
+  unvaluedGroups: 0,
+  referenceDate: null,
+  targetValue: null,
+  coveredMonths: null,
+  difference: null,
+  progressPercentage: null,
+  status: "not_configured" as const,
+};
+
+function makeService(
+  positions: ReturnType<typeof position>[] = [],
+  reserveCalculation: EmergencyReserveCalculation = notConfiguredReserve,
+) {
   const positionService = {
     listCurrentEnriched: vi.fn().mockResolvedValue(evaluated),
   };
@@ -45,12 +63,20 @@ function makeService(positions: ReturnType<typeof position>[] = []) {
     saveAllocationPercentages: vi.fn().mockResolvedValue({
       allocationPercentages: null,
     }),
+    activateAllocation: vi.fn().mockResolvedValue({ allocationActive: true }),
+  };
+  const reserveService = {
+    getContributionContext: vi.fn().mockResolvedValue({
+      calculation: reserveCalculation,
+      selectedAssetKeys: [],
+    }),
   };
   const service = new PersonalInvestmentStrategyService(
     positionService as never,
     allocationService as never,
     objectivesService as never,
     repository as never,
+    reserveService as never,
     () => "2026-10-02",
   );
   return {
@@ -59,10 +85,33 @@ function makeService(positions: ReturnType<typeof position>[] = []) {
     allocationService,
     objectivesService,
     repository,
+    reserveService,
   };
 }
 
 describe("PersonalInvestmentStrategyService", () => {
+  it("requires a saved composition before explicit contribution planning activation", async () => {
+    const { service, repository } = makeService();
+    await expect(
+      service.activateAllocation("req-missing"),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(repository.activateAllocation).not.toHaveBeenCalled();
+
+    repository.get.mockResolvedValueOnce({
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+    await expect(service.activateAllocation("req-active")).resolves.toEqual({
+      allocationActive: true,
+    });
+    expect(repository.activateAllocation).toHaveBeenCalledWith("req-active");
+  });
   it("uses one canonical valuation snapshot and includes only explicitly long-term destinations", async () => {
     const positions = [
       position("CDB", "100", "LONG_TERM_INVESTMENT", {
@@ -402,33 +451,113 @@ describe("PersonalInvestmentStrategyService", () => {
       [{ classification: {} }],
     );
     expect(result).toMatchObject({
-      totalCents: "10000",
-      contributionCents: "2000",
-      allocations: [
-        {
-          id: "fixed_income",
-          currentValueCents: "6000",
-          targetPercentage: 50,
-          contributionValueCents: "0",
-          projectedValueCents: "6000",
+      enteredContributionCents: "2000",
+      reserveContributionCents: "0",
+      strategyContributionCents: "2000",
+      reserveStatus: "not_configured",
+      simulation: {
+        totalCents: "10000",
+        contributionCents: "2000",
+        allocations: [
+          {
+            id: "fixed_income",
+            currentValueCents: "6000",
+            targetPercentage: 50,
+            contributionValueCents: "0",
+            projectedValueCents: "6000",
+          },
+          {
+            id: "brazilian_equities",
+            currentValueCents: "4000",
+            targetPercentage: 50,
+            contributionValueCents: "2000",
+            projectedValueCents: "6000",
+          },
+          { id: "international_etfs" },
+          { id: "fiis" },
+        ],
+        completeness: {
+          complete: true,
+          unvaluedPositionCount: 0,
+          unclassifiedKnownValueCents: "0",
+          valuationDate: "2026-10-02",
         },
-        {
-          id: "brazilian_equities",
-          currentValueCents: "4000",
-          targetPercentage: 50,
-          contributionValueCents: "2000",
-          projectedValueCents: "6000",
-        },
-        { id: "international_etfs" },
-        { id: "fiis" },
-      ],
-      completeness: {
-        complete: true,
-        unvaluedPositionCount: 0,
-        unclassifiedKnownValueCents: "0",
-        valuationDate: "2026-10-02",
       },
     });
+  });
+
+  it.each([
+    { differenceCents: "500", amount: 2, reserveCents: "200", remaining: "0" },
+    {
+      differenceCents: "500",
+      amount: 8,
+      reserveCents: "500",
+      remaining: "300",
+    },
+    { differenceCents: "0", amount: 8, reserveCents: "0", remaining: "800" },
+  ])(
+    "prioritizes reserve contributions consistently: $amount",
+    async ({ differenceCents, amount, reserveCents, remaining }) => {
+      const reserve = {
+        ...notConfiguredReserve,
+        monthlyExpenses: 100,
+        targetMonths: 10,
+        targetValue: Number(differenceCents) / 100 + 100,
+        targetValueCents: "1000",
+        difference: Number(differenceCents) / 100,
+        differenceCents,
+        status:
+          differenceCents === "0"
+            ? ("on_target" as const)
+            : ("below_target" as const),
+      };
+      const { service, objectivesService } = makeService([], reserve);
+      const result = await service.simulateContribution({
+        contributionAmount: amount,
+        allocationPercentages: {
+          fixed_income: 100,
+          brazilian_equities: 0,
+          international_etfs: 0,
+          fiis: 0,
+        },
+      });
+      expect(result.reserveContributionCents).toBe(reserveCents);
+      expect(result.strategyContributionCents).toBe(remaining);
+      if (remaining === "0") {
+        expect(result.simulation).toBeNull();
+        expect(objectivesService.getOverview).not.toHaveBeenCalled();
+      } else {
+        expect(result.simulation?.contributionCents).toBe(remaining);
+      }
+    },
+  );
+
+  it("returns an explicit unknown strategy amount when reserve values are incomplete", async () => {
+    const { service, objectivesService } = makeService([], {
+      ...notConfiguredReserve,
+      monthlyExpenses: 100,
+      targetMonths: 10,
+      targetValue: 1000,
+      difference: 500,
+      status: "below_target",
+      unvaluedGroups: 1,
+    });
+    const result = await service.simulateContribution({
+      contributionAmount: 8,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+    expect(result).toMatchObject({
+      reserveStatus: "incomplete",
+      reserveContributionCents: null,
+      strategyContributionCents: null,
+      simulation: null,
+    });
+    expect(objectivesService.getOverview).not.toHaveBeenCalled();
   });
 
   it("accepts a cent-precise decimal whose binary representation is inexact", async () => {
@@ -442,7 +571,7 @@ describe("PersonalInvestmentStrategyService", () => {
         fiis: 0,
       },
     });
-    expect(result.contributionCents).toBe("29");
+    expect(result.simulation?.contributionCents).toBe("29");
   });
 
   it.each([
@@ -496,7 +625,7 @@ describe("PersonalInvestmentStrategyService", () => {
         fiis: 0,
       },
     });
-    expect(result.completeness).toMatchObject({
+    expect(result.simulation?.completeness).toMatchObject({
       complete: false,
       unvaluedPositionCount: 1,
       unclassifiedKnownValueCents: "250",

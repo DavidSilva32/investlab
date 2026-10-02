@@ -12,6 +12,63 @@ describe("ContributionAssistant", () => {
     vi.mocked(toast.error).mockReset();
   });
 
+  it("clearly shows when the explicitly activated Strategy is the current source", () => {
+    render(<ContributionAssistant allocationMode="strategy" />);
+    expect(
+      screen.getByText(
+        /A Estratégia orienta este planejamento usando somente posições destinadas a Longo Prazo/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not label the source as legacy when its saved mode is unavailable", () => {
+    render(<ContributionAssistant allocationMode="unavailable" />);
+
+    expect(
+      screen.getByText(/verificar qual composi.*orienta os aportes/),
+    ).toBeTruthy();
+  });
+
+  it("explains when the active Strategy has no saved composition", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "needs_targets",
+          strategySource: "user_defined",
+          allocationMode: "strategy",
+          contributionAmount: 100,
+          reserveAmount: 0,
+          remainingAmount: 100,
+          unallocatedAmount: 100,
+          reserveStatus: "not_configured",
+          reserveDifference: null,
+          longTermPortfolioValue: 1000,
+          unknownPositionCount: 0,
+          allocations: [],
+        }),
+      }),
+    );
+    render(<ContributionAssistant allocationMode="strategy" />);
+    fireEvent.change(
+      screen.getByLabelText("Valor disponível para este aporte"),
+      { target: { value: "100" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Ver distribuição" }));
+
+    expect(
+      await screen.findByText(
+        "Salve uma composição na Estratégia antes de distribuir o aporte.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Composição salva na Estratégia · distribuição por classe",
+      ),
+    ).toBeTruthy();
+  });
+
   it("submits the amount and shows reserve-first values and class split", async () => {
     vi.stubGlobal(
       "fetch",
@@ -61,15 +118,19 @@ describe("ContributionAssistant", () => {
     expect(screen.getByText("Meta pessoal alcançada.")).toBeTruthy();
     expect(screen.getAllByText(/R\$\s*7\.298,92/)).toHaveLength(2);
     expect(
-      screen.getByText("Metas definidas por você · distribuição por classe"),
+      screen.getByText("Metas pessoais legadas · distribuição por classe"),
     ).toBeTruthy();
     expect(screen.getByText("Hoje abaixo da meta")).toBeTruthy();
     expect(screen.getByText("Aporte sugerido")).toBeTruthy();
+    const comparison = screen.getByRole("img", {
+      name: "Renda variável: hoje 20.0%, após aporte 53.8%, meta 50.0%.",
+    });
+    expect(comparison).toBeTruthy();
     expect(
-      screen.getByRole("img", {
-        name: "Renda variável: hoje 20.0%, após aporte 53.8%, meta 50.0%.",
-      }),
-    ).toBeTruthy();
+      comparison.querySelector(".relative")?.children[1]?.getAttribute("style"),
+    ).toContain(
+      "color-mix(in srgb, var(--asset-class-neutral) 36%, transparent)",
+    );
     expect(
       screen.getByText("Carteira considerada na estratégia: R$ 10.000,00"),
     ).toBeTruthy();

@@ -24,6 +24,7 @@ export type ContributionGuidance = {
   currentPercentage?: number;
   targetPercentage?: number;
   reserveNote?: string;
+  allocationMode?: "legacy" | "strategy";
 };
 type Input = {
   positions: ContributionGuidancePosition[];
@@ -170,5 +171,99 @@ export function getNextContributionGuidance({
     currentPercentage,
     targetPercentage,
     reserveNote,
+  };
+}
+
+export function getStrategyContributionGuidance({
+  classes,
+  allocationPercentages,
+  positionCount,
+  unvaluedPositionCount,
+  unclassifiedKnownValueCents,
+  emergencyReserve,
+}: {
+  classes: Array<{ id: string; label: string; currentPercentage: number }>;
+  allocationPercentages: Record<string, number> | null;
+  positionCount: number;
+  unvaluedPositionCount: number;
+  unclassifiedKnownValueCents: string;
+  emergencyReserve?: EmergencyReserveCalculation;
+}): ContributionGuidance {
+  const reserveGuidance = getNextContributionGuidance({
+    positions: [],
+    targets: null,
+    emergencyReserve,
+  });
+  if (
+    reserveGuidance.status === "reserve_below_target" ||
+    reserveGuidance.status === "reserve_incomplete"
+  )
+    return { ...reserveGuidance, allocationMode: "strategy" };
+
+  const reserveNote = getReserveNote(emergencyReserve);
+  if (positionCount === 0)
+    return {
+      status: "needs_values",
+      title: "Atribua posições a Longo Prazo para orientar aportes",
+      explanation:
+        "A Estratégia considera somente posições vinculadas a destinos classificados como investimento de longo prazo.",
+      reserveNote,
+      allocationMode: "strategy",
+    };
+  if (unvaluedPositionCount > 0 || BigInt(unclassifiedKnownValueCents) > 0n)
+    return {
+      status: "incomplete_data",
+      title: "A comparação de Longo Prazo está incompleta",
+      explanation:
+        "Há posições sem valor ou classe reconhecida. Revise os dados antes de usar a Estratégia para orientar aportes.",
+      reserveNote,
+      allocationMode: "strategy",
+    };
+  if (!allocationPercentages)
+    return {
+      status: "needs_targets",
+      title: "Salve uma composição na Estratégia",
+      explanation:
+        "A Estratégia ainda não tem uma composição salva para comparar com as posições de Longo Prazo.",
+      reserveNote,
+      allocationMode: "strategy",
+    };
+  const gaps = classes
+    .map((item) => ({
+      ...item,
+      gapBasisPoints:
+        Math.round(allocationPercentages[item.id]! * 100) -
+        Math.round(item.currentPercentage * 100),
+    }))
+    .filter((item) => item.gapBasisPoints > 0)
+    .sort((left, right) => right.gapBasisPoints - left.gapBasisPoints);
+  if (!gaps.length)
+    return {
+      status: "no_gap",
+      title: "Nenhuma classe está abaixo da composição escolhida",
+      explanation:
+        "Com os valores atuais de Longo Prazo, nenhuma classe está abaixo do percentual registrado na Estratégia.",
+      reserveNote,
+      allocationMode: "strategy",
+    };
+  if (gaps.length > 1 && gaps[0]!.gapBasisPoints === gaps[1]!.gapBasisPoints)
+    return {
+      status: "tie",
+      title: "Há mais de uma diferença semelhante",
+      explanation:
+        "As maiores diferenças em relação à composição escolhida estão empatadas. Revise a Estratégia antes de decidir como aportar.",
+      reserveNote,
+      allocationMode: "strategy",
+    };
+  const priority = gaps[0]!;
+  return {
+    status: "target_gap",
+    title: `Revise ${priority.label} no planejamento de aportes`,
+    explanation: `${priority.label} representa ${priority.currentPercentage.toFixed(1)}% das posições de Longo Prazo; a composição escolhida registra ${allocationPercentages[priority.id]!.toFixed(1)}%. A comparação não escolhe ativos nem movimenta investimentos.`,
+    assetClass: priority.label,
+    currentPercentage: priority.currentPercentage,
+    targetPercentage: allocationPercentages[priority.id],
+    reserveNote,
+    allocationMode: "strategy",
   };
 }

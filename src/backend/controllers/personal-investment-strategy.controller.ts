@@ -15,6 +15,24 @@ export class PersonalInvestmentStrategyController {
     if (
       body !== null &&
       typeof body === "object" &&
+      "activateContributionPlanning" in body &&
+      (body as { activateContributionPlanning?: unknown })
+        .activateContributionPlanning === true
+    ) {
+      const activation =
+        await personalInvestmentStrategyService.activateAllocation(requestId);
+      logger.info("personal_investment_strategy_allocation_activated", {
+        requestId,
+      });
+      return Response.json({
+        message:
+          "A Estratégia agora orienta o planejamento de aportes de Longo Prazo. As seis metas antigas foram preservadas.",
+        ...activation,
+      });
+    }
+    if (
+      body !== null &&
+      typeof body === "object" &&
       "allocationPercentages" in body
     ) {
       const allocationPercentages =
@@ -52,7 +70,7 @@ export class PersonalInvestmentStrategyController {
       );
     logger.info("personal_investment_strategy_contribution_simulated", {
       requestId,
-      complete: simulation.completeness.complete,
+      complete: simulation.simulation?.completeness.complete ?? false,
     });
     return Response.json(simulation);
   }

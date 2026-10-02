@@ -29,6 +29,7 @@ export type ContributionAllocationStatus =
   | "no_gap";
 
 export type ContributionAllocationResult = {
+  allocationMode?: "legacy" | "strategy";
   status: ContributionAllocationStatus;
   strategySource: "user_defined" | "system_calculated";
   contributionAmount: number;
@@ -60,6 +61,53 @@ type Input = {
 
 const cents = (value: number) => Math.round((value + Number.EPSILON) * 100);
 const money = (valueInCents: number) => valueInCents / 100;
+
+export type ReservePriorityAmounts = {
+  contributionCents: number;
+  reserveCents: number | null;
+  remainingCents: number | null;
+  reserveStatus: "applied" | "not_needed" | "not_configured" | "incomplete";
+};
+
+export function calculateReservePriorityAmounts(
+  contributionAmount: number,
+  reserve: EmergencyReserveCalculation,
+): ReservePriorityAmounts {
+  const contributionCents = Math.max(0, cents(contributionAmount));
+  const incompleteReserve =
+    reserve.unvaluedGroups > 0 || (reserve.missingSelectionCount ?? 0) > 0;
+  const hasReserveTarget =
+    reserve.targetValue !== null &&
+    reserve.difference !== null &&
+    reserve.monthlyExpenses !== null &&
+    reserve.targetMonths !== null;
+  const reserveStatus = incompleteReserve
+    ? "incomplete"
+    : !hasReserveTarget
+      ? "not_configured"
+      : reserve.status === "below_target"
+        ? "applied"
+        : "not_needed";
+  if (reserveStatus === "incomplete") {
+    return {
+      contributionCents,
+      reserveCents: null,
+      remainingCents: null,
+      reserveStatus,
+    };
+  }
+  const reserveCents =
+    reserveStatus === "applied"
+      ? Math.min(contributionCents, Math.max(0, cents(reserve.difference!)))
+      : 0;
+  return {
+    contributionCents,
+    reserveCents,
+    remainingCents: contributionCents - reserveCents,
+    reserveStatus,
+  };
+}
+
 const isAssetClass = (
   value: string | null,
 ): value is (typeof portfolioAssetClassOptions)[number] =>
@@ -85,26 +133,10 @@ export function calculateContributionAllocation({
   selectedReserveAssetKeys,
   strategySource = "user_defined",
 }: Input): ContributionAllocationResult {
-  const contributionCents = Math.max(0, cents(contributionAmount));
-  const incompleteReserve =
-    reserve.unvaluedGroups > 0 || (reserve.missingSelectionCount ?? 0) > 0;
-  const hasReserveTarget =
-    reserve.targetValue !== null &&
-    reserve.difference !== null &&
-    reserve.monthlyExpenses !== null &&
-    reserve.targetMonths !== null;
-  const reserveStatus = incompleteReserve
-    ? "incomplete"
-    : !hasReserveTarget
-      ? "not_configured"
-      : reserve.status === "below_target"
-        ? "applied"
-        : "not_needed";
-  const reserveCents =
-    reserveStatus === "applied"
-      ? Math.min(contributionCents, Math.max(0, cents(reserve.difference!)))
-      : 0;
-  const remainingCents = contributionCents - reserveCents;
+  const priority = calculateReservePriorityAmounts(contributionAmount, reserve);
+  const { contributionCents, reserveStatus } = priority;
+  const reserveCents = priority.reserveCents ?? 0;
+  const remainingCents = priority.remainingCents ?? 0;
   const selectedKeys = new Set(selectedReserveAssetKeys);
   const longTermPositions = positions.filter(
     (position) => !selectedKeys.has(getEmergencyReserveAssetKey(position)),

@@ -1,0 +1,1 @@
+ALTER TABLE "personal_investment_strategy" ADD COLUMN "allocationActive" boolean DEFAULT false NOT NULL;

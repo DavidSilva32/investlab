@@ -5,5 +5,10 @@ import eslintConfigPrettier from "eslint-config-prettier";
 export default defineConfig([
   ...nextVitals,
   eslintConfigPrettier,
-  globalIgnores([".next/**", "node_modules/**", "coverage/**"]),
+  globalIgnores([
+    ".next/**",
+    "node_modules/**",
+    ".worktrees/**",
+    "coverage/**",
+  ]),
 ]);

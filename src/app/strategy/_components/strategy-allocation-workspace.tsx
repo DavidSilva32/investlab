@@ -1,8 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  ArrowDown,
+  ArrowRight,
+  Building,
+  ChartColumnIncreasing,
+  ChevronRight,
+  Coins,
+  Globe,
+  PiggyBank,
+  Settings2,
+  TrendingUp,
+  WalletCards,
+} from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,16 +24,41 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getApiMessage } from "@/lib/api-message";
+import {
+  formatAmountInput,
+  getCurrencyInputSelection,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
+import { getPortfolioAssetClassColor } from "@/lib/portfolio-asset-class-colors";
+import {
+  distributeRemainingPercentage,
+  parseStrategyContributionAmount,
+  parseStrategyPercentage,
+  strategyPercentagesFromDraft,
+  type StrategyPercentageDraft,
+} from "@/lib/strategy-allocation-input";
+import {
+  strategyAssetClasses,
+  type StrategyAllocationPercentages,
+} from "@/lib/strategy-allocation";
 import {
   StrategyAllocationChart,
   strategyClasses,
-  type StrategyClassId,
   type StrategyCompositionRow,
-  type StrategyPercentages,
 } from "./strategy-allocation-chart";
 
 export type StrategyClassValue = {
@@ -31,74 +69,70 @@ export type StrategyClassValue = {
 };
 
 type StrategyContributionPreview = {
-  totalCents: string;
-  contributionCents: string;
-  unallocatedContributionCents: string;
-  completeness: {
-    complete: boolean;
-    unvaluedPositionCount: number;
-    unclassifiedKnownValueCents: string;
-    valuationDate: string;
-    valuationDates: string[];
-  };
-  allocations: Array<{
-    id: StrategyClassId;
-    label: string;
-    currentPercentage: number;
-    targetPercentage: number;
-    projectedPercentage: number;
-    contributionValueCents: string;
-  }>;
+  enteredContributionCents: string;
+  reserveContributionCents: string | null;
+  strategyContributionCents: string | null;
+  reserveStatus: "applied" | "not_needed" | "not_configured" | "incomplete";
+  reserveSelectedValueCents: string | null;
+  reserveTargetValueCents: string | null;
+  reserveDifferenceCents: string | null;
+  simulation: {
+    totalCents: string;
+    contributionCents: string;
+    unallocatedContributionCents: string;
+    completeness: {
+      complete: boolean;
+      unvaluedPositionCount: number;
+      unclassifiedKnownValueCents: string;
+      valuationDate: string;
+      valuationDates: string[];
+    };
+    allocations: Array<{
+      id: (typeof strategyAssetClasses)[number]["id"];
+      label: string;
+      currentPercentage: number;
+      targetPercentage: number;
+      projectedPercentage: number;
+      contributionValueCents: string;
+    }>;
+  } | null;
 };
 
 type Props = {
   classes: StrategyClassValue[];
   knownValueCents: string;
+  valuationDate: string;
+  positionCount: number;
   unclassifiedKnownValueCents: string;
   unvaluedPositionCount: number;
-  savedAllocationPercentages: StrategyPercentages | null;
-  onSaved: (percentages: StrategyPercentages) => void;
+  savedAllocationPercentages: StrategyAllocationPercentages | null;
+  allocationActive?: boolean;
+  onSaved: (percentages: StrategyAllocationPercentages) => void;
+  onActivated?: () => void;
 };
 
-type Draft = Record<StrategyClassId, string>;
+function percentText(value: number) {
+  return value.toFixed(2).replace(".", ",");
+}
 
 function initialDraft(
-  saved: StrategyPercentages | null,
+  saved: StrategyAllocationPercentages | null,
   classes: StrategyClassValue[],
   complete: boolean,
-): Draft {
+): StrategyPercentageDraft {
   return Object.fromEntries(
-    strategyClasses.map(({ id }) => {
+    strategyAssetClasses.map(({ id }) => {
       const current = classes.find((item) => item.id === id)?.currentPercentage;
       return [
         id,
         saved
-          ? String(saved[id])
+          ? percentText(saved[id])
           : complete && current !== undefined
-            ? current.toFixed(2)
+            ? percentText(current)
             : "",
       ];
     }),
-  ) as Draft;
-}
-
-function getPercentageCents(value: string): number | null {
-  if (!/^\d{1,3}(?:\.\d{1,2})?$/.test(value)) return null;
-  const [whole, fraction = ""] = value.split(".");
-  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
-  return cents <= 10000 ? cents : null;
-}
-
-function toPercentages(draft: Draft): StrategyPercentages | null {
-  const values = strategyClasses.map(({ id }) => getPercentageCents(draft[id]));
-  if (values.some((value) => value === null)) return null;
-  if (
-    values.reduce<number>((sum, value) => sum + (value as number), 0) !== 10000
-  )
-    return null;
-  return Object.fromEntries(
-    strategyClasses.map(({ id }, index) => [id, values[index]! / 100]),
-  ) as StrategyPercentages;
+  ) as StrategyPercentageDraft;
 }
 
 function formatDate(value: string) {
@@ -109,53 +143,94 @@ function formatDate(value: string) {
 export function StrategyAllocationWorkspace({
   classes,
   knownValueCents,
+  valuationDate,
+  positionCount,
   unclassifiedKnownValueCents,
   unvaluedPositionCount,
   savedAllocationPercentages,
+  allocationActive = false,
   onSaved,
+  onActivated,
 }: Props) {
   const baselineComplete =
     BigInt(knownValueCents) > 0n &&
     BigInt(unclassifiedKnownValueCents) === 0n &&
     unvaluedPositionCount === 0;
-  const [draft, setDraft] = useState<Draft>(() =>
+  const [draft, setDraft] = useState<StrategyPercentageDraft>(() =>
     initialDraft(savedAllocationPercentages, classes, baselineComplete),
   );
+  const [saved, setSaved] = useState(savedAllocationPercentages);
+  const [active, setActive] = useState(allocationActive);
+  const [draftChanged, setDraftChanged] = useState(false);
+  const [editingOpen, setEditingOpen] = useState(false);
   const [contributionAmount, setContributionAmount] = useState("");
+  const amountInputRef = useRef<HTMLInputElement>(null);
+  const selectionRef = useRef<CurrencyInputSelection | null>(null);
   const [saving, setSaving] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [simulation, setSimulation] =
     useState<StrategyContributionPreview | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);
 
-  const targetPercentages = useMemo(() => toPercentages(draft), [draft]);
-  const percentageSum = strategyClasses.reduce(
-    (sum, { id }) => sum + (getPercentageCents(draft[id]) ?? 0),
+  useLayoutEffect(() => {
+    const input = amountInputRef.current;
+    const selection = selectionRef.current;
+    if (!input || !selection) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    selectionRef.current = null;
+  }, [contributionAmount]);
+
+  const targetPercentages = useMemo(
+    () => strategyPercentagesFromDraft(draft),
+    [draft],
+  );
+  const parsedBasisPoints = strategyAssetClasses.map(({ id }) =>
+    parseStrategyPercentage(draft[id]),
+  );
+  const percentageSum = parsedBasisPoints.reduce<number>(
+    (sum, value) => sum + (value ?? 0),
     0,
   );
   const currentById = new Map(classes.map((item) => [item.id, item]));
   const currentPercentages = Object.fromEntries(
-    strategyClasses.map(({ id }) => [
+    strategyAssetClasses.map(({ id }) => [
       id,
       currentById.get(id)?.currentPercentage ?? 0,
     ]),
-  ) as StrategyPercentages;
-
+  ) as StrategyAllocationPercentages;
+  const allocationToShow = draftChanged
+    ? targetPercentages
+    : (saved ?? currentPercentages);
+  const hasAllocationToShow =
+    allocationToShow !== null &&
+    strategyAssetClasses.some(({ id }) => allocationToShow[id] > 0);
+  const allocationLabel = draftChanged
+    ? targetPercentages
+      ? "Composição em edição"
+      : "Ajustando composição"
+    : saved
+      ? "Composição planejada"
+      : "Distribuição atual";
   const chartData: StrategyCompositionRow[] = [
     { name: "Atual", ...currentPercentages },
-    ...(targetPercentages ? [{ name: "Escolhida", ...targetPercentages }] : []),
-    ...(simulation
+    ...(targetPercentages && (saved || draftChanged)
+      ? [{ name: saved ? "Planejada" : "Em edição", ...targetPercentages }]
+      : []),
+    ...(simulation?.simulation
       ? [
           {
-            name: !simulation.completeness.complete
+            name: !simulation.simulation.completeness.complete
               ? "Após aporte · parcial"
-              : simulation.completeness.valuationDates.length === 1 &&
-                  simulation.completeness.valuationDates[0] ===
-                    simulation.completeness.valuationDate
+              : simulation.simulation.completeness.valuationDates.length ===
+                    1 &&
+                  simulation.simulation.completeness.valuationDates[0] ===
+                    simulation.simulation.completeness.valuationDate
                 ? "Após aporte"
                 : "Após aporte · aproximado",
             ...Object.fromEntries(
-              simulation.allocations.map((item) => [
+              simulation.simulation.allocations.map((item) => [
                 item.id,
                 item.projectedPercentage,
               ]),
@@ -164,19 +239,29 @@ export function StrategyAllocationWorkspace({
         ]
       : []),
   ];
+  const classIcons = {
+    fixed_income: Coins,
+    brazilian_equities: ChartColumnIncreasing,
+    international_etfs: Globe,
+    fiis: Building,
+  } as const;
 
-  function updateDraft(id: StrategyClassId, value: string) {
+  function updateDraft(
+    id: (typeof strategyAssetClasses)[number]["id"],
+    value: string,
+  ) {
     setDraft((current) => ({ ...current, [id]: value }));
+    setDraftChanged(true);
     setSimulation(null);
   }
 
-  async function save() {
+  async function save(allocationPercentages: StrategyAllocationPercentages) {
     setSaving(true);
     try {
       const response = await fetch("/api/portfolio/strategy", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ allocationPercentages: targetPercentages }),
+        body: JSON.stringify({ allocationPercentages }),
       });
       const body: unknown = await response.json();
       if (!response.ok) {
@@ -185,10 +270,21 @@ export function StrategyAllocationWorkspace({
         );
         return;
       }
-      onSaved(
-        (body as { allocationPercentages: StrategyPercentages })
-          .allocationPercentages,
+      const percentages = (
+        body as { allocationPercentages: StrategyAllocationPercentages }
+      ).allocationPercentages;
+      setSaved(percentages);
+      setDraftChanged(false);
+      setDraft(
+        Object.fromEntries(
+          strategyAssetClasses.map(({ id }) => [
+            id,
+            percentText(percentages[id]),
+          ]),
+        ) as StrategyPercentageDraft,
       );
+      onSaved(percentages);
+      setEditingOpen(false);
       toast.success(getApiMessage(body, "Composição escolhida salva."));
     } catch {
       toast.error("Não foi possível salvar a composição.");
@@ -197,16 +293,43 @@ export function StrategyAllocationWorkspace({
     }
   }
 
+  async function activate() {
+    setActivating(true);
+    try {
+      const response = await fetch("/api/portfolio/strategy", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ activateContributionPlanning: true }),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(body, "Não foi possível ativar a composição."),
+        );
+        return;
+      }
+      setActive(true);
+      onActivated?.();
+      window.dispatchEvent(new Event("portfolio:updated"));
+      toast.success(
+        getApiMessage(
+          body,
+          "Estratégia ativada para o planejamento de aportes.",
+        ),
+      );
+    } catch {
+      toast.error("Não foi possível ativar a composição.");
+    } finally {
+      setActivating(false);
+    }
+  }
+
   async function simulate() {
-    const amount = Number(contributionAmount);
-    if (!targetPercentages || !Number.isFinite(amount) || amount <= 0) {
+    const amount = parseStrategyContributionAmount(contributionAmount);
+    if (!targetPercentages || amount === null || amount > 1_000_000_000_000) {
       setAmountError(
         "Informe um aporte maior que zero, com até duas casas decimais.",
       );
-      return;
-    }
-    if (!/^\d+(?:\.\d{1,2})?$/.test(contributionAmount)) {
-      setAmountError("Use no máximo duas casas decimais.");
       return;
     }
     setAmountError(null);
@@ -235,133 +358,250 @@ export function StrategyAllocationWorkspace({
     }
   }
 
+  function changeAmount(value: string) {
+    const input = amountInputRef.current!;
+    selectionRef.current = getCurrencyInputSelection(
+      contributionAmount,
+      value,
+      input.selectionStart ?? value.length,
+      input.selectionEnd ?? value.length,
+      input.selectionDirection,
+    );
+    setContributionAmount(formatAmountInput(value));
+    setAmountError(null);
+    setSimulation(null);
+  }
+
   return (
     <div className="space-y-4">
+      <Sheet open={editingOpen} onOpenChange={setEditingOpen}>
+        <Card>
+          <CardContent className="grid gap-5 pt-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
+            <div className="flex min-w-0 items-center gap-4">
+              <span className="hidden size-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary sm:flex">
+                <TrendingUp aria-hidden="true" className="size-7" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-medium text-muted-foreground">
+                  Patrimônio de longo prazo
+                </h2>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-primary tabular-nums sm:text-4xl">
+                  {formatCurrencyCents(knownValueCents)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Total investido em ativos de longo prazo ·{" "}
+                  {formatDate(valuationDate)}
+                  {positionCount === 0 ? " · sem posições" : ""}
+                </p>
+              </div>
+            </div>
+            <div className="min-w-0 border-t pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+              <p className="text-sm font-medium">{allocationLabel}</p>
+              {hasAllocationToShow ? (
+                <ul className="mt-2 space-y-1 text-sm">
+                  {strategyAssetClasses
+                    .filter(({ id }) => allocationToShow?.[id] > 0)
+                    .map(({ id, label }) => {
+                      const Icon = classIcons[id];
+                      const color = strategyClasses.find(
+                        (item) => item.id === id,
+                      )!.color;
+                      return (
+                        <li key={id} className="flex items-center gap-2">
+                          <Icon
+                            aria-hidden="true"
+                            className="size-4 shrink-0"
+                            style={{ color }}
+                          />
+                          <span className="min-w-0 text-muted-foreground">
+                            {label}
+                          </span>
+                          <span className="font-semibold tabular-nums">
+                            {percentText(allocationToShow![id])}%
+                          </span>
+                        </li>
+                      );
+                    })}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {draftChanged
+                    ? "Complete o total para ver a composição."
+                    : "Defina a composição desejada."}
+                </p>
+              )}
+            </div>
+            <SheetTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-between sm:w-auto"
+              >
+                <Settings2 aria-hidden="true" className="mr-2 size-4" />
+                Editar composição
+                <ChevronRight aria-hidden="true" className="ml-2 size-4" />
+              </Button>
+            </SheetTrigger>
+          </CardContent>
+        </Card>
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto sm:max-w-xl"
+        >
+          <SheetHeader className="mb-6 pr-8">
+            <SheetTitle>Editar composição</SheetTitle>
+            <SheetDescription>
+              Ajuste os percentuais. O total deve ser 100%.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {strategyAssetClasses.map(({ id, label }) => {
+                const color = strategyClasses.find(
+                  (item) => item.id === id,
+                )!.color;
+                const current = currentById.get(id);
+                const percentageCents = parseStrategyPercentage(draft[id]);
+                return (
+                  <div key={id} className="rounded-lg border bg-card p-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="size-2.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: color }}
+                      />
+                      <Label htmlFor={`strategy-${id}`} className="flex-1">
+                        {label}
+                      </Label>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      <div className="relative w-full">
+                        <Input
+                          id={`strategy-${id}`}
+                          aria-label={`${label} planejada em porcentagem`}
+                          aria-describedby={`strategy-${id}-current`}
+                          className="pr-8 tabular-nums"
+                          type="text"
+                          inputMode="decimal"
+                          value={draft[id]}
+                          onChange={(event) =>
+                            updateDraft(id, event.target.value)
+                          }
+                        />
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground"
+                        >
+                          %
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto whitespace-normal px-0 py-1 text-left text-xs leading-tight"
+                        disabled={percentageCents === null}
+                        onClick={() => {
+                          const distributed = distributeRemainingPercentage(
+                            draft,
+                            id,
+                          )!;
+                          setDraft(distributed);
+                          setDraftChanged(true);
+                          setSimulation(null);
+                        }}
+                      >
+                        Distribuir restante
+                      </Button>
+                    </div>
+                    <p
+                      id={`strategy-${id}-current`}
+                      className="mt-2 text-xs text-muted-foreground"
+                    >
+                      Atual:{" "}
+                      {current
+                        ? formatCurrencyCents(current.knownValueCents)
+                        : "Sem valor classificado"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p
+                aria-live="polite"
+                className={`text-sm tabular-nums ${percentageSum === 10000 && targetPercentages ? "text-foreground" : "text-muted-foreground"}`}
+              >
+                Total planejado: {percentText(percentageSum / 100)}%
+                {percentageSum < 10000 &&
+                  ` · faltam ${percentText((10000 - percentageSum) / 100)}%`}
+                {percentageSum > 10000 &&
+                  ` · excedem ${percentText((percentageSum - 10000) / 100)}%`}
+              </p>
+              <SheetFooter className="sm:justify-end">
+                <Button
+                  onClick={() => void save(targetPercentages!)}
+                  disabled={!targetPercentages || saving}
+                  className="w-full sm:w-auto"
+                >
+                  {saving ? "Salvando…" : "Salvar composição"}
+                </Button>
+              </SheetFooter>
+            </div>
+            {!baselineComplete && (
+              <Alert>
+                <AlertDescription>
+                  Parte do patrimônio de Longo Prazo está sem valor ou classe
+                  reconhecida. A distribuição atual mostra apenas valores
+                  classificados.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Sua composição de longo prazo
-          </CardTitle>
-          <CardDescription>
-            Ajuste os percentuais por classe. Esta composição é independente das
-            metas do assistente de aportes e não é uma recomendação.
-          </CardDescription>
+        <CardHeader className="pb-3">
+          <CardTitle>Distribuição por classe</CardTitle>
+          <CardDescription>Atual, planejada e após aporte.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent>
           <StrategyAllocationChart data={chartData} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {strategyClasses.map(({ id, label, color }) => {
-              const current = currentById.get(id);
-              const percentageCents = getPercentageCents(draft[id]);
-              const difference =
-                percentageCents === null
-                  ? null
-                  : percentageCents / 100 - currentPercentages[id];
-              return (
-                <div key={id} className="rounded-lg border p-3">
-                  <div className="flex items-center gap-2">
-                    <span
-                      aria-hidden="true"
-                      className="size-2.5 rounded-sm"
-                      style={{ backgroundColor: color }}
-                    />
-                    <Label htmlFor={`strategy-${id}`} className="flex-1">
-                      {label}
-                    </Label>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      Atual {currentPercentages[id].toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-3">
-                    <Input
-                      id={`strategy-${id}`}
-                      aria-label={`${label} escolhida (%)`}
-                      className="max-w-32 tabular-nums"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      value={draft[id]}
-                      onChange={(event) => updateDraft(id, event.target.value)}
-                    />
-                    <span className="text-sm tabular-nums">
-                      {difference === null
-                        ? "Escolha um peso"
-                        : `${difference > 0 ? "+" : ""}${difference.toFixed(2)} p.p.`}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {current
-                      ? formatCurrencyCents(current.knownValueCents)
-                      : "Sem valor classificado"}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-            <p
-              aria-live="polite"
-              className={`text-sm tabular-nums ${percentageSum === 10000 ? "text-foreground" : "text-muted-foreground"}`}
-            >
-              Soma dos pesos: {(percentageSum / 100).toFixed(2)}%
-              {percentageSum < 10000 &&
-                ` · faltam ${((10000 - percentageSum) / 100).toFixed(2)}%`}
-              {percentageSum > 10000 &&
-                ` · excedem ${((percentageSum - 10000) / 100).toFixed(2)}%`}
-            </p>
-            <Button
-              onClick={() => void save()}
-              disabled={!targetPercentages || saving}
-            >
-              {saving ? "Salvando…" : "Salvar composição"}
-            </Button>
-          </div>
-          {!baselineComplete && (
-            <Alert>
-              <AlertDescription>
-                Parte do patrimônio de longo prazo não está classificada ou sem
-                valor conhecido. O gráfico mostra os valores identificados; eles
-                não são tratados como 100% da carteira.
-              </AlertDescription>
-            </Alert>
-          )}
-          {savedAllocationPercentages && (
-            <p className="text-xs text-muted-foreground">
-              Última composição salva permanece como referência até você salvar
-              outra.
-            </p>
-          )}
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Visualizar um aporte</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle>Próximo aporte</CardTitle>
           <CardDescription>
-            Simulação informativa sobre posições destinadas ao longo prazo.
-            Nenhum investimento será movimentado.
+            Simule a divisão. Nada será movimentado.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="w-full space-y-2 sm:max-w-xs">
-              <Label htmlFor="strategy-contribution">Valor do aporte</Label>
+              <Label htmlFor="strategy-contribution">Valor disponível</Label>
               <Input
+                ref={amountInputRef}
                 id="strategy-contribution"
                 inputMode="decimal"
-                type="number"
-                min="0.01"
-                step="0.01"
+                type="text"
+                placeholder="R$ 0,00"
                 value={contributionAmount}
-                onChange={(event) => {
-                  setContributionAmount(event.target.value);
-                  setAmountError(null);
-                  setSimulation(null);
-                }}
+                onChange={(event) => changeAmount(event.target.value)}
+                aria-invalid={amountError !== null}
+                aria-describedby={
+                  amountError ? "strategy-amount-error" : undefined
+                }
               />
               {amountError && (
-                <p className="text-sm text-destructive">{amountError}</p>
+                <p
+                  id="strategy-amount-error"
+                  className="text-sm text-destructive"
+                >
+                  {amountError}
+                </p>
               )}
             </div>
             <Button
@@ -373,63 +613,229 @@ export function StrategyAllocationWorkspace({
             </Button>
           </div>
           {simulation && (
-            <div className="rounded-lg border bg-muted/30 p-4">
-              <p className="font-medium">
-                {!simulation.completeness.complete
-                  ? "Simulação parcial após o aporte"
-                  : simulation.completeness.valuationDates.length === 1 &&
-                      simulation.completeness.valuationDates[0] ===
-                        simulation.completeness.valuationDate
-                    ? "Composição estimada após o aporte"
-                    : "Simulação aproximada após o aporte"}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Valores classificados de longo prazo:{" "}
-                {formatCurrencyCents(simulation.totalCents)} · aporte:{" "}
-                {formatCurrencyCents(simulation.contributionCents)}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Consulta de {formatDate(simulation.completeness.valuationDate)}
-                {simulation.completeness.valuationDates.length > 0 &&
-                  ` · valores disponíveis em ${simulation.completeness.valuationDates.map(formatDate).join(", ")}`}
-              </p>
-              {BigInt(simulation.unallocatedContributionCents) > 0n && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Não distribuído:{" "}
-                  {formatCurrencyCents(simulation.unallocatedContributionCents)}
-                  . O cálculo não atribuiu esse valor para evitar ultrapassar a
-                  composição escolhida.
-                </p>
-              )}
-              {!simulation.completeness.complete && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  A simulação não cobre{" "}
-                  {simulation.completeness.unvaluedPositionCount} posição(ões)
-                  sem valor e{" "}
-                  {formatCurrencyCents(
-                    simulation.completeness.unclassifiedKnownValueCents,
-                  )}{" "}
-                  sem classe reconhecida. Avaliação de{" "}
-                  {simulation.completeness.valuationDate}.
-                </p>
-              )}
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {simulation.allocations.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex justify-between gap-2 text-sm"
-                  >
-                    <span>{item.label}</span>
-                    <span className="tabular-nums">
-                      {item.projectedPercentage.toFixed(2)}% ·{" "}
-                      {formatCurrencyCents(item.contributionValueCents)} do
-                      aporte
+            <div
+              className="space-y-4 rounded-lg border bg-muted/20 p-4 sm:p-5"
+              aria-live="polite"
+            >
+              <ol
+                aria-label="Sequência do aporte"
+                className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center"
+              >
+                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-sky-500/40 bg-sky-500/5 p-3 sm:p-4">
+                  <WalletCards
+                    aria-hidden="true"
+                    className="hidden size-6 shrink-0 text-sky-500 sm:block"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-muted-foreground">
+                      Valor informado
                     </span>
+                    <strong className="mt-1 block text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">
+                      {formatCurrencyCents(simulation.enteredContributionCents)}
+                    </strong>
+                  </span>
+                </li>
+                <li
+                  aria-hidden="true"
+                  className="flex justify-center text-muted-foreground"
+                >
+                  <ArrowDown className="size-4 sm:hidden" />
+                  <ArrowRight className="hidden size-5 sm:block" />
+                </li>
+                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 sm:p-4">
+                  <PiggyBank
+                    aria-hidden="true"
+                    className="hidden size-6 shrink-0 text-amber-500 sm:block"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-muted-foreground">
+                      {simulation.reserveStatus === "applied"
+                        ? "Completar reserva"
+                        : simulation.reserveStatus === "not_needed"
+                          ? "Reserva completa"
+                          : simulation.reserveStatus === "not_configured"
+                            ? "Reserva sem meta"
+                            : "Reserva"}
+                    </span>
+                    <strong className="mt-1 block text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">
+                      {simulation.reserveContributionCents === null
+                        ? "Indisponível"
+                        : formatCurrencyCents(
+                            simulation.reserveContributionCents,
+                          )}
+                    </strong>
+                  </span>
+                </li>
+                <li
+                  aria-hidden="true"
+                  className="flex justify-center text-muted-foreground"
+                >
+                  <ArrowDown className="size-4 sm:hidden" />
+                  <ArrowRight className="hidden size-5 sm:block" />
+                </li>
+                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 sm:p-4">
+                  <TrendingUp
+                    aria-hidden="true"
+                    className="hidden size-6 shrink-0 text-emerald-500 sm:block"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-muted-foreground">
+                      Restante para Longo Prazo
+                    </span>
+                    <strong className="mt-1 block text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">
+                      {simulation.strategyContributionCents === null
+                        ? "Indisponível"
+                        : formatCurrencyCents(
+                            simulation.strategyContributionCents,
+                          )}
+                    </strong>
+                  </span>
+                </li>
+              </ol>
+              {simulation.reserveStatus === "incomplete" ? (
+                <Alert variant="destructive">
+                  <AlertTitle>
+                    Não foi possível calcular a parte da Reserva
+                  </AlertTitle>
+                  <AlertDescription>
+                    Revise as posições e os valores selecionados para a Reserva.
+                    O valor disponível para Longo Prazo não foi estimado.
+                    {simulation.reserveTargetValueCents !== null &&
+                      ` Meta da Reserva: ${formatCurrencyCents(simulation.reserveTargetValueCents)}.`}
+                  </AlertDescription>
+                </Alert>
+              ) : simulation.simulation ? (
+                <>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 border-t pt-3">
+                    <p className="font-medium">
+                      {!simulation.simulation.completeness.complete
+                        ? "Plano parcial"
+                        : simulation.simulation.completeness.valuationDates
+                              .length === 1 &&
+                            simulation.simulation.completeness
+                              .valuationDates[0] ===
+                              simulation.simulation.completeness.valuationDate
+                          ? "Plano estimado"
+                          : "Plano aproximado"}
+                    </p>
+                    <p className="text-sm tabular-nums">
+                      Longo Prazo após aporte:{" "}
+                      {formatCurrencyCents(
+                        (
+                          BigInt(simulation.simulation.totalCents) +
+                          BigInt(simulation.simulation.contributionCents)
+                        ).toString(),
+                      )}
+                    </p>
                   </div>
-                ))}
-              </div>
+                  <p className="text-xs text-muted-foreground">
+                    Valores consultados em{" "}
+                    {formatDate(
+                      simulation.simulation.completeness.valuationDate,
+                    )}
+                    {simulation.simulation.completeness.valuationDates.length >
+                      0 &&
+                      ` · disponíveis em ${simulation.simulation.completeness.valuationDates.map(formatDate).join(", ")}`}
+                  </p>
+                  {BigInt(simulation.simulation.unallocatedContributionCents) >
+                    0n && (
+                    <p className="text-sm text-muted-foreground">
+                      Não distribuído:{" "}
+                      {formatCurrencyCents(
+                        simulation.simulation.unallocatedContributionCents,
+                      )}
+                      . O cálculo evita ultrapassar a composição escolhida.
+                    </p>
+                  )}
+                  {!simulation.simulation.completeness.complete && (
+                    <p className="text-sm text-muted-foreground">
+                      Não cobre{" "}
+                      {simulation.simulation.completeness.unvaluedPositionCount}{" "}
+                      posição(ões) sem valor e{" "}
+                      {formatCurrencyCents(
+                        simulation.simulation.completeness
+                          .unclassifiedKnownValueCents,
+                      )}{" "}
+                      sem classe reconhecida.
+                    </p>
+                  )}
+                  <div className="space-y-3 border-t pt-4">
+                    <h3 className="text-sm font-semibold">
+                      Distribuição do longo prazo
+                    </h3>
+                    <ul className="grid gap-3 sm:grid-cols-2">
+                      {simulation.simulation.allocations.map((item) => (
+                        <li
+                          key={item.id}
+                          className="min-w-0 rounded-lg border p-4 transition-shadow hover:shadow-sm"
+                          style={{
+                            backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(item.label)} 10%, var(--card))`,
+                            borderColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(item.label)} 52%, var(--border))`,
+                          }}
+                        >
+                          <span className="flex min-w-0 items-center gap-3 text-sm font-medium">
+                            {(() => {
+                              const Icon = classIcons[item.id];
+                              return (
+                                <span
+                                  aria-hidden="true"
+                                  className="flex size-10 shrink-0 items-center justify-center rounded-full"
+                                  style={{
+                                    backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(item.label)} 22%, transparent)`,
+                                    color: getPortfolioAssetClassColor(
+                                      item.label,
+                                    ),
+                                  }}
+                                >
+                                  <Icon className="size-5" />
+                                </span>
+                              );
+                            })()}
+                            {item.label}
+                          </span>
+                          <div className="mt-3 tabular-nums">
+                            <strong
+                              className={`block text-2xl font-semibold tracking-tight ${item.contributionValueCents === "0" ? "text-muted-foreground" : ""}`}
+                            >
+                              {formatCurrencyCents(item.contributionValueCents)}
+                            </strong>
+                            <span className="mt-1 block text-sm text-muted-foreground">
+                              {percentText(item.projectedPercentage)}% depois do
+                              aporte
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <p className="border-t pt-3 text-sm text-muted-foreground">
+                  O aporte foi destinado à Reserva.
+                </p>
+              )}
             </div>
           )}
+          <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">Assistente de aportes</p>
+              <p className="text-sm text-muted-foreground">
+                {active
+                  ? "Usando esta composição para posições de Longo Prazo."
+                  : "A configuração atual continua ativa até você escolher a Estratégia."}
+              </p>
+            </div>
+            {!active && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!saved || activating}
+                onClick={() => void activate()}
+              >
+                {activating ? "Ativando…" : "Usar Estratégia no assistente"}
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
