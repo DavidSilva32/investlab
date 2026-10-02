@@ -883,6 +883,82 @@ describe("PortfolioObjectives", () => {
     ).toBeTruthy();
   });
 
+  it("saves a manual observed balance and reloads the objective overview", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Saldo observado de Viagem"),
+      "350,25",
+    );
+    fetchMock.mockImplementationOnce(() =>
+      response({ message: "Saldo observado salvo." }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Salvar saldo observado" }),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Saldo observado salvo."),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/portfolio/objectives/balance",
+      expect.objectContaining({
+        method: "PUT",
+        body: expect.stringContaining('"amount":"350.25"'),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows the API message when saving a manual observed balance fails", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Saldo observado de Viagem"),
+      "350,25",
+    );
+    fetchMock.mockImplementationOnce(() =>
+      response({ message: "Data-base inválida." }, false),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Salvar saldo observado" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Data-base inválida."),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a safe fallback when saving an observed balance fails in transport", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
+    );
+    await user.type(
+      await screen.findByLabelText("Saldo observado de Viagem"),
+      "350,25",
+    );
+    fetchMock.mockRejectedValueOnce(new Error("private transport detail"));
+    await user.click(
+      screen.getByRole("button", { name: "Salvar saldo observado" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar o saldo.",
+      ),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("shows the API message when loading the overview returns an error", async () => {
     fetchMock.mockImplementationOnce(() =>
       response({ message: "Carteira indisponível." }, false),

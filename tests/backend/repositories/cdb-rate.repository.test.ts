@@ -55,6 +55,32 @@ describe("CdbRateRepository", () => {
     expect(conditionText).not.toContain(">= ");
   });
 
+  it("returns the latest persisted official CDI rate on or before a date", async () => {
+    const rate = { rateDate: "2026-09-15", annualRate: "14.9" };
+    const limit = vi.fn().mockResolvedValue([rate]);
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const where = vi.fn().mockReturnValue({ orderBy });
+    client.select.mockReturnValue({ from: () => ({ where }) });
+
+    await expect(
+      repository.listLatestRateOnOrBefore("2026-09-16"),
+    ).resolves.toEqual(rate);
+    expect(orderBy).toHaveBeenCalled();
+    expect(limit).toHaveBeenCalledWith(1);
+  });
+
+  it("returns null when there is no official rate on or before the date", async () => {
+    const limit = vi.fn().mockResolvedValue([]);
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const where = vi.fn().mockReturnValue({ orderBy });
+    client.select.mockReturnValue({ from: () => ({ where }) });
+
+    await expect(
+      repository.listLatestRateOnOrBefore("2026-09-16"),
+    ).resolves.toBeNull();
+    expect(limit).toHaveBeenCalledWith(1);
+  });
+
   it("upserts one configuration", async () => {
     const returning = vi.fn().mockResolvedValue([{ assetCode: "CDB1" }]);
     const conflict = vi.fn().mockReturnValue({ returning });

@@ -1,5 +1,6 @@
 import { logger } from "@/infrastructure/logging/logger";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
+import { objectiveBalanceService } from "@/backend/services/objective-balance.service";
 
 export class PortfolioObjectivesController {
   async get(requestId: string) {
@@ -95,6 +96,19 @@ export class PortfolioObjectivesController {
       objectiveId: objective.id,
     });
     return Response.json(objective);
+  }
+
+  async saveObservedBalance(body: unknown, requestId: string) {
+    const reference = await objectiveBalanceService.save(body);
+    logger.info("portfolio_objective_balance_saved", {
+      requestId,
+      objectiveId: reference.objectiveId,
+      observedOn: reference.observedDate,
+    });
+    return Response.json(
+      { message: "Saldo observado salvo." },
+      { status: 201 },
+    );
   }
 
   async delete(objectiveId: string, requestId: string) {

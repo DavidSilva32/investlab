@@ -216,6 +216,33 @@ export function PortfolioObjectives({
     }
   }
 
+  async function saveObservedBalance(input: {
+    objectiveId: string;
+    amount: string;
+    observedOn: string;
+    cdiPercentage: string | null;
+  }) {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/portfolio/objectives/balance", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(getApiMessage(body, "Não foi possível salvar o saldo."));
+        return;
+      }
+      toast.success(getApiMessage(body, "Saldo observado salvo."));
+      await loadData();
+    } catch {
+      toast.error("Não foi possível salvar o saldo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function deleteObjective(objectiveId: string) {
     setSaving(true);
     try {
@@ -374,6 +401,8 @@ export function PortfolioObjectives({
                 setView({ kind: "reserve-settings" });
                 navigateToObjective(reserveObjectiveId, "reserve-settings");
               }}
+              balanceSaving={saving}
+              onSaveBalance={saveObservedBalance}
             />
           )}
           {view.kind === "detail" && !activeObjective && (

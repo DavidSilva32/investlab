@@ -55,6 +55,8 @@ const position = {
   estimatedValue: 1000.55,
   cdbEstimateStatus: "provisional" as const,
   estimatedThrough: "2026-09-18",
+  cdbProjectedFromDate: "2026-09-19",
+  cdbProjectedThroughDate: "2026-09-21",
   cdbEstimateLimitation: "Estimativa parcial: ainda não há taxa CDI oficial.",
 };
 
@@ -68,6 +70,8 @@ describe("portfolio detail components", () => {
             ...position,
             id: "complete",
             cdbEstimateStatus: "complete",
+            cdbProjectedFromDate: null,
+            cdbProjectedThroughDate: null,
             cdbEstimateLimitation: null,
           },
         ]}
@@ -78,6 +82,7 @@ describe("portfolio detail components", () => {
     expect(html).toContain("Estimativa até");
     expect(html).toContain("100% do CDI");
     expect(html).toContain("data-base CURVA de");
+    expect(html).toContain("Trecho projetado: de 19/09/2026 a 21/09/2026");
     expect(html).toContain("18/09/2026");
     expect(html).toContain("Estimativa parcial: ainda não há taxa CDI oficial");
     expect(html).toContain("posições");

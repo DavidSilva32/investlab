@@ -14,6 +14,8 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { formatCurrencyCents } from "@/lib/portfolio-money";
+import type { ObjectiveBalanceTrackingData } from "./portfolio-objective-balance-tracking";
 
 export type PortfolioObjective = {
   id: string;
@@ -30,7 +32,13 @@ export type PortfolioObjective = {
   unvaluedPositionCount: number;
   assignedAssetKeys: string[];
   canEditAssignments: boolean;
+  balanceTracking?: ObjectiveBalanceTrackingData;
 };
+
+function formatDisplayDate(value: string) {
+  const [year, month, day] = value.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
 
 type Props = {
   objective: PortfolioObjective;
@@ -125,6 +133,29 @@ export function PortfolioObjectiveCard({
               Progresso indisponível com os dados atuais
             </span>
           ) : null}
+          {objective.balanceTracking && (
+            <span className="grid gap-1 border-t pt-3 text-xs font-normal sm:grid-cols-2">
+              <span className="text-muted-foreground">
+                Saldo observado:{" "}
+                {formatCurrencyCents(
+                  objective.balanceTracking.observedAmountCents,
+                )}
+                <span className="block">
+                  Em {formatDisplayDate(objective.balanceTracking.observedOn)}
+                </span>
+              </span>
+              <span className="text-muted-foreground">
+                {objective.balanceTracking.projection
+                  ? `Projeção bruta: ${formatCurrencyCents(objective.balanceTracking.projection.projectedAmountCents)}`
+                  : "Projeção indisponível"}
+                <span className="block">
+                  {objective.balanceTracking.projection
+                    ? `Avaliada em ${formatDisplayDate(objective.balanceTracking.projection.projectedOn)}`
+                    : "Acompanhamento separado da carteira"}
+                </span>
+              </span>
+            </span>
+          )}
           {(objective.missingPositionCount > 0 ||
             objective.unvaluedPositionCount > 0) && (
             <span className="block text-xs font-normal text-muted-foreground">

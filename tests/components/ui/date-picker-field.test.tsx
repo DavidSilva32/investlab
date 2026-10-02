@@ -49,6 +49,24 @@ describe("DatePickerField", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 
+  it("renders an external validation error as part of the field contract", () => {
+    render(
+      <DatePickerField
+        id="date"
+        label="Data-base"
+        value="2026-09-20"
+        onChange={vi.fn()}
+        errorMessage="A data-base não pode ser futura."
+      />,
+    );
+    const input = screen.getByLabelText("Data-base");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")).toBe("date-error");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "A data-base não pode ser futura.",
+    );
+  });
+
   it("resets a typed error when its saved value changes externally", () => {
     const onChange = vi.fn();
     const { rerender } = render(

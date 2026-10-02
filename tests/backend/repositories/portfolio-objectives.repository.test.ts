@@ -69,6 +69,67 @@ describe("PortfolioObjectivesRepository", () => {
     });
   });
 
+  it("appends a canonical observed balance to a new batch", async () => {
+    const objectiveQuery = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      for: vi.fn().mockResolvedValue([{ id: "goal-1" }]),
+    };
+    const savedReference = {
+      id: "reference-1",
+      objectiveId: "goal-1",
+      batchId: "batch-1",
+      amountCents: "12345",
+      cdiPercentage: "100.0000",
+    };
+    const batchReturning = vi.fn().mockResolvedValue([{ id: "batch-1" }]);
+    const referenceReturning = vi.fn().mockResolvedValue([savedReference]);
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({ returning: batchReturning }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({ returning: referenceReturning }),
+      });
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select: () => objectiveQuery, insert }),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveObservedBalance({
+        objectiveId: "goal-1",
+        amountCents: "12345",
+        observedOn: "2026-10-01",
+        cdiPercentage: "100.0000",
+      }),
+    ).resolves.toEqual({ ...savedReference, observedDate: "2026-10-01" });
+    expect(batchReturning).toHaveBeenCalledOnce();
+    expect(referenceReturning).toHaveBeenCalledOnce();
+  });
+
+  it("does not append a balance when its objective no longer exists", async () => {
+    const objectiveQuery = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      for: vi.fn().mockResolvedValue([]),
+    };
+    const insert = vi.fn();
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select: () => objectiveQuery, insert }),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveObservedBalance({
+        objectiveId: "missing",
+        amountCents: "12345",
+        observedOn: "2026-10-01",
+        cdiPercentage: null,
+      }),
+    ).resolves.toBeNull();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("updates only objective details", async () => {
     const objective = { id: "goal-1", name: "Carro" };
     const returning = vi.fn().mockResolvedValue([objective]);
@@ -1071,6 +1132,11 @@ describe("PortfolioObjectivesRepository", () => {
               annualRate: "14.900000",
               fetchedAt: new Date("2026-10-01T12:00:00Z"),
             },
+            {
+              rateDate: "2026-10-02",
+              annualRate: "15.000000",
+              fetchedAt: new Date("2026-10-02T12:00:00Z"),
+            },
           ],
         },
       });
@@ -1171,6 +1237,11 @@ describe("PortfolioObjectivesRepository", () => {
             rateDate: "2026-10-01",
             annualRate: "14.900000",
             fetchedAt: new Date("2026-10-01T12:00:00Z"),
+          },
+          {
+            rateDate: "2026-10-02",
+            annualRate: "15.000000",
+            fetchedAt: new Date("2026-10-02T12:00:00Z"),
           },
         ],
       ],

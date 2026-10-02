@@ -110,4 +110,24 @@ describe("PortfolioObjectiveDetail", () => {
     ).toBeTruthy();
     expect(screen.queryByText(/Falta/)).toBeNull();
   });
+
+  it("supports the optional balance-save action when it is omitted", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioObjectiveDetail
+        objective={objective}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Saldo observado de Viagem"), "50");
+    await user.click(
+      screen.getByRole("button", { name: "Salvar saldo observado" }),
+    );
+
+    expect(screen.getByLabelText("Saldo observado de Viagem")).toBeTruthy();
+    expect(screen.queryByText(/Informe um valor entre/)).toBeNull();
+  });
 });

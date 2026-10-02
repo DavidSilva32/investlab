@@ -47,6 +47,7 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
 }));
 
 import { ApplicationError } from "@/backend/errors/application-error";
+import { objectiveBalanceService } from "@/backend/services/objective-balance.service";
 import { PortfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -145,6 +146,91 @@ describe("PortfolioObjectivesService", () => {
       value: 123.45,
       valueCents: "12345",
     });
+  });
+
+  it("keeps an observed objective balance separate from assigned positions and destination totals", async () => {
+    const position = imported({
+      canonicalValueCents: "10000",
+      canonicalValueSource: "B3_IMPORTED",
+    });
+    const assetKey = getEmergencyReserveAssetKey(position);
+    mocks.list.mockResolvedValue({
+      objectives: [customObjective],
+      assignments: [{ objectiveId: customObjective.id, assetKey }],
+    });
+    mocks.listLatestBalanceReferences.mockResolvedValue([
+      {
+        objectiveId: customObjective.id,
+        amountCents: "25000",
+        observedDate: "2026-09-30",
+        cdiPercentage: null,
+      },
+    ]);
+
+    const result = await new PortfolioObjectivesService().getOverview(
+      undefined,
+      "2026-09-30",
+      [position],
+    );
+
+    expect(result.objectives[0]).toMatchObject({
+      currentValueCents: "10000",
+      balanceTracking: {
+        observedAmountCents: "25000",
+        observedOn: "2026-09-30",
+        projection: null,
+      },
+    });
+    expect(result.destinationSummary.knownTotalCents).toBe("10000");
+  });
+
+  it("keeps the objective overview available when balance projection fails", async () => {
+    const secondObjective = {
+      ...customObjective,
+      id: "objective-home",
+      name: "Casa",
+    };
+    const projection = vi
+      .spyOn(objectiveBalanceService, "projectLatest")
+      .mockRejectedValueOnce(new Error("CDI temporarily unavailable"));
+    mocks.list.mockResolvedValue({
+      objectives: [customObjective, secondObjective],
+      assignments: [],
+    });
+    mocks.listLatestBalanceReferences.mockResolvedValue([
+      {
+        objectiveId: customObjective.id,
+        amountCents: "10000",
+        observedDate: "2026-09-30",
+        cdiPercentage: null,
+      },
+      {
+        objectiveId: secondObjective.id,
+        amountCents: "20000",
+        observedDate: "2026-09-30",
+        cdiPercentage: "100.0000",
+      },
+    ]);
+
+    try {
+      const result = await new PortfolioObjectivesService().getOverview(
+        undefined,
+        "2026-09-30",
+        [],
+      );
+
+      expect(
+        result.objectives.find(({ id }) => id === customObjective.id)
+          ?.balanceTracking,
+      ).toMatchObject({ projectionUnavailableReason: "missing_conditions" });
+      expect(
+        result.objectives.find(({ id }) => id === secondObjective.id)
+          ?.balanceTracking,
+      ).toMatchObject({ projectionUnavailableReason: "rates_unavailable" });
+      expect(result.destinationSummary.knownTotalCents).toBe("0");
+    } finally {
+      projection.mockRestore();
+    }
   });
 
   it("handles canonical valued and unvalued positions with incomplete metadata", async () => {

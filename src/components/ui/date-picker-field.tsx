@@ -20,6 +20,7 @@ type DatePickerFieldProps = {
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
+  errorMessage?: string | null;
 };
 
 const isoDateFormat = "yyyy-MM-dd";
@@ -59,6 +60,7 @@ export function DatePickerField({
   value,
   onChange,
   required = false,
+  errorMessage = null,
 }: DatePickerFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const lastPropValue = useRef(value);
@@ -105,6 +107,8 @@ export function DatePickerField({
   };
 
   const invalidInput = inputValue.trim() !== "" && !selectedDate;
+  const displayedError =
+    errorMessage || (formatError && invalidInput ? invalidDateMessage : null);
 
   return (
     <div className="min-w-0 space-y-2">
@@ -121,10 +125,8 @@ export function DatePickerField({
           inputMode="numeric"
           autoComplete="off"
           required={required}
-          aria-invalid={formatError && invalidInput}
-          aria-describedby={
-            formatError && invalidInput ? id + "-error" : undefined
-          }
+          aria-invalid={Boolean(displayedError)}
+          aria-describedby={displayedError ? id + "-error" : undefined}
         />
         <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
           <PopoverTrigger asChild>
@@ -151,9 +153,9 @@ export function DatePickerField({
           </PopoverContent>
         </Popover>
       </div>
-      {formatError && invalidInput && (
+      {displayedError && (
         <p id={id + "-error"} className="text-sm text-destructive" role="alert">
-          {invalidDateMessage}
+          {displayedError}
         </p>
       )}
     </div>

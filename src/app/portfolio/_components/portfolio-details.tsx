@@ -165,6 +165,16 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
                 {row.cdbEstimateLimitation}
               </span>
             )}
+            {row.cdbProjectedFromDate && row.cdbProjectedThroughDate && (
+              <span className="block text-xs text-amber-700 dark:text-amber-400">
+                Trecho projetado: de{" "}
+                {date.format(new Date(`${row.cdbProjectedFromDate}T00:00:00Z`))}{" "}
+                a{" "}
+                {date.format(
+                  new Date(`${row.cdbProjectedThroughDate}T00:00:00Z`),
+                )}
+              </span>
+            )}
             {isDiCdb && <CdiRateIndicator percentage={row.cdiPercentage} />}
             <span className="block text-xs text-muted-foreground">
               Último valor informado pela B3:{" "}
