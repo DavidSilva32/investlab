@@ -4,8 +4,10 @@ import { personalInvestmentStrategyRepository } from "@/backend/repositories/per
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
+import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { todayInSaoPaulo } from "@/lib/valuation-date";
 import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
+import { calculateReservePriorityAmounts } from "@/lib/contribution-allocation";
 import {
   simulateStrategyContribution,
   strategyAssetClasses,
@@ -92,6 +94,7 @@ export class PersonalInvestmentStrategyService {
     private readonly allocation = portfolioAllocationService,
     private readonly objectives = portfolioObjectivesService,
     private readonly repository = personalInvestmentStrategyRepository,
+    private readonly reserve = emergencyReserveService,
     private readonly today = todayInSaoPaulo,
   ) {}
 
@@ -235,6 +238,7 @@ export class PersonalInvestmentStrategyService {
             }
           : null,
       savedAllocationPercentages: saved?.allocationPercentages ?? null,
+      allocationActive: saved?.allocationActive ?? false,
     };
   }
 
@@ -257,14 +261,20 @@ export class PersonalInvestmentStrategyService {
     return allocationPercentages;
   }
 
-  async simulateContribution(body: unknown, requestId?: string) {
-    const parsed = contributionSchema.safeParse(body);
-    if (!parsed.success) {
+  async activateAllocation(requestId?: string) {
+    const saved = await this.repository.get(requestId);
+    if (!saved?.allocationPercentages) {
       throw new ApplicationError(
-        "Informe um aporte positivo e uma composição válida totalizando 100%.",
+        "Salve uma composição válida antes de ativá-la para o planejamento de aportes.",
         400,
       );
     }
+    await this.repository.activateAllocation(requestId);
+    return { allocationActive: true };
+  }
+
+  async simulateContribution(body: unknown, requestId?: string) {
+    const parsed = this.validateContribution(body);
     const valuationDate = this.today();
     const evaluated = await this.positions.listCurrentEnriched(
       requestId,
@@ -274,6 +284,44 @@ export class PersonalInvestmentStrategyService {
       evaluated,
       requestId,
     );
+    const reserve = await this.reserve.getContributionContext(classified);
+    const priority = calculateReservePriorityAmounts(
+      parsed.contributionAmount,
+      reserve.calculation,
+    );
+    const reserveCents = (value: number | null, cents?: string | null) =>
+      cents ??
+      (value === null
+        ? null
+        : String(Math.round((value + Number.EPSILON) * 100)));
+    const reservePriority = {
+      enteredContributionCents: String(priority.contributionCents),
+      reserveContributionCents:
+        priority.reserveCents === null ? null : String(priority.reserveCents),
+      strategyContributionCents:
+        priority.remainingCents === null
+          ? null
+          : String(priority.remainingCents),
+      reserveStatus: priority.reserveStatus,
+      reserveSelectedValueCents: reserveCents(
+        reserve.calculation.selectedValue,
+        reserve.calculation.selectedValueCents,
+      ),
+      reserveTargetValueCents: reserveCents(
+        reserve.calculation.targetValue,
+        reserve.calculation.targetValueCents,
+      ),
+      reserveDifferenceCents: reserveCents(
+        reserve.calculation.difference,
+        reserve.calculation.differenceCents,
+      ),
+    };
+    if (priority.remainingCents === null || priority.remainingCents === 0) {
+      return {
+        ...reservePriority,
+        simulation: null,
+      };
+    }
     const objectiveOverview = await this.objectives.getOverview(
       requestId,
       valuationDate,
@@ -300,34 +348,46 @@ export class PersonalInvestmentStrategyService {
     }
     const result = simulateStrategyContribution({
       currentValuesCents,
-      targetPercentages: parsed.data.allocationPercentages,
-      contributionCents: String(
-        Math.round(parsed.data.contributionAmount * 100),
-      ),
+      targetPercentages: parsed.allocationPercentages,
+      contributionCents: String(priority.remainingCents),
     });
     return {
-      ...result,
-      completeness: {
-        complete:
-          longTerm.every((position) => position.valueCents !== null) &&
-          unclassifiedKnownValueCents === 0n,
-        unvaluedPositionCount: longTerm
-          .filter((position) => position.valueCents === null)
-          .reduce((sum, position) => sum + position.unvaluedPositions, 0),
-        unclassifiedKnownValueCents: unclassifiedKnownValueCents.toString(),
-        valuationDate,
-        valuationDates: [
-          ...new Set(
-            longTerm
-              .map(
-                (position) =>
-                  position.estimatedThrough ?? position.referenceDate,
-              )
-              .filter((date): date is string => date !== null),
-          ),
-        ].sort(),
+      ...reservePriority,
+      simulation: {
+        ...result,
+        completeness: {
+          complete:
+            longTerm.every((position) => position.valueCents !== null) &&
+            unclassifiedKnownValueCents === 0n,
+          unvaluedPositionCount: longTerm
+            .filter((position) => position.valueCents === null)
+            .reduce((sum, position) => sum + position.unvaluedPositions, 0),
+          unclassifiedKnownValueCents: unclassifiedKnownValueCents.toString(),
+          valuationDate,
+          valuationDates: [
+            ...new Set(
+              longTerm
+                .map(
+                  (position) =>
+                    position.estimatedThrough ?? position.referenceDate,
+                )
+                .filter((date): date is string => date !== null),
+            ),
+          ].sort(),
+        },
       },
     };
+  }
+
+  validateContribution(body: unknown) {
+    const parsed = contributionSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApplicationError(
+        "Informe um aporte positivo e uma composição válida totalizando 100%.",
+        400,
+      );
+    }
+    return parsed.data;
   }
 
   async save(body: unknown, requestId?: string) {

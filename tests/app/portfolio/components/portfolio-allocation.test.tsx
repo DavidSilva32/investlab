@@ -336,15 +336,14 @@ describe("PortfolioAllocation", () => {
       "fetch",
       vi.fn().mockResolvedValue(response({ positions: [] })),
     );
-    const user = userEvent.setup();
     render(<PortfolioAllocation />);
     expect(
       await screen.findByText(
         "Importe posições para visualizar a classificação e a alocação.",
       ),
     ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Definir metas" }));
-    expect(screen.getByRole("button", { name: "Salvar metas" })).toBeTruthy();
+    expect(screen.getByText("Detalhes da carteira")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Definir metas" })).toBeNull();
   });
 
   it("shows a load error and allows retry", async () => {
@@ -441,76 +440,6 @@ describe("PortfolioAllocation", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   });
 
-  it("saves allocation targets with PUT and reloads the empty portfolio", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(response({ positions: [], targetPercentages: {} }))
-      .mockResolvedValueOnce(response({ message: "Metas salvas." }))
-      .mockResolvedValueOnce(
-        response({ positions: [], targetPercentages: { "Renda fixa": 100 } }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-    const user = userEvent.setup();
-    render(<PortfolioAllocation />);
-
-    await user.click(
-      await screen.findByRole("button", { name: "Definir metas" }),
-    );
-    await user.clear(
-      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
-    );
-    await user.type(
-      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
-      "100",
-    );
-    await user.click(screen.getByRole("button", { name: "Salvar metas" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(fetchMock.mock.calls[1][1]).toMatchObject({
-      method: "PUT",
-      body: JSON.stringify({
-        targetPercentages: {
-          "Renda fixa": 100,
-          "Renda variável": 0,
-          Fundos: 0,
-          Criptoativos: 0,
-          Imóveis: 0,
-          Outros: 0,
-        },
-      }),
-    });
-    expect(toast.success).toHaveBeenCalledWith("Metas salvas.");
-  });
-
-  it("reports failed target saves without closing the editor", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(response({ positions: [], targetPercentages: {} }))
-      .mockResolvedValueOnce(
-        response({ message: "Meta recusada pelo servidor." }, false),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-    const user = userEvent.setup();
-    render(<PortfolioAllocation />);
-
-    await user.click(
-      await screen.findByRole("button", { name: "Definir metas" }),
-    );
-    await user.clear(
-      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
-    );
-    await user.type(
-      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
-      "100",
-    );
-    await user.click(screen.getByRole("button", { name: "Salvar metas" }));
-
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Meta recusada pelo servidor."),
-    );
-    expect(screen.getByRole("button", { name: "Salvar metas" })).toBeTruthy();
-  });
-
   it("uses a safe toast when saving a classification rejects at the network", async () => {
     const fetchMock = vi
       .fn()
@@ -538,34 +467,6 @@ describe("PortfolioAllocation", () => {
     expect(screen.getByLabelText("Subclasse")).toBeTruthy();
   });
 
-  it("uses a safe toast when saving allocation targets rejects at the network", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(response({ positions: [], targetPercentages: {} }))
-      .mockRejectedValueOnce(new Error("private transport detail"));
-    vi.stubGlobal("fetch", fetchMock);
-    const user = userEvent.setup();
-    render(<PortfolioAllocation />);
-    await user.click(
-      await screen.findByRole("button", { name: "Definir metas" }),
-    );
-    await user.clear(
-      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
-    );
-    await user.type(
-      screen.getByRole("spinbutton", { name: "Meta de Renda fixa" }),
-      "100",
-    );
-    await user.click(screen.getByRole("button", { name: "Salvar metas" }));
-
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        "Não foi possível salvar as metas de alocação.",
-      ),
-    );
-    expect(screen.queryByText("private transport detail")).toBeNull();
-    expect(screen.getByRole("button", { name: "Salvar metas" })).toBeTruthy();
-  });
   it("allows confirming a fully unknown classification", async () => {
     let finishSave:
       | ((value: { ok: boolean; json: () => Promise<unknown> }) => void)
@@ -759,19 +660,18 @@ describe("PortfolioAllocation", () => {
       ),
     );
   });
-  it("keeps saved goals in the explicit editor without turning guidance into a strategy", async () => {
-    const savedTargets = { "Renda fixa": 70, Fundos: 30 };
+  it("keeps Portfolio tracking and classification while removing the legacy target editor", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       response({
         positions: [positions[0]],
-        targetPercentages: savedTargets,
+        targetPercentages: { "Renda fixa": 70 },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const user = userEvent.setup();
     render(
       <PortfolioAllocation
         nextContributionGuidance={{
+          allocationMode: "legacy",
           status: "target_gap",
           title: "Considere Renda fixa para o próximo aporte",
           explanation: "A carteira está abaixo da meta registrada.",
@@ -785,25 +685,51 @@ describe("PortfolioAllocation", () => {
     expect(
       await screen.findByText("Considere Renda fixa para o próximo aporte"),
     ).toBeTruthy();
-    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(await screen.findByText(/Base:/)).toBeTruthy();
+    expect(screen.getByText("Detalhes da carteira")).toBeTruthy();
     expect(
-      screen.queryByText(/classes que voc. escolheu considerar/i),
-    ).toBeNull();
-    await user.click(
-      await screen.findByRole("button", { name: "Editar metas" }),
-    );
+      screen.getByText(/metas pessoais legadas salvas anteriormente/),
+    ).toBeTruthy();
     expect(
-      screen
-        .getByRole("spinbutton", { name: "Meta de Renda fixa" })
-        .getAttribute("value"),
-    ).toBe("70");
-    expect(
-      screen
-        .getByRole("spinbutton", { name: "Meta de Fundos" })
-        .getAttribute("value"),
-    ).toBe("30");
+      screen.getByRole("button", { name: /Mostrar.*classifica/i }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Meta de Renda fixa/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Editar metas" })).toBeNull();
     expect(
       fetchMock.mock.calls.some(([, init]) => init?.method === "PUT"),
     ).toBe(false);
+  });
+
+  it("uses the configured-source fallback when guidance has no source mode", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ positions: [positions[0]] })),
+    );
+    render(<PortfolioAllocation />);
+
+    expect(
+      await screen.findByText(
+        /a fonte atualmente configurada no planejamento de aportes/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("identifies Strategy as the source when that mode is active", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ positions: [positions[0]] })),
+    );
+    render(
+      <PortfolioAllocation
+        nextContributionGuidance={{
+          allocationMode: "strategy",
+          status: "no_gap",
+          title: "Composição em equilíbrio",
+          explanation: "A composição atual acompanha a escolhida.",
+        }}
+      />,
+    );
+
+    expect(await screen.findByText(/apenas posi.*de Longo Prazo/)).toBeTruthy();
   });
 });

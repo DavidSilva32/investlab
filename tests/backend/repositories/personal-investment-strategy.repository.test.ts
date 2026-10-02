@@ -147,4 +147,40 @@ describe("PersonalInvestmentStrategyRepository", () => {
       { requestId: "req-allocation-error", error },
     );
   });
+
+  it("activates contribution planning without modifying saved legacy or strategy values", async () => {
+    const record = { allocationActive: true };
+    const returning = vi.fn().mockResolvedValue([record]);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    database.insert.mockReturnValue({ values });
+    await expect(
+      new PersonalInvestmentStrategyRepository().activateAllocation("req-on"),
+    ).resolves.toEqual(record);
+    expect(values).toHaveBeenCalledWith({
+      id: "default",
+      allocationActive: true,
+      updatedAt: expect.any(Date),
+    });
+    expect(onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: { allocationActive: true, updatedAt: expect.any(Date) },
+      }),
+    );
+  });
+
+  it("logs activation persistence failures without exposing them", async () => {
+    const error = new Error("database unavailable");
+    const returning = vi.fn().mockRejectedValue(error);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    database.insert.mockReturnValue({ values });
+    await expect(
+      new PersonalInvestmentStrategyRepository().activateAllocation("req-fail"),
+    ).rejects.toBe(error);
+    expect(logger.error).toHaveBeenCalledWith(
+      "personal_investment_strategy_activation_failed",
+      { requestId: "req-fail", error },
+    );
+  });
 });

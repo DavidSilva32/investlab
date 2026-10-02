@@ -4,6 +4,7 @@ const service = vi.hoisted(() => ({
   getOverview: vi.fn(),
   save: vi.fn(),
   saveComposition: vi.fn(),
+  activateAllocation: vi.fn(),
   simulateContribution: vi.fn(),
 }));
 const logger = vi.hoisted(() => ({ info: vi.fn() }));
@@ -90,8 +91,29 @@ describe("PersonalInvestmentStrategyController", () => {
     );
   });
 
+  it("activates the saved Strategy in a separate operation", async () => {
+    service.activateAllocation.mockResolvedValue({ allocationActive: true });
+    const response = await new PersonalInvestmentStrategyController().save(
+      { activateContributionPlanning: true },
+      "req-activate",
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      message:
+        "A Estratégia agora orienta o planejamento de aportes de Longo Prazo. As seis metas antigas foram preservadas.",
+      allocationActive: true,
+    });
+    expect(service.activateAllocation).toHaveBeenCalledWith("req-activate");
+    expect(logger.info).toHaveBeenCalledWith(
+      "personal_investment_strategy_allocation_activated",
+      { requestId: "req-activate" },
+    );
+  });
+
   it("returns a contribution simulation and logs completeness", async () => {
-    const simulation = { completeness: { complete: false } };
+    const simulation = {
+      simulation: { completeness: { complete: false } },
+    };
     service.simulateContribution.mockResolvedValue(simulation);
     const response =
       await new PersonalInvestmentStrategyController().simulateContribution(
@@ -107,6 +129,22 @@ describe("PersonalInvestmentStrategyController", () => {
     expect(logger.info).toHaveBeenCalledWith(
       "personal_investment_strategy_contribution_simulated",
       { requestId: "req-simulation", complete: false },
+    );
+  });
+
+  it("logs incomplete when a contribution result has no position simulation", async () => {
+    service.simulateContribution.mockResolvedValue({ simulation: null });
+    const response =
+      await new PersonalInvestmentStrategyController().simulateContribution(
+        { contributionAmount: 100 },
+        "req-empty-simulation",
+      );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ simulation: null });
+    expect(logger.info).toHaveBeenCalledWith(
+      "personal_investment_strategy_contribution_simulated",
+      { requestId: "req-empty-simulation", complete: false },
     );
   });
 });

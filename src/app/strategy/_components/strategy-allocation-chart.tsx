@@ -1,18 +1,38 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  LabelList,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { strategyAssetClassColorById } from "@/lib/portfolio-asset-class-colors";
 
 export const strategyClasses = [
-  { id: "fixed_income", label: "Renda fixa", color: "#178357" },
-  { id: "brazilian_equities", label: "Ações brasileiras", color: "#3268c8" },
-  { id: "international_etfs", label: "ETFs internacionais", color: "#8155b8" },
-  { id: "fiis", label: "FIIs", color: "#c36a24" },
+  {
+    id: "fixed_income",
+    label: "Renda fixa",
+    color: strategyAssetClassColorById.fixed_income,
+  },
+  {
+    id: "brazilian_equities",
+    label: "Ações brasileiras",
+    color: strategyAssetClassColorById.brazilian_equities,
+  },
+  {
+    id: "international_etfs",
+    label: "ETFs internacionais",
+    color: strategyAssetClassColorById.international_etfs,
+  },
+  { id: "fiis", label: "FIIs", color: strategyAssetClassColorById.fiis },
 ] as const;
 
 export type StrategyClassId = (typeof strategyClasses)[number]["id"];
@@ -27,7 +47,38 @@ const chartConfig = Object.fromEntries(
 ) satisfies ChartConfig;
 
 export function formatStrategyPercentage(value: unknown) {
-  return `${Number(value).toFixed(2)}%`;
+  return `${Number(value).toFixed(2).replace(".", ",")}%`;
+}
+
+export function StrategyTooltipEntry({
+  value,
+  name,
+}: {
+  value: unknown;
+  name: string;
+}) {
+  const assetClass = strategyClasses.find((item) => item.id === name);
+  if (!assetClass) return <span>{formatStrategyPercentage(value)}</span>;
+  return (
+    <span className="flex w-full items-center gap-2">
+      <span
+        aria-hidden="true"
+        className="size-2.5 shrink-0 rounded-full"
+        style={{ backgroundColor: assetClass.color }}
+      />
+      <span className="text-foreground">{assetClass.label}</span>
+      <span
+        className="ml-auto font-mono font-semibold tabular-nums"
+        style={{ color: assetClass.color }}
+      >
+        {formatStrategyPercentage(value)}
+      </span>
+    </span>
+  );
+}
+
+export function formatStrategyTooltip(value: unknown, name: unknown) {
+  return <StrategyTooltipEntry value={value} name={String(name)} />;
 }
 
 export function StrategyAllocationChart({
@@ -40,13 +91,16 @@ export function StrategyAllocationChart({
       aria-label="Comparação da composição percentual por classe"
       role="group"
     >
-      <ChartContainer config={chartConfig} className="h-44 w-full sm:h-52">
+      <ChartContainer
+        config={chartConfig}
+        className="h-36 w-full sm:h-44 lg:h-48"
+      >
         <BarChart
           accessibilityLayer
           data={data}
           layout="vertical"
           margin={{ left: 8, right: 12, top: 8, bottom: 0 }}
-          barCategoryGap={18}
+          barCategoryGap={8}
         >
           <CartesianGrid horizontal={false} />
           <XAxis
@@ -66,7 +120,10 @@ export function StrategyAllocationChart({
           <ChartTooltip
             cursor={false}
             content={
-              <ChartTooltipContent formatter={formatStrategyPercentage} />
+              <ChartTooltipContent
+                hideLabel
+                formatter={formatStrategyTooltip}
+              />
             }
           />
           {strategyClasses.map(({ id }) => (
@@ -75,7 +132,25 @@ export function StrategyAllocationChart({
               dataKey={id}
               stackId="composition"
               fill={`var(--color-${id})`}
-            />
+              isAnimationActive={false}
+            >
+              <LabelList
+                dataKey={id}
+                position="inside"
+                fill="#fff"
+                stroke="rgba(0, 0, 0, 0.55)"
+                strokeWidth={2}
+                fontSize={12}
+                fontWeight={700}
+                style={{ paintOrder: "stroke" }}
+                formatter={(value: number | string) => {
+                  const percentage = Number(value);
+                  return percentage >= 12
+                    ? `${percentage.toString().replace(".", ",")}%`
+                    : "";
+                }}
+              />
+            </Bar>
           ))}
         </BarChart>
       </ChartContainer>

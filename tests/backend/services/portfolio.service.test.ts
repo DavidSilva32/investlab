@@ -9,10 +9,18 @@ const portfolioPositions = vi.hoisted(() => ({
   enrichImportedPositions: vi.fn(),
 }));
 const rates = vi.hoisted(() => ({ getReferenceRates: vi.fn() }));
-const reserve = vi.hoisted(() => ({ getSummary: vi.fn() }));
+const reserve = vi.hoisted(() => ({
+  getSummary: vi.fn(),
+  getContributionContext: vi.fn(),
+}));
 const allocation = vi.hoisted(() => ({
   classifyPositions: vi.fn(),
   getAllocationTargets: vi.fn(),
+}));
+const strategyRepository = vi.hoisted(() => ({ get: vi.fn() }));
+const strategy = vi.hoisted(() => ({
+  getOverview: vi.fn(),
+  simulateContribution: vi.fn(),
 }));
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: repository,
@@ -32,12 +40,22 @@ vi.mock("@/backend/services/portfolio-allocation.service", () => ({
 vi.mock("@/backend/services/portfolio-position.service", () => ({
   portfolioPositionService: portfolioPositions,
 }));
+vi.mock(
+  "@/backend/repositories/personal-investment-strategy.repository",
+  () => ({
+    personalInvestmentStrategyRepository: strategyRepository,
+  }),
+);
+vi.mock("@/backend/services/personal-investment-strategy.service", () => ({
+  personalInvestmentStrategyService: strategy,
+}));
 import { PortfolioService } from "@/backend/services/portfolio.service";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 
 describe("PortfolioService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    strategyRepository.get.mockResolvedValue(null);
     portfolioPositions.listCurrent.mockImplementation((requestId) =>
       repository.listLatestPositions(requestId),
     );
@@ -138,4 +156,178 @@ describe("PortfolioService", () => {
       );
     },
   );
+
+  it("uses the explicitly activated four-class Strategy for Portfolio guidance", async () => {
+    const estimated = [{ id: "p1", estimatedValue: 100, totalValue: "100" }];
+    const classified = [
+      { ...estimated[0], classification: { assetClass: "Renda fixa" } },
+    ];
+    repository.listLatestPositions.mockResolvedValue([{ id: "p1" }]);
+    repository.listMovements.mockResolvedValue([]);
+    estimates.enrich.mockResolvedValue(estimated);
+    rates.getReferenceRates.mockResolvedValue({ selic: null, cdi: null });
+    allocation.classifyPositions.mockResolvedValue(classified);
+    allocation.getAllocationTargets.mockRejectedValue(
+      new Error("legacy target lookup should not be needed"),
+    );
+    strategyRepository.get.mockResolvedValue({
+      allocationActive: true,
+      allocationPercentages: {
+        fixed_income: 50,
+        brazilian_equities: 25,
+        international_etfs: 25,
+        fiis: 0,
+      },
+    });
+    strategy.getOverview.mockResolvedValue({
+      savedAllocationPercentages: {
+        fixed_income: 50,
+        brazilian_equities: 25,
+        international_etfs: 25,
+        fiis: 0,
+      },
+      longTermWealth: {
+        positionCount: 2,
+        unvaluedPositionCount: 0,
+        unclassifiedKnownValueCents: "0",
+        classes: [
+          { id: "fixed_income", label: "Renda fixa", currentPercentage: 30 },
+          {
+            id: "brazilian_equities",
+            label: "Ações brasileiras",
+            currentPercentage: 40,
+          },
+          {
+            id: "international_etfs",
+            label: "ETFs internacionais",
+            currentPercentage: 20,
+          },
+          { id: "fiis", label: "FIIs", currentPercentage: 10 },
+        ],
+      },
+    });
+    reserve.getSummary.mockResolvedValue({
+      status: "not_configured",
+      difference: null,
+      unvaluedGroups: 0,
+      missingSelectionCount: 0,
+    });
+
+    const result = await new PortfolioService().getOverview("request-strategy");
+    expect(result.contributionAllocationMode).toBe("strategy");
+    expect(result.nextContributionGuidance).toMatchObject({
+      status: "target_gap",
+      assetClass: "Renda fixa",
+      allocationMode: "strategy",
+    });
+    expect(strategy.getOverview).toHaveBeenCalledWith("request-strategy");
+  });
+
+  it.each(["settings", "active_strategy"] as const)(
+    "does not guess a contribution source when the %s lookup fails",
+    async (failedLookup) => {
+      repository.listLatestPositions.mockResolvedValue([{ id: "p1" }]);
+      repository.listMovements.mockResolvedValue([]);
+      estimates.enrich.mockResolvedValue([]);
+      allocation.classifyPositions.mockResolvedValue([]);
+      allocation.getAllocationTargets.mockResolvedValue({});
+      rates.getReferenceRates.mockResolvedValue({ selic: null, cdi: null });
+      reserve.getSummary.mockResolvedValue({
+        unvaluedGroups: 0,
+        missingSelectionCount: 0,
+        status: "not_configured",
+        difference: null,
+      });
+      if (failedLookup === "settings") {
+        strategyRepository.get.mockRejectedValue(new Error("private"));
+      } else {
+        strategyRepository.get.mockResolvedValue({ allocationActive: true });
+        strategy.getOverview.mockRejectedValue(new Error("private"));
+      }
+
+      const result = await new PortfolioService().getOverview("request-failed");
+
+      expect(result.nextContributionGuidance).toMatchObject({
+        status: "unavailable",
+      });
+      expect(result.contributionAllocationMode).toBe(
+        failedLookup === "settings" ? "unavailable" : "strategy",
+      );
+    },
+  );
+
+  it.each([
+    {
+      label: "incomplete_data when long-term positions exist but are unvalued",
+      complete: false,
+      unvaluedPositionCount: 2,
+      expectedStatus: "incomplete_data",
+    },
+    {
+      label: "no_positions when no long-term positions exist",
+      complete: true,
+      unvaluedPositionCount: 0,
+      expectedStatus: "no_positions",
+    },
+  ])("reports $label in active Strategy mode", async (scenario) => {
+    const positions = [{ id: "p1" }];
+    repository.listLatestPositions.mockResolvedValue(positions);
+    estimates.enrich.mockResolvedValue(positions);
+    allocation.classifyPositions.mockResolvedValue(positions);
+    strategyRepository.get.mockResolvedValue({
+      allocationActive: true,
+      allocationPercentages: {
+        fixed_income: 50,
+        brazilian_equities: 25,
+        international_etfs: 25,
+        fiis: 0,
+      },
+    });
+    reserve.getContributionContext.mockResolvedValue({
+      calculation: {
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedValue: 0,
+        selectedGroups: 0,
+        unvaluedGroups: 0,
+        missingSelectionCount: 0,
+        referenceDate: null,
+        targetValue: null,
+        coveredMonths: null,
+        difference: null,
+        progressPercentage: null,
+        status: "not_configured",
+      },
+      selectedAssetKeys: [],
+    });
+    strategy.simulateContribution.mockResolvedValue({
+      enteredContributionCents: "10000",
+      reserveContributionCents: "0",
+      strategyContributionCents: "10000",
+      reserveStatus: "not_configured",
+      reserveDifferenceCents: null,
+      simulation: {
+        totalCents: "0",
+        contributionCents: "10000",
+        unallocatedContributionCents: "10000",
+        completeness: {
+          complete: scenario.complete,
+          unvaluedPositionCount: scenario.unvaluedPositionCount,
+          unclassifiedKnownValueCents: "0",
+          valuationDate: "2026-10-02",
+          valuationDates: [],
+        },
+        allocations: [],
+      },
+    });
+
+    const result = await new PortfolioService().calculateContribution(100);
+
+    expect(result).toMatchObject({
+      allocationMode: "strategy",
+      status: scenario.expectedStatus,
+      longTermPortfolioValue: 0,
+      unknownPositionCount: scenario.unvaluedPositionCount,
+    });
+  });
 });

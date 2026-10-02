@@ -31,6 +31,7 @@ export function DashboardSummary({
   emergencyReserve,
   unassignedSummary,
   onRetryUnassigned,
+  contributionAllocationMode,
 }: {
   positions: PortfolioInsightPosition[];
   insights: PortfolioInsights;
@@ -45,6 +46,7 @@ export function DashboardSummary({
     | { status: "unavailable" }
     | null;
   onRetryUnassigned?: () => void;
+  contributionAllocationMode?: "legacy" | "strategy" | "unavailable";
 }) {
   const referenceDates = [
     ...new Set(
@@ -252,7 +254,9 @@ export function DashboardSummary({
         </section>
       )}
 
-      <ContributionAssistant />
+      <ContributionAssistant
+        allocationMode={contributionAllocationMode ?? "legacy"}
+      />
 
       <section
         aria-labelledby="dashboard-attention-title"

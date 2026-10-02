@@ -7,6 +7,7 @@ import { portfolioPositionService } from "@/backend/services/portfolio-position.
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import {
   getNextContributionGuidance,
+  getStrategyContributionGuidance,
   type ContributionGuidance,
 } from "@/lib/next-contribution-guidance";
 import {
@@ -14,6 +15,8 @@ import {
   type ContributionPosition,
 } from "@/lib/contribution-allocation";
 import { getPortfolioInsights } from "@/lib/portfolio-insights";
+import { personalInvestmentStrategyRepository } from "@/backend/repositories/personal-investment-strategy.repository";
+import { personalInvestmentStrategyService } from "@/backend/services/personal-investment-strategy.service";
 
 const unavailableGuidance: ContributionGuidance = {
   status: "unavailable",
@@ -24,16 +27,112 @@ const unavailableGuidance: ContributionGuidance = {
 
 export class PortfolioService {
   async calculateContribution(contributionAmount: number, requestId?: string) {
+    const strategySettings =
+      await personalInvestmentStrategyRepository.get(requestId);
+    if (strategySettings?.allocationActive) {
+      if (!strategySettings.allocationPercentages) {
+        return {
+          allocationMode: "strategy" as const,
+          status: "needs_targets" as const,
+          strategySource: "user_defined" as const,
+          contributionAmount,
+          reserveAmount: null,
+          remainingAmount: null,
+          unallocatedAmount: null,
+          reserveStatus: "not_configured" as const,
+          reserveDifference: null,
+          longTermPortfolioValue: null,
+          unknownPositionCount: 0,
+          allocations: [],
+        };
+      }
+      const plan = await personalInvestmentStrategyService.simulateContribution(
+        {
+          contributionAmount,
+          allocationPercentages: strategySettings.allocationPercentages,
+        },
+        requestId,
+      );
+      const simulation = plan.simulation;
+      const reserveIncomplete = plan.reserveStatus === "incomplete";
+      const remainingCents = plan.strategyContributionCents;
+      const remainingAmount =
+        remainingCents === null ? null : Number(BigInt(remainingCents)) / 100;
+      const unallocated = simulation
+        ? Number(BigInt(simulation.unallocatedContributionCents)) / 100
+        : remainingAmount;
+      const projectedTotalCents =
+        simulation === null
+          ? 0n
+          : BigInt(simulation.totalCents) +
+            BigInt(simulation.contributionCents);
+      return {
+        status: reserveIncomplete
+          ? ("reserve_incomplete" as const)
+          : remainingAmount === 0
+            ? ("no_gap" as const)
+            : simulation && !simulation.completeness.complete
+              ? ("incomplete_data" as const)
+              : simulation?.totalCents === "0"
+                ? ("no_positions" as const)
+                : simulation && unallocated === remainingAmount
+                  ? ("no_gap" as const)
+                  : ("ready" as const),
+        allocationMode: "strategy" as const,
+        strategySource: "user_defined" as const,
+        contributionAmount: Number(BigInt(plan.enteredContributionCents)) / 100,
+        reserveAmount:
+          plan.reserveContributionCents === null
+            ? null
+            : Number(BigInt(plan.reserveContributionCents)) / 100,
+        remainingAmount,
+        unallocatedAmount: reserveIncomplete ? null : unallocated,
+        reserveStatus: reserveIncomplete
+          ? ("incomplete" as const)
+          : plan.reserveStatus,
+        reserveDifference:
+          plan.reserveDifferenceCents === null
+            ? null
+            : Number(BigInt(plan.reserveDifferenceCents)) / 100,
+        longTermPortfolioValue: simulation
+          ? Number(BigInt(simulation.totalCents)) / 100
+          : null,
+        unknownPositionCount:
+          simulation?.completeness.unvaluedPositionCount ?? 0,
+        allocations: (simulation?.allocations ?? []).map((item) => {
+          const currentCents = BigInt(item.currentValueCents);
+          const targetCents =
+            (projectedTotalCents *
+              BigInt(Math.round(item.targetPercentage * 100)) +
+              5000n) /
+            10000n;
+          return {
+            assetClass: item.label,
+            currentValue: Number(currentCents) / 100,
+            currentPercentage: item.currentPercentage,
+            targetPercentage: item.targetPercentage,
+            targetGapValue:
+              Number(
+                targetCents > currentCents ? targetCents - currentCents : 0n,
+              ) / 100,
+            contributionAmount:
+              Number(BigInt(item.contributionValueCents)) / 100,
+          };
+        }),
+      };
+    }
     const current = await portfolioPositionService.listCurrent(requestId);
     const estimated =
       await portfolioPositionService.enrichImportedPositions(current);
-    const [positions, targets] = await Promise.all([
-      portfolioAllocationService.classifyPositions(estimated, requestId),
+    const positions = await portfolioAllocationService.classifyPositions(
+      estimated,
+      requestId,
+    );
+    const [targets, reserve] = await Promise.all([
       portfolioAllocationService.getAllocationTargets(requestId),
+      emergencyReserveService.getContributionContext(positions),
     ]);
-    const reserve =
-      await emergencyReserveService.getContributionContext(positions);
-    return calculateContributionAllocation({
+    const legacyResult = calculateContributionAllocation({
       contributionAmount,
       positions: positions as ContributionPosition[],
       targets,
@@ -41,6 +140,7 @@ export class PortfolioService {
       selectedReserveAssetKeys: reserve.selectedAssetKeys,
       strategySource: "user_defined",
     });
+    return { ...legacyResult, allocationMode: "legacy" as const };
   }
 
   async getOverview(requestId?: string) {
@@ -59,28 +159,53 @@ export class PortfolioService {
       ),
       bcbReferenceRatesService.getReferenceRates(),
     ]);
-    const [classificationResult, targetsResult] = await Promise.all([
-      portfolioAllocationService
-        .classifyPositions(estimatedPositions, requestId)
-        .then((value) => ({ value }))
-        .catch(() => {
-          logger.warn("portfolio_contribution_guidance_unavailable", {
-            requestId,
-            phase: "classification",
-          });
-          return { value: null };
-        }),
-      portfolioAllocationService
-        .getAllocationTargets(requestId)
-        .then((value) => ({ value }))
-        .catch(() => {
-          logger.warn("portfolio_contribution_guidance_unavailable", {
-            requestId,
-            phase: "targets",
-          });
-          return { value: null };
-        }),
-    ]);
+    const [classificationResult, targetsResult, strategySettingsResult] =
+      await Promise.all([
+        portfolioAllocationService
+          .classifyPositions(estimatedPositions, requestId)
+          .then((value) => ({ value }))
+          .catch(() => {
+            logger.warn("portfolio_contribution_guidance_unavailable", {
+              requestId,
+              phase: "classification",
+            });
+            return { value: null };
+          }),
+        portfolioAllocationService
+          .getAllocationTargets(requestId)
+          .then((value) => ({ value }))
+          .catch(() => {
+            logger.warn("portfolio_contribution_guidance_unavailable", {
+              requestId,
+              phase: "targets",
+            });
+            return { value: null };
+          }),
+        personalInvestmentStrategyRepository
+          .get(requestId)
+          .then((value) => ({ value, failed: false }))
+          .catch(() => {
+            logger.warn("portfolio_contribution_guidance_unavailable", {
+              requestId,
+              phase: "strategy_settings",
+            });
+            return { value: null, failed: true };
+          }),
+      ]);
+    const strategyModeActive =
+      strategySettingsResult.value?.allocationActive === true;
+    const strategyOverviewResult = strategyModeActive
+      ? await personalInvestmentStrategyService
+          .getOverview(requestId)
+          .then((value) => ({ value }))
+          .catch(() => {
+            logger.warn("portfolio_contribution_guidance_unavailable", {
+              requestId,
+              phase: "active_strategy",
+            });
+            return { value: null };
+          })
+      : { value: null };
     let emergencyReserve: EmergencyReserveCalculation | undefined;
     if (classificationResult.value !== null) {
       try {
@@ -103,14 +228,41 @@ export class PortfolioService {
     );
     const nextContributionGuidance =
       classificationResult.value === null ||
-      targetsResult.value === null ||
-      emergencyReserve === undefined
+      emergencyReserve === undefined ||
+      strategySettingsResult.failed ||
+      (strategyModeActive
+        ? strategyOverviewResult.value === null
+        : targetsResult.value === null)
         ? unavailableGuidance
-        : getNextContributionGuidance({
-            positions: classificationResult.value,
-            targets: targetsResult.value,
-            emergencyReserve,
-          });
+        : strategyModeActive
+          ? getStrategyContributionGuidance({
+              classes: strategyOverviewResult.value!.longTermWealth.classes.map(
+                (item) => ({
+                  id: item.id,
+                  label: item.label,
+                  currentPercentage: item.currentPercentage,
+                }),
+              ),
+              allocationPercentages:
+                strategyOverviewResult.value!.savedAllocationPercentages,
+              positionCount:
+                strategyOverviewResult.value!.longTermWealth.positionCount,
+              unvaluedPositionCount:
+                strategyOverviewResult.value!.longTermWealth
+                  .unvaluedPositionCount,
+              unclassifiedKnownValueCents:
+                strategyOverviewResult.value!.longTermWealth
+                  .unclassifiedKnownValueCents,
+              emergencyReserve,
+            })
+          : {
+              ...getNextContributionGuidance({
+                positions: classificationResult.value,
+                targets: targetsResult.value,
+                emergencyReserve,
+              }),
+              allocationMode: "legacy" as const,
+            };
     logger.info("portfolio_overview_loaded", {
       requestId,
       positions: estimatedPositions.length,
@@ -124,6 +276,11 @@ export class PortfolioService {
       referenceRates,
       emergencyReserve,
       nextContributionGuidance,
+      contributionAllocationMode: strategySettingsResult.failed
+        ? "unavailable"
+        : strategyModeActive
+          ? "strategy"
+          : "legacy",
     };
   }
 }

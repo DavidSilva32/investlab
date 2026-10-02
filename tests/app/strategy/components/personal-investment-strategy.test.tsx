@@ -49,6 +49,7 @@ const baseData = {
   },
   destinationsNeedingPurposeConfirmation: 0,
   savedAllocationPercentages: null,
+  allocationActive: false,
 };
 
 Object.defineProperty(globalThis, "ResizeObserver", {
@@ -67,6 +68,7 @@ function jsonResponse(body: unknown, ok = true) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("PersonalInvestmentStrategy", () => {
@@ -74,22 +76,15 @@ describe("PersonalInvestmentStrategy", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(baseData)));
     render(<PersonalInvestmentStrategy />);
 
-    expect(screen.getByRole("status").textContent).toContain(
-      "Lendo sua carteira",
+    expect(screen.getByRole("status").getAttribute("aria-label")).toBe(
+      "Carregando as posições de Longo Prazo e os valores atuais…",
     );
-    expect(
-      await screen.findByText("Patrimônio destinado ao longo prazo"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Patrimônio de longo prazo")).toBeTruthy();
     expect(screen.getByText(/R\$\s*1\.000,00/)).toBeTruthy();
-    expect(screen.getByText("Em 02/10/2026")).toBeTruthy();
-    expect(
-      screen.getByText(
-        /Reserva, objetivos pessoais e posições sem destino ficam fora/,
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText("Sua composição de longo prazo")).toBeTruthy();
+    expect(screen.getByText(/02\/10\/2026/)).toBeTruthy();
+    expect(screen.getByText("Distribuição por classe")).toBeTruthy();
     expect(screen.queryByText("O que importa para você?")).toBeNull();
-    expect(screen.getByText(/não é uma recomendação/)).toBeTruthy();
+    expect(screen.getByText(/não identifica recomendações/)).toBeTruthy();
   });
 
   it("retries after a blocking load error", async () => {
@@ -108,10 +103,35 @@ describe("PersonalInvestmentStrategy", () => {
     expect(await screen.findByText("Falha temporária.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
 
-    expect(
-      await screen.findByText("Patrimônio destinado ao longo prazo"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Patrimônio de longo prazo")).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a page skeleton while loading and converts a hung request into a retryable error", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    render(<PersonalInvestmentStrategy />);
+    expect(
+      screen.getByRole("status", {
+        name: "Carregando as posições de Longo Prazo e os valores atuais…",
+      }),
+    ).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(
+      screen.getByText(
+        /A carteira demorou mais que 30 segundos para responder/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeTruthy();
   });
 
   it("shows purpose and valuation coverage limitations, and links to review destinations", async () => {
@@ -195,14 +215,15 @@ describe("PersonalInvestmentStrategy", () => {
     vi.stubGlobal("fetch", request);
     const user = userEvent.setup();
     render(<PersonalInvestmentStrategy />);
-    await screen.findByText("Sua composição de longo prazo");
+    await screen.findByText("Distribuição por classe");
+    await user.click(screen.getByRole("button", { name: "Editar composição" }));
     for (const [label, value] of [
-      ["Renda fixa escolhida (%)", "0"],
-      ["Ações brasileiras escolhida (%)", "30"],
-      ["ETFs internacionais escolhida (%)", "20"],
-      ["FIIs escolhida (%)", "50"],
+      ["Renda fixa planejada em porcentagem", "0"],
+      ["Ações brasileiras planejada em porcentagem", "30"],
+      ["ETFs internacionais planejada em porcentagem", "20"],
+      ["FIIs planejada em porcentagem", "50"],
     ]) {
-      fireEvent.change(screen.getByRole("spinbutton", { name: label }), {
+      fireEvent.change(screen.getByRole("textbox", { name: label }), {
         target: { value },
       });
     }
@@ -210,13 +231,58 @@ describe("PersonalInvestmentStrategy", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Última composição salva permanece/),
-      ).toBeTruthy(),
+        screen.queryByRole("textbox", {
+          name: "FIIs planejada em porcentagem",
+        }),
+      ).toBeNull(),
     );
+    await user.click(screen.getByRole("button", { name: "Editar composição" }));
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "FIIs planejada em porcentagem",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("50,00");
     expect(request).toHaveBeenLastCalledWith(
       "/api/portfolio/strategy",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("updates the page state after the user explicitly activates Strategy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          jsonResponse({
+            ...baseData,
+            savedAllocationPercentages: {
+              fixed_income: 40,
+              brazilian_equities: 30,
+              international_etfs: 20,
+              fiis: 10,
+            },
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse({ allocationActive: true })),
+    );
+    const user = userEvent.setup();
+    render(<PersonalInvestmentStrategy />);
+    await screen.findByText("Distribuição por classe");
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /Usar Estratégia no assistente/,
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        /Usando esta composição para posições de Longo Prazo/,
+      ),
+    ).toBeTruthy();
   });
 
   it("renders safe backend and fallback errors when loading fails", async () => {

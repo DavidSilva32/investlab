@@ -69,6 +69,8 @@ export function DashboardClient() {
           positions: data.positions,
           insights: data.insights,
           emergencyReserve: data.emergencyReserve,
+          contributionAllocationMode:
+            data.contributionAllocationMode ?? "legacy",
         });
         setError(null);
         loadUnassignedSummary();

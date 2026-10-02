@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
+import { getPortfolioAssetClassColor } from "@/lib/portfolio-asset-class-colors";
 import {
   portfolioAssetClassOptions,
   portfolioAssetGeographyOptions,
@@ -388,15 +389,23 @@ export function PortfolioClassificationList({
                             {position.product}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {[
-                              position.institution,
-                              position.classification.assetClass ??
-                                unknownLabel,
-                              position.classification.subClass ?? unknownLabel,
-                              position.classification.geography ?? unknownLabel,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
+                            {position.institution} ·{" "}
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                aria-hidden="true"
+                                className="size-2 shrink-0 rounded-full"
+                                style={{
+                                  backgroundColor: getPortfolioAssetClassColor(
+                                    position.classification.assetClass ?? "",
+                                  ),
+                                }}
+                              />
+                              {position.classification.assetClass ??
+                                unknownLabel}
+                            </span>{" "}
+                            · {position.classification.subClass ?? unknownLabel}{" "}
+                            ·{" "}
+                            {position.classification.geography ?? unknownLabel}
                             {position.classificationSource === "inferred"
                               ? " · sugestão baseada no produto ou indexador B3"
                               : position.classificationSource === "manual"

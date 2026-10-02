@@ -27,6 +27,7 @@ import {
   portfolioAssetGeographyHelpText,
 } from "@/lib/portfolio-classification-options";
 import { Label } from "@/components/ui/label";
+import { getPortfolioAssetClassColor } from "@/lib/portfolio-asset-class-colors";
 import {
   Collapsible,
   CollapsibleContent,
@@ -390,7 +391,16 @@ export function ManualPositionManager({
                   </div>
                   <div className="flex items-center gap-2">
                     {position.classification?.assetClass && (
-                      <Badge variant="secondary">
+                      <Badge variant="secondary" className="gap-1.5">
+                        <span
+                          aria-hidden="true"
+                          className="size-2 rounded-full"
+                          style={{
+                            backgroundColor: getPortfolioAssetClassColor(
+                              position.classification.assetClass,
+                            ),
+                          }}
+                        />
                         {position.classification.assetClass}
                       </Badge>
                     )}

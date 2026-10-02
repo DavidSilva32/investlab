@@ -3,13 +3,25 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   formatStrategyPercentage,
+  formatStrategyTooltip,
   StrategyAllocationChart,
 } from "@/app/strategy/_components/strategy-allocation-chart";
 
 Object.defineProperty(globalThis, "ResizeObserver", {
   configurable: true,
   value: class {
-    observe() {}
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback(
+        [
+          {
+            target,
+            contentRect: { width: 500, height: 220 },
+          } as ResizeObserverEntry,
+        ],
+        this as unknown as ResizeObserver,
+      );
+    }
     unobserve() {}
     disconnect() {}
   },
@@ -19,7 +31,21 @@ afterEach(cleanup);
 
 describe("StrategyAllocationChart", () => {
   it("formats tooltip values as percentages with two decimal places", () => {
-    expect(formatStrategyPercentage(12.345)).toBe("12.35%");
+    expect(formatStrategyPercentage(12.345)).toBe("12,35%");
+  });
+
+  it("identifies each tooltip percentage with its class and color", () => {
+    const { container, rerender } = render(
+      formatStrategyTooltip(50, "international_etfs"),
+    );
+    expect(screen.getByText("ETFs internacionais")).toBeTruthy();
+    expect(screen.getByText("50,00%").getAttribute("style")).toContain(
+      "--asset-class-international-etfs",
+    );
+    expect(container.querySelector('[aria-hidden="true"]')).toBeTruthy();
+
+    rerender(formatStrategyTooltip(12.5, "unknown"));
+    expect(screen.getByText("12,50%")).toBeTruthy();
   });
 
   it("labels the current and selected compositions and all classes", () => {
@@ -34,7 +60,7 @@ describe("StrategyAllocationChart", () => {
             fiis: 10,
           },
           {
-            name: "Escolhida",
+            name: "Planejada",
             fixed_income: 20,
             brazilian_equities: 30,
             international_etfs: 40,
@@ -53,5 +79,7 @@ describe("StrategyAllocationChart", () => {
     expect(screen.getByText("Ações brasileiras")).toBeTruthy();
     expect(screen.getByText("ETFs internacionais")).toBeTruthy();
     expect(screen.getByText("FIIs")).toBeTruthy();
+    expect(screen.getAllByText("40%").length).toBeGreaterThan(0);
+    expect(screen.queryByText("10%")).toBeNull();
   });
 });
