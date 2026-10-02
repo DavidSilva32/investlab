@@ -9,6 +9,7 @@ import {
   portfolioObjectives,
   positionItems,
   positionSnapshots,
+  stockOpportunityManualInputs,
 } from "@/infrastructure/database/schema";
 
 describe("database schema", () => {
@@ -54,5 +55,18 @@ describe("database schema", () => {
       assignmentConfig.columns.find((column) => column.name === "assetKey")
         ?.isUnique,
     ).toBe(true);
+  });
+
+  it("stores manual stock opportunity inputs with unique ticker and input keys", () => {
+    expect(getTableName(stockOpportunityManualInputs)).toBe(
+      "stock_opportunity_manual_inputs",
+    );
+    const config = getTableConfig(stockOpportunityManualInputs);
+    expect(config.indexes).toHaveLength(2);
+    expect(config.indexes.map((index) => index.config.name)).toEqual([
+      "stock_opportunity_manual_ticker_input_idx",
+      "stock_opportunity_manual_ticker_idx",
+    ]);
+    expect(config.columns.map((column) => column.name)).toContain("inputKey");
   });
 });

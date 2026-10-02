@@ -299,6 +299,36 @@ export const stockFundamentals = pgTable("stock_fundamentals", {
   fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
+export const stockOpportunityManualInputs = pgTable(
+  "stock_opportunity_manual_inputs",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    ticker: varchar({ length: 16 }).notNull(),
+    inputKey: varchar({ length: 24 }).notNull(),
+    value: numeric({ precision: 24, scale: 8 }).notNull(),
+    source: text().notNull(),
+    asOf: date().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("stock_opportunity_manual_ticker_input_idx").on(
+      table.ticker,
+      table.inputKey,
+    ),
+    index("stock_opportunity_manual_ticker_idx").on(table.ticker),
+  ],
+);
+
+export const stockOpportunityAnalysisSettings = pgTable(
+  "stock_opportunity_analysis_settings",
+  {
+    id: integer().primaryKey().default(1),
+    bazinTargetYield: numeric({ precision: 8, scale: 4 })
+      .notNull()
+      .default("6"),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+);
 export const screenerMarketRefreshRuns = pgTable(
   "screener_market_refresh_runs",
   {

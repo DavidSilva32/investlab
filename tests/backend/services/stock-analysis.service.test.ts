@@ -8,6 +8,7 @@ describe("StockAnalysisService ticker search", () => {
   it("trims a valid search query and returns provider matches", async () => {
     const marketProvider = {
       getByTicker: vi.fn(),
+      getQuoteByTicker: vi.fn(),
       searchTickers: vi
         .fn()
         .mockResolvedValue([{ ticker: "VALE3", name: "Vale" }]),
@@ -24,7 +25,11 @@ describe("StockAnalysisService ticker search", () => {
   });
 
   it("skips provider calls for queries shorter than the minimum", async () => {
-    const marketProvider = { getByTicker: vi.fn(), searchTickers: vi.fn() };
+    const marketProvider = {
+      getByTicker: vi.fn(),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
     const service = new StockAnalysisService(
       marketProvider,
       { getByTicker: vi.fn() },
@@ -39,6 +44,7 @@ describe("StockAnalysisService", () => {
   it("returns market data when fundamentals are absent from the cache", async () => {
     const marketProvider = {
       searchTickers: vi.fn().mockResolvedValue([]),
+      getQuoteByTicker: vi.fn(),
       getByTicker: vi.fn().mockResolvedValue({
         ticker: "PETR4",
         companyName: "Petrobras",
@@ -175,7 +181,11 @@ describe("StockAnalysisService cache and failures", () => {
   };
 
   it("rejects invalid tickers before calling providers", async () => {
-    const marketProvider = { getByTicker: vi.fn(), searchTickers: vi.fn() };
+    const marketProvider = {
+      getByTicker: vi.fn(),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
     const service = new StockAnalysisService(
       marketProvider,
       { getByTicker: vi.fn() },
@@ -192,6 +202,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("uses a recent fundamentals cache", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue(market),
+      getQuoteByTicker: vi.fn(),
       searchTickers: vi.fn(),
     };
     const fundamentalsProvider = { getByTicker: vi.fn() };
@@ -241,6 +252,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("surfaces the missing-CNPJ application error", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue({ ...market, cnpj: null }),
+      getQuoteByTicker: vi.fn(),
       searchTickers: vi.fn(),
     };
     const fundamentalsProvider = { getByTicker: vi.fn().mockResolvedValue([]) };
@@ -268,6 +280,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("wraps unexpected fundamentals refresh errors for the route boundary", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue(market),
+      getQuoteByTicker: vi.fn(),
       searchTickers: vi.fn(),
     };
     const fundamentalsProvider = {

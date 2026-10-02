@@ -24,7 +24,7 @@ describe("secondary pages", () => {
       renderToStaticMarkup(
         await AnalysesPage({ searchParams: Promise.resolve({}) }),
       ),
-    ).toContain("Encontre uma empresa para analisar");
+    ).toContain("Minha carteira");
     expect(renderToStaticMarkup(<SettingsPage />)).toContain(
       "Fundamentos e cadastro",
     );

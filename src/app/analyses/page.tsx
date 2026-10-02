@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { StockAnalysisDashboard } from "./_components/stock-analysis-dashboard";
+import { AnalysesTabs } from "./_components/analyses-tabs";
 
 export default async function AnalysesPage({
   searchParams,
@@ -9,7 +9,7 @@ export default async function AnalysesPage({
   const { ticker } = await searchParams;
   return (
     <AppShell title="Análises">
-      <StockAnalysisDashboard
+      <AnalysesTabs
         initialTicker={
           ticker?.match(/^[A-Za-z]{4}[0-9]{1,2}$/)
             ? ticker.toUpperCase()
