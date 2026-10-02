@@ -167,6 +167,7 @@ export const portfolioObjectives = pgTable(
   {
     id: uuid().defaultRandom().primaryKey(),
     kind: varchar({ length: 16 }).notNull().default("CUSTOM"),
+    purpose: varchar({ length: 32 }),
     name: varchar({ length: 120 }).notNull(),
     targetAmount: numeric({ precision: 18, scale: 2 }),
     monthlyPlannedAmount: numeric({ precision: 18, scale: 2 }),
@@ -240,6 +241,20 @@ export const portfolioAllocationTargets = pgTable(
   {
     id: varchar({ length: 20 }).primaryKey().default("default"),
     percentages: jsonb().$type<Record<string, number>>().notNull().default({}),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+);
+export const personalInvestmentStrategy = pgTable(
+  "personal_investment_strategy",
+  {
+    id: varchar({ length: 20 }).primaryKey().default("default"),
+    answers: jsonb()
+      .$type<{
+        horizonYears: number;
+        internationalInterest: "interested" | "not_interested" | "unsure";
+      }>()
+      .notNull(),
+    selectedDirection: varchar({ length: 40 }).notNull(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
 );

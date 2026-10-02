@@ -42,6 +42,7 @@ import {
 const maximumAmount = 1_000_000_000_000;
 const createSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  purpose: z.enum(["PERSONAL_GOAL", "LONG_TERM_INVESTMENT"]),
   targetAmount: z
     .number()
     .finite()
@@ -70,7 +71,14 @@ const assignmentsSchema = z.object({
     .max(500)
     .default([]),
 });
-const updateSchema = createSchema.extend({ objectiveId: z.string().uuid() });
+const updateSchema = createSchema
+  .extend({
+    purpose: z
+      .enum(["PERSONAL_GOAL", "LONG_TERM_INVESTMENT"])
+      .nullable()
+      .optional(),
+  })
+  .extend({ objectiveId: z.string().uuid() });
 const deleteSchema = z.object({ objectiveId: z.string().uuid() });
 const suggestionsSchema = z.object({
   targetAmount: z.number().finite().positive().max(maximumAmount),
@@ -118,7 +126,7 @@ type RawPosition = Record<string, unknown> & {
   convertedValueBrl?: string | number | null;
   currency?: string | null;
   referenceDate?: string | null;
-  classification?: { assetClass: string | null };
+  classification?: { assetClass: string | null; geography?: string | null };
   issuer?: string | null;
   indexer?: string | null;
   regimeType?: string | null;
@@ -219,6 +227,7 @@ export class PortfolioObjectivesService {
       return {
         id: objective.id,
         kind: objective.kind,
+        purpose: objective.purpose ?? null,
         name: objective.name,
         targetAmount,
         targetAmountCents: targetAmountCents?.toString() ?? null,
@@ -292,17 +301,37 @@ export class PortfolioObjectivesService {
     );
     const personalKnownValueCents = sumMoneyCents(
       objectives
-        .filter((objective) => objective.kind !== "RESERVE")
+        .filter((objective) => objective.purpose === "PERSONAL_GOAL")
+        .map((objective) => BigInt(objective.knownValueCents)),
+    );
+    const purposeUnknownKnownValueCents = sumMoneyCents(
+      objectives
+        .filter(
+          (objective) =>
+            objective.kind !== "RESERVE" && objective.purpose === null,
+        )
+        .map((objective) => BigInt(objective.knownValueCents)),
+    );
+    const longTermKnownValueCents = sumMoneyCents(
+      objectives
+        .filter((objective) => objective.purpose === "LONG_TERM_INVESTMENT")
         .map((objective) => BigInt(objective.knownValueCents)),
     );
     const destinationsKnownTotalCents = sumMoneyCents([
       reserveKnownValueCents,
       personalKnownValueCents,
+      longTermKnownValueCents,
+      purposeUnknownKnownValueCents,
       unassignedKnownValueCents,
     ]);
     const destinationValues = [
       { key: "reserve", valueCents: reserveKnownValueCents },
       { key: "personal", valueCents: personalKnownValueCents },
+      {
+        key: "long_term",
+        valueCents: longTermKnownValueCents,
+      },
+      { key: "purpose_unknown", valueCents: purposeUnknownKnownValueCents },
       { key: "unassigned", valueCents: unassignedKnownValueCents },
     ];
     const overview = {
@@ -342,6 +371,11 @@ export class PortfolioObjectivesService {
             (objective) =>
               objective.id === objectiveByAssetKey.get(position.assetKey),
           )?.name ?? null,
+        objectivePurpose:
+          stored.objectives.find(
+            (objective) =>
+              objective.id === objectiveByAssetKey.get(position.assetKey),
+          )?.purpose ?? null,
       })),
       unassignedKnownValue,
       unassignedKnownValueCents: unassignedKnownValueCents.toString(),
@@ -364,10 +398,11 @@ export class PortfolioObjectivesService {
           assetKey,
           objectiveId,
         })),
-        objectives: stored.objectives.map(({ id, name, kind }) => ({
+        objectives: stored.objectives.map(({ id, name, kind, purpose }) => ({
           id,
           name,
           kind,
+          purpose,
         })),
       }),
     };
@@ -381,9 +416,10 @@ export class PortfolioObjectivesService {
         400,
       );
     }
-    const { name, targetAmount, monthlyPlannedAmount } = parsed.data;
+    const { name, purpose, targetAmount, monthlyPlannedAmount } = parsed.data;
     const objective = await portfolioObjectivesRepository.create({
       name,
+      purpose,
       targetAmount: targetAmount == null ? null : targetAmount.toFixed(2),
       monthlyPlannedAmount:
         monthlyPlannedAmount == null ? null : monthlyPlannedAmount.toFixed(2),
@@ -972,6 +1008,12 @@ export class PortfolioObjectivesService {
     }
     const updated = await portfolioObjectivesRepository.update(objectiveId, {
       name: parsed.data.name,
+      purpose:
+        parsed.data.purpose ??
+        (objective.purpose === "PERSONAL_GOAL" ||
+        objective.purpose === "LONG_TERM_INVESTMENT"
+          ? objective.purpose
+          : null),
       targetAmount:
         parsed.data.targetAmount == null
           ? null
@@ -1009,6 +1051,7 @@ export class PortfolioObjectivesService {
         maturityAt: string | null;
         institution: string | null;
         assetClass: string | null;
+        geography: string | null;
         positionCount: number;
         valueCents: bigint | null;
         knownValueCents: bigint;
@@ -1043,6 +1086,8 @@ export class PortfolioObjectivesService {
       if (existing) {
         if (existing.maturityAt !== (position.maturityAt ?? null))
           existing.maturityAt = null;
+        if (existing.geography !== (position.classification?.geography ?? null))
+          existing.geography = null;
         if (
           existing.estimationBaseDate !== (position.estimationBaseDate ?? null)
         )
@@ -1087,6 +1132,7 @@ export class PortfolioObjectivesService {
         maturityAt: position.maturityAt ?? null,
         institution: position.institution,
         assetClass: position.classification?.assetClass ?? null,
+        geography: position.classification?.geography ?? null,
         positionCount: 1,
         valueCents: cents,
         knownValueCents: cents ?? 0n,

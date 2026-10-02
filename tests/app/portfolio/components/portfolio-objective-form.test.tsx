@@ -9,6 +9,23 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PortfolioObjectiveForm } from "@/app/portfolio/_components/portfolio-objective-form";
+
+Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+  configurable: true,
+  value: () => false,
+});
+Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+  configurable: true,
+  value: () => {},
+});
+Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+  configurable: true,
+  value: () => {},
+});
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: () => {},
+});
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 
 const toast = vi.hoisted(() => ({ error: vi.fn() }));
@@ -34,10 +51,15 @@ describe("PortfolioObjectiveForm", () => {
       screen.getByLabelText("Aporte mensal planejado (opcional)"),
       { target: { value: "R$ 250,00" } },
     );
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Objetivo pessoal" }));
     await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         name: "Viagem",
+        purpose: "PERSONAL_GOAL",
         targetAmount: 2500,
         monthlyPlannedAmount: 250,
       }),
@@ -58,6 +80,7 @@ describe("PortfolioObjectiveForm", () => {
           {
             id: "trip",
             name: "Viagem",
+            purpose: "PERSONAL_GOAL",
             targetAmount: 500,
             monthlyPlannedAmount: null,
           } as never
@@ -85,12 +108,19 @@ describe("PortfolioObjectiveForm", () => {
     fireEvent.change(screen.getByLabelText("Nome"), {
       target: { value: "Longo prazo" },
     });
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Investimento de longo prazo" }),
+    );
 
     await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         name: "Longo prazo",
+        purpose: "LONG_TERM_INVESTMENT",
         targetAmount: null,
         monthlyPlannedAmount: null,
       }),
@@ -113,11 +143,82 @@ describe("PortfolioObjectiveForm", () => {
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
       target: { value: "R$ 0,00" },
     });
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Objetivo pessoal" }));
     await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Informe um nome e revise a meta em reais, se preenchida.",
     );
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit destination purpose when creating a goal", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(<PortfolioObjectiveForm saving={false} onSave={onSave} />);
+    fireEvent.change(screen.getByLabelText("Nome"), {
+      target: { value: "Investir no longo prazo" },
+    });
+    await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Escolha a finalidade deste destino para continuar.",
+    );
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("preserves an unclassified legacy destination during unrelated edits", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const legacy = {
+      id: "legacy",
+      kind: "CUSTOM",
+      name: "Longo prazo",
+      purpose: null,
+      targetAmount: 100000,
+      monthlyPlannedAmount: 8000,
+      currentValue: 0,
+      knownValue: 0,
+      remainingAmount: 100000,
+      progressPercent: 0,
+      assignedPositionCount: 1,
+      missingPositionCount: 0,
+      unvaluedPositionCount: 0,
+      assignedAssetKeys: ["asset"],
+      canEditAssignments: true,
+    } satisfies PortfolioObjective;
+    render(
+      <PortfolioObjectiveForm
+        objective={legacy}
+        saving={false}
+        onSave={onSave}
+      />,
+    );
+    expect(
+      screen.getByText(
+        /a altera\u00e7\u00e3o preservar\u00e1 essa situa\u00e7\u00e3o/,
+      ),
+    ).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("combobox", {
+          name: "Finalidade deste destino",
+        }) as HTMLButtonElement
+      ).textContent,
+    ).toContain("Escolha uma finalidade");
+    fireEvent.change(screen.getByLabelText("Nome"), {
+      target: { value: "Longo prazo revisado" },
+    });
+    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        name: "Longo prazo revisado",
+        purpose: null,
+        targetAmount: 100000,
+        monthlyPlannedAmount: 8000,
+      }),
+    );
   });
 
   it("rejects a monthly plan that exceeds the supported numeric range", async () => {
@@ -134,6 +235,10 @@ describe("PortfolioObjectiveForm", () => {
       screen.getByLabelText("Aporte mensal planejado (opcional)"),
       { target: { value: "R$ " + "9".repeat(400) } },
     );
+    await user.click(
+      screen.getByRole("combobox", { name: "Finalidade deste destino" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Objetivo pessoal" }));
 
     await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
@@ -152,6 +257,7 @@ describe("PortfolioObjectiveForm", () => {
             id: "trip",
             kind: "CUSTOM",
             name: "Viagem",
+            purpose: "PERSONAL_GOAL",
             targetAmount: 500,
             monthlyPlannedAmount: 125.5,
             currentValue: 0,

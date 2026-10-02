@@ -92,7 +92,9 @@ describe("PortfolioObjectivesOverview", () => {
             categories: [
               { key: "reserve", value: 250, percentage: 25 },
               { key: "personal", value: 300, percentage: 30 },
-              { key: "unassigned", value: 450, percentage: 45 },
+              { key: "long_term", value: 0, percentage: 0 },
+              { key: "purpose_unknown", value: 50, percentage: 5 },
+              { key: "unassigned", value: 400, percentage: 40 },
             ],
             knownTotal: 1000,
             missingPositionCount: 1,
@@ -118,7 +120,7 @@ describe("PortfolioObjectivesOverview", () => {
       name: "Gráfico de rosca dos valores conhecidos por destino",
     });
     expect(chart.getAttribute("data-chart-colors")).toBe(
-      "var(--primary)|var(--accent-foreground)|var(--muted-foreground)",
+      "#2563eb|#9333ea|#059669|#d97706|#64748b",
     );
     expect(
       screen
@@ -127,6 +129,7 @@ describe("PortfolioObjectivesOverview", () => {
     ).toEqual([
       "var(--color-reserve)",
       "var(--color-personal)",
+      "var(--color-purpose_unknown)",
       "var(--color-unassigned)",
     ]);
     expect(screen.getByTestId("chart-tooltip-value").textContent).toBe(
@@ -138,8 +141,14 @@ describe("PortfolioObjectivesOverview", () => {
     const distributionRows = distribution.getAllByRole("listitem");
     expect(distributionRows[0].textContent).toContain("25");
     expect(distributionRows[0].textContent).toContain("%");
-    expect(distributionRows[2].textContent).toContain("45");
-    expect(distributionRows[2].textContent).toContain("%");
+    expect(distributionRows).toHaveLength(4);
+    expect(distributionRows[2].textContent).toContain(
+      "Finalidade não definida",
+    );
+    expect(distributionRows[2].textContent).toContain("5");
+    expect(distributionRows[3].textContent).toContain("40");
+    expect(distributionRows[3].textContent).toContain("%");
+    expect(distribution.queryByText("Investimento de longo prazo")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: /Como ler estes valores/ }),
     );
@@ -173,6 +182,8 @@ describe("PortfolioObjectivesOverview", () => {
             categories: [
               { key: "reserve", value: 0, percentage: 0 },
               { key: "personal", value: 0, percentage: 0 },
+              { key: "long_term", value: 0, percentage: 0 },
+              { key: "purpose_unknown", value: 0, percentage: 0 },
               { key: "unassigned", value: 0, percentage: 0 },
             ],
             knownTotal: 0,

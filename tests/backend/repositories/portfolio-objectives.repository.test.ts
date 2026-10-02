@@ -57,12 +57,14 @@ describe("PortfolioObjectivesRepository", () => {
     await expect(
       new PortfolioObjectivesRepository().create({
         name: "Viagem",
+        purpose: "PERSONAL_GOAL",
         targetAmount: "1000.00",
         monthlyPlannedAmount: null,
       }),
     ).resolves.toEqual(objective);
     expect(values).toHaveBeenCalledWith({
       name: "Viagem",
+      purpose: "PERSONAL_GOAL",
       targetAmount: "1000.00",
       monthlyPlannedAmount: null,
       kind: "CUSTOM",
@@ -140,12 +142,14 @@ describe("PortfolioObjectivesRepository", () => {
     await expect(
       new PortfolioObjectivesRepository().update("goal-1", {
         name: "Carro",
+        purpose: "PERSONAL_GOAL",
         targetAmount: "20000.00",
         monthlyPlannedAmount: null,
       }),
     ).resolves.toEqual(objective);
     expect(set).toHaveBeenCalledWith({
       name: "Carro",
+      purpose: "PERSONAL_GOAL",
       targetAmount: "20000.00",
       monthlyPlannedAmount: null,
       updatedAt: expect.any(Date),
@@ -161,6 +165,7 @@ describe("PortfolioObjectivesRepository", () => {
     await expect(
       new PortfolioObjectivesRepository().update("missing", {
         name: "Carro",
+        purpose: "PERSONAL_GOAL",
         targetAmount: "20000.00",
         monthlyPlannedAmount: null,
       }),

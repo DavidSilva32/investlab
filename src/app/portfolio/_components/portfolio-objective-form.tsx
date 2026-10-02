@@ -5,6 +5,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import {
   formatAmountInput,
@@ -12,8 +19,10 @@ import {
   parseBrazilianAmount,
 } from "@/lib/currency-input";
 
+type DestinationPurpose = "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT";
 type Values = {
   name: string;
+  purpose: DestinationPurpose | null;
   targetAmount: number | null;
   monthlyPlannedAmount: number | null;
 };
@@ -34,6 +43,12 @@ export function PortfolioObjectiveForm({
   onCancel,
 }: Props) {
   const [name, setName] = useState(objective?.name ?? "");
+  const [purpose, setPurpose] = useState<DestinationPurpose | "">(
+    objective?.purpose === "PERSONAL_GOAL" ||
+      objective?.purpose === "LONG_TERM_INVESTMENT"
+      ? objective.purpose
+      : "",
+  );
   const [targetAmount, setTargetAmount] = useState(
     objective?.targetAmount === null || objective?.targetAmount === undefined
       ? ""
@@ -51,6 +66,10 @@ export function PortfolioObjectiveForm({
     event.preventDefault();
     const target = targetAmount ? parseBrazilianAmount(targetAmount) : null;
     const monthly = monthlyAmount ? parseBrazilianAmount(monthlyAmount) : null;
+    if (!purpose && !objective) {
+      setError("Escolha a finalidade deste destino para continuar.");
+      return;
+    }
     if (
       !name.trim() ||
       (target !== null && (!Number.isFinite(target) || target <= 0))
@@ -66,11 +85,13 @@ export function PortfolioObjectiveForm({
     try {
       await onSave({
         name: name.trim(),
+        purpose: purpose || null,
         targetAmount: target,
         monthlyPlannedAmount: monthly,
       });
       if (!objective) {
         setName("");
+        setPurpose("");
         setTargetAmount("");
         setMonthlyAmount("");
       }
@@ -97,6 +118,33 @@ export function PortfolioObjectiveForm({
             placeholder="Ex.: Viagem"
             required
           />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="objective-purpose">Finalidade deste destino</Label>
+          <Select
+            value={purpose}
+            onValueChange={(value) => setPurpose(value as DestinationPurpose)}
+          >
+            <SelectTrigger id="objective-purpose" aria-required="true">
+              <SelectValue placeholder="Escolha uma finalidade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="PERSONAL_GOAL">Objetivo pessoal</SelectItem>
+              <SelectItem value="LONG_TERM_INVESTMENT">
+                Investimento de longo prazo
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Essa classificação organiza o destino. As posições e os valores
+            atribuídos não serão alterados.
+          </p>
+          {objective && !purpose && (
+            <p role="note" className="text-xs text-muted-foreground">
+              Este destino antigo ainda não tem finalidade definida. Se você não
+              escolher uma, a alteração preservará essa situação.
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="objective-target">Meta em reais (opcional)</Label>
