@@ -10,8 +10,12 @@ const service = vi.hoisted(() => ({
   previewGlobalAllocation: vi.fn(),
   confirmGlobalAllocation: vi.fn(),
 }));
+const balanceService = vi.hoisted(() => ({ save: vi.fn() }));
 vi.mock("@/backend/services/portfolio-objectives.service", () => ({
   portfolioObjectivesService: service,
+}));
+vi.mock("@/backend/services/objective-balance.service", () => ({
+  objectiveBalanceService: balanceService,
 }));
 
 import { PortfolioObjectivesController } from "@/backend/controllers/portfolio-objectives.controller";
@@ -37,6 +41,26 @@ describe("PortfolioObjectivesController", () => {
     );
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual(objective);
+  });
+
+  it("saves an observed objective balance and logs its date", async () => {
+    balanceService.save.mockResolvedValue({
+      objectiveId: "goal-1",
+      observedDate: "2026-10-01",
+    });
+    const response =
+      await new PortfolioObjectivesController().saveObservedBalance(
+        { objectiveId: "goal-1", amount: "10.00" },
+        "r-balance",
+      );
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({
+      message: "Saldo observado salvo.",
+    });
+    expect(balanceService.save).toHaveBeenCalledWith({
+      objectiveId: "goal-1",
+      amount: "10.00",
+    });
   });
 
   it("rejects an assignment request without an objective id", async () => {

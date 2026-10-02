@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, inArray, lt, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  lte,
+  lt,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
@@ -261,7 +271,7 @@ export class PortfolioObjectivesRepository {
         .where(
           and(
             gt(cdiDailyRates.rateDate, baseDate),
-            lt(cdiDailyRates.rateDate, valuationDate),
+            lte(cdiDailyRates.rateDate, valuationDate),
           ),
         )
         .orderBy(cdiDailyRates.rateDate);
@@ -532,6 +542,7 @@ export class PortfolioObjectivesRepository {
       .select({
         objectiveId: portfolioObjectiveBalanceReferences.objectiveId,
         amountCents: portfolioObjectiveBalanceReferences.amountCents,
+        cdiPercentage: portfolioObjectiveBalanceReferences.cdiPercentage,
         observedDate: portfolioObjectiveReferenceBatches.observedOn,
         createdAt: portfolioObjectiveBalanceReferences.createdAt,
       })
@@ -544,6 +555,7 @@ export class PortfolioObjectivesRepository {
         ),
       )
       .orderBy(
+        desc(portfolioObjectiveReferenceBatches.observedOn),
         desc(portfolioObjectiveBalanceReferences.createdAt),
         desc(portfolioObjectiveBalanceReferences.id),
       );
@@ -551,12 +563,43 @@ export class PortfolioObjectivesRepository {
     for (const row of rows)
       if (!latest.has(row.objectiveId)) latest.set(row.objectiveId, row);
     return [...latest.values()].map(
-      ({ objectiveId, amountCents, observedDate }) => ({
+      ({ objectiveId, amountCents, observedDate, cdiPercentage }) => ({
         objectiveId,
         amountCents,
         observedDate,
+        cdiPercentage,
       }),
     );
+  }
+
+  async saveObservedBalance(input: {
+    objectiveId: string;
+    amountCents: string;
+    observedOn: string;
+    cdiPercentage: string | null;
+  }) {
+    return getDatabaseClient().transaction(async (transaction) => {
+      const [objective] = await transaction
+        .select({ id: portfolioObjectives.id })
+        .from(portfolioObjectives)
+        .where(eq(portfolioObjectives.id, input.objectiveId))
+        .for("update");
+      if (!objective) return null;
+      const [batch] = await transaction
+        .insert(portfolioObjectiveReferenceBatches)
+        .values({ observedOn: input.observedOn })
+        .returning({ id: portfolioObjectiveReferenceBatches.id });
+      const [reference] = await transaction
+        .insert(portfolioObjectiveBalanceReferences)
+        .values({
+          batchId: batch.id,
+          objectiveId: input.objectiveId,
+          amountCents: input.amountCents,
+          cdiPercentage: input.cdiPercentage,
+        })
+        .returning();
+      return { ...reference, observedDate: input.observedOn };
+    });
   }
 
   async saveGlobalAllocation(input: {

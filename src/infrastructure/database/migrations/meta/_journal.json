@@ -176,6 +176,13 @@
       "when": 1790891213294,
       "tag": "0024_objective_balance_references",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790942256719,
+      "tag": "0025_objective_balance_cdi_condition",
+      "breakpoints": true
     }
   ]
 }

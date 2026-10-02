@@ -217,6 +217,7 @@ export const portfolioObjectiveBalanceReferences = pgTable(
       .notNull()
       .references(() => portfolioObjectives.id, { onDelete: "cascade" }),
     amountCents: numeric({ precision: 20, scale: 0 }).notNull(),
+    cdiPercentage: numeric({ precision: 9, scale: 4 }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

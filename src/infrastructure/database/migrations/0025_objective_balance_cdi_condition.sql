@@ -1,0 +1,1 @@
+ALTER TABLE "portfolio_objective_balance_references" ADD COLUMN "cdiPercentage" numeric(9, 4);

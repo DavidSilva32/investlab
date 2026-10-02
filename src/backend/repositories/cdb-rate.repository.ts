@@ -1,4 +1,4 @@
-import { and, gt, inArray, lt } from "drizzle-orm";
+import { and, desc, gt, inArray, lte, lt } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
   cdbRateConfigurations,
@@ -51,6 +51,16 @@ export class CdbRateRepository {
           lt(cdiDailyRates.rateDate, today),
         ),
       );
+  }
+
+  async listLatestRateOnOrBefore(date: string) {
+    const [rate] = await getDatabaseClient()
+      .select()
+      .from(cdiDailyRates)
+      .where(lte(cdiDailyRates.rateDate, date))
+      .orderBy(desc(cdiDailyRates.rateDate))
+      .limit(1);
+    return rate ?? null;
   }
 
   async cacheRates(rates: Array<{ date: string; annualRate: string }>) {

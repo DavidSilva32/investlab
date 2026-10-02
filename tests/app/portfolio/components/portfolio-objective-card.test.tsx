@@ -143,4 +143,71 @@ describe("PortfolioObjectiveCard", () => {
     expect(screen.getByText("meta não configurada")).toBeTruthy();
     expect(screen.queryByText("destino sem meta financeira")).toBeNull();
   });
+
+  it("shows the observed balance and projection as separate, dated values", () => {
+    render(
+      <PortfolioObjectiveCard
+        objective={{
+          ...objective,
+          currentValue: 100,
+          progressPercent: 10,
+          remainingAmount: 900,
+          missingPositionCount: 0,
+          unvaluedPositionCount: 0,
+          balanceTracking: {
+            observedAmountCents: "25050",
+            observedOn: "2026-10-01",
+            cdiPercentage: "100.0000",
+            projection: {
+              projectedAmountCents: "25075",
+              projectedOn: "2026-10-02",
+              estimatedThrough: "2026-10-02",
+              cdiPercentage: "100.0000",
+              status: "projected",
+            },
+          },
+        }}
+        deleteDialogOpen={false}
+        deleting={false}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Saldo observado: R\$ 250,50/)).toBeTruthy();
+    expect(screen.getByText("Em 01/10/2026")).toBeTruthy();
+    expect(screen.getByText(/R\$\s*250,75/)).toBeTruthy();
+    expect(screen.getByText("Avaliada em 02/10/2026")).toBeTruthy();
+    expect(screen.getByText("10% acompanhado")).toBeTruthy();
+  });
+
+  it("labels an unprojected observation and preserves an unrecognized date", () => {
+    render(
+      <PortfolioObjectiveCard
+        objective={{
+          ...objective,
+          balanceTracking: {
+            observedAmountCents: "25050",
+            observedOn: "data desconhecida",
+            cdiPercentage: null,
+            projection: null,
+          },
+        }}
+        deleteDialogOpen={false}
+        deleting={false}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Em data desconhecida")).toBeTruthy();
+    expect(screen.getAllByText(/indispon/).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Acompanhamento separado da carteira"),
+    ).toBeTruthy();
+  });
 });

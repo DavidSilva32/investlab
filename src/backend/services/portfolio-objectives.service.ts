@@ -2,6 +2,11 @@ import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
 import {
+  objectiveBalanceService,
+  type ObjectiveBalanceProjectionResult,
+  type ObjectiveBalanceReference,
+} from "@/backend/services/objective-balance.service";
+import {
   createAllocationSourceFingerprint,
   portfolioObjectivesRepository,
 } from "@/backend/repositories/portfolio-objectives.repository";
@@ -161,6 +166,12 @@ export class PortfolioObjectivesService {
       emergencyReserveRepository.getSettings(),
       portfolioObjectivesRepository.listLatestBalanceReferences(),
     ]);
+    const balanceProjectionResults = await objectiveBalanceService
+      .projectLatest(
+        balanceReferences as ObjectiveBalanceReference[],
+        valuationDate,
+      )
+      .catch(() => new Map<string, ObjectiveBalanceProjectionResult>());
     const classified = evaluatedPositions
       ? evaluatedPositions
       : await portfolioAllocationService.classifyPositions(
@@ -248,6 +259,24 @@ export class PortfolioObjectivesService {
         unvaluedPositionCount: current.unvaluedPositionCount,
         assignedAssetKeys,
         canEditAssignments: objective.id !== reserveObjectiveId,
+        balanceTracking: (() => {
+          const observed = balanceReferences.find(
+            (reference) => reference.objectiveId === objective.id,
+          );
+          if (!observed) return null;
+          const projectionResult = balanceProjectionResults.get(objective.id);
+          return {
+            observedAmountCents: observed.amountCents,
+            observedOn: observed.observedDate,
+            cdiPercentage: observed.cdiPercentage,
+            projection: projectionResult?.projection ?? null,
+            projectionUnavailableReason:
+              projectionResult?.unavailableReason ??
+              (observed.cdiPercentage === null
+                ? "missing_conditions"
+                : "rates_unavailable"),
+          };
+        })(),
       };
     });
     const unassignedPositions = positions.filter(

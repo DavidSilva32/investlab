@@ -92,20 +92,43 @@ const expectedRateDates = (fromDate: string, toDateExclusive: string) => {
   return dates;
 };
 
-const getTrustedRatePrefix = (
-  baseDate: string,
-  valuationDate: string,
-  rates: CachedCdiRate[],
-) => {
-  const ratesByDate = new Map(rates.map((rate) => [rate.rateDate, rate]));
-  const expectedDates = expectedRateDates(addDays(baseDate, 1), valuationDate);
-  const prefix: CachedCdiRate[] = [];
-  for (const date of expectedDates) {
-    const rate = ratesByDate.get(date);
-    if (!rate) return { rates: prefix, missingDate: date };
-    prefix.push(rate);
+export const buildEffectiveCdiRateSeries = ({
+  fromDateExclusive,
+  toDateExclusive,
+  officialRates,
+  latestPriorOfficial,
+}: {
+  fromDateExclusive: string;
+  toDateExclusive: string;
+  officialRates: CachedCdiRate[];
+  latestPriorOfficial?: CachedCdiRate | null;
+}) => {
+  const ratesByDate = new Map(
+    officialRates.map((rate) => [rate.rateDate, rate]),
+  );
+  const rates: CachedCdiRate[] = [];
+  const projectedDates: string[] = [];
+  let latestOfficial = latestPriorOfficial ?? null;
+  let missingDate: string | null = null;
+
+  for (const date of expectedRateDates(
+    addDays(fromDateExclusive, 1),
+    toDateExclusive,
+  )) {
+    const official = ratesByDate.get(date);
+    if (official) {
+      rates.push(official);
+      latestOfficial = official;
+    } else if (latestOfficial) {
+      rates.push({ ...latestOfficial, rateDate: date });
+      projectedDates.push(date);
+    } else {
+      missingDate = date;
+      break;
+    }
   }
-  return { rates: prefix, missingDate: null };
+
+  return { rates, projectedDates, missingDate };
 };
 
 const logUnavailable = (phase: "configuration" | "rates" | "cache") =>
@@ -128,6 +151,8 @@ const markUnavailable = <
     ? {
         cdbEstimateStatus: "unavailable" as const,
         cdbEstimateLimitation: limitation,
+        cdbProjectedFromDate: null,
+        cdbProjectedThroughDate: null,
         [allocationCdiInputsKey]: {
           assetCode: position.assetCode,
           cdiPercentage,
@@ -154,6 +179,7 @@ export class CdbEstimateService {
     },
   >(positions: T[], executionValuationDate?: string) {
     const valuationDate = executionValuationDate ?? this.getValuationDate();
+    const valuationDateExclusive = addDays(valuationDate, 1);
     const cdbs = positions.filter(isDiCdb);
     let configurations: Array<{ assetCode: string; cdiPercentage: string }>;
     try {
@@ -191,24 +217,26 @@ export class CdbEstimateService {
     ];
     const readCanonicalRates = async () => {
       const ratesByBaseDate = new Map<string, CachedCdiRate[]>();
+      const latestPriorRateByBaseDate = new Map<string, CachedCdiRate | null>();
       await Promise.all(
         baseDates.map(async (baseDate) => {
-          const rates = await cdbRateRepository.listRatesFrom(
-            baseDate,
-            valuationDate,
-          );
+          const [rates, latestPriorRate] = await Promise.all([
+            cdbRateRepository.listRatesFrom(baseDate, valuationDateExclusive),
+            cdbRateRepository.listLatestRateOnOrBefore(baseDate),
+          ]);
           ratesByBaseDate.set(
             baseDate,
             sortRates(rates.filter((rate) => rate.rateDate > baseDate)),
           );
+          latestPriorRateByBaseDate.set(baseDate, latestPriorRate);
         }),
       );
-      return ratesByBaseDate;
+      return { ratesByBaseDate, latestPriorRateByBaseDate };
     };
 
-    let cachedRatesByBaseDate: Map<string, CachedCdiRate[]>;
+    let canonicalRates: Awaited<ReturnType<typeof readCanonicalRates>>;
     try {
-      cachedRatesByBaseDate = await readCanonicalRates();
+      canonicalRates = await readCanonicalRates();
     } catch {
       logUnavailable("rates");
       return positions.map((position) =>
@@ -225,27 +253,56 @@ export class CdbEstimateService {
     const missingRateDates = new Set(
       baseDates.flatMap((baseDate) => {
         const cachedDates = new Set(
-          cachedRatesByBaseDate.get(baseDate)!.map((rate) => rate.rateDate),
+          canonicalRates.ratesByBaseDate
+            .get(baseDate)!
+            .map((rate) => rate.rateDate),
         );
-        return expectedRateDates(addDays(baseDate, 1), valuationDate).filter(
-          (date) => !cachedDates.has(date),
+        return expectedRateDates(
+          addDays(baseDate, 1),
+          valuationDateExclusive,
+        ).filter((date) => !cachedDates.has(date));
+      }),
+    );
+    const baseDatesWithoutPriorRate = new Set(
+      baseDates.filter((baseDate) => {
+        if (canonicalRates.latestPriorRateByBaseDate.get(baseDate))
+          return false;
+        const firstExpectedDate = expectedRateDates(
+          addDays(baseDate, 1),
+          valuationDateExclusive,
+        )[0];
+        return Boolean(
+          firstExpectedDate &&
+          !canonicalRates.ratesByBaseDate
+            .get(baseDate)!
+            .some((rate) => rate.rateDate === firstExpectedDate),
         );
       }),
     );
 
-    if (missingRateDates.size) {
-      const from = [...missingRateDates].sort()[0]!;
+    if (missingRateDates.size || baseDatesWithoutPriorRate.size) {
+      const fetchStarts = [
+        ...missingRateDates,
+        ...[...baseDatesWithoutPriorRate].map((baseDate) =>
+          addDays(baseDate, -10),
+        ),
+      ];
+      const from = fetchStarts.sort()[0]!;
       try {
         const fetchedRates = await bcbCdiService.fetchRates(
           from,
-          valuationDate,
+          valuationDateExclusive,
         );
         const ratesToCache = Array.from(
           new Map(
             fetchedRates
               .filter(
                 (rate) =>
-                  rate.date < valuationDate && missingRateDates.has(rate.date),
+                  rate.date < valuationDateExclusive &&
+                  (missingRateDates.has(rate.date) ||
+                    [...baseDatesWithoutPriorRate].some(
+                      (baseDate) => rate.date <= baseDate,
+                    )),
               )
               .map((rate) => [rate.date, rate]),
           ).values(),
@@ -264,7 +321,7 @@ export class CdbEstimateService {
 
     try {
       // Always calculate from the canonical persisted set, including after a concurrent insert.
-      cachedRatesByBaseDate = await readCanonicalRates();
+      canonicalRates = await readCanonicalRates();
     } catch {
       logUnavailable("rates");
       return positions.map((position) =>
@@ -300,6 +357,12 @@ export class CdbEstimateService {
             isDiCdb(position) && position.totalValue
               ? ("unavailable" as const)
               : null,
+          ...(isDiCdb(position)
+            ? {
+                cdbProjectedFromDate: null,
+                cdbProjectedThroughDate: null,
+              }
+            : {}),
           cdbEstimateLimitation:
             isDiCdb(position) && position.totalValue
               ? !cdiPercentage
@@ -312,28 +375,31 @@ export class CdbEstimateService {
               : null,
         };
 
-      const rates = cachedRatesByBaseDate.get(estimationBaseDate)!;
+      const rates = canonicalRates.ratesByBaseDate.get(estimationBaseDate)!;
       const expectedAccrualDates = expectedRateDates(
         addDays(estimationBaseDate, 1),
-        valuationDate,
+        valuationDateExclusive,
       );
       const noAccrualDateAvailable = expectedAccrualDates.length === 0;
-      const trustedPrefix = getTrustedRatePrefix(
-        estimationBaseDate,
-        valuationDate,
-        rates,
-      );
-      const lastRateDate = trustedPrefix.rates.at(-1)?.rateDate;
-      if (!noAccrualDateAvailable && trustedPrefix.rates.length === 0) {
+      const effectiveSeries = buildEffectiveCdiRateSeries({
+        fromDateExclusive: estimationBaseDate,
+        toDateExclusive: valuationDateExclusive,
+        officialRates: rates,
+        latestPriorOfficial:
+          canonicalRates.latestPriorRateByBaseDate.get(estimationBaseDate),
+      });
+      const lastRateDate = effectiveSeries.rates.at(-1)?.rateDate;
+      if (!noAccrualDateAvailable && effectiveSeries.rates.length === 0) {
         return {
           ...position,
           cdiPercentage,
           estimatedValue: null,
           estimatedValueCents: null,
           cdbEstimateStatus: "unavailable" as const,
-          cdbEstimateLimitation: rates.length
-            ? "Há lacunas nas taxas CDI do período; a estimativa não foi calculada."
-            : "Não há taxas CDI oficiais persistidas para a data-base informada.",
+          cdbEstimateLimitation:
+            "Não há taxa CDI oficial anterior para projetar as datas sem publicação.",
+          cdbProjectedFromDate: null,
+          cdbProjectedThroughDate: null,
         };
       }
 
@@ -341,22 +407,23 @@ export class CdbEstimateService {
         const estimate = estimatePostFixedCdb({
           officialValue: position.totalValue,
           cdiPercentage,
-          rates: trustedPrefix.rates,
+          rates: effectiveSeries.rates,
         });
-        const incompleteDates = trustedPrefix.missingDate
-          ? [trustedPrefix.missingDate]
-          : [];
+        const incomplete = Boolean(effectiveSeries.projectedDates.length);
         return {
           ...position,
           cdiPercentage,
           ...estimate,
           estimatedThrough: lastRateDate ?? estimationBaseDate,
-          cdbEstimateStatus: incompleteDates.length
+          cdbEstimateStatus: incomplete
             ? ("provisional" as const)
             : ("complete" as const),
           cdbEstimateComparisonApproximate: true,
-          cdbEstimateLimitation: incompleteDates.length
-            ? "Estimativa parcial: ainda não há taxa CDI oficial para as datas seguintes."
+          cdbProjectedFromDate: effectiveSeries.projectedDates[0] ?? null,
+          cdbProjectedThroughDate:
+            effectiveSeries.projectedDates.at(-1) ?? null,
+          cdbEstimateLimitation: effectiveSeries.projectedDates.length
+            ? "Projeção usa a última taxa CDI oficial nas datas sem publicação."
             : "Comparação aproximada: a última avaliação confiável disponível é anterior à data informada.",
         };
       } catch {
@@ -367,6 +434,8 @@ export class CdbEstimateService {
           estimatedValue: null,
           estimatedValueCents: null,
           cdbEstimateStatus: "unavailable" as const,
+          cdbProjectedFromDate: null,
+          cdbProjectedThroughDate: null,
           cdbEstimateLimitation:
             "Não foi possível calcular com as taxas CDI disponíveis.",
         };
@@ -381,7 +450,7 @@ export class CdbEstimateService {
           assetCode: position.assetCode,
           cdiPercentage: percentages.get(position.assetCode!) ?? null,
           rates: estimationBaseDate
-            ? (cachedRatesByBaseDate.get(estimationBaseDate) ?? [])
+            ? (canonicalRates.ratesByBaseDate.get(estimationBaseDate) ?? [])
             : [],
         },
       };

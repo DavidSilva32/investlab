@@ -39,6 +39,8 @@ export type PortfolioPosition = {
   canonicalValueSource?: string;
   reportedValueCents?: string | null;
   estimatedThrough?: string | null;
+  cdbProjectedFromDate?: string | null;
+  cdbProjectedThroughDate?: string | null;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
 };
