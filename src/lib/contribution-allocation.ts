@@ -2,6 +2,7 @@ import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-ta
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
 
 export type ContributionPosition = {
   product: string;
@@ -197,35 +198,15 @@ export function calculateContributionAllocation({
 
   const positiveGaps = gaps.filter((gap) => gap.targetGapValue > 0);
   const distributableCents = Math.min(remainingCents, totalGapCents);
-  let assignedCents = 0;
   const contributions = new Map<string, number>();
-  const remainders: Array<{ assetClass: string; remainder: bigint }> = [];
-  const totalGapBigInt = BigInt(totalGapCents);
-  positiveGaps.forEach((gap) => {
-    const numerator = BigInt(distributableCents) * BigInt(gap.targetGapValue);
-    const allocated = Number(numerator / totalGapBigInt);
-    contributions.set(gap.assetClass, Math.min(allocated, gap.targetGapValue));
-    assignedCents += Math.min(allocated, gap.targetGapValue);
-    if (contributions.get(gap.assetClass)! < gap.targetGapValue) {
-      remainders.push({
-        assetClass: gap.assetClass,
-        remainder: numerator % totalGapBigInt,
-      });
-    }
-  });
-  remainders.sort((left, right) =>
-    left.remainder === right.remainder
-      ? positiveGaps.findIndex((gap) => gap.assetClass === left.assetClass) -
-        positiveGaps.findIndex((gap) => gap.assetClass === right.assetClass)
-      : left.remainder > right.remainder
-        ? -1
-        : 1,
+  const proportionalAllocations = allocateCentsByProportionalGap(
+    positiveGaps.map((gap) => BigInt(gap.targetGapValue)),
+    BigInt(distributableCents),
   );
-  const centsToDistribute = distributableCents - assignedCents;
-  for (const { assetClass } of remainders.slice(0, centsToDistribute)) {
-    contributions.set(assetClass, contributions.get(assetClass)! + 1);
-  }
-  assignedCents = [...contributions.values()].reduce(
+  positiveGaps.forEach((gap, index) => {
+    contributions.set(gap.assetClass, Number(proportionalAllocations[index]));
+  });
+  const assignedCents = [...contributions.values()].reduce(
     (total, value) => total + value,
     0,
   );

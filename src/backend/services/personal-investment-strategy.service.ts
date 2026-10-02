@@ -5,6 +5,12 @@ import { portfolioAllocationService } from "@/backend/services/portfolio-allocat
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { todayInSaoPaulo } from "@/lib/valuation-date";
+import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
+import {
+  simulateStrategyContribution,
+  strategyAssetClasses,
+  type StrategyAllocationPercentages,
+} from "@/lib/strategy-allocation";
 
 const answerSchema = z.object({
   horizonYears: z.number().int().min(1).max(100),
@@ -14,13 +20,38 @@ const saveSchema = z.object({
   answers: answerSchema,
   selectedDirection: z.enum(["review_horizon", "consider_international"]),
 });
+const allocationPercentagesSchema = z
+  .object({
+    fixed_income: z.number().finite().min(0).max(100),
+    brazilian_equities: z.number().finite().min(0).max(100),
+    international_etfs: z.number().finite().min(0).max(100),
+    fiis: z.number().finite().min(0).max(100),
+  })
+  .strict()
+  .refine(
+    (percentages) =>
+      Object.values(percentages).every(
+        (percentage) =>
+          Math.abs(percentage * 100 - Math.round(percentage * 100)) < 1e-7,
+      ) &&
+      Object.values(percentages).reduce(
+        (total, percentage) => total + Math.round(percentage * 100),
+        0,
+      ) === 10000,
+  );
+const contributionSchema = z.object({
+  contributionAmount: z
+    .number()
+    .finite()
+    .positive()
+    .max(1_000_000_000_000)
+    .refine(
+      (amount) => Math.abs(amount * 100 - Math.round(amount * 100)) < 1e-7,
+    ),
+  allocationPercentages: allocationPercentagesSchema,
+});
 
-const groups = [
-  { id: "fixed_income", label: "Renda fixa" },
-  { id: "brazilian_equities", label: "Ações brasileiras" },
-  { id: "international_etfs", label: "ETFs internacionais" },
-  { id: "fiis", label: "FIIs" },
-] as const;
+const groups = strategyAssetClasses;
 
 type Position = {
   positionCount: number;
@@ -97,7 +128,7 @@ export class PersonalInvestmentStrategyService {
     );
     const dates = [
       ...new Set(
-        positions
+        longTerm
           .map(
             (position) => position.estimatedThrough ?? position.referenceDate,
           )
@@ -119,6 +150,19 @@ export class PersonalInvestmentStrategyService {
         unclassifiedKnownCents += BigInt(position.valueCents!);
       }
     }
+    const classifiedCents = groups.reduce(
+      (sum, group) => sum + classValues.get(group.id)!,
+      0n,
+    );
+    const representedBasisPoints =
+      longTermCents === 0n
+        ? 0n
+        : (classifiedCents * 10000n + longTermCents / 2n) / longTermCents;
+    const classBasisPoints = allocateCentsByProportionalGap(
+      groups.map((group) => classValues.get(group.id)!),
+      representedBasisPoints,
+      false,
+    );
     const saved = await this.repository.get(requestId);
     const maturityCounts = new Map<string, number>();
     for (const position of longTerm) {
@@ -158,11 +202,17 @@ export class PersonalInvestmentStrategyService {
           .filter((position) => position.objectiveId !== null)
           .reduce((sum, position) => sum + position.positionCount, 0),
         unclassifiedKnownValueCents: unclassifiedKnownCents.toString(),
-        classes: groups.map(({ id, label }) => ({
-          id,
-          label,
-          knownValueCents: classValues.get(id)!.toString(),
-        })),
+        classes: groups.map(({ id, label }, index) => {
+          const knownValueCents = classValues.get(id)!;
+          const percentageBasisPoints = classBasisPoints[index];
+          return {
+            id,
+            label,
+            knownValueCents: knownValueCents.toString(),
+            percentageBasisPoints: Number(percentageBasisPoints),
+            currentPercentage: Number(percentageBasisPoints) / 100,
+          };
+        }),
       },
       longTermMaturityDates: [...maturityCounts]
         .map(([date, count]) => ({ date, count }))
@@ -176,13 +226,107 @@ export class PersonalInvestmentStrategyService {
             objective.kind !== "RESERVE" && objective.purpose === null,
         ).length,
       valuationDates: dates,
-      savedStrategy: saved
-        ? {
-            answers: saved.answers,
-            selectedDirection: saved.selectedDirection,
-            updatedAt: saved.updatedAt.toISOString(),
-          }
-        : null,
+      savedStrategy:
+        saved?.answers && saved.selectedDirection
+          ? {
+              answers: saved.answers,
+              selectedDirection: saved.selectedDirection,
+              updatedAt: saved.updatedAt.toISOString(),
+            }
+          : null,
+      savedAllocationPercentages: saved?.allocationPercentages ?? null,
+    };
+  }
+
+  async saveComposition(body: unknown, requestId?: string) {
+    const parsed = allocationPercentagesSchema.safeParse(
+      (body as { allocationPercentages?: unknown } | null)
+        ?.allocationPercentages,
+    );
+    if (!parsed.success) {
+      throw new ApplicationError(
+        "Informe percentuais entre 0% e 100%, com até duas casas decimais e total de 100%.",
+        400,
+      );
+    }
+    const allocationPercentages = parsed.data as StrategyAllocationPercentages;
+    await this.repository.saveAllocationPercentages(
+      allocationPercentages,
+      requestId,
+    );
+    return allocationPercentages;
+  }
+
+  async simulateContribution(body: unknown, requestId?: string) {
+    const parsed = contributionSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApplicationError(
+        "Informe um aporte positivo e uma composição válida totalizando 100%.",
+        400,
+      );
+    }
+    const valuationDate = this.today();
+    const evaluated = await this.positions.listCurrentEnriched(
+      requestId,
+      valuationDate,
+    );
+    const classified = await this.allocation.classifyPositions(
+      evaluated,
+      requestId,
+    );
+    const objectiveOverview = await this.objectives.getOverview(
+      requestId,
+      valuationDate,
+      classified,
+    );
+    const positions = objectiveOverview.positions as Position[];
+    const longTerm = positions.filter(
+      (position) => position.objectivePurpose === "LONG_TERM_INVESTMENT",
+    );
+    const currentValuesCents = Object.fromEntries(
+      groups.map(({ id }) => [id, "0"]),
+    ) as Record<(typeof groups)[number]["id"], string>;
+    let unclassifiedKnownValueCents = 0n;
+    for (const position of longTerm) {
+      if (position.valueCents === null) continue;
+      const group = groupFor(position);
+      if (group) {
+        currentValuesCents[group] = (
+          BigInt(currentValuesCents[group]) + BigInt(position.valueCents)
+        ).toString();
+      } else {
+        unclassifiedKnownValueCents += BigInt(position.valueCents);
+      }
+    }
+    const result = simulateStrategyContribution({
+      currentValuesCents,
+      targetPercentages: parsed.data.allocationPercentages,
+      contributionCents: String(
+        Math.round(parsed.data.contributionAmount * 100),
+      ),
+    });
+    return {
+      ...result,
+      completeness: {
+        complete:
+          longTerm.every((position) => position.valueCents !== null) &&
+          unclassifiedKnownValueCents === 0n,
+        unvaluedPositionCount: longTerm
+          .filter((position) => position.valueCents === null)
+          .reduce((sum, position) => sum + position.unvaluedPositions, 0),
+        unclassifiedKnownValueCents: unclassifiedKnownValueCents.toString(),
+        valuationDate,
+        valuationDates: [
+          ...new Set(
+            longTerm
+              .map(
+                (position) =>
+                  position.estimatedThrough ?? position.referenceDate,
+              )
+              .filter((date): date is string => date !== null),
+          ),
+        ].sort(),
+      },
     };
   }
 

@@ -248,13 +248,12 @@ export const personalInvestmentStrategy = pgTable(
   "personal_investment_strategy",
   {
     id: varchar({ length: 20 }).primaryKey().default("default"),
-    answers: jsonb()
-      .$type<{
-        horizonYears: number;
-        internationalInterest: "interested" | "not_interested" | "unsure";
-      }>()
-      .notNull(),
-    selectedDirection: varchar({ length: 40 }).notNull(),
+    answers: jsonb().$type<{
+      horizonYears: number;
+      internationalInterest: "interested" | "not_interested" | "unsure";
+    }>(),
+    selectedDirection: varchar({ length: 40 }),
+    allocationPercentages: jsonb().$type<Record<string, number> | null>(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
 );

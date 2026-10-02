@@ -11,360 +11,226 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersonalInvestmentStrategy } from "@/app/strategy/_components/personal-investment-strategy";
 
-Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
-  configurable: true,
-  value: () => false,
-});
-Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
-  configurable: true,
-  value: () => {},
-});
-Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
-  configurable: true,
-  value: () => {},
-});
-Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-  configurable: true,
-  value: () => {},
-});
-
-const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
-vi.mock("sonner", () => ({ toast }));
-
 const baseData = {
   valuationDate: "2026-10-02",
-  valuationDates: ["2026-09-30", "2026-10-01"],
-  totalWealth: {
-    knownValueCents: "150000",
-    unvaluedPositionCount: 0,
-    positionCount: 4,
-  },
+  valuationDates: ["2026-10-02"],
   longTermWealth: {
     knownValueCents: "100000",
     unvaluedPositionCount: 0,
-    positionCount: 2,
-    positionsWithoutMaturityDate: 1,
-    assignedPositionCount: 2,
+    positionCount: 4,
+    assignedPositionCount: 4,
     unclassifiedKnownValueCents: "0",
     classes: [
-      { id: "fixed_income", label: "Renda fixa", knownValueCents: "40000" },
+      {
+        id: "fixed_income",
+        label: "Renda fixa",
+        knownValueCents: "40000",
+        currentPercentage: 40,
+      },
       {
         id: "brazilian_equities",
         label: "Ações brasileiras",
         knownValueCents: "30000",
+        currentPercentage: 30,
       },
       {
         id: "international_etfs",
         label: "ETFs internacionais",
         knownValueCents: "20000",
+        currentPercentage: 20,
       },
-      { id: "fiis", label: "FIIs", knownValueCents: "10000" },
+      {
+        id: "fiis",
+        label: "FIIs",
+        knownValueCents: "10000",
+        currentPercentage: 10,
+      },
     ],
   },
-  longTermMaturityDates: [
-    { date: "2028-10-02", count: 1 },
-    { date: "2032-10-02", count: 1 },
-  ],
-  longTermPositionsWithoutMaturityDate: 1,
   destinationsNeedingPurposeConfirmation: 0,
-  savedStrategy: null,
+  savedAllocationPercentages: null,
 };
+
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  value: class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
 
 function jsonResponse(body: unknown, ok = true) {
   return Promise.resolve({ ok, json: () => Promise.resolve(body) });
 }
 
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
 describe("PersonalInvestmentStrategy", () => {
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-    toast.error.mockReset();
-    toast.success.mockReset();
+  it("loads the dated long-term composition and excludes unrelated wealth from the strategy view", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(baseData)));
+    render(<PersonalInvestmentStrategy />);
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Lendo sua carteira",
+    );
+    expect(
+      await screen.findByText("Patrimônio destinado ao longo prazo"),
+    ).toBeTruthy();
+    expect(screen.getByText(/R\$\s*1\.000,00/)).toBeTruthy();
+    expect(screen.getByText("Em 02/10/2026")).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Reserva, objetivos pessoais e posições sem destino ficam fora/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Sua composição de longo prazo")).toBeTruthy();
+    expect(screen.queryByText("O que importa para você?")).toBeNull();
+    expect(screen.getByText(/não é uma recomendação/)).toBeTruthy();
   });
 
-  it("loads the canonical portfolio snapshot, explains facts, and lets answers alter directions", async () => {
-    const fetch = vi.fn().mockResolvedValue(jsonResponse(baseData));
-    vi.stubGlobal("fetch", fetch);
+  it("retries after a blocking load error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          jsonResponse({ message: "Falha temporária." }, false),
+        )
+        .mockResolvedValueOnce(jsonResponse(baseData)),
+    );
+    const user = userEvent.setup();
+    render(<PersonalInvestmentStrategy />);
+
+    expect(await screen.findByText("Falha temporária.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+
+    expect(
+      await screen.findByText("Patrimônio destinado ao longo prazo"),
+    ).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows purpose and valuation coverage limitations, and links to review destinations", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          valuationDates: ["2026-09-30", "2026-10-02"],
+          longTermWealth: {
+            ...baseData.longTermWealth,
+            unvaluedPositionCount: 1,
+            unclassifiedKnownValueCents: "500",
+          },
+          destinationsNeedingPurposeConfirmation: 2,
+        }),
+      ),
+    );
     render(<PersonalInvestmentStrategy />);
 
     expect(
-      await screen.findByText("O que sua carteira mostra hoje"),
+      await screen.findByText("2 destino(s) sem finalidade definida"),
     ).toBeTruthy();
-    expect(screen.getByText("Patrimônio total")).toBeTruthy();
-    expect(
-      screen.getByText("Destinado à estratégia de longo prazo"),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Retrato atual por classe; não são metas nem uma alocação recomendada.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/As fontes disponíveis têm datas efetivas diferentes/),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /Revisar os prazos da carteira/ }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /Avaliar exposição internacional/ }),
-    ).toBeNull();
     expect(
       screen
-        .getByRole("button", { name: "Salvar direção escolhida" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+        .getByRole("link", { name: "Revisar destinos" })
+        .getAttribute("href"),
+    ).toBe("/portfolio?panel=objectives");
+    expect(
+      screen.getByText(/As posições têm datas efetivas diferentes/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/1 posição\(ões\) não têm valor conhecido/),
+    ).toBeTruthy();
+    expect(screen.getByText(/R\$\s*5,00 não se enquadram/)).toBeTruthy();
+  });
 
-    fireEvent.change(screen.getByLabelText(/Em quantos anos/), {
-      target: { value: "3" },
-    });
+  it("explains the empty state when no position is assigned to long term", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          longTermWealth: {
+            ...baseData.longTermWealth,
+            knownValueCents: "0",
+            positionCount: 0,
+            assignedPositionCount: 0,
+            classes: [],
+          },
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
     expect(
-      screen.getByRole("button", { name: /Revisar os prazos da carteira/ }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        /há 1 posição\(ões\) com vencimento cadastrado até 02\/10\/2029/,
+      await screen.findByText(
+        "Nenhuma posição está atribuída a um destino de longo prazo.",
       ),
     ).toBeTruthy();
-    const user = userEvent.setup();
-    await user.click(
-      screen.getByRole("combobox", { name: /Você quer considerar/ }),
-    );
-    await user.click(screen.getByRole("option", { name: "Sim" }));
     expect(
-      screen.getByRole("button", { name: /Avaliar exposição internacional/ }),
-    ).toBeTruthy();
-    await user.click(
-      screen.getByRole("button", { name: /Avaliar exposição internacional/ }),
-    );
-    await user.click(
-      screen.getByRole("combobox", { name: /Você quer considerar/ }),
-    );
-    await user.click(screen.getByRole("option", { name: "Não por enquanto" }));
-    expect(
-      screen
-        .getByRole("button", { name: "Salvar direção escolhida" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(
-      screen.queryByRole("button", { name: /Avaliar exposição internacional/ }),
-    ).toBeNull();
-    expect(
-      screen
-        .getByRole("button", { name: "Salvar direção escolhida" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(
-      screen.getByRole("button", { name: /Revisar os prazos da carteira/ }),
+      screen.getByRole("link", { name: "Organizar destinos" }),
     ).toBeTruthy();
   });
 
-  it("saves the chosen direction without presenting it as an allocation", async () => {
-    const fetch = vi
+  it("saves a new composition through the editor and updates the saved state", async () => {
+    const request = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(baseData))
       .mockResolvedValueOnce(
         jsonResponse({
-          message: "Direção salva pelo servidor.",
-          strategy: {
-            answers: { horizonYears: 5, internationalInterest: "unsure" },
-            selectedDirection: "consider_international",
-            updatedAt: "2026-10-02T10:00:00.000Z",
+          message: "Composição salva.",
+          allocationPercentages: {
+            fixed_income: 0,
+            brazilian_equities: 30,
+            international_etfs: 20,
+            fiis: 50,
           },
         }),
       );
-    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("fetch", request);
     const user = userEvent.setup();
     render(<PersonalInvestmentStrategy />);
-    await screen.findByText("O que sua carteira mostra hoje");
-    fireEvent.change(screen.getByLabelText(/Em quantos anos/), {
-      target: { value: "5" },
-    });
-    await user.click(
-      screen.getByRole("combobox", { name: /Você quer considerar/ }),
-    );
-    await user.click(screen.getByRole("option", { name: "Ainda não sei" }));
-    await user.click(
-      screen.getByRole("button", { name: /Avaliar exposição internacional/ }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Salvar direção escolhida" }),
-    );
+    await screen.findByText("Sua composição de longo prazo");
+    for (const [label, value] of [
+      ["Renda fixa escolhida (%)", "0"],
+      ["Ações brasileiras escolhida (%)", "30"],
+      ["ETFs internacionais escolhida (%)", "20"],
+      ["FIIs escolhida (%)", "50"],
+    ]) {
+      fireEvent.change(screen.getByRole("spinbutton", { name: label }), {
+        target: { value },
+      });
+    }
+    await user.click(screen.getByRole("button", { name: "Salvar composição" }));
 
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        "Direção salva pelo servidor.",
-      ),
+      expect(
+        screen.getByText(/Última composição salva permanece/),
+      ).toBeTruthy(),
     );
-    expect(fetch).toHaveBeenLastCalledWith(
+    expect(request).toHaveBeenLastCalledWith(
       "/api/portfolio/strategy",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          answers: { horizonYears: 5, internationalInterest: "unsure" },
-          selectedDirection: "consider_international",
-        }),
-      }),
+      expect.objectContaining({ method: "POST" }),
     );
-    expect(
-      screen.getByText("Esta versão não conclui uma alocação quantitativa"),
-    ).toBeTruthy();
-    expect(screen.getByText("Sua direção está registrada.")).toBeTruthy();
   });
 
-  it("does not invent a horizon or international preference before the user answers", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(baseData)));
-    render(<PersonalInvestmentStrategy />);
-    await screen.findByText("O que sua carteira mostra hoje");
-    expect(
-      (screen.getByLabelText(/Em quantos anos/) as HTMLInputElement).value,
-    ).toBe("");
-    expect(
-      screen.getByRole("combobox", { name: /Você quer considerar/ })
-        .textContent,
-    ).toContain("Escolha uma resposta");
-    expect(
-      screen
-        .getByRole("button", { name: "Salvar direção escolhida" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(
-      screen.getByText(
-        "Informe seu horizonte para comparar os vencimentos cadastrados.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("restores a persisted direction and allows changing it", async () => {
-    const fetch = vi.fn().mockResolvedValue(
-      jsonResponse({
-        ...baseData,
-        savedStrategy: {
-          answers: { horizonYears: 8, internationalInterest: "not_interested" },
-          selectedDirection: "review_horizon",
-          updatedAt: "2026-10-01T10:00:00.000Z",
-        },
-      }),
-    );
-    vi.stubGlobal("fetch", fetch);
-    const user = userEvent.setup();
-    render(<PersonalInvestmentStrategy />);
-    await screen.findByText("Sua direção está registrada.");
-    expect(
-      (screen.getByLabelText(/Em quantos anos/) as HTMLInputElement).value,
-    ).toBe("8");
-    expect(
-      screen.queryByRole("button", { name: /Avaliar exposição internacional/ }),
-    ).toBeNull();
-    await user.click(
-      screen.getByRole("button", { name: /Revisar os prazos da carteira/ }),
-    );
-    expect(
-      screen
-        .getByRole("button", { name: /Revisar os prazos da carteira/ })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-  });
-
-  it("shows unknown and unclassified amounts without treating them as zero", async () => {
-    const partial = {
-      ...baseData,
-      valuationDates: [],
-      totalWealth: {
-        knownValueCents: "500",
-        unvaluedPositionCount: 1,
-        positionCount: 2,
-      },
-      longTermWealth: {
-        ...baseData.longTermWealth,
-        knownValueCents: "500",
-        unvaluedPositionCount: 1,
-        unclassifiedKnownValueCents: "500",
-      },
-    };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(partial)));
-    render(<PersonalInvestmentStrategy />);
-    expect(
-      await screen.findByText(
-        /Valores não conhecidos não são tratados como zero/,
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Classe ou geografia não identificada"),
-    ).toBeTruthy();
-    expect(
-      screen.getAllByText(/posição\(ões\) sem valor conhecido/).length,
-    ).toBeGreaterThan(0);
-    expect(
-      screen.queryByText(/As fontes disponíveis têm datas efetivas diferentes/),
-    ).toBeNull();
-  });
-
-  it("asks to classify legacy destinations and shows the empty long-term state", async () => {
-    const legacy = {
-      ...baseData,
-      destinationsNeedingPurposeConfirmation: 1,
-      longTermWealth: {
-        ...baseData.longTermWealth,
-        positionCount: 0,
-        classes: baseData.longTermWealth.classes.filter(
-          ({ id }) => id !== "international_etfs",
-        ),
-      },
-    };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(legacy)));
-    render(<PersonalInvestmentStrategy />);
-    expect(
-      await screen.findByText(/destino\(s\) ainda sem finalidade definida/),
-    ).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Revisar destinos" })).toBeTruthy();
-    expect(screen.getByText(/Nenhuma posi/)).toBeTruthy();
-
-    const user = userEvent.setup();
-    await user.click(screen.getAllByRole("combobox")[0]);
-    await user.click(screen.getByRole("option", { name: "Sim" }));
-    await user.click(screen.getByRole("button", { name: /Avaliar exposi/ }));
-    expect(
-      screen.getByText(/em ETFs internacionais identificados/),
-    ).toBeTruthy();
-  });
-
-  it("keeps the international direction hidden when it is declined and blocks an invalid horizon", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(baseData)));
-    const user = userEvent.setup();
-    render(<PersonalInvestmentStrategy />);
-    await screen.findByText("O que sua carteira mostra hoje");
-    fireEvent.change(screen.getByLabelText(/Em quantos anos/), {
-      target: { value: "0" },
-    });
-    fireEvent.change(screen.getByLabelText(/Em quantos anos/), {
-      target: { value: "" },
-    });
-    await user.click(
-      screen.getByRole("combobox", { name: /Você quer considerar/ }),
-    );
-    await user.click(screen.getByRole("option", { name: "Não por enquanto" }));
-    expect(
-      screen
-        .getByRole("button", { name: "Salvar direção escolhida" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(
-      screen.queryByRole("button", { name: /Avaliar exposição internacional/ }),
-    ).toBeNull();
-  });
-
-  it("shows API, fallback, network and non-Error loading failures inline", async () => {
+  it("renders safe backend and fallback errors when loading fails", async () => {
     vi.stubGlobal(
       "fetch",
       vi
         .fn()
         .mockResolvedValue(
-          jsonResponse({ message: "A carteira está indisponível." }, false),
+          jsonResponse({ message: "A estratégia está indisponível." }, false),
         ),
     );
     render(<PersonalInvestmentStrategy />);
     expect(
-      await screen.findByText("A carteira está indisponível."),
+      await screen.findByText("A estratégia está indisponível."),
     ).toBeTruthy();
 
     cleanup();
@@ -382,53 +248,7 @@ describe("PersonalInvestmentStrategy", () => {
     ).toBeTruthy();
   });
 
-  it("uses a safe save fallback when the API rejects the choice", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(baseData))
-      .mockResolvedValueOnce(jsonResponse({ message: "" }, false));
-    vi.stubGlobal("fetch", fetch);
-    const user = userEvent.setup();
-    render(<PersonalInvestmentStrategy />);
-    await screen.findByText("O que sua carteira mostra hoje");
-    fireEvent.change(screen.getByLabelText(/Em quantos anos/), {
-      target: { value: "2" },
-    });
-    await user.click(
-      screen.getByRole("combobox", { name: /Você quer considerar/ }),
-    );
-    await user.click(screen.getByRole("option", { name: "Não por enquanto" }));
-    await user.click(screen.getByRole("button", { name: /Revisar os prazos/ }));
-    await user.click(
-      screen.getByRole("button", { name: "Salvar direção escolhida" }),
-    );
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        "Não foi possível salvar sua estratégia.",
-      ),
-    );
-  });
-
-  it("uses a safe toast fallback when saving fails in transport", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(baseData))
-      .mockRejectedValueOnce(new Error("offline"));
-    vi.stubGlobal("fetch", fetch);
-    const user = userEvent.setup();
-    render(<PersonalInvestmentStrategy />);
-    await screen.findByText("O que sua carteira mostra hoje");
-    fireEvent.change(screen.getByLabelText(/Em quantos anos/), {
-      target: { value: "2" },
-    });
-    await user.click(screen.getAllByRole("combobox")[0]);
-    await user.click(screen.getByRole("option", { name: /por enquanto/ }));
-    await user.click(screen.getByRole("button", { name: /Revisar os prazos/ }));
-    await user.click(screen.getByRole("button", { name: /Salvar dire/ }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
-  });
-
-  it("ignores a portfolio response when the page unmounts during loading", async () => {
+  it("ignores a portfolio response after unmount", async () => {
     let resolve!: (value: unknown) => void;
     vi.stubGlobal(
       "fetch",
@@ -443,7 +263,7 @@ describe("PersonalInvestmentStrategy", () => {
     await act(async () => resolve(jsonResponse(baseData)));
   });
 
-  it("ignores a portfolio failure when the page unmounts during loading", async () => {
+  it("ignores a loading error after unmount", async () => {
     let reject!: (reason: unknown) => void;
     vi.stubGlobal(
       "fetch",
@@ -456,6 +276,10 @@ describe("PersonalInvestmentStrategy", () => {
     const { unmount } = render(<PersonalInvestmentStrategy />);
     unmount();
     await act(async () => reject(new Error("offline")));
-    expect(toast.error).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Não foi possível abrir a estratégia"),
+      ).toBeNull(),
+    );
   });
 });

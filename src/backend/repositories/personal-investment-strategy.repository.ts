@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import { personalInvestmentStrategy } from "@/infrastructure/database/schema";
+import type { StrategyAllocationPercentages } from "@/lib/strategy-allocation";
 
 const singletonId = "default";
 
@@ -47,6 +48,33 @@ export class PersonalInvestmentStrategyRepository {
       return record;
     } catch (error) {
       logger.error("personal_investment_strategy_update_failed", {
+        requestId,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  async saveAllocationPercentages(
+    allocationPercentages: StrategyAllocationPercentages,
+    requestId?: string,
+  ) {
+    try {
+      const [record] = await getDatabaseClient()
+        .insert(personalInvestmentStrategy)
+        .values({
+          id: singletonId,
+          allocationPercentages,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: personalInvestmentStrategy.id,
+          set: { allocationPercentages, updatedAt: new Date() },
+        })
+        .returning();
+      return record;
+    } catch (error) {
+      logger.error("personal_investment_strategy_allocation_update_failed", {
         requestId,
         error,
       });

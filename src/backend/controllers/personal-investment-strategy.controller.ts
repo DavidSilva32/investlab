@@ -12,6 +12,24 @@ export class PersonalInvestmentStrategyController {
   }
 
   async save(body: unknown, requestId: string) {
+    if (
+      body !== null &&
+      typeof body === "object" &&
+      "allocationPercentages" in body
+    ) {
+      const allocationPercentages =
+        await personalInvestmentStrategyService.saveComposition(
+          body,
+          requestId,
+        );
+      logger.info("personal_investment_strategy_allocation_saved", {
+        requestId,
+      });
+      return Response.json({
+        message: "Sua composição de longo prazo foi salva.",
+        allocationPercentages,
+      });
+    }
     const strategy = await personalInvestmentStrategyService.save(
       body,
       requestId,
@@ -24,6 +42,19 @@ export class PersonalInvestmentStrategyController {
       message: "Sua direção de estratégia foi salva.",
       strategy,
     });
+  }
+
+  async simulateContribution(body: unknown, requestId: string) {
+    const simulation =
+      await personalInvestmentStrategyService.simulateContribution(
+        body,
+        requestId,
+      );
+    logger.info("personal_investment_strategy_contribution_simulated", {
+      requestId,
+      complete: simulation.completeness.complete,
+    });
+    return Response.json(simulation);
   }
 }
 
