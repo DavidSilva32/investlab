@@ -93,6 +93,157 @@ describe("solvePortfolioObjectiveAllocation", () => {
     expect(result.exploredStates).toBe(1);
   });
 
+  it("keeps the current assignment when meet-in-the-middle storage truncates before searching", () => {
+    const positions: AllocationPosition[] = Array.from(
+      { length: 25 },
+      (_, index) => ({
+        assetKey: `owned-${index}`,
+        valueCents: BigInt(index + 10),
+        objectiveId: index < 12 ? "goal-a" : null,
+      }),
+    );
+    const result = solvePortfolioObjectiveAllocation(
+      positions,
+      [
+        { objectiveId: "goal-a", amountCents: 1n },
+        { objectiveId: "goal-b", amountCents: 1n },
+      ],
+      1,
+    );
+    expect(result.optimal).toBe(false);
+    expect(result.allocation).toEqual(
+      Object.fromEntries(
+        positions.map(({ assetKey, objectiveId }) => [assetKey, objectiveId]),
+      ),
+    );
+    expect(result.transferCount).toBe(0);
+    expect(result.changedAssignmentCount).toBe(0);
+  });
+
+  it("returns the current candidate when the exact-search state budget is exhausted", () => {
+    const positions: AllocationPosition[] = [
+      { assetKey: "owned", valueCents: 40n, objectiveId: "goal-a" },
+      { assetKey: "free-b", valueCents: 80n, objectiveId: null },
+      { assetKey: "free-c", valueCents: 130n, objectiveId: null },
+    ];
+    const result = solvePortfolioObjectiveAllocation(
+      positions,
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 10n },
+      ],
+      9,
+    );
+    expect(result.optimal).toBe(false);
+    expect(result.exploredStates).toBe(9);
+    expect(result.allocation).toEqual({
+      owned: "goal-a",
+      "free-b": null,
+      "free-c": null,
+    });
+  });
+
+  it("stops unwinding exact-search branches as soon as the state limit is reached", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "owned", valueCents: 40n, objectiveId: "goal-a" },
+        { assetKey: "free-b", valueCents: 80n, objectiveId: null },
+        { assetKey: "free-c", valueCents: 130n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 10n },
+      ],
+      10,
+    );
+    expect(result.optimal).toBe(false);
+    expect(result.exploredStates).toBe(10);
+  });
+
+  it("reports a partial candidate when the exact-radius search reaches its state budget", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "owned", valueCents: 9n, objectiveId: "goal-a" },
+        { assetKey: "four", valueCents: 4n, objectiveId: null },
+        { assetKey: "seven", valueCents: 7n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 0n },
+      ],
+      13,
+    );
+    expect(result.optimal).toBe(false);
+    expect(result.exploredStates).toBe(13);
+  });
+
+  it("improves a near-exact existing assignment with a better candidate from the radius search", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "owned-eight", valueCents: 8n, objectiveId: "goal-a" },
+        { assetKey: "free-nine", valueCents: 9n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 0n },
+      ],
+    );
+    expect(result.optimal).toBe(true);
+    expect(result.differenceCents).toBe(1n);
+    expect(result.allocation["free-nine"]).toBe("goal-a");
+  });
+
+  it("reports a partial candidate when kd-tree construction reaches its state budget", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "four", valueCents: 4n, objectiveId: null },
+        { assetKey: "eight", valueCents: 8n, objectiveId: null },
+        { assetKey: "thirteen", valueCents: 13n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 10n },
+      ],
+      13,
+    );
+    expect(result.optimal).toBe(false);
+    expect(result.exploredStates).toBe(13);
+  });
+
+  it("reports a partial candidate when kd-tree querying reaches its state budget", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "four", valueCents: 4n, objectiveId: null },
+        { assetKey: "eight", valueCents: 8n, objectiveId: null },
+        { assetKey: "thirteen", valueCents: 13n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 10n },
+      ],
+      22,
+    );
+    expect(result.optimal).toBe(false);
+    expect(result.exploredStates).toBe(22);
+  });
+
+  it("stops before the first kd-tree query when the node-build budget is fully consumed", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "four", valueCents: 4n, objectiveId: null },
+        { assetKey: "eight", valueCents: 8n, objectiveId: null },
+        { assetKey: "thirteen", valueCents: 13n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 10n },
+      ],
+      21,
+    );
+    expect(result.optimal).toBe(false);
+    expect(result.exploredStates).toBe(21);
+  });
+
   it("reports the search as partial when the query traversal reaches its state cap", () => {
     const result = solvePortfolioObjectiveAllocation(
       [{ assetKey: "a", valueCents: 1n, objectiveId: null }],
@@ -133,6 +284,67 @@ describe("solvePortfolioObjectiveAllocation", () => {
       [{ objectiveId: "goal-a", amountCents: 100n }],
     );
     expect(result.allocation).toEqual({ a: null, b: "goal-a" });
+  });
+
+  it("accepts repeated target IDs as a stable zero-difference input", () => {
+    expect(
+      solvePortfolioObjectiveAllocation(
+        [],
+        [
+          { objectiveId: "same", amountCents: 0n },
+          { objectiveId: "same", amountCents: 0n },
+        ],
+      ),
+    ).toMatchObject({ optimal: true, differenceCents: 0n, allocation: {} });
+  });
+
+  it("uses the bounded exact kd-tree path when no exact or two-cent candidate exists", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "four", valueCents: 4n, objectiveId: null },
+        { assetKey: "eight", valueCents: 8n, objectiveId: null },
+        { assetKey: "thirteen", valueCents: 13n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 10n },
+      ],
+    );
+    expect(result.optimal).toBe(true);
+    expect(result.differenceCents).toBe(5n);
+    expect(result.exploredStates).toBeGreaterThan(12);
+  });
+
+  it("uses allocation-key string order when target IDs sort differently by locale", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "a", valueCents: 100n, objectiveId: null },
+        { assetKey: "b", valueCents: 100n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "a-goal", amountCents: 100n },
+        { objectiveId: "B-goal", amountCents: 100n },
+      ],
+    );
+    expect(result.optimal).toBe(true);
+    expect(result.allocation).toEqual({ a: "B-goal", b: "a-goal" });
+  });
+
+  it("improves the current assignment through the kd-tree while preserving transfer tie-breaks", () => {
+    const result = solvePortfolioObjectiveAllocation(
+      [
+        { assetKey: "four", valueCents: 4n, objectiveId: "goal-a" },
+        { assetKey: "eight", valueCents: 8n, objectiveId: "goal-b" },
+        { assetKey: "thirteen", valueCents: 13n, objectiveId: null },
+      ],
+      [
+        { objectiveId: "goal-a", amountCents: 10n },
+        { objectiveId: "goal-b", amountCents: 10n },
+      ],
+    );
+    expect(result.optimal).toBe(true);
+    expect(result.differenceCents).toBe(5n);
+    expect(result.changedAssignmentCount).toBeGreaterThan(0);
   });
 
   it("returns the best known result as partial when the state budget is reached", () => {
@@ -181,6 +393,23 @@ describe("solvePortfolioObjectiveAllocation", () => {
     });
   });
 
+  it("uses bounded branch and bound above the meet-in-the-middle position limit", () => {
+    const positions: AllocationPosition[] = Array.from(
+      { length: 26 },
+      (_, index) => ({
+        assetKey: `large-${index}`,
+        valueCents: 1n,
+        objectiveId: null,
+      }),
+    );
+    const result = solvePortfolioObjectiveAllocation(positions, [
+      { objectiveId: "goal-a", amountCents: 1n },
+      { objectiveId: "goal-b", amountCents: 1n },
+    ]);
+    expect(result.optimal).toBe(true);
+    expect(result.differenceCents).toBe(0n);
+  });
+
   it("benchmarks an adversarial synthetic 25-position portfolio with two objectives", () => {
     const positions: AllocationPosition[] = Array.from(
       { length: 25 },
@@ -214,8 +443,87 @@ describe("solvePortfolioObjectiveAllocation", () => {
       optimal: result.optimal,
       differenceCents: result.differenceCents.toString(),
     });
-    expect(result.optimal).toBe(false);
+    expect(result.optimal).toBe(true);
     expect(result.differenceCents).toBe(0n);
+  }, 60_000);
+
+  it("proves an exact 25-position result with existing owners, free positions, and transfers", () => {
+    const positions: AllocationPosition[] = Array.from(
+      { length: 25 },
+      (_, index) => ({
+        assetKey: `owned-synthetic-${String(index).padStart(2, "0")}`,
+        valueCents: BigInt(145_000 + index * 7_319),
+        objectiveId: index < 12 ? "goal-a" : index < 20 ? "goal-b" : null,
+      }),
+    );
+    const targets: AllocationTarget[] = [
+      {
+        objectiveId: "goal-a",
+        amountCents: positions
+          .slice(0, 10)
+          .reduce((sum, position) => sum + position.valueCents, 0n),
+      },
+      {
+        objectiveId: "goal-b",
+        amountCents: positions
+          .slice(10, 16)
+          .reduce((sum, position) => sum + position.valueCents, 0n),
+      },
+    ];
+    const startedAt = performance.now();
+    const result = solvePortfolioObjectiveAllocation(positions, targets);
+    const elapsedMs = performance.now() - startedAt;
+    console.info("Synthetic 25-position owner/transfer benchmark", {
+      elapsedMs: Number(elapsedMs.toFixed(2)),
+      exploredStates: result.exploredStates,
+      stateLimit: portfolioObjectiveAllocationStateLimit,
+      optimal: result.optimal,
+      differenceCents: result.differenceCents.toString(),
+      transferCount: result.transferCount,
+    });
+    expect(result.optimal).toBe(true);
+    expect(result.differenceCents).toBe(0n);
+    expect(result.transferCount).toBeGreaterThan(0);
+    expect(result.exploredStates).toBeLessThan(
+      portfolioObjectiveAllocationStateLimit,
+    );
+  }, 60_000);
+
+  it("benchmarks the reported 25-position shape with an exact goal and a two-cent offset", () => {
+    const positions: AllocationPosition[] = Array.from(
+      { length: 25 },
+      (_, index) => ({
+        assetKey: `reported-shape-${String(index).padStart(2, "0")}`,
+        valueCents: BigInt(205_037 + index * 7_319),
+        objectiveId: index < 11 ? "goal-a" : index < 22 ? "goal-b" : null,
+      }),
+    );
+    const canonicalGoalASum = positions
+      .slice(0, 11)
+      .reduce((sum, position) => sum + position.valueCents, 0n);
+    const canonicalGoalBSum = positions
+      .slice(11, 22)
+      .reduce((sum, position) => sum + position.valueCents, 0n);
+    const targets: AllocationTarget[] = [
+      { objectiveId: "goal-a", amountCents: canonicalGoalASum + 2n },
+      { objectiveId: "goal-b", amountCents: canonicalGoalBSum },
+    ];
+    const startedAt = performance.now();
+    const result = solvePortfolioObjectiveAllocation(positions, targets);
+    const elapsedMs = performance.now() - startedAt;
+    console.info("Synthetic 25-position two-cent-offset benchmark", {
+      elapsedMs: Number(elapsedMs.toFixed(2)),
+      exploredStates: result.exploredStates,
+      stateLimit: portfolioObjectiveAllocationStateLimit,
+      optimal: result.optimal,
+      differenceCents: result.differenceCents.toString(),
+    });
+    expect(result.optimal).toBe(true);
+    expect(result.differenceCents).toBe(2n);
+    expect(result.totals["goal-b"]).toBe(canonicalGoalBSum);
+    expect(result.exploredStates).toBeLessThan(
+      portfolioObjectiveAllocationStateLimit,
+    );
   }, 60_000);
 
   it("benchmarks a synthetic 25-position allocation already aligned with two references", () => {

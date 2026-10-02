@@ -4,6 +4,17 @@ import { useMemo, useState } from "react";
 import { ArrowRightLeft, LoaderCircle, Search, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePickerField } from "@/components/ui/date-picker-field";
@@ -46,6 +57,9 @@ type Preview = {
   }>;
   transfers: Array<{
     assetKey: string;
+    product: string;
+    assetCode: string | null;
+    maturityAt: string | null;
     fromObjectiveId: string;
     fromObjectiveName: string;
     toObjectiveId: string;
@@ -55,6 +69,15 @@ type Preview = {
   unassignedPositions: Array<{
     assetKey: string;
     product: string;
+    valueCents: string;
+  }>;
+  unassignmentTransfers: Array<{
+    assetKey: string;
+    product: string;
+    assetCode: string | null;
+    maturityAt: string | null;
+    fromObjectiveId: string;
+    fromObjectiveName: string;
     valueCents: string;
   }>;
   preservedPositions?: Array<{
@@ -182,8 +205,7 @@ export function PortfolioObjectiveOrganizer({
     }
   }
 
-  async function confirmAllocation() {
-    // The confirm action is rendered only for a complete, confirmable preview.
+  async function confirmAllocation(acceptPartial = false) {
     const confirmedPreview = preview!;
     const balances = collectBalances()!;
     setBusy(true);
@@ -200,6 +222,7 @@ export function PortfolioObjectiveOrganizer({
             expectedOwners: confirmedPreview.expectedOwners,
             expectedValueCents: confirmedPreview.expectedValueCents,
             expectedValuationDates: confirmedPreview.expectedValuationDates,
+            ...(acceptPartial ? { acceptPartial: true } : {}),
           }),
         },
       );
@@ -323,7 +346,7 @@ export function PortfolioObjectiveOrganizer({
         <AllocationPreview
           preview={preview}
           busy={busy}
-          onConfirm={() => void confirmAllocation()}
+          onConfirm={(acceptPartial) => void confirmAllocation(acceptPartial)}
           onCancel={onCancel}
         />
       )}
@@ -339,7 +362,7 @@ function AllocationPreview({
 }: {
   preview: Preview;
   busy: boolean;
-  onConfirm: () => void;
+  onConfirm: (acceptPartial: boolean) => void;
   onCancel: () => void;
 }) {
   const effectiveDates = [...new Set(preview.effectiveValuationDates)];
@@ -370,7 +393,7 @@ function AllocationPreview({
             <AlertDescription>
               {preview.optimal
                 ? "Esta prévia não pode ser confirmada. Consulte as limitações abaixo ou use a organização manual."
-                : "A busca atingiu o limite de processamento. Esta prévia não garante a melhor distribuição global e não pode ser confirmada. Você pode voltar e usar a organização manual."}
+                : "A busca atingiu o limite de processamento. Esta candidata pode não ser a melhor distribuição global. Revise as diferenças e transferências; a confirmação exige sua autorização explícita."}
             </AlertDescription>
           </Alert>
         )}
@@ -416,7 +439,13 @@ function AllocationPreview({
                     className="size-4 text-muted-foreground"
                   />
                   <span className="min-w-0 flex-1 break-all">
-                    {transfer.assetKey}
+                    {transfer.product}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {transfer.assetCode ?? "Código não informado"}
+                    {transfer.maturityAt
+                      ? " · vence em " + formatDate(transfer.maturityAt)
+                      : " · vencimento não informado"}
                   </span>
                   <span>
                     {transfer.fromObjectiveName} → {transfer.toObjectiveName}
@@ -534,12 +563,122 @@ function AllocationPreview({
         </p>
         <div className="flex flex-wrap gap-2 border-t pt-4">
           {preview.canConfirm && preview.optimal && (
-            <Button type="button" onClick={onConfirm} disabled={busy}>
+            <Button
+              type="button"
+              onClick={() => onConfirm(false)}
+              disabled={busy}
+            >
               {busy && (
                 <LoaderCircle aria-hidden="true" className="animate-spin" />
               )}
               Confirmar distribuição
             </Button>
+          )}
+          {preview.canConfirm && !preview.optimal && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="destructive" disabled={busy}>
+                  Revisar confirmação parcial
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Aplicar esta candidata parcial?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    A busca não provou que esta é a melhor distribuição global.
+                    Ao continuar, você aceita as diferenças abaixo e autoriza as
+                    transferências listadas.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
+                  {preview.objectives.map((objective) => (
+                    <li
+                      className="flex flex-wrap justify-between gap-x-3"
+                      key={objective.objectiveId}
+                    >
+                      <span>{objective.name}</span>
+                      <span className="tabular-nums">
+                        {formatCurrencyCents(objective.proposedValueCents)}
+                        {" · diferença "}
+                        {formatCurrencyCents(objective.differenceCents)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3 text-sm">
+                  <p className="font-medium">
+                    {preview.transfers.length === 0
+                      ? "Nenhuma transferência"
+                      : "Transferências autorizadas"}
+                  </p>
+                  {preview.transfers.map((transfer) => (
+                    <p
+                      className="flex flex-wrap justify-between gap-2"
+                      key={transfer.assetKey}
+                    >
+                      <span>
+                        {transfer.product} ({transfer.assetCode ?? "sem código"}
+                        )
+                        {transfer.maturityAt
+                          ? " · vence em " + formatDate(transfer.maturityAt)
+                          : ""}
+                        {" · "}
+                        {transfer.fromObjectiveName} →{" "}
+                        {transfer.toObjectiveName}
+                      </span>
+                      <span className="shrink-0 tabular-nums">
+                        {formatCurrencyCents(transfer.valueCents)}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+                {preview.unassignmentTransfers.length > 0 && (
+                  <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3 text-sm">
+                    <p className="font-medium">
+                      Posições que ficarão sem objetivo
+                    </p>
+                    {preview.unassignmentTransfers.map((position) => (
+                      <p
+                        className="flex flex-wrap justify-between gap-2"
+                        key={position.assetKey}
+                      >
+                        <span>
+                          {position.product} (
+                          {position.assetCode ?? "sem código"})
+                          {position.maturityAt
+                            ? " · vence em " + formatDate(position.maturityAt)
+                            : ""}
+                          {" · "}
+                          {position.fromObjectiveName} → Sem objetivo
+                        </span>
+                        <span className="shrink-0 tabular-nums">
+                          {formatCurrencyCents(position.valueCents)}
+                        </span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={busy}>
+                    Voltar e revisar
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={busy}
+                    onClick={() => onConfirm(true)}
+                  >
+                    {busy && (
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className="mr-2 size-4 animate-spin"
+                      />
+                    )}
+                    Confirmar candidata parcial
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
           <Button
             type="button"

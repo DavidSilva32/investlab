@@ -1817,6 +1817,9 @@ describe("PortfolioObjectivesService", () => {
     expect(result.transfers).toEqual([
       expect.objectContaining({
         assetKey: transferKey,
+        product: transferPosition.product,
+        assetCode: transferPosition.assetCode,
+        maturityAt: transferPosition.maturityAt,
         fromObjectiveId: sourceId,
         fromObjectiveName: "Viagem",
         toObjectiveId: targetId,
@@ -1878,7 +1881,7 @@ describe("PortfolioObjectivesService", () => {
     ]);
   });
 
-  it("does not allow a partial search to be confirmed", async () => {
+  it("requires explicit consent before a partial search can be confirmed", async () => {
     const firstId = "00000000-0000-4000-8000-000000000008";
     const secondId = "00000000-0000-4000-8000-000000000009";
     const position = imported({
@@ -1904,7 +1907,7 @@ describe("PortfolioObjectivesService", () => {
     });
     expect(preview).toMatchObject({
       optimal: false,
-      canConfirm: false,
+      canConfirm: true,
       stateLimit: 1,
     });
     await expect(
@@ -1922,6 +1925,129 @@ describe("PortfolioObjectivesService", () => {
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
     expect(preview.expectedOwners).toEqual({ [key]: null });
+  });
+
+  it("keeps transfer maturity unknown when grouped manual positions disagree", async () => {
+    const sourceId = "00000000-0000-4000-8000-000000000018";
+    const targetId = "00000000-0000-4000-8000-000000000019";
+    const first = imported({
+      source: "MANUAL",
+      assetKey: "manual-shared-key",
+      assetCode: "MANUAL-1",
+      canonicalValueCents: "50",
+      maturityAt: null,
+    });
+    const second = imported({
+      source: "MANUAL",
+      assetKey: "manual-shared-key",
+      assetCode: "MANUAL-1",
+      canonicalValueCents: "50",
+      maturityAt: "2028-01-01",
+    });
+    const third = imported({
+      source: "MANUAL",
+      assetKey: "manual-shared-key",
+      assetCode: "MANUAL-1",
+      canonicalValueCents: "50",
+      maturityAt: null,
+    });
+    mocks.listCurrentEnriched.mockResolvedValue([first, second, third]);
+    mocks.list.mockResolvedValue({
+      objectives: [
+        { ...customObjective, id: sourceId, name: "Origem" },
+        { ...customObjective, id: targetId, name: "Destino" },
+      ],
+      assignments: [{ objectiveId: sourceId, assetKey: "manual-shared-key" }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [
+          { objectiveId: sourceId, amount: 0 },
+          { objectiveId: targetId, amount: 1.5 },
+        ],
+      });
+
+    expect(result.transfers).toEqual([
+      expect.objectContaining({
+        assetKey: "manual-shared-key",
+        product: first.product,
+        assetCode: first.assetCode,
+        maturityAt: null,
+        fromObjectiveName: "Origem",
+        toObjectiveName: "Destino",
+      }),
+    ]);
+  });
+
+  it("confirms a partial candidate only when the request explicitly accepts it", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000016";
+    const position = imported({
+      assetCode: "PARTIAL-CONSENT",
+      canonicalValueCents: "100",
+    });
+    mocks.listCurrentEnriched.mockResolvedValue([position]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    mocks.saveGlobalAllocation.mockResolvedValue({ batchId: "partial-batch" });
+    const service = new PortfolioObjectivesService(1);
+    const request = {
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 1 }],
+    };
+    const preview = await service.previewGlobalAllocation(request);
+    expect(preview.optimal).toBe(false);
+
+    await expect(
+      service.confirmGlobalAllocation({
+        ...request,
+        allocation: preview.allocation,
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+        acceptPartial: true,
+      }),
+    ).resolves.toEqual({ batchId: "partial-batch" });
+    expect(mocks.saveGlobalAllocation).toHaveBeenCalledWith(
+      expect.objectContaining({ allocation: preview.allocation }),
+    );
+  });
+
+  it("still rejects a stale partial candidate after explicit consent", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000017";
+    const position = imported({
+      assetCode: "STALE-PARTIAL",
+      canonicalValueCents: "100",
+    });
+    const changedPosition = { ...position, canonicalValueCents: "101" };
+    mocks.listCurrentEnriched
+      .mockResolvedValueOnce([position])
+      .mockResolvedValueOnce([changedPosition]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [],
+    });
+    const service = new PortfolioObjectivesService(1);
+    const request = {
+      valuationDate: "2026-10-01",
+      balances: [{ objectiveId, amount: 1 }],
+    };
+    const preview = await service.previewGlobalAllocation(request);
+    expect(preview.optimal).toBe(false);
+    await expect(
+      service.confirmGlobalAllocation({
+        ...request,
+        allocation: preview.allocation,
+        expectedOwners: preview.expectedOwners,
+        expectedValueCents: preview.expectedValueCents,
+        expectedValuationDates: preview.expectedValuationDates,
+        acceptPartial: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
   });
 
   it("rejects confirmation when the expected owner map is stale even if allocation is unchanged", async () => {
@@ -1969,5 +2095,39 @@ describe("PortfolioObjectivesService", () => {
       { assetKey: key, product: position.product, valueCents: "10000" },
     ]);
     expect(result.effectiveValuationDates).toEqual([]);
+  });
+
+  it("identifies owned positions that the proposed allocation will leave without an objective", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000018";
+    const position = imported({
+      assetCode: "UNASSIGN-OWNED",
+      canonicalValueCents: "10000",
+      maturityAt: null,
+    });
+    const key = getEmergencyReserveAssetKey(position);
+    mocks.listCurrentEnriched.mockResolvedValue([position]);
+    mocks.list.mockResolvedValue({
+      objectives: [{ ...customObjective, id: objectiveId }],
+      assignments: [{ objectiveId, assetKey: key }],
+    });
+
+    const result =
+      await new PortfolioObjectivesService().previewGlobalAllocation({
+        valuationDate: "2026-10-01",
+        balances: [{ objectiveId, amount: 0 }],
+      });
+
+    expect(result.allocation[key]).toBeNull();
+    expect(result.unassignmentTransfers).toEqual([
+      {
+        assetKey: key,
+        product: position.product,
+        assetCode: position.assetCode,
+        maturityAt: null,
+        fromObjectiveId: objectiveId,
+        fromObjectiveName: customObjective.name,
+        valueCents: "10000",
+      },
+    ]);
   });
 });
