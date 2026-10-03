@@ -1,13 +1,14 @@
-# Referências visuais aprovadas
+# Referências visuais
 
-O inventário de rotas, abas, painéis e dependências legadas está em [`../active-route-inventory.md`](../active-route-inventory.md). As referências por área cobrem seus layouts principais; consulte o inventário para distinguir subfluxos ativos de páginas fora da navegação. Screener dedicado e Study List estão fora do escopo de refatoração visual da issue #94.
+O [inventário de rotas](../active-route-inventory.md) e o [processo de design](../design-process.md) definem experiências, fontes de verdade e critérios de cobertura. Os READMEs de cada área documentam os estados de suas imagens; referências geradas por IA são propostas, salvo quando identificadas explicitamente como aprovadas.
 
 ## Estratégia — desktop
 
-- Arquivo: [`strategy-approved-desktop.png`](./strategy-approved-desktop.png)
+- Arquivo: [`strategy/page-desktop.png`](./strategy/page-desktop.png)
 - Origem: referência fornecida e aprovada pelo usuário para a experiência da página Estratégia.
 - Uso: hierarquia do patrimônio, comparação de composição e fluxo visual do próximo aporte.
 - Escopo: referência de uma página; não aplicar o mesmo layout indiscriminadamente a outras áreas.
 - Nota: é uma referência fornecida, não uma captura gerada por este fluxo. Nenhuma captura mobile foi aprovada nesta entrega.
+- Estados separados: referência criada; contexto funcional parcialmente revisado; layout registrado na issue #94 e não revalidado nesta tarefa; verificação estrutural não registrada por imagem e não revalidada nesta tarefa; comparação visual real pendente; o usuário aprovou esta referência, não a implementação.
 
-Novas capturas só devem ser adicionadas após registrar página, tamanho de viewport, estado mostrado e aprovação visual. Não registrar protótipos ou capturas hipotéticas como evidência.
+Nova captura só é evidência de comparação quando registrar experiência, estado, viewport e resultado observado. Não registrar protótipos ou capturas hipotéticas como validação.

@@ -1,21 +1,15 @@
-# Estratégia — edição da composição
+# Estratégia
 
-## Referência
+## Referências e metadados
 
-![Mockup do Sheet Editar composição](./allocation-sheet-reference.png)
+| Arquivo                                        | Experiência/rota e estado                                                         | Origem                                                                                       | Funcionalidades reais ilustradas                          | Elementos fictícios                                                                                                                                                                       | Tokens semânticos aplicáveis                                                                                                                      | Implementação                                                                                          | Validação visual                                                                                        | Estados (separados)                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [page-desktop.png](./page-desktop.png)         | Estratégia (`/strategy`), página desktop com composição atual/planejada e aporte. | Referência fornecida e aprovada pelo usuário; bytes preservados ao organizar o arquivo.      | Composição por classe e fluxo visual para simular aporte. | Valores apresentados na imagem não são dados do usuário.                                                                                                                                  | `asset-class-fixed-income`, `asset-class-brazilian-equities`, `asset-class-international-etfs`, `asset-class-fiis`; tokens de superfície e texto. | Composição implementada; alterações anteriores não são prova de comparação.                            | Referência aprovada pelo usuário; comparação visual real da implementação pendente em desktop e mobile. | Referência criada: sim; Contexto funcional revisado: parcial (aprovação não comprova revisão elemento a elemento); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: sim.                                |
+| [allocation-sheet.png](./allocation-sheet.png) | Estratégia (`/strategy`), Sheet de edição de percentuais aberto.                  | Mockup gerado por IA, proposta para estado que não aparece na referência de página aprovada. | Edição de percentuais por classe, total e ação de salvar. | Valores atuais, percentuais e composição ao fundo são sintéticos; rendimento, risco e histórico mostrados ao fundo não existem na tela e não devem ser implementados por causa da imagem. | Tokens `asset-class-*` para classes; tokens de superfície e texto.                                                                                | Sheet ampliado e edição existente implementados; regras financeiras e classes disponíveis preservadas. | Comparação visual real pendente.                                                                        | Referência criada: sim; Contexto funcional revisado: parcial (descrição registrada, sem conferência elemento a elemento nesta tarefa); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: não registrada. |
 
-Mockup gerado por IA com percentuais e valores sintéticos para documentar o Sheet aberto de edição, que não aparece na referência principal aprovada.
+## Diretrizes de adaptação
 
-## Regras de adaptação
-
-- Mostrar somente renda fixa, ações brasileiras, ETFs internacionais e FIIs, com as cores semânticas já aprovadas.
-- Percentual zero é permitido; nenhuma classe é obrigatória.
-- Preservar “Distribuir restante”, o total calculado e a gravação existente.
-- O dashboard ao fundo contém rendimento, risco e histórico fictícios; esses elementos não fazem parte do produto e não devem ser implementados.
-- A imagem não contém marcador do Next.js.
-
-## Estado
-
-- Referência criada: imagem acima.
-- Layout implementado: Sheet ampliado, classes em cartões empilhados com cores/ícones semânticos, valor atual por classe, campos percentuais mais legíveis, total e ação de salvar destacados. Regras de percentuais e classes zeradas preservadas.
-- Validação visual real: pendente; navegador indisponível.
+- A página aprovada é específica de Estratégia e não deve ser aplicada como layout universal.
+- A edição deve manter as quatro classes existentes, admitir percentual zero, total calculado e a ação “Distribuir restante”.
+- Não implementar rendimento, risco, histórico ou qualquer conteúdo sem suporte mostrado no mockup.
+- Não foi confirmada divergência de cor de classe entre as referências de Estratégia e os tokens documentados. A existência de dois mapas de cores no código é ponto de auditoria futura, não inconsistência visual comprovada.

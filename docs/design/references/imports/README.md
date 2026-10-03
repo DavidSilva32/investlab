@@ -1,33 +1,11 @@
 # Importações
 
-## Referência de design
+## Referência e metadados
 
-![Referência visual gerada por IA para Importações, com dados fictícios](./design-reference.png)
+| Experiência/rota e estado                                       | Origem                                                                                          | Funcionalidades reais ilustradas                                                             | Elementos fictícios                                                                   | Tokens semânticos aplicáveis                                                                                                                  | Implementação                                                                      | Validação visual                                | Estados (separados)                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Importar planilhas (`/imports`), seleção, prévia e confirmação. | [design-reference.png](./design-reference.png), proposta gerada por IA, não captura do produto. | Seleção múltipla de XLSX da B3, prévia, validação e confirmação para posições/movimentações. | Nome de arquivo e linhas são sintéticos; estados visuais não comprovam comportamento. | `status-*` para validações e processamento; superfície/texto. Cores de classe somente quando uma classe existente for explicitamente exibida. | Layout implementado anteriormente, preservando campos, validações e suporte reais. | Comparação visual real desktop/mobile pendente. | Referência criada: sim; Contexto funcional revisado: parcial (descrição registrada, sem conferência elemento a elemento nesta tarefa); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: não registrada. |
 
-Proposta gerada por IA; não é captura do InvestLab. Dados e arquivo são fictícios. O navegador integrado não esteve disponível nesta sessão, então não foi possível comparar capturas reais.
+## Limites de uso
 
-### Referências visuais adotadas
-
-- Seleção horizontal destacada no topo.
-- Prévia do arquivo em toda a largura, com três indicadores visuais com ícones e valores destacados.
-- Data exibida na B3 abaixo dos indicadores e tabela ampla em seguida.
-- Ações de confirmação agrupadas ao final da revisão.
-- Conflitos, dados parciais, loading e erros continuam distintos e acessíveis.
-
-### Elementos ilustrativos que não representam o comportamento atual
-
-- Não adicionar suporte a XLS, limite de tamanho, arrastar/soltar, remoção individual de arquivos ou correção manual de instituição apenas porque aparecem na imagem.
-- O estado sem conflito e as linhas sintéticas servem somente para comunicar composição visual.
-
-### Funcionalidades a preservar
-
-- Importação de planilhas XLSX da B3 para posições e movimentações, com prévia antes de confirmar.
-- Data de referência digitada manualmente para posições; não inferir pela Data de Emissão.
-- Bloqueio em divergência de identidade e indicação de posições sem valor.
-- Mensagens de sucesso/erro, estado de processamento e seleção de múltiplos arquivos.
-
-## Status da entrega
-
-- Referência criada: imagem acima, gerada por IA com valores fictícios; sem indicador/badge do Next.js.
-- Layout implementado: seletor horizontal no topo; prévia ampla com três indicadores, data de referência, avisos e tabela; confirmação explícita ao fim da revisão. Dados, validações e suporte a múltiplos arquivos preservados.
-- Validação visual real desktop/mobile: pendente; navegador integrado indisponível nesta sessão.
+Não inferir suporte a XLS, arrastar/soltar, exclusão individual, edição de instituição ou qualquer outra ação apenas pela imagem. A data de referência de posições é informada pelo usuário, não inferida da Data de Emissão.

@@ -1,21 +1,11 @@
-# Carteira — posições e cadastro manual
+# Carteira — posições
 
-## Referência
+## Referência e metadados
 
-![Mockup da visão Posições com diálogo de cadastro manual](./manual-position-reference.png)
+| Experiência/rota e estado                                                           | Origem                                                                                               | Funcionalidades reais ilustradas                                                                  | Elementos fictícios                                                                                                                                                | Tokens semânticos aplicáveis                                               | Implementação                                                                       | Validação visual                                | Estados (separados)                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Visão Posições (`/portfolio?view=positions`) com diálogo de cadastro manual aberto. | [manual-position-reference.png](./manual-position-reference.png), mockup gerado por IA, não captura. | Tabela de posições, ordenação/classificação existente e cadastro manual conforme formulário real. | Registros e valores são sintéticos; conta seletora e preço de mercado automático mostrados não existem no fluxo e não devem ser implementados por causa da imagem. | `asset-class-*` para classes; `status-*` para validação; superfície/texto. | Tabela e diálogo implementados; campos e validações seguem `ManualPositionManager`. | Comparação visual real desktop/mobile pendente. | Referência criada: sim; Contexto funcional revisado: parcial (descrição registrada, sem conferência elemento a elemento nesta tarefa); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: não registrada. |
 
-Mockup gerado por IA com registros e valores sintéticos. O diálogo aberto orienta a hierarquia dos campos já existentes e a tabela ao fundo representa a visão `?view=positions`.
+## Limites de uso
 
-## Regras de adaptação
-
-- Preservar `PortfolioTable`, ordenação, colunas, classificações, valores canônicos e edição manual.
-- Campos, opções e validações devem continuar determinados por `ManualPositionManager`; não adicionar conta/carteira seletora ou preço de mercado automático ilustrado.
-- CDB possui uma configuração de taxa separada e existente; o mockup não especifica mudanças nela.
-- Movimentações permanece uma tabela simples coberta pelo padrão compartilhado, sem mockup próprio.
-- A imagem não contém marcador do Next.js.
-
-## Estado
-
-- Referência criada: imagem acima.
-- Layout implementado: tabela em largura total; diálogo ampliado para o formulário de duas colunas.
-- Validação visual real: pendente; navegador indisponível.
+Movimentações é uma experiência separada em `/portfolio?view=movements` e não é coberta por esta referência. O mockup não especifica a configuração separada de taxa para CDB. Não deduza cobertura de abas sem referência dedicada.

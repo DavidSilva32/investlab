@@ -1,43 +1,12 @@
 # Análises
 
-## Referência de design
+## Referências e metadados
 
-![Referência visual gerada por IA para Análises, usando exemplos fictícios](./design-reference.png)
+| Arquivo                                                                  | Experiência/rota e estado                                                   | Origem                                          | Funcionalidades reais ilustradas                                                                                                                                                                     | Elementos fictícios ou sem suporte confirmados                                                                                                                                                                           | Tokens semânticos aplicáveis                                                                                                                            | Implementação                                                       | Validação visual                                                                        | Estados (separados)                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [design-reference.png](./design-reference.png)                           | Aba “Minha carteira” (`/analyses`), análise das ações da carteira.          | Mockup gerado por IA; não é captura do produto. | A `PortfolioOpportunities` apresenta os cálculos de Graham e Bazin, compara as referências, permite configurar e salvar a taxa-alvo global do Bazin e exibe os dados, a origem e a data disponíveis. | O seletor de ordenação por Ticker e o CTA superior “Saiba mais sobre as metodologias” não existem no fluxo atual e ficam registrados como backlog documental. Tickers, valores, datas e fontes da imagem são sintéticos. | Tokens de superfície/texto; cores de classe apenas quando o dado identificado for classe de ativo; cores de estado apenas para estado.                  | Layout da análise implementado em alterações anteriores.            | Comparação visual real pendente; conclusão estrutural/testes não equivalem a validação. | Referência criada: sim; Contexto funcional revisado: parcial (seletor de ordenação por Ticker e CTA “Saiba mais sobre as metodologias” identificados como sem suporte; revisão de todos os elementos pendente); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: não registrada. |
+| [individual-analysis-reference.png](./individual-analysis-reference.png) | Aba “Análise individual” (`/analyses`), busca de ativo e painel de análise. | Mockup gerado por IA; não é captura do produto. | A aplicação oferece busca, cotação, períodos disponíveis, histórico, indicadores disponíveis, evolução anual e detalhes de metodologias/limitações.                                                  | Máximos, mínimos e volume, além do bloco de empresa com setor, subsetor, Tag Along e liquidez média, aparecem na imagem, mas não são suportados pelo fluxo atual. Ticker, preço e série da imagem são sintéticos.        | Tokens de superfície/texto; séries genéricas `chart-category-*` para dados sem significado de classe; `asset-class-*` somente para classe identificada. | Layout da análise individual implementado em alterações anteriores. | Comparação visual real pendente; não há aprovação visual documentada.                   | Referência criada: sim; Contexto funcional revisado: parcial (itens sem suporte descritos abaixo; revisão de todos os elementos pendente); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: não registrada.                                                                      |
 
-Imagem gerada por IA para orientar hierarquia visual; não é captura do sistema. Tickers, preços e resultados são fictícios. O browser integrado não está disponível nesta sessão, então não houve comparação visual real.
+## Uso
 
-### Referências visuais adotadas
-
-- Diferenciar as duas tarefas atuais: análise da carteira e análise individual.
-- Dar destaque ao ativo consultado, ao preço e às duas referências metodológicas disponíveis.
-- Manter fonte e data próximas dos valores e limitações em uma área recolhível.
-- Apresentar abaixo/acima de uma referência com texto explícito e aparência neutra, sem transformar isso em recomendação.
-
-### Elementos ilustrativos que não representam o comportamento atual
-
-- Tickers, preços, resultados, ordenação, botões de metodologia e conteúdo de ajuda da imagem são fictícios ou podem não existir na interface; não os implementar sem suporte funcional atual.
-- Nenhum retorno futuro ou recomendação deve ser inferido dos valores de Graham/Bazin.
-
-### Funcionalidades a preservar
-
-- Análise de oportunidades na carteira com ações classificadas, dados financeiros, cotações e datas de referência.
-- Fórmulas, inputs manuais, taxa-alvo já existente, salvamento, estados parciais e fonte/limitações.
-- Pesquisa individual, histórico de preços, período selecionado, indicadores, fundamentos e erros/retry.
-
-## Status da entrega
-
-- Referência criada: imagem acima, gerada por IA com dados fictícios; sem badge do Next.js.
-- Layout implementado: cada ação analisada agora separa identidade/preço numa coluna lateral e os dois cartões metodológicos na área principal; análise individual mantém seus próprios agrupamentos reais. No mobile, as colunas empilham.
-- Validação visual real desktop/mobile: pendente; navegador integrado indisponível nesta sessão.
-
-## Referência adicional — Análise individual
-
-![Mockup gerado por IA para a aba Análise individual, com dados sintéticos](./individual-analysis-reference.png)
-
-Esta imagem cobre a aba ativa “Análise individual”, ausente na proposta principal. Aplicar a composição de busca, resumo do ativo, histórico, fundamentos e detalhes recolhíveis usando somente os dados e períodos já fornecidos pela aplicação.
-
-O preço e a série são sintéticos. Não implementar máximo/mínimo/volume, retornos, risco ou outros campos que não sejam fornecidos pelo fluxo real. A referência não contém o indicador de desenvolvimento do Next.js.
-
-- Referência criada: imagem acima, desktop, gerada por IA.
-- Layout implementado: busca em largura total, resumo da cotação, gráfico histórico amplo e agrupamento de indicadores/leitura anual com contexto dos dados; períodos, fundamentos, loading e erro existentes preservados.
-- Validação visual real: pendente; não houve comparação no navegador.
+As abas são tarefas distintas e cada referência cobre somente a experiência listada. Tickers e valores sintéticos podem ilustrar informação que já existe; não definem ordenação, recomendação, indicador ou método. A documentação de conteúdo sem suporte é uma pendência editorial, não autorização para alterar a imagem ou o produto nesta etapa.

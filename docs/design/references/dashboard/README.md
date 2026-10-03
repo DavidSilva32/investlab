@@ -1,28 +1,11 @@
 # Dashboard
 
-## Referência de design
+## Referência e metadados
 
-![Proposta visual gerada por IA para o Dashboard, com dados sintéticos](./dashboard-design-reference.png)
+| Experiência/rota e estado                               | Origem                                                                                                              | Funcionalidades reais ilustradas                                                                                          | Elementos fictícios                                                                                  | Tokens semânticos aplicáveis                                                                                                                                         | Implementação                                                                                                        | Validação visual                                | Estados (separados)                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard (`/`), visão principal autenticada; sem abas. | [dashboard-design-reference.png](./dashboard-design-reference.png), proposta gerada por IA, não captura do produto. | Patrimônio conhecido, Reserva, simulador de aporte, próximos passos e valores sem destino, conforme disponibilidade real. | Valores, datas e posições da imagem são sintéticos. Não representam recomendação nem resultado real. | Tokens `asset-class-*` para classe; `destination-*` para finalidade; `status-*` para estado operacional; `chart-category-*` para séries genéricas; superfície/texto. | Composição da página implementada anteriormente; dados, estados e regras de domínio continuam definidos pelo código. | Comparação visual real desktop/mobile pendente. | Referência criada: sim; Contexto funcional revisado: parcial (descrição registrada, sem conferência elemento a elemento nesta tarefa); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: não registrada. |
 
-Esta é uma referência visual gerada por IA, não uma captura da aplicação. Os valores e a data que aparecem na imagem são fictícios. O navegador integrado estava indisponível durante esta execução; portanto, não há captura real de antes/depois nem validação visual no browser.
+## Limites de uso
 
-### Elementos da imagem que orientam a implementação
-
-- Patrimônio conhecido, quantidade de posições valorizadas e data-base como primeira leitura.
-- Reserva e simulador de aporte como tarefas principais, com o fluxo do valor informado para reserva e estratégia.
-- Cores de classe iguais às da Estratégia e cores de alerta separadas das classes.
-- Atenção e posições sem destino em uma área secundária mais compacta.
-
-### Funcionalidades que devem continuar usando os dados reais do domínio
-
-- O total da carteira soma apenas posições com valor conhecido e informa a completude e as datas-base retornadas pelo serviço.
-- A Reserva mostra cobertura de despesas e meta pessoal configurada usando os percentuais e meses retornados pelo domínio. A interface não presume liquidez.
-- O simulador mantém o modo de distribuição atual, inclusive compatibilidade com as metas legadas, prioridade da Reserva e limitações de dados. A simulação não movimenta dinheiro.
-- O resumo de posições sem destino, alertas, fatos da carteira, explicações e ações condicionais continuam disponíveis.
-- Estados de erro, retry, dados parciais, vazio e carregamento mantêm seus contratos atuais.
-
-## Status da entrega
-
-- Referência criada: imagem acima, gerada por IA e identificada como proposta.
-- Layout implementado: patrimônio, posições valorizadas e data-base ocupam três regiões de leitura; Reserva apresenta valor, despesas e meta em indicadores; o simulador coloca entrada e processamento ao lado da distribuição em cartões semânticos. Ação seguinte e patrimônio sem destino ficam agrupados abaixo.
-- Validação visual real desktop/mobile: pendente, pois o navegador integrado esteve indisponível.
+O total e a cobertura da Reserva usam os valores retornados pelo domínio. A simulação não movimenta dinheiro. Não inferir liquidez, regras ou condições de ação a partir dos exemplos fictícios. A auditoria disponível não confirmou divergência de cor de classe na referência do Dashboard.
