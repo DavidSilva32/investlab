@@ -18,5 +18,6 @@ export type MarketQuote = {
 };
 export interface MarketDataProvider {
   getByTicker(ticker: string): Promise<MarketData>;
+  getQuoteByTicker(ticker: string): Promise<MarketQuote>;
   searchTickers(query: string): Promise<MarketTicker[]>;
 }
