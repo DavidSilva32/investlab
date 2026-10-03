@@ -27,7 +27,7 @@ import {
   portfolioAssetGeographyHelpText,
 } from "@/lib/portfolio-classification-options";
 import { Label } from "@/components/ui/label";
-import { getPortfolioAssetClassColor } from "@/lib/portfolio-asset-class-colors";
+import { neutralAssetClassColor } from "@/lib/strategy-allocation";
 import {
   Collapsible,
   CollapsibleContent,
@@ -396,9 +396,7 @@ export function ManualPositionManager({
                           aria-hidden="true"
                           className="size-2 rounded-full"
                           style={{
-                            backgroundColor: getPortfolioAssetClassColor(
-                              position.classification.assetClass,
-                            ),
+                            backgroundColor: neutralAssetClassColor,
                           }}
                         />
                         {position.classification.assetClass}

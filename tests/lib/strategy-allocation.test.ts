@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { simulateStrategyContribution } from "@/lib/strategy-allocation";
+import {
+  getStrategyAssetClassColor,
+  neutralAssetClassColor,
+  strategyAssetClassById,
+  strategyAssetClasses,
+  simulateStrategyContribution,
+} from "@/lib/strategy-allocation";
 
 describe("simulateStrategyContribution", () => {
   const emptyValues = {
@@ -101,5 +107,53 @@ describe("simulateStrategyContribution", () => {
     expect(
       result.allocations.slice(0, 2).map((item) => item.contributionValueCents),
     ).toEqual(["2", "1"]);
+  });
+});
+
+describe("strategy asset class metadata", () => {
+  it("centralizes official labels, semantic token keys, and stable IDs", () => {
+    expect(
+      strategyAssetClasses.map(({ id, label, colorToken }) => [
+        id,
+        label,
+        colorToken,
+      ]),
+    ).toEqual([
+      ["fixed_income", "Renda fixa", "--asset-class-fixed-income"],
+      [
+        "brazilian_equities",
+        "Ações e BDRs",
+        "--asset-class-brazilian-equities",
+      ],
+      [
+        "international_etfs",
+        "ETFs internacionais",
+        "--asset-class-international-etfs",
+      ],
+      ["fiis", "Fundos imobiliários (FIIs)", "--asset-class-fiis"],
+    ]);
+    expect(strategyAssetClassById.brazilian_equities.label).toBe(
+      "Ações e BDRs",
+    );
+    expect(
+      strategyAssetClassById.brazilian_equities.groupingDescription,
+    ).toContain("geografia Brasil");
+    expect(
+      strategyAssetClassById.international_etfs.groupingDescription,
+    ).toContain("Exterior ou Global");
+  });
+
+  it("resolves colors by stable ID and returns neutral for missing identity", () => {
+    expect(getStrategyAssetClassColor("fixed_income")).toBe(
+      "var(--asset-class-fixed-income)",
+    );
+    expect(getStrategyAssetClassColor("brazilian_equities")).toBe(
+      "var(--asset-class-brazilian-equities)",
+    );
+    expect(getStrategyAssetClassColor("international_etfs")).toBe(
+      "var(--asset-class-international-etfs)",
+    );
+    expect(getStrategyAssetClassColor("fiis")).toBe("var(--asset-class-fiis)");
+    expect(getStrategyAssetClassColor(null)).toBe(neutralAssetClassColor);
   });
 });

@@ -1,13 +1,47 @@
 import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
 
 export const strategyAssetClasses = [
-  { id: "fixed_income", label: "Renda fixa" },
-  { id: "brazilian_equities", label: "Ações brasileiras" },
-  { id: "international_etfs", label: "ETFs internacionais" },
-  { id: "fiis", label: "FIIs" },
+  {
+    id: "fixed_income",
+    label: "Renda fixa",
+    groupingDescription:
+      "Grupo atual de posições classificadas como Renda fixa.",
+    colorToken: "--asset-class-fixed-income",
+  },
+  {
+    id: "brazilian_equities",
+    label: "Ações e BDRs",
+    groupingDescription: "Grupo atual de Renda variável com geografia Brasil.",
+    colorToken: "--asset-class-brazilian-equities",
+  },
+  {
+    id: "international_etfs",
+    label: "ETFs internacionais",
+    groupingDescription:
+      "Grupo atual de ETFs com geografia Exterior ou Global.",
+    colorToken: "--asset-class-international-etfs",
+  },
+  {
+    id: "fiis",
+    label: "Fundos imobiliários (FIIs)",
+    groupingDescription:
+      "Grupo atual de posições identificadas como FII ou fundo imobiliário.",
+    colorToken: "--asset-class-fiis",
+  },
 ] as const;
 
 export type StrategyAssetClassId = (typeof strategyAssetClasses)[number]["id"];
+export const strategyAssetClassById = Object.fromEntries(
+  strategyAssetClasses.map((assetClass) => [assetClass.id, assetClass]),
+) as Record<StrategyAssetClassId, (typeof strategyAssetClasses)[number]>;
+export const neutralAssetClassColor = "var(--asset-class-neutral)";
+
+export function getStrategyAssetClassColor(id: StrategyAssetClassId | null) {
+  return id
+    ? `var(${strategyAssetClassById[id].colorToken})`
+    : neutralAssetClassColor;
+}
+
 export type StrategyAllocationPercentages = Record<
   StrategyAssetClassId,
   number

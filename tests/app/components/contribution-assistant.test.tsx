@@ -189,6 +189,40 @@ describe("ContributionAssistant", () => {
     );
   });
 
+  it("labels a calculated allocation when no strategy mode is saved", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "no_positions",
+          strategySource: "system_calculated",
+          contributionAmount: 100,
+          reserveAmount: 0,
+          remainingAmount: 100,
+          unallocatedAmount: 100,
+          reserveStatus: "not_configured",
+          reserveDifference: null,
+          longTermPortfolioValue: null,
+          unknownPositionCount: 0,
+          allocations: [],
+        }),
+      }),
+    );
+    render(<ContributionAssistant />);
+    fireEvent.change(
+      screen.getByLabelText("Valor disponível para este aporte"),
+      { target: { value: "100" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Ver distribuição" }));
+
+    expect(
+      await screen.findByText(
+        "Estratégia calculada pelo InvestLab · distribuição por classe",
+      ),
+    ).toBeTruthy();
+  });
+
   it("keeps zero and amounts above the endpoint limit disabled", () => {
     render(<ContributionAssistant />);
     const input = screen.getByLabelText(
@@ -428,6 +462,7 @@ describe("ContributionAssistant", () => {
         ok: true,
         json: async () => ({
           status: "ready",
+          allocationMode: "strategy",
           strategySource: "system_calculated",
           contributionAmount: 100,
           reserveAmount: 0,
@@ -447,7 +482,7 @@ describe("ContributionAssistant", () => {
               contributionAmount: 75,
             },
             {
-              assetClass: "Exterior",
+              assetClass: "Ações e BDRs",
               currentValue: 0,
               currentPercentage: 0,
               targetPercentage: 0,
@@ -467,7 +502,7 @@ describe("ContributionAssistant", () => {
 
     expect(
       await screen.findByText(
-        "Estratégia calculada pelo InvestLab · distribuição por classe",
+        "Composição salva na Estratégia · distribuição por classe",
       ),
     ).toBeTruthy();
     expect(
@@ -475,6 +510,10 @@ describe("ContributionAssistant", () => {
         /Nenhuma classe está abaixo da sua meta\. R\$\s*25,00 fica sem classe direcionada/,
       ),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: /Renda fixa:/ }).parentElement?.style
+        .borderColor,
+    ).toBe("var(--asset-class-fixed-income)");
     fireEvent.click(
       screen.getByRole("button", { name: "Por quê e detalhes do cálculo" }),
     );
@@ -579,6 +618,11 @@ describe("ContributionAssistant", () => {
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("R$ 500,00")).toHaveLength(2);
+    expect(screen.getByText(/Metas pessoais legadas/)).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: /Renda vari/ }).parentElement?.style
+        .borderColor,
+    ).toBe("var(--asset-class-neutral)");
     expect(
       screen.getByText("Para a reserva").parentElement?.textContent,
     ).toContain("Meta pessoal alcançada");

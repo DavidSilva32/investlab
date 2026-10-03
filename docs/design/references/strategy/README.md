@@ -12,4 +12,4 @@
 - A página aprovada é específica de Estratégia e não deve ser aplicada como layout universal.
 - A edição deve manter as quatro classes existentes, admitir percentual zero, total calculado e a ação “Distribuir restante”.
 - Não implementar rendimento, risco, histórico ou qualquer conteúdo sem suporte mostrado no mockup.
-- Não foi confirmada divergência de cor de classe entre as referências de Estratégia e os tokens documentados. A existência de dois mapas de cores no código é ponto de auditoria futura, não inconsistência visual comprovada.
+- As imagens preservadas usam nomenclatura histórica: `page-desktop.png` e `allocation-sheet.png` mostram “Ações brasileiras” e “FIIs” e, no Sheet, “Fundos imobiliários”. Os nomes oficiais atuais são “Ações e BDRs” e “Fundos imobiliários (FIIs)”. A referência desktop foi aprovada pelo usuário; nenhuma imagem foi regenerada nesta tarefa. Consulte `src/lib/strategy-allocation.ts` para a nomenclatura vigente antes de produzir novos artefatos.

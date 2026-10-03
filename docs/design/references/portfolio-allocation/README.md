@@ -9,3 +9,7 @@
 ## Limites de uso
 
 Mostrar somente a dimensão e os campos selecionados que o produto já suporta. Classe, destino e série genérica têm paletas semânticas diferentes.
+
+### Nomenclatura histórica
+
+`allocation-details-reference.png` mostra os nomes “Ações Brasil”, “ETFs Internacionais” e “FIIs”, além desses rótulos nas visualizações e nos controles. Eles são anteriores à nomenclatura oficial atual: “Ações e BDRs”, “ETFs internacionais” e “Fundos imobiliários (FIIs)”. Preserve a imagem sem regeneração automática; use o catálogo por ID em `src/lib/strategy-allocation.ts` para novos artefatos. Valores amplos de posição continuam separados.

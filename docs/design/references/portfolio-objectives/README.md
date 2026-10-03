@@ -14,3 +14,7 @@
 ## Limites de uso
 
 As imagens não são capturas da aplicação. Conteúdo atrás dos Sheets é ilustrativo. Não transformar classes de ativo em finalidades, não inferir metas nem automatizar atribuições. Para outros Sheets da Carteira, consulte os READMEs de [detalhes e classificação](../portfolio-allocation/README.md) e [posições](../portfolio-positions/README.md).
+
+### Nomenclatura histórica
+
+`design-reference.png` usa “Ações”, “ETFs” e “FIIs” em uma composição ilustrativa por classe; `position-assignment-reference.png` mostra “Renda Variável” e “Fundos Imobiliários” como valores de posição. Esses textos não definem os nomes oficiais das classes específicas nem alteram as categorias amplas disponíveis no produto. As novas referências devem consultar `src/lib/strategy-allocation.ts`; imagens existentes ficam preservadas e identificadas como históricas.

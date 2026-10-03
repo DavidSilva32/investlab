@@ -29,9 +29,9 @@ import { formatCurrency } from "@/lib/utils";
 import { getApiMessage } from "@/lib/api-message";
 import type { ContributionAllocationResult } from "@/lib/contribution-allocation";
 import {
-  getPortfolioAssetClassColor,
-  portfolioAssetClassColors,
-} from "@/lib/portfolio-asset-class-colors";
+  getStrategyAssetClassColor,
+  strategyAssetClasses,
+} from "@/lib/strategy-allocation";
 import {
   formatAmountInput,
   getCurrencyInputSelection,
@@ -337,33 +337,13 @@ export function ContributionAssistant({
                           aria-hidden="true"
                           className="inline-flex size-2.5 overflow-hidden rounded-full"
                         >
-                          <span
-                            className="h-full w-1/4"
-                            style={{
-                              backgroundColor:
-                                portfolioAssetClassColors.fixedIncome,
-                            }}
-                          />
-                          <span
-                            className="h-full w-1/4"
-                            style={{
-                              backgroundColor:
-                                portfolioAssetClassColors.brazilianEquities,
-                            }}
-                          />
-                          <span
-                            className="h-full w-1/4"
-                            style={{
-                              backgroundColor:
-                                portfolioAssetClassColors.internationalEtfs,
-                            }}
-                          />
-                          <span
-                            className="h-full w-1/4"
-                            style={{
-                              backgroundColor: portfolioAssetClassColors.fiis,
-                            }}
-                          />
+                          {strategyAssetClasses.map(({ id, colorToken }) => (
+                            <span
+                              key={id}
+                              className="h-full w-1/4"
+                              style={{ backgroundColor: `var(${colorToken})` }}
+                            />
+                          ))}
                         </span>
                         Após aporte
                       </span>
@@ -376,6 +356,13 @@ export function ContributionAssistant({
                       </span>
                     </div>
                     {visibleAllocations.map((allocation) => {
+                      const allocationIndex = allocations.indexOf(allocation);
+                      const assetClassId =
+                        result.allocationMode === "strategy"
+                          ? strategyAssetClasses[allocationIndex]!.id
+                          : null;
+                      const assetClassColor =
+                        getStrategyAssetClassColor(assetClassId);
                       const projectedPercentage =
                         ((allocation.currentValue +
                           allocation.contributionAmount) /
@@ -389,10 +376,8 @@ export function ContributionAssistant({
                           key={allocation.assetClass}
                           className="space-y-2 rounded-xl border bg-card p-4 shadow-sm"
                           style={{
-                            borderColor: getPortfolioAssetClassColor(
-                              allocation.assetClass,
-                            ),
-                            backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(allocation.assetClass)} 8%, var(--card))`,
+                            borderColor: assetClassColor,
+                            backgroundColor: `color-mix(in srgb, ${assetClassColor} 8%, var(--card))`,
                           }}
                         >
                           <div className="space-y-2 text-sm">
@@ -401,9 +386,7 @@ export function ContributionAssistant({
                                 aria-hidden="true"
                                 className="mr-2 inline-block size-2.5 rounded-full align-middle"
                                 style={{
-                                  backgroundColor: getPortfolioAssetClassColor(
-                                    allocation.assetClass,
-                                  ),
+                                  backgroundColor: assetClassColor,
                                 }}
                               />
                               {allocation.assetClass}
@@ -444,7 +427,7 @@ export function ContributionAssistant({
                                 style={{
                                   left: `${Math.min(allocation.currentPercentage, projectedPercentage)}%`,
                                   width: `${Math.abs(projectedPercentage - allocation.currentPercentage)}%`,
-                                  backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(allocation.assetClass)} 36%, transparent)`,
+                                  backgroundColor: `color-mix(in srgb, ${assetClassColor} 36%, transparent)`,
                                 }}
                               />
                               <span
@@ -457,9 +440,7 @@ export function ContributionAssistant({
                                 className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card"
                                 style={{
                                   left: `${Math.min(100, projectedPercentage)}%`,
-                                  backgroundColor: getPortfolioAssetClassColor(
-                                    allocation.assetClass,
-                                  ),
+                                  backgroundColor: assetClassColor,
                                 }}
                               />
                               <span
@@ -476,9 +457,7 @@ export function ContributionAssistant({
                               <span
                                 className="text-center tabular-nums"
                                 style={{
-                                  color: getPortfolioAssetClassColor(
-                                    allocation.assetClass,
-                                  ),
+                                  color: assetClassColor,
                                 }}
                               >
                                 Após {projectedPercentage.toFixed(1)}%

@@ -14,36 +14,21 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { strategyAssetClassColorById } from "@/lib/portfolio-asset-class-colors";
-
-export const strategyClasses = [
-  {
-    id: "fixed_income",
-    label: "Renda fixa",
-    color: strategyAssetClassColorById.fixed_income,
-  },
-  {
-    id: "brazilian_equities",
-    label: "Ações brasileiras",
-    color: strategyAssetClassColorById.brazilian_equities,
-  },
-  {
-    id: "international_etfs",
-    label: "ETFs internacionais",
-    color: strategyAssetClassColorById.international_etfs,
-  },
-  { id: "fiis", label: "FIIs", color: strategyAssetClassColorById.fiis },
-] as const;
-
-export type StrategyClassId = (typeof strategyClasses)[number]["id"];
-export type StrategyPercentages = Record<StrategyClassId, number>;
+import {
+  getStrategyAssetClassColor,
+  strategyAssetClasses,
+  type StrategyAssetClassId,
+} from "@/lib/strategy-allocation";
 
 export type StrategyCompositionRow = {
   name: string;
-} & Record<StrategyClassId, number>;
+} & Record<StrategyAssetClassId, number>;
 
 const chartConfig = Object.fromEntries(
-  strategyClasses.map(({ id, label, color }) => [id, { label, color }]),
+  strategyAssetClasses.map(({ id, label }) => [
+    id,
+    { label, color: getStrategyAssetClassColor(id) },
+  ]),
 ) satisfies ChartConfig;
 
 export function formatStrategyPercentage(value: unknown) {
@@ -57,19 +42,19 @@ export function StrategyTooltipEntry({
   value: unknown;
   name: string;
 }) {
-  const assetClass = strategyClasses.find((item) => item.id === name);
+  const assetClass = strategyAssetClasses.find((item) => item.id === name);
   if (!assetClass) return <span>{formatStrategyPercentage(value)}</span>;
   return (
     <span className="flex w-full items-center gap-2">
       <span
         aria-hidden="true"
         className="size-2.5 shrink-0 rounded-full"
-        style={{ backgroundColor: assetClass.color }}
+        style={{ backgroundColor: getStrategyAssetClassColor(assetClass.id) }}
       />
       <span className="text-foreground">{assetClass.label}</span>
       <span
         className="ml-auto font-mono font-semibold tabular-nums"
-        style={{ color: assetClass.color }}
+        style={{ color: getStrategyAssetClassColor(assetClass.id) }}
       >
         {formatStrategyPercentage(value)}
       </span>
@@ -126,7 +111,7 @@ export function StrategyAllocationChart({
               />
             }
           />
-          {strategyClasses.map(({ id }) => (
+          {strategyAssetClasses.map(({ id }) => (
             <Bar
               key={id}
               dataKey={id}
@@ -155,12 +140,12 @@ export function StrategyAllocationChart({
         </BarChart>
       </ChartContainer>
       <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
-        {strategyClasses.map(({ id, label, color }) => (
+        {strategyAssetClasses.map(({ id, label }) => (
           <li key={id} className="flex items-center gap-2">
             <span
               aria-hidden="true"
               className="size-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: color }}
+              style={{ backgroundColor: getStrategyAssetClassColor(id) }}
             />
             <span>{label}</span>
           </li>

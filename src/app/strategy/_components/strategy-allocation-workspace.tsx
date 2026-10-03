@@ -44,7 +44,6 @@ import {
   type CurrencyInputSelection,
 } from "@/lib/currency-input";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
-import { getPortfolioAssetClassColor } from "@/lib/portfolio-asset-class-colors";
 import {
   distributeRemainingPercentage,
   parseStrategyContributionAmount,
@@ -54,11 +53,11 @@ import {
 } from "@/lib/strategy-allocation-input";
 import {
   strategyAssetClasses,
+  getStrategyAssetClassColor,
   type StrategyAllocationPercentages,
 } from "@/lib/strategy-allocation";
 import {
   StrategyAllocationChart,
-  strategyClasses,
   type StrategyCompositionRow,
 } from "./strategy-allocation-chart";
 
@@ -404,9 +403,7 @@ export function StrategyAllocationWorkspace({
                     .filter(({ id }) => allocationToShow?.[id] > 0)
                     .map(({ id, label }) => {
                       const Icon = classIcons[id];
-                      const color = strategyClasses.find(
-                        (item) => item.id === id,
-                      )!.color;
+                      const color = getStrategyAssetClassColor(id);
                       return (
                         <li key={id} className="flex items-center gap-2">
                           <Icon
@@ -458,9 +455,7 @@ export function StrategyAllocationWorkspace({
           <div className="space-y-5">
             <div className="space-y-3">
               {strategyAssetClasses.map(({ id, label }) => {
-                const color = strategyClasses.find(
-                  (item) => item.id === id,
-                )!.color;
+                const color = getStrategyAssetClassColor(id);
                 const Icon = classIcons[id];
                 const current = currentById.get(id);
                 const percentageCents = parseStrategyPercentage(draft[id]);
@@ -806,8 +801,8 @@ export function StrategyAllocationWorkspace({
                           key={item.id}
                           className="min-w-0 rounded-lg border p-4 transition-shadow hover:shadow-sm"
                           style={{
-                            backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(item.label)} 10%, var(--card))`,
-                            borderColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(item.label)} 52%, var(--border))`,
+                            backgroundColor: `color-mix(in srgb, ${getStrategyAssetClassColor(item.id)} 10%, var(--card))`,
+                            borderColor: `color-mix(in srgb, ${getStrategyAssetClassColor(item.id)} 52%, var(--border))`,
                           }}
                         >
                           <span className="flex min-w-0 items-center gap-3 text-sm font-medium">
@@ -818,10 +813,8 @@ export function StrategyAllocationWorkspace({
                                   aria-hidden="true"
                                   className="flex size-10 shrink-0 items-center justify-center rounded-full"
                                   style={{
-                                    backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(item.label)} 22%, transparent)`,
-                                    color: getPortfolioAssetClassColor(
-                                      item.label,
-                                    ),
+                                    backgroundColor: `color-mix(in srgb, ${getStrategyAssetClassColor(item.id)} 22%, transparent)`,
+                                    color: getStrategyAssetClassColor(item.id),
                                   }}
                                 >
                                   <Icon className="size-5" />

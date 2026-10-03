@@ -9,3 +9,7 @@
 ## Limites de uso
 
 Movimentações é uma experiência separada em `/portfolio?view=movements` e não é coberta por esta referência. O mockup não especifica a configuração separada de taxa para CDB. Não deduza cobertura de abas sem referência dedicada.
+
+## Taxonomia e nomenclatura
+
+`manual-position-reference.png` usa `Renda Variável` como categoria ampla e mostra nomes de produtos/subclasses; não deve ser interpretada como um seletor das classes específicas da estratégia. As opções amplas do cadastro permanecem inalteradas. As classes específicas oficiais são “Renda fixa”, “Ações e BDRs”, “ETFs internacionais” e “Fundos imobiliários (FIIs)”, com tokens semânticos definidos pela fonte indexada por ID em `src/lib/strategy-allocation.ts`.

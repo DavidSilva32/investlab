@@ -5,8 +5,11 @@ import {
   formatStrategyPercentage,
   formatStrategyTooltip,
   StrategyAllocationChart,
-  strategyClasses,
 } from "@/app/strategy/_components/strategy-allocation-chart";
+import {
+  getStrategyAssetClassColor,
+  strategyAssetClasses,
+} from "@/lib/strategy-allocation";
 
 Object.defineProperty(globalThis, "ResizeObserver", {
   configurable: true,
@@ -36,7 +39,12 @@ describe("StrategyAllocationChart", () => {
   });
 
   it("uses the shared semantic class-color tokens", () => {
-    expect(strategyClasses.map(({ id, color }) => [id, color])).toEqual([
+    expect(
+      strategyAssetClasses.map(({ id }) => [
+        id,
+        getStrategyAssetClassColor(id),
+      ]),
+    ).toEqual([
       ["fixed_income", "var(--asset-class-fixed-income)"],
       ["brazilian_equities", "var(--asset-class-brazilian-equities)"],
       ["international_etfs", "var(--asset-class-international-etfs)"],
@@ -86,9 +94,9 @@ describe("StrategyAllocationChart", () => {
       }),
     ).toBeTruthy();
     expect(screen.getByText("Renda fixa")).toBeTruthy();
-    expect(screen.getByText("Ações brasileiras")).toBeTruthy();
+    expect(screen.getByText("Ações e BDRs")).toBeTruthy();
     expect(screen.getByText("ETFs internacionais")).toBeTruthy();
-    expect(screen.getByText("FIIs")).toBeTruthy();
+    expect(screen.getByText("Fundos imobiliários (FIIs)")).toBeTruthy();
     expect(screen.getAllByText("40%").length).toBeGreaterThan(0);
     expect(screen.queryByText("10%")).toBeNull();
   });

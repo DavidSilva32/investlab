@@ -9,3 +9,7 @@
 ## Limites de uso
 
 O total e a cobertura da Reserva usam os valores retornados pelo domínio. A simulação não movimenta dinheiro. Não inferir liquidez, regras ou condições de ação a partir dos exemplos fictícios. A auditoria disponível não confirmou divergência de cor de classe na referência do Dashboard.
+
+### Nomenclatura da imagem
+
+`dashboard-design-reference.png` é uma referência gerada por IA cuja legenda ainda mostra “Ações brasileiras” e “FIIs”, termos históricos para as classes específicas. Os nomes oficiais são “Ações e BDRs” e “Fundos imobiliários (FIIs)”. A imagem foi preservada, sem regeneração automática; novas referências devem consultar `src/lib/strategy-allocation.ts`.

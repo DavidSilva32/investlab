@@ -287,7 +287,7 @@ describe("getStrategyContributionGuidance", () => {
     { id: "fixed_income", label: "Renda fixa", currentPercentage: 50 },
     {
       id: "brazilian_equities",
-      label: "Ações brasileiras",
+      label: "Ações e BDRs",
       currentPercentage: 25,
     },
     {
@@ -295,7 +295,7 @@ describe("getStrategyContributionGuidance", () => {
       label: "ETFs internacionais",
       currentPercentage: 25,
     },
-    { id: "fiis", label: "FIIs", currentPercentage: 0 },
+    { id: "fiis", label: "Fundos imobiliários (FIIs)", currentPercentage: 0 },
   ];
   const input = {
     classes,
@@ -388,7 +388,7 @@ describe("getStrategyContributionGuidance", () => {
       }),
     ).toMatchObject({
       status: "target_gap",
-      assetClass: "Ações brasileiras",
+      assetClass: "Ações e BDRs",
       targetPercentage: 35,
       allocationMode: "strategy",
     });
