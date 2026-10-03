@@ -1,6 +1,6 @@
 # Design system do InvestLab
 
-Esta documentação orienta novas páginas e mudanças visuais relevantes. A implementação dos tokens fica em `src/app/globals.css`; os componentes reutilizáveis ficam em `src/components/ui`.
+Esta documentação orienta novas páginas e mudanças visuais relevantes. A implementação dos tokens fica em `src/app/globals.css`; os componentes reutilizáveis ficam em `src/components/ui`. O contrato compartilhado para geração de referências e validação de fidelidade está em [`design-process.md`](./design-process.md).
 
 ## Direção visual
 
@@ -34,7 +34,13 @@ Os tokens de classe mantêm a mesma identidade em claro e escuro, com luminosida
 - A visão “Patrimônio por destino” tem finalidade própria, diferente de classe. Sua paleta foi ligada a tokens `destination-*` nesta entrega.
 - `portfolio-distribution-charts.tsx` usa tokens de paleta indexada para categorias genéricas, como instituições; séries com significado financeiro fixo usam os tokens semânticos correspondentes.
 - Loading usa tanto `AppPageSkeleton` compartilhado quanto skeletons locais mais específicos. A consistência deve ser avaliada por página e por conteúdo, sem forçar a mesma silhueta em todas as rotas.
-- Cores de estados operacionais ainda aparecem como utilitários locais em diferentes páginas. Os tokens `status-*` fornecem o ponto comum para migração incremental; esta primeira entrega não redesenha nem reescreve todas as páginas.
+- Cores de estados operacionais ainda aparecem como utilitários locais em diferentes páginas. Em `src/app/analyses/_components/fundamentals-grid.tsx`, `stock-analysis-reading.tsx` e `stock-analysis-dashboard.tsx`; em `src/app/strategy/_components/strategy-allocation-workspace.tsx`; e em `src/app/portfolio/_components/manual-position-manager.tsx`, tons locais de âmbar/verde são candidatos a conferir contra os tokens `status-*`. São pontos de auditoria de status, não divergências de classe nem correções confirmadas. Os tokens `status-*` fornecem o ponto comum para migração incremental; esta primeira entrega não redesenha nem reescreve todas as páginas.
+
+## Auditoria de cores — issue #103
+
+- A auditoria visual disponível não confirmou divergência de cor de classe nas referências de Dashboard e Estratégia. Não registrar cores de estado nem séries genéricas como erro de classe sem verificar o significado e o contexto do dado.
+- Ponto para auditoria futura, sem divergência visual comprovada: `strategyAssetClassColorById` e `portfolioAssetClassColors` em `src/lib/portfolio-asset-class-colors.ts` mantêm mapas por ID com valores duplicados, enquanto `specificClassColors` resolve classes pelo rótulo localizado. Revisar os consumidores em `src/app/strategy/_components/strategy-allocation-chart.tsx`, `src/app/strategy/_components/strategy-allocation-workspace.tsx` e `src/app/portfolio/_components/portfolio-distribution-charts.tsx`; centralizar a resolução por identidade da classe se a auditoria de código encontrar drift. Esta tarefa não altera componentes ou mapas.
+- As propostas de Análises e Configurações têm conteúdo funcional sem suporte anotado nos respectivos READMEs. É uma pendência documental sobre fidelidade de conteúdo, não uma divergência de paleta confirmada; não redesenhar as imagens nesta entrega.
 
 ## Gráficos e dados
 
