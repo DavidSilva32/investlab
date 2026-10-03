@@ -10,11 +10,19 @@ Não invente páginas, navegação, funcionalidades, indicadores, métricas, met
 
 Antes de reutilizar uma imagem, confirme sua origem e status. Preserve referências aprovadas e identifique mockups gerados por IA como propostas. Registre a experiência, rota, estado, origem, suporte funcional, elementos fictícios e tokens em um README junto à imagem.
 
+### Identidade aprovada e enquadramento
+
+- Preserve a identidade visual global aprovada: azul para a interface, superfícies escuras neutras e suporte ao tema claro. Gere imagens futuras usando os tokens e referências vigentes; não proponha nem introduza uma mudança de paleta sem registrá-la como decisão pendente.
+- Mantenha as cores semânticas de classe independentes da identidade global: renda fixa laranja, ações brasileiras azul, ETFs internacionais roxo e FIIs verde. Confirme no código que a classe exibida é suportada; não infira classe/cor pelo ticker, produto ou subclasse.
+- Uma referência de componente complexo pode mostrar somente o componente em foco, sem reproduzir toda a página ao fundo, quando o contexto ao redor não fizer parte da decisão visual. Identifique no README a rota, o componente, o estado, o tema e o contexto de página omitido. Não acrescente controles de fundo que não existem no produto.
+
 ## Implementação e cores
 
 Implemente apenas experiências suportadas e use primeiro componentes e padrões compartilhados. Consulte o [`design system`](./design-system.md), os padrões de página e referências aprovadas aplicáveis.
 
 Use os tokens `asset-class-*` definidos em `src/app/globals.css` e o mapeamento compartilhado em `src/lib/portfolio-asset-class-colors.ts` para classes de ativos: renda fixa em laranja, ações brasileiras em azul, ETFs internacionais em roxo e FIIs em verde. Não replique cores diretamente em componentes. Mantenha cores de classe distintas de tokens de finalidade/destino, estado operacional e séries genéricas de gráfico. Preserve o mesmo significado em temas claro e escuro e não use cor como único indicador.
+
+Use os tokens globais de identidade (incluindo `primary`) para azul de marca, ações primárias, estados ativos e foco. A identidade azul não substitui a cor semântica de uma classe; uma tela só aplica uma cor de classe quando o dado identifica essa classe sem ambiguidade.
 
 ## Evidência e qualidade
 
