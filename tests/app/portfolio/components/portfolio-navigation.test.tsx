@@ -13,5 +13,6 @@ describe("PortfolioNavigation", () => {
     expect(html).toContain('href="/portfolio?view=movements"');
     expect(html).toContain("Movimentações");
     expect(html).toContain("border-primary text-primary");
+    expect(html).toContain('aria-current="page"');
   });
 });

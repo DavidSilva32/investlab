@@ -21,11 +21,26 @@
   --border: oklch(0.9 0.015 155);
   --input: oklch(0.86 0.02 155);
   --ring: oklch(0.5 0.14 158);
+  --status-success: oklch(0.5 0.15 150);
+  --status-warning: oklch(0.61 0.16 72);
+  --status-danger: var(--destructive);
+  --status-info: oklch(0.52 0.15 255);
+  --destination-reserve: oklch(0.55 0.16 255);
+  --destination-personal: oklch(0.55 0.18 305);
+  --destination-long-term: oklch(0.56 0.16 150);
+  --destination-purpose-unknown: oklch(0.67 0.16 72);
+  --destination-unassigned: oklch(0.57 0.02 160);
   --asset-class-fixed-income: oklch(0.58 0.17 55);
   --asset-class-brazilian-equities: oklch(0.53 0.17 255);
   --asset-class-international-etfs: oklch(0.55 0.18 305);
   --asset-class-fiis: oklch(0.5 0.16 150);
   --asset-class-neutral: oklch(0.53 0.025 160);
+  --chart-category-1: oklch(0.55 0.17 255);
+  --chart-category-2: oklch(0.55 0.14 195);
+  --chart-category-3: oklch(0.52 0.14 150);
+  --chart-category-4: oklch(0.6 0.16 55);
+  --chart-category-5: oklch(0.55 0.16 305);
+  --chart-category-6: oklch(0.56 0.16 25);
 }
 .dark {
   --background: oklch(0.18 0.018 160);
@@ -47,11 +62,26 @@
   --border: oklch(0.34 0.018 160);
   --input: oklch(0.37 0.02 160);
   --ring: oklch(0.72 0.14 158);
+  --status-success: oklch(0.73 0.14 150);
+  --status-warning: oklch(0.79 0.14 75);
+  --status-danger: var(--destructive);
+  --status-info: oklch(0.76 0.13 255);
+  --destination-reserve: oklch(0.75 0.13 255);
+  --destination-personal: oklch(0.74 0.15 305);
+  --destination-long-term: oklch(0.74 0.14 150);
+  --destination-purpose-unknown: oklch(0.79 0.14 75);
+  --destination-unassigned: oklch(0.71 0.02 160);
   --asset-class-fixed-income: oklch(0.76 0.15 70);
   --asset-class-brazilian-equities: oklch(0.75 0.14 250);
   --asset-class-international-etfs: oklch(0.76 0.14 305);
   --asset-class-fiis: oklch(0.74 0.14 150);
   --asset-class-neutral: oklch(0.68 0.025 160);
+  --chart-category-1: oklch(0.76 0.14 250);
+  --chart-category-2: oklch(0.74 0.12 195);
+  --chart-category-3: oklch(0.73 0.13 150);
+  --chart-category-4: oklch(0.78 0.13 70);
+  --chart-category-5: oklch(0.75 0.14 305);
+  --chart-category-6: oklch(0.74 0.14 25);
 }
 @theme inline {
   --color-background: var(--background);
@@ -73,6 +103,26 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-asset-class-fixed-income: var(--asset-class-fixed-income);
+  --color-asset-class-brazilian-equities: var(--asset-class-brazilian-equities);
+  --color-asset-class-international-etfs: var(--asset-class-international-etfs);
+  --color-asset-class-fiis: var(--asset-class-fiis);
+  --color-asset-class-neutral: var(--asset-class-neutral);
+  --color-chart-category-1: var(--chart-category-1);
+  --color-chart-category-2: var(--chart-category-2);
+  --color-chart-category-3: var(--chart-category-3);
+  --color-chart-category-4: var(--chart-category-4);
+  --color-chart-category-5: var(--chart-category-5);
+  --color-chart-category-6: var(--chart-category-6);
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-danger: var(--status-danger);
+  --color-status-info: var(--status-info);
+  --color-destination-reserve: var(--destination-reserve);
+  --color-destination-personal: var(--destination-personal);
+  --color-destination-long-term: var(--destination-long-term);
+  --color-destination-purpose-unknown: var(--destination-purpose-unknown);
+  --color-destination-unassigned: var(--destination-unassigned);
 }
 * {
   border-color: var(--border);

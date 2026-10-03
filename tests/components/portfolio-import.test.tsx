@@ -477,7 +477,9 @@ describe("PortfolioImport", () => {
     ) as HTMLInputElement;
     const click = vi.spyOn(input, "click");
 
-    fireEvent.click(screen.getByRole("button", { name: "Importar carteira" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar arquivos XLSX" }),
+    );
 
     expect(click).toHaveBeenCalledOnce();
   });

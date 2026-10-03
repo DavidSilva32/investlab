@@ -13,12 +13,12 @@ export type DistributionItem = {
 };
 
 const categoryColors = [
-  "#2563eb",
-  "#0891b2",
-  "#059669",
-  "#7c3aed",
-  "#d97706",
-  "#64748b",
+  "var(--chart-category-1)",
+  "var(--chart-category-2)",
+  "var(--chart-category-3)",
+  "var(--chart-category-4)",
+  "var(--chart-category-5)",
+  "var(--chart-category-6)",
 ];
 
 function DistributionChart({

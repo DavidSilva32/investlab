@@ -5,10 +5,16 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/ui/chart", () => ({
   ChartContainer: ({
     children,
-    config: _config,
+    config,
     ...props
-  }: React.PropsWithChildren<Record<string, unknown>>) => (
-    <div {...props}>{children}</div>
+  }: React.PropsWithChildren<
+    {
+      config: { share: { color: string } };
+    } & Record<string, unknown>
+  >) => (
+    <div {...props} data-series-color={config.share.color}>
+      {children}
+    </div>
   ),
 }));
 
@@ -62,6 +68,19 @@ describe("PortfolioDistributionCharts", () => {
     expect(screen.getByText("Demais classes")).toBeTruthy();
     expect(screen.getByText(/sem classe informada/)).toBeTruthy();
     expect(screen.getAllByTestId("bar-chart")).toHaveLength(12);
+    expect(
+      screen
+        .getAllByRole("img")
+        .slice(0, institutions.length)
+        .map((chart) => chart.getAttribute("data-series-color")),
+    ).toEqual([
+      "var(--chart-category-1)",
+      "var(--chart-category-2)",
+      "var(--chart-category-3)",
+      "var(--chart-category-4)",
+      "var(--chart-category-5)",
+      "var(--chart-category-6)",
+    ]);
     expect(
       screen
         .getAllByTestId("bar-track")

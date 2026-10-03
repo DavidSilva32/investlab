@@ -112,7 +112,8 @@ describe("PortfolioOverview", () => {
 
     expect(html).toContain("Valor conhecido da carteira");
     expect(html).toContain("1.550,00");
-    expect(html).toContain("6 de 7 posições com valor");
+    expect(html).toContain("6 de 7");
+    expect(html).toContain("posições com valor");
     expect(html).toContain("Principais posições");
     expect(html).toContain("Ordenadas pelo maior valor conhecido");
     expect(html).toContain("Ver todas as posições");

@@ -10,7 +10,7 @@ describe("SettingsLoading", () => {
   it("uses the placeholder skeleton", () => {
     renderToStaticMarkup(<Loading />);
     expect(pageLoading).toHaveBeenCalledWith(
-      { title: "Configurações", variant: "placeholder" },
+      { title: "Configurações", variant: "settings" },
       undefined,
     );
   });

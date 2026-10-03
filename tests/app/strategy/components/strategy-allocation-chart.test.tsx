@@ -5,6 +5,7 @@ import {
   formatStrategyPercentage,
   formatStrategyTooltip,
   StrategyAllocationChart,
+  strategyClasses,
 } from "@/app/strategy/_components/strategy-allocation-chart";
 
 Object.defineProperty(globalThis, "ResizeObserver", {
@@ -32,6 +33,15 @@ afterEach(cleanup);
 describe("StrategyAllocationChart", () => {
   it("formats tooltip values as percentages with two decimal places", () => {
     expect(formatStrategyPercentage(12.345)).toBe("12,35%");
+  });
+
+  it("uses the shared semantic class-color tokens", () => {
+    expect(strategyClasses.map(({ id, color }) => [id, color])).toEqual([
+      ["fixed_income", "var(--asset-class-fixed-income)"],
+      ["brazilian_equities", "var(--asset-class-brazilian-equities)"],
+      ["international_etfs", "var(--asset-class-international-etfs)"],
+      ["fiis", "var(--asset-class-fiis)"],
+    ]);
   });
 
   it("identifies each tooltip percentage with its class and color", () => {

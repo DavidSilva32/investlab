@@ -163,9 +163,7 @@ function MethodCard({
         {method.value === null ? "—" : currency.format(method.value)}
       </p>
       {difference !== null ? (
-        <p
-          className={`mt-1 flex items-center gap-1 text-sm font-medium ${below ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}
-        >
+        <p className="mt-1 flex items-center gap-1 text-sm font-medium text-foreground">
           {equal ? null : below ? (
             <ArrowDownRight className="size-4" aria-hidden="true" />
           ) : (
@@ -436,18 +434,86 @@ export function PortfolioOpportunities({
   }
 
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Compare referências calculadas para estudo. Os métodos não definem se
-        uma ação deve receber aporte.
-      </p>
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,0.82fr)] xl:items-stretch">
+        <Card className="border-primary/20 bg-primary/[0.03]">
+          <CardContent className="flex h-full flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Minha carteira
+              </p>
+              <h2 className="mt-1 text-xl font-semibold tracking-tight">
+                Comparar referências das ações
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Compare referências calculadas para estudo. Os métodos não
+                definem se uma ação deve receber aporte.
+              </p>
+            </div>
+            <div className="shrink-0 rounded-xl bg-background/70 px-4 py-3 sm:text-right">
+              <p className="text-2xl font-semibold tabular-nums">
+                {opportunities.length}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {opportunities.length === 1
+                  ? "ação analisada"
+                  : "ações analisadas"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex h-full flex-col justify-between gap-4 pt-5 sm:flex-row sm:items-center">
+            <div className="max-w-xl space-y-1">
+              <div className="flex items-center gap-1">
+                <h2 className="font-medium">Taxa-alvo global do Bazin</h2>
+                <Help label="Sobre a taxa inicial do Bazin">
+                  A configuração começa em 6% ao ano, uma premissa tradicional
+                  do método. Não é taxa universal recomendada. Ajustar aqui
+                  aplica o mesmo valor a todas as ações elegíveis.
+                </Help>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Premissa configurável; não representa recomendação de
+                rendimento.
+              </p>
+            </div>
+            <div className="flex items-end gap-2">
+              <label className="space-y-1 text-sm" htmlFor="bazin-target-yield">
+                <span className="block text-xs text-muted-foreground">
+                  Percentual anual
+                </span>
+                <Input
+                  id="bazin-target-yield"
+                  className="w-28"
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.1"
+                  value={targetYield}
+                  onChange={(event) => setTargetYield(event.target.value)}
+                />
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void saveTargetYield()}
+                disabled={savingTargetYield}
+              >
+                <Save className="mr-2 size-4" aria-hidden="true" />
+                {savingTargetYield ? "Salvando" : "Salvar taxa"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
       {classificationStatus === "partial" && (
         <div
-          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+          className="flex items-start gap-2 rounded-md border border-status-warning/30 bg-status-warning/10 p-3 text-sm"
           role="status"
         >
           <AlertTriangle
-            className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+            className="mt-0.5 size-4 shrink-0 text-status-warning"
             aria-hidden="true"
           />
           <span>
@@ -467,50 +533,6 @@ export function PortfolioOpportunities({
           </Button>
         </div>
       )}
-      <Card>
-        <CardContent className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-xl space-y-1">
-            <div className="flex items-center gap-1">
-              <h2 className="font-medium">Taxa-alvo global do Bazin</h2>
-              <Help label="Sobre a taxa inicial do Bazin">
-                A configuração começa em 6% ao ano, uma premissa tradicional do
-                método. Não é taxa universal recomendada. Ajustar aqui aplica o
-                mesmo valor a todas as ações elegíveis.
-              </Help>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Premissa configurável nas Análises; não representa recomendação de
-              rendimento.
-            </p>
-          </div>
-          <div className="flex items-end gap-2">
-            <label className="space-y-1 text-sm" htmlFor="bazin-target-yield">
-              <span className="block text-xs text-muted-foreground">
-                Percentual anual
-              </span>
-              <Input
-                id="bazin-target-yield"
-                className="w-28"
-                type="number"
-                min="0.01"
-                max="100"
-                step="0.1"
-                value={targetYield}
-                onChange={(event) => setTargetYield(event.target.value)}
-              />
-            </label>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void saveTargetYield()}
-              disabled={savingTargetYield}
-            >
-              <Save className="mr-2 size-4" aria-hidden="true" />
-              {savingTargetYield ? "Salvando" : "Salvar taxa"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
       {opportunities.map((item) => {
         const hasBoth =
           item.methods.graham.differencePercent !== null &&
@@ -520,8 +542,11 @@ export function PortfolioOpportunities({
           item.methods.graham.differencePercent! >= 0 !==
             item.methods.bazin.differencePercent! >= 0;
         return (
-          <Card key={item.ticker}>
-            <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <Card
+            key={item.ticker}
+            className="grid overflow-hidden lg:grid-cols-[minmax(14rem,0.72fr)_minmax(0,1.6fr)]"
+          >
+            <CardHeader className="gap-3 border-b bg-muted/20 p-4 sm:flex-row sm:items-start sm:justify-between lg:flex-col lg:justify-center lg:border-b-0 lg:border-r lg:p-6">
               <div className="space-y-1">
                 <CardTitle className="text-xl">
                   {item.ticker}{" "}
@@ -545,14 +570,14 @@ export function PortfolioOpportunities({
                 </p>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="min-w-0 space-y-3 p-4 sm:p-5">
               {split && (
                 <div
-                  className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+                  className="flex items-start gap-2 rounded-md border border-status-warning/30 bg-status-warning/10 p-3 text-sm"
                   role="status"
                 >
                   <AlertTriangle
-                    className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+                    className="mt-0.5 size-4 shrink-0 text-status-warning"
                     aria-hidden="true"
                   />
                   <span>

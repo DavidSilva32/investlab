@@ -238,7 +238,7 @@ export function ScreenerDataSettings() {
           <>
             <div className="flex items-center gap-2 text-sm font-medium">
               <StatusIcon
-                className={`size-4 ${run?.status === "COMPLETED" ? "text-emerald-600" : run?.status === "FAILED" ? "text-destructive" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
+                className={`size-4 ${run?.status === "COMPLETED" ? "text-status-success" : run?.status === "FAILED" ? "text-status-danger" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
                 aria-hidden="true"
               />
               <span>Status: {runLabel}</span>

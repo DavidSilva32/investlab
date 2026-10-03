@@ -155,58 +155,62 @@ export function ContributionAssistant({
                 : "Até você ativar a Estratégia, esta simulação continua usando as metas pessoais legadas já salvas."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <form
-            onSubmit={handleSubmit}
-            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+        <CardContent className="grid gap-5 xl:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.4fr)] xl:items-start">
+          <div
+            className={`space-y-3 rounded-xl border bg-muted/20 p-4 ${result ? "" : "xl:col-span-2"}`}
           >
-            <div className="w-full space-y-2 sm:max-w-xs">
-              <label
-                htmlFor="contribution-amount"
-                className="text-sm font-medium"
-              >
-                Valor disponível para este aporte
-              </label>
-              <Input
-                id="contribution-amount"
-                ref={amountInputRef}
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                required
-                value={amount}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  const nextAmount = formatAmountInput(value);
-                  const start = event.target.selectionStart ?? value.length;
-                  const end = event.target.selectionEnd ?? start;
-                  selectionRef.current = getCurrencyInputSelection(
-                    value,
-                    nextAmount,
-                    start,
-                    end,
-                    event.target.selectionDirection ?? "none",
-                  );
-                  setAmount(nextAmount);
-                  setResult(null);
-                  setError(null);
-                }}
-                placeholder="R$ 0,00"
-              />
-            </div>
-            <Button type="submit" disabled={loading || !canSubmit}>
-              {loading ? "Calculando..." : "Ver distribuição"}
-            </Button>
-          </form>
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-col gap-3 sm:flex-row sm:items-end"
+            >
+              <div className="w-full space-y-2 sm:max-w-xs">
+                <label
+                  htmlFor="contribution-amount"
+                  className="text-sm font-medium"
+                >
+                  Valor disponível para este aporte
+                </label>
+                <Input
+                  id="contribution-amount"
+                  ref={amountInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  required
+                  value={amount}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    const nextAmount = formatAmountInput(value);
+                    const start = event.target.selectionStart ?? value.length;
+                    const end = event.target.selectionEnd ?? start;
+                    selectionRef.current = getCurrencyInputSelection(
+                      value,
+                      nextAmount,
+                      start,
+                      end,
+                      event.target.selectionDirection ?? "none",
+                    );
+                    setAmount(nextAmount);
+                    setResult(null);
+                    setError(null);
+                  }}
+                  placeholder="R$ 0,00"
+                />
+              </div>
+              <Button type="submit" disabled={loading || !canSubmit}>
+                {loading ? "Calculando..." : "Ver distribuição"}
+              </Button>
+            </form>
 
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
 
           {result && (
-            <div aria-live="polite" className="space-y-4 border-t pt-4">
+            <div aria-live="polite" className="min-w-0 space-y-4">
               <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
                 <AmountSummary
                   label="Aporte informado"
@@ -248,7 +252,7 @@ export function ContributionAssistant({
               </div>
 
               {result.reserveStatus === "incomplete" && (
-                <p className="flex gap-2 text-sm text-amber-800 dark:text-amber-300">
+                <p className="flex gap-2 text-sm text-status-warning">
                   <CircleAlert
                     aria-hidden="true"
                     className="mt-0.5 size-4 shrink-0"
@@ -304,9 +308,9 @@ export function ContributionAssistant({
                     calcular o desbalanceamento.
                   </Limitation>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <div
-                      className={`rounded-md p-3 text-sm ${classGapAfterContribution > 0 ? "bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100" : "bg-muted/40"}`}
+                      className={`rounded-md p-3 text-sm sm:col-span-2 ${classGapAfterContribution > 0 ? "border border-status-warning/30 bg-status-warning/10 text-foreground" : "bg-muted/40"}`}
                     >
                       <p className="font-medium">
                         {totalClassGap === 0
@@ -319,7 +323,7 @@ export function ContributionAssistant({
                     <div
                       role="group"
                       aria-label="Legenda da comparação"
-                      className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"
+                      className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:col-span-2"
                     >
                       <span className="inline-flex items-center gap-1.5">
                         <span
@@ -383,9 +387,15 @@ export function ContributionAssistant({
                       return (
                         <div
                           key={allocation.assetClass}
-                          className="space-y-1.5 rounded-md border p-3"
+                          className="space-y-2 rounded-xl border bg-card p-4 shadow-sm"
+                          style={{
+                            borderColor: getPortfolioAssetClassColor(
+                              allocation.assetClass,
+                            ),
+                            backgroundColor: `color-mix(in srgb, ${getPortfolioAssetClassColor(allocation.assetClass)} 8%, var(--card))`,
+                          }}
                         >
-                          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+                          <div className="space-y-2 text-sm">
                             <span className="font-medium">
                               <span
                                 aria-hidden="true"
@@ -402,7 +412,7 @@ export function ContributionAssistant({
                               variant="outline"
                               className={
                                 isBelowTarget
-                                  ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"
+                                  ? "border-status-warning/40 bg-status-warning/10 text-status-warning"
                                   : "border-muted bg-muted/40 text-muted-foreground"
                               }
                             >
@@ -414,7 +424,7 @@ export function ContributionAssistant({
                               <span className="block text-xs text-muted-foreground">
                                 Aporte sugerido
                               </span>
-                              <span className="block tabular-nums font-semibold">
+                              <span className="block text-xl font-semibold tabular-nums">
                                 {formatCurrency(allocation.contributionAmount)}
                               </span>
                             </span>
@@ -574,11 +584,11 @@ function AmountSummary({
 }) {
   return (
     <div
-      className={`rounded-lg p-3 ${tone === "reserve" ? "bg-amber-50 dark:bg-amber-950/30" : tone === "remaining" ? "bg-primary/10" : "bg-muted/40"}`}
+      className={`rounded-lg p-3 ${tone === "reserve" ? "border border-status-warning/30 bg-status-warning/10" : tone === "remaining" ? "bg-primary/10" : "bg-muted/40"}`}
     >
       <p className="text-xs text-muted-foreground">{label}</p>
       <p
-        className={`mt-1 text-lg font-semibold tabular-nums ${tone === "reserve" && value !== null && value > 0 ? "text-amber-800 dark:text-amber-300" : tone === "reserve" && value === 0 ? "text-emerald-700 dark:text-emerald-300" : tone === "remaining" ? "text-primary" : ""}`}
+        className={`mt-1 text-lg font-semibold tabular-nums ${tone === "reserve" && value !== null && value > 0 ? "text-status-warning" : tone === "reserve" && value === 0 ? "text-status-success" : tone === "remaining" ? "text-primary" : ""}`}
       >
         {value === null ? fallback : formatCurrency(value)}
       </p>

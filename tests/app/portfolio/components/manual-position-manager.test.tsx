@@ -115,7 +115,7 @@ describe("ManualPositionManager", () => {
   it("opens the accessible form and explains explicit foreign conversion", () => {
     render(<ManualPositionManager positions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: /adicionar posição/i }));
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("dialog").className).toContain("sm:max-w-3xl");
     expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
     expect(screen.getByLabelText("Classe")).toBeTruthy();
     expect(screen.getByLabelText("Subclasse")).toBeTruthy();

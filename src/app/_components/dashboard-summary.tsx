@@ -127,9 +127,12 @@ export function DashboardSummary({
     <div className="space-y-5">
       <section aria-labelledby="dashboard-where-am-i">
         <Card className="overflow-hidden border-primary/20 shadow-sm">
-          <CardContent className="p-5 sm:p-7">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
+          <CardContent className="grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(12rem,0.8fr)_minmax(14rem,0.9fr)] lg:items-center">
+            <div className="flex items-start gap-4">
+              <span className="mt-1 grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary sm:size-14">
+                <WalletCards aria-hidden="true" className="size-6" />
+              </span>
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-muted-foreground">
                   Onde você está
                 </p>
@@ -145,36 +148,41 @@ export function DashboardSummary({
                   Patrimônio da carteira que o InvestLab conhece
                 </p>
               </div>
-              <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary">
-                <WalletCards aria-hidden="true" className="size-5" />
-              </span>
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-4 text-sm">
-              <span>
-                <strong className="tabular-nums">
-                  {insights.valuedPositions} de {positions.length}
-                </strong>{" "}
+            <div className="rounded-xl border bg-muted/25 p-4 lg:border-l lg:border-y-0 lg:border-r-0 lg:rounded-none lg:bg-transparent lg:pl-5">
+              <p className="text-xs font-medium text-muted-foreground">
+                Posições com valor
+              </p>
+              <p className="mt-1 text-xl font-semibold tabular-nums">
+                {insights.valuedPositions}
+                {" de "}
+                {positions.length}
+              </p>
+              <p className="text-xs text-muted-foreground">
                 posições com valor
-              </span>
-              {referenceDate ? (
-                <span className="text-muted-foreground">
-                  Dados de {date.format(new Date(`${referenceDate}T00:00:00Z`))}
-                </span>
-              ) : dataDateIsMixed ? (
-                <span className="text-muted-foreground">
-                  Datas-base variadas ou incompletas
-                </span>
-              ) : (
-                <span className="text-muted-foreground">
-                  Data-base não informada
-                </span>
-              )}
+              </p>
               {missingValueCount > 0 && (
-                <span className="text-amber-800 dark:text-amber-300">
+                <p className="mt-1 text-xs text-status-warning">
                   {missingValueCount} sem valor atual
-                </span>
+                </p>
               )}
+            </div>
+            <div className="rounded-xl border bg-muted/25 p-4 lg:border-l lg:border-y-0 lg:border-r-0 lg:rounded-none lg:bg-transparent lg:pl-5">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <CalendarDays aria-hidden="true" className="size-3.5" />
+                Data-base
+              </p>
+              <p className="mt-1 text-sm font-semibold">
+                {referenceDate
+                  ? `Dados de ${date.format(new Date(`${referenceDate}T00:00:00Z`))}`
+                  : dataDateIsMixed
+                    ? "Datas-base variadas ou incompletas"
+                    : "Não informada"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Dos valores registrados
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -184,79 +192,111 @@ export function DashboardSummary({
         <EmergencyReserveSummary calculation={emergencyReserve} />
       </section>
 
-      {unassignedSummary && (
-        <section aria-labelledby="dashboard-unassigned-title">
-          {unassignedSummary.status === "loaded" ? (
-            <Card>
-              <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4 sm:px-5">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                    <WalletCards aria-hidden="true" className="size-4" />
-                  </span>
-                  <div className="min-w-0">
+      <ContributionAssistant
+        allocationMode={contributionAllocationMode ?? "legacy"}
+      />
+
+      <div className="grid gap-3 xl:grid-cols-2">
+        {nextAction && (
+          <section aria-labelledby="dashboard-next-action-title">
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Próxima ação
+                  </p>
+                  <h2
+                    id="dashboard-next-action-title"
+                    className="mt-1 font-semibold"
+                  >
+                    {nextAction.title}
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                    {nextAction.detail}
+                  </p>
+                </div>
+                <Link
+                  href={nextAction.href}
+                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {nextAction.label}
+                  <ArrowRight aria-hidden="true" className="size-4" />
+                </Link>
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
+        {unassignedSummary && (
+          <section aria-labelledby="dashboard-unassigned-title">
+            {unassignedSummary.status === "loaded" ? (
+              <Card>
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4 sm:px-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                      <WalletCards aria-hidden="true" className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <h2
+                        id="dashboard-unassigned-title"
+                        className="text-sm font-medium"
+                      >
+                        Patrimônio conhecido sem destino
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {unassignedSummary.positionCount} posições ainda não
+                        associadas a um objetivo
+                        {unassignedSummary.unvaluedPositionCount > 0 &&
+                          ` · ${unassignedSummary.unvaluedPositionCount} sem valor atual`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="font-semibold tabular-nums">
+                      {formatCurrency(unassignedSummary.knownValue)}
+                    </span>
+                    <Link
+                      href="/portfolio?panel=objectives"
+                      className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                    >
+                      Ver objetivos
+                      <ArrowRight aria-hidden="true" className="size-4" />
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent
+                  className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-5"
+                  role="status"
+                >
+                  <div>
                     <h2
                       id="dashboard-unassigned-title"
                       className="text-sm font-medium"
                     >
-                      Patrimônio conhecido sem destino
+                      Patrimônio sem destino indisponível
                     </h2>
                     <p className="text-xs text-muted-foreground">
-                      {unassignedSummary.positionCount} posições ainda não
-                      associadas a um objetivo
-                      {unassignedSummary.unvaluedPositionCount > 0 &&
-                        ` · ${unassignedSummary.unvaluedPositionCount} sem valor atual`}
+                      Não foi possível carregar este resumo. Nenhum valor foi
+                      presumido.
                     </p>
                   </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="font-semibold tabular-nums">
-                    {formatCurrency(unassignedSummary.knownValue)}
-                  </span>
-                  <Link
-                    href="/portfolio?panel=objectives"
-                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto p-0"
+                    onClick={onRetryUnassigned}
                   >
-                    Ver objetivos
-                    <ArrowRight aria-hidden="true" className="size-4" />
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent
-                className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-5"
-                role="status"
-              >
-                <div>
-                  <h2
-                    id="dashboard-unassigned-title"
-                    className="text-sm font-medium"
-                  >
-                    Patrimônio sem destino indisponível
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Não foi possível carregar este resumo. Nenhum valor foi
-                    presumido.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="link"
-                  className="h-auto p-0"
-                  onClick={onRetryUnassigned}
-                >
-                  Tentar novamente
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </section>
-      )}
-
-      <ContributionAssistant
-        allocationMode={contributionAllocationMode ?? "legacy"}
-      />
+                    Tentar novamente
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </section>
+        )}
+      </div>
 
       <section
         aria-labelledby="dashboard-attention-title"
@@ -290,7 +330,7 @@ export function DashboardSummary({
               return (
                 <Card key={item.title}>
                   <CardContent className="flex gap-3 p-4">
-                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-status-warning/10 text-status-warning">
                       <Icon aria-hidden="true" className="size-4" />
                     </span>
                     <div className="min-w-0">
@@ -348,36 +388,6 @@ export function DashboardSummary({
               );
             })}
           </div>
-        </section>
-      )}
-
-      {nextAction && (
-        <section aria-labelledby="dashboard-next-action-title">
-          <Card className="bg-muted/40">
-            <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Próxima ação
-                </p>
-                <h2
-                  id="dashboard-next-action-title"
-                  className="mt-1 font-semibold"
-                >
-                  {nextAction.title}
-                </h2>
-                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                  {nextAction.detail}
-                </p>
-              </div>
-              <Link
-                href={nextAction.href}
-                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {nextAction.label}
-                <ArrowRight aria-hidden="true" className="size-4" />
-              </Link>
-            </CardContent>
-          </Card>
         </section>
       )}
 

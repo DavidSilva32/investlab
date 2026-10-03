@@ -406,7 +406,7 @@ describe("PortfolioObjectives", () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
-    await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
+    await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     expect(screen.getByRole("heading", { name: "Novo objetivo" })).toBeTruthy();
     await user.type(screen.getByLabelText("Nome"), "Carro");
     await user.click(
@@ -472,6 +472,9 @@ describe("PortfolioObjectives", () => {
       screen.getByRole("heading", { name: "Gerenciar posições" }),
     ).toBeTruthy();
     expect(
+      screen.getByRole("heading", { name: "Posições do objetivo" }),
+    ).toBeTruthy();
+    expect(
       screen.getByLabelText("Objetivo para associar posições"),
     ).toBeTruthy();
     expect(
@@ -497,7 +500,7 @@ describe("PortfolioObjectives", () => {
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
 
-    await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
+    await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     expect(screen.getByRole("heading", { name: "Novo objetivo" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Voltar" }));
     expect(screen.getByText("Patrimônio por destino")).toBeTruthy();
@@ -753,7 +756,7 @@ describe("PortfolioObjectives", () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
-    await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
+    await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome"), "Casa");
     await user.click(
       screen.getByRole("combobox", { name: "Finalidade deste destino" }),
@@ -776,7 +779,7 @@ describe("PortfolioObjectives", () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
-    await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
+    await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome"), "Casa");
     await user.click(
       screen.getByRole("combobox", { name: "Finalidade deste destino" }),
@@ -989,7 +992,7 @@ describe("PortfolioObjectives", () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
-    await user.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
+    await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome"), "Casa");
     await user.click(
       screen.getByRole("combobox", { name: "Finalidade deste destino" }),

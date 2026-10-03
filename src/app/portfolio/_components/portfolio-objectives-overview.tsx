@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import {
   type PortfolioObjective,
 } from "./portfolio-objective-card";
 import { Cell, Pie, PieChart } from "recharts";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 
 type Data = {
   objectives: PortfolioObjective[];
@@ -52,21 +52,21 @@ type Props = {
   onOrganize?: () => void;
 };
 
-const chartConfig = {
-  reserve: { label: "Reserva", color: "#2563eb" },
+export const destinationChartConfig = {
+  reserve: { label: "Reserva", color: "var(--destination-reserve)" },
   personal: {
     label: "Objetivos pessoais",
-    color: "#9333ea",
+    color: "var(--destination-personal)",
   },
   long_term: {
     label: "Investimento de longo prazo",
-    color: "#059669",
+    color: "var(--destination-long-term)",
   },
   purpose_unknown: {
     label: "Finalidade não definida",
-    color: "#d97706",
+    color: "var(--destination-purpose-unknown)",
   },
-  unassigned: { label: "Sem destino", color: "#64748b" },
+  unassigned: { label: "Sem destino", color: "var(--destination-unassigned)" },
 } satisfies ChartConfig;
 
 const percent = new Intl.NumberFormat("pt-BR", {
@@ -104,7 +104,7 @@ export function PortfolioObjectivesOverview({
   return (
     <div className="space-y-5">
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
+        <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
             <CardTitle className="text-base">Patrimônio por destino</CardTitle>
             <p className="text-xs text-muted-foreground">
@@ -114,13 +114,29 @@ export function PortfolioObjectivesOverview({
           <Badge variant="outline">
             {incompleteCount > 0 ? "Conhecido · parcial" : "Valor conhecido"}
           </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            {onOrganize && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onOrganize}
+              >
+                Organizar objetivos
+              </Button>
+            )}
+            <Button type="button" size="sm" onClick={onCreate}>
+              <Plus aria-hidden="true" className="size-4" />
+              Novo objetivo
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="grid items-center gap-4 pt-2 sm:grid-cols-[220px_minmax(0,1fr)]">
           <div className="relative">
             {chartData.length > 0 ? (
               <ChartContainer
-                config={chartConfig}
-                className="mx-auto h-[190px] max-w-[220px]"
+                config={destinationChartConfig}
+                className="mx-auto h-47.5 max-w-55"
                 aria-label="Gráfico de rosca dos valores conhecidos por destino"
                 role="img"
               >
@@ -153,7 +169,7 @@ export function PortfolioObjectivesOverview({
             ) : (
               <div
                 aria-label="Sem valores conhecidos para compor o gráfico"
-                className="mx-auto flex h-[190px] max-w-[220px] items-center justify-center rounded-full border border-dashed text-center text-xs text-muted-foreground"
+                className="mx-auto flex h-47.5 max-w-55 items-center justify-center rounded-full border border-dashed text-center text-xs text-muted-foreground"
                 role="img"
               >
                 Nenhum valor conhecido
@@ -183,7 +199,8 @@ export function PortfolioObjectivesOverview({
                       aria-hidden="true"
                       className="size-2.5 shrink-0 rounded-full"
                       style={{
-                        backgroundColor: chartConfig[category.key].color,
+                        backgroundColor:
+                          destinationChartConfig[category.key].color,
                       }}
                     />
                     <span className="truncate text-sm">{category.label}</span>
@@ -241,17 +258,9 @@ export function PortfolioObjectivesOverview({
               Cada posição pertence a no máximo um destino.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={onOrganize}>
-              Organizar objetivos
-            </Button>
-            <Button type="button" onClick={onCreate}>
-              + Novo objetivo
-            </Button>
-          </div>
         </div>
         {data.objectives.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-3">
             {data.objectives.map((objective) => (
               <PortfolioObjectiveCard
                 key={objective.id}

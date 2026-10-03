@@ -16,10 +16,19 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { getApiMessage } from "@/lib/api-message";
 import { formatAmountInput, parseBrazilianAmount } from "@/lib/currency-input";
 import {
@@ -248,36 +257,47 @@ export function PortfolioObjectiveOrganizer({
 
   return (
     <section aria-labelledby="objective-organizer-title" className="space-y-4">
-      <header className="space-y-1">
-        <h3 id="objective-organizer-title" className="text-sm font-semibold">
-          Saldos observados no banco
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Informe os saldos que você vê para cada objetivo. Deixe em branco os
-          que não quer incluir nesta distribuição.
-        </p>
-      </header>
-
       <Card className="shadow-none">
-        <CardContent className="space-y-4 p-4 sm:p-5">
-          <DatePickerField
-            id="objective-organizer-date"
-            label="Data comum da consulta ao banco"
-            value={valuationDate}
-            onChange={(value) => {
-              setValuationDate(value);
-              setPreview(null);
-              setFormError(null);
-            }}
-            required
-          />
-          <div className="grid gap-3 sm:grid-cols-2">
+        <CardHeader className="space-y-1 pb-3">
+          <CardTitle id="objective-organizer-title" className="text-base">
+            Saldos observados no banco
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Informe o saldo atual de cada objetivo que deseja incluir.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 rounded-lg border bg-muted/20 p-3 sm:p-4 md:grid-cols-[minmax(0,1fr)_15rem] md:items-end">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Saldos para comparar</p>
+              <p className="text-xs text-muted-foreground">
+                Deixe em branco os objetivos que não entram nesta distribuição.
+              </p>
+            </div>
+            <DatePickerField
+              id="objective-organizer-date"
+              label="Data comum da consulta ao banco"
+              value={valuationDate}
+              onChange={(value) => {
+                setValuationDate(value);
+                setPreview(null);
+                setFormError(null);
+              }}
+              required
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {objectives.map((objective) => {
               const reference = latestReferences.get(objective.id);
               const inputId = "objective-balance-" + objective.id;
               return (
-                <div className="min-w-0 space-y-2" key={objective.id}>
-                  <Label htmlFor={inputId}>{objective.name}</Label>
+                <div
+                  className="min-w-0 space-y-2 rounded-lg border bg-card p-3"
+                  key={objective.id}
+                >
+                  <Label className="block" htmlFor={inputId}>
+                    {objective.name}
+                  </Label>
                   <Input
                     id={inputId}
                     inputMode="decimal"
@@ -320,7 +340,7 @@ export function PortfolioObjectiveOrganizer({
             organizar as posições, mas não comprova quais notas formam cada
             saldo no banco.
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-between">
             <Button
               type="button"
               onClick={() => void searchAllocation()}
@@ -371,8 +391,20 @@ function AllocationPreview({
   const effectiveDates = [...new Set(preview.effectiveValuationDates)];
   return (
     <Card aria-label="Prévia da distribuição" className="shadow-none">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Revise a distribuição</CardTitle>
+      <CardHeader className="space-y-2 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base">Revise a distribuição</CardTitle>
+          <Badge
+            variant="outline"
+            className={
+              preview.optimal
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-status-warning/40 bg-status-warning/10 text-status-warning"
+            }
+          >
+            {preview.optimal ? "Busca concluída" : "Busca parcial"}
+          </Badge>
+        </div>
         <p className="text-sm text-muted-foreground">
           Comparação solicitada para {formatDate(preview.valuationDate)}.
           {effectiveDates.length > 0 && (
@@ -386,7 +418,7 @@ function AllocationPreview({
       </CardHeader>
       <CardContent className="space-y-4">
         {(!preview.optimal || !preview.canConfirm) && (
-          <Alert variant="destructive">
+          <Alert className="border-status-warning/40 bg-status-warning/5 [&>svg]:text-status-warning">
             <Shuffle aria-hidden="true" />
             <AlertTitle>
               {preview.optimal
@@ -400,26 +432,42 @@ function AllocationPreview({
             </AlertDescription>
           </Alert>
         )}
-        <div className="space-y-2">
-          {preview.objectives.map((objective) => (
-            <div key={objective.objectiveId} className="rounded-lg border p-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h4 className="font-medium">{objective.name}</h4>
-                <span className="text-sm font-semibold tabular-nums">
-                  {formatCurrencyCents(objective.proposedValueCents)}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Saldo informado{" "}
-                {formatCurrencyCents(objective.observedBalanceCents)}
-                {" · "}diferença{" "}
-                {formatCurrencyCents(objective.differenceCents)}
-                {" · "}
-                {objective.assetKeys.length} posições
-              </p>
-            </div>
-          ))}
-        </div>
+        <section
+          aria-label="Resumo por objetivo"
+          className="overflow-hidden rounded-lg border"
+        >
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableHead>Objetivo</TableHead>
+                <TableHead className="text-right">Saldo informado</TableHead>
+                <TableHead className="text-right">Total proposto</TableHead>
+                <TableHead className="text-right">Diferença</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {preview.objectives.map((objective) => (
+                <TableRow key={objective.objectiveId}>
+                  <TableCell>
+                    <h4 className="font-medium">{objective.name}</h4>
+                    <span className="text-xs text-muted-foreground">
+                      {objective.assetKeys.length} posições
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatCurrencyCents(objective.observedBalanceCents)}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {formatCurrencyCents(objective.proposedValueCents)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatCurrencyCents(objective.differenceCents)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
         {preview.transfers.length > 0 && (
           <section
             aria-labelledby="allocation-transfers-title"
@@ -435,25 +483,24 @@ function AllocationPreview({
               {preview.transfers.map((transfer) => (
                 <li
                   key={transfer.assetKey}
-                  className="flex flex-wrap items-center gap-x-2 rounded-lg bg-muted/50 p-3 text-sm"
+                  className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 >
-                  <ArrowRightLeft
-                    aria-hidden="true"
-                    className="size-4 text-muted-foreground"
-                  />
-                  <span className="min-w-0 flex-1 break-all">
-                    {transfer.product}
+                  <span className="min-w-0">
+                    <span className="block break-words font-medium">
+                      {transfer.product}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {transfer.assetCode ?? "Código não informado"}
+                      {transfer.maturityAt
+                        ? " · vence em " + formatDate(transfer.maturityAt)
+                        : " · vencimento não informado"}
+                    </span>
+                    <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <ArrowRightLeft aria-hidden="true" className="size-3.5" />
+                      {transfer.fromObjectiveName} → {transfer.toObjectiveName}
+                    </span>
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {transfer.assetCode ?? "Código não informado"}
-                    {transfer.maturityAt
-                      ? " · vence em " + formatDate(transfer.maturityAt)
-                      : " · vencimento não informado"}
-                  </span>
-                  <span>
-                    {transfer.fromObjectiveName} → {transfer.toObjectiveName}
-                  </span>
-                  <span className="font-medium tabular-nums">
+                  <span className="font-semibold tabular-nums sm:text-right">
                     {formatCurrencyCents(transfer.valueCents)}
                   </span>
                 </li>

@@ -17,7 +17,8 @@ describe("AppPageSkeleton", () => {
     ["Dashboard", "dashboard"],
     ["Carteira", "portfolio"],
     ["Importações", "form"],
-    ["Análises", "placeholder"],
+    ["Análises", "analyses"],
+    ["Configurações", "settings"],
   ] as const)("renders the %s %s skeleton", (title, variant) => {
     const html = renderToStaticMarkup(
       <AppPageSkeleton title={title} variant={variant} />,

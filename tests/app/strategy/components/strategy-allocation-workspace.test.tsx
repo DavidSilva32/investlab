@@ -183,16 +183,31 @@ describe("StrategyAllocationWorkspace", () => {
     expect(screen.getByText("Distribuição atual")).toBeTruthy();
     expect(screen.getAllByText("30,00%").length).toBeGreaterThan(0);
     input("Renda fixa planejada em porcentagem");
-    expect(screen.getByRole("dialog").className).toContain("sm:max-w-xl");
+    expect(screen.getByRole("dialog").className).toContain("sm:max-w-2xl");
     expect(input("Renda fixa planejada em porcentagem").value).toBe("40,00");
-    expect(screen.getByText("Total planejado: 100,00%")).toBeTruthy();
+    expect(screen.getByText("Total planejado")).toBeTruthy();
+    expect(screen.getByText("100,00%", { selector: "strong" })).toBeTruthy();
+    expect(
+      screen.getByText("Composição dentro do total de 100%."),
+    ).toBeTruthy();
+    const classCards = screen.getByRole("dialog").querySelectorAll("section");
+    expect(classCards).toHaveLength(4);
+    expect(classCards[0]?.textContent).toContain("Renda fixa");
+    expect(classCards[0]?.textContent).toContain("Valor atual");
+    expect(classCards[0]?.textContent?.replace(/\u00a0/g, " ")).toContain(
+      "R$ 400,00",
+    );
+    expect(classCards[3]?.textContent).toContain("FIIs");
+    expect(classCards[3]?.textContent?.replace(/\u00a0/g, " ")).toContain(
+      "R$ 100,00",
+    );
     expect(screen.getByText("Distribuição por classe")).toBeTruthy();
     fireEvent.change(input("Renda fixa planejada em porcentagem"), {
       target: { value: "40," },
     });
     expect(input("Renda fixa planejada em porcentagem").value).toBe("40,");
     setPercentages(["100", "0", "0", "0"]);
-    expect(screen.getByText("Total planejado: 100,00%")).toBeTruthy();
+    expect(screen.getByText("100,00%", { selector: "strong" })).toBeTruthy();
     expect(input("Ações brasileiras planejada em porcentagem").value).toBe("0");
     fireEvent.change(input("Renda fixa planejada em porcentagem"), {
       target: { value: "101" },

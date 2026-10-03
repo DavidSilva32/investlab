@@ -29,7 +29,8 @@ describe("EmergencyReserveSummary", () => {
     );
 
     expect(html).toContain("2.5 meses de despesas");
-    expect(html).toContain("Sua meta: 6 meses");
+    expect(html).toContain("Sua meta pessoal");
+    expect(html).toContain("6 meses");
     expect(html).toContain("meta que você escolheu");
     expect(html).toContain('role="progressbar"');
     expect(html).toContain("Cobertura em relação à sua meta pessoal");

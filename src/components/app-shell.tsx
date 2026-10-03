@@ -40,16 +40,22 @@ function Brand() {
 function Navigation({ pathname }: { pathname: string }) {
   return (
     <nav className="flex flex-col gap-1" aria-label="Navegação principal">
-      {navigation.map(({ href, label, Icon }) => (
-        <Link
-          key={href}
-          href={href}
-          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${pathname === href || (href === "/analyses" && pathname?.startsWith("/analyses")) ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
-        >
-          <Icon className="size-4" />
-          {label}
-        </Link>
-      ))}
+      {navigation.map(({ href, label, Icon }) => {
+        const active =
+          pathname === href ||
+          (href === "/analyses" && pathname?.startsWith("/analyses"));
+        return (
+          <Link
+            key={href}
+            href={href}
+            aria-current={active ? "page" : undefined}
+            className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+          >
+            <Icon aria-hidden="true" className="size-4" />
+            {label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

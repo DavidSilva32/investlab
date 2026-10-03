@@ -120,7 +120,7 @@ export function AnalysisStockSearch({
       className="overflow-visible bg-transparent"
     >
       <Popover open={open && canSearch} onOpenChange={setOpen}>
-        <div className="relative z-20 max-w-2xl">
+        <div className="relative z-20 w-full">
           <span className="mb-1.5 block text-sm font-medium">
             Pesquisar ação
           </span>
