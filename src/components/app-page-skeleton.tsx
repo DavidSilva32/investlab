@@ -2,7 +2,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
 type AppPageSkeletonVariant =
-  "dashboard" | "portfolio" | "form" | "placeholder";
+  "dashboard" | "portfolio" | "form" | "analyses" | "settings";
 
 type AppPageSkeletonProps = {
   title: string;
@@ -30,7 +30,8 @@ export function AppContentSkeleton({ title, variant }: AppPageSkeletonProps) {
       {variant === "portfolio" && <PortfolioSkeleton />}
       {variant === "dashboard" && <DashboardSkeleton />}
       {variant === "form" && <FormSkeleton />}
-      {variant === "placeholder" && <PlaceholderSkeleton />}
+      {variant === "analyses" && <AnalysesSkeleton />}
+      {variant === "settings" && <SettingsSkeleton />}
     </section>
   );
 }
@@ -70,14 +71,14 @@ function DashboardSkeleton() {
           <Skeleton className="mt-5 h-4 w-full max-w-xl" />
           <Skeleton className="mt-3 h-2.5 w-full" />
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <PanelSkeleton compact />
-          <PanelSkeleton compact />
-        </div>
         <div className="rounded-xl border bg-card p-5">
           <Skeleton className="h-5 w-44" />
           <Skeleton className="mt-3 h-4 w-full max-w-xl" />
           <Skeleton className="mt-4 h-10 w-36" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <PanelSkeleton compact />
+          <PanelSkeleton compact />
         </div>
       </div>
     </>
@@ -86,23 +87,70 @@ function DashboardSkeleton() {
 
 function FormSkeleton() {
   return (
-    <div className="rounded-xl border bg-card p-6">
-      <Skeleton className="h-5 w-52" />
-      <Skeleton className="mt-2 h-4 w-80" />
-      <Skeleton className="mt-8 h-36 w-full" />
-      <Skeleton className="mt-5 h-10 w-32" />
+    <div className="space-y-5 rounded-xl border bg-card p-4 sm:p-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div className="space-y-2">
+          <Skeleton className="h-5 w-52" />
+          <Skeleton className="h-4 w-80 max-w-full" />
+        </div>
+        <Skeleton className="h-10 w-full sm:w-40" />
+      </div>
+      <div className="space-y-4 rounded-lg border p-4">
+        <Skeleton className="h-5 w-56" />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <PanelSkeleton compact />
+          <PanelSkeleton compact />
+          <PanelSkeleton compact />
+        </div>
+        <Skeleton className="h-11 w-full" />
+        <Skeleton className="h-52 w-full" />
+      </div>
     </div>
   );
 }
 
-function PlaceholderSkeleton() {
+function AnalysesSkeleton() {
   return (
-    <div className="grid min-h-72 place-items-center rounded-xl border bg-card p-6">
-      <div className="grid justify-items-center gap-3">
-        <Skeleton className="size-11 rounded-xl" />
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-4 w-72" />
+    <div className="space-y-4">
+      <div className="flex w-full gap-2 sm:w-fit">
+        <Skeleton className="h-11 flex-1 sm:w-44" />
+        <Skeleton className="h-11 flex-1 sm:w-44" />
       </div>
+      <PanelSkeleton />
+      <div className="grid gap-4 md:grid-cols-2">
+        <PanelSkeleton compact />
+        <PanelSkeleton compact />
+      </div>
+    </div>
+  );
+}
+
+function SettingsSkeleton() {
+  return (
+    <div className="space-y-5">
+      {[0, 1].map((item) => (
+        <div key={item} className="rounded-xl border bg-card p-5 sm:p-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+            <div className="space-y-2">
+              <Skeleton className="h-5 w-52" />
+              <Skeleton className="h-4 w-96 max-w-full" />
+            </div>
+            <Skeleton className="h-10 w-36" />
+          </div>
+          <div className="mt-5 flex items-center gap-2">
+            <Skeleton className="size-4 rounded-full" />
+            <Skeleton className="h-4 w-52" />
+          </div>
+          <div className="mt-5 grid gap-4 border-t pt-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((metric) => (
+              <div key={metric} className="space-y-2">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

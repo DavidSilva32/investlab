@@ -396,49 +396,54 @@ export function StockAnalysisDashboard({
     <div className="space-y-4">
       {search}
       <Card>
-        <CardHeader>
-          <CardDescription>Ativo consultado</CardDescription>
-          <CardTitle className="text-2xl">
-            {analysis.ticker} ·{" "}
-            {analysis.companyName ?? "Empresa não informada"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-8">
-          <p className="text-3xl font-semibold tracking-tight">
-            {analysis.price === null ? "—" : money.format(analysis.price)}
-          </p>
-          <div className="sm:ml-auto">
-            <p className="text-xs text-muted-foreground">
-              Variação do preço no período · {selectedIntervalLabel}
+        <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Ativo consultado
             </p>
-            <p
-              className={`mt-0.5 text-xl font-semibold tabular-nums ${priceChangeTone}`}
-            >
-              {priceChange === null
-                ? "Indisponível"
-                : pricePercent.format(priceChange)}
-            </p>
-            <p className="text-xs text-muted-foreground">Sem dividendos</p>
+            <h2 className="mt-1 truncate text-xl font-semibold tracking-tight sm:text-2xl">
+              {analysis.ticker} ·{" "}
+              {analysis.companyName ?? "Empresa não informada"}
+            </h2>
           </div>
-          <p className="text-xs text-muted-foreground sm:ml-4">
-            {analysis.changePercent === null
-              ? "Variação do dia não informada"
-              : `Variação do dia: ${analysis.changePercent.toFixed(2)}%`}
-          </p>
+          <div className="flex flex-wrap items-end gap-x-8 gap-y-3 sm:justify-end">
+            <div>
+              <p className="text-3xl font-semibold tracking-tight tabular-nums">
+                {analysis.price === null ? "—" : money.format(analysis.price)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {analysis.changePercent === null
+                  ? "Variação do dia não informada"
+                  : `Variação do dia: ${analysis.changePercent.toFixed(2)}%`}
+              </p>
+            </div>
+            <div className="border-l pl-5">
+              <p className="text-xs text-muted-foreground">
+                Variação do preço no período · {selectedIntervalLabel}
+              </p>
+              <p
+                className={`mt-0.5 text-lg font-semibold tabular-nums ${priceChangeTone}`}
+              >
+                {priceChange === null
+                  ? "Indisponível"
+                  : pricePercent.format(priceChange)}
+              </p>
+              <p className="text-xs text-muted-foreground">Sem dividendos</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
       <Card>
-        <CardHeader>
-          <CardTitle>Histórico de preço</CardTitle>
-          <CardDescription>
-            Cotações diárias em ordem cronológica. Selecione um intervalo
-            disponível.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle>Cotação histórica</CardTitle>
+            <CardDescription>
+              Preços de fechamento em reais. Selecione um período disponível.
+            </CardDescription>
+          </div>
           {intervals.length > 0 && (
             <div
-              className="flex flex-wrap gap-2"
+              className="flex flex-wrap gap-2 sm:justify-end"
               role="group"
               aria-label="Intervalo do histórico"
             >
@@ -456,38 +461,54 @@ export function StockAnalysisDashboard({
               ))}
             </div>
           )}
+        </CardHeader>
+        <CardContent>
           <PriceHistoryChart points={points} />
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Leitura do InvestLab</CardTitle>
-          <CardDescription>
-            Um resumo factual das demonstrações anuais disponíveis.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <StockAnalysisReading periods={annual} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Indicadores fundamentalistas</CardTitle>
-          <CardDescription>
-            P/L e P/VP usam o valor de mercado da BRAPI e as demonstrações
-            financeiras anuais mais recentes; os demais preservam a base
-            indicada.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {analysis.indicators.map((indicator) => (
-            <FundamentalIndicatorCard
-              key={indicator.key}
-              indicator={indicator}
-            />
-          ))}
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(17rem,0.8fr)] xl:items-start">
+        <Card>
+          <CardHeader>
+            <CardTitle>Indicadores fundamentalistas</CardTitle>
+            <CardDescription>
+              Indicadores disponíveis e uma síntese dos dados anuais.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {analysis.indicators.map((indicator) => (
+                <FundamentalIndicatorCard
+                  key={indicator.key}
+                  indicator={indicator}
+                />
+              ))}
+            </div>
+            <div className="border-t pt-4">
+              <h3 className="mb-3 text-sm font-medium">Leitura do InvestLab</h3>
+              <StockAnalysisReading periods={annual} />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Sobre os dados financeiros</CardTitle>
+            <CardDescription>
+              Referências das demonstrações usadas nesta análise.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              P/L e P/VP usam o valor de mercado da BRAPI e as demonstrações
+              anuais mais recentes. Os demais indicadores preservam a base
+              indicada em cada cartão.
+            </p>
+            <p>
+              Os dados representam períodos contábeis informados e não são uma
+              previsão de resultados futuros nem uma recomendação.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Evolução dos fundamentos anuais</CardTitle>

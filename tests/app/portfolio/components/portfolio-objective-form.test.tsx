@@ -41,6 +41,12 @@ describe("PortfolioObjectiveForm", () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<PortfolioObjectiveForm saving={false} onSave={onSave} />);
+    const form = screen
+      .getByRole("button", { name: "Criar objetivo" })
+      .closest("form");
+    expect(form?.className).toContain("grid gap-5");
+    expect(form?.className).not.toContain("grid-cols");
+    expect(form?.closest("section")?.className).toContain("rounded-xl border");
     fireEvent.change(screen.getByLabelText("Nome"), {
       target: { value: "  Viagem  " },
     });

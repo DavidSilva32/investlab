@@ -11,12 +11,14 @@ vi.mock("next/link", () => ({
     href,
     children,
     className,
+    "aria-current": ariaCurrent,
   }: {
     href: string;
     children: React.ReactNode;
     className?: string;
+    "aria-current"?: "page";
   }) => (
-    <a href={href} className={className}>
+    <a href={href} className={className} aria-current={ariaCurrent}>
       {children}
     </a>
   ),
@@ -39,6 +41,11 @@ describe("AppShell", () => {
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Carteira").length).toBeGreaterThan(1);
     expect(screen.getAllByText("Usuário autorizado").length).toBeGreaterThan(0);
+    expect(
+      screen
+        .getAllByRole("link", { name: "Carteira" })
+        .every((link) => link.getAttribute("aria-current") === "page"),
+    ).toBe(true);
   });
 
   it("keeps the analysis navigation active on nested analysis paths", () => {
@@ -53,6 +60,9 @@ describe("AppShell", () => {
     expect(links.every((link) => link.className.includes("bg-primary"))).toBe(
       true,
     );
+    expect(
+      links.every((link) => link.getAttribute("aria-current") === "page"),
+    ).toBe(true);
   });
 
   it("handles a null pathname while rendering the navigation", () => {

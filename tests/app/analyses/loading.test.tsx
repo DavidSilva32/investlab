@@ -10,7 +10,7 @@ describe("AnalysesLoading", () => {
   it("uses the placeholder skeleton", () => {
     renderToStaticMarkup(<Loading />);
     expect(pageLoading).toHaveBeenCalledWith(
-      { title: "Análises", variant: "placeholder" },
+      { title: "Análises", variant: "analyses" },
       undefined,
     );
   });

@@ -335,12 +335,28 @@ export function PositionDetails({
       </CardHeader>
       <CardContent className="space-y-4 p-4 sm:p-5">
         <ManualPositionManager positions={positions} />
-        <PortfolioTable
-          columns={positionColumns}
-          rows={positions}
-          initialSort={{ id: "product", direction: "asc" }}
-          emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."
-        />
+        <section
+          aria-label="Posições registradas"
+          className="min-w-0 overflow-hidden rounded-xl border"
+        >
+          <div className="flex items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold">Posições na carteira</h2>
+              <p className="text-xs text-muted-foreground">
+                Valores, instituições e vencimentos registrados
+              </p>
+            </div>
+            <Badge variant="outline" className="shrink-0 tabular-nums">
+              {positions.length}
+            </Badge>
+          </div>
+          <PortfolioTable
+            columns={positionColumns}
+            rows={positions}
+            initialSort={{ id: "product", direction: "asc" }}
+            emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."
+          />
+        </section>
       </CardContent>
     </Card>
   );

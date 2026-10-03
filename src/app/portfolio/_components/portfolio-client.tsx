@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -198,7 +198,7 @@ export function PortfolioClient({
               </SheetTrigger>
               <SheetContent
                 side="right"
-                className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden sm:max-w-5xl"
+                className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden sm:max-w-3xl"
               >
                 <SheetHeader className="mb-6 shrink-0 pr-8">
                   <SheetTitle>Objetivos e destinos</SheetTitle>
@@ -229,7 +229,7 @@ export function PortfolioClient({
               </SheetTrigger>
               <SheetContent
                 side="right"
-                className="w-full overflow-y-auto sm:max-w-5xl"
+                className="w-full overflow-y-auto sm:max-w-3xl"
               >
                 <SheetHeader className="mb-6 pr-8">
                   <SheetTitle>Metas pessoais e dados detalhados</SheetTitle>

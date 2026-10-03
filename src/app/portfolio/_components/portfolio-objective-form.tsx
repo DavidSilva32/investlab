@@ -101,13 +101,16 @@ export function PortfolioObjectiveForm({
   }
 
   return (
-    <section aria-labelledby="objective-form-title" className="space-y-3">
+    <section
+      aria-labelledby="objective-form-title"
+      className="space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+    >
       {!hideTitle && (
         <h3 id="objective-form-title" className="text-sm font-semibold">
           {objective ? "Editar objetivo" : "Criar objetivo"}
         </h3>
       )}
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
+      <form className="grid gap-5" onSubmit={submit}>
         <div className="space-y-2">
           <Label htmlFor="objective-name">Nome</Label>
           <Input
@@ -162,7 +165,7 @@ export function PortfolioObjectiveForm({
             progresso ou valor restante.
           </p>
         </div>
-        <div className="space-y-2 sm:col-span-2">
+        <div className="space-y-2">
           <Label htmlFor="objective-monthly">
             Aporte mensal planejado (opcional)
           </Label>
@@ -189,7 +192,7 @@ export function PortfolioObjectiveForm({
             {error}
           </p>
         )}
-        <div className="flex gap-2 sm:col-span-2">
+        <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t bg-background/95 py-3 backdrop-blur sm:flex-row sm:justify-end">
           <Button type="submit" disabled={saving}>
             {saving
               ? "Salvando…"

@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -119,6 +120,27 @@ export function PortfolioObjectiveAssignment({
     });
   }
 
+  const positionGroups = [
+    {
+      title: "Já neste objetivo",
+      positions: positions.filter(
+        (position) => position.objectiveId === selectedObjectiveId,
+      ),
+    },
+    {
+      title: "Posições livres para associar",
+      positions: positions.filter((position) => position.objectiveId === null),
+    },
+    {
+      title: "Vinculadas a outro objetivo",
+      positions: positions.filter(
+        (position) =>
+          position.objectiveId !== null &&
+          position.objectiveId !== selectedObjectiveId,
+      ),
+    },
+  ].filter((group) => group.positions.length > 0);
+
   if (!positions.length) {
     return (
       <section
@@ -157,38 +179,68 @@ export function PortfolioObjectiveAssignment({
 
   return (
     <section aria-labelledby="objective-positions-title" className="space-y-3">
-      <div className="space-y-1">
-        <h3 id="objective-positions-title" className="text-sm font-semibold">
-          Associar posições a um objetivo
-        </h3>
-        <p className="text-xs text-muted-foreground">
-          A atribuição vale para a posição inteira. O valor acompanha as
-          próximas atualizações da carteira.
-        </p>
+      <div className="space-y-4 rounded-xl border bg-card p-4 sm:p-5">
+        <div className="space-y-1">
+          <h3
+            id="objective-positions-title"
+            className="text-base font-semibold"
+          >
+            Posições do objetivo
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Cada posição pertence a um único objetivo. Escolha um destino e
+            revise a seleção antes de salvar.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,0.7fr)] md:items-end">
+          <div className="space-y-2">
+            <Label htmlFor="objective-assignment-select">Objetivo</Label>
+            <Select
+              value={selectedObjectiveId}
+              onValueChange={(objectiveId) => {
+                setSelectedObjectiveId(objectiveId);
+                setSelectedAssetKeys(
+                  new Set(
+                    objectives.find((item) => item.id === objectiveId)!
+                      .assignedAssetKeys,
+                  ),
+                );
+              }}
+            >
+              <SelectTrigger
+                id="objective-assignment-select"
+                aria-label="Objetivo para associar posições"
+              >
+                <SelectValue placeholder="Escolha um objetivo" />
+              </SelectTrigger>
+              <SelectContent>
+                {objectives.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {objective && (
+            <div className="flex items-end justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">
+                  Total atual no objetivo
+                </p>
+                <p className="text-lg font-semibold tabular-nums">
+                  {objective.currentValue === null
+                    ? "Valor indisponível"
+                    : formatCurrency(objective.currentValue)}
+                </p>
+              </div>
+              <p className="shrink-0 pb-0.5 text-xs text-muted-foreground">
+                {objective.assignedPositionCount} posições
+              </p>
+            </div>
+          )}
+        </div>
       </div>
-      <Select
-        value={selectedObjectiveId}
-        onValueChange={(objectiveId) => {
-          setSelectedObjectiveId(objectiveId);
-          setSelectedAssetKeys(
-            new Set(
-              objectives.find((item) => item.id === objectiveId)!
-                .assignedAssetKeys,
-            ),
-          );
-        }}
-      >
-        <SelectTrigger aria-label="Objetivo para associar posições">
-          <SelectValue placeholder="Escolha um objetivo" />
-        </SelectTrigger>
-        <SelectContent>
-          {objectives.map((item) => (
-            <SelectItem key={item.id} value={item.id}>
-              {item.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
       {objective?.id === reserveObjectiveId ? (
         <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
           A Reserva usa a seleção e as regras próprias existentes. Para alterar
@@ -245,10 +297,22 @@ export function PortfolioObjectiveAssignment({
               }}
             />
           )}
-          <p className="rounded-md bg-muted/40 p-3 text-sm" aria-live="polite">
-            {selectedAssetKeys.size} posição(ões) selecionada(s) para{" "}
-            {objective.name}.
-          </p>
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3"
+            aria-live="polite"
+          >
+            <div>
+              <p className="text-sm font-medium">
+                Seleção para {objective.name}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                A pré-seleção não altera as atribuições existentes.
+              </p>
+            </div>
+            <p className="text-lg font-semibold tabular-nums">
+              {selectedAssetKeys.size} posições
+            </p>
+          </div>
           <Collapsible>
             <CollapsibleTrigger asChild>
               <Button
@@ -264,106 +328,120 @@ export function PortfolioObjectiveAssignment({
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
-              <ul className="grid max-h-80 gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
-                {positions.map((position) => {
-                  const assignedElsewhere =
-                    position.objectiveId !== null &&
-                    position.objectiveId !== selectedObjectiveId;
-                  return (
-                    <li key={position.assetKey}>
-                      <label
-                        className={
-                          "flex h-full items-start gap-3 rounded-md border p-3 " +
-                          (assignedElsewhere
-                            ? "cursor-not-allowed opacity-60"
-                            : "cursor-pointer hover:bg-muted/40")
-                        }
-                      >
-                        <Checkbox
-                          checked={selectedAssetKeys.has(position.assetKey)}
-                          disabled={assignedElsewhere || saving}
-                          onCheckedChange={() => togglePosition(position)}
-                          aria-label={
-                            "Associar " +
-                            position.product +
-                            " a " +
-                            objective.name
-                          }
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium">
-                            {position.product}
-                          </span>
-                          <span className="block text-xs text-muted-foreground">
-                            {[
-                              position.assetCode,
-                              position.institution,
-                              position.assetClass,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ") || "Sem detalhes adicionais"}
-                          </span>
-                          <span className="block text-xs tabular-nums text-muted-foreground">
-                            {position.value === null
-                              ? "Valor indisponível"
-                              : formatCurrencyCents(
-                                  position.valueCents ?? null,
+              <div className="max-h-80 space-y-4 overflow-y-auto rounded-lg border p-3 sm:p-4">
+                {positionGroups.map((group) => (
+                  <section key={group.title} className="space-y-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {group.title}
+                    </h4>
+                    <ul className="grid gap-2 sm:grid-cols-2">
+                      {group.positions.map((position) => {
+                        const assignedElsewhere =
+                          position.objectiveId !== null &&
+                          position.objectiveId !== selectedObjectiveId;
+                        return (
+                          <li key={position.assetKey}>
+                            <label
+                              className={
+                                "flex h-full items-start gap-3 rounded-md border p-3 " +
+                                (assignedElsewhere
+                                  ? "cursor-not-allowed border-status-warning/20 bg-status-warning/5 opacity-70"
+                                  : "cursor-pointer bg-card hover:border-primary/40 hover:bg-muted/30")
+                              }
+                            >
+                              <Checkbox
+                                checked={selectedAssetKeys.has(
+                                  position.assetKey,
                                 )}
-                            {position.positionCount > 1 &&
-                              " · " +
-                                position.positionCount +
-                                " posições agrupadas"}
-                            {position.unvaluedPositions > 0 &&
-                              " · " + position.unvaluedPositions + " sem valor"}
-                          </span>
-                          {position.canonicalValueSource && (
-                            <span className="block text-xs text-muted-foreground">
-                              Origem:{" "}
-                              {portfolioMoneySourceLabels[
-                                position.canonicalValueSource as keyof typeof portfolioMoneySourceLabels
-                              ] ?? position.canonicalValueSource}
-                            </span>
-                          )}
-                          {position.estimationBaseDate && (
-                            <span className="block text-xs text-muted-foreground">
-                              Data-base CURVA:{" "}
-                              {date.format(
-                                new Date(
-                                  `${position.estimationBaseDate}T00:00:00Z`,
-                                ),
-                              )}
-                            </span>
-                          )}
-                          {position.estimatedThrough && (
-                            <span className="block text-xs text-muted-foreground">
-                              {position.cdbEstimateStatus === "provisional" ||
-                              position.cdbEstimateComparisonApproximate
-                                ? "Estimativa aproximada até "
-                                : "Estimativa até "}
-                              {date.format(
-                                new Date(
-                                  `${position.estimatedThrough}T00:00:00Z`,
-                                ),
-                              )}
-                            </span>
-                          )}
-                          {position.cdbEstimateLimitation && (
-                            <span className="block text-xs text-muted-foreground">
-                              {position.cdbEstimateLimitation}
-                            </span>
-                          )}
-                          {assignedElsewhere && (
-                            <span className="mt-1 block text-xs text-muted-foreground">
-                              Já vinculada a{" "}
-                              {position.objectiveName ?? "outro objetivo"}
-                            </span>
-                          )}
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
+                                disabled={assignedElsewhere || saving}
+                                onCheckedChange={() => togglePosition(position)}
+                                aria-label={
+                                  "Associar " +
+                                  position.product +
+                                  " a " +
+                                  objective.name
+                                }
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-medium">
+                                  {position.product}
+                                </span>
+                                <span className="block text-xs text-muted-foreground">
+                                  {[
+                                    position.assetCode,
+                                    position.institution,
+                                    position.assetClass,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ") || "Sem detalhes adicionais"}
+                                </span>
+                                <span className="block text-xs tabular-nums text-muted-foreground">
+                                  {position.value === null
+                                    ? "Valor indisponível"
+                                    : formatCurrencyCents(
+                                        position.valueCents ?? null,
+                                      )}
+                                  {position.positionCount > 1 &&
+                                    " · " +
+                                      position.positionCount +
+                                      " posições agrupadas"}
+                                  {position.unvaluedPositions > 0 &&
+                                    " · " +
+                                      position.unvaluedPositions +
+                                      " sem valor"}
+                                </span>
+                                {position.canonicalValueSource && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    Origem:{" "}
+                                    {portfolioMoneySourceLabels[
+                                      position.canonicalValueSource as keyof typeof portfolioMoneySourceLabels
+                                    ] ?? position.canonicalValueSource}
+                                  </span>
+                                )}
+                                {position.estimationBaseDate && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    Data-base CURVA:{" "}
+                                    {date.format(
+                                      new Date(
+                                        `${position.estimationBaseDate}T00:00:00Z`,
+                                      ),
+                                    )}
+                                  </span>
+                                )}
+                                {position.estimatedThrough && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    {position.cdbEstimateStatus ===
+                                      "provisional" ||
+                                    position.cdbEstimateComparisonApproximate
+                                      ? "Estimativa aproximada até "
+                                      : "Estimativa até "}
+                                    {date.format(
+                                      new Date(
+                                        `${position.estimatedThrough}T00:00:00Z`,
+                                      ),
+                                    )}
+                                  </span>
+                                )}
+                                {position.cdbEstimateLimitation && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    {position.cdbEstimateLimitation}
+                                  </span>
+                                )}
+                                {assignedElsewhere && (
+                                  <span className="mt-1 inline-flex rounded-md border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-xs text-status-warning">
+                                    Já vinculada a{" "}
+                                    {position.objectiveName ?? "outro objetivo"}
+                                  </span>
+                                )}
+                              </span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))}
+              </div>
             </CollapsibleContent>
           </Collapsible>
           <div className="flex justify-end">
@@ -397,12 +475,36 @@ export function PortfolioObjectiveAssignment({
             {pendingTransfer?.transfers.map((transfer) => (
               <div
                 key={transfer.assetKey}
-                className="rounded-md border p-3 text-sm"
+                className="space-y-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 text-sm"
               >
-                <p className="font-medium">{transfer.product}</p>
-                <p className="text-muted-foreground">
-                  De {transfer.fromObjectiveName} para {objective?.name} ·{" "}
-                  {formatCurrency(transfer.value)}
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-medium">{transfer.product}</p>
+                  <p className="font-semibold tabular-nums">
+                    {formatCurrency(transfer.value)}
+                  </p>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-xs">
+                  <div className="min-w-0 rounded-md border bg-background/70 p-2">
+                    <span className="block text-muted-foreground">Sai de</span>
+                    <span className="block truncate font-medium">
+                      {transfer.fromObjectiveName}
+                    </span>
+                  </div>
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="size-4 text-muted-foreground"
+                  />
+                  <div className="min-w-0 rounded-md border bg-background/70 p-2">
+                    <span className="block text-muted-foreground">
+                      Entra em
+                    </span>
+                    <span className="block truncate font-medium">
+                      {objective?.name}
+                    </span>
+                  </div>
+                </div>
+                <p className="sr-only">
+                  De {transfer.fromObjectiveName} para {objective?.name}
                 </p>
               </div>
             ))}

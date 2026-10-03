@@ -63,6 +63,23 @@ export function PortfolioObjectiveCard({
   const isReserve =
     objective.kind === "RESERVE" || objective.id === reserveObjectiveId;
   const progress = objective.progressPercent;
+  const purpose = isReserve
+    ? "reserve"
+    : objective.purpose === "LONG_TERM_INVESTMENT"
+      ? "long_term"
+      : objective.purpose === "PERSONAL_GOAL"
+        ? "personal"
+        : "purpose_unknown";
+  const purposeClass = {
+    reserve:
+      "border-destination-reserve/40 bg-destination-reserve/10 text-destination-reserve",
+    personal:
+      "border-destination-personal/40 bg-destination-personal/10 text-destination-personal",
+    long_term:
+      "border-destination-long-term/40 bg-destination-long-term/10 text-destination-long-term",
+    purpose_unknown:
+      "border-destination-purpose-unknown/40 bg-destination-purpose-unknown/10 text-destination-purpose-unknown",
+  }[purpose];
 
   return (
     <Card className="relative shadow-none transition-colors hover:border-primary/40">
@@ -86,7 +103,7 @@ export function PortfolioObjectiveCard({
               <span className="block truncate font-semibold">
                 {objective.name}
               </span>
-              <Badge variant={isReserve ? "secondary" : "outline"}>
+              <Badge variant="outline" className={purposeClass}>
                 {isReserve
                   ? "Reserva"
                   : objective.purpose === "LONG_TERM_INVESTMENT"

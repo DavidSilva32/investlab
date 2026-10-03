@@ -194,7 +194,7 @@ describe("PortfolioClient", () => {
     expect(sheet.className).toContain("overflow-hidden");
     expect(sheet.className).not.toContain("overflow-y-auto");
     expect(sheet.className).toContain("w-full");
-    expect(sheet.className).toContain("sm:max-w-5xl");
+    expect(sheet.className).toContain("sm:max-w-3xl");
     expect(sheet.className).not.toMatch(/inset-y-auto|top-4|h-auto/);
     const scrollRegion = screen.getByRole("region", {
       name: "Conteúdo dos objetivos e destinos",

@@ -431,7 +431,7 @@ export function ManualPositionManager({
         </Collapsible>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Editar posição" : "Adicionar posição manual"}

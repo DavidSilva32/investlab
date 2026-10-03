@@ -1,6 +1,14 @@
 ﻿"use client";
 
 import { useRef, useState } from "react";
+import {
+  Building2,
+  CircleDollarSign,
+  FileSpreadsheet,
+  Layers3,
+  Upload,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -225,22 +233,6 @@ export function PortfolioImport() {
 
   return (
     <section className="rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm sm:p-6">
-      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h2 className="text-lg font-semibold">Importar dados B3</h2>
-          <p className="text-sm text-muted-foreground">
-            Envie posições e movimentações juntas. O preview é gerado
-            automaticamente antes de salvar.
-          </p>
-        </div>
-        <Button
-          className="w-full sm:w-auto"
-          disabled={loading}
-          onClick={() => input.current!.click()}
-        >
-          Importar carteira
-        </Button>
-      </div>
       <input
         ref={input}
         className="hidden"
@@ -253,39 +245,88 @@ export function PortfolioImport() {
           event.target.value = "";
         }}
       />
-      {loading && (
-        <p className="mt-4 text-sm text-muted-foreground">Lendo arquivos...</p>
-      )}
-      <div className="mt-5 space-y-5">
-        {items.map((item) => (
-          <PreviewItem
-            key={`${item.file.name}-${item.file.lastModified}`}
-            item={item}
-            onReferenceDateChange={updateReferenceDate}
-          />
-        ))}
-      </div>
-      {items.some((item) => item.preview) && (
-        <div className="mt-5 flex gap-3">
+      <div className="space-y-5">
+        <div className="flex flex-col gap-4 rounded-xl border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <FileSpreadsheet aria-hidden="true" className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Importação da B3
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">
+                Selecione os arquivos para revisar
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                A importação só é concluída depois da sua confirmação.
+              </p>
+            </div>
+          </div>
           <Button
-            disabled={
-              loading || hasMissingPositionReferenceDate || hasIdentityConflicts
-            }
-            onClick={confirm}
-          >
-            {loading
-              ? "Salvando..."
-              : `Confirmar ${items.filter((item) => item.preview).length} arquivo(s)`}
-          </Button>
-          <Button
-            variant="ghost"
+            className="w-full shrink-0 sm:w-auto"
             disabled={loading}
-            onClick={() => setItems([])}
+            onClick={() => input.current!.click()}
           >
-            Cancelar
+            <Upload aria-hidden="true" className="size-4" />
+            Importar arquivos XLSX
           </Button>
         </div>
-      )}
+
+        {loading && (
+          <p role="status" aria-live="polite" className="text-sm text-primary">
+            Lendo arquivos...
+          </p>
+        )}
+        {items.length === 0 && !loading ? (
+          <div className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center">
+            <FileSpreadsheet
+              aria-hidden="true"
+              className="size-6 text-muted-foreground"
+            />
+            <p className="mt-2 text-sm font-medium">A prévia aparecerá aqui</p>
+            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+              Selecione uma ou mais planilhas. Você poderá revisar posições e
+              movimentações antes de confirmar.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {items.map((item) => (
+              <PreviewItem
+                key={`${item.file.name}-${item.file.lastModified}`}
+                item={item}
+                onReferenceDateChange={updateReferenceDate}
+              />
+            ))}
+          </div>
+        )}
+        {items.some((item) => item.preview) && (
+          <div className="flex flex-col-reverse justify-end gap-3 border-t pt-4 sm:flex-row">
+            <Button
+              className="w-full sm:w-auto"
+              disabled={
+                loading ||
+                hasMissingPositionReferenceDate ||
+                hasIdentityConflicts
+              }
+              onClick={confirm}
+            >
+              {loading
+                ? "Salvando..."
+                : `Confirmar ${items.filter((item) => item.preview).length} arquivo(s)`}
+            </Button>
+            <Button
+              className="w-full sm:w-auto"
+              variant="outline"
+              disabled={loading}
+              onClick={() => setItems([])}
+            >
+              Cancelar
+            </Button>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -372,19 +413,41 @@ function PositionPreview({
 
   return (
     <Card className="overflow-hidden shadow-sm">
-      <CardHeader className="gap-3 border-b bg-muted/20 p-4 sm:p-5">
+      <CardHeader className="gap-4 border-b bg-muted/20 p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle className="text-base">{fileName}</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Revise os valores extraídos antes de confirmar a importação.
-            </p>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+              <FileSpreadsheet aria-hidden="true" className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <CardTitle className="truncate text-base">{fileName}</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Revise os dados extraídos antes de confirmar.
+              </p>
+            </div>
           </div>
           <Badge variant="secondary" className="w-fit">
             {preview.count} posição(ões)
           </Badge>
         </div>
-        <div className="max-w-xs space-y-2">
+        <dl className="grid gap-3 sm:grid-cols-3">
+          <SummaryItem
+            icon={CircleDollarSign}
+            label="Total reconhecido"
+            value={money.format(totalValue)}
+          />
+          <SummaryItem
+            icon={Layers3}
+            label="Posições com valor"
+            value={`${valuedPositions.length} de ${preview.count}`}
+          />
+          <SummaryItem
+            icon={Building2}
+            label="Instituições"
+            value={String(institutions.size)}
+          />
+        </dl>
+        <div className="grid gap-2 sm:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] sm:items-end">
           <DatePickerField
             id={`reference-date-${fileName}`}
             label="Data exibida na B3 para estas posições"
@@ -435,17 +498,6 @@ function PositionPreview({
             </AlertDescription>
           </Alert>
         ) : null}
-        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-          <SummaryItem
-            label="Total reconhecido"
-            value={money.format(totalValue)}
-          />
-          <SummaryItem
-            label="Com valor"
-            value={`${valuedPositions.length} de ${preview.count}`}
-          />
-          <SummaryItem label="Instituições" value={String(institutions.size)} />
-        </dl>
       </CardHeader>
       <CardContent className="p-0">
         {valuedPositions.length !== preview.count && (
@@ -457,70 +509,89 @@ function PositionPreview({
             </AlertDescription>
           </Alert>
         )}
-        <Table className="min-w-240">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Produto</TableHead>
-              <TableHead>Instituição</TableHead>
-              <TableHead>Código</TableHead>
-              <TableHead>Indexador</TableHead>
-              <TableHead className="text-right">Quantidade</TableHead>
-              <TableHead className="text-right">Preço unitário</TableHead>
-              <TableHead>Critério</TableHead>
-              <TableHead className="text-right">Valor total</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {preview.positions.map((position, index) => (
-              <TableRow
-                key={`${position.product}-${position.assetCode ?? index}`}
-              >
-                <TableCell className="min-w-48 font-medium">
-                  {position.product}
-                </TableCell>
-                <TableCell>{position.institution ?? "—"}</TableCell>
-                <TableCell className="font-mono text-xs">
-                  {position.assetCode ?? "—"}
-                </TableCell>
-                <TableCell>{position.indexer ?? "—"}</TableCell>
+        <div className="overflow-x-auto">
+          <Table className="min-w-240">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead>Instituição</TableHead>
+                <TableHead>Código</TableHead>
+                <TableHead>Indexador</TableHead>
+                <TableHead className="text-right">Quantidade</TableHead>
+                <TableHead className="text-right">Preço unitário</TableHead>
+                <TableHead>Critério</TableHead>
+                <TableHead className="text-right">Valor total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {preview.positions.map((position, index) => (
+                <TableRow
+                  key={`${position.product}-${position.assetCode ?? index}`}
+                >
+                  <TableCell className="min-w-48 font-medium">
+                    {position.product}
+                  </TableCell>
+                  <TableCell>{position.institution ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {position.assetCode ?? "—"}
+                  </TableCell>
+                  <TableCell>{position.indexer ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number.format(Number(position.quantity))}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatMoney(position.unitPrice)}
+                  </TableCell>
+                  <TableCell>
+                    {position.valuationSource ? (
+                      <Badge variant="outline">
+                        {position.valuationSource}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {formatMoney(position.totalValue)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={7}>Total reconhecido no arquivo</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {number.format(Number(position.quantity))}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatMoney(position.unitPrice)}
-                </TableCell>
-                <TableCell>
-                  {position.valuationSource ? (
-                    <Badge variant="outline">{position.valuationSource}</Badge>
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
-                  {formatMoney(position.totalValue)}
+                  {money.format(totalValue)}
                 </TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-          <TableFooter>
-            <TableRow>
-              <TableCell colSpan={7}>Total reconhecido no arquivo</TableCell>
-              <TableCell className="text-right tabular-nums">
-                {money.format(totalValue)}
-              </TableCell>
-            </TableRow>
-          </TableFooter>
-        </Table>
+            </TableFooter>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function SummaryItem({ label, value }: { label: string; value: string }) {
+function SummaryItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+}) {
   return (
-    <div className="rounded-lg border bg-background/60 px-3 py-2">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 font-medium tabular-nums">{value}</dd>
+    <div className="flex min-w-0 items-center gap-3 rounded-xl border bg-background/60 p-3 sm:p-4">
+      <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+        <Icon aria-hidden="true" className="size-5" />
+      </span>
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{label}</dt>
+        <dd className="mt-1 truncate text-lg font-semibold tabular-nums sm:text-xl">
+          {value}
+        </dd>
+      </div>
     </div>
   );
 }

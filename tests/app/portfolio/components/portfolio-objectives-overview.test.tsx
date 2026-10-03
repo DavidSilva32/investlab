@@ -7,7 +7,10 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PortfolioObjectivesOverview } from "@/app/portfolio/_components/portfolio-objectives-overview";
+import {
+  destinationChartConfig,
+  PortfolioObjectivesOverview,
+} from "@/app/portfolio/_components/portfolio-objectives-overview";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
@@ -79,6 +82,22 @@ const objectives: PortfolioObjective[] = [
 ];
 
 describe("PortfolioObjectivesOverview", () => {
+  it("uses dedicated semantic color tokens for each destination", () => {
+    expect(
+      Object.fromEntries(
+        Object.entries(destinationChartConfig).map(([key, value]) => [
+          key,
+          value.color,
+        ]),
+      ),
+    ).toEqual({
+      reserve: "var(--destination-reserve)",
+      personal: "var(--destination-personal)",
+      long_term: "var(--destination-long-term)",
+      purpose_unknown: "var(--destination-purpose-unknown)",
+      unassigned: "var(--destination-unassigned)",
+    });
+  });
   afterEach(cleanup);
 
   it("shows the known partial distribution, missing data and accessible objective actions", () => {
@@ -120,7 +139,7 @@ describe("PortfolioObjectivesOverview", () => {
       name: "Gráfico de rosca dos valores conhecidos por destino",
     });
     expect(chart.getAttribute("data-chart-colors")).toBe(
-      "#2563eb|#9333ea|#059669|#d97706|#64748b",
+      "var(--destination-reserve)|var(--destination-personal)|var(--destination-long-term)|var(--destination-purpose-unknown)|var(--destination-unassigned)",
     );
     expect(
       screen
@@ -166,7 +185,7 @@ describe("PortfolioObjectivesOverview", () => {
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
     expect(onOpen).toHaveBeenCalledWith(objectives[1]);
-    fireEvent.click(screen.getByRole("button", { name: "+ Novo objetivo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Novo objetivo" }));
     expect(onCreate).toHaveBeenCalledOnce();
     fireEvent.click(
       screen.getByRole("button", { name: "Organizar objetivos" }),

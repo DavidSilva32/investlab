@@ -232,10 +232,7 @@ export function MarketDataSettings() {
           </div>
         )}
         {notice && (
-          <p
-            role="status"
-            className="text-sm text-emerald-700 dark:text-emerald-400"
-          >
+          <p role="status" className="text-sm text-status-success">
             {notice}
           </p>
         )}
@@ -247,7 +244,7 @@ export function MarketDataSettings() {
           <>
             <div className="flex items-center gap-2 text-sm font-medium">
               <Icon
-                className={`size-4 ${run?.status === "COMPLETED" ? "text-emerald-600" : run?.status === "PARTIAL" ? "text-amber-600" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
+                className={`size-4 ${run?.status === "COMPLETED" ? "text-status-success" : run?.status === "PARTIAL" ? "text-status-warning" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
                 aria-hidden="true"
               />
               <span>Status da última execução: {label}</span>

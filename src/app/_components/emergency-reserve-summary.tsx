@@ -62,21 +62,31 @@ export function EmergencyReserveSummary({
 
         {canCalculateCoverage ? (
           <div className="mt-5 space-y-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm text-muted-foreground">
-                {formatCurrency(calculation.selectedValue)} conhecidos ÷{" "}
-                {formatCurrency(calculation.monthlyExpenses!)} de despesas
-                mensais
-              </p>
-              {hasPersonalTarget ? (
-                <p className="text-sm font-medium">
-                  Sua meta: {calculation.targetMonths} meses
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Valor conhecido</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {formatCurrency(calculation.selectedValue)}
                 </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Sem meta pessoal configurada
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Despesas mensais
                 </p>
-              )}
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {formatCurrency(calculation.monthlyExpenses!)}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Sua meta pessoal
+                </p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {hasPersonalTarget
+                    ? `${calculation.targetMonths} meses`
+                    : "Sem meta pessoal configurada"}
+                </p>
+              </div>
             </div>
             {hasPersonalTarget &&
               !incomplete &&
@@ -91,7 +101,7 @@ export function EmergencyReserveSummary({
                 />
               )}
             {hasPersonalTarget && incomplete ? (
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              <p className="text-sm font-medium text-status-warning">
                 A comparação com sua meta está incompleta porque há posições ou
                 valores ausentes.
               </p>
@@ -99,7 +109,7 @@ export function EmergencyReserveSummary({
               <p
                 className={
                   calculation.status === "below_target"
-                    ? "text-sm font-medium text-amber-800 dark:text-amber-300"
+                    ? "text-sm font-medium text-status-warning"
                     : "text-sm text-muted-foreground"
                 }
               >

@@ -20,14 +20,24 @@ vi.mock("@/app/settings/_components/market-data-settings", () => ({
 }));
 
 describe("SettingsPage", () => {
-  it("uses the page title and data sections without a repeated generic introduction", () => {
+  it("groups both independent data-source panels beneath one page heading", () => {
     const { container } = render(<SettingsPage />);
     expect(screen.getByRole("heading", { name: /Configura/ })).toBeTruthy();
     expect(container.querySelector("main > div")?.className).toBe(
-      "w-full space-y-6",
+      "w-full space-y-5",
     );
+    expect(
+      screen.getByRole("heading", { name: "Fontes das análises" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Consulte o estado e atualize as fontes que alimentam as análises.",
+      ),
+    ).toBeTruthy();
+    const panels = container.querySelectorAll("main section");
+    expect(panels).toHaveLength(2);
+    expect(panels[0]?.parentElement?.className).toContain("space-y-5");
     expect(screen.getByText("Dados da CVM")).toBeTruthy();
     expect(screen.getByText("Dados de mercado")).toBeTruthy();
-    expect(screen.queryByText(/Veja quais fontes alimentam/)).toBeNull();
   });
 });

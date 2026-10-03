@@ -360,17 +360,15 @@ export function EmergencyReserveEditor() {
       </p>
       {loading && (
         <div
-          className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
+          className="space-y-5"
           data-testid="reserve-editor-loading-layout"
           aria-hidden="true"
         >
-          <div className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="h-16 animate-pulse rounded-md bg-muted" />
-              <div className="h-16 animate-pulse rounded-md bg-muted" />
-            </div>
-            <div className="h-48 animate-pulse rounded-xl bg-muted" />
+          <div className="grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
+            <div className="h-16 animate-pulse rounded-md bg-muted" />
+            <div className="h-16 animate-pulse rounded-md bg-muted" />
           </div>
+          <div className="h-40 animate-pulse rounded-xl bg-muted" />
           <div className="h-72 animate-pulse rounded-xl bg-muted" />
         </div>
       )}
@@ -391,19 +389,16 @@ export function EmergencyReserveEditor() {
       )}
       {data && (
         <form className="space-y-5" onSubmit={save}>
-          <div
-            className="grid items-start gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
-            data-testid="reserve-editor-layout"
-          >
+          <div className="space-y-5" data-testid="reserve-editor-layout">
             <div className="space-y-5">
               <section
                 aria-labelledby="reserve-target-title"
-                className="space-y-4"
+                className="space-y-4 rounded-xl border p-4 sm:p-5"
               >
                 <h3 id="reserve-target-title" className="text-sm font-semibold">
                   Sua meta pessoal
                 </h3>
-                <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="monthly-expenses">Custo mensal</Label>
                     <Input
@@ -562,7 +557,7 @@ export function EmergencyReserveEditor() {
               />
             </div>
 
-            <fieldset className="min-w-0 space-y-3 rounded-xl border p-4">
+            <fieldset className="min-w-0 space-y-3 rounded-xl border p-4 sm:p-5">
               <legend className="px-1 text-sm font-semibold">
                 Posições consideradas na reserva
               </legend>
@@ -657,7 +652,7 @@ export function EmergencyReserveEditor() {
                         investimentos da reserva.
                       </p>
                     ) : (
-                      <ul className="grid max-h-[min(28rem,45dvh)] gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-1">
+                      <ul className="grid max-h-[min(28rem,45dvh)] gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
                         {data.holdings.map((holding) => (
                           <li
                             key={holding.assetKey}

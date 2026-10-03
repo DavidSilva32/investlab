@@ -144,9 +144,8 @@ describe("EmergencyReserveEditor", () => {
     ).toBe("true");
     expect(await screen.findByText("R$ 12.000,00")).toBeTruthy();
     const layout = screen.getByTestId("reserve-editor-layout");
-    expect(layout.className).toContain(
-      "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]",
-    );
+    expect(layout.className).toContain("space-y-5");
+    expect(layout.className).not.toContain("grid-cols");
     expect(screen.getByText(/1 grupo selecionado/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Encontrar grupos pelo valor/ }),
@@ -229,9 +228,8 @@ describe("EmergencyReserveEditor", () => {
 
     expect(screen.getByRole("status").textContent).toContain("Carregando");
     const loadingLayout = screen.getByTestId("reserve-editor-loading-layout");
-    expect(loadingLayout.className).toContain(
-      "lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]",
-    );
+    expect(loadingLayout.className).toContain("space-y-5");
+    expect(loadingLayout.className).not.toContain("grid-cols");
     expect(loadingLayout.querySelectorAll(".animate-pulse")).toHaveLength(4);
     expect(screen.queryByLabelText("Custo mensal")).toBeNull();
   });

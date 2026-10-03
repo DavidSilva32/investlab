@@ -192,6 +192,9 @@ describe("PortfolioObjectiveAssignment", () => {
         onSave={onSave}
       />,
     );
+    expect(screen.getByText("Total atual no objetivo")).toBeTruthy();
+    expect(screen.getByText("Posições livres para associar")).toBeTruthy();
+    expect(screen.getByText("Vinculadas a outro objetivo")).toBeTruthy();
     expect(
       screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
     ).toBeTruthy();
@@ -614,6 +617,29 @@ describe("PortfolioObjectiveAssignment", () => {
         "Valor indisponível · 2 posições agrupadas · 1 sem valor",
       ),
     ).toBeTruthy();
+  });
+
+  it("labels an unavailable current objective total", () => {
+    render(
+      <PortfolioObjectiveAssignment
+        objectives={[
+          {
+            ...goals[1],
+            id: "home",
+            name: "Casa",
+            currentValue: null,
+            assignedPositionCount: 0,
+            assignedAssetKeys: [],
+          },
+        ]}
+        positions={positions}
+        preferredObjectiveId="home"
+        saving={false}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Valor indisponível")).toBeTruthy();
   });
 
   it("guides the user to import when no current portfolio positions exist", () => {

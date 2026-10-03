@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { getApiMessage } from "@/lib/api-message";
 import {
   formatAmountInput,
@@ -446,7 +447,7 @@ export function StrategyAllocationWorkspace({
         </Card>
         <SheetContent
           side="right"
-          className="w-full overflow-y-auto sm:max-w-xl"
+          className="w-full overflow-y-auto sm:max-w-2xl"
         >
           <SheetHeader className="mb-6 pr-8">
             <SheetTitle>Editar composição</SheetTitle>
@@ -454,33 +455,69 @@ export function StrategyAllocationWorkspace({
               Ajuste os percentuais. O total deve ser 100%.
             </SheetDescription>
           </SheetHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-5">
+            <div className="space-y-3">
               {strategyAssetClasses.map(({ id, label }) => {
                 const color = strategyClasses.find(
                   (item) => item.id === id,
                 )!.color;
+                const Icon = classIcons[id];
                 const current = currentById.get(id);
                 const percentageCents = parseStrategyPercentage(draft[id]);
                 return (
-                  <div key={id} className="rounded-lg border bg-card p-3">
-                    <div className="flex items-center gap-2">
+                  <section
+                    key={id}
+                    aria-labelledby={`strategy-${id}-label`}
+                    className="grid gap-4 rounded-xl border border-l-4 bg-card p-4 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.8fr)_auto] sm:items-center"
+                    style={{
+                      borderLeftColor: color,
+                      backgroundColor: `color-mix(in srgb, ${color} 5%, var(--card))`,
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
                       <span
                         aria-hidden="true"
-                        className="size-2.5 shrink-0 rounded-sm"
-                        style={{ backgroundColor: color }}
-                      />
-                      <Label htmlFor={`strategy-${id}`} className="flex-1">
-                        {label}
-                      </Label>
+                        className="flex size-11 shrink-0 items-center justify-center rounded-full"
+                        style={{
+                          color,
+                          backgroundColor: `color-mix(in srgb, ${color} 16%, var(--card))`,
+                        }}
+                      >
+                        <Icon aria-hidden="true" className="size-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3
+                          id={`strategy-${id}-label`}
+                          className="text-sm font-semibold"
+                        >
+                          {label}
+                        </h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Valor atual
+                        </p>
+                        <p
+                          id={`strategy-${id}-current`}
+                          className="font-semibold tabular-nums"
+                        >
+                          {current
+                            ? formatCurrencyCents(current.knownValueCents)
+                            : "Sem valor classificado"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="mt-2 space-y-1">
+                    <div className="min-w-0">
+                      <Label
+                        htmlFor={`strategy-${id}`}
+                        className="mb-1.5 block text-xs text-muted-foreground"
+                      >
+                        Percentual planejado
+                      </Label>
                       <div className="relative w-full">
                         <Input
                           id={`strategy-${id}`}
                           aria-label={`${label} planejada em porcentagem`}
                           aria-describedby={`strategy-${id}-current`}
-                          className="pr-8 tabular-nums"
+                          className="h-11 pr-9 text-base font-semibold tabular-nums"
                           type="text"
                           inputMode="decimal"
                           value={draft[id]}
@@ -495,59 +532,59 @@ export function StrategyAllocationWorkspace({
                           %
                         </span>
                       </div>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="h-auto whitespace-normal px-0 py-1 text-left text-xs leading-tight"
-                        disabled={percentageCents === null}
-                        onClick={() => {
-                          const distributed = distributeRemainingPercentage(
-                            draft,
-                            id,
-                          )!;
-                          setDraft(distributed);
-                          setDraftChanged(true);
-                          setSimulation(null);
-                        }}
-                      >
-                        Distribuir restante
-                      </Button>
                     </div>
-                    <p
-                      id={`strategy-${id}-current`}
-                      className="mt-2 text-xs text-muted-foreground"
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full whitespace-nowrap sm:w-auto"
+                      disabled={percentageCents === null}
+                      onClick={() => {
+                        const distributed = distributeRemainingPercentage(
+                          draft,
+                          id,
+                        )!;
+                        setDraft(distributed);
+                        setDraftChanged(true);
+                        setSimulation(null);
+                      }}
                     >
-                      Atual:{" "}
-                      {current
-                        ? formatCurrencyCents(current.knownValueCents)
-                        : "Sem valor classificado"}
-                    </p>
-                  </div>
+                      Distribuir restante
+                    </Button>
+                  </section>
                 );
               })}
             </div>
-            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <p
-                aria-live="polite"
-                className={`text-sm tabular-nums ${percentageSum === 10000 && targetPercentages ? "text-foreground" : "text-muted-foreground"}`}
-              >
-                Total planejado: {percentText(percentageSum / 100)}%
+            <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-sm font-medium">Total planejado</span>
+                <strong className="text-xl font-bold tabular-nums">
+                  {percentText(percentageSum / 100)}%
+                </strong>
+              </div>
+              <Progress
+                value={Math.min(percentageSum / 100, 100)}
+                aria-label="Percentual da composição planejada"
+              />
+              <p aria-live="polite" className="text-sm text-muted-foreground">
                 {percentageSum < 10000 &&
-                  ` · faltam ${percentText((10000 - percentageSum) / 100)}%`}
+                  `Faltam ${percentText((10000 - percentageSum) / 100)}% para completar.`}
                 {percentageSum > 10000 &&
-                  ` · excedem ${percentText((percentageSum - 10000) / 100)}%`}
+                  `Excedem ${percentText((percentageSum - 10000) / 100)}%.`}
+                {percentageSum === 10000 &&
+                  targetPercentages &&
+                  "Composição dentro do total de 100%."}
               </p>
-              <SheetFooter className="sm:justify-end">
-                <Button
-                  onClick={() => void save(targetPercentages!)}
-                  disabled={!targetPercentages || saving}
-                  className="w-full sm:w-auto"
-                >
-                  {saving ? "Salvando…" : "Salvar composição"}
-                </Button>
-              </SheetFooter>
             </div>
+            <SheetFooter className="border-t pt-4 sm:justify-end">
+              <Button
+                onClick={() => void save(targetPercentages!)}
+                disabled={!targetPercentages || saving}
+                className="w-full sm:w-auto"
+              >
+                {saving ? "Salvando…" : "Salvar composição"}
+              </Button>
+            </SheetFooter>
             {!baselineComplete && (
               <Alert>
                 <AlertDescription>

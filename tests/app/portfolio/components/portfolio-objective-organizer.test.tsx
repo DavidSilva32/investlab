@@ -295,6 +295,16 @@ describe("PortfolioObjectiveOrganizer", () => {
     expect(
       screen.getByText(/Valores efetivamente disponíveis até 30\/09\/2026/),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("columnheader", { name: "Saldo informado" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("columnheader", { name: "Total proposto" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("columnheader", { name: "Diferença" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Busca concluída")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Reserva" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Viagem" })).toBeTruthy();
     expect(screen.getByText(/Reserva → Viagem/)).toBeTruthy();
