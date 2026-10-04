@@ -42,26 +42,58 @@ export function PortfolioObjectiveDetail({
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              {isReserve ? (
-                <PiggyBank aria-hidden="true" className="size-5" />
-              ) : (
-                <Target aria-hidden="true" className="size-5" />
-              )}
-            </span>
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <CardTitle className="text-lg">{objective.name}</CardTitle>
-                <Badge variant={isReserve ? "secondary" : "outline"}>
-                  {isReserve ? "Reserva" : "Objetivo pessoal"}
-                </Badge>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                {isReserve ? (
+                  <PiggyBank aria-hidden="true" className="size-5" />
+                ) : (
+                  <Target aria-hidden="true" className="size-5" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="text-lg">{objective.name}</CardTitle>
+                  <Badge variant={isReserve ? "secondary" : "outline"}>
+                    {isReserve ? "Reserva" : "Objetivo pessoal"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {isReserve
+                    ? "A reserva mantém a configuração e os critérios próprios atuais."
+                    : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
+                </p>
               </div>
-              <p className="text-sm text-muted-foreground">
-                {isReserve
-                  ? "A reserva mantém a configuração e os critérios próprios atuais."
-                  : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
-              </p>
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end">
+              {isReserve ? (
+                <Button
+                  className="w-full sm:w-auto"
+                  type="button"
+                  onClick={onConfigureReserve}
+                >
+                  Configurar reserva
+                  <ArrowRight aria-hidden="true" className="ml-2 size-4" />
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    className="w-full sm:w-auto"
+                    type="button"
+                    variant="outline"
+                    onClick={onManagePositions}
+                  >
+                    Gerenciar posições
+                  </Button>
+                  <Button
+                    className="w-full sm:w-auto"
+                    type="button"
+                    onClick={onEdit}
+                  >
+                    Editar objetivo
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -140,27 +172,6 @@ export function PortfolioObjectiveDetail({
               pessoal, não uma obrigação.
             </p>
           )}
-          <div className="flex flex-wrap gap-2 border-t pt-4">
-            {isReserve ? (
-              <Button type="button" onClick={onConfigureReserve}>
-                Configurar reserva
-                <ArrowRight aria-hidden="true" className="ml-2 size-4" />
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onManagePositions}
-                >
-                  Gerenciar posições
-                </Button>
-                <Button type="button" onClick={onEdit}>
-                  Editar objetivo
-                </Button>
-              </>
-            )}
-          </div>
         </CardContent>
       </Card>
       <PortfolioObjectiveBalanceTracking

@@ -15,6 +15,8 @@
 
 As imagens não são capturas da aplicação. Conteúdo atrás dos Sheets é ilustrativo. Não transformar classes de ativo em finalidades, não inferir metas nem automatizar atribuições. Para outros Sheets da Carteira, consulte os READMEs de [detalhes e classificação](../portfolio-allocation/README.md) e [posições](../portfolio-positions/README.md).
 
+Atualização visual de 04/10/2026: na visão geral, título, contexto e indicador de dados conhecidos ficam agrupados; as ações alinham à direita no desktop e ocupam a largura disponível no mobile. No detalhe do objetivo, as ações também ficam no cabeçalho, com empilhamento responsivo; valores, saldo observado, projeção e comportamentos existentes foram preservados. A comparação com captura real continua pendente.
+
 ### Nomenclatura histórica
 
 `design-reference.png` usa “Ações”, “ETFs” e “FIIs” em uma composição ilustrativa por classe; `position-assignment-reference.png` mostra “Renda Variável” e “Fundos Imobiliários” como valores de posição. Esses textos não definem os nomes oficiais das classes específicas nem alteram as categorias amplas disponíveis no produto. As novas referências devem consultar `src/lib/strategy-allocation.ts`; imagens existentes ficam preservadas e identificadas como históricas.
