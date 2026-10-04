@@ -81,28 +81,30 @@ export function DashboardNextAction({
   return (
     <section aria-labelledby="dashboard-next-action-title">
       <Card className="h-full">
-        <CardContent className="flex h-full flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
-          <span className="grid size-12 shrink-0 place-items-center rounded-full border border-primary/40 bg-primary/10 text-primary">
-            <ClipboardList aria-hidden="true" className="size-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2
-              id="dashboard-next-action-title"
-              className="text-lg font-semibold"
-            >
-              Próxima ação
-            </h2>
-            <p className="mt-1 font-medium">{action.title}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {action.detail}
-            </p>
-            <Link
-              href={action.href}
-              className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {action.label}
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
+        <CardContent className="h-full p-5 sm:p-6">
+          <h2
+            id="dashboard-next-action-title"
+            className="text-lg font-semibold"
+          >
+            Próxima ação
+          </h2>
+          <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full border border-primary/40 bg-primary/10 text-primary">
+              <ClipboardList aria-hidden="true" className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="mt-1 font-medium">{action.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {action.detail}
+              </p>
+              <Link
+                href={action.href}
+                className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {action.label}
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+            </div>
           </div>
         </CardContent>
       </Card>
