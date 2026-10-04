@@ -21,3 +21,5 @@
 ## Direção visual
 
 Identidade azul com superfícies escuras neutras. Azul e vermelho são usados somente como semântica operacional de compra/venda e exclusão; não representam classes de ativos. A proposta não adiciona filtros, KPIs, análise ou outras ações.
+
+A exclusão de posições e movimentações importadas reutiliza `DeleteImportedDataButton` com `ConfirmActionDialog`, exibindo uma confirmação específica antes da remoção.

@@ -3,6 +3,7 @@
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { Button } from "@/components/ui/button";
 import { getApiMessage } from "@/lib/api-message";
 
@@ -18,14 +19,9 @@ export function DeleteImportedDataButton({
   label,
 }: DeleteImportedDataButtonProps) {
   const [loading, setLoading] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const remove = async () => {
-    if (
-      !window.confirm(
-        `Excluir todas as ${label.toLowerCase()} importadas? Esta ação permitirá importar os mesmos arquivos novamente.`,
-      )
-    )
-      return;
     setLoading(true);
     try {
       const response = await fetch(
@@ -41,6 +37,7 @@ export function DeleteImportedDataButton({
       }
       toast.success(getApiMessage(body, "Dados importados excluídos."));
       window.dispatchEvent(new Event("portfolio:updated"));
+      setDialogOpen(false);
     } catch {
       toast.error("Não foi possível comunicar com o servidor.");
     } finally {
@@ -50,10 +47,26 @@ export function DeleteImportedDataButton({
 
   return (
     <div className="flex flex-col items-end gap-2">
-      <Button variant="outline" size="sm" disabled={loading} onClick={remove}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={loading}
+        onClick={() => setDialogOpen(true)}
+      >
         <Trash2 aria-hidden="true" />
         {loading ? "Excluindo..." : `Excluir ${label}`}
       </Button>
+      <ConfirmActionDialog
+        hideTrigger
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={`Excluir ${label.toLowerCase()}?`}
+        description={`Todos os registros de ${label.toLowerCase()} serão excluídos. Você poderá importar esses arquivos novamente.`}
+        confirmLabel="Confirmar exclusão"
+        loading={loading}
+        onConfirm={remove}
+      />
     </div>
   );
 }
