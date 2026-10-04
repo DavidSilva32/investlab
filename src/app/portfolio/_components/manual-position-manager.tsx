@@ -28,7 +28,6 @@ import {
 } from "@/lib/portfolio-classification-options";
 import { Label } from "@/components/ui/label";
 import { neutralAssetClassColor } from "@/lib/strategy-allocation";
-import { strategyAssetClassById } from "@/lib/strategy-allocation";
 import {
   Collapsible,
   CollapsibleContent,
@@ -238,10 +237,6 @@ export function ManualPositionManager({
 
   const set = (field: keyof FormValues, value: string) =>
     setValues((current) => ({ ...current, [field]: value }));
-  const getClassColor = (assetClass: string) =>
-    assetClass === strategyAssetClassById.fixed_income.label
-      ? `var(${strategyAssetClassById.fixed_income.colorToken})`
-      : neutralAssetClassColor;
 
   const startCreate = () => {
     setEditing(null);
@@ -399,7 +394,7 @@ export function ManualPositionManager({
                         : ""}
                     </p>
                     {position.duplicateAssetCode && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                      <p className="text-xs text-status-warning">
                         Código repetido em outra posição manual; confira se os
                         ativos são distintos.
                       </p>
@@ -412,9 +407,7 @@ export function ManualPositionManager({
                           aria-hidden="true"
                           className="size-2 rounded-full"
                           style={{
-                            backgroundColor: getClassColor(
-                              position.classification.assetClass,
-                            ),
+                            backgroundColor: neutralAssetClassColor,
                           }}
                         />
                         {position.classification.assetClass}

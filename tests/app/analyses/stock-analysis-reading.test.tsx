@@ -59,7 +59,7 @@ describe("StockAnalysisReading", () => {
 
     expect(screen.getByText("Resultado negativo")).toBeTruthy();
     expect(screen.getByText(/-R\$\s?25\.000/)).toBeTruthy();
-    expect(container.querySelector(".text-rose-600")).toBeTruthy();
+    expect(container.querySelector(".text-status-danger")).toBeTruthy();
     expect(
       screen.getByText(/Sem períodos anuais consecutivos e alinhados/),
     ).toBeTruthy();

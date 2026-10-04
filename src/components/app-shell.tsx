@@ -30,7 +30,7 @@ function Brand() {
       href="/"
       className="flex items-center gap-2.5 font-semibold tracking-tight"
     >
-      <span className="grid size-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+      <span className="grid size-8 place-items-center rounded-lg bg-brand text-sm font-bold text-brand-foreground">
         I
       </span>
       InvestLab
@@ -49,7 +49,7 @@ function Navigation({ pathname }: { pathname: string }) {
             key={href}
             href={href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+            className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-brand text-brand-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
           >
             <Icon aria-hidden="true" className="size-4" />
             {label}

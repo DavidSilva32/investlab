@@ -586,7 +586,7 @@ function CandidateSummary({
                     {holding.institution ?? "Instituição não informada"}
                   </span>
                   {transfer && (
-                    <span className="mt-1 block text-xs text-amber-700">
+                    <span className="mt-1 block text-xs text-muted-foreground">
                       Será transferida de {transfer.fromObjectiveName} para
                       {targetObjectiveName}
                     </span>

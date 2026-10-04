@@ -500,7 +500,7 @@ describe("ManualPositionManager", () => {
     expect(screen.getByText("Fundos")).toBeTruthy();
   });
 
-  it("keeps broad class colors neutral and preserves fixed income semantics", () => {
+  it("uses neutral class colors when records do not include a stable class ID", () => {
     const fixedIncome = {
       ...row,
       classification: {
@@ -521,9 +521,7 @@ describe("ManualPositionManager", () => {
     const dots = screen
       .getAllByText(/Renda fixa|Renda variável/)
       .map((label) => label.parentElement?.querySelector("span"));
-    expect(dots[0]?.getAttribute("style")).toContain(
-      "--asset-class-fixed-income",
-    );
+    expect(dots[0]?.getAttribute("style")).toContain("--asset-class-neutral");
     expect(dots[1]?.getAttribute("style")).toContain("--asset-class-neutral");
   });
 

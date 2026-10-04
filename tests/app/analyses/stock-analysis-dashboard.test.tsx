@@ -274,7 +274,7 @@ describe("StockAnalysisDashboard", () => {
     ).toBeTruthy();
     expect(screen.getByText("Sem dividendos")).toBeTruthy();
     expect(screen.getByText(/\+24(?:,00)?%/).className).toContain(
-      "text-emerald-600",
+      "text-status-success",
     );
     expect(
       screen
@@ -354,7 +354,7 @@ describe("StockAnalysisDashboard", () => {
     );
 
     expect(await screen.findByText("-19,35%")).toBeTruthy();
-    expect(container.querySelector(".text-rose-600")).toBeTruthy();
+    expect(container.querySelector(".text-status-danger")).toBeTruthy();
   });
 
   it("shows zero change neutrally", async () => {

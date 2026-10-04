@@ -601,7 +601,7 @@ function AllocationPreview({
           )}
         </section>
         {preview.limitations.length > 0 && (
-          <ul className="space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+          <ul className="space-y-1 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 text-sm text-muted-foreground">
             {preview.limitations.map((limitation) => (
               <li key={limitation}>{limitation}</li>
             ))}

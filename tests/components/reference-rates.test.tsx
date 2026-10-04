@@ -14,6 +14,11 @@ describe("ReferenceRates", () => {
       />,
     );
     expect(html).toContain("Indicadores");
+    expect(html).toContain("rounded-xl border bg-card");
+    expect(html).toContain("sm:grid-cols-2 sm:gap-4");
+    expect(html).toContain(
+      "lg:grid-cols-[minmax(8rem,0.55fr)_minmax(0,1fr)_minmax(0,1fr)]",
+    );
     expect(html).toContain("Selic");
     expect(html).toContain("15%");
     expect(html).toContain("18/09/2026");

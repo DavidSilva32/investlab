@@ -513,7 +513,7 @@ describe("ContributionAssistant", () => {
     expect(
       screen.getByRole("img", { name: /Renda fixa:/ }).parentElement?.style
         .borderColor,
-    ).toBe("var(--asset-class-fixed-income)");
+    ).toBe("var(--asset-class-neutral)");
     fireEvent.click(
       screen.getByRole("button", { name: "Por quê e detalhes do cálculo" }),
     );

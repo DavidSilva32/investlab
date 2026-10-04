@@ -3,6 +3,8 @@
 import { Bar, BarChart, Cell, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
+import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
+import { neutralAssetClassColor } from "@/lib/strategy-allocation";
 import { formatCurrency } from "@/lib/utils";
 
 export type DistributionItem = {
@@ -18,23 +20,55 @@ const categoryColors = [
   "var(--chart-category-4)",
   "var(--chart-category-5)",
   "var(--chart-category-6)",
-];
+] as const;
+
+type PortfolioAssetClass = (typeof portfolioAssetClassOptions)[number];
+
+const portfolioAssetClassColors: Record<PortfolioAssetClass, string> = {
+  "Renda fixa": categoryColors[3],
+  "Renda variável": categoryColors[0],
+  Fundos: categoryColors[4],
+  Criptoativos: categoryColors[1],
+  Imóveis: categoryColors[2],
+  Outros: categoryColors[5],
+};
+
+function getInstitutionColor(label: string) {
+  let hash = 0;
+  for (const character of label) {
+    hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
+  }
+  return categoryColors[hash % categoryColors.length];
+}
+
+function getDistributionColor(
+  label: string,
+  colorSource: "institution" | "asset-class",
+) {
+  if (colorSource === "institution") return getInstitutionColor(label);
+  return (
+    portfolioAssetClassColors[label as PortfolioAssetClass] ??
+    neutralAssetClassColor
+  );
+}
 
 function DistributionChart({
   title,
   items,
   emptyMessage,
   loading = false,
+  colorSource,
 }: {
   title: string;
   items: DistributionItem[] | null;
   emptyMessage: string;
   loading?: boolean;
+  colorSource: "institution" | "asset-class";
 }) {
   const displayItems = items ?? [];
-  const chartData = displayItems.map((item, index) => ({
+  const chartData = displayItems.map((item) => ({
     ...item,
-    color: categoryColors[index % categoryColors.length],
+    color: getDistributionColor(item.label, colorSource),
   }));
 
   return (
@@ -68,12 +102,7 @@ function DistributionChart({
                     {item.label}
                   </span>
                   <span className="shrink-0 text-right tabular-nums text-muted-foreground">
-                    {formatCurrency(item.value)} ·{" "}
-                    {item.percentage.toLocaleString("pt-BR", {
-                      minimumFractionDigits: 1,
-                      maximumFractionDigits: 1,
-                    })}
-                    %
+                    {formatCurrency(item.value)}
                   </span>
                 </div>
                 <ChartContainer
@@ -133,6 +162,7 @@ export function PortfolioDistributionCharts({
         title="Onde está · por instituição"
         items={institutionItems}
         emptyMessage="Ainda não há valores conhecidos para mostrar a distribuição."
+        colorSource="institution"
       />
       <div className="space-y-3">
         <DistributionChart
@@ -140,6 +170,7 @@ export function PortfolioDistributionCharts({
           items={classItems}
           emptyMessage="Não há valores classificados disponíveis."
           loading={loading}
+          colorSource="asset-class"
         />
         {!loading &&
           classItems !== null &&

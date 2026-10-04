@@ -389,8 +389,8 @@ export function StockAnalysisDashboard({
     priceChange === null || priceChange === 0
       ? "text-muted-foreground"
       : priceChange > 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-rose-600 dark:text-rose-400";
+        ? "text-status-success"
+        : "text-status-danger";
 
   return (
     <div className="space-y-4">

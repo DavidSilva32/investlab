@@ -129,7 +129,7 @@ export function DashboardSummary({
         <Card className="overflow-hidden border-primary/20 shadow-sm">
           <CardContent className="grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(12rem,0.8fr)_minmax(14rem,0.9fr)] lg:items-center">
             <div className="flex items-start gap-4">
-              <span className="mt-1 grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary sm:size-14">
+              <span className="mt-1 grid size-12 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand sm:size-14">
                 <WalletCards aria-hidden="true" className="size-6" />
               </span>
               <div className="min-w-0">
@@ -199,7 +199,7 @@ export function DashboardSummary({
       <div className="grid gap-3 xl:grid-cols-2">
         {nextAction && (
           <section aria-labelledby="dashboard-next-action-title">
-            <Card className="border-primary/20 bg-primary/5">
+            <Card className="border-brand/20 bg-brand/5">
               <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">
@@ -217,7 +217,7 @@ export function DashboardSummary({
                 </div>
                 <Link
                   href={nextAction.href}
-                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {nextAction.label}
                   <ArrowRight aria-hidden="true" className="size-4" />
