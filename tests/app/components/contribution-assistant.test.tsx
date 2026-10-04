@@ -12,20 +12,58 @@ describe("ContributionAssistant", () => {
     vi.mocked(toast.error).mockReset();
   });
 
+  it("starts with an empty simulation and explains that it does not move money", () => {
+    render(<ContributionAssistant />);
+
+    const input = screen.getByLabelText(
+      "Valor disponível para este aporte",
+    ) as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Ver distribuição",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(screen.getByText("Simulação não movimenta dinheiro.")).toBeTruthy();
+    expect(screen.queryByText("Distribuição por classe")).toBeNull();
+  });
+
   it("clearly shows when the explicitly activated Strategy is the current source", () => {
     render(<ContributionAssistant allocationMode="strategy" />);
+    expect(
+      screen.getByText(
+        "Simule como o valor informado pode ser distribuído conforme a composição disponível para os aportes.",
+      ),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         /A Estratégia orienta este planejamento usando somente posições destinadas a Longo Prazo/,
       ),
     ).toBeTruthy();
+    expect(screen.queryByText(/seus objetivos pessoais/)).toBeNull();
   });
 
   it("does not label the source as legacy when its saved mode is unavailable", () => {
     render(<ContributionAssistant allocationMode="unavailable" />);
 
     expect(
+      screen.getByText(
+        "Simule como o valor informado pode ser distribuído conforme a composição disponível para os aportes.",
+      ),
+    ).toBeTruthy();
+    expect(
       screen.getByText(/verificar qual composi.*orienta os aportes/),
+    ).toBeTruthy();
+  });
+
+  it("keeps the legacy source explanation when Strategy is not active", () => {
+    render(<ContributionAssistant allocationMode="legacy" />);
+
+    expect(screen.getByText(/metas pessoais legadas já salvas/)).toBeTruthy();
+    expect(
+      screen.getByText(/composição disponível para os aportes/),
     ).toBeTruthy();
   });
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
+import type { UnassignedPortfolioSummary } from "@/app/_components/dashboard-unassigned-summary";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
 import { getApiMessage } from "@/lib/api-message";
@@ -10,21 +11,12 @@ type Overview = Parameters<typeof DashboardSummary>[0] & {
   positions: NonNullable<Parameters<typeof DashboardSummary>[0]["positions"]>;
 };
 
-type UnassignedSummary =
-  | {
-      status: "loaded";
-      knownValue: number;
-      positionCount: number;
-      unvaluedPositionCount: number;
-    }
-  | { status: "unavailable" };
-
 const loadErrorMessage = "Não foi possível carregar o dashboard.";
 
 export function DashboardClient() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [unassignedSummary, setUnassignedSummary] =
-    useState<UnassignedSummary | null>(null);
+    useState<UnassignedPortfolioSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadUnassignedSummary = useCallback(() => {
@@ -104,6 +96,9 @@ export function DashboardClient() {
     return <AppContentSkeleton title="Dashboard" variant="dashboard" />;
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Visão geral do patrimônio e próximos passos
+      </p>
       {error && (
         <div role="alert" className="space-y-2 text-sm text-destructive">
           <p>{error}</p>

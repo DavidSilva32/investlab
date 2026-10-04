@@ -108,6 +108,7 @@ export class PortfolioService {
             10000n;
           return {
             assetClass: item.label,
+            assetClassId: item.id,
             currentValue: Number(currentCents) / 100,
             currentPercentage: item.currentPercentage,
             targetPercentage: item.targetPercentage,

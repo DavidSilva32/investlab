@@ -8,7 +8,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { ArrowRight, ChevronDown, CircleAlert } from "lucide-react";
+import { ArrowRight, ChevronDown, CircleAlert, Info } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -144,23 +144,25 @@ export function ContributionAssistant({
             Planejar aporte do mês
           </CardTitle>
           <CardDescription>
+            Simule como o valor informado pode ser distribuído conforme a
+            composição disponível para os aportes.
+          </CardDescription>
+          <p className="text-xs text-muted-foreground">
             {result?.allocationMode === "strategy" ||
             allocationMode === "strategy"
               ? "A Estratégia orienta este planejamento usando somente posições destinadas a Longo Prazo. Reserva e objetivos pessoais ficam fora."
               : allocationMode === "unavailable"
                 ? "Não foi possível verificar qual composição orienta os aportes. Atualize a Carteira antes de tomar uma decisão."
                 : "Até você ativar a Estratégia, esta simulação continua usando as metas pessoais legadas já salvas."}
-          </CardDescription>
+          </p>
         </CardHeader>
-        <CardContent className="grid gap-5 xl:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.4fr)] xl:items-start">
-          <div
-            className={`space-y-3 rounded-xl border bg-muted/20 p-4 ${result ? "" : "xl:col-span-2"}`}
-          >
+        <CardContent className="space-y-4">
+          <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
             <form
               onSubmit={handleSubmit}
-              className="flex flex-col gap-3 sm:flex-row sm:items-end"
+              className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.42fr)] sm:items-end"
             >
-              <div className="w-full space-y-2 sm:max-w-xs">
+              <div className="w-full space-y-2">
                 <label
                   htmlFor="contribution-amount"
                   className="text-sm font-medium"
@@ -194,10 +196,19 @@ export function ContributionAssistant({
                   placeholder="R$ 0,00"
                 />
               </div>
-              <Button type="submit" disabled={loading || !canSubmit}>
+              <Button
+                type="submit"
+                disabled={loading || !canSubmit}
+                className="min-h-11 w-full"
+              >
                 {loading ? "Calculando..." : "Ver distribuição"}
               </Button>
             </form>
+
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Info aria-hidden="true" className="size-4 shrink-0" />
+              Simulação não movimenta dinheiro.
+            </p>
 
             {error && (
               <p role="alert" className="text-sm text-destructive">
@@ -347,7 +358,9 @@ export function ContributionAssistant({
                       </span>
                     </div>
                     {visibleAllocations.map((allocation) => {
-                      const assetClassColor = getStrategyAssetClassColor(null);
+                      const assetClassColor = getStrategyAssetClassColor(
+                        allocation.assetClassId ?? null,
+                      );
                       const projectedPercentage =
                         ((allocation.currentValue +
                           allocation.contributionAmount) /

@@ -1,29 +1,24 @@
-import Link from "next/link";
-import {
-  ArrowRight,
-  CalendarDays,
-  ChevronDown,
-  CircleAlert,
-  Info,
-  WalletCards,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import type {
   PortfolioInsightPosition,
   PortfolioInsights,
 } from "@/lib/portfolio-insights";
-import { formatCurrency } from "@/lib/utils";
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { ContributionAssistant } from "@/app/_components/contribution-assistant";
-
-const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+import {
+  DashboardNextAction,
+  getDashboardNextAction,
+} from "@/app/_components/dashboard-next-action";
+import { DashboardObservations } from "@/app/_components/dashboard-observations";
+import { DashboardUnassignedSummary } from "@/app/_components/dashboard-unassigned-summary";
+import type { UnassignedPortfolioSummary } from "@/app/_components/dashboard-unassigned-summary";
+import { DashboardWealthSummary } from "@/app/_components/dashboard-wealth-summary";
 
 export function DashboardSummary({
   positions,
@@ -36,157 +31,28 @@ export function DashboardSummary({
   positions: PortfolioInsightPosition[];
   insights: PortfolioInsights;
   emergencyReserve?: EmergencyReserveCalculation;
-  unassignedSummary?:
-    | {
-        status: "loaded";
-        knownValue: number;
-        positionCount: number;
-        unvaluedPositionCount: number;
-      }
-    | { status: "unavailable" }
-    | null;
+  unassignedSummary?: UnassignedPortfolioSummary | null;
   onRetryUnassigned?: () => void;
   contributionAllocationMode?: "legacy" | "strategy" | "unavailable";
 }) {
-  const referenceDates = [
-    ...new Set(
-      positions
-        .map((position) => position.referenceDate)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  ];
-  const referenceDate =
-    referenceDates.length === 1 &&
-    positions.length > 0 &&
-    positions.every((position) => position.referenceDate === referenceDates[0])
-      ? referenceDates[0]
-      : null;
-  const dataDateIsMixed = referenceDates.length > 0 && referenceDate === null;
-  const missingValueCount = insights.unvaluedPositions;
-  const nextMaturity = insights.upcomingMaturities[0];
   const reserveIncomplete = Boolean(
     emergencyReserve &&
     (emergencyReserve.unvaluedGroups > 0 ||
       (emergencyReserve.missingSelectionCount ?? 0) > 0),
   );
-
-  const attentionItems = [
-    ...(reserveIncomplete
-      ? [
-          {
-            icon: CircleAlert,
-            title: "Os dados da reserva estão incompletos",
-            detail:
-              "Há valores ausentes ou seleções que não correspondem às posições atuais. Confira os dados antes de tirar conclusões sobre a cobertura.",
-            tone: "attention" as const,
-          },
-        ]
-      : []),
-    ...(!reserveIncomplete &&
-    emergencyReserve?.status === "below_target" &&
-    emergencyReserve.difference !== null
-      ? [
-          {
-            icon: CircleAlert,
-            title: "A reserva está abaixo da sua meta pessoal",
-            detail: `A diferença é ${formatCurrency(emergencyReserve.difference)}. Essa meta foi definida por você; não é uma recomendação do InvestLab.`,
-            tone: "attention" as const,
-          },
-        ]
-      : []),
-  ];
-  const portfolioFacts = [
-    ...(insights.largestPosition
-      ? [
-          {
-            icon: WalletCards,
-            title: "Maior posição na carteira conhecida",
-            detail: `${insights.largestPosition.product} representa ${insights.largestPosition.percentage.toFixed(1)}% do valor conhecido. Isso descreve a distribuição; não classifica o nível de risco.`,
-          },
-        ]
-      : []),
-    ...(nextMaturity
-      ? [
-          {
-            icon: CalendarDays,
-            title: "Próximo vencimento informado",
-            detail: `${nextMaturity.product} · ${date.format(new Date(`${nextMaturity.maturityAt}T00:00:00Z`))}. O vencimento é uma data registrada e não confirma quando o dinheiro ficará disponível.`,
-          },
-        ]
-      : []),
-  ];
-
-  const nextAction = getNextAction({
+  const nextAction = getDashboardNextAction({
     positionCount: positions.length,
-    missingValueCount,
+    missingValueCount: insights.unvaluedPositions,
     reserveIncomplete,
     reserve: emergencyReserve,
   });
+  const hasUnassignedSummary =
+    unassignedSummary !== null && unassignedSummary !== undefined;
+  const hasLowerSummaryContent = hasUnassignedSummary || nextAction !== null;
 
   return (
-    <div className="space-y-5">
-      <section aria-labelledby="dashboard-where-am-i">
-        <Card className="overflow-hidden border-primary/20 shadow-sm">
-          <CardContent className="grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(12rem,0.8fr)_minmax(14rem,0.9fr)] lg:items-center">
-            <div className="flex items-start gap-4">
-              <span className="mt-1 grid size-12 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand sm:size-14">
-                <WalletCards aria-hidden="true" className="size-6" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Onde você está
-                </p>
-                <h2
-                  id="dashboard-where-am-i"
-                  className="mt-1 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl"
-                >
-                  {insights.valuedPositions
-                    ? formatCurrency(insights.totalValue)
-                    : "Ainda sem valores conhecidos"}
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Patrimônio da carteira que o InvestLab conhece
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-xl border bg-muted/25 p-4 lg:border-l lg:border-y-0 lg:border-r-0 lg:rounded-none lg:bg-transparent lg:pl-5">
-              <p className="text-xs font-medium text-muted-foreground">
-                Posições com valor
-              </p>
-              <p className="mt-1 text-xl font-semibold tabular-nums">
-                {insights.valuedPositions}
-                {" de "}
-                {positions.length}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                posições com valor
-              </p>
-              {missingValueCount > 0 && (
-                <p className="mt-1 text-xs text-status-warning">
-                  {missingValueCount} sem valor atual
-                </p>
-              )}
-            </div>
-            <div className="rounded-xl border bg-muted/25 p-4 lg:border-l lg:border-y-0 lg:border-r-0 lg:rounded-none lg:bg-transparent lg:pl-5">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <CalendarDays aria-hidden="true" className="size-3.5" />
-                Data-base
-              </p>
-              <p className="mt-1 text-sm font-semibold">
-                {referenceDate
-                  ? `Dados de ${date.format(new Date(`${referenceDate}T00:00:00Z`))}`
-                  : dataDateIsMixed
-                    ? "Datas-base variadas ou incompletas"
-                    : "Não informada"}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Dos valores registrados
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+    <div className="space-y-4">
+      <DashboardWealthSummary positions={positions} insights={insights} />
 
       <section aria-labelledby="dashboard-reserve-title">
         <EmergencyReserveSummary calculation={emergencyReserve} />
@@ -196,200 +62,23 @@ export function DashboardSummary({
         allocationMode={contributionAllocationMode ?? "legacy"}
       />
 
-      <div className="grid gap-3 xl:grid-cols-2">
-        {nextAction && (
-          <section aria-labelledby="dashboard-next-action-title">
-            <Card className="border-brand/20 bg-brand/5">
-              <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Próxima ação
-                  </p>
-                  <h2
-                    id="dashboard-next-action-title"
-                    className="mt-1 font-semibold"
-                  >
-                    {nextAction.title}
-                  </h2>
-                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                    {nextAction.detail}
-                  </p>
-                </div>
-                <Link
-                  href={nextAction.href}
-                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {nextAction.label}
-                  <ArrowRight aria-hidden="true" className="size-4" />
-                </Link>
-              </CardContent>
-            </Card>
-          </section>
-        )}
-
-        {unassignedSummary && (
-          <section aria-labelledby="dashboard-unassigned-title">
-            {unassignedSummary.status === "loaded" ? (
-              <Card>
-                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4 sm:px-5">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                      <WalletCards aria-hidden="true" className="size-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <h2
-                        id="dashboard-unassigned-title"
-                        className="text-sm font-medium"
-                      >
-                        Patrimônio conhecido sem destino
-                      </h2>
-                      <p className="text-xs text-muted-foreground">
-                        {unassignedSummary.positionCount} posições ainda não
-                        associadas a um objetivo
-                        {unassignedSummary.unvaluedPositionCount > 0 &&
-                          ` · ${unassignedSummary.unvaluedPositionCount} sem valor atual`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="font-semibold tabular-nums">
-                      {formatCurrency(unassignedSummary.knownValue)}
-                    </span>
-                    <Link
-                      href="/portfolio?panel=objectives"
-                      className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-                    >
-                      Ver objetivos
-                      <ArrowRight aria-hidden="true" className="size-4" />
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardContent
-                  className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-5"
-                  role="status"
-                >
-                  <div>
-                    <h2
-                      id="dashboard-unassigned-title"
-                      className="text-sm font-medium"
-                    >
-                      Patrimônio sem destino indisponível
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      Não foi possível carregar este resumo. Nenhum valor foi
-                      presumido.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="link"
-                    className="h-auto p-0"
-                    onClick={onRetryUnassigned}
-                  >
-                    Tentar novamente
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-          </section>
-        )}
-      </div>
-
-      <section
-        aria-labelledby="dashboard-attention-title"
-        className="space-y-3"
-      >
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">
-              Leitura da carteira
-            </p>
-            <h2
-              id="dashboard-attention-title"
-              className="text-xl font-semibold"
-            >
-              O que merece atenção
-            </h2>
-          </div>
-          {positions.length > 0 && (
-            <Link
-              href="/portfolio"
-              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-            >
-              Ver carteira <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
-          )}
+      {hasLowerSummaryContent && (
+        <div
+          className={`grid gap-3 ${hasUnassignedSummary && nextAction ? "xl:grid-cols-2" : "grid-cols-1"}`}
+        >
+          <DashboardUnassignedSummary
+            summary={unassignedSummary}
+            onRetry={onRetryUnassigned}
+          />
+          <DashboardNextAction action={nextAction} />
         </div>
-        {attentionItems.length ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {attentionItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Card key={item.title}>
-                  <CardContent className="flex gap-3 p-4">
-                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-status-warning/10 text-status-warning">
-                      <Icon aria-hidden="true" className="size-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <h3 className="font-medium">{item.title}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {item.detail}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        ) : (
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground">
-              <Info aria-hidden="true" className="size-4 shrink-0" />
-              {missingValueCount > 0
-                ? "A leitura fica limitada enquanto houver posições sem valor atual."
-                : positions.length === 0
-                  ? "Ainda não há posições conhecidas para identificar pontos de atenção."
-                  : "Não há pontos de atenção identificados com os dados disponíveis."}
-            </CardContent>
-          </Card>
-        )}
-      </section>
-
-      {portfolioFacts.length > 0 && (
-        <section aria-labelledby="dashboard-facts-title" className="space-y-3">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">
-              Dados registrados
-            </p>
-            <h2 id="dashboard-facts-title" className="text-lg font-semibold">
-              Fatos da carteira
-            </h2>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {portfolioFacts.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Card key={item.title}>
-                  <CardContent className="flex gap-3 p-4">
-                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
-                      <Icon aria-hidden="true" className="size-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <h3 className="font-medium">{item.title}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {item.detail}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
       )}
+
+      <DashboardObservations
+        positions={positions}
+        insights={insights}
+        emergencyReserve={emergencyReserve}
+      />
 
       <Collapsible className="text-sm text-muted-foreground">
         <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-2 rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -414,56 +103,4 @@ export function DashboardSummary({
       </Collapsible>
     </div>
   );
-}
-
-function getNextAction({
-  positionCount,
-  missingValueCount,
-  reserveIncomplete,
-  reserve,
-}: {
-  positionCount: number;
-  missingValueCount: number;
-  reserveIncomplete: boolean;
-  reserve?: EmergencyReserveCalculation;
-}) {
-  if (reserveIncomplete) {
-    return {
-      title: "Revise as posições selecionadas como reserva",
-      detail:
-        "Há posições sem valor ou seleções que não correspondem à carteira atual.",
-      label: "Revisar reserva",
-      href: "/portfolio?panel=objectives&objective=reserve",
-    };
-  }
-  if (positionCount === 0) {
-    return {
-      title: "Adicione os dados da sua carteira",
-      detail: "Sem posições, ainda não há base para interpretar sua situação.",
-      label: "Importar carteira",
-      href: "/imports",
-    };
-  }
-  if (missingValueCount > 0) {
-    return {
-      title: "Revise as posições sem valor atual",
-      detail:
-        "Valores ausentes deixam o total conhecido e a distribuição incompletos.",
-      label: "Revisar carteira",
-      href: "/portfolio?view=positions",
-    };
-  }
-  if (
-    reserve &&
-    (reserve.monthlyExpenses === null || reserve.status === "not_configured")
-  ) {
-    return {
-      title: "Complete a configuração da reserva",
-      detail:
-        "Informe suas despesas e defina sua meta pessoal para acompanhar a cobertura.",
-      label: "Configurar reserva",
-      href: "/portfolio?panel=objectives&objective=reserve&screen=reserve-settings",
-    };
-  }
-  return null;
 }
