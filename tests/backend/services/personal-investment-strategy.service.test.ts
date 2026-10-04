@@ -183,7 +183,7 @@ describe("PersonalInvestmentStrategyService", () => {
       },
       {
         id: "brazilian_equities",
-        label: "Ações brasileiras",
+        label: "Ações e BDRs",
         knownValueCents: "200",
         percentageBasisPoints: 1333,
         currentPercentage: 13.33,
@@ -197,7 +197,7 @@ describe("PersonalInvestmentStrategyService", () => {
       },
       {
         id: "fiis",
-        label: "FIIs",
+        label: "Fundos imobiliários (FIIs)",
         knownValueCents: "400",
         percentageBasisPoints: 2667,
         currentPercentage: 26.67,

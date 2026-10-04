@@ -12,7 +12,7 @@ import {
   StrategyAllocationWorkspace,
   type StrategyClassValue,
 } from "./strategy-allocation-workspace";
-import type { StrategyPercentages } from "./strategy-allocation-chart";
+import type { StrategyAllocationPercentages } from "@/lib/strategy-allocation";
 
 type StrategyData = {
   valuationDate: string;
@@ -26,7 +26,7 @@ type StrategyData = {
     classes: StrategyClassValue[];
   };
   destinationsNeedingPurposeConfirmation: number;
-  savedAllocationPercentages: StrategyPercentages | null;
+  savedAllocationPercentages: StrategyAllocationPercentages | null;
   allocationActive: boolean;
 };
 

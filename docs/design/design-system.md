@@ -21,9 +21,9 @@ Use as variáveis CSS existentes ou suas classes Tailwind semânticas. Não repl
 | Primitivos legados           | `primary`, `primary-foreground`, `ring`                                                                                         | Tokens shadcn ainda consumidos por telas não migradas; a conversão global é acompanhada na #106                  |
 | Superfícies e texto          | `background`, `foreground`, `card`, `muted`, `border`, `destructive`                                                            | Estrutura neutra e hierarquia geral, com valores próprios para tema claro/escuro                                 |
 | Renda fixa                   | `asset-class-fixed-income`                                                                                                      | Laranja                                                                                                          |
-| Ações brasileiras            | `asset-class-brazilian-equities`                                                                                                | Azul                                                                                                             |
+| Ações e BDRs                 | `asset-class-brazilian-equities`                                                                                                | Azul                                                                                                             |
 | ETFs internacionais          | `asset-class-international-etfs`                                                                                                | Roxo                                                                                                             |
-| FIIs                         | `asset-class-fiis`                                                                                                              | Verde                                                                                                            |
+| Fundos imobiliários (FIIs)   | `asset-class-fiis`                                                                                                              | Verde                                                                                                            |
 | Classe ampla ou desconhecida | `asset-class-neutral`                                                                                                           | Neutro; não inferir classe por proximidade de cor                                                                |
 | Estados operacionais         | `status-success`, `status-warning`, `status-danger`, `status-info`                                                              | Sucesso, alerta, erro e informação; não são cores de classe de ativo                                             |
 | Finalidade/destino           | `destination-reserve`, `destination-personal`, `destination-long-term`, `destination-purpose-unknown`, `destination-unassigned` | Reserva, objetivos pessoais, longo prazo, finalidade não definida e sem destino; não representam classe de ativo |
@@ -35,9 +35,25 @@ A cor da identidade pode ser azul, assim como a cor de uma classe de ações bra
 
 Na etapa piloto da #105, o token compartilhado `brand` é consumido somente em Carteira → Posições e cadastro manual. Os tokens shadcn `primary` e as superfícies existentes permanecem temporariamente nas telas e no shell compartilhado; a adoção ampla do azul, a neutralização global das superfícies e a revisão visual rota a rota pertencem à #106. Não faça ajustes manuais isolados nem migre markup de outras páginas dentro da #105.
 
+## Taxonomia de investimentos e nomenclatura oficial
+
+As classes específicas da estratégia usam IDs técnicos estáveis e nomes oficiais definidos em `src/lib/strategy-allocation.ts`. Consulte essa fonte diretamente antes de criar referências, protótipos ou textos de interface. Nunca use um rótulo apresentado como identidade técnica, crie sinônimos ou abreviações, ou altere uma classe com base apenas em ticker, produto, subclasse ou geografia.
+
+| Conceito               | Definição                                                                                                  | Regra de uso                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Categoria ampla        | Classificação geral, como `Renda fixa`, `Renda variável`, `Fundos`, `Criptoativos`, `Imóveis` ou `Outros`. | Preserve valores e usos atuais em formulários, filtros, persistência e regras. `Renda variável` não é sinônimo de `Ações e BDRs`. |
+| Classe específica      | Agrupamento identificado por ID estável da estratégia e exibido onde esse dado está disponível.            | Use somente o nome oficial do catálogo e preserve o critério de agrupamento existente.                                            |
+| Subclasse              | Detalhe disponível nas opções do produto, como ação, BDR, ETF ou FII.                                      | Não a promova a classe específica nem deduza um grupo sem suporte do modelo.                                                      |
+| Instrumento ou produto | Investimento concreto, como CDB, ação, BDR, ETF ou FII.                                                    | Preserve o nome do instrumento; o nome do produto não é automaticamente o nome da classe.                                         |
+| Geografia              | Valor geográfico efetivamente suportado, como Brasil, Exterior ou Global.                                  | Não amplie o grupo `international_etfs` para além dos critérios atuais.                                                           |
+| Destino                | Finalidade existente, como reserva, objetivos pessoais ou longo prazo.                                     | Use tokens `destination-*`; destino não é classe, subclasse ou instrumento.                                                       |
+
+O modelo não estabelece uma hierarquia completa nem uma correspondência universal entre esses conceitos. Mantenha cada um em sua estrutura e descreva limites em vez de presumir relações.
+
 ## Auditoria inicial
 
-- `src/app/globals.css` centraliza superfícies, identidade e tipografia de foreground em OKLCH, com variantes clara/escura. Os tokens de classe de ativo e seus aliases Tailwind também existem e são reutilizados por `src/lib/portfolio-asset-class-colors.ts`; as referências aprovadas mantêm o mapa semântico.
+- `src/app/globals.css` centraliza superfícies, foregrounds e os valores dos tokens semânticos em OKLCH, com variantes clara/escura. O catálogo específico indexado por ID em `src/lib/strategy-allocation.ts` associa os nomes oficiais às chaves dos tokens de classe.
+
 - A visão “Patrimônio por destino” tem finalidade própria, diferente de classe. Sua paleta foi ligada a tokens `destination-*` nesta entrega.
 - `portfolio-distribution-charts.tsx` usa tokens de paleta indexada para categorias genéricas, como instituições; séries com significado financeiro fixo usam os tokens semânticos correspondentes.
 - Loading usa tanto `AppPageSkeleton` compartilhado quanto skeletons locais mais específicos. A consistência deve ser avaliada por página e por conteúdo, sem forçar a mesma silhueta em todas as rotas.
@@ -45,8 +61,7 @@ Na etapa piloto da #105, o token compartilhado `brand` é consumido somente em C
 
 ## Auditoria de cores — issue #103
 
-- A auditoria visual disponível não confirmou divergência de cor de classe nas referências de Dashboard e Estratégia. Não registrar cores de estado nem séries genéricas como erro de classe sem verificar o significado e o contexto do dado.
-- Ponto para auditoria futura, sem divergência visual comprovada: `strategyAssetClassColorById` e `portfolioAssetClassColors` em `src/lib/portfolio-asset-class-colors.ts` mantêm mapas por ID com valores duplicados, enquanto `specificClassColors` resolve classes pelo rótulo localizado. Revisar os consumidores em `src/app/strategy/_components/strategy-allocation-chart.tsx`, `src/app/strategy/_components/strategy-allocation-workspace.tsx` e `src/app/portfolio/_components/portfolio-distribution-charts.tsx`; centralizar a resolução por identidade da classe se a auditoria de código encontrar drift. Esta tarefa não altera componentes ou mapas.
+- A auditoria da issue #107 confirmou nomes históricos nas referências de Estratégia, Dashboard, concentração da Carteira e Objetivos; seus READMEs agora identificam os arquivos sem regenerá-los. Os nomes novos devem vir do catálogo por ID, e categorias amplas ou séries genéricas continuam distintas. Cores de estado não são divergências de classe semântica.
 - As propostas de Análises e Configurações têm conteúdo funcional sem suporte anotado nos respectivos READMEs. É uma pendência documental sobre fidelidade de conteúdo, não uma divergência de paleta confirmada; não redesenhar as imagens nesta entrega.
 
 ## Gráficos e dados

@@ -4,7 +4,6 @@ import { Bar, BarChart, Cell, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
 import { formatCurrency } from "@/lib/utils";
-import { getPortfolioAssetClassColor } from "@/lib/portfolio-asset-class-colors";
 
 export type DistributionItem = {
   label: string;
@@ -26,20 +25,16 @@ function DistributionChart({
   items,
   emptyMessage,
   loading = false,
-  colorByAssetClass = false,
 }: {
   title: string;
   items: DistributionItem[] | null;
   emptyMessage: string;
   loading?: boolean;
-  colorByAssetClass?: boolean;
 }) {
   const displayItems = items ?? [];
   const chartData = displayItems.map((item, index) => ({
     ...item,
-    color: colorByAssetClass
-      ? getPortfolioAssetClassColor(item.label)
-      : categoryColors[index % categoryColors.length],
+    color: categoryColors[index % categoryColors.length],
   }));
 
   return (
@@ -145,7 +140,6 @@ export function PortfolioDistributionCharts({
           items={classItems}
           emptyMessage="Não há valores classificados disponíveis."
           loading={loading}
-          colorByAssetClass
         />
         {!loading &&
           classItems !== null &&

@@ -42,7 +42,7 @@ const classes = [
   },
   {
     id: "brazilian_equities",
-    label: "Ações brasileiras",
+    label: "Ações e BDRs",
     knownValueCents: "30000",
     currentPercentage: 30,
   },
@@ -54,7 +54,7 @@ const classes = [
   },
   {
     id: "fiis",
-    label: "FIIs",
+    label: "Fundos imobiliários (FIIs)",
     knownValueCents: "10000",
     currentPercentage: 10,
   },
@@ -91,7 +91,7 @@ function input(label: string) {
     label.startsWith("Renda") ||
     label.startsWith("Ações") ||
     label.startsWith("ETFs") ||
-    label.startsWith("FIIs")
+    label.startsWith("Fundos imobiliários (FIIs)")
   ) {
     openEditor();
   }
@@ -113,9 +113,9 @@ function openEditor() {
 function setPercentages(values: [string, string, string, string]) {
   [
     "Renda fixa planejada em porcentagem",
-    "Ações brasileiras planejada em porcentagem",
+    "Ações e BDRs planejada em porcentagem",
     "ETFs internacionais planejada em porcentagem",
-    "FIIs planejada em porcentagem",
+    "Fundos imobiliários (FIIs) planejada em porcentagem",
   ].forEach((label, index) => {
     fireEvent.change(input(label), { target: { value: values[index] } });
   });
@@ -197,7 +197,7 @@ describe("StrategyAllocationWorkspace", () => {
     expect(classCards[0]?.textContent?.replace(/\u00a0/g, " ")).toContain(
       "R$ 400,00",
     );
-    expect(classCards[3]?.textContent).toContain("FIIs");
+    expect(classCards[3]?.textContent).toContain("Fundos imobiliários (FIIs)");
     expect(classCards[3]?.textContent?.replace(/\u00a0/g, " ")).toContain(
       "R$ 100,00",
     );
@@ -208,7 +208,7 @@ describe("StrategyAllocationWorkspace", () => {
     expect(input("Renda fixa planejada em porcentagem").value).toBe("40,");
     setPercentages(["100", "0", "0", "0"]);
     expect(screen.getByText("100,00%", { selector: "strong" })).toBeTruthy();
-    expect(input("Ações brasileiras planejada em porcentagem").value).toBe("0");
+    expect(input("Ações e BDRs planejada em porcentagem").value).toBe("0");
     fireEvent.change(input("Renda fixa planejada em porcentagem"), {
       target: { value: "101" },
     });
@@ -261,13 +261,13 @@ describe("StrategyAllocationWorkspace", () => {
       screen.getAllByRole("button", { name: "Distribuir restante" })[0]!,
     );
     expect(input("Renda fixa planejada em porcentagem").value).toBe("40,00");
-    expect(input("Ações brasileiras planejada em porcentagem").value).toBe(
-      "20,00",
-    );
+    expect(input("Ações e BDRs planejada em porcentagem").value).toBe("20,00");
     expect(input("ETFs internacionais planejada em porcentagem").value).toBe(
       "20,00",
     );
-    expect(input("FIIs planejada em porcentagem").value).toBe("20,00");
+    expect(
+      input("Fundos imobiliários (FIIs) planejada em porcentagem").value,
+    ).toBe("20,00");
   });
 
   it("saves a validated composition without activating the assistant source", async () => {
@@ -465,9 +465,9 @@ describe("StrategyAllocationWorkspace", () => {
   it("uses the shared class colors for tinted contribution cards", async () => {
     const allocations = [
       ["fixed_income", "Renda fixa", "1000"],
-      ["brazilian_equities", "Ações brasileiras", "4000"],
+      ["brazilian_equities", "Ações e BDRs", "4000"],
       ["international_etfs", "ETFs internacionais", "3000"],
-      ["fiis", "FIIs", "0"],
+      ["fiis", "Fundos imobiliários (FIIs)", "0"],
     ].map(([id, label, contributionValueCents]) => ({
       id,
       label,
@@ -663,6 +663,8 @@ describe("StrategyAllocationWorkspace", () => {
     expect(
       screen.getByText(/Parte do patrimônio de Longo Prazo está sem valor/),
     ).toBeTruthy();
-    expect(input("FIIs planejada em porcentagem").value).toBe("");
+    expect(
+      input("Fundos imobiliários (FIIs) planejada em porcentagem").value,
+    ).toBe("");
   });
 });

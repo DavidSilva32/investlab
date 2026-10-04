@@ -29,7 +29,7 @@ const baseData = {
       },
       {
         id: "brazilian_equities",
-        label: "Ações brasileiras",
+        label: "Ações e BDRs",
         knownValueCents: "30000",
         currentPercentage: 30,
       },
@@ -41,7 +41,7 @@ const baseData = {
       },
       {
         id: "fiis",
-        label: "FIIs",
+        label: "Fundos imobiliários (FIIs)",
         knownValueCents: "10000",
         currentPercentage: 10,
       },
@@ -219,9 +219,9 @@ describe("PersonalInvestmentStrategy", () => {
     await user.click(screen.getByRole("button", { name: "Editar composição" }));
     for (const [label, value] of [
       ["Renda fixa planejada em porcentagem", "0"],
-      ["Ações brasileiras planejada em porcentagem", "30"],
+      ["Ações e BDRs planejada em porcentagem", "30"],
       ["ETFs internacionais planejada em porcentagem", "20"],
-      ["FIIs planejada em porcentagem", "50"],
+      ["Fundos imobiliários (FIIs) planejada em porcentagem", "50"],
     ]) {
       fireEvent.change(screen.getByRole("textbox", { name: label }), {
         target: { value },
@@ -232,7 +232,7 @@ describe("PersonalInvestmentStrategy", () => {
     await waitFor(() =>
       expect(
         screen.queryByRole("textbox", {
-          name: "FIIs planejada em porcentagem",
+          name: "Fundos imobiliários (FIIs) planejada em porcentagem",
         }),
       ).toBeNull(),
     );
@@ -240,7 +240,7 @@ describe("PersonalInvestmentStrategy", () => {
     expect(
       (
         screen.getByRole("textbox", {
-          name: "FIIs planejada em porcentagem",
+          name: "Fundos imobiliários (FIIs) planejada em porcentagem",
         }) as HTMLInputElement
       ).value,
     ).toBe("50,00");

@@ -194,7 +194,7 @@ describe("PortfolioService", () => {
           { id: "fixed_income", label: "Renda fixa", currentPercentage: 30 },
           {
             id: "brazilian_equities",
-            label: "Ações brasileiras",
+            label: "Ações e BDRs",
             currentPercentage: 40,
           },
           {
@@ -202,7 +202,11 @@ describe("PortfolioService", () => {
             label: "ETFs internacionais",
             currentPercentage: 20,
           },
-          { id: "fiis", label: "FIIs", currentPercentage: 10 },
+          {
+            id: "fiis",
+            label: "Fundos imobiliários (FIIs)",
+            currentPercentage: 10,
+          },
         ],
       },
     });
@@ -317,7 +321,18 @@ describe("PortfolioService", () => {
           valuationDate: "2026-10-02",
           valuationDates: [],
         },
-        allocations: [],
+        allocations: [
+          {
+            id: "fixed_income",
+            label: "Renda fixa",
+            currentValueCents: "0",
+            targetPercentage: 50,
+            currentPercentage: 0,
+            projectedValueCents: "5000",
+            projectedPercentage: 50,
+            contributionValueCents: "5000",
+          },
+        ],
       },
     });
 
@@ -328,6 +343,8 @@ describe("PortfolioService", () => {
       status: scenario.expectedStatus,
       longTermPortfolioValue: 0,
       unknownPositionCount: scenario.unvaluedPositionCount,
+      allocations: [{ assetClass: "Renda fixa" }],
     });
+    expect(result.allocations[0]).not.toHaveProperty("assetClassId");
   });
 });

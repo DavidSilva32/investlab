@@ -339,7 +339,7 @@ describe("PortfolioService.calculateContribution", () => {
             },
             {
               id: "brazilian_equities",
-              label: "Ações brasileiras",
+              label: "Ações e BDRs",
               currentValueCents: "1000",
               currentPercentage: 2,
               targetPercentage: 80,
@@ -361,7 +361,7 @@ describe("PortfolioService.calculateContribution", () => {
           targetGapValue: 0,
         },
         {
-          assetClass: "Ações brasileiras",
+          assetClass: "Ações e BDRs",
           targetGapValue: 470,
         },
       ],
