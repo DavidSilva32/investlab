@@ -54,11 +54,12 @@ export function PortfolioTable<Row extends { id: string }>({
   const [pagination, setPagination] = useState({ rows, page: 0 });
   if (pagination.rows !== rows) setPagination({ rows, page: 0 });
   const page = pagination.rows === rows ? pagination.page : 0;
+  const activeSortColumn =
+    columns.find((item) => item.id === sort.id) ?? columns[0];
   const sortedRows = useMemo(() => {
-    const column = columns.find((item) => item.id === sort.id) ?? columns[0];
     return [...rows].sort((left, right) => {
-      const leftValue = column.value(left);
-      const rightValue = column.value(right);
+      const leftValue = activeSortColumn.value(left);
+      const rightValue = activeSortColumn.value(right);
       if (leftValue === rightValue) return 0;
       if (leftValue === null) return 1;
       if (rightValue === null) return -1;
@@ -68,7 +69,7 @@ export function PortfolioTable<Row extends { id: string }>({
           : collator.compare(String(leftValue), String(rightValue));
       return sort.direction === "asc" ? result : -result;
     });
-  }, [columns, rows, sort]);
+  }, [activeSortColumn, rows, sort]);
 
   const toggleSort = (id: string) => {
     setPagination({ rows, page: 0 });
@@ -106,7 +107,7 @@ export function PortfolioTable<Row extends { id: string }>({
       <TableHeader>
         <TableRow>
           {columns.map((column) => {
-            const active = sort.id === column.id;
+            const active = activeSortColumn.id === column.id;
             const Icon = active
               ? sort.direction === "asc"
                 ? ArrowUp
@@ -116,6 +117,13 @@ export function PortfolioTable<Row extends { id: string }>({
               <TableHead
                 key={column.id}
                 className={cn(column.className, "px-3")}
+                aria-sort={
+                  active
+                    ? sort.direction === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
               >
                 <Button
                   type="button"

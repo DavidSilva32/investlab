@@ -94,10 +94,14 @@ const submit = () => {
   if (!form) throw new Error("form missing");
   fireEvent.submit(form);
 };
-const expandManualPositions = () =>
-  fireEvent.click(
-    screen.getByRole("button", { name: /posições manuais cadastradas/ }),
-  );
+const expandManualPositions = () => {
+  const trigger = screen.getByRole("button", {
+    name: /posições manuais cadastradas/,
+  });
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(trigger);
+  }
+};
 const choose = async (
   user: ReturnType<typeof userEvent.setup>,
   index: number,
@@ -115,7 +119,8 @@ describe("ManualPositionManager", () => {
   it("opens the accessible form and explains explicit foreign conversion", () => {
     render(<ManualPositionManager positions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: /adicionar posição/i }));
-    expect(screen.getByRole("dialog").className).toContain("sm:max-w-3xl");
+    expect(screen.getByRole("dialog").className).toContain("sm:max-w-5xl");
+    expect(screen.getByRole("dialog").className).toContain("overflow-y-auto");
     expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
     expect(screen.getByLabelText("Classe")).toBeTruthy();
     expect(screen.getByLabelText("Subclasse")).toBeTruthy();
@@ -428,6 +433,31 @@ describe("ManualPositionManager", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("prevents duplicate removal requests while deletion is pending", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    let resolveResponse!: (value: ReturnType<typeof jsonResponse>) => void;
+    const pendingResponse = new Promise<ReturnType<typeof jsonResponse>>(
+      (resolve) => {
+        resolveResponse = resolve;
+      },
+    );
+    const fetchMock = vi.fn().mockReturnValue(pendingResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ManualPositionManager positions={[row]} />);
+    const removeButton = screen.getByRole("button", {
+      name: "Remover ETF internacional",
+    });
+
+    fireEvent.click(removeButton);
+
+    expect(removeButton).toHaveProperty("disabled", true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    resolveResponse(jsonResponse());
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(removeButton).toHaveProperty("disabled", false);
+  });
+
   it("renders duplicate codes, source, conversion and valuation dates", () => {
     render(
       <ManualPositionManager
@@ -441,12 +471,12 @@ describe("ManualPositionManager", () => {
     expect(
       screen.getByRole("button", {
         name: /posições manuais cadastradas/,
-        expanded: false,
+        expanded: true,
       }),
     ).toBeTruthy();
     expect(
-      screen.queryByText(/Código repetido em outra posição manual/),
-    ).toBeNull();
+      screen.getByText(/Código repetido em outra posição manual/),
+    ).toBeTruthy();
     expandManualPositions();
     expect(screen.getAllByText("Manual")).toHaveLength(2);
     expect(
@@ -468,6 +498,33 @@ describe("ManualPositionManager", () => {
     render(<ManualPositionManager positions={[classifiedPosition]} />);
     expandManualPositions();
     expect(screen.getByText("Fundos")).toBeTruthy();
+  });
+
+  it("keeps broad class colors neutral and preserves fixed income semantics", () => {
+    const fixedIncome = {
+      ...row,
+      classification: {
+        assetClass: "Renda fixa",
+        subClass: null,
+        geography: null,
+      },
+    };
+    const broadClasses = {
+      ...emptyRow,
+      classification: {
+        assetClass: "Renda variável",
+        subClass: "ETF de ações",
+        geography: "Exterior",
+      },
+    };
+    render(<ManualPositionManager positions={[fixedIncome, broadClasses]} />);
+    const dots = screen
+      .getAllByText(/Renda fixa|Renda variável/)
+      .map((label) => label.parentElement?.querySelector("span"));
+    expect(dots[0]?.getAttribute("style")).toContain(
+      "--asset-class-fixed-income",
+    );
+    expect(dots[1]?.getAttribute("style")).toContain("--asset-class-neutral");
   });
 
   it("uses fallback currency and conversion text when value metadata is partial", () => {

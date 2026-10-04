@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,7 @@ import {
 } from "@/lib/portfolio-classification-options";
 import { Label } from "@/components/ui/label";
 import { neutralAssetClassColor } from "@/lib/strategy-allocation";
+import { strategyAssetClassById } from "@/lib/strategy-allocation";
 import {
   Collapsible,
   CollapsibleContent,
@@ -232,10 +233,15 @@ export function ManualPositionManager({
   const [editing, setEditing] = useState<ManualPosition | null>(null);
   const [values, setValues] = useState<FormValues>(emptyValues);
   const [saving, setSaving] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [assetClassError, setAssetClassError] = useState(false);
 
   const set = (field: keyof FormValues, value: string) =>
     setValues((current) => ({ ...current, [field]: value }));
+  const getClassColor = (assetClass: string) =>
+    assetClass === strategyAssetClassById.fixed_income.label
+      ? `var(${strategyAssetClassById.fixed_income.colorToken})`
+      : neutralAssetClassColor;
 
   const startCreate = () => {
     setEditing(null);
@@ -309,6 +315,7 @@ export function ManualPositionManager({
   };
   const remove = async (position: ManualPosition) => {
     if (!window.confirm(`Remover a posição ${position.product}?`)) return;
+    setRemovingId(position.id);
     try {
       const response = await fetch("/api/positions/manual", {
         method: "DELETE",
@@ -324,20 +331,27 @@ export function ManualPositionManager({
       window.dispatchEvent(new Event("portfolio:updated"));
     } catch {
       toast.error("Não foi possível remover a posição.");
+    } finally {
+      setRemovingId(null);
     }
   };
 
   return (
-    <section className="space-y-3 rounded-lg border p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="space-y-4 rounded-xl border bg-muted/10 p-4 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="font-semibold">Posições manuais</h3>
-          <p className="text-sm text-muted-foreground">
-            Registre ativos não importados. Valores em moeda estrangeira só
-            entram no patrimônio após informar uma conversão para reais.
+          <h3 className="text-base font-semibold">Posições manuais</h3>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Registre ativos que não vieram da importação. Valores em moeda
+            estrangeira entram no patrimônio após informar a conversão para
+            reais.
           </p>
         </div>
-        <Button type="button" onClick={startCreate}>
+        <Button
+          type="button"
+          onClick={startCreate}
+          className="w-full shrink-0 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
+        >
           <Plus className="mr-2 h-4 w-4" /> Adicionar posição
         </Button>
       </div>
@@ -346,8 +360,8 @@ export function ManualPositionManager({
           Nenhuma posição manual cadastrada.
         </p>
       ) : (
-        <Collapsible>
-          <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-medium hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <Collapsible defaultOpen>
+          <CollapsibleTrigger className="group flex min-h-12 w-full items-center justify-between rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <span>{manualPositions.length} posições manuais cadastradas</span>
             <ChevronDown
               aria-hidden="true"
@@ -355,14 +369,14 @@ export function ManualPositionManager({
             />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <ul className="mt-2 max-h-96 divide-y overflow-y-auto rounded-md border px-3">
+            <ul className="mt-2 max-h-96 divide-y overflow-y-auto rounded-lg border bg-card px-3 sm:px-4">
               {manualPositions.map((position) => (
                 <li
                   key={position.id}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
                 >
-                  <div className="min-w-0">
-                    <p className="font-medium">
+                  <div className="min-w-0 flex-1">
+                    <p className="wrap-break-word font-medium">
                       {position.product}{" "}
                       {position.assetCode && (
                         <span className="text-muted-foreground">
@@ -370,8 +384,10 @@ export function ManualPositionManager({
                         </span>
                       )}
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatQuantity(Number(position.quantity))} unidades ·{" "}
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {formatQuantity(Number(position.quantity))}{" "}
+                      {Number(position.quantity) === 1 ? "unidade" : "unidades"}{" "}
+                      ·{" "}
                       {position.reportedTotalValue
                         ? `${Number(position.reportedTotalValue).toLocaleString("pt-BR")} ${position.currency ?? "BRL"}`
                         : "valor não informado"}
@@ -389,20 +405,23 @@ export function ManualPositionManager({
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                     {position.classification?.assetClass && (
-                      <Badge variant="secondary" className="gap-1.5">
+                      <Badge variant="outline" className="gap-1.5 bg-muted/20">
                         <span
                           aria-hidden="true"
                           className="size-2 rounded-full"
                           style={{
-                            backgroundColor: neutralAssetClassColor,
+                            backgroundColor: getClassColor(
+                              position.classification.assetClass,
+                            ),
                           }}
                         />
                         {position.classification.assetClass}
                       </Badge>
                     )}
-                    <Badge variant="outline">Manual</Badge>
+                    <Badge variant="secondary">Manual</Badge>
+                    <span className="flex-1 sm:hidden" />
                     <Button
                       type="button"
                       variant="outline"
@@ -418,8 +437,16 @@ export function ManualPositionManager({
                       size="icon"
                       aria-label={`Remover ${position.product}`}
                       onClick={() => remove(position)}
+                      disabled={removingId !== null}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {removingId === position.id ? (
+                        <LoaderCircle
+                          aria-hidden="true"
+                          className="size-4 animate-spin"
+                        />
+                      ) : (
+                        <Trash2 aria-hidden="true" className="size-4" />
+                      )}
                     </Button>
                   </div>
                 </li>
@@ -429,8 +456,8 @@ export function ManualPositionManager({
         </Collapsible>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-0 sm:max-w-5xl">
+          <DialogHeader className="border-b px-6 pb-5 pt-6 sm:px-8">
             <DialogTitle>
               {editing ? "Editar posição" : "Adicionar posição manual"}
             </DialogTitle>
@@ -439,8 +466,8 @@ export function ManualPositionManager({
               cotação nem converte moeda automaticamente.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={submit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+          <form onSubmit={submit} className="space-y-5">
+            <div className="grid gap-x-6 gap-y-5 px-6 sm:grid-cols-2 sm:px-8">
               <Field
                 id="manual-product"
                 label="Ativo ou produto"
@@ -626,7 +653,7 @@ export function ManualPositionManager({
                 </>
               )}
             </div>
-            <DialogFooter>
+            <DialogFooter className="border-t px-6 py-4 sm:px-8">
               <Button
                 type="button"
                 variant="outline"
@@ -634,7 +661,11 @@ export function ManualPositionManager({
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={saving}>
+              <Button
+                type="submit"
+                disabled={saving}
+                className="bg-brand text-brand-foreground hover:bg-brand/90"
+              >
                 {saving ? "Salvando…" : "Salvar posição"}
               </Button>
             </DialogFooter>
