@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight, List, Target } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
@@ -180,7 +181,7 @@ export function PortfolioClient({
             classificationStatus={classification.status}
             summaryContent={<ReferenceRates rates={overview.referenceRates} />}
           />
-          <div className="flex flex-wrap gap-2 border-t pt-4">
+          <div className="grid gap-3 border-t pt-4 sm:grid-cols-2">
             <Sheet
               open={objectivesRoute.open}
               onOpenChange={(open) =>
@@ -192,8 +193,19 @@ export function PortfolioClient({
               }
             >
               <SheetTrigger asChild>
-                <Button type="button" size="sm">
-                  Objetivos e destinos
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="group h-auto min-h-14 justify-between gap-4 rounded-xl border-primary/20 bg-card px-4 py-3 text-left text-primary shadow-sm hover:border-primary/40 hover:bg-accent hover:text-primary"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <Target aria-hidden="true" className="size-5 shrink-0" />
+                    <span className="font-medium">Objetivos e destinos</span>
+                  </span>
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                  />
                 </Button>
               </SheetTrigger>
               <SheetContent
@@ -223,8 +235,21 @@ export function PortfolioClient({
             </Sheet>
             <Sheet>
               <SheetTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  Metas pessoais e detalhes
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="group h-auto min-h-14 justify-between gap-4 rounded-xl border-primary/20 bg-card px-4 py-3 text-left text-primary shadow-sm hover:border-primary/40 hover:bg-accent hover:text-primary"
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <List aria-hidden="true" className="size-5 shrink-0" />
+                    <span className="font-medium">
+                      Metas pessoais e detalhes
+                    </span>
+                  </span>
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                  />
                 </Button>
               </SheetTrigger>
               <SheetContent

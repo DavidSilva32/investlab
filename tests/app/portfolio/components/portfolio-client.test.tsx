@@ -131,9 +131,18 @@ describe("PortfolioClient", () => {
     const replaceState = vi.spyOn(window.history, "replaceState");
 
     expect(await screen.findByText("Taxas de referência")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Objetivos e destinos" }),
-    ).toBeTruthy();
+    const objectivesShortcut = screen.getByRole("button", {
+      name: "Objetivos e destinos",
+    });
+    expect(objectivesShortcut).toBeTruthy();
+    expect(objectivesShortcut.className).toContain("rounded-xl");
+    expect(objectivesShortcut.className).toContain("justify-between");
+    expect(objectivesShortcut.querySelector("svg")).toBeTruthy();
+    const detailsShortcut = screen.getByRole("button", {
+      name: "Metas pessoais e detalhes",
+    });
+    expect(detailsShortcut.className).toContain("rounded-xl");
+    expect(detailsShortcut.querySelector("svg")).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "Configurar reserva" }),
     ).toBeNull();

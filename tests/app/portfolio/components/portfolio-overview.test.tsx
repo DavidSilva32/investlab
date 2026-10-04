@@ -93,7 +93,7 @@ function classified(
 }
 
 describe("PortfolioOverview", () => {
-  it("keeps summary values and top-position rows responsive at narrow widths", () => {
+  it("keeps the three-part summary and top-position rows responsive", () => {
     const html = renderToStaticMarkup(
       <PortfolioOverview
         classifiedPositions={[]}
@@ -102,17 +102,20 @@ describe("PortfolioOverview", () => {
       />,
     );
 
-    expect(html).toContain("size-10 shrink-0");
+    expect(html).toContain("lg:grid-cols-3 lg:divide-x");
+    expect(html).toContain("lg:border-t-0 lg:px-6");
     expect(html).toContain(
       "text-2xl font-semibold tracking-tight text-primary tabular-nums sm:text-3xl lg:text-4xl",
     );
     expect(html).toContain(
       "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 px-3 py-3 sm:items-center sm:gap-4 sm:px-5",
     );
-    expect(html).toContain("shrink-0 items-center gap-1 whitespace-nowrap");
+    expect(html).toContain(
+      "mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline",
+    );
   });
 
-  it("shows known value, completeness, top five values and the full positions path", () => {
+  it("shows known value, completeness, top three values and the full positions path", () => {
     const html = renderToStaticMarkup(
       <PortfolioOverview
         classifiedPositions={[]}
@@ -137,10 +140,15 @@ describe("PortfolioOverview", () => {
     expect(html).toContain("Ordenadas pelo maior valor conhecido");
     expect(html).toContain("Ver todas as posições");
     expect(html).toContain("/portfolio?view=positions");
-    expect(html).toContain("CDB cinco");
+    expect(html.indexOf("CDB três")).toBeLessThan(
+      html.indexOf("Ver todas as posições"),
+    );
+    expect(html).toContain("CDB três");
+    expect(html).not.toContain("CDB quatro");
     expect(html).not.toContain("CDB seis");
     expect(html).toContain("CDB um");
-    expect(html).toContain("32,3% da carteira conhecida");
+    expect(html).not.toContain("32,3% da carteira conhecida");
+    expect(html).toContain("lg:grid-cols-2");
     expect(html).toContain("1 posição está sem valor atual informado");
   });
 
@@ -158,7 +166,7 @@ describe("PortfolioOverview", () => {
 
     expect(html).toContain("Classes: Renda fixa, Classe não informada");
     expect(html).toContain("Sem classe: 100");
-    expect(html).toContain("100,0% da carteira conhecida");
+    expect(html).not.toContain("100,0% da carteira conhecida");
   });
 
   it("reports provisional, unavailable and upcoming maturity facts", () => {
@@ -233,7 +241,7 @@ describe("PortfolioOverview", () => {
     );
 
     expect(html).toContain("Instituição não informada");
-    expect(html).toContain("0,0% da carteira conhecida");
+    expect(html).not.toContain("0,0% da carteira conhecida");
     expect(html).toContain("4 posições estão sem valor atual informado");
     expect(html).toContain("2 estimativas estão provisórias");
     expect(html).toContain("Não foi possível atualizar 2 estimativas de CDB");
