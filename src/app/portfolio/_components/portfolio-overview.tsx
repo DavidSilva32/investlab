@@ -104,16 +104,16 @@ export function PortfolioOverview({
   return (
     <div className="space-y-5">
       <Card>
-        <CardContent className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,1fr)] lg:items-center">
-          <div className="flex items-center gap-3">
-            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary sm:size-14">
+        <CardContent className="grid gap-4 p-4 sm:gap-5 sm:p-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,1fr)] lg:items-center">
+          <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary sm:size-14">
               <WalletCards aria-hidden="true" className="size-6" />
             </span>
             <div className="min-w-0">
               <p className="text-sm font-medium text-muted-foreground">
                 Valor conhecido da carteira
               </p>
-              <p className="mt-1 text-3xl font-semibold tracking-tight text-primary tabular-nums sm:text-4xl">
+              <p className="mt-1 break-words text-2xl font-semibold tracking-tight text-primary tabular-nums sm:text-3xl lg:text-4xl">
                 {insights.valuedPositions
                   ? formatCurrency(insights.totalValue)
                   : "—"}
@@ -181,7 +181,7 @@ export function PortfolioOverview({
             </div>
             <Link
               href="/portfolio?view=positions"
-              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm font-medium text-primary hover:underline"
             >
               Ver todas as posições <ArrowRight className="size-4" />
             </Link>
@@ -199,7 +199,7 @@ export function PortfolioOverview({
                   ) => (
                     <li
                       key={`${product}:${institution ?? ""}:${index}`}
-                      className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5"
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 px-3 py-3 sm:items-center sm:gap-4 sm:px-5"
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">

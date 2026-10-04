@@ -3,6 +3,7 @@
 import { Bar, BarChart, Cell, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
+import { neutralAssetClassColor } from "@/lib/strategy-allocation";
 import { formatCurrency } from "@/lib/utils";
 
 export type DistributionItem = {
@@ -25,16 +26,20 @@ function DistributionChart({
   items,
   emptyMessage,
   loading = false,
+  neutralColors = false,
 }: {
   title: string;
   items: DistributionItem[] | null;
   emptyMessage: string;
   loading?: boolean;
+  neutralColors?: boolean;
 }) {
   const displayItems = items ?? [];
   const chartData = displayItems.map((item, index) => ({
     ...item,
-    color: categoryColors[index % categoryColors.length],
+    color: neutralColors
+      ? neutralAssetClassColor
+      : categoryColors[index % categoryColors.length],
   }));
 
   return (
@@ -138,6 +143,7 @@ export function PortfolioDistributionCharts({
         <DistributionChart
           title="Como se distribui · por classe"
           items={classItems}
+          neutralColors
           emptyMessage="Não há valores classificados disponíveis."
           loading={loading}
         />

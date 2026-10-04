@@ -81,9 +81,9 @@ function Result({
     value === null
       ? "text-muted-foreground"
       : value > 0
-        ? "text-emerald-600 dark:text-emerald-400"
+        ? "text-status-success"
         : value < 0
-          ? "text-rose-600 dark:text-rose-400"
+          ? "text-status-danger"
           : "text-muted-foreground";
   const Icon = value === null ? CircleHelp : value === 0 ? Minus : null;
 
@@ -136,9 +136,9 @@ function Comparison({
   const percentageChange = changePercent(after, before);
   const tone =
     movement === "up"
-      ? "text-sky-700 dark:text-sky-300"
+      ? "text-status-info"
       : movement === "down"
-        ? "text-amber-700 dark:text-amber-300"
+        ? "text-status-warning"
         : "text-muted-foreground";
   const movementLabel =
     movement === "up"

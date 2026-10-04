@@ -83,6 +83,16 @@ describe("PortfolioDistributionCharts", () => {
     ]);
     expect(
       screen
+        .getAllByRole("img")
+        .slice(institutions.length)
+        .every(
+          (chart) =>
+            chart.getAttribute("data-series-color") ===
+            "var(--asset-class-neutral)",
+        ),
+    ).toBe(true);
+    expect(
+      screen
         .getAllByTestId("bar-track")
         .every((track) => track.getAttribute("data-fill") === "var(--muted)"),
     ).toBe(true);

@@ -444,6 +444,11 @@ describe("PositionCombinationSuggestions", () => {
     expect(
       screen.getByText(/Viagem: R\$ 30\.000,00 de R\$ 40\.000,00/),
     ).toBeTruthy();
+    const transferDetail = screen.getByText(
+      /transferida de Viagem para\s*Reserva/,
+    );
+    expect(transferDetail.className).toContain("text-xs");
+    expect(transferDetail.className).toContain("text-muted-foreground");
     expect(screen.queryByText(/40\.000,00 ·/)).toBeNull();
   });
 

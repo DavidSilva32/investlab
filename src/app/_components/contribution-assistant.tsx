@@ -28,10 +28,7 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import { getApiMessage } from "@/lib/api-message";
 import type { ContributionAllocationResult } from "@/lib/contribution-allocation";
-import {
-  getStrategyAssetClassColor,
-  strategyAssetClasses,
-} from "@/lib/strategy-allocation";
+import { getStrategyAssetClassColor } from "@/lib/strategy-allocation";
 import {
   formatAmountInput,
   getCurrencyInputSelection,
@@ -337,13 +334,7 @@ export function ContributionAssistant({
                           aria-hidden="true"
                           className="inline-flex size-2.5 overflow-hidden rounded-full"
                         >
-                          {strategyAssetClasses.map(({ id, colorToken }) => (
-                            <span
-                              key={id}
-                              className="h-full w-1/4"
-                              style={{ backgroundColor: `var(${colorToken})` }}
-                            />
-                          ))}
+                          <span className="h-full w-full bg-brand" />
                         </span>
                         Após aporte
                       </span>
@@ -356,13 +347,7 @@ export function ContributionAssistant({
                       </span>
                     </div>
                     {visibleAllocations.map((allocation) => {
-                      const allocationIndex = allocations.indexOf(allocation);
-                      const assetClassId =
-                        result.allocationMode === "strategy"
-                          ? strategyAssetClasses[allocationIndex]!.id
-                          : null;
-                      const assetClassColor =
-                        getStrategyAssetClassColor(assetClassId);
+                      const assetClassColor = getStrategyAssetClassColor(null);
                       const projectedPercentage =
                         ((allocation.currentValue +
                           allocation.contributionAmount) /

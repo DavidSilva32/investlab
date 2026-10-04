@@ -653,10 +653,10 @@ export function StrategyAllocationWorkspace({
                 aria-label="Sequência do aporte"
                 className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center"
               >
-                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-sky-500/40 bg-sky-500/5 p-3 sm:p-4">
+                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-status-info/40 bg-status-info/5 p-3 sm:p-4">
                   <WalletCards
                     aria-hidden="true"
-                    className="hidden size-6 shrink-0 text-sky-500 sm:block"
+                    className="hidden size-6 shrink-0 text-status-info sm:block"
                   />
                   <span className="min-w-0">
                     <span className="block text-sm text-muted-foreground">
@@ -674,10 +674,10 @@ export function StrategyAllocationWorkspace({
                   <ArrowDown className="size-4 sm:hidden" />
                   <ArrowRight className="hidden size-5 sm:block" />
                 </li>
-                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 sm:p-4">
+                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-status-warning/40 bg-status-warning/5 p-3 sm:p-4">
                   <PiggyBank
                     aria-hidden="true"
-                    className="hidden size-6 shrink-0 text-amber-500 sm:block"
+                    className="hidden size-6 shrink-0 text-status-warning sm:block"
                   />
                   <span className="min-w-0">
                     <span className="block text-sm text-muted-foreground">
@@ -705,10 +705,10 @@ export function StrategyAllocationWorkspace({
                   <ArrowDown className="size-4 sm:hidden" />
                   <ArrowRight className="hidden size-5 sm:block" />
                 </li>
-                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 sm:p-4">
+                <li className="flex min-w-0 items-center gap-3 rounded-lg border border-status-success/40 bg-status-success/5 p-3 sm:p-4">
                   <TrendingUp
                     aria-hidden="true"
-                    className="hidden size-6 shrink-0 text-emerald-500 sm:block"
+                    className="hidden size-6 shrink-0 text-status-success sm:block"
                   />
                   <span className="min-w-0">
                     <span className="block text-sm text-muted-foreground">

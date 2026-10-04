@@ -57,7 +57,7 @@ describe("AppShell", () => {
     );
     const links = screen.getAllByRole("link", { name: "Análises" });
     expect(links.length).toBeGreaterThan(0);
-    expect(links.every((link) => link.className.includes("bg-primary"))).toBe(
+    expect(links.every((link) => link.className.includes("bg-brand"))).toBe(
       true,
     );
     expect(

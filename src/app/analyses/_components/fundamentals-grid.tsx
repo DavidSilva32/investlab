@@ -154,8 +154,8 @@ function FundamentalValue({
     !colorSign || parsed === null || parsed === 0
       ? ""
       : parsed > 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-rose-600 dark:text-rose-400";
+        ? "text-status-success"
+        : "text-status-danger";
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
@@ -178,9 +178,9 @@ function MovementBadge({ movement }: { movement: Movement }) {
         : Minus;
   const tone =
     movement.direction === "up"
-      ? "text-sky-700 dark:text-sky-300"
+      ? "text-status-info"
       : movement.direction === "down"
-        ? "text-amber-700 dark:text-amber-300"
+        ? "text-status-warning"
         : "text-muted-foreground";
   const label =
     movement.direction === "up"

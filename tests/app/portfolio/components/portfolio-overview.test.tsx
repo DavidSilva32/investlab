@@ -93,6 +93,25 @@ function classified(
 }
 
 describe("PortfolioOverview", () => {
+  it("keeps summary values and top-position rows responsive at narrow widths", () => {
+    const html = renderToStaticMarkup(
+      <PortfolioOverview
+        classifiedPositions={[]}
+        classificationStatus="loaded"
+        positions={[position("1", "Tesouro", "123456.78")]}
+      />,
+    );
+
+    expect(html).toContain("size-10 shrink-0");
+    expect(html).toContain(
+      "text-2xl font-semibold tracking-tight text-primary tabular-nums sm:text-3xl lg:text-4xl",
+    );
+    expect(html).toContain(
+      "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 px-3 py-3 sm:items-center sm:gap-4 sm:px-5",
+    );
+    expect(html).toContain("shrink-0 items-center gap-1 whitespace-nowrap");
+  });
+
   it("shows known value, completeness, top five values and the full positions path", () => {
     const html = renderToStaticMarkup(
       <PortfolioOverview

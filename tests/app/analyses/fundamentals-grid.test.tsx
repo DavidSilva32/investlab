@@ -215,7 +215,7 @@ describe("FundamentalsGrid", () => {
     expect(
       screen.getByLabelText(/Sem variação entre 2023 e 2024/),
     ).toBeTruthy();
-    expect(container.querySelector(".text-amber-700")).toBeTruthy();
+    expect(container.querySelector(".text-status-warning")).toBeTruthy();
     expect(container.querySelector(".text-muted-foreground")).toBeTruthy();
   });
 
@@ -243,10 +243,10 @@ describe("FundamentalsGrid", () => {
     );
 
     expect(screen.getByText(/10\.000,00/).className).toContain(
-      "text-emerald-600",
+      "text-status-success",
     );
     expect(screen.getByText(/-R\$\s?5\.000,00/).className).toContain(
-      "text-rose-600",
+      "text-status-danger",
     );
     expect(screen.queryByText(/Aumentou|Diminuiu/)).toBeNull();
 
@@ -265,7 +265,7 @@ describe("FundamentalsGrid", () => {
       />,
     );
     expect(screen.getByText(/R\$\s?0,00/).className).not.toMatch(
-      /text-(?:emerald|rose)-600/,
+      /text-status-(?:success|danger)/,
     );
   });
 });

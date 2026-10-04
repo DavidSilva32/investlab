@@ -161,12 +161,12 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
               )}
             </span>
             {row.cdbEstimateLimitation && (
-              <span className="block text-xs text-amber-700 dark:text-amber-400">
+              <span className="block text-xs text-status-warning">
                 {row.cdbEstimateLimitation}
               </span>
             )}
             {row.cdbProjectedFromDate && row.cdbProjectedThroughDate && (
-              <span className="block text-xs text-amber-700 dark:text-amber-400">
+              <span className="block text-xs text-status-warning">
                 Trecho projetado: de{" "}
                 {date.format(new Date(`${row.cdbProjectedFromDate}T00:00:00Z`))}{" "}
                 a{" "}
@@ -201,7 +201,7 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
               Último valor informado pela B3
             </span>
             {row.cdbEstimateStatus === "unavailable" && (
-              <span className="block text-xs text-amber-700 dark:text-amber-400">
+              <span className="block text-xs text-status-warning">
                 {row.cdbEstimateLimitation ??
                   "A estimativa com taxas CDI oficiais não está disponível."}
               </span>
@@ -369,8 +369,8 @@ export function MovementDetails({
   return (
     <Card>
       <CardHeader className="border-b">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <CardTitle>Movimentações</CardTitle>
             <CardDescription>
               {movements.length
