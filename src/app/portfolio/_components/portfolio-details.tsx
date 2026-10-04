@@ -303,62 +303,61 @@ export function PositionDetails({
   positions: PortfolioPosition[];
 }) {
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="space-y-4 sm:space-y-5">
+      <Card className="overflow-hidden">
+        <CardHeader className="py-4 sm:py-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>Posições atuais</CardTitle>
+              <CardDescription>
+                {positions.length
+                  ? `${positions.length} posições disponíveis`
+                  : "Nenhuma posição importada"}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {positions.length > 0 && <Badge>{positions.length} ativos</Badge>}
+              <CdbRateConfiguration
+                assetCodes={positions
+                  .filter(
+                    (position) =>
+                      position.assetCode &&
+                      /^CDB\b/i.test(position.product) &&
+                      /^(DI|CDI)$/i.test(position.indexer ?? ""),
+                  )
+                  .map((position) => position.assetCode!)}
+              />
+              <DeleteImportedDataButton
+                documentType="B3_POSITION_XLSX"
+                label="posições importadas"
+              />
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
+      <Card className="min-w-0 overflow-hidden">
+        <CardHeader className="flex-row items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3 sm:px-5">
           <div>
-            <CardTitle>Posições atuais</CardTitle>
-            <CardDescription>
-              {positions.length
-                ? `${positions.length} posições disponíveis`
-                : "Nenhuma posição importada"}
+            <CardTitle className="text-base">Posições na carteira</CardTitle>
+            <CardDescription className="mt-0.5">
+              Valores, instituições e vencimentos registrados
             </CardDescription>
           </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            {positions.length > 0 && <Badge>{positions.length} ativos</Badge>}
-            <CdbRateConfiguration
-              assetCodes={positions
-                .filter(
-                  (position) =>
-                    position.assetCode &&
-                    /^CDB\b/i.test(position.product) &&
-                    /^(DI|CDI)$/i.test(position.indexer ?? ""),
-                )
-                .map((position) => position.assetCode!)}
-            />
-            <DeleteImportedDataButton
-              documentType="B3_POSITION_XLSX"
-              label="posições importadas"
-            />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4 p-4 sm:p-5">
-        <ManualPositionManager positions={positions} />
-        <section
-          aria-label="Posições registradas"
-          className="min-w-0 overflow-hidden rounded-xl border"
-        >
-          <div className="flex items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">Posições na carteira</h2>
-              <p className="text-xs text-muted-foreground">
-                Valores, instituições e vencimentos registrados
-              </p>
-            </div>
-            <Badge variant="outline" className="shrink-0 tabular-nums">
-              {positions.length}
-            </Badge>
-          </div>
+          <Badge variant="outline" className="shrink-0 tabular-nums">
+            {positions.length} {positions.length === 1 ? "posição" : "posições"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="p-0">
           <PortfolioTable
             columns={positionColumns}
             rows={positions}
             initialSort={{ id: "product", direction: "asc" }}
             emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."
           />
-        </section>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+      <ManualPositionManager positions={positions} />
+    </div>
   );
 }
 

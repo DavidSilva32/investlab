@@ -78,6 +78,9 @@ describe("portfolio detail components", () => {
       />,
     );
     expect(html).toContain("Posições atuais");
+    expect(html.indexOf("Posições na carteira")).toBeLessThan(
+      html.indexOf("Posições manuais"),
+    );
     expect(html).toContain("Estimativa parcial até");
     expect(html).toContain("Estimativa até");
     expect(html).toContain("100% do CDI");
@@ -173,6 +176,7 @@ describe("portfolio detail components", () => {
       />,
     );
     expect(positions).toContain("Nenhuma posição importada");
+    expect(positions).toContain("0 posições");
     expect(movements).toContain("Crédito");
     expect(movements).toContain("Débito");
   });

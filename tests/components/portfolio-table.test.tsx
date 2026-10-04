@@ -105,6 +105,16 @@ describe("PortfolioTable", () => {
       />,
     );
     expect(bodyCellTexts()).toEqual(["Alfa", "1", "Zeta", "2"]);
+    expect(
+      screen
+        .getByRole("columnheader", { name: /Nome/ })
+        .getAttribute("aria-sort"),
+    ).toBe("ascending");
+    expect(
+      screen
+        .getByRole("columnheader", { name: /Valor/ })
+        .getAttribute("aria-sort"),
+    ).toBeNull();
   });
   it("keeps null values at the end and renders the empty state", async () => {
     const { rerender } = render(
@@ -119,6 +129,11 @@ describe("PortfolioTable", () => {
       />,
     );
     expect(bodyCellTexts()).toEqual(["Alfa", "1", "Zeta", "—"]);
+    const valueHeader = screen.getByRole("columnheader", { name: /Valor/ });
+    expect(valueHeader.getAttribute("aria-sort")).toBe("ascending");
+    await userEvent.click(screen.getByRole("button", { name: /Valor/ }));
+    expect(bodyCellTexts()).toEqual(["Alfa", "1", "Zeta", "—"]);
+    expect(valueHeader.getAttribute("aria-sort")).toBe("descending");
     rerender(
       <PortfolioTable
         columns={columns}
