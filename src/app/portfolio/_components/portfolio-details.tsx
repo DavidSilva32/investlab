@@ -337,10 +337,12 @@ export function PositionDetails({
                   )
                   .map((position) => position.assetCode!)}
               />
-              <DeleteImportedDataButton
-                documentType="B3_POSITION_XLSX"
-                label="posições importadas"
-              />
+              <div className="shrink-0 [&_button]:border-status-danger/50 [&_button]:bg-status-danger/5 [&_button]:text-status-danger [&_button:hover]:border-status-danger [&_button:hover]:bg-status-danger/10 [&_button:hover]:text-status-danger">
+                <DeleteImportedDataButton
+                  documentType="B3_POSITION_XLSX"
+                  label="posições importadas"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>

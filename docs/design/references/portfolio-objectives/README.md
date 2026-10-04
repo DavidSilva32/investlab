@@ -15,7 +15,7 @@
 
 As imagens não são capturas da aplicação. Conteúdo atrás dos Sheets é ilustrativo. Não transformar classes de ativo em finalidades, não inferir metas nem automatizar atribuições. Para outros Sheets da Carteira, consulte os READMEs de [detalhes e classificação](../portfolio-allocation/README.md) e [posições](../portfolio-positions/README.md).
 
-Atualização visual de 04/10/2026: na visão geral, título, contexto e indicador de dados conhecidos ficam agrupados; as ações alinham à direita no desktop e ocupam a largura disponível no mobile. No detalhe do objetivo, as ações também ficam no cabeçalho, com empilhamento responsivo; valores, saldo observado, projeção e comportamentos existentes foram preservados. A comparação com captura real continua pendente.
+Atualização visual de 04/10/2026: na visão geral, título, contexto e indicador de dados conhecidos ficam agrupados; as ações alinham à direita no desktop e ocupam a largura disponível no mobile. No detalhe, as ações ficam no cabeçalho do objetivo; no formulário, título/contexto e ações seguem a hierarquia da referência, com Cancelar antes de Salvar no desktop. Valores, campos, saldo observado, projeção e comportamentos existentes foram preservados. A comparação com captura real continua pendente.
 
 ### Nomenclatura histórica
 
