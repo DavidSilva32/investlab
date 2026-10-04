@@ -4,7 +4,8 @@ Esta documentação orienta novas páginas e mudanças visuais relevantes. A imp
 
 ## Direção visual
 
-- O tema escuro da Estratégia é a referência visual inicial; o tema claro continua sendo suportado e precisa manter contraste e hierarquia equivalentes.
+- **Identidade global aprovada em 03/10/2026:** azul. Use os tokens compartilhados de identidade para marca, navegação ativa, foco e ações primárias; não derive identidade global dos tokens das classes de ativos.
+- O tema escuro usa superfícies neutras, sem dominante verde ou azul saturada; o tema claro continua suportado e precisa manter contraste e hierarquia equivalentes.
 - Apresente primeiro a informação que ajuda a decidir. Use texto curto, valores importantes em destaque e detalhes explicativos sob demanda.
 - Use gráficos quando ajudarem a comparar composição, evolução, concentração ou cenários. Evite métricas e ornamentos sem uma decisão associada.
 - Use `Card`, `Sheet`, `Collapsible`, `Skeleton`, `Table` e os demais componentes shadcn existentes antes de criar padrões locais.
@@ -16,7 +17,9 @@ Use as variáveis CSS existentes ou suas classes Tailwind semânticas. Não repl
 
 | Uso                          | Tokens                                                                                                                          | Significado                                                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Superfícies e texto          | `background`, `foreground`, `card`, `muted`, `border`, `primary`, `destructive`                                                 | Estrutura e hierarquia geral, com valores próprios para tema claro/escuro                                        |
+| Identidade global            | `brand`, `brand-foreground`                                                                                                     | Azul da marca e componentes explicitamente migrados; não representa classe de ativo                              |
+| Primitivos legados           | `primary`, `primary-foreground`, `ring`                                                                                         | Tokens shadcn ainda consumidos por telas não migradas; a conversão global é acompanhada na #106                  |
+| Superfícies e texto          | `background`, `foreground`, `card`, `muted`, `border`, `destructive`                                                            | Estrutura neutra e hierarquia geral, com valores próprios para tema claro/escuro                                 |
 | Renda fixa                   | `asset-class-fixed-income`                                                                                                      | Laranja                                                                                                          |
 | Ações e BDRs                 | `asset-class-brazilian-equities`                                                                                                | Azul                                                                                                             |
 | ETFs internacionais          | `asset-class-international-etfs`                                                                                                | Roxo                                                                                                             |
@@ -27,6 +30,10 @@ Use as variáveis CSS existentes ou suas classes Tailwind semânticas. Não repl
 | Séries genéricas em gráficos | `chart-category-1` a `chart-category-6`                                                                                         | Categorias sem significado financeiro fixo, como instituições; não usar como cor de classe, destino ou estado    |
 
 Os tokens de classe mantêm a mesma identidade em claro e escuro, com luminosidade ajustada para o fundo. Cores não devem ser o único meio de explicar um estado: associe-as a texto, ícone ou rótulo. Use texto principal/secundário pelos tokens de foreground, não pela cor de classe.
+
+A cor da identidade pode ser azul, assim como a cor de uma classe de ações brasileiras, mas os dois significados continuam independentes: use `brand` para a interface e `asset-class-brazilian-equities` somente para dados identificados como ações brasileiras. Não derive a classe nem sua cor do ticker, produto, subclasse ou proximidade visual. Quando o dado estiver em uma classe ampla ou desconhecida, use `asset-class-neutral`.
+
+Na etapa piloto da #105, o token compartilhado `brand` é consumido somente em Carteira → Posições e cadastro manual. Os tokens shadcn `primary` e as superfícies existentes permanecem temporariamente nas telas e no shell compartilhado; a adoção ampla do azul, a neutralização global das superfícies e a revisão visual rota a rota pertencem à #106. Não faça ajustes manuais isolados nem migre markup de outras páginas dentro da #105.
 
 ## Taxonomia de investimentos e nomenclatura oficial
 
@@ -46,6 +53,7 @@ O modelo não estabelece uma hierarquia completa nem uma correspondência univer
 ## Auditoria inicial
 
 - `src/app/globals.css` centraliza superfícies, foregrounds e os valores dos tokens semânticos em OKLCH, com variantes clara/escura. O catálogo específico indexado por ID em `src/lib/strategy-allocation.ts` associa os nomes oficiais às chaves dos tokens de classe.
+
 - A visão “Patrimônio por destino” tem finalidade própria, diferente de classe. Sua paleta foi ligada a tokens `destination-*` nesta entrega.
 - `portfolio-distribution-charts.tsx` usa tokens de paleta indexada para categorias genéricas, como instituições; séries com significado financeiro fixo usam os tokens semânticos correspondentes.
 - Loading usa tanto `AppPageSkeleton` compartilhado quanto skeletons locais mais específicos. A consistência deve ser avaliada por página e por conteúdo, sem forçar a mesma silhueta em todas as rotas.
