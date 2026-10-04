@@ -64,7 +64,7 @@ export function DashboardSummary({
 
       {hasLowerSummaryContent && (
         <div
-          className={`grid gap-3 ${hasUnassignedSummary && nextAction ? "xl:grid-cols-2" : "grid-cols-1"}`}
+          className={`grid gap-3 [&>section]:h-full [&>section>div]:h-full ${hasUnassignedSummary && nextAction ? "xl:grid-cols-2" : "grid-cols-1"}`}
         >
           <DashboardUnassignedSummary
             summary={unassignedSummary}

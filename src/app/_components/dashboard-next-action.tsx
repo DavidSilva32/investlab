@@ -59,6 +59,15 @@ export function getDashboardNextAction({
       href: "/portfolio?panel=objectives&objective=reserve&screen=reserve-settings",
     };
   }
+  if (reserve?.status === "below_target" && reserve.difference !== null) {
+    return {
+      title: "Acompanhe a evolução da reserva",
+      detail:
+        "A cobertura está abaixo da meta pessoal que você definiu. Consulte os valores registrados na carteira.",
+      label: "Ver reserva",
+      href: "/portfolio?panel=objectives&objective=reserve",
+    };
+  }
   return null;
 }
 

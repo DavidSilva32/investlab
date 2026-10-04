@@ -199,7 +199,7 @@ export function ContributionAssistant({
               <Button
                 type="submit"
                 disabled={loading || !canSubmit}
-                className="min-h-11 w-full"
+                className="w-full"
               >
                 {loading ? "Calculando..." : "Ver distribuição"}
               </Button>

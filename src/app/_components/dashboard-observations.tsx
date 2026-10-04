@@ -146,7 +146,7 @@ export function DashboardObservations({
             <p className="text-sm font-medium text-muted-foreground">
               Dados registrados
             </p>
-            <h2 id="dashboard-facts-title" className="text-lg font-semibold">
+            <h2 id="dashboard-facts-title" className="text-xl font-semibold">
               Fatos da carteira
             </h2>
           </div>

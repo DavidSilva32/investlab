@@ -4,8 +4,6 @@
 
 `dashboard-design-reference.png` é a proposta visual atual, gerada por IA para o Dashboard autenticado (`/`), no tema escuro e no estado principal sem abas. Ela orienta a hierarquia e a composição: patrimônio conhecido, Reserva, planejamento de aporte, patrimônio sem destino, próxima ação, pontos de atenção e fatos registrados. Não é uma captura do produto nem valida dados ou funcionalidades.
 
-`dashboard-design-reference-historical.png` preserva a proposta anterior como histórico. Ela não é referência de implementação atual. Os rótulos históricos de classe que aparecem nela não devem ser reproduzidos; a nomenclatura oficial está em `src/lib/strategy-allocation.ts`.
-
 ## Revisão funcional e diferenças de conteúdo
 
 Os elementos foram conferidos com `src/app/page.tsx`, `src/app/_components/dashboard-client.tsx`, `dashboard-summary.tsx`, `dashboard-wealth-summary.tsx`, `dashboard-unassigned-summary.tsx`, `dashboard-next-action.tsx`, `dashboard-observations.tsx`, `emergency-reserve-summary.tsx` e `contribution-assistant.tsx`.
@@ -24,11 +22,11 @@ Identidade da interface: azul pelos tokens globais `primary`/`brand`; cartões, 
 
 ## Estados de entrega
 
-| Estado                      | Situação                                                                                                                                                                                                    |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Referência criada           | Sim; proposta de IA, arquivo canônico acima.                                                                                                                                                                |
-| Contexto funcional revisado | Sim; componentes e estados reais conferidos, diferenças documentadas nesta página.                                                                                                                          |
-| Layout implementado         | Sim; composição atualizada e blocos independentes extraídos em componentes do Dashboard.                                                                                                                    |
-| Verificação estrutural      | Concluída em 04/10/2026: 75 testes focados; 1.860 testes em 207 arquivos; cobertura global 100% em statements, branches, functions e lines; lint, typecheck, Prettier, build e `git diff --check` passaram. |
-| Comparação visual real      | Pendente; requer capturas reais desktop e mobile no mesmo estado da referência.                                                                                                                             |
-| Aprovação visual do usuário | Não registrada.                                                                                                                                                                                             |
+| Estado                      | Situação                                                                                                                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Referência criada           | Sim; proposta de IA, arquivo canônico acima.                                                                                                                                                                                |
+| Contexto funcional revisado | Sim; componentes e estados reais conferidos, diferenças documentadas nesta página.                                                                                                                                          |
+| Layout implementado         | Sim; composição atualizada e blocos independentes extraídos em componentes do Dashboard.                                                                                                                                    |
+| Verificação estrutural      | Typecheck, Prettier nos arquivos alterados e `git diff --check` passaram em 04/10/2026. A suíte completa registrada anteriormente precede este ajuste; testes não foram executados nesta revisão.                           |
+| Comparação visual real      | Pendente: o navegador integrado não estava disponível para captura após este ajuste. A captura enviada pelo usuário mostra o estado anterior; falta conferir desktop e mobile nos mesmos estados e viewports da referência. |
+| Aprovação visual do usuário | Não registrada.                                                                                                                                                                                                             |
