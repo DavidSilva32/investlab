@@ -254,18 +254,24 @@ export function PortfolioClient({
               </SheetTrigger>
               <SheetContent
                 side="right"
-                className="w-full overflow-y-auto sm:max-w-3xl"
+                className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden p-4 sm:max-w-5xl sm:p-6"
               >
-                <SheetHeader className="mb-6 pr-8">
+                <SheetHeader className="mb-5 shrink-0 pr-8">
                   <SheetTitle>Metas pessoais e dados detalhados</SheetTitle>
                   <SheetDescription>
                     Metas registradas por você, classificações e análises
                     detalhadas da carteira.
                   </SheetDescription>
                 </SheetHeader>
-                <PortfolioAllocation
-                  nextContributionGuidance={overview.nextContributionGuidance}
-                />
+                <div
+                  aria-label="Conteúdo de metas pessoais e dados detalhados"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+                  role="region"
+                >
+                  <PortfolioAllocation
+                    nextContributionGuidance={overview.nextContributionGuidance}
+                  />
+                </div>
               </SheetContent>
             </Sheet>
           </div>

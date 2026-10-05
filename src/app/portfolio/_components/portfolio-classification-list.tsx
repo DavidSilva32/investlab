@@ -185,8 +185,18 @@ export function PortfolioClassificationList({
             <h3 id="positions-heading" className="text-sm font-semibold">
               Posições e classificação
             </h3>
-            <span className="text-sm text-muted-foreground" aria-live="polite">
-              {selectedCount} selecionado(s)
+            <span
+              className="rounded-full border bg-muted/50 px-2.5 py-1 text-sm tabular-nums text-muted-foreground"
+              aria-live="polite"
+            >
+              {positions.length}{" "}
+              {positions.length === 1 ? "posição" : "posições"}
+              {selectedCount > 0 && (
+                <>
+                  {" · "}
+                  {selectedCount} selecionada{selectedCount === 1 ? "" : "s"}
+                </>
+              )}
             </span>
           </div>
           <div className="flex items-center gap-2">

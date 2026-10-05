@@ -151,16 +151,20 @@ describe("PortfolioAllocation", () => {
     toast.error.mockReset();
   });
 
-  it("shows concentration by asset, class, subclass, and geography", async () => {
+  it("starts with class concentration and supports asset, subclass, and geography", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ positions })));
     const user = userEvent.setup();
     render(<PortfolioAllocation />);
 
     expect(screen.getByRole("status").textContent).toContain("Carregando");
-    expect(await screen.findByText(/Base:/)).toBeTruthy();
+    expect(await screen.findByText("Base analisada")).toBeTruthy();
     await user.click(
       await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
     );
+    expect(
+      screen.getByRole("progressbar", { name: "Renda fixa: 72,2%" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Ativo" }));
     expect(
       screen.getByRole("progressbar", { name: "CDB: 55,6%" }),
     ).toBeTruthy();
@@ -284,6 +288,11 @@ describe("PortfolioAllocation", () => {
       .setup()
       .click(
         await screen.findByRole("button", { name: /Mostrar.*classifica/i }),
+      );
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: /Base de c[aá]lculo e limites/i }),
       );
 
     expect(await screen.findByRole("progressbar")).toBeTruthy();
@@ -563,18 +572,18 @@ describe("PortfolioAllocation", () => {
     await user.click(
       screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
     );
-    expect(screen.getByText("4 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("4 posições · 4 selecionadas")).toBeTruthy();
 
     await user.type(
       screen.getByLabelText("Buscar por produto ou instituição"),
       "Corretora Exemplo",
     );
     expect(screen.getByText("Selecionar resultados (1)")).toBeTruthy();
-    expect(screen.getByText("4 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("4 posições · 4 selecionadas")).toBeTruthy();
     await user.click(
       screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
     );
-    expect(screen.getByText("3 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("4 posições · 3 selecionadas")).toBeTruthy();
     expect(screen.queryByText("CDB pós-fixado")).toBeNull();
 
     await user.click(
@@ -685,7 +694,7 @@ describe("PortfolioAllocation", () => {
     expect(
       await screen.findByText("Considere Renda fixa para o próximo aporte"),
     ).toBeTruthy();
-    expect(await screen.findByText(/Base:/)).toBeTruthy();
+    expect(await screen.findByText("Base analisada")).toBeTruthy();
     expect(screen.getByText("Detalhes da carteira")).toBeTruthy();
     expect(
       screen.getByText(/metas pessoais legadas salvas anteriormente/),
