@@ -93,6 +93,30 @@ describe("AnalysesTabs", () => {
     expect(screen.getByText("PETR4")).toBeTruthy();
   });
 
+  it("keeps the imported-portfolio empty state hidden on individual analysis", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ opportunities: [] }),
+      }),
+    );
+    render(<AnalysesTabs />);
+
+    const emptyState = await screen.findByText(
+      "Nenhuma ação importada encontrada",
+    );
+    const portfolioPanel = emptyState.closest('[role="tabpanel"]');
+    expect(portfolioPanel?.getAttribute("data-state")).toBe("active");
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: "Análise individual" }),
+    );
+
+    expect(portfolioPanel?.getAttribute("data-state")).toBe("inactive");
+    expect(portfolioPanel?.className).toContain("data-[state=inactive]:hidden");
+  });
+
   it("defers the portfolio request until its tab is first opened", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response());
     vi.stubGlobal("fetch", fetchMock);

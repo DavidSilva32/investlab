@@ -273,6 +273,13 @@ describe("StockAnalysisDashboard", () => {
       screen.getByText("Variação do preço no período · 1 ano"),
     ).toBeTruthy();
     expect(screen.getByText("Sem dividendos")).toBeTruthy();
+    const assetSummary = screen.getByText("Ativo consultado").closest(".grid");
+    expect(assetSummary?.children[0].textContent).toContain("PETR4");
+    expect(assetSummary?.children[0].textContent).toMatch(/R\$\s*30,00/);
+    expect(assetSummary?.children[1].textContent).toContain(
+      "Variação do preço no período",
+    );
+    expect(assetSummary?.children[1].textContent).toContain("Sem dividendos");
     expect(screen.getByText(/\+24(?:,00)?%/).className).toContain(
       "text-status-success",
     );

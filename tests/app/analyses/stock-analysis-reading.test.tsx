@@ -16,7 +16,7 @@ describe("StockAnalysisReading", () => {
   afterEach(cleanup);
 
   it("shows latest profit and compact annual movements with values and percentages", () => {
-    render(
+    const { container } = render(
       <StockAnalysisReading
         periods={[
           { ...annualPeriod, referenceDate: "2023-12-31", revenue: "900000" },
@@ -48,6 +48,17 @@ describe("StockAnalysisReading", () => {
     expect(screen.getByText(/Aumentou R\$\s?20\.000 \(\+20%\)/)).toBeTruthy();
     expect(screen.getAllByText("2023 → 2024")).toHaveLength(2);
     expect(screen.queryByText(/recomendação de investimento/)).toBeNull();
+    const resultRow = screen
+      .getByText("Lucro líquido do exercício")
+      .closest(".grid");
+    const comparisonRow = screen.getByText("Receita anual").closest(".grid");
+    expect(resultRow?.className).toBe(comparisonRow?.className);
+    expect(resultRow?.children[1].className).toContain("sm:border-l");
+    expect(
+      container.querySelectorAll(
+        "ul[aria-label='Síntese dos dados anuais'] > li",
+      ),
+    ).toHaveLength(3);
   });
 
   it("colors and labels a negative reported profit as a fact, not a recommendation", () => {

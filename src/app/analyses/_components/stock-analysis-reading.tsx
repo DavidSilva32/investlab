@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  Minus,
-  TrendingDown,
-  TrendingUp,
-  CircleHelp,
-} from "lucide-react";
+import { ChevronDown, CircleHelp } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   Collapsible,
@@ -45,12 +39,6 @@ function direction(current: number, previous: number): Direction {
   return "same";
 }
 
-function DirectionIcon({ value }: { value: Direction }) {
-  const Icon =
-    value === "up" ? TrendingUp : value === "down" ? TrendingDown : Minus;
-  return <Icon className="size-4 shrink-0" aria-hidden="true" />;
-}
-
 function periodLabel(period: AnalysisPeriod) {
   return period.referenceDate.slice(0, 4);
 }
@@ -85,34 +73,19 @@ function Result({
         : value < 0
           ? "text-status-danger"
           : "text-muted-foreground";
-  const Icon = value === null ? CircleHelp : value === 0 ? Minus : null;
-
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <span
-        className={`flex size-8 shrink-0 items-center justify-center rounded-full bg-muted ${tone}`}
-      >
-        {Icon ? (
-          <Icon className="size-4" aria-hidden="true" />
-        ) : value !== null && value > 0 ? (
-          <TrendingUp className="size-4" aria-hidden="true" />
-        ) : (
-          <TrendingDown className="size-4" aria-hidden="true" />
-        )}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <p className="text-sm font-medium">Lucro líquido do exercício</p>
-          <p className="text-xs tabular-nums text-muted-foreground">
-            Exercício {periodLabel(latest)}
-          </p>
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <p className={`text-lg font-semibold tabular-nums ${tone}`}>
-            {value === null ? "Indisponível" : money.format(value)}
-          </p>
-          <p className="text-xs text-muted-foreground">{label}</p>
-        </div>
+    <div className="grid gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] sm:items-center">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">Lucro líquido do exercício</p>
+        <p className="text-xs tabular-nums text-muted-foreground">
+          Exercício {periodLabel(latest)}
+        </p>
+      </div>
+      <div className="min-w-0 sm:border-l sm:pl-4">
+        <p className="text-lg font-semibold tabular-nums">
+          {value === null ? "Indisponível" : money.format(value)}
+        </p>
+        <p className={`text-xs font-medium ${tone}`}>{label}</p>
       </div>
     </div>
   );
@@ -152,28 +125,21 @@ function Comparison({
       : `${movementLabel} ${money.format(Math.abs(nominalChange))}${percentageChange ? ` (${percentageChange})` : ""}`;
 
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <span
-        className={`flex size-8 shrink-0 items-center justify-center rounded-full bg-muted ${tone}`}
-      >
-        <DirectionIcon value={movement} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <p className="text-sm font-medium">{metrics[metric].label}</p>
-          <p className="text-xs tabular-nums text-muted-foreground">
-            {periodLabel(previous)} → {periodLabel(current)}
-          </p>
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <p className="text-base font-semibold tabular-nums">
-            {money.format(after)}
-          </p>
-          <p className={`text-xs font-medium tabular-nums ${tone}`}>
-            {variation}
-          </p>
-        </div>
+    <div className="grid gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] sm:items-center">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{metrics[metric].label}</p>
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {periodLabel(previous)} → {periodLabel(current)}
+        </p>
       </div>
+      <p className="min-w-0 text-base font-semibold tabular-nums sm:border-l sm:pl-4">
+        {money.format(after)}
+      </p>
+      <p
+        className={`min-w-0 text-xs font-medium tabular-nums ${tone} sm:border-l sm:pl-4`}
+      >
+        {variation}
+      </p>
     </div>
   );
 }

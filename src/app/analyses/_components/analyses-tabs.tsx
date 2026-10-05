@@ -37,10 +37,17 @@ export function AnalysesTabs({
           Análise individual
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="portfolio" className="mt-0" forceMount>
+      <TabsContent
+        value="portfolio"
+        className="mt-0 data-[state=inactive]:hidden"
+        forceMount
+      >
         <PortfolioOpportunities enabled={hasOpenedPortfolio} />
       </TabsContent>
-      <TabsContent value="individual" className="mt-0">
+      <TabsContent
+        value="individual"
+        className="mt-0 data-[state=inactive]:hidden"
+      >
         <StockAnalysisDashboard initialTicker={initialTicker} />
       </TabsContent>
     </Tabs>
