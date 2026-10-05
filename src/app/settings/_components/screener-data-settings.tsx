@@ -180,6 +180,19 @@ export function ScreenerDataSettings() {
       : run.status === "COMPLETED"
         ? CheckCircle2
         : XCircle;
+  const synchronizeButton = (
+    <Button
+      className="w-full shrink-0 sm:w-auto"
+      onClick={() => void synchronize()}
+      disabled={syncing || loading}
+    >
+      <RefreshCw
+        className={`size-4 ${syncing ? "animate-spin" : ""}`}
+        aria-hidden="true"
+      />
+      {syncing ? "Sincronizando…" : "Sincronizar agora"}
+    </Button>
+  );
 
   return (
     <Card>
@@ -192,18 +205,6 @@ export function ScreenerDataSettings() {
               da CVM usados nas análises.
             </CardDescription>
           </div>
-          {!status?.hasSuccessfulSync && (
-            <Button
-              onClick={() => void synchronize()}
-              disabled={syncing || loading}
-            >
-              <RefreshCw
-                className={`size-4 ${syncing ? "animate-spin" : ""}`}
-                aria-hidden="true"
-              />
-              {syncing ? "Sincronizando…" : "Sincronizar agora"}
-            </Button>
-          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -231,12 +232,15 @@ export function ScreenerDataSettings() {
           </>
         )}
         {loading && !status ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Consultando a última sincronização…
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p role="status" className="text-sm text-muted-foreground">
+              Consultando a última sincronização…
+            </p>
+            {synchronizeButton}
+          </div>
         ) : (
           <>
-            <div className="grid gap-2 sm:grid-cols-2 sm:items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <StatusIcon
                   className={`size-4 ${run?.status === "COMPLETED" ? "text-status-success" : run?.status === "FAILED" ? "text-status-danger" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
@@ -252,6 +256,7 @@ export function ScreenerDataSettings() {
                     : "nenhuma sincronização concluída"}
                 </p>
               )}
+              {synchronizeButton}
             </div>
             {run ? (
               <>
@@ -264,18 +269,6 @@ export function ScreenerDataSettings() {
                     />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="mt-3 space-y-4">
-                    {status?.hasSuccessfulSync && (
-                      <Button
-                        onClick={() => void synchronize()}
-                        disabled={syncing || loading}
-                      >
-                        <RefreshCw
-                          className={`size-4 ${syncing ? "animate-spin" : ""}`}
-                          aria-hidden="true"
-                        />
-                        {syncing ? "Sincronizando…" : "Sincronizar agora"}
-                      </Button>
-                    )}
                     <dl className="grid gap-2">
                       <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                         <dt className="text-xs text-muted-foreground">
