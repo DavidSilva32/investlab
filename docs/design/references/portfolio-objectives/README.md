@@ -19,6 +19,8 @@ Atualização visual de 04/10/2026: na visão geral, título, contexto e indicad
 
 Na atribuição de posições, a etapa agora explica o objetivo do fluxo junto ao título. Seleção exclusiva, prévia e confirmação de transferência permanecem no componente existente; a comparação visual real segue pendente.
 
+No organizador, o cabeçalho contextual acompanha a experiência e as ações principais empilham em largura total no mobile. Os estados de prévia exata/parcial, limitações e autorização de transferência foram preservados; a comparação visual real segue pendente.
+
 ### Nomenclatura histórica
 
 `design-reference.png` usa “Ações”, “ETFs” e “FIIs” em uma composição ilustrativa por classe; `position-assignment-reference.png` mostra “Renda Variável” e “Fundos Imobiliários” como valores de posição. Esses textos não definem os nomes oficiais das classes específicas nem alteram as categorias amplas disponíveis no produto. As novas referências devem consultar `src/lib/strategy-allocation.ts`; imagens existentes ficam preservadas e identificadas como históricas.

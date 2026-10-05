@@ -391,6 +391,12 @@ export function PortfolioObjectives({
                   Associe posições existentes a um objetivo.
                 </p>
               )}
+              {view.kind === "organize" && (
+                <p className="text-sm text-muted-foreground">
+                  Revise os saldos, veja a distribuição proposta e confirme para
+                  transferir as posições.
+                </p>
+              )}
             </div>
           </div>
           {view.kind === "detail" && activeObjective && (

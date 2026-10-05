@@ -343,6 +343,7 @@ export function PortfolioObjectiveOrganizer({
           <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-between">
             <Button
               type="button"
+              className="w-full sm:w-auto"
               onClick={() => void searchAllocation()}
               disabled={busy}
             >
@@ -356,6 +357,7 @@ export function PortfolioObjectiveOrganizer({
             <Button
               type="button"
               variant="outline"
+              className="w-full sm:w-auto"
               onClick={onCancel}
               disabled={busy}
             >
@@ -611,10 +613,11 @@ function AllocationPreview({
           A distribuição reorganiza os vínculos no InvestLab. Ela não identifica
           as notas originais de cada objetivo no aplicativo do banco.
         </p>
-        <div className="flex flex-wrap gap-2 border-t pt-4">
+        <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap">
           {preview.canConfirm && preview.optimal && (
             <Button
               type="button"
+              className="w-full sm:w-auto"
               onClick={() => onConfirm(false)}
               disabled={busy}
             >
@@ -627,7 +630,12 @@ function AllocationPreview({
           {preview.canConfirm && !preview.optimal && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button type="button" variant="destructive" disabled={busy}>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  disabled={busy}
+                >
                   Revisar confirmação parcial
                 </Button>
               </AlertDialogTrigger>
@@ -733,6 +741,7 @@ function AllocationPreview({
           <Button
             type="button"
             variant="outline"
+            className="w-full sm:w-auto"
             onClick={onCancel}
             disabled={busy}
           >
