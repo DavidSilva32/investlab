@@ -674,6 +674,12 @@ it("shows the annual fact reading and keeps statement detail collapsed", async (
   expect(await screen.findByText("Lucro líquido do exercício")).toBeTruthy();
   expect(screen.getByText("Receita anual")).toBeTruthy();
   expect(screen.getByText("Resultado positivo")).toBeTruthy();
+  expect(
+    screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
+  ).toBeNull();
+  expect(
+    screen.queryByText(/P\/L e P\/VP usam o valor de mercado da BRAPI/),
+  ).toBeNull();
   expect(screen.queryByText(/Informações trimestrais \(ITR\)/)).toBeNull();
   await userEvent.setup().click(
     screen.getByRole("button", {
@@ -683,6 +689,9 @@ it("shows the annual fact reading and keeps statement detail collapsed", async (
   expect(
     await screen.findByText(/Informações trimestrais \(ITR\)/),
   ).toBeTruthy();
+  expect(
+    screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
+  ).toBeNull();
 });
 
 it("ignores a stale request rejection after a newer ticker has loaded", async () => {

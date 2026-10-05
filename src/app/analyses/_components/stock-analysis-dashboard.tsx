@@ -466,49 +466,28 @@ export function StockAnalysisDashboard({
           <PriceHistoryChart points={points} />
         </CardContent>
       </Card>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(17rem,0.8fr)] xl:items-start">
-        <Card>
-          <CardHeader>
-            <CardTitle>Indicadores fundamentalistas</CardTitle>
-            <CardDescription>
-              Indicadores disponíveis e uma síntese dos dados anuais.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {analysis.indicators.map((indicator) => (
-                <FundamentalIndicatorCard
-                  key={indicator.key}
-                  indicator={indicator}
-                />
-              ))}
-            </div>
-            <div className="border-t pt-4">
-              <h3 className="mb-3 text-sm font-medium">Leitura do InvestLab</h3>
-              <StockAnalysisReading periods={annual} />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Sobre os dados financeiros</CardTitle>
-            <CardDescription>
-              Referências das demonstrações usadas nesta análise.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              P/L e P/VP usam o valor de mercado da BRAPI e as demonstrações
-              anuais mais recentes. Os demais indicadores preservam a base
-              indicada em cada cartão.
-            </p>
-            <p>
-              Os dados representam períodos contábeis informados e não são uma
-              previsão de resultados futuros nem uma recomendação.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Indicadores fundamentalistas</CardTitle>
+          <CardDescription>
+            Indicadores disponíveis e uma síntese dos dados anuais.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {analysis.indicators.map((indicator) => (
+              <FundamentalIndicatorCard
+                key={indicator.key}
+                indicator={indicator}
+              />
+            ))}
+          </div>
+          <div className="border-t pt-4">
+            <h3 className="mb-3 text-sm font-medium">Leitura do InvestLab</h3>
+            <StockAnalysisReading periods={annual} />
+          </div>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Evolução dos fundamentos anuais</CardTitle>

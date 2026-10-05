@@ -9,9 +9,17 @@ import {
 import type { AnalysisPeriod } from "./stock-analysis-types";
 
 const metrics = [
-  { key: "revenue", label: "Receita", color: "oklch(0.55 0.14 160)" },
-  { key: "netIncome", label: "Lucro líquido", color: "oklch(0.58 0.14 240)" },
-  { key: "equity", label: "Patrimônio líquido", color: "oklch(0.62 0.14 310)" },
+  { key: "revenue", label: "Receita", color: "var(--chart-category-1)" },
+  {
+    key: "netIncome",
+    label: "Lucro líquido",
+    color: "var(--chart-category-5)",
+  },
+  {
+    key: "equity",
+    label: "Patrimônio líquido",
+    color: "var(--chart-category-4)",
+  },
 ] as const;
 const exactMoney = new Intl.NumberFormat("pt-BR", {
   style: "currency",

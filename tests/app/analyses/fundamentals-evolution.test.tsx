@@ -4,8 +4,21 @@ import { describe, expect, it, vi } from "vitest";
 import { FundamentalsEvolution } from "@/app/analyses/_components/fundamentals-evolution";
 
 vi.mock("@/components/ui/chart", () => ({
-  ChartContainer: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
+  ChartContainer: ({
+    children,
+    config,
+  }: {
+    children: React.ReactNode;
+    config: Record<string, { color?: string }>;
+  }) => (
+    <div
+      data-testid="chart-config-colors"
+      data-colors={Object.values(config)
+        .map(({ color }) => color)
+        .join(",")}
+    >
+      {children}
+    </div>
   ),
   ChartTooltipContent: ({
     formatter,
@@ -77,6 +90,15 @@ describe("FundamentalsEvolution", () => {
     expect(screen.getByText("Lucro líquido")).toBeTruthy();
     expect(screen.getByText("Patrimônio líquido")).toBeTruthy();
     expect(screen.getAllByTestId("exact-tooltip").length).toBe(3);
+    expect(
+      screen
+        .getAllByTestId("chart-config-colors")
+        .map((chart) => chart.getAttribute("data-colors")),
+    ).toEqual([
+      "var(--chart-category-1)",
+      "var(--chart-category-5)",
+      "var(--chart-category-4)",
+    ]);
     expect(
       document.querySelector("[data-years='2024,2025,2026']"),
     ).toBeTruthy();
