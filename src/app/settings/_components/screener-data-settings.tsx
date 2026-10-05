@@ -236,23 +236,27 @@ export function ScreenerDataSettings() {
           </p>
         ) : (
           <>
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <StatusIcon
-                className={`size-4 ${run?.status === "COMPLETED" ? "text-status-success" : run?.status === "FAILED" ? "text-status-danger" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
-                aria-hidden="true"
-              />
-              <span>Status: {runLabel}</span>
-            </div>
-            {run ? (
-              <>
+            <div className="grid gap-2 sm:grid-cols-2 sm:items-center">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <StatusIcon
+                  className={`size-4 ${run?.status === "COMPLETED" ? "text-status-success" : run?.status === "FAILED" ? "text-status-danger" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
+                  aria-hidden="true"
+                />
+                <span>Status: {runLabel}</span>
+              </div>
+              {run && (
                 <p className="text-sm text-muted-foreground">
                   Última atualização concluída:{" "}
                   {status?.lastSuccessfulCompletedAt
                     ? `${dateTime.format(new Date(status.lastSuccessfulCompletedAt))} (${ageLabel(status.lastSuccessfulCompletedAt)})`
                     : "nenhuma sincronização concluída"}
                 </p>
-                <Collapsible className="text-xs text-muted-foreground">
-                  <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              )}
+            </div>
+            {run ? (
+              <>
+                <Collapsible className="rounded-lg border p-3 text-xs text-muted-foreground">
+                  <CollapsibleTrigger className="group flex w-full cursor-pointer items-center justify-between gap-2 rounded-sm border-b pb-3 text-left font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                     Detalhes técnicos
                     <ChevronDown
                       aria-hidden="true"
@@ -272,20 +276,20 @@ export function ScreenerDataSettings() {
                         {syncing ? "Sincronizando…" : "Sincronizar agora"}
                       </Button>
                     )}
-                    <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      <div>
+                    <dl className="grid gap-2">
+                      <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                         <dt className="text-xs text-muted-foreground">
                           Iniciada em
                         </dt>
-                        <dd className="mt-1 text-sm font-medium">
+                        <dd className="min-w-0 text-sm font-medium">
                           {dateTime.format(new Date(run.startedAt))}
                         </dd>
                       </div>
-                      <div>
+                      <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                         <dt className="text-xs text-muted-foreground">
                           Duração
                         </dt>
-                        <dd className="mt-1 text-sm font-medium">
+                        <dd className="min-w-0 text-sm font-medium">
                           {formatDuration(run.durationMs)}
                         </dd>
                       </div>
@@ -299,28 +303,31 @@ export function ScreenerDataSettings() {
                           },
                         ] as const
                       ).map(({ label, value }) => (
-                        <div key={label}>
+                        <div
+                          key={label}
+                          className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4"
+                        >
                           <dt className="text-xs text-muted-foreground">
                             {label}
                           </dt>
-                          <dd className="mt-1 text-sm font-medium tabular-nums">
+                          <dd className="min-w-0 text-sm font-medium tabular-nums">
                             {value === null ? "—" : number.format(value)}
                           </dd>
                         </div>
                       ))}
                       {run.errorMessage && (
-                        <div className="sm:col-span-2 lg:col-span-4">
+                        <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                           <dt className="text-xs text-muted-foreground">
                             Mensagem
                           </dt>
-                          <dd className="mt-1 text-sm text-destructive">
+                          <dd className="min-w-0 break-words text-sm text-destructive">
                             {run.errorMessage}
                           </dd>
                         </div>
                       )}
                     </dl>
-                    <div className="space-y-2">
-                      <p>
+                    <div className="space-y-2 border-t pt-3">
+                      <p className="leading-relaxed">
                         A CVM prevê prazo de até três meses após o encerramento
                         do exercício para entrega da DFP. A publicação pode
                         ocorrer depois dessa janela.{" "}

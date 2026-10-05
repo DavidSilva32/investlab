@@ -11,7 +11,7 @@ export default function SettingsPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-primary">
               Dados e serviços
             </p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight">
               Fontes das análises
             </h2>
           </div>
