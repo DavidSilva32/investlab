@@ -397,6 +397,12 @@ export function PortfolioObjectives({
                   transferir as posições.
                 </p>
               )}
+              {view.kind === "reserve-settings" && (
+                <p className="text-sm text-muted-foreground">
+                  Defina sua meta pessoal e revise as posições consideradas na
+                  Reserva antes de salvar.
+                </p>
+              )}
             </div>
           </div>
           {view.kind === "detail" && activeObjective && (

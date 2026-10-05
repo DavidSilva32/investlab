@@ -398,8 +398,8 @@ export function EmergencyReserveEditor() {
                 <h3 id="reserve-target-title" className="text-sm font-semibold">
                   Sua meta pessoal
                 </h3>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+                  <div className="min-w-0 space-y-2">
                     <Label htmlFor="monthly-expenses">Custo mensal</Label>
                     <Input
                       id="monthly-expenses"
@@ -423,7 +423,7 @@ export function EmergencyReserveEditor() {
                       Use o valor que melhor representa suas despesas mensais.
                     </p>
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-w-0 space-y-2">
                     <p className="text-sm font-medium">Meta pessoal em meses</p>
                     <div
                       className="flex flex-wrap gap-2"
@@ -457,7 +457,7 @@ export function EmergencyReserveEditor() {
                       ))}
                     </div>
                     {monthChoice === "custom" && (
-                      <div className="space-y-2">
+                      <div className="min-w-0 space-y-2">
                         <Label htmlFor="target-months">
                           Quantidade de meses
                         </Label>
@@ -508,22 +508,28 @@ export function EmergencyReserveEditor() {
                         Os atalhos não são recomendações.
                       </PopoverContent>
                     </Popover>
-                    {hasValidReserveTarget && (
-                      <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                        <span className="text-muted-foreground">
-                          Meta calculada pela sua escolha:{" "}
-                        </span>
-                        <strong className="tabular-nums">
-                          {previewLoading
-                            ? "Calculando..."
-                            : visibleCalculation?.targetValueCents
-                              ? formatCurrencyCents(
-                                  visibleCalculation.targetValueCents,
-                                )
-                              : "—"}
-                        </strong>
-                      </div>
-                    )}
+                  </div>
+                  <div
+                    className="flex min-w-0 flex-col justify-center rounded-lg border bg-muted/30 p-3"
+                    aria-live="polite"
+                  >
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Valor da meta calculado
+                    </span>
+                    <strong className="mt-1 text-lg tabular-nums">
+                      {hasValidReserveTarget
+                        ? previewLoading
+                          ? "Calculando..."
+                          : visibleCalculation?.targetValueCents
+                            ? formatCurrencyCents(
+                                visibleCalculation.targetValueCents,
+                              )
+                            : "—"
+                        : "—"}
+                    </strong>
+                    <span className="mt-1 text-xs text-muted-foreground">
+                      Custo mensal multiplicado pelos meses definidos.
+                    </span>
                   </div>
                 </div>
               </section>
@@ -780,7 +786,11 @@ export function EmergencyReserveEditor() {
               </p>
             )}
             <div className="flex justify-end">
-              <Button type="submit" disabled={saving}>
+              <Button
+                type="submit"
+                className="w-full sm:w-auto"
+                disabled={saving}
+              >
                 {saving ? "Salvando…" : "Salvar configuração"}
               </Button>
             </div>
