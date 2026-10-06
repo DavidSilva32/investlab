@@ -500,7 +500,7 @@ describe("ManualPositionManager", () => {
     expect(screen.getByText("Fundos")).toBeTruthy();
   });
 
-  it("uses neutral class colors when records do not include a stable class ID", () => {
+  it("uses the catalog color for fixed income and neutral colors for broad classes", () => {
     const fixedIncome = {
       ...row,
       classification: {
@@ -518,11 +518,21 @@ describe("ManualPositionManager", () => {
       },
     };
     render(<ManualPositionManager positions={[fixedIncome, broadClasses]} />);
-    const dots = screen
-      .getAllByText(/Renda fixa|Renda variável/)
-      .map((label) => label.parentElement?.querySelector("span"));
-    expect(dots[0]?.getAttribute("style")).toContain("--asset-class-neutral");
-    expect(dots[1]?.getAttribute("style")).toContain("--asset-class-neutral");
+    expandManualPositions();
+
+    const fixedIncomeBadge = screen.getByText("Renda fixa");
+    expect(fixedIncomeBadge.getAttribute("style")).toContain(
+      "--asset-class-fixed-income",
+    );
+    expect(
+      fixedIncomeBadge.querySelector("span")?.getAttribute("style"),
+    ).toContain("--asset-class-fixed-income");
+
+    const broadClassBadge = screen.getByText(/Renda vari/);
+    expect(broadClassBadge.getAttribute("style")).toBeNull();
+    expect(
+      broadClassBadge.querySelector("span")?.getAttribute("style"),
+    ).toContain("--asset-class-neutral");
   });
 
   it("uses fallback currency and conversion text when value metadata is partial", () => {

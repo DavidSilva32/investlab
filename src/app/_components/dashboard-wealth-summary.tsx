@@ -36,10 +36,7 @@ export function DashboardWealthSummary({
       <Card className="overflow-hidden shadow-sm">
         <CardContent className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(10rem,0.7fr)_minmax(12rem,0.8fr)] lg:items-center">
           <div className="min-w-0">
-            <h2
-              id="dashboard-where-am-i"
-              className="text-sm font-medium text-muted-foreground"
-            >
+            <h2 id="dashboard-where-am-i" className="text-lg font-semibold">
               Patrimônio conhecido
             </h2>
             <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">

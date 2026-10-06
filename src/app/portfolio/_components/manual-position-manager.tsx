@@ -27,7 +27,11 @@ import {
   portfolioAssetGeographyHelpText,
 } from "@/lib/portfolio-classification-options";
 import { Label } from "@/components/ui/label";
-import { neutralAssetClassColor } from "@/lib/strategy-allocation";
+import {
+  getStrategyAssetClassColor,
+  neutralAssetClassColor,
+  strategyAssetClassById,
+} from "@/lib/strategy-allocation";
 import {
   Collapsible,
   CollapsibleContent,
@@ -83,6 +87,24 @@ type FormValues = {
   convertedValueBrl: string;
   conversionDate: string;
 };
+
+function manualAssetClassColor(assetClass: string | null | undefined) {
+  return assetClass === strategyAssetClassById.fixed_income.label
+    ? getStrategyAssetClassColor("fixed_income")
+    : neutralAssetClassColor;
+}
+
+function manualAssetClassBadgeStyle(assetClass: string | null | undefined) {
+  if (assetClass !== strategyAssetClassById.fixed_income.label)
+    return undefined;
+
+  const color = getStrategyAssetClassColor("fixed_income");
+  return {
+    borderColor: color,
+    color,
+    backgroundColor: `color-mix(in srgb, ${color} 10%, var(--card))`,
+  };
+}
 
 const emptyValues = (): FormValues => ({
   product: "",
@@ -402,12 +424,20 @@ export function ManualPositionManager({
                   </div>
                   <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                     {position.classification?.assetClass && (
-                      <Badge variant="outline" className="gap-1.5 bg-muted/20">
+                      <Badge
+                        variant="outline"
+                        className="gap-1.5 bg-muted/20"
+                        style={manualAssetClassBadgeStyle(
+                          position.classification.assetClass,
+                        )}
+                      >
                         <span
                           aria-hidden="true"
                           className="size-2 rounded-full"
                           style={{
-                            backgroundColor: neutralAssetClassColor,
+                            backgroundColor: manualAssetClassColor(
+                              position.classification.assetClass,
+                            ),
                           }}
                         />
                         {position.classification.assetClass}

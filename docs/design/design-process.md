@@ -13,6 +13,7 @@ Antes de reutilizar uma imagem, confirme sua origem e status. Preserve referênc
 ### Identidade aprovada e enquadramento
 
 - Preserve a identidade visual global aprovada: azul para a interface, superfícies escuras neutras e suporte ao tema claro. Gere imagens futuras usando os tokens e referências vigentes; não proponha nem introduza uma mudança de paleta sem registrá-la como decisão pendente.
+- Gere referências apenas para telas grandes/desktop. Não crie variantes em imagem para mobile; mantenha e valide a responsividade na implementação e nos testes aplicáveis.
 - Mantenha as cores semânticas de classe independentes da identidade global: renda fixa laranja, ações brasileiras azul, ETFs internacionais roxo e FIIs verde. Confirme no código que a classe exibida é suportada; não infira classe/cor pelo ticker, produto ou subclasse.
 - Uma referência de componente complexo pode mostrar somente o componente em foco, sem reproduzir toda a página ao fundo, quando o contexto ao redor não fizer parte da decisão visual. Identifique no README a rota, o componente, o estado, o tema e o contexto de página omitido. Não acrescente controles de fundo que não existem no produto.
 
@@ -30,7 +31,7 @@ Use os tokens globais de identidade (incluindo `primary`) para azul de marca, a�
 
 Registre separadamente estes seis estados junto a cada imagem no README da experiência: referência criada; revisão do contexto funcional; layout implementado; verificação estrutural; comparação visual real; aprovação do usuário. Marque a revisão como parcial ou pendente quando os elementos da imagem não tiverem sido comparados com o produto. Para layout e verificação estrutural, cite o registro que sustenta o status e indique quando não foi revalidado nesta tarefa; não infira esses estados. Registre aprovação somente com evidência explícita do usuário. Implementação concluída, testes automatizados e semelhança estrutural não comprovam fidelidade visual nem aprovação.
 
-Uma comparação visual exige captura real da implementação e da referência aplicável, na mesma experiência, estado e viewport, com diferenças observadas registradas. Cubra desktop e mobile quando forem relevantes. Se browser/captura não estiver disponível, marque a comparação como pendente; nunca infira validação a partir do código ou de testes.
+Não tente abrir o navegador nem executar Playwright para comparação visual neste fluxo. Registre a comparação visual real como não realizada/pendente e explique que não houve captura. Não infira fidelidade a partir do código, testes automatizados ou da imagem gerada. Responsividade continua sendo requisito de implementação, sem exigir referência em imagem mobile.
 
 Quando a revisão encontrar funcionalidade ou conteúdo visual sem suporte, registre a divergência e o caminho do artefato como backlog documental. Não redesenhe referências aprovadas nem altere o escopo do produto silenciosamente.
 

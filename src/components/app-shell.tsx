@@ -39,7 +39,7 @@ function Brand() {
 }
 function Navigation({ pathname }: { pathname: string }) {
   return (
-    <nav className="flex flex-col gap-1" aria-label="Navegação principal">
+    <nav className="flex flex-col gap-1.5" aria-label="Navegação principal">
       {navigation.map(({ href, label, Icon }) => {
         const active =
           pathname === href ||
@@ -49,7 +49,7 @@ function Navigation({ pathname }: { pathname: string }) {
             key={href}
             href={href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-brand text-brand-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+            className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-brand/15 text-brand shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
           >
             <Icon aria-hidden="true" className="size-4" />
             {label}
@@ -69,12 +69,14 @@ export function AppShell({
   const pathname = usePathname();
   return (
     <div className="min-h-screen bg-background lg:flex">
-      <aside className="hidden w-64 shrink-0 border-r border-border bg-card p-4 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
-        <Brand />
-        <div className="mt-9">
+      <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-card/55 p-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+        <div className="px-1 py-2">
+          <Brand />
+        </div>
+        <div className="mt-10">
           <Navigation pathname={pathname} />
         </div>
-        <div className="mt-auto border-t pt-4">
+        <div className="mt-auto border-t border-border/70 pt-5">
           <p className="mb-3 px-3 text-xs font-medium text-muted-foreground">
             CONTA
           </p>
@@ -106,15 +108,15 @@ export function AppShell({
               </SheetContent>
             </Sheet>
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                 InvestLab
               </p>
               <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <ThemeToggle />
-            <div className="hidden text-right sm:block">
+            <div className="hidden border-l border-border/70 pl-4 text-right sm:block">
               <p className="text-sm font-medium">Usuário autorizado</p>
               <p className="text-xs text-muted-foreground">Área pessoal</p>
             </div>

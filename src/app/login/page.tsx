@@ -50,11 +50,19 @@ export default function LoginPage() {
     }
   }
   return (
-    <main className="relative grid min-h-screen place-items-center bg-muted/40 p-4">
-      <div className="absolute right-4 top-4">
+    <main className="relative isolate grid min-h-screen place-items-center overflow-hidden bg-background p-4">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 mx-auto h-[min(72vh,46rem)] w-[min(72vw,64rem)] rounded-full bg-brand/10 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-40 -right-24 -z-10 size-[28rem] rounded-full bg-brand/5 blur-3xl"
+      />
+      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
         <ThemeToggle />
       </div>
-      <Card className="w-full max-w-md shadow-lg shadow-primary/5">
+      <Card className="w-full max-w-md border-border/70 bg-card/90 shadow-2xl shadow-brand/10 backdrop-blur-xl">
         <CardHeader className="text-center">
           <div className="mx-auto mb-3 grid size-11 place-items-center rounded-xl bg-primary text-primary-foreground">
             <LockKeyhole className="size-5" />

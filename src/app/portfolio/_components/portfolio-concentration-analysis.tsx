@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -62,9 +62,12 @@ export function PortfolioConcentrationAnalysis({ analyses }: Props) {
       aria-labelledby="concentration-heading"
     >
       <div className="space-y-1">
-        <h3 id="concentration-heading" className="text-base font-semibold">
-          Concentração observada
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 id="concentration-heading" className="text-base font-semibold">
+            Concentração observada
+          </h3>
+          <Info aria-hidden="true" className="size-4 text-muted-foreground" />
+        </div>
       </div>
 
       <div

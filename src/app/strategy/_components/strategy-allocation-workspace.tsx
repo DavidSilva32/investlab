@@ -375,73 +375,84 @@ export function StrategyAllocationWorkspace({
   return (
     <div className="space-y-4">
       <Sheet open={editingOpen} onOpenChange={setEditingOpen}>
-        <Card>
-          <CardContent className="grid gap-5 pt-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
-            <div className="flex min-w-0 items-center gap-4">
-              <span className="hidden size-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary sm:flex">
-                <TrendingUp aria-hidden="true" className="size-7" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-sm font-medium text-muted-foreground">
-                  Patrimônio de longo prazo
-                </h2>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-primary tabular-nums sm:text-4xl">
-                  {formatCurrencyCents(knownValueCents)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Total investido em ativos de longo prazo ·{" "}
-                  {formatDate(valuationDate)}
-                  {positionCount === 0 ? " · sem posições" : ""}
-                </p>
+        <div className="grid gap-4 lg:grid-cols-[minmax(19rem,0.72fr)_minmax(0,1.3fr)] lg:items-stretch">
+          <Card>
+            <CardContent className="grid gap-5 pt-6">
+              <div className="flex min-w-0 items-center gap-4">
+                <span className="hidden size-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary sm:flex">
+                  <TrendingUp aria-hidden="true" className="size-7" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-medium text-muted-foreground">
+                    Patrimônio de longo prazo
+                  </h2>
+                  <p className="mt-1 text-3xl font-bold tracking-tight text-primary tabular-nums sm:text-4xl">
+                    {formatCurrencyCents(knownValueCents)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Total investido em ativos de longo prazo ·{" "}
+                    {formatDate(valuationDate)}
+                    {positionCount === 0 ? " · sem posições" : ""}
+                  </p>
+                </div>
               </div>
-            </div>
-            <div className="min-w-0 border-t pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-              <p className="text-sm font-medium">{allocationLabel}</p>
-              {hasAllocationToShow ? (
-                <ul className="mt-2 space-y-1 text-sm">
-                  {strategyAssetClasses
-                    .filter(({ id }) => allocationToShow?.[id] > 0)
-                    .map(({ id, label }) => {
-                      const Icon = classIcons[id];
-                      const color = getStrategyAssetClassColor(id);
-                      return (
-                        <li key={id} className="flex items-center gap-2">
-                          <Icon
-                            aria-hidden="true"
-                            className="size-4 shrink-0"
-                            style={{ color }}
-                          />
-                          <span className="min-w-0 text-muted-foreground">
-                            {label}
-                          </span>
-                          <span className="font-semibold tabular-nums">
-                            {percentText(allocationToShow![id])}%
-                          </span>
-                        </li>
-                      );
-                    })}
-                </ul>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {draftChanged
-                    ? "Complete o total para ver a composição."
-                    : "Defina a composição desejada."}
-                </p>
-              )}
-            </div>
-            <SheetTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-between sm:w-auto"
-              >
-                <Settings2 aria-hidden="true" className="mr-2 size-4" />
-                Editar composição
-                <ChevronRight aria-hidden="true" className="ml-2 size-4" />
-              </Button>
-            </SheetTrigger>
-          </CardContent>
-        </Card>
+              <div className="min-w-0 border-t pt-4">
+                <p className="text-sm font-medium">{allocationLabel}</p>
+                {hasAllocationToShow ? (
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {strategyAssetClasses
+                      .filter(({ id }) => allocationToShow?.[id] > 0)
+                      .map(({ id, label }) => {
+                        const Icon = classIcons[id];
+                        const color = getStrategyAssetClassColor(id);
+                        return (
+                          <li key={id} className="flex items-center gap-2">
+                            <Icon
+                              aria-hidden="true"
+                              className="size-4 shrink-0"
+                              style={{ color }}
+                            />
+                            <span className="min-w-0 text-muted-foreground">
+                              {label}
+                            </span>
+                            <span className="font-semibold tabular-nums">
+                              {percentText(allocationToShow![id])}%
+                            </span>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {draftChanged
+                      ? "Complete o total para ver a composição."
+                      : "Defina a composição desejada."}
+                  </p>
+                )}
+              </div>
+              <SheetTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-between sm:w-auto"
+                >
+                  <Settings2 aria-hidden="true" className="mr-2 size-4" />
+                  Editar composição
+                  <ChevronRight aria-hidden="true" className="ml-2 size-4" />
+                </Button>
+              </SheetTrigger>
+            </CardContent>
+          </Card>
+          <Card className="min-w-0">
+            <CardHeader className="pb-3">
+              <CardTitle>Distribuição por classe</CardTitle>
+              <CardDescription>Atual, planejada e após aporte.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <StrategyAllocationChart data={chartData} />
+            </CardContent>
+          </Card>
+        </div>
         <SheetContent
           side="right"
           className="w-full overflow-y-auto sm:max-w-2xl"
@@ -592,16 +603,6 @@ export function StrategyAllocationWorkspace({
           </div>
         </SheetContent>
       </Sheet>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>Distribuição por classe</CardTitle>
-          <CardDescription>Atual, planejada e após aporte.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <StrategyAllocationChart data={chartData} />
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader className="pb-2">
