@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  ChartColumnIncreasing,
   ChevronDown,
   CircleHelp,
   RefreshCw,
@@ -438,23 +439,28 @@ export function PortfolioOpportunities({
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,0.82fr)] xl:items-stretch">
         <Card className="border-primary/20 bg-primary/[0.03]">
           <CardContent className="flex h-full flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
-            <div className="max-w-2xl">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-                Minha carteira
-              </p>
-              <h2 className="mt-1 text-xl font-semibold tracking-tight">
-                Comparar referências das ações
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Compare referências calculadas para estudo. Os métodos não
-                definem se uma ação deve receber aporte.
-              </p>
+            <div className="flex min-w-0 items-center gap-4">
+              <span className="hidden size-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary sm:flex">
+                <ChartColumnIncreasing aria-hidden="true" className="size-7" />
+              </span>
+              <div className="max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                  Minha carteira
+                </p>
+                <h2 className="mt-1 text-xl font-semibold tracking-tight">
+                  Comparar referências das ações
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Compare referências calculadas para estudo. Os métodos não
+                  definem se uma ação deve receber aporte.
+                </p>
+              </div>
             </div>
-            <div className="shrink-0 rounded-xl bg-background/70 px-4 py-3 sm:text-right">
+            <div className="flex shrink-0 items-center gap-2 self-start rounded-full bg-primary/10 px-4 py-2 text-primary sm:self-center">
               <p className="text-2xl font-semibold tabular-nums">
                 {opportunities.length}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs font-medium">
                 {opportunities.length === 1
                   ? "ação analisada"
                   : "ações analisadas"}

@@ -302,7 +302,15 @@ export function PortfolioImport() {
           </div>
         )}
         {items.some((item) => item.preview) && (
-          <div className="flex flex-col-reverse justify-end gap-3 border-t pt-4 sm:flex-row">
+          <div className="flex flex-col justify-end gap-3 border-t pt-4 sm:flex-row">
+            <Button
+              className="w-full sm:w-auto"
+              variant="outline"
+              disabled={loading}
+              onClick={() => setItems([])}
+            >
+              Cancelar
+            </Button>
             <Button
               className="w-full sm:w-auto"
               disabled={
@@ -315,14 +323,6 @@ export function PortfolioImport() {
               {loading
                 ? "Salvando..."
                 : `Confirmar ${items.filter((item) => item.preview).length} arquivo(s)`}
-            </Button>
-            <Button
-              className="w-full sm:w-auto"
-              variant="outline"
-              disabled={loading}
-              onClick={() => setItems([])}
-            >
-              Cancelar
             </Button>
           </div>
         )}
@@ -358,32 +358,65 @@ function PreviewItem({
     );
 
   return (
-    <div>
-      <h3 className="font-medium">
-        {item.file.name} — {item.preview.count} movimentações encontradas
-      </h3>
-      <div className="mt-3 max-h-64 overflow-auto rounded-md border">
-        <Table aria-label="Prévia de movimentações">
-          <TableBody>
-            {item.preview.movements.map((record, index) => (
-              <TableRow key={index}>
-                <TableCell className="p-2">
-                  {date.format(new Date(`${record.occurredAt}T00:00:00Z`))}
-                </TableCell>
-                <TableCell>{record.movementType}</TableCell>
-                <TableCell>{record.product}</TableCell>
-                <TableCell>{number.format(Number(record.quantity))}</TableCell>
-                <TableCell className="p-2 text-right tabular-nums">
-                  {record.operationValue
-                    ? money.format(Number(record.operationValue))
-                    : "—"}
-                </TableCell>
+    <Card className="overflow-hidden shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 border-b bg-muted/20 p-4 sm:p-5">
+        <div className="min-w-0">
+          <CardTitle className="truncate text-base">{item.file.name}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Revise os dados extraídos antes de confirmar.
+          </p>
+        </div>
+        <Badge variant="secondary" className="shrink-0">
+          {item.preview.count} movimentação(ões)
+        </Badge>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="max-h-64 overflow-auto">
+          <Table aria-label="Prévia de movimentações" className="min-w-[48rem]">
+            <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur">
+              <TableRow>
+                <TableHead scope="col" className="whitespace-nowrap">
+                  Data
+                </TableHead>
+                <TableHead scope="col" className="whitespace-nowrap">
+                  Tipo de movimentação
+                </TableHead>
+                <TableHead scope="col">Produto</TableHead>
+                <TableHead scope="col" className="text-right">
+                  Quantidade
+                </TableHead>
+                <TableHead scope="col" className="text-right">
+                  Valor da operação
+                </TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+            </TableHeader>
+            <TableBody>
+              {item.preview.movements.map((record, index) => (
+                <TableRow key={index}>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {date.format(new Date(`${record.occurredAt}T00:00:00Z`))}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {record.movementType}
+                  </TableCell>
+                  <TableCell className="min-w-48 font-medium">
+                    {record.product}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number.format(Number(record.quantity))}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
+                    {record.operationValue
+                      ? money.format(Number(record.operationValue))
+                      : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

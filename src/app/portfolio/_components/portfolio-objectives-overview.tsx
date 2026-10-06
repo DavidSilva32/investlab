@@ -270,7 +270,7 @@ export function PortfolioObjectivesOverview({
           </div>
         </div>
         {data.objectives.length > 0 ? (
-          <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {data.objectives.map((objective) => (
               <PortfolioObjectiveCard
                 key={objective.id}

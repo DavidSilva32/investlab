@@ -2,7 +2,11 @@
 
 ## Minha carteira
 
-`design-reference.png` é uma proposta de IA para a aba “Minha carteira” em `/analyses`, não uma captura do produto. Tickers, valores, datas e fontes são sintéticos. A proposta contém ordenação por ticker e o CTA “Saiba mais sobre as metodologias”, que não existem na tela; estes itens permanecem como backlog documental. A referência não foi alterada nesta etapa.
+`design-reference.png` é uma proposta desktop de IA recriada em 06/10/2026 para a aba “Minha carteira” em `/analyses`, não uma captura do produto. A versão azul/neutra substitui a antiga proposta verde, que incluía controles sem suporte. Tickers, valores, datas e fontes são sintéticos.
+
+A referência atual mostra as abas “Minha carteira” e “Análise individual”, a comparação de referências das ações, a premissa configurável do Bazin e cartões de Graham e Bazin com fonte e data. Não incluir ordenação por ticker nem o CTA “Saiba mais sobre as metodologias”: esses controles não existem na tela. As referências calculadas são para estudo e não determinam aporte.
+
+Estados da atualização: referência criada: sim; contexto funcional revisado: sim; implementação existente: sim; verificação estrutural: não refeita; comparação visual real: pendente, sem captura de navegador; aprovação visual desta nova imagem: pendente.
 
 ## Análise individual
 

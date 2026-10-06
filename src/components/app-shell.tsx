@@ -69,7 +69,7 @@ export function AppShell({
   const pathname = usePathname();
   return (
     <div className="min-h-screen bg-background lg:flex">
-      <aside className="hidden w-72 shrink-0 border-r border-border/70 bg-card/55 p-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+      <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-card/55 p-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="px-1 py-2">
           <Brand />
         </div>

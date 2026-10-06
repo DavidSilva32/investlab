@@ -105,7 +105,7 @@ describe("PortfolioImport", () => {
     const table = await screen.findByRole("table", {
       name: "Prévia de movimentações",
     });
-    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
     expect(within(table).getByText("Compra")).toBeTruthy();
     expect(within(table).getByText("—")).toBeTruthy();
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, PiggyBank, Target } from "lucide-react";
+import { ArrowRight, Info, PiggyBank, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -112,7 +112,7 @@ export function PortfolioObjectiveDetail({
                 </p>
               )}
             </div>
-            <div>
+            <div className="sm:border-l sm:pl-5">
               <p className="text-xs text-muted-foreground">
                 {isReserve ? "Meta" : "Meta financeira"}
               </p>
@@ -166,7 +166,11 @@ export function PortfolioObjectiveDetail({
             </p>
           )}
           {objective.monthlyPlannedAmount !== null && (
-            <p className="text-sm text-muted-foreground">
+            <p className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+              <Info
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0 text-primary"
+              />
               Aporte mensal planejado por você:{" "}
               {formatCurrency(objective.monthlyPlannedAmount)}. É uma intenção
               pessoal, não uma obrigação.

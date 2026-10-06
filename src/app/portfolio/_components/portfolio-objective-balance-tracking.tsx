@@ -226,7 +226,7 @@ function BalanceTrackingEditor({
         <form
           noValidate
           onSubmit={submit}
-          className="grid gap-3 sm:grid-cols-2"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(10rem,auto)] lg:items-end"
         >
           <div className="space-y-1.5">
             <Label htmlFor="objective-observed-amount">Saldo total (R$)</Label>
@@ -281,7 +281,7 @@ function BalanceTrackingEditor({
             required
             errorMessage={dateError}
           />
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
             <Label htmlFor="objective-cdi-percentage">
               Rendimento contratado (% do CDI, opcional)
             </Label>
@@ -314,8 +314,8 @@ function BalanceTrackingEditor({
               1.000% do CDI.
             </p>
           </div>
-          <div className="sm:col-span-2">
-            <Button type="submit" disabled={saving}>
+          <div className="sm:col-span-2 lg:col-span-1">
+            <Button className="w-full" type="submit" disabled={saving}>
               {saving ? "Salvando…" : "Salvar saldo observado"}
             </Button>
           </div>
