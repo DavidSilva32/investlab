@@ -16,13 +16,13 @@ A proposta é uma composição visual, não um contrato funcional. O fluxo aceit
 
 ## Estados de entrega
 
-| Estado | Situação |
-| --- | --- |
-| Referência criada | Sim; proposta desktop gerada por IA e salva neste diretório. |
-| Contexto funcional revisado | Sim; rota, shell, conteúdo suportado e divergências foram conferidos no código. |
-| Layout implementado | Sim; experiência existente em `src/components/portfolio-import.tsx`; a prévia de movimentações tem cabeçalhos visíveis. |
-| Verificação estrutural | ESLint, Prettier, typecheck, build e `git diff --check` passaram na implementação; a imagem foi regenerada sem mudança no código. Testes não foram executados. |
-| Comparação visual real | Não realizada; nenhuma captura do produto foi feita e não foi usado navegador/Playwright. |
-| Aprovação visual do usuário | O usuário solicitou a recriação; aprovação visual específica desta nova proposta ainda não foi registrada. |
+| Estado                      | Situação                                                                                                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Referência criada           | Sim; proposta desktop gerada por IA e salva neste diretório.                                                                                                   |
+| Contexto funcional revisado | Sim; rota, shell, conteúdo suportado e divergências foram conferidos no código.                                                                                |
+| Layout implementado         | Sim; experiência existente em `src/components/portfolio-import.tsx`; a prévia de movimentações tem cabeçalhos visíveis.                                        |
+| Verificação estrutural      | ESLint, Prettier, typecheck, build e `git diff --check` passaram na implementação; a imagem foi regenerada sem mudança no código. Testes não foram executados. |
+| Comparação visual real      | Não realizada; nenhuma captura do produto foi feita e não foi usado navegador/Playwright.                                                                      |
+| Aprovação visual do usuário | O usuário solicitou a recriação; aprovação visual específica desta nova proposta ainda não foi registrada.                                                     |
 
 Comparações em telas menores não usam imagens; mantenha e valide a responsividade no código.
