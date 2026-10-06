@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 type Props = {
   open: boolean;
@@ -54,6 +54,7 @@ export function ConfirmActionDialog({
           <AlertDialogCancel>Cancelar</AlertDialogCancel>
           <AlertDialogAction
             disabled={loading}
+            className={buttonVariants({ variant: "destructive" })}
             onClick={(event) => {
               event.preventDefault();
               onConfirm();
