@@ -3,6 +3,7 @@ import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-optio
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
+import type { StrategyAssetClassId } from "@/lib/strategy-allocation";
 
 export type ContributionPosition = {
   product: string;
@@ -42,6 +43,7 @@ export type ContributionAllocationResult = {
   unknownPositionCount: number;
   allocations: Array<{
     assetClass: string;
+    assetClassId?: StrategyAssetClassId;
     currentValue: number;
     currentPercentage: number;
     targetPercentage: number;
