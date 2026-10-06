@@ -351,7 +351,7 @@ describe("PortfolioObjectives", () => {
     render(<PortfolioObjectives />);
     expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
     expect(screen.getByText("R$ 650,00")).toBeTruthy();
-    expect(screen.queryByLabelText("Nome")).toBeNull();
+    expect(screen.queryByLabelText("Nome do objetivo")).toBeNull();
     expect(
       screen.queryByLabelText("Objetivo para associar posições"),
     ).toBeNull();
@@ -408,7 +408,7 @@ describe("PortfolioObjectives", () => {
     await screen.findByText("Patrimônio por destino");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     expect(screen.getByRole("heading", { name: "Novo objetivo" })).toBeTruthy();
-    await user.type(screen.getByLabelText("Nome"), "Carro");
+    await user.type(screen.getByLabelText("Nome do objetivo"), "Carro");
     await user.click(
       screen.getByRole("combobox", { name: "Finalidade deste destino" }),
     );
@@ -443,19 +443,19 @@ describe("PortfolioObjectives", () => {
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
     expect(screen.getByRole("heading", { name: "Viagem" })).toBeTruthy();
-    expect(screen.queryByLabelText("Nome")).toBeNull();
+    expect(screen.queryByLabelText("Nome do objetivo")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Editar objetivo" }));
     expect(
       screen.getByRole("heading", { name: "Editar objetivo" }),
     ).toBeTruthy();
-    expect((screen.getByLabelText("Nome") as HTMLInputElement).value).toBe(
-      "Viagem",
-    );
+    expect(
+      (screen.getByLabelText("Nome do objetivo") as HTMLInputElement).value,
+    ).toBe("Viagem");
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
       target: { value: "R$ 20.000,00" },
     });
-    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+    await user.click(screen.getByRole("button", { name: "Salvar objetivo" }));
     expect(await screen.findByRole("heading", { name: "Viagem" })).toBeTruthy();
     expect(
       fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
@@ -514,7 +514,7 @@ describe("PortfolioObjectives", () => {
     expect(
       screen.getByRole("heading", { name: "Editar objetivo" }),
     ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: /Cancelar edi/ }));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(screen.getByText("Patrimônio por destino")).toBeTruthy();
   });
 
@@ -757,7 +757,7 @@ describe("PortfolioObjectives", () => {
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
-    await user.type(screen.getByLabelText("Nome"), "Casa");
+    await user.type(screen.getByLabelText("Nome do objetivo"), "Casa");
     await user.click(
       screen.getByRole("combobox", { name: "Finalidade deste destino" }),
     );
@@ -780,7 +780,7 @@ describe("PortfolioObjectives", () => {
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
-    await user.type(screen.getByLabelText("Nome"), "Casa");
+    await user.type(screen.getByLabelText("Nome do objetivo"), "Casa");
     await user.click(
       screen.getByRole("combobox", { name: "Finalidade deste destino" }),
     );
@@ -796,7 +796,7 @@ describe("PortfolioObjectives", () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Objetivo criado."),
     );
-    expect(await screen.findByLabelText("Nome")).toBeTruthy();
+    expect(await screen.findByLabelText("Nome do objetivo")).toBeTruthy();
   });
 
   it("shows an assignment error when saving fails with a transport value", async () => {
@@ -993,7 +993,7 @@ describe("PortfolioObjectives", () => {
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
-    await user.type(screen.getByLabelText("Nome"), "Casa");
+    await user.type(screen.getByLabelText("Nome do objetivo"), "Casa");
     await user.click(
       screen.getByRole("combobox", { name: "Finalidade deste destino" }),
     );

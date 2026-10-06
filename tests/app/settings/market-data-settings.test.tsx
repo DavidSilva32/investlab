@@ -76,8 +76,8 @@ describe("MarketDataSettings", () => {
     expect(screen.getByText(/hoje/)).toBeTruthy();
     expect(screen.queryByText("AAA3")).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Atualizar mercado" }),
-    ).toBeNull();
+      screen.getByRole("button", { name: "Atualizar mercado" }),
+    ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Detalhes técnicos" }));
     expect(screen.getByText("AAA3")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
@@ -139,6 +139,10 @@ describe("MarketDataSettings", () => {
       );
       render(<MarketDataSettings />);
 
+      await screen.findByText(
+        runStatus === "RUNNING" ? "Em andamento" : "Parcial",
+        { exact: false },
+      );
       const refreshButton = await screen.findByRole("button", {
         name: "Atualizar mercado",
       });
