@@ -158,7 +158,8 @@ describe("DashboardSummary", () => {
 
     expect(html).toContain("A reserva está abaixo da sua meta pessoal");
     expect(html).toContain("não é uma recomendação do InvestLab");
-    expect(html).not.toContain('aria-labelledby="dashboard-next-action-title"');
+    expect(html).toContain('aria-labelledby="dashboard-next-action-title"');
+    expect(html).toContain("Acompanhe a evolução da reserva");
     expect(html).not.toContain("Defina sua estratégia de alocação");
   });
 
