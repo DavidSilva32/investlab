@@ -239,12 +239,22 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     label: "Tipo",
     width: "17%",
     value: (row) => row.movementType,
-    render: (row) => (
-      <Badge>
-        {row.direction === "CREDITO" ? "Crédito" : "Débito"} ·{" "}
-        {row.movementType}
-      </Badge>
-    ),
+    render: (row) => {
+      const isCredit = row.direction === "CREDITO";
+
+      return (
+        <Badge
+          variant="outline"
+          className={
+            isCredit
+              ? "border-primary/30 bg-primary/5 text-primary"
+              : "border-status-danger/30 bg-status-danger/5 text-status-danger"
+          }
+        >
+          {isCredit ? "Crédito" : "Débito"} · {row.movementType}
+        </Badge>
+      );
+    },
   },
   {
     id: "product",
@@ -327,10 +337,12 @@ export function PositionDetails({
                   )
                   .map((position) => position.assetCode!)}
               />
-              <DeleteImportedDataButton
-                documentType="B3_POSITION_XLSX"
-                label="posições importadas"
-              />
+              <div className="shrink-0 [&_button]:border-status-danger/50 [&_button]:bg-status-danger/5 [&_button]:text-status-danger [&_button:hover]:border-status-danger [&_button:hover]:bg-status-danger/10 [&_button:hover]:text-status-danger">
+                <DeleteImportedDataButton
+                  documentType="B3_POSITION_XLSX"
+                  label="posições importadas"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -367,21 +379,28 @@ export function MovementDetails({
   movements: PortfolioMovement[];
 }) {
   return (
-    <Card>
-      <CardHeader className="border-b">
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b bg-muted/10 px-5 py-5 sm:px-6 sm:py-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="min-w-0">
-            <CardTitle>Movimentações</CardTitle>
-            <CardDescription>
-              {movements.length
-                ? `${movements.length} movimentações importadas`
-                : "Nenhuma movimentação importada"}
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Movimentações
+            </CardTitle>
+            <CardDescription className="text-base">
+              Histórico registrado da carteira
             </CardDescription>
+            <p className="pt-1 text-sm text-muted-foreground">
+              {movements.length
+                ? `${movements.length} ${movements.length === 1 ? "movimentação registrada" : "movimentações registradas"}`
+                : "Nenhuma movimentação importada"}
+            </p>
           </div>
-          <DeleteImportedDataButton
-            documentType="B3_MOVEMENT_XLSX"
-            label="movimentações"
-          />
+          <div className="shrink-0 [&_button]:border-status-danger/50 [&_button]:bg-status-danger/5 [&_button]:text-status-danger [&_button:hover]:border-status-danger [&_button:hover]:bg-status-danger/10 [&_button:hover]:text-status-danger">
+            <DeleteImportedDataButton
+              documentType="B3_MOVEMENT_XLSX"
+              label="movimentações"
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">

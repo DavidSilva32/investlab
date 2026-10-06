@@ -196,8 +196,20 @@ export function MarketDataSettings() {
       : run.status === "COMPLETED"
         ? CheckCircle2
         : XCircle;
-  const firstRefresh = !status?.latestQuote;
   const refreshDisabled = refreshing || loading || run?.status === "RUNNING";
+  const refreshButton = (
+    <Button
+      className="w-full shrink-0 sm:w-auto"
+      onClick={() => void refresh()}
+      disabled={refreshDisabled}
+    >
+      <RefreshCw
+        className={`size-4 ${refreshing ? "animate-spin" : ""}`}
+        aria-hidden="true"
+      />
+      {refreshing ? "Atualizando…" : "Atualizar mercado"}
+    </Button>
+  );
 
   return (
     <Card>
@@ -210,15 +222,6 @@ export function MarketDataSettings() {
               independentes da sincronização anual da CVM.
             </CardDescription>
           </div>
-          {firstRefresh && (
-            <Button onClick={() => void refresh()} disabled={refreshDisabled}>
-              <RefreshCw
-                className={`size-4 ${refreshing ? "animate-spin" : ""}`}
-                aria-hidden="true"
-              />
-              {refreshing ? "Atualizando…" : "Atualizar mercado"}
-            </Button>
-          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -237,26 +240,34 @@ export function MarketDataSettings() {
           </p>
         )}
         {loading ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Consultando a última atualização do mercado…
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p role="status" className="text-sm text-muted-foreground">
+              Consultando a última atualização do mercado…
+            </p>
+            {refreshButton}
+          </div>
         ) : (
           <>
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Icon
-                className={`size-4 ${run?.status === "COMPLETED" ? "text-status-success" : run?.status === "PARTIAL" ? "text-status-warning" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
-                aria-hidden="true"
-              />
-              <span>Status da última execução: {label}</span>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="grid min-w-0 gap-2 sm:flex-1 sm:grid-cols-2 sm:items-center">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Icon
+                    className={`size-4 ${run?.status === "COMPLETED" ? "text-status-success" : run?.status === "PARTIAL" ? "text-status-warning" : "text-muted-foreground"} ${run?.status === "RUNNING" ? "animate-spin" : ""}`}
+                    aria-hidden="true"
+                  />
+                  <span>Status da última execução: {label}</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Cotação mais recente registrada:{" "}
+                  {status?.latestQuote
+                    ? `${dateTime.format(new Date(status.latestQuote.quoteObservedAt))} (${ageLabel(status.latestQuote.quoteObservedAt)})`
+                    : "nenhuma cotação registrada"}
+                </p>
+              </div>
+              {refreshButton}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Cotação mais recente registrada:{" "}
-              {status?.latestQuote
-                ? `${dateTime.format(new Date(status.latestQuote.quoteObservedAt))} (${ageLabel(status.latestQuote.quoteObservedAt)})`
-                : "nenhuma cotação registrada"}
-            </p>
-            <Collapsible className="text-xs text-muted-foreground">
-              <CollapsibleTrigger className="group flex w-fit cursor-pointer items-center gap-1 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+            <Collapsible className="rounded-lg border p-3 text-xs text-muted-foreground">
+              <CollapsibleTrigger className="group flex w-full cursor-pointer items-center justify-between gap-2 rounded-sm border-b pb-3 text-left font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                 Detalhes técnicos
                 <ChevronDown
                   aria-hidden="true"
@@ -264,65 +275,53 @@ export function MarketDataSettings() {
                 />
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-3 space-y-4">
-                {!firstRefresh && (
-                  <Button
-                    onClick={() => void refresh()}
-                    disabled={refreshDisabled}
-                  >
-                    <RefreshCw
-                      className={`size-4 ${refreshing ? "animate-spin" : ""}`}
-                      aria-hidden="true"
-                    />
-                    {refreshing ? "Atualizando…" : "Atualizar mercado"}
-                  </Button>
-                )}
-                <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
+                <dl className="grid gap-2">
+                  <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                     <dt className="text-xs text-muted-foreground">
                       Ticker da observação
                     </dt>
-                    <dd className="mt-1 text-sm font-medium">
+                    <dd className="min-w-0 text-sm font-medium">
                       {status?.latestQuote?.sourceTicker ?? "—"}
                     </dd>
                   </div>
                   {run && (
                     <>
-                      <div>
+                      <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                         <dt className="text-xs text-muted-foreground">
                           Última execução
                         </dt>
-                        <dd className="mt-1 text-sm font-medium">
+                        <dd className="min-w-0 text-sm font-medium">
                           {dateTime.format(new Date(run.startedAt))}
                         </dd>
                       </div>
-                      <div>
+                      <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                         <dt className="text-xs text-muted-foreground">
                           Emissores tentados
                         </dt>
-                        <dd className="mt-1 text-sm font-medium tabular-nums">
+                        <dd className="min-w-0 text-sm font-medium tabular-nums">
                           {number.format(run.attemptedIssuers)}
                         </dd>
                       </div>
-                      <div>
+                      <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                         <dt className="text-xs text-muted-foreground">
                           Atualizados
                         </dt>
-                        <dd className="mt-1 text-sm font-medium tabular-nums">
+                        <dd className="min-w-0 text-sm font-medium tabular-nums">
                           {number.format(run.updatedIssuers)}
                         </dd>
                       </div>
-                      <div>
+                      <div className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4">
                         <dt className="text-xs text-muted-foreground">
                           Indisponíveis
                         </dt>
-                        <dd className="mt-1 text-sm font-medium tabular-nums">
+                        <dd className="min-w-0 text-sm font-medium tabular-nums">
                           {number.format(run.unavailableIssuers)}
                         </dd>
                       </div>
                     </>
                   )}
                 </dl>
-                <p className="leading-relaxed">
+                <p className="border-t pt-3 leading-relaxed">
                   As múltiplas do Screener só usam cotações verificadas com até
                   sete dias. Essa regra não garante cobertura de todos os
                   ativos.

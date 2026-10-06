@@ -104,28 +104,38 @@ export function PortfolioObjectivesOverview({
   return (
     <div className="space-y-5">
       <Card>
-        <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-base">Patrimônio por destino</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Valores conhecidos das posições atribuídas.
-            </p>
+        <CardHeader className="flex flex-col gap-4 pb-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="space-y-1">
+              <CardTitle className="text-base">
+                Patrimônio por destino
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Valores conhecidos das posições atribuídas.
+              </p>
+            </div>
+            <Badge className="w-fit" variant="outline">
+              {incompleteCount > 0 ? "Conhecido · parcial" : "Valor conhecido"}
+            </Badge>
           </div>
-          <Badge variant="outline">
-            {incompleteCount > 0 ? "Conhecido · parcial" : "Valor conhecido"}
-          </Badge>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row sm:items-center">
             {onOrganize && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="w-full sm:w-auto"
                 onClick={onOrganize}
               >
                 Organizar objetivos
               </Button>
             )}
-            <Button type="button" size="sm" onClick={onCreate}>
+            <Button
+              type="button"
+              size="sm"
+              className="w-full sm:w-auto"
+              onClick={onCreate}
+            >
               <Plus aria-hidden="true" className="size-4" />
               Novo objetivo
             </Button>

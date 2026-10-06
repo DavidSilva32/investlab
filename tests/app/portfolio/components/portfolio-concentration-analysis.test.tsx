@@ -81,6 +81,15 @@ describe("PortfolioConcentrationAnalysis", () => {
     render(<PortfolioConcentrationAnalysis positions={positions} />);
 
     expect(screen.getByRole("heading", { name: /Concentra/ })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Classe" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("progressbar", { name: "Renda Variavel: 75,0%" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Ativo" }));
     expect(screen.getAllByText(/ACAO3/).length).toBeGreaterThan(0);
     expect(screen.getByText(/1 posi/)).toBeTruthy();
 

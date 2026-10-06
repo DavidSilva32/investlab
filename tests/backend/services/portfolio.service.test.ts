@@ -345,6 +345,9 @@ describe("PortfolioService", () => {
       unknownPositionCount: scenario.unvaluedPositionCount,
       allocations: [{ assetClass: "Renda fixa" }],
     });
-    expect(result.allocations[0]).not.toHaveProperty("assetClassId");
+    expect(result.allocations[0]).toHaveProperty(
+      "assetClassId",
+      "fixed_income",
+    );
   });
 });

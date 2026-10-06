@@ -102,17 +102,31 @@ export function PortfolioObjectiveForm({
 
   return (
     <section
-      aria-labelledby="objective-form-title"
-      className="space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+      aria-label={
+        hideTitle
+          ? objective
+            ? "Editar objetivo"
+            : "Criar objetivo"
+          : undefined
+      }
+      aria-labelledby={hideTitle ? undefined : "objective-form-title"}
+      className="space-y-5 rounded-xl border bg-card p-4 sm:p-6"
     >
-      {!hideTitle && (
-        <h3 id="objective-form-title" className="text-sm font-semibold">
-          {objective ? "Editar objetivo" : "Criar objetivo"}
-        </h3>
-      )}
+      <header className="space-y-1.5">
+        {!hideTitle && (
+          <h3 id="objective-form-title" className="text-lg font-semibold">
+            {objective ? "Editar objetivo" : "Criar objetivo"}
+          </h3>
+        )}
+        <p className="text-sm text-muted-foreground">
+          {objective
+            ? "Atualize os dados deste objetivo."
+            : "Defina os dados do novo objetivo."}
+        </p>
+      </header>
       <form className="grid gap-5" onSubmit={submit}>
         <div className="space-y-2">
-          <Label htmlFor="objective-name">Nome</Label>
+          <Label htmlFor="objective-name">Nome do objetivo</Label>
           <Input
             id="objective-name"
             value={name}
@@ -192,24 +206,25 @@ export function PortfolioObjectiveForm({
             {error}
           </p>
         )}
-        <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t bg-background/95 py-3 backdrop-blur sm:flex-row sm:justify-end">
-          <Button type="submit" disabled={saving}>
-            {saving
-              ? "Salvando…"
-              : objective
-                ? "Salvar alterações"
-                : "Criar objetivo"}
-          </Button>
+        <div className="sticky bottom-0 flex flex-col gap-2 border-t bg-background/95 py-3 backdrop-blur sm:flex-row sm:justify-end">
           {objective && onCancel && (
             <Button
               type="button"
               variant="outline"
               onClick={onCancel}
               disabled={saving}
+              className="w-full sm:w-auto"
             >
-              Cancelar edição
+              Cancelar
             </Button>
           )}
+          <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+            {saving
+              ? "Salvando…"
+              : objective
+                ? "Salvar objetivo"
+                : "Criar objetivo"}
+          </Button>
         </div>
       </form>
     </section>

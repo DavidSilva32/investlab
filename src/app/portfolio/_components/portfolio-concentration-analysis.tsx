@@ -50,29 +50,25 @@ function displayLabel(label: string) {
 }
 
 export function PortfolioConcentrationAnalysis({ analyses }: Props) {
-  const [dimension, setDimension] = useState<ConcentrationDimension>("asset");
+  const [dimension, setDimension] =
+    useState<ConcentrationDimension>("assetClass");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const analysis = analyses[dimension];
   const largestGroup = analysis.groups[0]!;
 
   return (
     <section
-      className="space-y-4 border-t pt-5"
+      className="space-y-5 rounded-xl border bg-card p-4 sm:p-6"
       aria-labelledby="concentration-heading"
     >
       <div className="space-y-1">
-        <h3 id="concentration-heading" className="text-sm font-semibold">
+        <h3 id="concentration-heading" className="text-base font-semibold">
           Concentração observada
         </h3>
-        <p className="text-sm text-muted-foreground">
-          A participação mostra quanto cada posição ou classificação representa
-          do patrimônio com valor disponível. Ela não mede, sozinha, a
-          diversificação da carteira.
-        </p>
       </div>
 
       <div
-        className="flex flex-wrap gap-2"
+        className="grid grid-cols-2 gap-1 rounded-lg border bg-muted/40 p-1 sm:grid-cols-4"
         role="group"
         aria-label="Dimensão da concentração"
       >
@@ -80,8 +76,8 @@ export function PortfolioConcentrationAnalysis({ analyses }: Props) {
           <Button
             key={item.key}
             type="button"
-            size="sm"
-            variant={dimension === item.key ? "default" : "outline"}
+            variant={dimension === item.key ? "default" : "ghost"}
+            className="w-full"
             aria-pressed={dimension === item.key}
             onClick={() => setDimension(item.key)}
           >
@@ -99,95 +95,83 @@ export function PortfolioConcentrationAnalysis({ analyses }: Props) {
         </p>
       ) : (
         <>
-          <div className="grid gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2">
-            <p>
-              <span className="font-medium">Maior participação observada:</span>{" "}
-              {displayLabel(largestGroup.label)} ·{" "}
-              {formatPercentage(largestGroup.percentage)}
-            </p>
-            <p>
-              <span className="font-medium">Base:</span>{" "}
-              {formatCurrency(analysis.totalValue)} em{" "}
-              {analysis.valuedPositions}{" "}
-              {analysis.valuedPositions === 1
-                ? "posição valorizada"
-                : "posições valorizadas"}
-            </p>
-            <p>
-              <span className="font-medium">Sem valor disponível:</span>{" "}
-              {analysis.unvaluedPositions}{" "}
-              {analysis.unvaluedPositions === 1 ? "posição" : "posições"}; fora
-              do denominador.
-            </p>
-            <p>
-              <span className="font-medium">Classificado nesta dimensão:</span>{" "}
-              {formatCurrency(analysis.classifiedValue)} (
-              {formatPercentage(
-                analysis.totalValue > 0 ? analysis.classifiedPercentage : 0,
-              )}
-              ) em {analysis.classifiedPositions}{" "}
-              {analysis.classifiedPositions === 1 ? "posição" : "posições"}
-            </p>
-            <p>
-              <span className="font-medium">Não classificado:</span>{" "}
-              {formatCurrency(analysis.unclassifiedValue)} (
-              {formatPercentage(
-                analysis.totalValue > 0 ? analysis.unclassifiedPercentage : 0,
-              )}
-              ) em {analysis.unclassifiedPositions}{" "}
-              {analysis.unclassifiedPositions === 1 ? "posição" : "posições"}
-            </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="min-w-0 rounded-lg border bg-muted/20 p-4">
+              <p className="text-sm text-muted-foreground">
+                Maior participação
+              </p>
+              <p className="mt-2 truncate text-lg font-semibold tabular-nums">
+                {displayLabel(largestGroup.label)} ·{" "}
+                {formatPercentage(largestGroup.percentage)}
+              </p>
+            </div>
+            <div className="min-w-0 rounded-lg border bg-muted/20 p-4">
+              <p className="text-sm text-muted-foreground">Base analisada</p>
+              <p className="mt-2 text-lg font-semibold tabular-nums">
+                {formatCurrency(analysis.totalValue)}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {analysis.valuedPositions}{" "}
+                {analysis.valuedPositions === 1
+                  ? "posição com valor"
+                  : "posições com valor"}
+              </p>
+            </div>
+            <div className="min-w-0 rounded-lg border bg-muted/20 p-4">
+              <p className="text-sm text-muted-foreground">Sem valor</p>
+              <p className="mt-2 text-lg font-semibold tabular-nums">
+                {analysis.unvaluedPositions}{" "}
+                {analysis.unvaluedPositions === 1
+                  ? "posição excluída"
+                  : "posições excluídas"}
+              </p>
+              <p className="text-sm text-muted-foreground">da base analisada</p>
+            </div>
           </div>
 
           <ul
-            className="space-y-3"
+            className="divide-y rounded-lg border px-4"
             aria-label={`Concentração por ${dimensions.find((item) => item.key === dimension)?.label.toLocaleLowerCase("pt-BR")}`}
           >
-            {analysis.groups.map((group) => (
-              <li key={group.label}>
-                <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-                  <span className="min-w-0 truncate font-medium">
-                    {displayLabel(group.label)}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {formatPercentage(group.percentage)} ·{" "}
-                    {formatCurrency(group.value)}
-                  </span>
-                </div>
-                <div
-                  className="h-2 overflow-hidden rounded-full bg-muted"
-                  role="progressbar"
-                  aria-label={`${displayLabel(group.label)}: ${formatPercentage(group.percentage)}`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.min(100, Math.max(0, group.percentage))}
-                >
+            {analysis.groups.map((group) => {
+              const percentage = Math.min(100, Math.max(0, group.percentage));
+              return (
+                <li key={group.label} className="py-4 first:pt-4 last:pb-4">
+                  <div className="mb-2 flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate font-medium">
+                      {displayLabel(group.label)}
+                    </span>
+                    <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+                      {formatCurrency(group.value)} ·{" "}
+                      {formatPercentage(percentage)}
+                    </span>
+                  </div>
                   <div
-                    className="h-full rounded-full bg-primary"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, group.percentage))}%`,
-                    }}
-                  />
-                </div>
-              </li>
-            ))}
+                    className="h-2 overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                    aria-label={`${displayLabel(group.label)}: ${formatPercentage(percentage)}`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={percentage}
+                  >
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
-
-      <p className="text-sm text-muted-foreground">
-        Uma participação maior torna o patrimônio mais sensível a variações
-        naquela posição ou grupo, mantendo os demais valores iguais. Isso
-        descreve a exposição observada e não é uma meta nem um sinal de compra
-        ou venda.
-      </p>
 
       <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
         <CollapsibleTrigger asChild>
           <Button
             type="button"
-            size="sm"
-            variant="ghost"
+            variant="outline"
+            className="h-auto min-h-12 w-full justify-between px-4 text-left"
             aria-expanded={detailsOpen}
           >
             Base de cálculo e limites
@@ -201,7 +185,30 @@ export function PortfolioConcentrationAnalysis({ analyses }: Props) {
             />
           </Button>
         </CollapsibleTrigger>
-        <CollapsibleContent className="space-y-2 pt-2 text-sm text-muted-foreground">
+        <CollapsibleContent className="space-y-3 rounded-b-lg border border-t-0 px-4 pb-4 pt-3 text-sm text-muted-foreground">
+          <p>
+            Classificado nesta dimensão:{" "}
+            {formatCurrency(analysis.classifiedValue)} (
+            {formatPercentage(
+              analysis.totalValue > 0 ? analysis.classifiedPercentage : 0,
+            )}
+            ) em {analysis.classifiedPositions}{" "}
+            {analysis.classifiedPositions === 1 ? "posição" : "posições"}. Não
+            classificado: {formatCurrency(analysis.unclassifiedValue)} (
+            {formatPercentage(
+              analysis.totalValue > 0 ? analysis.unclassifiedPercentage : 0,
+            )}
+            ) em {analysis.unclassifiedPositions}{" "}
+            {analysis.unclassifiedPositions === 1 ? "posição" : "posições"}.
+          </p>
+          <p>
+            A participação mostra quanto cada posição ou classificação
+            representa do patrimônio com valor disponível. Ela não mede,
+            sozinha, a diversificação da carteira. Uma participação maior torna
+            o patrimônio mais sensível a variações naquela posição ou grupo,
+            mantendo os demais valores iguais; isso não é uma meta nem um sinal
+            de compra ou venda.
+          </p>
           <p>
             O percentual usa a soma dos valores atuais disponíveis. Nas posições
             importadas, usa a estimativa CDI quando existe; caso contrário, usa

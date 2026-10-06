@@ -123,6 +123,7 @@ describe("PortfolioClassificationList", () => {
     const disclosure = screen.getByRole("button", {
       name: /Mostrar.*classifica/i,
     });
+    expect(screen.getByText("3 posições")).toBeTruthy();
     expect(disclosure.getAttribute("aria-expanded")).toBe("false");
     await user.click(disclosure);
     expect(
@@ -143,7 +144,7 @@ describe("PortfolioClassificationList", () => {
     await user.click(
       screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
     );
-    expect(screen.getByText("1 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("3 posições · 1 selecionada")).toBeTruthy();
 
     await user.click(screen.getByRole("checkbox", { name: "Aplicar classe" }));
     expect(
@@ -181,7 +182,7 @@ describe("PortfolioClassificationList", () => {
       subClass: "FII",
       geography: "Global",
     });
-    expect(screen.getByText("0 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("3 posições")).toBeTruthy();
     expect(
       screen
         .getByRole("button", { name: "Aplicar aos selecionados" })
@@ -213,7 +214,7 @@ describe("PortfolioClassificationList", () => {
     await user.click(
       screen.getByRole("checkbox", { name: "Selecionar resultados visíveis" }),
     );
-    expect(screen.getByText("2 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("3 posições · 2 selecionadas")).toBeTruthy();
     await user.click(
       screen.getByRole("checkbox", { name: "Aplicar subclasse" }),
     );
@@ -241,9 +242,9 @@ describe("PortfolioClassificationList", () => {
       subClass: null,
       geography: null,
     });
-    expect(screen.getByText("2 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("3 posições · 2 selecionadas")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Limpar seleção" }));
-    expect(screen.getByText("0 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("3 posições")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Limpar seleção" })).toBeNull();
   });
 
@@ -351,9 +352,9 @@ describe("PortfolioClassificationList", () => {
       name: "Selecionar posição CDB",
     });
     await user.click(checkbox);
-    expect(screen.getByText("1 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("3 posições · 1 selecionada")).toBeTruthy();
     await user.click(checkbox);
-    expect(screen.getByText("0 selecionado(s)")).toBeTruthy();
+    expect(screen.getByText("3 posições")).toBeTruthy();
   });
 
   it("applies a selected class without changing geography", async () => {

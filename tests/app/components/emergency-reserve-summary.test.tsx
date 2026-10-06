@@ -28,10 +28,14 @@ describe("EmergencyReserveSummary", () => {
       <EmergencyReserveSummary calculation={calculation} />,
     );
 
-    expect(html).toContain("2.5 meses de despesas");
+    expect(html).toContain("Reserva de emergência");
+    expect(html).toContain("Cobertura em meses");
+    expect(html).toContain("lg:grid-cols-4");
+    expect(html).toContain("2,5 meses de despesas");
     expect(html).toContain("Sua meta pessoal");
     expect(html).toContain("6 meses");
     expect(html).toContain("meta que você escolheu");
+    expect(html).toContain("42% da sua meta pessoal");
     expect(html).toContain('role="progressbar"');
     expect(html).toContain("Cobertura em relação à sua meta pessoal");
     expect(html).toContain(
@@ -54,7 +58,7 @@ describe("EmergencyReserveSummary", () => {
       />,
     );
 
-    expect(html).toContain("2.5 meses de despesas");
+    expect(html).toContain("2,5 meses de despesas");
     expect(html).toContain("Sem meta pessoal configurada");
     expect(html).not.toContain('role="progressbar"');
     expect(html).not.toContain("recomendação do InvestLab");
@@ -74,9 +78,10 @@ describe("EmergencyReserveSummary", () => {
       />,
     );
 
-    expect(html).toContain("7.0 meses de despesas");
+    expect(html).toContain("7 meses de despesas");
     expect(html).toContain("A cobertura está R$ 1.000,00 acima da meta");
     expect(html).toContain('aria-valuenow="100"');
+    expect(html).toContain("117% da sua meta pessoal");
   });
 
   it("describes a personal target that is exactly reached", () => {
@@ -94,6 +99,7 @@ describe("EmergencyReserveSummary", () => {
     );
 
     expect(html).toContain("Sua meta pessoal está atingida.");
+    expect(html).toContain("100% da sua meta pessoal");
   });
 
   it("keeps methodology and liquidity limitations under disclosure", async () => {
@@ -153,9 +159,10 @@ describe("EmergencyReserveSummary", () => {
       />,
     );
 
-    expect(html).toContain("Estimativa parcial: 2.5 meses de despesas");
+    expect(html).toContain("Estimativa parcial: 2,5 meses de despesas");
     expect(html).toContain("A comparação com sua meta está incompleta");
     expect(html).not.toContain('role="progressbar"');
+    expect(html).not.toContain("% da sua meta pessoal");
     expect(html).toContain("Origem, cálculo e limitações");
     expect(html).not.toContain("contêm posições sem valor");
   });

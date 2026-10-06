@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronDown, Shield } from "lucide-react";
+import { ArrowRight, ChevronDown, Shield } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -11,6 +11,7 @@ import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+const months = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 
 export function EmergencyReserveSummary({
   calculation,
@@ -35,41 +36,31 @@ export function EmergencyReserveSummary({
       <CardContent className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-xl bg-muted text-foreground">
+            <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
               <Shield aria-hidden="true" className="size-5" />
             </span>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Como está sua reserva?
-              </p>
-              <h2
-                id="dashboard-reserve-title"
-                className="text-xl font-semibold"
-              >
-                {canCalculateCoverage
-                  ? `${incomplete ? "Estimativa parcial: " : ""}${calculation.coveredMonths!.toFixed(1)} meses de despesas`
-                  : "Cobertura ainda não calculada"}
-              </h2>
-            </div>
+            <h2 id="dashboard-reserve-title" className="text-xl font-semibold">
+              Reserva de emergência
+            </h2>
           </div>
           <Link
             href="/portfolio?panel=objectives&objective=reserve"
-            className="text-sm font-medium text-primary hover:underline"
+            className="inline-flex min-h-10 items-center gap-2 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Ver reserva
+            Ver reserva <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
         </div>
 
         {canCalculateCoverage ? (
-          <div className="mt-5 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="mt-4 space-y-3">
+            <div className="grid gap-0 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="border-t py-3 sm:pr-4 lg:border-r lg:border-t-0 lg:pr-5">
                 <p className="text-xs text-muted-foreground">Valor conhecido</p>
                 <p className="mt-1 text-lg font-semibold tabular-nums">
                   {formatCurrency(calculation.selectedValue)}
                 </p>
               </div>
-              <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="border-t py-3 sm:pl-4 lg:border-r lg:border-t-0 lg:px-5">
                 <p className="text-xs text-muted-foreground">
                   Despesas mensais
                 </p>
@@ -77,7 +68,7 @@ export function EmergencyReserveSummary({
                   {formatCurrency(calculation.monthlyExpenses!)}
                 </p>
               </div>
-              <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="border-t py-3 sm:pr-4 lg:border-r lg:border-t-0 lg:px-5">
                 <p className="text-xs text-muted-foreground">
                   Sua meta pessoal
                 </p>
@@ -87,19 +78,34 @@ export function EmergencyReserveSummary({
                     : "Sem meta pessoal configurada"}
                 </p>
               </div>
-            </div>
-            {hasPersonalTarget &&
-              !incomplete &&
-              calculation.progressPercentage !== null && (
-                <Progress
-                  aria-label="Cobertura em relação à sua meta pessoal"
-                  value={Math.min(
-                    100,
-                    Math.round(calculation.progressPercentage),
+              <div className="border-t py-3 sm:pl-4 lg:border-t-0 lg:pl-5">
+                <p className="text-xs text-muted-foreground">
+                  Cobertura em meses
+                </p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {incomplete ? "Estimativa parcial: " : ""}
+                  {months.format(calculation.coveredMonths!)} meses de despesas
+                </p>
+                {hasPersonalTarget &&
+                  !incomplete &&
+                  calculation.progressPercentage !== null && (
+                    <div className="mt-2 space-y-1.5">
+                      <Progress
+                        aria-label="Cobertura em relação à sua meta pessoal"
+                        value={Math.min(
+                          100,
+                          Math.round(calculation.progressPercentage),
+                        )}
+                        className="h-2.5 bg-muted"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {Math.round(calculation.progressPercentage)}% da sua
+                        meta pessoal
+                      </p>
+                    </div>
                   )}
-                  className="h-2.5 bg-muted"
-                />
-              )}
+              </div>
+            </div>
             {hasPersonalTarget && incomplete ? (
               <p className="text-sm font-medium text-status-warning">
                 A comparação com sua meta está incompleta porque há posições ou

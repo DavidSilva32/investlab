@@ -367,7 +367,7 @@ export function PortfolioObjectives({
           aria-labelledby="objective-subview-title"
           className="space-y-4"
         >
-          <div className="flex items-center gap-3 border-b pb-3">
+          <div className="flex items-start gap-3 border-b pb-3">
             <Button
               type="button"
               variant="ghost"
@@ -379,12 +379,31 @@ export function PortfolioObjectives({
               <ArrowLeft aria-hidden="true" className="mr-2 size-4" />
               Voltar
             </Button>
-            <h2
-              id="objective-subview-title"
-              className="text-base font-semibold"
-            >
-              {subviewTitle}
-            </h2>
+            <div className="min-w-0 space-y-1">
+              <h2
+                id="objective-subview-title"
+                className="text-base font-semibold"
+              >
+                {subviewTitle}
+              </h2>
+              {view.kind === "assign" && (
+                <p className="text-sm text-muted-foreground">
+                  Associe posições existentes a um objetivo.
+                </p>
+              )}
+              {view.kind === "organize" && (
+                <p className="text-sm text-muted-foreground">
+                  Revise os saldos, veja a distribuição proposta e confirme para
+                  transferir as posições.
+                </p>
+              )}
+              {view.kind === "reserve-settings" && (
+                <p className="text-sm text-muted-foreground">
+                  Defina sua meta pessoal e revise as posições consideradas na
+                  Reserva antes de salvar.
+                </p>
+              )}
+            </div>
           </div>
           {view.kind === "detail" && activeObjective && (
             <PortfolioObjectiveDetail

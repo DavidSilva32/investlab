@@ -1,15 +1,32 @@
-# Carteira — detalhes e classificação
+# Carteira — metas e detalhes
 
-## Referência e metadados
+## Referência e estado
 
-| Experiência/rota e estado                                                                                               | Origem                                                                                                     | Funcionalidades reais ilustradas                                                                                         | Elementos fictícios                                                                                                              | Tokens semânticos aplicáveis                                                                                                                                          | Implementação                                                                          | Validação visual                 | Estados (separados)                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sheet “Metas pessoais e detalhes” em `/portfolio`, com dimensão de concentração selecionada e classificação disponível. | [allocation-details-reference.png](./allocation-details-reference.png), mockup gerado por IA, não captura. | Concentração observada, orientação de aporte e classificação por posição/em lote, conforme dados e controles existentes. | Valores, rótulos e vários gráficos da imagem são demonstrativos; não adicionar dimensões, recomendações ou pesos não suportados. | `asset-class-*` para classe; `destination-*` para destino/finalidade; séries genéricas `chart-category-*` para categorias sem semântica financeira; superfície/texto. | Sheet existente organizado verticalmente; controles e dimensões seguem os dados reais. | Comparação visual real pendente. | Referência criada: sim; Contexto funcional revisado: parcial (descrição registrada, sem conferência elemento a elemento nesta tarefa); Layout implementado: sim (registro da #94, não revalidado nesta tarefa); Verificação estrutural: não documentada por imagem e não revalidada nesta tarefa; Comparação visual real: pendente; Aprovação do usuário: não registrada. |
+| Experiência / rota                                                                                                              | Origem e estado                                                                                                                                     | Conteúdo representado                                                                                                                                                                  | Implementação e validação                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Sheet “Metas pessoais e dados detalhados” em `/portfolio`, com a dimensão “Classe” selecionada e a lista de posições recolhida. | [allocation-details-reference.png](./allocation-details-reference.png), proposta visual gerada pelo imagegen integrado; não é captura da aplicação. | Concentração observada por classe, base de cálculo, limite de posições sem valor, estado `needs_targets` da orientação da Estratégia e controle para abrir “Posições e classificação”. | Implementação alinhada à proposta; testes focados aprovados. Comparação visual com a aplicação e validação por captura desktop/mobile pendentes. |
 
-## Limites de uso
+## Dados ilustrativos e limites
 
-Mostrar somente a dimensão e os campos selecionados que o produto já suporta. Classe, destino e série genérica têm paletas semânticas diferentes.
+Os valores da imagem são demonstrativos: R$ 62.000,00 em cinco posições com valor, uma posição sem valor fora da base, e quatro grupos que totalizam 100% da base. Não são dados reais da carteira nem uma recomendação.
 
-### Nomenclatura histórica
+A tela mostra a dimensão “Classe”, suportada pelo produto. “Renda variável”, “Fundos” e “Não informado” são categorias amplas de classificação; não representam as classes específicas da Estratégia. As barras usam uma série visual neutra. Não aplicar a elas cores semânticas de classes específicas. A imagem não deve ser interpretada como suporte a dimensões de instituição ou emissor.
 
-`allocation-details-reference.png` mostra os nomes “Ações Brasil”, “ETFs Internacionais” e “FIIs”, além desses rótulos nas visualizações e nos controles. Eles são anteriores à nomenclatura oficial atual: “Ações e BDRs”, “ETFs internacionais” e “Fundos imobiliários (FIIs)”. Preserve a imagem sem regeneração automática; use o catálogo por ID em `src/lib/strategy-allocation.ts` para novos artefatos. Valores amplos de posição continuam separados.
+O estado de orientação mostrado corresponde à ausência de composição salva na Estratégia: “Salve uma composição na Estratégia”. A orientação deve continuar descritiva e não sugerir compra, venda, alocação ou aporte.
+
+## Identidade visual
+
+Usar superfícies neutras escuras, identidade e ações azuis e suporte ao tema claro, conforme os tokens globais. Se classes específicas forem exibidas em outra visualização, consultar os IDs e cores oficiais em `src/lib/strategy-allocation.ts`; não deduzir classes específicas a partir das categorias amplas desta referência.
+
+## Histórico
+
+A imagem anterior foi substituída por esta proposta e não é mais uma referência ativa. Ela apresentava rótulos de classes desatualizados, dimensões de concentração sem suporte e uma recomendação fixa de aporte. A proposta atual corrige esses pontos.
+
+## Aprovação e acompanhamento
+
+- Referência gerada: sim.
+- Contexto funcional: revisado para o estado ilustrado.
+- Aprovação visual do usuário: aprovada.
+- Implementação da proposta: concluída.
+- Verificação estrutural: cinco arquivos de teste de componentes; 51 testes aprovados.
+- Comparação visual real e captura desktop/mobile: pendentes.

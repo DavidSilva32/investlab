@@ -79,6 +79,8 @@ export function PortfolioOverview({
     insights.provisionalEstimates > 0 ||
     insights.unavailableEstimates > 0 ||
     nextMaturity !== undefined;
+  const positionsWithCaveat =
+    insights.provisionalEstimates + insights.unavailableEstimates;
 
   const institutionDistribution = insights.chartAllocations.map((item) => ({
     label: item.institution,
@@ -124,7 +126,7 @@ export function PortfolioOverview({
               {insights.provisionalEstimates === 0 &&
               insights.unavailableEstimates === 0
                 ? "Sem estimativas pendentes"
-                : `${insights.provisionalEstimates + insights.unavailableEstimates} posição(ões) com ressalva`}
+                : `${positionsWithCaveat} ${positionsWithCaveat === 1 ? "posição" : "posições"} com ressalva`}
             </p>
             {(insights.provisionalEstimates > 0 ||
               insights.unavailableEstimates > 0) && (

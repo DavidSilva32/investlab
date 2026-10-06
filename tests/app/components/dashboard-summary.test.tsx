@@ -63,6 +63,32 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Ver objetivos");
   });
 
+  it("uses a two-column layout when an unassigned summary and next action are available", () => {
+    render(
+      <DashboardSummary
+        positions={[]}
+        unassignedSummary={{
+          status: "loaded",
+          knownValue: 0,
+          positionCount: 0,
+          unvaluedPositionCount: 0,
+        }}
+      />,
+    );
+
+    const unassignedSection = screen.getByRole("region", {
+      name: "Patrimônio conhecido sem destino",
+    });
+    const nextActionSection = screen.getByRole("region", {
+      name: "Próxima ação",
+    });
+    const summaryGrid = unassignedSection.parentElement;
+
+    expect(summaryGrid).toBe(nextActionSection.parentElement);
+    expect(summaryGrid?.className).toContain("xl:grid-cols-2");
+    expect(summaryGrid?.children).toHaveLength(2);
+  });
+
   it("shows an unavailable destination summary without a fabricated amount and retries", async () => {
     const user = userEvent.setup();
     const onRetryUnassigned = vi.fn();
@@ -87,7 +113,7 @@ describe("DashboardSummary", () => {
       <DashboardSummary positions={positions} />,
     );
 
-    expect(html).toContain("Onde você está");
+    expect(html).toContain("Patrimônio conhecido");
     expect(html).toContain("R$");
     expect(html).toContain("2 de 2");
     expect(html).toContain("Dados de 01/09/2026");
@@ -104,6 +130,10 @@ describe("DashboardSummary", () => {
       "Maior posição na carteira conhecida",
     );
     expect(html).toContain("Como ler estes dados");
+    expect(html).toContain(
+      "lg:grid-cols-[minmax(0,1.5fr)_minmax(10rem,0.7fr)_minmax(12rem,0.8fr)]",
+    );
+    expect(html).toContain("xl:grid-cols-2");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("group-data-[state=open]:rotate-180");
     expect(html).toContain(
@@ -154,7 +184,8 @@ describe("DashboardSummary", () => {
 
     expect(html).toContain("A reserva está abaixo da sua meta pessoal");
     expect(html).toContain("não é uma recomendação do InvestLab");
-    expect(html).not.toContain('aria-labelledby="dashboard-next-action-title"');
+    expect(html).toContain('aria-labelledby="dashboard-next-action-title"');
+    expect(html).toContain("Acompanhe a evolução da reserva");
     expect(html).not.toContain("Defina sua estratégia de alocação");
   });
 
@@ -178,7 +209,7 @@ describe("DashboardSummary", () => {
       />,
     );
 
-    expect(html).toContain("2.0 meses de despesas");
+    expect(html).toContain("2 meses de despesas");
     expect(html).toContain("Sem meta pessoal configurada");
     expect(html).toContain("Complete a configuração da reserva");
     expect(html).toContain('aria-labelledby="dashboard-next-action-title"');

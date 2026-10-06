@@ -47,7 +47,7 @@ describe("PortfolioObjectiveForm", () => {
     expect(form?.className).toContain("grid gap-5");
     expect(form?.className).not.toContain("grid-cols");
     expect(form?.closest("section")?.className).toContain("rounded-xl border");
-    fireEvent.change(screen.getByLabelText("Nome"), {
+    fireEvent.change(screen.getByLabelText("Nome do objetivo"), {
       target: { value: "  Viagem  " },
     });
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
@@ -96,14 +96,14 @@ describe("PortfolioObjectiveForm", () => {
         onCancel={onCancel}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+    await user.click(screen.getByRole("button", { name: "Salvar objetivo" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível salvar o objetivo.",
       ),
     );
     expect(screen.queryByRole("alert")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Cancelar edição" }));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
@@ -111,7 +111,7 @@ describe("PortfolioObjectiveForm", () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<PortfolioObjectiveForm saving={false} onSave={onSave} />);
-    fireEvent.change(screen.getByLabelText("Nome"), {
+    fireEvent.change(screen.getByLabelText("Nome do objetivo"), {
       target: { value: "Longo prazo" },
     });
     await user.click(
@@ -143,7 +143,7 @@ describe("PortfolioObjectiveForm", () => {
     const onSave = vi.fn();
     render(<PortfolioObjectiveForm saving={false} onSave={onSave} />);
 
-    fireEvent.change(screen.getByLabelText("Nome"), {
+    fireEvent.change(screen.getByLabelText("Nome do objetivo"), {
       target: { value: "Viagem" },
     });
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
@@ -164,7 +164,7 @@ describe("PortfolioObjectiveForm", () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
     render(<PortfolioObjectiveForm saving={false} onSave={onSave} />);
-    fireEvent.change(screen.getByLabelText("Nome"), {
+    fireEvent.change(screen.getByLabelText("Nome do objetivo"), {
       target: { value: "Investir no longo prazo" },
     });
     await user.click(screen.getByRole("button", { name: "Criar objetivo" }));
@@ -213,10 +213,10 @@ describe("PortfolioObjectiveForm", () => {
         }) as HTMLButtonElement
       ).textContent,
     ).toContain("Escolha uma finalidade");
-    fireEvent.change(screen.getByLabelText("Nome"), {
+    fireEvent.change(screen.getByLabelText("Nome do objetivo"), {
       target: { value: "Longo prazo revisado" },
     });
-    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+    await user.click(screen.getByRole("button", { name: "Salvar objetivo" }));
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         name: "Longo prazo revisado",
@@ -231,7 +231,7 @@ describe("PortfolioObjectiveForm", () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
     render(<PortfolioObjectiveForm saving={false} onSave={onSave} />);
-    fireEvent.change(screen.getByLabelText("Nome"), {
+    fireEvent.change(screen.getByLabelText("Nome do objetivo"), {
       target: { value: "Viagem" },
     });
     fireEvent.change(screen.getByLabelText("Meta em reais (opcional)"), {
@@ -289,7 +289,7 @@ describe("PortfolioObjectiveForm", () => {
         ) as HTMLInputElement
       ).value,
     ).toBe("R$ 125,50");
-    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+    await user.click(screen.getByRole("button", { name: "Salvar objetivo" }));
     expect(toast.error).toHaveBeenCalledWith(
       "Não foi possível salvar o objetivo.",
     );

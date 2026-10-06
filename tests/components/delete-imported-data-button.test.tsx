@@ -16,9 +16,9 @@ describe("DeleteImportedDataButton", () => {
   });
 
   it("shows the API success message and notifies the portfolio without reloading", async () => {
+    const user = userEvent.setup();
     const portfolioUpdated = vi.fn();
     window.addEventListener("portfolio:updated", portfolioUpdated);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -35,8 +35,10 @@ describe("DeleteImportedDataButton", () => {
         label="posições"
       />,
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Excluir posições" }),
+    await user.click(screen.getByRole("button", { name: "Excluir posições" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
     );
     await waitFor(() =>
       expect(portfolioUpdated).toHaveBeenCalledWith(
@@ -54,7 +56,7 @@ describe("DeleteImportedDataButton", () => {
   });
 
   it("uses the localized default error when the API does not provide one", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
@@ -65,8 +67,10 @@ describe("DeleteImportedDataButton", () => {
         label="posições"
       />,
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Excluir posições" }),
+    await user.click(screen.getByRole("button", { name: "Excluir posições" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
     );
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
@@ -76,11 +80,7 @@ describe("DeleteImportedDataButton", () => {
     expect(screen.queryByText(/Não foi possível excluir os dados/)).toBeNull();
   });
   it("does nothing when cancellation is declined and reports failures by toast", async () => {
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true);
+    const user = userEvent.setup();
     const fetch = vi
       .fn()
       .mockResolvedValueOnce({
@@ -98,18 +98,26 @@ describe("DeleteImportedDataButton", () => {
     const button = screen.getByRole("button", {
       name: "Excluir movimentações",
     });
-    await userEvent.click(button);
+    await user.click(button);
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(fetch).not.toHaveBeenCalled();
-    await userEvent.click(button);
+    await user.click(button);
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Não pode"),
     );
-    await userEvent.click(button);
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await user.click(button);
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível comunicar com o servidor.",
       ),
     );
-    expect(confirm).toHaveBeenCalledTimes(3);
   });
 });
