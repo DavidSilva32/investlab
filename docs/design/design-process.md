@@ -37,4 +37,4 @@ Quando a revisão encontrar funcionalidade ou conteúdo visual sem suporte, regi
 
 ## Cobertura
 
-Use a [matriz de cobertura](./active-route-inventory.md#matriz-de-cobertura-visual) para identificar referências existentes e lacunas por experiência. Uma referência cobre mais de um estado somente quando a composição e a tarefa forem comprovadamente compartilhadas. Experiências fora da navegação ativa, incluindo Screener e Study List, não recebem referências nesta cobertura.
+Use a [matriz de cobertura](./active-route-inventory.md#matriz-de-cobertura-visual) para identificar referências existentes e lacunas por experiência. Uma referência cobre mais de um estado somente quando a composição e a tarefa forem comprovadamente compartilhadas. Experiências fora da navegação ativa, incluindo Screener, não recebem referências nesta cobertura. Study List foi aposentada no Issue #117.

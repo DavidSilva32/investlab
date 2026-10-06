@@ -428,18 +428,6 @@ describe("StockAnalysisDashboard", () => {
     expect(chart.dataset.points).toBe("2019-02-28,2024-02-29");
   });
 
-  it("keeps the analysis focused on its data without offering the study list", async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(jsonResponse(analysis));
-    vi.stubGlobal("fetch", fetcher);
-    render(<StockAnalysisDashboard initialTicker="PETR4" />);
-
-    expect(await screen.findByText(/PETR4.*Petrobras/)).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /lista de estudo/i }),
-    ).toBeNull();
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
   it("keeps the analysis available when its CNPJ is unresolved", async () => {
     vi.stubGlobal(
       "fetch",

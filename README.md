@@ -33,7 +33,7 @@ Configure `AUTH_EMAIL`, `AUTH_PASSWORD_HASH`, `AUTH_SECRET`, `DATABASE_URL_POOLE
 
 ## Dados de empresas
 
-A navegação principal oferece **Dashboard**, **Carteira**, **Importações**, **Análises** e **Configurações**. Análises abre a busca e a análise individual de empresas; o Screener fica disponível em `/analyses/screener`, fora da navegação principal. A Lista de estudo continua disponível em `/study-list`, também fora da navegação principal. Não há uma tela de Descobrir na jornada atual.
+A navegação principal oferece **Dashboard**, **Carteira**, **Importações**, **Análises** e **Configurações**. Análises abre a busca e a análise individual de empresas; o Screener fica disponível em `/analyses/screener`, fora da navegação principal. A antiga Lista de estudo foi aposentada no Issue #117. Não há uma tela de Descobrir na jornada atual.
 
 A base do Screener é atualizada manualmente em Configurações com cadastro e cotações da BRAPI e fatos anuais consolidados DFP da CVM. A atualização de mercado também pode ser executada separadamente. Não há cron configurado. Os dados mostram período, origem e critérios atendidos, não atendidos ou indisponíveis. As múltiplas do Screener exigem cotações verificadas com até sete dias. Atualização da base não significa que cada empresa tenha divulgado um novo demonstrativo ou que cada cotação esteja igualmente recente.
 
