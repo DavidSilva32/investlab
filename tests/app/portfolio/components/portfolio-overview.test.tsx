@@ -198,6 +198,23 @@ describe("PortfolioOverview", () => {
     expect(html).toContain("01/01/2099");
   });
 
+  it("uses singular wording for one position with a caveat", () => {
+    const html = renderToStaticMarkup(
+      <PortfolioOverview
+        classifiedPositions={[]}
+        classificationStatus="loaded"
+        positions={[
+          {
+            ...position("1", "CDB provisório", "100"),
+            cdbEstimateStatus: "provisional",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("1 posição com ressalva");
+  });
+
   it("explains empty and unavailable chart data without financial judgment", () => {
     const html = renderToStaticMarkup(
       <PortfolioOverview

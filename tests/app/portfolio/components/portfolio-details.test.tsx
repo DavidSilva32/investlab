@@ -206,6 +206,30 @@ describe("portfolio detail components", () => {
       "Nenhuma movimentação importada",
     );
   });
+
+  it("uses the singular count for one movement", () => {
+    const html = renderToStaticMarkup(
+      <MovementDetails
+        movements={[
+          {
+            id: "single",
+            direction: "CREDITO",
+            occurredAt: "2026-01-01",
+            movementType: "APLICAÇÃO",
+            product: "CDB",
+            assetCode: "CDB1",
+            institution: "Banco",
+            quantity: "1",
+            unitPrice: "10",
+            operationValue: "10",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("1 movimentação registrada");
+    expect(html).not.toContain("1 movimentações registradas");
+  });
 });
 
 it("does not claim a current valuation when no covered-through date is returned", () => {

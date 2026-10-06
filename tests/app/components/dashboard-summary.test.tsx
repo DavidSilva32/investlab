@@ -63,6 +63,32 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Ver objetivos");
   });
 
+  it("uses a two-column layout when an unassigned summary and next action are available", () => {
+    render(
+      <DashboardSummary
+        positions={[]}
+        unassignedSummary={{
+          status: "loaded",
+          knownValue: 0,
+          positionCount: 0,
+          unvaluedPositionCount: 0,
+        }}
+      />,
+    );
+
+    const unassignedSection = screen.getByRole("region", {
+      name: "Patrimônio conhecido sem destino",
+    });
+    const nextActionSection = screen.getByRole("region", {
+      name: "Próxima ação",
+    });
+    const summaryGrid = unassignedSection.parentElement;
+
+    expect(summaryGrid).toBe(nextActionSection.parentElement);
+    expect(summaryGrid?.className).toContain("xl:grid-cols-2");
+    expect(summaryGrid?.children).toHaveLength(2);
+  });
+
   it("shows an unavailable destination summary without a fabricated amount and retries", async () => {
     const user = userEvent.setup();
     const onRetryUnassigned = vi.fn();
