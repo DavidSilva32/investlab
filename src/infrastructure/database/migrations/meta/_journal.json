@@ -218,6 +218,13 @@
       "when": 1790984696526,
       "tag": "0030_white_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791323015711,
+      "tag": "0031_remove_study_list",
+      "breakpoints": true
     }
   ]
 }
