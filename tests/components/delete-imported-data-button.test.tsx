@@ -37,7 +37,9 @@ describe("DeleteImportedDataButton", () => {
     );
     await user.click(screen.getByRole("button", { name: "Excluir posições" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Confirmar exclusão" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
     await waitFor(() =>
       expect(portfolioUpdated).toHaveBeenCalledWith(
         expect.objectContaining({ type: "portfolio:updated" }),
@@ -67,7 +69,9 @@ describe("DeleteImportedDataButton", () => {
     );
     await user.click(screen.getByRole("button", { name: "Excluir posições" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Confirmar exclusão" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível excluir os dados.",
@@ -99,13 +103,17 @@ describe("DeleteImportedDataButton", () => {
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(fetch).not.toHaveBeenCalled();
     await user.click(button);
-    await user.click(screen.getByRole("button", { name: "Confirmar exclusão" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Não pode"),
     );
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
     await user.click(button);
-    await user.click(screen.getByRole("button", { name: "Confirmar exclusão" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível comunicar com o servidor.",
