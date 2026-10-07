@@ -367,7 +367,16 @@ export function StockAnalysisDashboard({
     (period) => period.sourceDocument === "DFP",
   );
   const interim = analysis.fundamentals.filter(
-    (period) => period.sourceDocument === "ITR",
+    (period) =>
+      period.sourceDocument === "ITR" &&
+      period.periodBasis === "year_to_date" &&
+      !period.isDerived,
+  );
+  const discreteQuarters = analysis.fundamentals.filter(
+    (period) =>
+      period.sourceDocument === "ITR" &&
+      period.periodBasis === "quarterly" &&
+      period.exerciseOrder !== "previous",
   );
   const intervals = historyIntervals.filter(({ days }) =>
     hasPeriodCoverage(history, days),
@@ -413,6 +422,15 @@ export function StockAnalysisDashboard({
                 {analysis.changePercent === null
                   ? "Variação do dia não informada"
                   : `Variação do dia: ${analysis.changePercent.toFixed(2)}%`}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {analysis.priceUpdatedAt &&
+                Number.isFinite(Date.parse(analysis.priceUpdatedAt))
+                  ? `Cotação observada em ${new Intl.DateTimeFormat("pt-BR", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    }).format(new Date(analysis.priceUpdatedAt))}`
+                  : "Data da cotação não informada"}
               </p>
             </div>
           </div>
@@ -548,6 +566,23 @@ export function StockAnalysisDashboard({
                 </div>
                 <FundamentalsGrid periods={interim} type="ITR" />
               </section>
+              {discreteQuarters.length > 0 && (
+                <section
+                  aria-labelledby="quarterly-evidence-title"
+                  className="space-y-3"
+                >
+                  <div>
+                    <h3 id="quarterly-evidence-title" className="font-medium">
+                      Trimestres isolados informados
+                    </h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Estes valores cobrem apenas o trimestre indicado; os ITR
+                      acumulados permanecem em uma seção separada.
+                    </p>
+                  </div>
+                  <FundamentalsGrid periods={discreteQuarters} type="ITR" />
+                </section>
+              )}
             </CardContent>
           </CollapsibleContent>
         </Card>

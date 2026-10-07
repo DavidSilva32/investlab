@@ -22,7 +22,7 @@ describe("FundamentalsGrid", () => {
     );
     expect(screen.getByText("Receita")).toBeTruthy();
     expect(screen.getByText("Lucro líquido")).toBeTruthy();
-    expect(screen.getByText("Patrimônio líquido")).toBeTruthy();
+    expect(screen.getByText(/Patrimônio líquido \(saldo em/)).toBeTruthy();
     expect(screen.getByText(/1\.000\.000,00/)).toBeTruthy();
   });
   it("explains when the requested statement type is unavailable", () => {
@@ -30,6 +30,81 @@ describe("FundamentalsGrid", () => {
     expect(
       screen.getByText("Sem informações trimestrais disponíveis."),
     ).toBeTruthy();
+  });
+
+  it("labels an explicitly reported quarter separately from accumulated ITR data", () => {
+    render(
+      <FundamentalsGrid
+        type="ITR"
+        periods={[
+          {
+            referenceDate: "2026-06-30",
+            periodStart: "2026-04-01",
+            periodEnd: "2026-06-30",
+            periodBasis: "quarterly",
+            sourceDocument: "ITR",
+            revenue: "100",
+            netIncome: "20",
+            equity: null,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Receita do trimestre")).toBeTruthy();
+    expect(screen.getByText("Lucro líquido do trimestre")).toBeTruthy();
+    expect(
+      screen.getByText(/Patrimônio líquido \(saldo em 30 de jun/),
+    ).toBeTruthy();
+  });
+
+  it("distinguishes comparative flows and leaves unknown periods unlabeled", () => {
+    const { rerender } = render(
+      <FundamentalsGrid
+        type="ITR"
+        periods={[
+          {
+            referenceDate: "2025-06-30",
+            periodStart: "2025-01-01",
+            periodEnd: "2025-06-30",
+            periodBasis: "year_to_date",
+            exerciseOrder: "previous",
+            sourceDocument: "ITR",
+            revenue: "100",
+            netIncome: "20",
+            equity: "80",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/Comparativo informado até/)).toBeTruthy();
+    expect(
+      screen.getByText("Receita comparativa acumulada no exercício"),
+    ).toBeTruthy();
+
+    rerender(
+      <FundamentalsGrid
+        type="ITR"
+        periods={[
+          {
+            referenceDate: "2026-05-15",
+            periodBasis: "unknown",
+            sourceDocument: "ITR",
+            revenue: "100",
+            netIncome: "20",
+            equity: "80",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText("Receita com período não identificado"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Lucro líquido com período não identificado"),
+    ).toBeTruthy();
+    expect(screen.getByText(/Patrimônio líquido \(saldo em/)).toBeTruthy();
   });
 
   it("shows annual direction and percent only for consecutive aligned DFP periods", () => {
@@ -276,6 +351,7 @@ it("labels accumulated interim data and marks invalid values as unavailable", ()
       periods={[
         {
           referenceDate: "2026-06-30",
+          periodBasis: "year_to_date",
           sourceDocument: "ITR",
           revenue: null,
           netIncome: "invalid",
@@ -285,7 +361,11 @@ it("labels accumulated interim data and marks invalid values as unavailable", ()
     />,
   );
 
-  expect(screen.getByText(/Acumulado at?/)).toBeTruthy();
+  expect(screen.getByText("Receita acumulada no exercício")).toBeTruthy();
+  expect(screen.getByText("Lucro líquido acumulado no exercício")).toBeTruthy();
+  expect(
+    screen.getByText(/Patrimônio líquido \(saldo em 30 de jun/),
+  ).toBeTruthy();
   expect(screen.getAllByText("—")).toHaveLength(2);
   expect(screen.getByText("R$ 0,00")).toBeTruthy();
 });

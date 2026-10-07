@@ -55,6 +55,7 @@ const analysis = {
   cnpj: "33000167000101",
   companyName: "Petrobras",
   price: 30,
+  priceUpdatedAt: "2026-09-19T15:30:00-03:00",
   changePercent: -1.25,
   history: [
     { date: "2026-09-19", close: 31 },
@@ -319,6 +320,7 @@ describe("StockAnalysisDashboard", () => {
         .getAttribute("aria-pressed"),
     ).toBe("false");
     expect(screen.getByText("Variação do dia: -1.25%")).toBeTruthy();
+    expect(screen.getByText(/Cotação observada em/)).toBeTruthy();
     expect(
       screen.getByRole("group", { name: "Intervalo do histórico" }),
     ).toBeTruthy();
@@ -687,6 +689,58 @@ it("shows the annual fact reading and keeps statement detail collapsed", async (
   expect(
     screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
   ).toBeNull();
+});
+
+it("separates accumulated and isolated ITR periods and handles missing quote time", async () => {
+  const currentInterim = {
+    ...analysis.fundamentals[1],
+    referenceDate: "2026-06-30",
+    periodBasis: "year_to_date",
+    exerciseOrder: "last",
+  };
+  const response = {
+    ...analysis,
+    priceUpdatedAt: "invalid timestamp",
+    fundamentals: [
+      ...analysis.fundamentals.slice(0, 1),
+      currentInterim,
+      {
+        ...currentInterim,
+        referenceDate: "2025-06-30",
+        exerciseOrder: "previous",
+      },
+      {
+        ...currentInterim,
+        referenceDate: "2026-03-31",
+        periodBasis: "quarterly",
+        exerciseOrder: "last",
+      },
+      {
+        ...currentInterim,
+        referenceDate: "2025-03-31",
+        periodBasis: "quarterly",
+        exerciseOrder: "previous",
+      },
+      { ...currentInterim, isDerived: true },
+    ],
+  };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(response)));
+  render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+  expect(await screen.findByText("Data da cotação não informada")).toBeTruthy();
+  await userEvent.setup().click(
+    screen.getByRole("button", {
+      name: /ver demonstrativos e detalhes técnicos/i,
+    }),
+  );
+  expect(
+    await screen.findByRole("heading", {
+      name: "Trimestres isolados informados",
+    }),
+  ).toBeTruthy();
+  expect(screen.getByText("Receita acumulada no exercício")).toBeTruthy();
+  expect(screen.getByText("Receita do trimestre")).toBeTruthy();
+  expect(screen.getAllByText(/Comparativo informado até/)).toHaveLength(1);
 });
 
 it("ignores a stale request rejection after a newer ticker has loaded", async () => {

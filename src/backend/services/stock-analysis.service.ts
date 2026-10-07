@@ -23,36 +23,256 @@ function numericValue(value: string | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizedAccountLabel(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function isFinancialIntermediationRevenue(
+  period: FundamentalPeriod | undefined,
+) {
+  const label = normalizedAccountLabel(period?.revenueAccountLabel);
+  return /^RECEITAS? (?:DA |DE )?INTERMEDIACAO FINANCEIRA$/.test(label);
+}
+
+function addUtcDay(date: string) {
+  const result = new Date(`${date}T00:00:00.000Z`);
+  result.setUTCDate(result.getUTCDate() + 1);
+  return result.toISOString().slice(0, 10);
+}
+
+function subtractUtcYear(date: string) {
+  const result = new Date(`${date}T00:00:00.000Z`);
+  const month = result.getUTCMonth();
+  const day = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCFullYear(result.getUTCFullYear() - 1);
+  const lastDay = new Date(
+    Date.UTC(result.getUTCFullYear(), month + 1, 0),
+  ).getUTCDate();
+  result.setUTCMonth(month, Math.min(day, lastDay));
+  return result.toISOString().slice(0, 10);
+}
+
+function ltmFlowPeriods(periods: FundamentalPeriod[]) {
+  return periods.flatMap((current) => {
+    if (
+      current.sourceDocument !== "ITR" ||
+      current.periodBasis !== "year_to_date" ||
+      current.exerciseOrder !== "last" ||
+      !current.periodStart ||
+      !current.periodEnd ||
+      !current.filingReferenceDate ||
+      current.periodStart !== `${current.periodEnd.slice(0, 4)}-01-01`
+    )
+      return [];
+
+    const currentPeriodEnd = current.periodEnd!;
+    const year = Number(currentPeriodEnd.slice(0, 4));
+    const previousYear = year - 1;
+    const annual = periods.filter(
+      (period) =>
+        period.sourceDocument === "DFP" &&
+        period.periodType === "annual" &&
+        period.periodBasis === "annual" &&
+        period.periodStart === `${previousYear}-01-01` &&
+        period.periodEnd === `${previousYear}-12-31` &&
+        period.exerciseOrder === "last",
+    );
+    const comparative = periods.filter(
+      (period) =>
+        period.sourceDocument === "ITR" &&
+        period.periodBasis === "year_to_date" &&
+        period.exerciseOrder === "previous" &&
+        period.filingReferenceDate === current.filingReferenceDate &&
+        period.periodStart === `${previousYear}-01-01` &&
+        period.periodEnd === subtractUtcYear(currentPeriodEnd),
+    );
+    if (annual.length !== 1 || comparative.length !== 1) return [];
+    const fullYear = annual[0]!;
+    const priorYtd = comparative[0]!;
+    const priorYtdPeriodEnd = priorYtd.periodEnd!;
+    const calculateFlow = (
+      field: "revenue" | "netIncome",
+      versionField: "revenueVersion" | "netIncomeVersion",
+      accountIdentityField: "revenueAccountLabel" | "netIncomeConcept",
+    ) => {
+      if (
+        !current[versionField] ||
+        current[versionField] !== priorYtd[versionField]
+      )
+        return null;
+      const accountIdentities = [
+        fullYear[accountIdentityField],
+        current[accountIdentityField],
+        priorYtd[accountIdentityField],
+      ].map((identity) =>
+        accountIdentityField === "revenueAccountLabel"
+          ? normalizedAccountLabel(identity)
+          : (identity ?? ""),
+      );
+      if (
+        !accountIdentities[0] ||
+        !accountIdentities.every(
+          (identity) => identity === accountIdentities[0],
+        )
+      )
+        return null;
+      if (
+        accountIdentityField === "netIncomeConcept" &&
+        (!fullYear.netIncomeAccount ||
+          !current.netIncomeAccount ||
+          current.netIncomeAccount !== priorYtd.netIncomeAccount ||
+          !["3.09", "3.11"].includes(fullYear.netIncomeAccount) ||
+          !["3.09", "3.11"].includes(current.netIncomeAccount))
+      )
+        return null;
+      const values = [fullYear[field], current[field], priorYtd[field]].map(
+        numericValue,
+      );
+      if (values.some((value) => value === null)) return null;
+      return values[0]! + values[1]! - values[2]!;
+    };
+    const revenue = calculateFlow(
+      "revenue",
+      "revenueVersion",
+      "revenueAccountLabel",
+    );
+    const netIncome = calculateFlow(
+      "netIncome",
+      "netIncomeVersion",
+      "netIncomeConcept",
+    );
+    if (revenue === null && netIncome === null) return [];
+    return [
+      {
+        ...current,
+        referenceDate: currentPeriodEnd,
+        periodStart: addUtcDay(priorYtdPeriodEnd),
+        periodBasis: "trailing_twelve_months" as const,
+        revenue: revenue?.toFixed(2) ?? null,
+        netIncome: netIncome?.toFixed(2) ?? null,
+        equity: null,
+        assets: null,
+        liabilities: null,
+        cash: null,
+        debt: null,
+        isDerived: true,
+      },
+    ];
+  });
+}
+
 export function calculateAnalysisIndicators(
   periods: FundamentalPeriod[],
   marketCap: number | null = null,
+  marketDataDate: string | null = null,
 ): AnalysisIndicator[] {
+  const ltm = ltmFlowPeriods(periods).sort((left, right) =>
+    right.periodEnd!.localeCompare(left.periodEnd!),
+  )[0];
   const unavailableMarketValue =
     "Indisponível: a fonte de mercado não informou o valor de mercado do ativo.";
   const annual = periods
-    .filter((period) => period.sourceDocument === "DFP")
+    .filter(
+      (period) =>
+        period.sourceDocument === "DFP" &&
+        period.periodBasis === "annual" &&
+        period.periodStart === `${period.periodEnd?.slice(0, 4)}-01-01` &&
+        period.periodEnd === `${period.periodEnd?.slice(0, 4)}-12-31` &&
+        period.exerciseOrder === "last",
+    )
     .sort((left, right) =>
       right.referenceDate.localeCompare(left.referenceDate),
     );
   const latest = periods
+    .filter(
+      (period) =>
+        period.exerciseOrder !== "previous" &&
+        (period.periodBasis === "annual" ||
+          period.periodBasis === "year_to_date" ||
+          period.periodBasis === "quarterly") &&
+        Boolean(period.periodEnd ?? period.referenceDate),
+    )
     .slice()
     .sort((left, right) =>
-      right.referenceDate.localeCompare(left.referenceDate),
+      (right.periodEnd ?? right.referenceDate).localeCompare(
+        left.periodEnd ?? left.referenceDate,
+      ),
     )[0];
   const latestAnnual = annual[0];
   const previousAnnual = annual[1];
-  const revenue = latest ? numericValue(latest.revenue) : null;
-  const netIncome = latest ? numericValue(latest.netIncome) : null;
+  const netIncomeFlowPeriod =
+    ltm && numericValue(ltm.netIncome) !== null ? ltm : latestAnnual;
+  const marketFlowPeriod = netIncomeFlowPeriod;
+  const marginPeriod = ltm ?? latest;
+  const roeFlowPeriod = netIncomeFlowPeriod;
+  const usesLtmRoe = roeFlowPeriod?.periodBasis === "trailing_twelve_months";
+  const revenue = marginPeriod ? numericValue(marginPeriod.revenue) : null;
+  const netIncome = marginPeriod ? numericValue(marginPeriod.netIncome) : null;
+  const financialIntermediationRevenue =
+    isFinancialIntermediationRevenue(marginPeriod);
   const netMargin =
-    revenue !== null && netIncome !== null && revenue !== 0
+    !financialIntermediationRevenue &&
+    revenue !== null &&
+    netIncome !== null &&
+    revenue !== 0
       ? (netIncome / revenue) * 100
       : null;
-  const latestEquity = latestAnnual ? numericValue(latestAnnual.equity) : null;
-  const previousEquity = previousAnnual
-    ? numericValue(previousAnnual.equity)
+  const latestBalance = periods
+    .filter(
+      (period) =>
+        period.exerciseOrder !== "previous" &&
+        numericValue(period.equity) !== null,
+    )
+    .sort((left, right) =>
+      (right.periodEnd ?? right.referenceDate).localeCompare(
+        left.periodEnd ?? left.referenceDate,
+      ),
+    )[0];
+  const latestEquity = latestBalance
+    ? numericValue(latestBalance.equity)
     : null;
-  const annualNetIncome = latestAnnual
-    ? numericValue(latestAnnual.netIncome)
+  const latestBalanceAtFlowEnd = roeFlowPeriod
+    ? periods.filter(
+        (period) =>
+          (period.periodEnd ?? period.referenceDate) ===
+            roeFlowPeriod.periodEnd &&
+          (period.exerciseOrder ?? "last") === "last",
+      )
+    : [];
+  const openingBalances =
+    usesLtmRoe && ltm
+      ? periods.filter(
+          (period) =>
+            period.sourceDocument === "ITR" &&
+            period.exerciseOrder === "previous" &&
+            period.filingReferenceDate === ltm.filingReferenceDate &&
+            (period.periodEnd ?? period.referenceDate) ===
+              subtractUtcYear(ltm.periodEnd!),
+        )
+      : [];
+  const openingBalance = usesLtmRoe
+    ? openingBalances.length === 1
+      ? openingBalances[0]
+      : undefined
+    : previousAnnual;
+  const roeEndingEquity =
+    latestBalanceAtFlowEnd.length === 1
+      ? numericValue(latestBalanceAtFlowEnd[0]!.equity)
+      : usesLtmRoe
+        ? null
+        : numericValue(latestAnnual?.equity ?? null);
+  const previousEquity = numericValue(openingBalance?.equity ?? null);
+  const supportedNetIncome = (period: FundamentalPeriod | undefined) =>
+    period?.netIncomeConcept === "consolidated_net_income" &&
+    ["3.09", "3.11"].includes(period.netIncomeAccount ?? "");
+  const annualNetIncome = supportedNetIncome(roeFlowPeriod)
+    ? numericValue(roeFlowPeriod.netIncome)
     : null;
   const hasMarketCap = marketCap !== null && marketCap > 0;
   const pe =
@@ -63,34 +283,70 @@ export function calculateAnalysisIndicators(
     hasMarketCap && latestEquity !== null && latestEquity > 0
       ? marketCap / latestEquity
       : null;
-  const consecutiveYears =
-    latestAnnual &&
-    previousAnnual &&
-    Number(latestAnnual.referenceDate.slice(0, 4)) -
-      Number(previousAnnual.referenceDate.slice(0, 4)) ===
-      1;
+  const compatibleRoePeriod = usesLtmRoe
+    ? Boolean(
+        openingBalance &&
+        latestBalanceAtFlowEnd.length === 1 &&
+        latestBalanceAtFlowEnd[0]!.equityAccount &&
+        latestBalanceAtFlowEnd[0]!.equityAccount ===
+          openingBalance.equityAccount &&
+        latestBalanceAtFlowEnd[0]!.equityConcept === "consolidated_equity" &&
+        latestBalanceAtFlowEnd[0]!.equityConcept ===
+          openingBalance.equityConcept &&
+        latestBalanceAtFlowEnd[0]!.equityVersion &&
+        latestBalanceAtFlowEnd[0]!.equityVersion ===
+          openingBalance.equityVersion,
+      )
+    : Boolean(
+        latestAnnual &&
+        previousAnnual &&
+        supportedNetIncome(latestAnnual) &&
+        supportedNetIncome(previousAnnual) &&
+        latestAnnual.equityConcept === "consolidated_equity" &&
+        previousAnnual.equityConcept === "consolidated_equity" &&
+        latestAnnual.equityAccount === previousAnnual.equityAccount &&
+        ["2.03", "2.07", "2.08"].includes(latestAnnual.equityAccount ?? "") &&
+        Number(latestAnnual.referenceDate.slice(0, 4)) -
+          Number(previousAnnual.referenceDate.slice(0, 4)) ===
+          1,
+      );
   const roe =
-    consecutiveYears &&
-    latestEquity !== null &&
+    compatibleRoePeriod &&
+    roeEndingEquity !== null &&
     previousEquity !== null &&
     annualNetIncome !== null &&
-    latestEquity + previousEquity !== 0
-      ? (annualNetIncome / ((latestEquity + previousEquity) / 2)) * 100
+    roeEndingEquity + previousEquity > 0
+      ? (annualNetIncome / ((roeEndingEquity + previousEquity) / 2)) * 100
       : null;
-  const annualReferenceDate = latestAnnual?.referenceDate ?? null;
+  const peUnavailableReason =
+    pe !== null
+      ? null
+      : !hasMarketCap
+        ? unavailableMarketValue
+        : marketFlowPeriod?.periodBasis === "trailing_twelve_months"
+          ? `Indisponível: o lucro líquido positivo não está disponível no LTM encerrado em ${marketFlowPeriod!.periodEnd}.`
+          : "Indisponível: as demonstrações financeiras anuais mais recentes não informam lucro líquido positivo compatível.";
+  const roeUnavailableReason =
+    roe !== null
+      ? null
+      : usesLtmRoe
+        ? `Indisponível: não foi possível reconciliar o lucro LTM encerrado em ${roeFlowPeriod!.periodEnd} com patrimônio líquido médio compatível nas datas-base e versões disponíveis.`
+        : "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados.";
 
   return [
     {
       key: "pe",
       value: pe,
-      unavailableReason:
+      unavailableReason: peUnavailableReason,
+      referenceDate: pe === null ? null : marketFlowPeriod!.periodEnd!,
+      sourceDocument: pe === null ? null : marketFlowPeriod!.sourceDocument,
+      periodBasis:
         pe === null
-          ? hasMarketCap
-            ? "Indisponível: as demonstrações financeiras anuais mais recentes não informam lucro líquido positivo compatível."
-            : unavailableMarketValue
-          : null,
-      referenceDate: pe === null ? null : annualReferenceDate,
-      sourceDocument: pe === null ? null : "DFP",
+          ? null
+          : marketFlowPeriod === ltm
+            ? "trailing_twelve_months"
+            : "annual",
+      marketDataDate: pe === null ? null : marketDataDate,
     },
     {
       key: "pb",
@@ -101,28 +357,38 @@ export function calculateAnalysisIndicators(
             ? "Indisponível: as demonstrações financeiras anuais mais recentes não informam patrimônio líquido positivo compatível."
             : unavailableMarketValue
           : null,
-      referenceDate: pb === null ? null : annualReferenceDate,
-      sourceDocument: pb === null ? null : "DFP",
+      referenceDate:
+        pb === null
+          ? null
+          : (latestBalance!.periodEnd ?? latestBalance!.referenceDate),
+      sourceDocument: pb === null ? null : latestBalance!.sourceDocument,
+      periodBasis: pb === null ? null : "point_in_time",
+      marketDataDate: pb === null ? null : marketDataDate,
     },
     {
       key: "roe",
       value: roe,
-      unavailableReason:
-        roe === null
-          ? "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados."
-          : null,
-      referenceDate: roe === null ? null : latestAnnual.referenceDate,
-      sourceDocument: roe === null ? null : "DFP",
+      unavailableReason: roeUnavailableReason,
+      referenceDate: roe === null ? null : roeFlowPeriod!.periodEnd!,
+      sourceDocument: roe === null ? null : roeFlowPeriod!.sourceDocument,
+      periodBasis:
+        roe === null ? null : usesLtmRoe ? "trailing_twelve_months" : "annual",
+      marketDataDate: null,
     },
     {
       key: "netMargin",
       value: netMargin,
       unavailableReason:
         netMargin === null
-          ? "Indisponível: receita e lucro líquido precisam estar informados no mesmo demonstrativo, e a receita não pode ser zero."
+          ? financialIntermediationRevenue
+            ? "Indisponível: a receita de intermediação financeira não foi aprovada como denominador comparável para margem bancária."
+            : "Indisponível: receita e lucro líquido precisam estar informados no mesmo demonstrativo, e a receita não pode ser zero."
           : null,
-      referenceDate: latest?.referenceDate ?? null,
-      sourceDocument: latest?.sourceDocument ?? null,
+      referenceDate:
+        marginPeriod?.periodEnd ?? marginPeriod?.referenceDate ?? null,
+      sourceDocument: marginPeriod?.sourceDocument ?? null,
+      periodBasis: marginPeriod?.periodBasis ?? null,
+      marketDataDate: null,
     },
   ];
 }
@@ -135,6 +401,14 @@ export type AnalysisIndicator = {
   unavailableReason: string | null;
   referenceDate: string | null;
   sourceDocument: "DFP" | "ITR" | null;
+  periodBasis?:
+    | "annual"
+    | "year_to_date"
+    | "quarterly"
+    | "trailing_twelve_months"
+    | "point_in_time"
+    | null;
+  marketDataDate: string | null;
 };
 
 export class StockAnalysisService {
@@ -167,15 +441,32 @@ export class StockAnalysisService {
     const periods: FundamentalPeriod[] = cacheValid
       ? cached.map(({ sourceDocument, fetchedAt, ...period }) => ({
           ...period,
+          periodEnd: period.periodEnd ?? period.referenceDate,
           periodType: period.periodType as "annual" | "interim",
           sourceDocument: sourceDocument as "DFP" | "ITR",
+          exerciseOrder:
+            period.exerciseOrder === "previous" ? "previous" : "last",
+          periodBasis:
+            period.periodBasis === "annual" ||
+            period.periodBasis === "year_to_date" ||
+            period.periodBasis === "quarterly" ||
+            period.periodBasis === "trailing_twelve_months" ||
+            period.periodBasis === "unknown"
+              ? period.periodBasis
+              : "unknown",
+          isDerived: false,
         }))
       : await this.refreshFundamentals(market.ticker, market.cnpj, requestId);
 
+    const ltmPeriods = ltmFlowPeriods(periods);
     return {
       ...market,
-      fundamentals: periods,
-      indicators: calculateAnalysisIndicators(periods, market.marketCap),
+      fundamentals: [...periods, ...ltmPeriods],
+      indicators: calculateAnalysisIndicators(
+        periods,
+        market.marketCap,
+        market.priceUpdatedAt,
+      ),
     };
   }
 

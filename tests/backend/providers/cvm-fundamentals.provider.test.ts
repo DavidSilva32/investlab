@@ -6,7 +6,16 @@ import { CvmFundamentalsProvider } from "@/backend/providers/cvm-fundamentals.pr
 const cnpj = "33000167000101";
 const cadHeader = "CNPJ_CIA;CD_CVM;DENOM_SOCIAL;SIT";
 const documentHeader =
-  "CNPJ_CIA;CD_CVM;DT_REFER;VERSAO;ORDEM_EXERC;CD_CONTA;VL_CONTA;ESCALA_MOEDA";
+  "CNPJ_CIA;CD_CVM;DT_REFER;DT_INI_EXERC;DT_FIM_EXERC;VERSAO;ORDEM_EXERC;CD_CONTA;DS_CONTA;VL_CONTA;ESCALA_MOEDA";
+
+const accountLabels: Record<string, string> = {
+  "3.01": "Receitas da Intermediação Financeira",
+  "3.09": "Lucro/Prejuízo Consolidado do Período",
+  "3.11": "Lucro/Prejuízo Consolidado do Período",
+  "2.03": "Patrimônio Líquido Consolidado",
+  "2.07": "Patrimônio Líquido Consolidado",
+  "2.08": "Patrimônio Líquido Consolidado",
+};
 
 function csvZip(name: string, csv: string) {
   return zipSync({ [name]: Buffer.from(csv, "latin1") });
@@ -21,9 +30,12 @@ function row(
     CNPJ_CIA: "33.000.167/0001-01",
     CD_CVM: "09512",
     DT_REFER: "2025-12-31",
+    DT_INI_EXERC: `${(options.DT_FIM_EXERC ?? options.DT_REFER ?? "2025-12-31").slice(0, 4)}-01-01`,
+    DT_FIM_EXERC: options.DT_REFER ?? "2025-12-31",
     VERSAO: "1",
     ORDEM_EXERC: String.fromCharCode(218) + "LTIMO",
     CD_CONTA: account,
+    DS_CONTA: accountLabels[account] ?? "Outra conta",
     VL_CONTA: value,
     ESCALA_MOEDA: "MIL",
     ...options,
@@ -48,22 +60,61 @@ describe("CvmFundamentalsProvider", () => {
       row("3.01", "999", { VERSAO: "1" }),
       row("3.11", "20"),
       row("2.03", "30"),
+      row("2.03", "1.5", { VERSAO: "2", ESCALA_MOEDA: "UNIDADE" }),
       row("1", "40"),
       row("2", "10"),
       row("1.01.01", "5"),
       row("2.01.04", "invalid"),
+      row("2.01.04", "3", { VERSAO: "2" }),
       row("2.02.01", "7"),
       row("3.01", "999", { CNPJ_CIA: "00.000.000/0001-00" }),
       row("3.01", "999", { CD_CVM: "123" }),
       row("3.01", "999", {
         ORDEM_EXERC: "PEN" + String.fromCharCode(218) + "LTIMO",
       }),
+      row("3.01", "999", { ORDEM_EXERC: "INVALID_ORDER" }),
       row("9.99", "999"),
       row("3.01", "999", { DT_REFER: "" }),
     ];
     const itr = documentCsv([
       row("3.01", "2", { DT_REFER: "2026-03-31" }),
+      row("3.01", "1", {
+        DT_REFER: "2026-06-30",
+        DT_INI_EXERC: "2026-04-01",
+        DT_FIM_EXERC: "2026-06-30",
+      }),
+      row("3.11", "1", {
+        DT_REFER: "2026-03-31",
+        DT_INI_EXERC: "2025-01-01",
+        DT_FIM_EXERC: "2025-03-31",
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
       row("1.01.01", "", { DT_REFER: "2026-03-31", ESCALA_MOEDA: " reais " }),
+      row("3.01", "3", {
+        DT_REFER: "2026-06-30",
+        DT_INI_EXERC: "2026-05-01",
+        DT_FIM_EXERC: "2026-06-30",
+      }),
+      row("3.01", "4", {
+        DT_REFER: "2026-09-30",
+        DT_INI_EXERC: "2026-07-01",
+        DT_FIM_EXERC: "2026-09-30",
+      }),
+      row("3.01", "5", {
+        DT_REFER: "2026-12-31",
+        DT_INI_EXERC: "2026-10-01",
+        DT_FIM_EXERC: "2026-12-31",
+      }),
+      row("3.01", "6", {
+        DT_REFER: "2026-05-31",
+        DT_INI_EXERC: "2026-04-01",
+        DT_FIM_EXERC: "2026-05-31",
+      }),
+      row("3.01", "7", {
+        DT_REFER: "2026-03-31",
+        DT_INI_EXERC: "2026-02-01",
+        DT_FIM_EXERC: "2026-03-31",
+      }),
     ]);
     const fetcher = vi
       .fn()
@@ -84,7 +135,13 @@ describe("CvmFundamentalsProvider", () => {
         new Response(
           csvZip(
             "dfp_cia_aberta_DRE_con_2024.csv",
-            documentCsv([row("3.01", "4")]),
+            documentCsv([
+              row("3.01", "5", {
+                DT_REFER: "2026-04-01",
+                DT_INI_EXERC: "2025-01-01",
+                DT_FIM_EXERC: "2025-12-31",
+              }),
+            ]),
           ),
         ),
       )
@@ -98,37 +155,74 @@ describe("CvmFundamentalsProvider", () => {
       cnpj: "33.000.167/0001-01",
     });
 
-    expect(periods).toEqual([
-      expect.objectContaining({
-        referenceDate: "2026-03-31",
-        periodType: "interim",
-        sourceDocument: "ITR",
-        revenue: "2000.00",
-        netIncome: null,
-        equity: null,
-        assets: null,
-        liabilities: null,
-        cash: null,
-        debt: null,
-      }),
-      expect.objectContaining({
-        referenceDate: "2025-12-31",
-        periodType: "annual",
-        sourceDocument: "DFP",
-        revenue: "1234500.00",
-        netIncome: "20000.00",
-        equity: "30000.00",
-        assets: "40000.00",
-        liabilities: "10000.00",
-        cash: "5000.00",
-        debt: "7000.00",
-      }),
-      expect.objectContaining({
-        referenceDate: "2025-12-31",
-        periodType: "annual",
-        revenue: "4000.00",
-      }),
-    ]);
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: "2026-03-31",
+          periodType: "interim",
+          sourceDocument: "ITR",
+          revenue: "2000.00",
+          netIncome: null,
+          equity: null,
+          assets: null,
+          liabilities: null,
+          cash: null,
+          debt: null,
+        }),
+        expect.objectContaining({
+          referenceDate: "2025-12-31",
+          periodType: "annual",
+          sourceDocument: "DFP",
+          revenue: "1234500.00",
+          netIncome: "20000.00",
+          equity: "1.50",
+          assets: "40000.00",
+          liabilities: "10000.00",
+          cash: "5000.00",
+          debt: "10000.00",
+        }),
+        expect.objectContaining({
+          referenceDate: "2025-12-31",
+          periodType: "annual",
+          filingReferenceDate: "2026-04-01",
+          revenue: "5000.00",
+        }),
+        expect.objectContaining({
+          referenceDate: "2025-03-31",
+          periodStart: "2025-01-01",
+          periodEnd: "2025-03-31",
+          filingReferenceDate: "2026-03-31",
+          exerciseOrder: "previous",
+          periodBasis: "year_to_date",
+          sourceDocument: "ITR",
+        }),
+        expect.objectContaining({
+          referenceDate: "2026-06-30",
+          periodStart: "2026-04-01",
+          periodEnd: "2026-06-30",
+          periodBasis: "quarterly",
+          sourceDocument: "ITR",
+        }),
+        expect.objectContaining({
+          periodStart: "2026-05-01",
+          periodEnd: "2026-06-30",
+          periodBasis: "unknown",
+          sourceDocument: "ITR",
+        }),
+        expect.objectContaining({
+          periodStart: "2026-07-01",
+          periodEnd: "2026-09-30",
+          periodBasis: "quarterly",
+          sourceDocument: "ITR",
+        }),
+        expect.objectContaining({
+          periodStart: "2026-10-01",
+          periodEnd: "2026-12-31",
+          periodBasis: "quarterly",
+          sourceDocument: "ITR",
+        }),
+      ]),
+    );
     expect(fetcher).toHaveBeenCalledTimes(5);
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
       "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
@@ -149,6 +243,154 @@ describe("CvmFundamentalsProvider", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 422 });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("maps consolidated bank income and equity by verified account labels", async () => {
+    const year = new Date().getUTCFullYear();
+    const itr = documentCsv([
+      row("3.09", "20", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+      row("3.11", "999", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+        DS_CONTA: "Resultado Líquido das Operações Continuadas",
+      }),
+      row("2.07", "90", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+      row("3.09", "15", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: `${year - 1}-06-30`,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+      row("2.08", "75", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: `${year - 1}-06-30`,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+      row("3.09", "20", {
+        DT_REFER: `${year}-08-01`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+      row("2.07", "90", {
+        DT_REFER: `${year}-08-01`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+      row("3.09", "999", {
+        DT_REFER: `${year}-07-01`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+      row("2.07", "999", {
+        DT_REFER: `${year}-07-01`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+    ]);
+    const emptyAnnual = csvZip(
+      `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;Petrobras;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(emptyAnnual))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
+      );
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "SANB11",
+      cnpj,
+    });
+
+    expect(
+      periods.filter((period) => period.periodEnd === `${year}-06-30`),
+    ).toHaveLength(1);
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: `${year}-06-30`,
+          filingReferenceDate: `${year}-08-01`,
+          netIncome: "20000.00",
+          netIncomeAccount: "3.09",
+          netIncomeConcept: "consolidated_net_income",
+          equity: "90000.00",
+          equityAccount: "2.07",
+          equityConcept: "consolidated_equity",
+        }),
+        expect.objectContaining({
+          periodEnd: `${year - 1}-06-30`,
+          netIncome: "15000.00",
+          netIncomeAccount: "3.09",
+          netIncomeConcept: "consolidated_net_income",
+          equity: "75000.00",
+          equityAccount: "2.08",
+          equityConcept: "consolidated_equity",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps consolidated income unavailable when multiple accepted accounts match", async () => {
+    const year = new Date().getUTCFullYear();
+    const itr = documentCsv([
+      row("3.09", "20", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+      row("3.11", "21", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+    ]);
+    const emptyAnnual = csvZip(
+      `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;Petrobras;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(emptyAnnual))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
+      );
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "SANB11",
+      cnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: `${year}-06-30`,
+          netIncome: null,
+          netIncomeAccount: null,
+          netIncomeConcept: null,
+        }),
+      ]),
+    );
   });
 
   it("rejects unsuccessful issuer catalog requests", async () => {
@@ -346,9 +588,17 @@ describe("CvmFundamentalsProvider", () => {
       "1,5",
       "overflow",
     ].join(";");
+    const unlabeledIncomeRow = [
+      "33.000.167/0001-01",
+      "CODE",
+      "2025-12-31",
+      String.fromCharCode(218) + "LTIMO",
+      "3.09",
+      "2",
+    ].join(";");
     const optionalFiles = zipSync({
       "dfp_cia_aberta_DRE_con_2025.csv": Buffer.from(
-        `${minimalHeader}\n${minimalRow}`,
+        `${minimalHeader}\n${minimalRow}\n${unlabeledIncomeRow}`,
         "latin1",
       ),
       "dfp_cia_aberta_DRE_con_missing_cnpj.csv": Buffer.from(
@@ -361,6 +611,10 @@ describe("CvmFundamentalsProvider", () => {
       ),
       "dfp_cia_aberta_DRE_con_missing_account.csv": Buffer.from(
         `CNPJ_CIA;CD_CVM;DT_REFER;VERSAO;ORDEM_EXERC;VL_CONTA\n33.000.167/0001-01;CODE;2025-12-31;1;${String.fromCharCode(218)}LTIMO;5`,
+        "latin1",
+      ),
+      "dfp_cia_aberta_DRE_con_missing_order.csv": Buffer.from(
+        "CNPJ_CIA;CD_CVM;DT_REFER;DT_FIM_EXERC;CD_CONTA;VL_CONTA\n33.000.167/0001-01;CODE;2025-12-31;2025-12-31;3.01;5",
         "latin1",
       ),
     });
@@ -380,7 +634,7 @@ describe("CvmFundamentalsProvider", () => {
     ).resolves.toEqual([
       expect.objectContaining({
         sourceDocument: "DFP",
-        revenue: "1.50",
+        revenue: null,
         netIncome: null,
         debt: null,
       }),
