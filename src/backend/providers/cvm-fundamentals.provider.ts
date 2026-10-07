@@ -27,8 +27,10 @@ type AccountValue = {
   version: number | null;
   value: string | null;
   label: string | null;
-  ambiguous?: boolean;
-};
+} & (
+  | { ambiguous?: false; ambiguousLabels?: never }
+  | { ambiguous: true; ambiguousLabels: string[] }
+);
 type SelectedAccount = AccountValue & { code: string };
 type PeriodAccounts = {
   accounts: Map<string, AccountValue>;
@@ -163,20 +165,39 @@ function normalizedAccountLabel(value: string | undefined) {
     .toUpperCase();
 }
 
+function isExplicitlyIndividualEquityLabel(value: string) {
+  return /^PATRIMONIO LIQUIDO INDIVIDUAL(?:\s|$)/.test(
+    normalizedAccountLabel(value),
+  );
+}
+
 function selectedAccount(
   accounts: AccountMap,
   acceptedCodes: string[],
   acceptedLabels: string[],
+  ambiguityByAcceptedLabel = false,
 ): SelectedAccount | null {
   const acceptedAccounts = [...accounts.entries()].filter(([code]) =>
     acceptedCodes.includes(code),
   );
-  if (acceptedAccounts.some(([, account]) => account.ambiguous)) return null;
+  if (
+    acceptedAccounts.some(
+      ([, account]) =>
+        account.ambiguous &&
+        (!ambiguityByAcceptedLabel ||
+          account.ambiguousLabels.some(
+            (label) => !isExplicitlyIndividualEquityLabel(label),
+          )),
+    )
+  )
+    return null;
   const candidates = acceptedAccounts
-    .filter(([, account]) =>
-      acceptedLabels.includes(
-        normalizedAccountLabel(account.label ?? undefined),
-      ),
+    .filter(
+      ([, account]) =>
+        !account.ambiguous &&
+        acceptedLabels.includes(
+          normalizedAccountLabel(account.label ?? undefined),
+        ),
     )
     .map(([code, account]) => ({ ...account, code }));
   return candidates.length === 1 ? candidates[0]! : null;
@@ -353,21 +374,38 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
               label: row.DS_CONTA ?? null,
             });
             periods.set(periodKey, period);
-          } else if (
-            version === current.version &&
-            !current.ambiguous &&
-            (current.value !==
-              normalizedValue(row.VL_CONTA, row.ESCALA_MOEDA) ||
+          } else if (version === current.version) {
+            const rowLabel = row.DS_CONTA ?? "";
+            const rowValue = normalizedValue(row.VL_CONTA, row.ESCALA_MOEDA);
+            if (current.ambiguous) {
+              const labels = current.ambiguousLabels;
+              if (
+                !labels.some(
+                  (label) =>
+                    normalizedAccountLabel(label) ===
+                    normalizedAccountLabel(rowLabel),
+                )
+              ) {
+                period.accounts.set(row.CD_CONTA, {
+                  ...current,
+                  ambiguousLabels: [...labels, rowLabel],
+                });
+                periods.set(periodKey, period);
+              }
+            } else if (
+              current.value !== rowValue ||
               normalizedAccountLabel(current.label ?? undefined) !==
-                normalizedAccountLabel(row.DS_CONTA))
-          ) {
-            period.accounts.set(row.CD_CONTA, {
-              ...current,
-              value: null,
-              label: null,
-              ambiguous: true,
-            });
-            periods.set(periodKey, period);
+                normalizedAccountLabel(rowLabel)
+            ) {
+              period.accounts.set(row.CD_CONTA, {
+                ...current,
+                value: null,
+                label: null,
+                ambiguous: true,
+                ambiguousLabels: [current.label ?? "", rowLabel],
+              });
+              periods.set(periodKey, period);
+            }
           }
           matchedRows += 1;
         };
@@ -449,6 +487,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
           accounts,
           ["2.03", "2.07", "2.08"],
           consolidatedEquityLabels,
+          true,
         );
         return {
           referenceDate: periodEnd,

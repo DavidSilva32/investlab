@@ -48,6 +48,20 @@ function documentCsv(rows: string[]) {
   return [documentHeader, ...rows].join("\n");
 }
 
+function documentCsvWithoutAccountLabels(rows: string[]) {
+  const cells = documentHeader.split(";");
+  const labelIndex = cells.indexOf("DS_CONTA");
+  cells.splice(labelIndex, 1);
+  return [
+    cells.join(";"),
+    ...rows.map((line) => {
+      const rowCells = line.split(";");
+      rowCells.splice(labelIndex, 1);
+      return rowCells.join(";");
+    }),
+  ].join("\n");
+}
+
 function issuerCsv(rows: string[]) {
   return [cadHeader, ...rows].join("\n");
 }
@@ -286,6 +300,90 @@ describe("CvmFundamentalsProvider", () => {
     });
   });
 
+  it("handles absent labels and repeated rows after an equal-version value conflict", async () => {
+    const year = new Date().getUTCFullYear();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          csvZip(
+            `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+            documentCsvWithoutAccountLabels([
+              row("3.01", "100", { VERSAO: "2" }),
+              row("3.01", "100", { VERSAO: "2" }),
+              row("3.01", "110", { VERSAO: "2" }),
+              row("3.01", "110", { VERSAO: "2" }),
+              row("3.11", "20"),
+              row("2.03", "30"),
+            ]),
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+
+    expect(periods[0]).toMatchObject({
+      revenue: null,
+      revenueVersion: "2",
+      revenueAccountLabel: null,
+      netIncome: null,
+      equity: null,
+    });
+  });
+
+  it("marks equal-value rows with different same-version labels ambiguous", async () => {
+    const year = new Date().getUTCFullYear();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          csvZip(
+            `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+            documentCsv([
+              row("3.01", "100", {
+                VERSAO: "2",
+                DS_CONTA: "Receita A",
+              }),
+              row("3.01", "100", {
+                VERSAO: "2",
+                DS_CONTA: "Receita B",
+              }),
+              row("3.11", "20"),
+              row("2.03", "30"),
+            ]),
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+
+    expect(periods[0]).toMatchObject({
+      revenue: null,
+      revenueVersion: "2",
+      revenueAccountLabel: null,
+      netIncome: "20000.00",
+      equity: "30000.00",
+    });
+  });
+
   it("deduplicates periods returned without an explicit end date", async () => {
     const provider = new CvmFundamentalsProvider(
       vi
@@ -378,6 +476,223 @@ describe("CvmFundamentalsProvider", () => {
           netIncome: null,
           netIncomeAccount: null,
           netIncomeConcept: null,
+        }),
+      ]),
+    );
+  });
+
+  it("uses consolidated 2.07 when another equity alternative is ambiguous only for non-consolidated labels", async () => {
+    const year = new Date().getUTCFullYear();
+    const period = {
+      DT_REFER: `${year}-06-30`,
+      DT_INI_EXERC: `${year}-01-01`,
+      DT_FIM_EXERC: `${year}-06-30`,
+    };
+    const itr = documentCsv([
+      row("2.03", "100", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "Patrimônio líquido individual",
+      }),
+      row("2.03", "110", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "Patrimônio líquido individual reapresentado",
+      }),
+      row("2.07", "200", { ...period, VERSAO: "1" }),
+      row("3.09", "30", { ...period, VERSAO: "1" }),
+    ]);
+    const emptyAnnual = csvZip(
+      `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(emptyAnnual))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
+      );
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: `${year}-06-30`,
+          equity: "200000.00",
+          equityAccount: "2.07",
+          equityConcept: "consolidated_equity",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps equity unavailable when ambiguous 2.03 has blank labels despite valid 2.07", async () => {
+    const year = new Date().getUTCFullYear();
+    const period = {
+      DT_REFER: `${year}-06-30`,
+      DT_INI_EXERC: `${year}-01-01`,
+      DT_FIM_EXERC: `${year}-06-30`,
+    };
+    const itr = documentCsv([
+      row("2.03", "100", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "",
+      }),
+      row("2.03", "110", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "",
+      }),
+      row("2.07", "200", { ...period, VERSAO: "1" }),
+      row("3.09", "30", { ...period, VERSAO: "1" }),
+    ]);
+    const emptyAnnual = csvZip(
+      `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(emptyAnnual))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
+      );
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: `${year}-06-30`,
+          equity: null,
+          equityAccount: null,
+          equityConcept: null,
+        }),
+      ]),
+    );
+  });
+
+  it("keeps equity unavailable when a third same-version label is consolidated", async () => {
+    const year = new Date().getUTCFullYear();
+    const period = {
+      DT_REFER: `${year}-06-30`,
+      DT_INI_EXERC: `${year}-01-01`,
+      DT_FIM_EXERC: `${year}-06-30`,
+    };
+    const itr = documentCsv([
+      row("2.03", "100", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "Patrimônio líquido individual",
+      }),
+      row("2.03", "110", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "Patrimônio líquido individual reapresentado",
+      }),
+      row("2.03", "120", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "Patrimônio Líquido Consolidado",
+      }),
+      row("2.03", "120", {
+        ...period,
+        VERSAO: "2",
+        DS_CONTA: "Patrimônio Líquido Consolidado",
+      }),
+      row("2.07", "200", { ...period, VERSAO: "1" }),
+      row("3.09", "30", { ...period, VERSAO: "1" }),
+    ]);
+    const emptyAnnual = csvZip(
+      `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(emptyAnnual))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
+      );
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: `${year}-06-30`,
+          equity: null,
+          equityAccount: null,
+          equityConcept: null,
+        }),
+      ]),
+    );
+  });
+
+  it("keeps equity unavailable when the consolidated 2.07 candidate is ambiguous", async () => {
+    const year = new Date().getUTCFullYear();
+    const period = {
+      DT_REFER: `${year}-06-30`,
+      DT_INI_EXERC: `${year}-01-01`,
+      DT_FIM_EXERC: `${year}-06-30`,
+    };
+    const itr = documentCsv([
+      row("2.07", "200", { ...period, VERSAO: "1" }),
+      row("2.07", "201", { ...period, VERSAO: "1" }),
+      row("3.09", "30", { ...period, VERSAO: "1" }),
+    ]);
+    const emptyAnnual = csvZip(
+      `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(emptyAnnual))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
+      );
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: `${year}-06-30`,
+          equity: null,
+          equityAccount: null,
+          equityConcept: null,
         }),
       ]),
     );
