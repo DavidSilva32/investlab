@@ -22,6 +22,33 @@ import { getDatabaseClient } from "@/infrastructure/database/client";
 import { classifyCvmSector } from "@/lib/cvm-sector-classification";
 
 export class ScreenerRepository {
+  async getComparisonMetadata(tickers: string[]) {
+    if (tickers.length === 0) return [];
+    return getDatabaseClient()
+      .select({
+        ticker: screenerSecurities.ticker,
+        securityName: screenerSecurities.name,
+        securityUpdatedAt: screenerSecurities.updatedAt,
+        cnpj: screenerIssuers.cnpj,
+        cvmCode: screenerIssuers.cvmCode,
+        issuerName: screenerIssuers.name,
+        sector: screenerIssuers.sector,
+        issuerMetadataUpdatedAt: screenerIssuers.updatedAt,
+      })
+      .from(screenerSecurities)
+      .innerJoin(
+        screenerIssuers,
+        eq(screenerSecurities.issuerCnpj, screenerIssuers.cnpj),
+      )
+      .where(
+        and(
+          inArray(screenerSecurities.ticker, tickers),
+          inArray(screenerSecurities.subType, ["stock", "unit"]),
+          eq(screenerSecurities.isActive, true),
+        ),
+      );
+  }
+
   async getStockValuationContext(ticker: string) {
     const database = getDatabaseClient();
     const [issuer] = await database

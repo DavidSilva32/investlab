@@ -9,6 +9,11 @@ vi.mock("@/app/analyses/_components/stock-analysis-dashboard", () => ({
     <section>Análise individual {initialTicker || "sem ticker"}</section>
   ),
 }));
+vi.mock("@/app/analyses/_components/company-comparison", () => ({
+  CompanyComparison: ({ initialTicker }: { initialTicker?: string }) => (
+    <section>Comparação {initialTicker || "sem ticker"}</section>
+  ),
+}));
 
 afterEach(cleanup);
 
@@ -91,6 +96,18 @@ describe("AnalysesTabs", () => {
     expect(screen.getByText("Análise individual sem ticker")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "Minha carteira" }));
     expect(screen.getByText("PETR4")).toBeTruthy();
+  });
+
+  it("keeps the three analysis tabs and seeds comparison with the consulted ticker", async () => {
+    render(<AnalysesTabs initialTicker="PETR4" />);
+    expect(screen.getByRole("tab", { name: "Minha carteira" })).toBeTruthy();
+    expect(
+      screen.getByRole("tab", { name: "Análise individual" }),
+    ).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("tab", { name: "Comparar empresas" }),
+    );
+    expect(screen.getByText("Comparação PETR4")).toBeTruthy();
   });
 
   it("keeps the imported-portfolio empty state hidden on individual analysis", async () => {

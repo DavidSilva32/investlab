@@ -1,0 +1,414 @@
+"use client";
+
+import Link from "next/link";
+import { Fragment, useState } from "react";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { AnalysisStockSearch } from "./analysis-stock-search";
+import { getApiMessage } from "@/lib/api-message";
+
+type TickerOption = { ticker: string; name: string };
+type MetricCell = {
+  value: number | null;
+  referenceDate: string | null;
+  periodStart: string | null;
+  periodBasis: string | null;
+  sourceDocument: "DFP" | "ITR" | null;
+  sourceSummary: string | null;
+  marketDataDate: string | null;
+  accountProvenance: string | null;
+  unavailableReason: string | null;
+};
+type ComparisonCompany = {
+  ticker: string;
+  selectedTickers: string[];
+  name: string;
+  cnpj: string;
+  cvmCode: string;
+  sector: string | null;
+  metadataUpdatedAt: string | null;
+  identityVerified: boolean;
+  fundamentals: { roe: MetricCell; netMargin: MetricCell };
+  valuation: { pe: MetricCell; pb: MetricCell };
+};
+type ComparisonResult = {
+  sector: string | null;
+  sectorMetadataAsOf: string | null;
+  companies: ComparisonCompany[];
+};
+
+const basisLabels: Record<string, string> = {
+  annual: "exercício anual",
+  year_to_date: "acumulado no exercício",
+  quarterly: "trimestre",
+  trailing_twelve_months: "LTM",
+  point_in_time: "saldo na data-base",
+};
+
+function dateLabel(value: string | null) {
+  if (!value) return null;
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(date)
+    : null;
+}
+
+function cellDateLabel(cell: MetricCell) {
+  const referenceDate = dateLabel(cell.referenceDate);
+  const marketDate = cell.marketDataDate
+    ? new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "short",
+        timeZone: "America/Sao_Paulo",
+      }).format(new Date(cell.marketDataDate))
+    : null;
+  const basis = cell.periodBasis ? basisLabels[cell.periodBasis] : null;
+  const periodWindow =
+    cell.periodBasis === "trailing_twelve_months" && cell.periodStart
+      ? `LTM de ${dateLabel(cell.periodStart)} a ${referenceDate}`
+      : null;
+  return [
+    cell.sourceSummary ??
+      (cell.sourceDocument ? `CVM ${cell.sourceDocument}` : null),
+    basis,
+    periodWindow,
+    referenceDate ? `até ${referenceDate}` : null,
+    marketDate ? `cotação ${marketDate}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+const percent = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 2,
+});
+const multiple = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 2,
+});
+
+function renderCell(cell: MetricCell, kind: "percent" | "multiple") {
+  if (cell.value === null)
+    return (
+      <div className="space-y-1 text-sm text-muted-foreground">
+        <p>Indisponível</p>
+        <p>{cell.unavailableReason}</p>
+        {cellDateLabel(cell) && (
+          <p className="text-xs">{cellDateLabel(cell)}</p>
+        )}
+      </div>
+    );
+  return (
+    <div className="space-y-1">
+      <p className="font-semibold tabular-nums">
+        {kind === "percent"
+          ? `${percent.format(cell.value)}%`
+          : `${multiple.format(cell.value)}x`}
+      </p>
+      {cellDateLabel(cell) && (
+        <p className="text-xs text-muted-foreground">{cellDateLabel(cell)}</p>
+      )}
+      {cell.accountProvenance && (
+        <p className="text-xs text-muted-foreground">
+          {cell.accountProvenance}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function CompanyComparison({
+  initialTicker = "",
+}: {
+  initialTicker?: string;
+}) {
+  const initialOption = initialTicker
+    ? { ticker: initialTicker.toUpperCase(), name: initialTicker.toUpperCase() }
+    : null;
+  const [searchTicker, setSearchTicker] = useState(initialOption?.ticker ?? "");
+  const [selected, setSelected] = useState<TickerOption[]>(
+    initialOption ? [initialOption] : [],
+  );
+  const [result, setResult] = useState<ComparisonResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function addTicker(option: TickerOption) {
+    setSearchTicker(option.ticker);
+    setError(null);
+    setResult(null);
+    if (selected.some((item) => item.ticker === option.ticker)) return;
+    if (selected.length >= 5) {
+      setError("É possível comparar até cinco empresas por vez.");
+      return;
+    }
+    setSelected((current) => [...current, option]);
+  }
+
+  function removeTicker(ticker: string) {
+    setSelected((current) => current.filter((item) => item.ticker !== ticker));
+    setResult(null);
+    setError(null);
+  }
+
+  async function compare() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const response = await fetch("/api/analyses/companies/compare", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tickers: selected.map((item) => item.ticker),
+        }),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        setError(
+          getApiMessage(body, "Não foi possível comparar as empresas agora."),
+        );
+        return;
+      }
+      const comparison = body as ComparisonResult;
+      setResult(comparison);
+      setSelected(
+        comparison.companies.map((company) => ({
+          ticker: company.ticker,
+          name: company.name,
+        })),
+      );
+    } catch {
+      setError("Não foi possível comparar as empresas agora.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const rows = result?.companies ?? [];
+  const sectorMetadataDate = result?.sectorMetadataAsOf
+    ? dateLabel(result.sectorMetadataAsOf)
+    : null;
+  const metricRows: Array<{
+    label: string;
+    kind: "percent" | "multiple";
+    group: "Fundamentos" | "Valuation";
+    get: (company: ComparisonCompany) => MetricCell;
+  }> = [
+    {
+      label:
+        result?.sector === "Bancos" ? "ROE contábil simplificado LTM" : "ROE",
+      kind: "percent",
+      group: "Fundamentos",
+      get: (company) => company.fundamentals.roe,
+    },
+    {
+      label: "Margem líquida",
+      kind: "percent",
+      group: "Fundamentos",
+      get: (company) => company.fundamentals.netMargin,
+    },
+    {
+      label: "P/L",
+      kind: "multiple",
+      group: "Valuation",
+      get: (company) => company.valuation.pe,
+    },
+    {
+      label: "P/VP",
+      kind: "multiple",
+      group: "Valuation",
+      get: (company) => company.valuation.pb,
+    },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <header className="space-y-1">
+        <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          Comparar empresas
+        </h2>
+        <p className="text-sm text-muted-foreground sm:text-base">
+          Compare empresas do mesmo setor e mostre valores apenas quando período
+          e origem forem compatíveis.
+        </p>
+      </header>
+
+      <Card>
+        <CardContent className="grid gap-4 p-4 md:grid-cols-[minmax(14rem,1.15fr)_minmax(12rem,1fr)_auto] md:items-center md:p-5">
+          <AnalysisStockSearch
+            ticker={searchTicker}
+            onSelect={addTicker}
+            showDescription={false}
+          />
+          <div
+            aria-label="Empresas selecionadas"
+            className="flex min-h-11 flex-wrap content-center gap-2"
+          >
+            {selected.map((option) => (
+              <span
+                key={option.ticker}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border bg-muted px-3 text-sm"
+              >
+                <span className="font-semibold">{option.ticker}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-6"
+                  aria-label={`Remover ${option.ticker}`}
+                  onClick={() => removeTicker(option.ticker)}
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </Button>
+              </span>
+            ))}
+            {selected.length === 0 && (
+              <span className="text-sm text-muted-foreground">
+                Nenhuma empresa selecionada
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 md:justify-end">
+            <div className="min-w-32 text-sm text-muted-foreground md:text-right">
+              {selected.length} de 5 empresas selecionadas
+            </div>
+            <Button
+              type="button"
+              onClick={compare}
+              disabled={loading || selected.length < 2}
+            >
+              {loading ? "Comparando…" : "Comparar selecionadas"}
+            </Button>
+          </div>
+          {loading && (
+            <p
+              role="status"
+              className="text-sm text-muted-foreground md:col-span-3"
+            >
+              Consultando demonstrações oficiais da CVM…
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-destructive md:col-span-3">
+              {error}
+            </p>
+          )}
+          {selected.length < 2 && !result && !error && (
+            <p className="text-sm text-muted-foreground md:col-span-3">
+              Selecione mais uma empresa para iniciar a comparação.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {result && rows.length > 0 && (
+        <Card>
+          <CardHeader className="pb-0">
+            <p className="text-sm text-muted-foreground">
+              Setor CVM:{" "}
+              <span className="font-semibold text-foreground">
+                {result.sector ?? "não informado"}
+              </span>
+              {sectorMetadataDate && (
+                <span className="ml-2 text-xs">
+                  Cadastro CVM atualizado em {sectorMetadataDate}
+                </span>
+              )}
+            </p>
+            {rows.some((company) => company.selectedTickers.length > 1) && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Classes do mesmo CNPJ foram agrupadas em uma única empresa.
+              </p>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full min-w-180 border-collapse text-left text-sm">
+                <caption className="sr-only">
+                  Comparação de fundamentos e valuation por empresa, sem
+                  classificação ou recomendação.
+                </caption>
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th scope="col" className="min-w-36 p-3 font-medium">
+                      Métrica
+                    </th>
+                    {rows.map((company) => (
+                      <th
+                        key={company.cnpj}
+                        scope="col"
+                        className="min-w-52 p-3 align-top"
+                      >
+                        <div className="space-y-1">
+                          <p className="font-semibold">{company.ticker}</p>
+                          <p className="font-normal text-muted-foreground">
+                            {company.name}
+                          </p>
+                          <Link
+                            className="inline-flex text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            href={`/analyses?ticker=${encodeURIComponent(company.ticker)}`}
+                          >
+                            Abrir análise individual
+                          </Link>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(["Fundamentos", "Valuation"] as const).map((group) => (
+                    <Fragment key={group}>
+                      <tr className="border-y bg-muted/70">
+                        <th
+                          scope="rowgroup"
+                          colSpan={rows.length + 1}
+                          className="p-3 font-semibold"
+                        >
+                          {group === "Valuation" ? "Valuation e preço" : group}
+                        </th>
+                      </tr>
+                      {metricRows
+                        .filter((row) => row.group === group)
+                        .map((row) => (
+                          <tr key={row.label} className="border-t">
+                            <th
+                              scope="row"
+                              className="p-3 align-top font-medium"
+                            >
+                              {row.label}
+                            </th>
+                            {rows.map((company) => (
+                              <td key={company.cnpj} className="p-3 align-top">
+                                {renderCell(row.get(company), row.kind)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t bg-muted/30">
+                    <td
+                      colSpan={rows.length + 1}
+                      className="p-3 text-xs text-muted-foreground"
+                    >
+                      Sem ranking, pontuação ou recomendação. A ordem segue a
+                      seleção.
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}

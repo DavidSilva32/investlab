@@ -45,6 +45,19 @@ describe("AnalysisStockSearch", () => {
       screen.getByRole("combobox", { name: "Pesquisar ação" }),
     ).toBeTruthy();
   });
+  it("can use the compact search presentation without helper copy", () => {
+    render(
+      <AnalysisStockSearch
+        ticker="PETR4"
+        onSelect={vi.fn()}
+        showDescription={false}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Pesquisar ação" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/catálogo de ações/)).toBeNull();
+  });
   it("synchronizes its input without searching the previous ticker", async () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);

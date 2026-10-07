@@ -161,7 +161,7 @@ export class ScreenerSyncService {
       profileTotal = catalog.filter(
         (stock) =>
           stock.active &&
-          stock.subtype === "stock" &&
+          (stock.subtype === "stock" || stock.subtype === "unit") &&
           !stock.ticker.endsWith("F"),
       ).length;
       const issuers = new Map<
@@ -173,8 +173,12 @@ export class ScreenerSyncService {
       const fractional: typeof catalog = [];
 
       for (const stock of catalog) {
-        if (!stock.active || stock.subtype !== "stock") continue;
-        if (stock.ticker.endsWith("F")) {
+        if (
+          !stock.active ||
+          (stock.subtype !== "stock" && stock.subtype !== "unit")
+        )
+          continue;
+        if (stock.subtype === "stock" && stock.ticker.endsWith("F")) {
           fractional.push(stock);
           continue;
         }
@@ -198,7 +202,8 @@ export class ScreenerSyncService {
           baseTicker: null,
         };
         securities.push(security);
-        baseSecurities.set(stock.ticker, security);
+        if (stock.subtype === "stock")
+          baseSecurities.set(stock.ticker, security);
       }
 
       for (const alias of fractional) {
@@ -340,11 +345,19 @@ export class ScreenerSyncService {
           );
         const persistedShareCapitalFacts =
           await this.repository.getShareCapitalFacts(runId);
+        const mappedUnitTickers = new Set(
+          securities
+            .filter((security) => security.subtype === "unit")
+            .map((security) => security.ticker),
+        );
         shareClassReconciliations = reconcileShareClassFacts(
           securities,
           persistedShareCapitalFacts,
           catalog.filter(
-            (instrument) => instrument.active && instrument.subtype === "unit",
+            (instrument) =>
+              instrument.active &&
+              instrument.subtype === "unit" &&
+              !mappedUnitTickers.has(instrument.ticker),
           ),
         );
         await this.repository.saveShareClassReconciliations(

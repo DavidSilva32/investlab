@@ -21,9 +21,11 @@ type TickerOption = { ticker: string; name: string };
 export function AnalysisStockSearch({
   ticker,
   onSelect,
+  showDescription = true,
 }: {
   ticker: string;
   onSelect: (option: TickerOption) => void;
+  showDescription?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(ticker);
@@ -147,10 +149,12 @@ export function AnalysisStockSearch({
               />
             </div>
           </PopoverAnchor>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            A busca consulta o catálogo de ações retornado pela fonte de
-            mercado.
-          </p>
+          {showDescription && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              A busca consulta o catálogo de ações retornado pela fonte de
+              mercado.
+            </p>
+          )}
         </div>
         <PopoverContent
           align="start"

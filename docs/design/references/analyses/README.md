@@ -32,3 +32,13 @@ Usar superfícies neutras e identidade azul. O histórico de cotação usa a cor
 - Implementação desta proposta: concluída; os indicadores ocupam a área principal e o bloco genérico sobre dados financeiros foi removido.
 - Verificação estrutural: testes focados, ESLint, typecheck e `git diff --check` passaram.
 - Comparação visual real e capturas desktop/mobile: pendentes.
+
+## Comparar empresas
+
+`company-comparison-reference.png` é uma proposta desktop gerada em 06/10/2026 para a nova aba de comparação em `/analyses`. Mostra a seleção ordenada ITUB4, BBAS3 e BBDC4, com o setor Bancos, fundamentos e valuation em grupos visuais separados. Não é uma captura do produto nem uma referência mobile.
+
+Os ROEs e a data-base LTM até 30/06/2026 ilustram os valores do estudo oficial documentado na metodologia aprovada da issue #115. As demais métricas exibidas como indisponíveis refletem as limitações metodológicas atuais: margem bancária sem definição comparável e P/L/P/VP sem reconciliação temporal da cotação e da classe da ação. O código deve obter os valores e períodos efetivamente disponíveis, mostrar origem e data-base por célula, preservar a ordem escolhida e não apresentar ranking, pontuação ou recomendação.
+
+O layout proposto contém as três abas ativas, busca e seleção de tickers, botão de comparação e tabela com uma coluna por empresa. Não usar CNPJ na interface. A responsividade deve ser implementada no código; não criar imagem mobile. Não abrir navegador/Playwright para validar a referência.
+
+Estados desta referência: referência criada: sim; contexto funcional revisado: sim; implementação: em andamento; verificação estrutural: pendente; comparação visual real: pendente, sem captura de navegador; aprovação visual do usuário: pendente.
