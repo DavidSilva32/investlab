@@ -7,6 +7,7 @@ import {
   screenerIssuers,
   screenerMarketRefreshRuns,
   screenerMarketSnapshots,
+  screenerMarketSnapshotQuotes,
   screenerSecurities,
   cvmShareClassReconciliations,
 } from "@/infrastructure/database/schema";
@@ -105,6 +106,129 @@ describe("ScreenerRepository", () => {
       new ScreenerRepository().getComparisonMetadata([]),
     ).resolves.toEqual([]);
     expect(mocks.getDatabaseClient).not.toHaveBeenCalled();
+  });
+
+  it("loads only quote evidence joined to the exact active ticker and validated issuer snapshot", async () => {
+    const expected = {
+      ticker: "PETR4",
+      returnedTicker: "PETR4",
+      issuerCnpj: "33000167000101",
+      companyName: "Petrobras",
+      price: "31.25",
+      marketCap: "300000000000.00",
+      quoteObservedAt: new Date("2026-10-01T15:00:00.000Z"),
+      snapshotMarketCap: "300000000000.00",
+      snapshotObservedAt: new Date("2026-10-01T15:00:00.000Z"),
+      snapshotQuoteObservedAt: new Date("2026-10-01T15:00:00.000Z"),
+    };
+    const builder = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([expected]),
+    };
+    mocks.getDatabaseClient.mockReturnValue({
+      select: vi.fn(() => builder),
+    });
+
+    await expect(
+      new ScreenerRepository().getValidatedAnalysisQuote("PETR4"),
+    ).resolves.toEqual(expected);
+
+    expect(builder.from).toHaveBeenCalledWith(screenerMarketSnapshotQuotes);
+    expect(builder.innerJoin).toHaveBeenCalledTimes(3);
+    expect(builder.where).toHaveBeenCalledOnce();
+    expect(builder.limit).toHaveBeenCalledWith(1);
+    const sql = sqlFor(builder.where.mock.calls[0]![0]);
+    expect(sql.params).toEqual(
+      expect.arrayContaining(["PETR4", "VALIDATED", true, "0"]),
+    );
+    expect(sql.sql).toContain('"price" >');
+    expect(sql.sql).toContain('"marketCap" >');
+    expect(sql.sql).toContain('"quoteObservedAt" =');
+    expect(sql.sql).toContain('"quoteObservedAt" >=');
+    expect(sql.sql).toContain('"quoteObservedAt" <=');
+    expect(builder.innerJoin.mock.calls.map(([table]) => table)).toEqual(
+      expect.arrayContaining([
+        screenerMarketSnapshots,
+        screenerSecurities,
+        screenerIssuers,
+      ]),
+    );
+  });
+
+  it("keeps a recent older quote eligible when a newer observation is future-dated", async () => {
+    const now = Date.now();
+    const futureQuoteObservedAt = new Date(now + 60_000);
+    const olderObservedAt = new Date(now - 3 * 24 * 60 * 60 * 1000);
+    const olderQuote = {
+      ticker: "PETR4",
+      returnedTicker: "PETR4",
+      issuerCnpj: "33000167000101",
+      companyName: "Petrobras",
+      price: "31.25",
+      marketCap: "300000000000.00",
+      quoteObservedAt: olderObservedAt,
+      snapshotMarketCap: "300000000000.00",
+      snapshotObservedAt: olderObservedAt,
+      snapshotQuoteObservedAt: olderObservedAt,
+    };
+    const builder = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([olderQuote]),
+    };
+    mocks.getDatabaseClient.mockReturnValue({ select: vi.fn(() => builder) });
+
+    await expect(
+      new ScreenerRepository().getValidatedAnalysisQuote("PETR4"),
+    ).resolves.toEqual(olderQuote);
+
+    const sql = sqlFor(builder.where.mock.calls[0]![0]);
+    const dateParameters = sql.params.flatMap((parameter) => {
+      const timestamp =
+        parameter instanceof Date
+          ? parameter.getTime()
+          : typeof parameter === "string"
+            ? Date.parse(parameter)
+            : Number.NaN;
+      return Number.isFinite(timestamp) && timestamp > Date.UTC(2020, 0, 1)
+        ? [timestamp]
+        : [];
+    });
+    const upperTimeBounds = dateParameters.filter(
+      (timestamp) => timestamp >= now - 5_000 && timestamp <= now + 5_000,
+    );
+    const freshnessLowerBounds = dateParameters.filter(
+      (timestamp) =>
+        Math.abs(timestamp - (now - 7 * 24 * 60 * 60 * 1000)) <= 5_000,
+    );
+    expect(futureQuoteObservedAt.getTime()).toBeGreaterThan(now);
+    expect(upperTimeBounds).toHaveLength(3);
+    expect(freshnessLowerBounds).toHaveLength(3);
+    expect(
+      upperTimeBounds.every((bound) => bound < futureQuoteObservedAt.getTime()),
+    ).toBe(true);
+    expect(olderObservedAt.getTime()).toBeGreaterThan(freshnessLowerBounds[0]!);
+    expect(olderObservedAt.getTime()).toBeLessThan(upperTimeBounds[0]!);
+  });
+
+  it("returns null when no positive-price validated quote exists", async () => {
+    const builder = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([]),
+    };
+    mocks.getDatabaseClient.mockReturnValue({ select: vi.fn(() => builder) });
+
+    await expect(
+      new ScreenerRepository().getValidatedAnalysisQuote("PETR4"),
+    ).resolves.toBeNull();
   });
 
   it("fails closed when a ticker has no persisted issuer context", async () => {

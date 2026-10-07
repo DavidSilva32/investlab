@@ -190,9 +190,10 @@ describe("BrapiMarketDataProvider", () => {
               data: {
                 historicalDataPrice: [
                   { date: 1767225600, close: 31 },
+                  { date: 1767225600, close: 31 },
                   { date: 1767139200, close: 30 },
                   { date: 1767225600, close: 32 },
-                  { date: 1767312000, close: null },
+                  { date: 1767312000, close: 33 },
                 ],
               },
             },
@@ -212,8 +213,9 @@ describe("BrapiMarketDataProvider", () => {
       priceUpdatedAt: "2026-01-01T12:00:00Z",
       history: [
         { date: "2025-12-31", close: 30 },
-        { date: "2026-01-01", close: 32 },
+        { date: "2026-01-02", close: 33 },
       ],
+      historyStatus: "available",
     });
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       "https://brapi.dev/api/v2/stocks/quote?symbols=PETR4%2FSA",
@@ -241,6 +243,7 @@ describe("BrapiMarketDataProvider", () => {
       changePercent: null,
       priceUpdatedAt: null,
       history: [],
+      historyStatus: "empty",
     });
   });
 
@@ -255,7 +258,12 @@ describe("BrapiMarketDataProvider", () => {
 
     await expect(
       new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
-    ).resolves.toMatchObject({ companyName: null, cnpj: null, history: [] });
+    ).resolves.toMatchObject({
+      companyName: null,
+      cnpj: null,
+      history: [],
+      historyStatus: "unavailable",
+    });
   });
 
   it("propagates malformed required quote payloads", async () => {
@@ -289,7 +297,8 @@ describe("BrapiMarketDataProvider", () => {
       );
     await expect(
       new BrapiMarketDataProvider(invalidHistoryFetcher).getByTicker("PETR4"),
-    ).rejects.toThrow();
+    ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
+    expect(invalidHistoryFetcher).toHaveBeenCalledTimes(3);
   });
   it("does not retry a historical rate limit but falls back to one year on other failures", async () => {
     const rateLimited = vi
@@ -301,7 +310,7 @@ describe("BrapiMarketDataProvider", () => {
       );
     await expect(
       new BrapiMarketDataProvider(rateLimited).getByTicker("PETR4"),
-    ).resolves.toMatchObject({ history: [] });
+    ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
     expect(rateLimited).toHaveBeenCalledTimes(3);
 
     const unavailable = vi
@@ -314,8 +323,65 @@ describe("BrapiMarketDataProvider", () => {
       );
     await expect(
       new BrapiMarketDataProvider(unavailable).getByTicker("PETR4"),
-    ).resolves.toMatchObject({ history: [] });
+    ).resolves.toMatchObject({ history: [], historyStatus: "empty" });
     expect(unavailable.mock.calls[2]?.[0]).toContain("range=5y");
     expect(unavailable.mock.calls[3]?.[0]).toContain("range=1y");
   });
+
+  it("does not retry invalid history payloads and exposes unavailable history", async () => {
+    const invalidJson = new Response("not json");
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(invalidJson);
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
+    ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher.mock.calls[2]?.[0]).toContain("range=5y");
+  });
+
+  it("does not retry deterministic historical client errors", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
+    ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["a null close", [{ date: 1767225600, close: null }]],
+    ["an invalid date", [{ date: 1e100, close: 12 }]],
+    [
+      "conflicting same-day closes",
+      [
+        { date: 1767225600, close: 12 },
+        { date: 1767225600, close: 13 },
+      ],
+    ],
+  ])(
+    "marks history unavailable when records contain only %s",
+    async (_label, points) => {
+      const fetcher = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(quote()))
+        .mockResolvedValueOnce(jsonResponse({}))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            results: [{ data: { historicalDataPrice: points } }],
+          }),
+        );
+
+      await expect(
+        new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
+      ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
+    },
+  );
 });

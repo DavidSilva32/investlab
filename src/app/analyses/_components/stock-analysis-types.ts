@@ -1,5 +1,6 @@
 export type AnalysisPeriod = {
   referenceDate: string;
+  periodType?: "annual" | "interim";
   periodStart?: string | null;
   periodEnd?: string;
   filingReferenceDate?: string | null;
@@ -16,6 +17,28 @@ export type AnalysisPeriod = {
   netIncome: string | null;
   equity: string | null;
 };
+
+export function annualAnalysisPeriods(periods: AnalysisPeriod[]) {
+  const byYear = new Map<string, AnalysisPeriod>();
+  for (const period of periods) {
+    if (
+      period.sourceDocument !== "DFP" ||
+      period.periodType === "interim" ||
+      (period.periodBasis !== undefined && period.periodBasis !== "annual")
+    )
+      continue;
+    const year = period.referenceDate.slice(0, 4);
+    const existing = byYear.get(year);
+    if (
+      !existing ||
+      (period.filingReferenceDate ?? "") > (existing.filingReferenceDate ?? "")
+    )
+      byYear.set(year, period);
+  }
+  return [...byYear.values()].sort((left, right) =>
+    left.referenceDate.localeCompare(right.referenceDate),
+  );
+}
 
 export type AnalysisIndicator = {
   key: "pe" | "pb" | "roe" | "netMargin";
@@ -40,7 +63,11 @@ export type StockAnalysis = {
   price: number | null;
   changePercent: number | null;
   priceUpdatedAt: string | null;
+  priceIsStale?: boolean;
+  fundamentalsIsStale?: boolean;
+  fundamentalsFetchedAt?: string | null;
   history: Array<{ date: string; close: number }>;
+  historyStatus?: "available" | "empty" | "unavailable";
   fundamentals: AnalysisPeriod[];
   indicators: AnalysisIndicator[];
 };

@@ -6,7 +6,10 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
-import type { AnalysisPeriod } from "./stock-analysis-types";
+import {
+  annualAnalysisPeriods,
+  type AnalysisPeriod,
+} from "./stock-analysis-types";
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -153,12 +156,7 @@ export function StockAnalysisReading({
 }: {
   periods: AnalysisPeriod[];
 }) {
-  const annual = periods
-    .filter((period) => period.sourceDocument === "DFP")
-    .slice()
-    .sort((left, right) =>
-      left.referenceDate.localeCompare(right.referenceDate),
-    );
+  const annual = annualAnalysisPeriods(periods);
   const latest = annual.at(-1);
   const previous = annual.at(-2);
   const consecutive =

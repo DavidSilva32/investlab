@@ -70,6 +70,17 @@ describe("PriceHistoryChart", () => {
     render(<PriceHistoryChart points={[{ date: "2026-01-01", close: 10 }]} />);
     expect(screen.getByText(/hist.rico suficiente/i)).toBeTruthy();
   });
+
+  it("explains when the market data source could not load history", () => {
+    render(<PriceHistoryChart points={[]} unavailable />);
+
+    expect(screen.getByRole("status").textContent).toMatch(
+      /Não foi possível carregar o histórico de cotações agora/,
+    );
+    expect(screen.getByRole("status").textContent).not.toContain(
+      "histórico suficiente",
+    );
+  });
 });
 vi.mock("@/components/ui/chart", async () => {
   const actual = await vi.importActual<typeof import("@/components/ui/chart")>(

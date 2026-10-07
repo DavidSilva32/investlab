@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ApplicationError } from "@/backend/errors/application-error";
 import {
   calculateAnalysisIndicators,
   StockAnalysisService,
@@ -1074,6 +1075,36 @@ describe("StockAnalysisService cache and failures", () => {
     history: [],
   };
 
+  const expiredCachePeriod = (overrides: Record<string, unknown> = {}) => ({
+    referenceDate: "2025-12-31",
+    periodStart: "2025-01-01",
+    periodEnd: "2025-12-31",
+    filingReferenceDate: "2026-03-20",
+    exerciseOrder: "last",
+    periodBasis: "annual",
+    periodType: "annual",
+    sourceDocument: "DFP",
+    cnpj: "33000167000101",
+    sourceVersion: "2026",
+    revenueVersion: "1",
+    revenueAccountLabel: "Receita operacional consolidada",
+    netIncomeVersion: "1",
+    netIncomeAccount: "3.09",
+    netIncomeConcept: "consolidated_net_income",
+    equityVersion: "1",
+    equityAccount: "2.03",
+    equityConcept: "consolidated_equity",
+    revenue: "100",
+    netIncome: "10",
+    equity: "50",
+    assets: null,
+    liabilities: null,
+    cash: null,
+    debt: null,
+    fetchedAt: new Date(Date.now() - 1000 * 60 * 60 * 25),
+    ...overrides,
+  });
+
   it("rejects invalid tickers before calling providers", async () => {
     const marketProvider = {
       getByTicker: vi.fn(),
@@ -1093,6 +1124,39 @@ describe("StockAnalysisService cache and failures", () => {
     expect(marketProvider.getByTicker).not.toHaveBeenCalled();
   });
 
+  it("rejects mismatched market tickers instead of returning another issuer", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue({ ...market, ticker: "VALE3" }),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+    );
+
+    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+      statusCode: 502,
+    });
+  });
+
+  it("preserves application errors when the market provider is unavailable", async () => {
+    const failure = new ApplicationError("Market rate limited", 429, 30);
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockRejectedValue(failure),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+    );
+
+    await expect(service.getByTicker("PETR4")).rejects.toBe(failure);
+  });
+
   it("uses a recent fundamentals cache", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue(market),
@@ -1109,6 +1173,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodBasis: "annual",
       periodType: "annual",
       sourceDocument: "DFP",
+      cnpj: "33000167000101",
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -1137,13 +1202,22 @@ describe("StockAnalysisService cache and failures", () => {
       sourceDocument: "ITR",
     };
     const repository = {
-      listByTicker: vi
-        .fn()
-        .mockResolvedValue([
-          cachedPeriod,
-          legacyInterimPeriod,
-          comparativeInterimPeriod,
-        ]),
+      listByTicker: vi.fn().mockResolvedValue([
+        cachedPeriod,
+        { ...cachedPeriod, revenue: "105" },
+        {
+          ...cachedPeriod,
+          filingReferenceDate: "2025-04-01",
+          revenue: "110",
+        },
+        {
+          ...cachedPeriod,
+          filingReferenceDate: "2025-04-01",
+          revenue: "115",
+        },
+        legacyInterimPeriod,
+        comparativeInterimPeriod,
+      ]),
       save: vi.fn(),
     };
     const service = new StockAnalysisService(
@@ -1159,13 +1233,13 @@ describe("StockAnalysisService cache and failures", () => {
         referenceDate: "2025-12-31",
         periodStart: null,
         periodEnd: "2025-12-31",
-        filingReferenceDate: null,
+        filingReferenceDate: "2025-04-01",
         exerciseOrder: "last",
         periodBasis: "annual",
         isDerived: false,
         periodType: "annual",
         sourceDocument: "DFP",
-        revenue: "100",
+        revenue: "110",
         netIncome: "10",
         equity: "50",
         assets: null,
@@ -1198,6 +1272,533 @@ describe("StockAnalysisService cache and failures", () => {
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
     expect(repository.save).not.toHaveBeenCalled();
   });
+
+  it("uses an expired CNPJ-matched cache with complete CVM provenance when refresh fails", async () => {
+    const fetchedAt = new Date(Date.now() - 1000 * 60 * 60 * 25);
+    const cachedPeriod = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: "2026-03-20",
+      exerciseOrder: "last",
+      periodBasis: "annual",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      cnpj: "33000167000101",
+      sourceVersion: "2026",
+      revenueVersion: "1",
+      revenueAccountLabel: "Receita operacional consolidada",
+      netIncomeVersion: "1",
+      netIncomeAccount: "3.09",
+      netIncomeConcept: "consolidated_net_income",
+      equityVersion: "1",
+      equityAccount: "2.03",
+      equityConcept: "consolidated_equity",
+      revenue: "100",
+      netIncome: "10",
+      equity: "50",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+      fetchedAt,
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(market),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")) },
+      repository,
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+    );
+
+    const result = await service.getByTicker("PETR4");
+
+    expect(result).toMatchObject({
+      fundamentalsIsStale: true,
+      fundamentalsFetchedAt: fetchedAt.toISOString(),
+      fundamentals: [
+        expect.objectContaining({
+          referenceDate: "2025-12-31",
+          filingReferenceDate: "2026-03-20",
+          revenue: "100",
+        }),
+      ],
+    });
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("uses a valid stale cache when CVM refresh succeeds without periods", async () => {
+    const cachedPeriod = expiredCachePeriod({ periodEnd: null });
+    const fetchedAt = cachedPeriod.fetchedAt;
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(market),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      repository,
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+    );
+
+    const result = await service.getByTicker("PETR4");
+
+    expect(result).toMatchObject({
+      fundamentalsIsStale: true,
+      fundamentalsFetchedAt: fetchedAt.toISOString(),
+      fundamentals: [expect.objectContaining({ periodEnd: "2025-12-31" })],
+    });
+  });
+
+  it("accepts an expired ITR cache only with interim period provenance", async () => {
+    const cachedPeriod = expiredCachePeriod({
+      referenceDate: "2026-06-30",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-06-30",
+      filingReferenceDate: "2026-08-10",
+      periodType: "interim",
+      periodBasis: "year_to_date",
+      sourceDocument: "ITR",
+    });
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(market),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")) },
+      {
+        listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
+        save: vi.fn(),
+      },
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+    );
+
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      fundamentalsIsStale: true,
+      fundamentals: [expect.objectContaining({ sourceDocument: "ITR" })],
+    });
+  });
+
+  it.each([
+    ["revenue version", { revenueVersion: null }],
+    ["revenue label", { revenueAccountLabel: " " }],
+    ["net income account", { netIncomeAccount: null }],
+    ["equity concept", { equityConcept: null }],
+    ["period start", { periodStart: "not-a-date" }],
+    ["reported end date", { periodEnd: "2025-11-30" }],
+    ["filing date", { filingReferenceDate: null }],
+    [
+      "interim basis",
+      {
+        referenceDate: "2026-06-30",
+        periodStart: "2026-01-01",
+        periodEnd: "2026-06-30",
+        filingReferenceDate: "2026-08-10",
+        periodType: "interim",
+        periodBasis: "unknown",
+        sourceDocument: "ITR",
+      },
+    ],
+    [
+      "interim type",
+      {
+        referenceDate: "2026-06-30",
+        periodStart: "2026-01-01",
+        periodEnd: "2026-06-30",
+        filingReferenceDate: "2026-08-10",
+        periodType: "annual",
+        periodBasis: "quarterly",
+        sourceDocument: "ITR",
+      },
+    ],
+  ])(
+    "rejects an expired cache with incomplete %s provenance",
+    async (_field, change) => {
+      const service = new StockAnalysisService(
+        {
+          getByTicker: vi.fn().mockResolvedValue(market),
+          getQuoteByTicker: vi.fn(),
+          searchTickers: vi.fn(),
+        },
+        {
+          getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")),
+        },
+        {
+          listByTicker: vi.fn().mockResolvedValue([expiredCachePeriod(change)]),
+          save: vi.fn(),
+        },
+        { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+      );
+
+      await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+        statusCode: 502,
+      });
+    },
+  );
+
+  it("does not use stale fundamentals cache without an issuer CNPJ", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue({ ...market, cnpj: null }),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")) },
+      {
+        listByTicker: vi.fn().mockResolvedValue([expiredCachePeriod()]),
+        save: vi.fn(),
+      },
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+    );
+
+    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+      statusCode: 502,
+    });
+  });
+
+  it("does not use an expired cache when CNPJ or CVM provenance does not match", async () => {
+    const cachedPeriod = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: "2026-03-20",
+      exerciseOrder: "last",
+      periodBasis: "annual",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      cnpj: "99000167000101",
+      sourceVersion: "2026",
+      revenueVersion: null,
+      revenueAccountLabel: null,
+      netIncomeVersion: null,
+      netIncomeAccount: null,
+      netIncomeConcept: null,
+      equityVersion: null,
+      equityAccount: null,
+      equityConcept: null,
+      revenue: "100",
+      netIncome: null,
+      equity: null,
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+      fetchedAt: new Date(Date.now() - 1000 * 60 * 60 * 25),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(market),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")) },
+      {
+        listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
+        save: vi.fn(),
+      },
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+    );
+
+    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+      statusCode: 502,
+    });
+  });
+
+  it("uses a fresh validated Screener quote as an explicitly stale last observation", async () => {
+    const observedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const screener = {
+      getValidatedAnalysisQuote: vi.fn().mockResolvedValue({
+        ticker: "PETR4",
+        returnedTicker: "PETR4",
+        issuerCnpj: "33000167000101",
+        companyName: "Petrobras",
+        price: "31.25",
+        marketCap: "300000000000.00",
+        quoteObservedAt: observedAt,
+        snapshotMarketCap: "300000000000.00",
+        snapshotObservedAt: observedAt,
+        snapshotQuoteObservedAt: observedAt,
+      }),
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockRejectedValue(new Error("market offline")),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      repository,
+      screener,
+    );
+
+    const result = await service.getByTicker("PETR4");
+
+    expect(result).toMatchObject({
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+      price: 31.25,
+      marketCap: 300000000000,
+      changePercent: null,
+      priceUpdatedAt: observedAt.toISOString(),
+      priceIsStale: true,
+      history: [],
+    });
+  });
+
+  it.each(["expired", "future"])(
+    "replaces a %s provider quote with a fresh validated Screener quote",
+    async (timestampKind) => {
+      const observedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const providerObservedAt = new Date(
+        Date.now() +
+          (timestampKind === "future" ? 24 : -8) *
+            60 *
+            60 *
+            1000 *
+            (timestampKind === "future" ? 1 : 24),
+      );
+      const screenerQuote = {
+        ticker: "PETR4",
+        returnedTicker: "PETR4",
+        issuerCnpj: "33000167000101",
+        companyName: "Petrobras",
+        price: "31.25",
+        marketCap: "300000000000.00",
+        quoteObservedAt: observedAt,
+        snapshotMarketCap: "300000000000.00",
+        snapshotObservedAt: observedAt,
+        snapshotQuoteObservedAt: observedAt,
+      };
+      const screener = {
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(screenerQuote),
+      };
+      const repository = {
+        listByTicker: vi.fn().mockResolvedValue([]),
+        save: vi.fn(),
+      };
+      const service = new StockAnalysisService(
+        {
+          getByTicker: vi.fn().mockResolvedValue({
+            ...market,
+            price: 29,
+            priceUpdatedAt: providerObservedAt.toISOString(),
+          }),
+          getQuoteByTicker: vi.fn(),
+          searchTickers: vi.fn(),
+        },
+        { getByTicker: vi.fn().mockResolvedValue([]) },
+        repository,
+        screener,
+      );
+
+      const result = await service.getByTicker("PETR4");
+
+      expect(result).toMatchObject({
+        price: 31.25,
+        marketCap: 300000000000,
+        priceUpdatedAt: observedAt.toISOString(),
+        priceIsStale: true,
+      });
+    },
+  );
+
+  it("rejects stale, mismatched, or issuer-unverified Screener quote evidence", async () => {
+    const tooOld = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    const screener = {
+      getValidatedAnalysisQuote: vi.fn().mockResolvedValue({
+        ticker: "PETR4",
+        returnedTicker: "PETR4",
+        issuerCnpj: "33000167000101",
+        companyName: "Petrobras",
+        price: "31.25",
+        marketCap: "300000000000.00",
+        quoteObservedAt: tooOld,
+        snapshotMarketCap: "300000000000.00",
+        snapshotObservedAt: tooOld,
+        snapshotQuoteObservedAt: tooOld,
+      }),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockRejectedValue(new Error("market offline")),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+      screener,
+    );
+
+    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+      statusCode: 502,
+    });
+  });
+
+  it.each([
+    ["requested ticker", { ticker: "VALE3" }],
+    ["returned ticker", { returnedTicker: "VALE3" }],
+    ["snapshot market cap", { snapshotMarketCap: "300000000000.01" }],
+    ["snapshot quote timestamp", { snapshotQuoteObservedAt: null }],
+    [
+      "future quote timestamp",
+      { quoteObservedAt: new Date(Date.now() + 60_000) },
+    ],
+    [
+      "future snapshot timestamp",
+      { snapshotObservedAt: new Date(Date.now() + 60_000) },
+    ],
+  ])(
+    "rejects last-observed quote evidence with mismatched %s",
+    async (_case, change) => {
+      const observedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const row = {
+        ticker: "PETR4",
+        returnedTicker: "PETR4",
+        issuerCnpj: "33000167000101",
+        companyName: "Petrobras",
+        price: "31.25",
+        marketCap: "300000000000.00",
+        quoteObservedAt: observedAt,
+        snapshotMarketCap: "300000000000.00",
+        snapshotObservedAt: observedAt,
+        snapshotQuoteObservedAt: observedAt,
+        ...change,
+      };
+      const service = new StockAnalysisService(
+        {
+          getByTicker: vi.fn().mockRejectedValue(new Error("market offline")),
+          getQuoteByTicker: vi.fn(),
+          searchTickers: vi.fn(),
+        },
+        { getByTicker: vi.fn() },
+        { listByTicker: vi.fn(), save: vi.fn() },
+        { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(row) },
+      );
+
+      await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+        statusCode: 502,
+      });
+    },
+  );
+
+  it("does not replace a missing quote with evidence from another issuer", async () => {
+    const observedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    const marketWithoutQuote = { ...market, price: null };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(marketWithoutQuote),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      repository,
+      {
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue({
+          ticker: "PETR4",
+          returnedTicker: "PETR4",
+          issuerCnpj: "99000167000101",
+          companyName: "Outra empresa",
+          price: "31.25",
+          marketCap: "300000000000.00",
+          quoteObservedAt: observedAt,
+          snapshotMarketCap: "300000000000.00",
+          snapshotObservedAt: observedAt,
+          snapshotQuoteObservedAt: observedAt,
+        }),
+      },
+    );
+
+    const result = await service.getByTicker("PETR4");
+    expect(result.price).toBeNull();
+    expect(result.priceIsStale).toBe(false);
+  });
+
+  it.each(["source version", "period provenance", "retrieval timestamp"])(
+    "rejects an expired cache with inconsistent %s",
+    async (inconsistentField) => {
+      const fetchedAt = new Date(Date.now() - 1000 * 60 * 60 * 25);
+      const latest = {
+        referenceDate: "2025-12-31",
+        periodStart: "2025-01-01",
+        periodEnd: "2025-12-31",
+        filingReferenceDate: "2026-03-20",
+        exerciseOrder: "last",
+        periodBasis: "annual",
+        periodType: "annual",
+        sourceDocument: "DFP",
+        cnpj: "33000167000101",
+        sourceVersion: "2026",
+        revenueVersion: "1",
+        revenueAccountLabel: "Receita operacional consolidada",
+        netIncomeVersion: null,
+        netIncomeAccount: null,
+        netIncomeConcept: null,
+        equityVersion: null,
+        equityAccount: null,
+        equityConcept: null,
+        revenue: "100",
+        netIncome: null,
+        equity: null,
+        assets: null,
+        liabilities: null,
+        cash: null,
+        debt: null,
+        fetchedAt,
+      };
+      const older = {
+        ...latest,
+        referenceDate: "2024-12-31",
+        periodStart: "2024-01-01",
+        periodEnd: "2024-12-31",
+        filingReferenceDate:
+          inconsistentField === "period provenance" ? null : "2025-03-20",
+        sourceVersion: inconsistentField === "source version" ? "2025" : "2026",
+        fetchedAt:
+          inconsistentField === "retrieval timestamp"
+            ? new Date(fetchedAt.getTime() + 1)
+            : fetchedAt,
+      };
+      const service = new StockAnalysisService(
+        {
+          getByTicker: vi.fn().mockResolvedValue(market),
+          getQuoteByTicker: vi.fn(),
+          searchTickers: vi.fn(),
+        },
+        {
+          getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")),
+        },
+        {
+          listByTicker: vi.fn().mockResolvedValue([latest, older]),
+          save: vi.fn(),
+        },
+        { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
+      );
+
+      await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+        statusCode: 502,
+      });
+    },
+  );
 
   it("loads issuer fundamentals from an identity-matched cache without market data", async () => {
     const cachedPeriod = {
