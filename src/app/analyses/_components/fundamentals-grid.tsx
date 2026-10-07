@@ -103,12 +103,16 @@ export function FundamentalsGrid({
           className="rounded-lg border bg-card p-4 shadow-sm"
         >
           <h3 className="font-medium">
-            {type === "ITR" ? "Acumulado até " : ""}
+            {type === "ITR"
+              ? period.exerciseOrder === "previous"
+                ? "Comparativo informado até "
+                : "Demonstrativo informado em "
+              : ""}
             {dateLabel(period.referenceDate)}
           </h3>
           <dl className="mt-3 space-y-2 text-sm">
             <FundamentalValue
-              label="Receita"
+              label={flowLabel("Receita", period, type)}
               value={period.revenue}
               movement={
                 type === "DFP"
@@ -117,7 +121,7 @@ export function FundamentalsGrid({
               }
             />
             <FundamentalValue
-              label="Lucro líquido"
+              label={flowLabel("Lucro líquido", period, type)}
               value={period.netIncome}
               movement={
                 type === "DFP"
@@ -127,7 +131,7 @@ export function FundamentalsGrid({
               colorSign={type === "ITR"}
             />
             <FundamentalValue
-              label="Patrimônio líquido"
+              label={`Patrimônio líquido (saldo em ${dateLabel(period.referenceDate)})`}
               value={period.equity}
               movement={null}
             />
@@ -136,6 +140,29 @@ export function FundamentalsGrid({
       ))}
     </div>
   );
+}
+
+function flowLabel(
+  label: "Receita" | "Lucro líquido",
+  period: AnalysisPeriod,
+  type: "DFP" | "ITR",
+) {
+  if (type === "DFP") return label;
+  const periodDescription =
+    period.periodBasis === "year_to_date"
+      ? label === "Receita"
+        ? "acumulada no exercício"
+        : "acumulado no exercício"
+      : period.periodBasis === "quarterly"
+        ? "do trimestre"
+        : "com período não identificado";
+  const comparative =
+    period.exerciseOrder === "previous"
+      ? label === "Receita"
+        ? "comparativa "
+        : "comparativo "
+      : "";
+  return `${label} ${comparative}${periodDescription}`;
 }
 
 function FundamentalValue({

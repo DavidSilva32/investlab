@@ -14,6 +14,15 @@ const dateLabel = (date: string) =>
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${date}T00:00:00Z`));
+const dateTimeLabel = (value: string) => {
+  const timestamp = new Date(value);
+  return Number.isFinite(timestamp.getTime())
+    ? new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "short",
+      }).format(timestamp)
+    : null;
+};
 const names: Record<AnalysisIndicator["key"], string> = {
   pe: "P/L",
   pb: "P/VP",
@@ -26,7 +35,7 @@ const help: Record<
 > = {
   pe: {
     definition:
-      "Compara o valor de mercado da empresa com o lucro líquido anual: quantos anos desse lucro equivalem ao preço atual, em uma simplificação.",
+      "Compara o valor de mercado da empresa com o lucro líquido dos últimos 12 meses quando os períodos oficiais são compatíveis; sem essa base, usa o exercício anual mais recente.",
     reading:
       "Um P/L maior pode refletir expectativas de crescimento; um menor pode indicar preço mais baixo em relação ao lucro.",
     caution:
@@ -34,7 +43,7 @@ const help: Record<
   },
   pb: {
     definition:
-      "Compara o valor de mercado com o patrimônio líquido contábil da empresa.",
+      "Compara o valor de mercado com o patrimônio líquido contábil informado na data-base mais recente.",
     reading:
       "Um P/VP maior indica preço mais alto em relação ao patrimônio; um menor pode refletir desconto ou riscos percebidos.",
     caution:
@@ -42,7 +51,7 @@ const help: Record<
   },
   roe: {
     definition:
-      "Relaciona o lucro líquido anual ao patrimônio líquido médio entre o início e o fim do exercício.",
+      "Relaciona o lucro líquido do período ao patrimônio líquido médio entre a data inicial e a data final informadas.",
     reading:
       "Um ROE maior mostra mais lucro em relação ao patrimônio usado; um menor pode indicar retorno mais baixo nesse período.",
     caution:
@@ -68,9 +77,31 @@ export function FundamentalIndicatorCard({
     indicator.value === null
       ? "Indisponível"
       : `${indicator.value.toFixed(1)}${usesRatio ? "x" : "%"}`;
-  const reference = indicator.referenceDate
-    ? `${indicator.sourceDocument === "ITR" ? "Informações trimestrais acumuladas até" : "Demonstrações financeiras anuais encerradas em"} ${dateLabel(indicator.referenceDate)}`
+  const periodLabel =
+    indicator.periodBasis === "trailing_twelve_months"
+      ? "LTM encerrado em"
+      : indicator.periodBasis === "year_to_date"
+        ? "Acumulado no exercício até"
+        : indicator.periodBasis === "point_in_time"
+          ? "Saldo informado em"
+          : indicator.periodBasis === "quarterly"
+            ? "Trimestre encerrado em"
+            : indicator.sourceDocument === "ITR"
+              ? "Acumulado no exercício até"
+              : "Exercício anual encerrado em";
+  const fundamentalsReference = indicator.referenceDate
+    ? `${periodLabel} ${dateLabel(indicator.referenceDate)}`
     : indicator.unavailableReason;
+  const marketReference = usesRatio
+    ? indicator.marketDataDate
+      ? dateTimeLabel(indicator.marketDataDate)
+        ? `Cotação observada em ${dateTimeLabel(indicator.marketDataDate)}`
+        : "Data da cotação não informada"
+      : "Data da cotação não informada"
+    : null;
+  const reference = [fundamentalsReference, marketReference]
+    .filter(Boolean)
+    .join(" · ");
   const explanation = help[indicator.key];
 
   return (

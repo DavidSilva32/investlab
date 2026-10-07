@@ -9,8 +9,11 @@ import type {
 const cvmBaseUrl = "https://dados.cvm.gov.br/dados/CIA_ABERTA";
 const requiredAccounts = new Set([
   "3.01",
+  "3.09",
   "3.11",
   "2.03",
+  "2.07",
+  "2.08",
   "1",
   "2",
   "1.01.01",
@@ -20,8 +23,34 @@ const requiredAccounts = new Set([
 
 type CvmRow = Record<string, string>;
 type Issuer = { code: string; name: string; status: string | null };
-type AccountValue = { version: number; value: string | null };
-type PeriodAccounts = Map<string, AccountValue>;
+type AccountValue = {
+  version: number | null;
+  value: string | null;
+  label: string | null;
+};
+type SelectedAccount = AccountValue & { code: string };
+type PeriodAccounts = {
+  accounts: Map<string, AccountValue>;
+  periodStart: string | null;
+  periodEnd: string;
+  filingReferenceDate: string;
+  exerciseOrder: "last" | "previous";
+};
+type AccountMap = Map<string, AccountValue>;
+
+function normalizedDate(value: string | undefined) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value?.trim() ?? "") ? value!.trim() : null;
+}
+
+function normalizedExerciseOrder(value: string | undefined) {
+  const order = (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  if (order.includes("ULTIMO") && !order.includes("PENULTIMO")) return "last";
+  if (order.includes("PENULTIMO")) return "previous";
+  return null;
+}
 
 function splitCsvLine(line: string) {
   const cells: string[] = [];
@@ -65,19 +94,103 @@ function normalizedValue(value: string | undefined, scale: string | undefined) {
     : value;
   const amount = Number(normalized);
   if (!Number.isFinite(amount)) return null;
-  const multiplier = scale?.trim().toUpperCase() === "MIL" ? 1_000 : 1;
+  const normalizedScale = scale?.trim().toUpperCase();
+  const multiplier =
+    normalizedScale === "MIL"
+      ? 1_000
+      : normalizedScale === "UNIDADE" || normalizedScale === "REAIS"
+        ? 1
+        : null;
+  if (multiplier === null) return null;
   return (amount * multiplier).toFixed(2);
 }
 
-function accountValue(period: PeriodAccounts, account: string) {
+function normalizedPeriodBasis(
+  document: "DFP" | "ITR",
+  periodStart: string | null,
+  periodEnd: string,
+) {
+  const year = periodEnd.slice(0, 4);
+  if (
+    document === "DFP" &&
+    periodStart === `${year}-01-01` &&
+    periodEnd === `${year}-12-31`
+  )
+    return "annual" as const;
+  if (document !== "ITR" || !periodStart) return "unknown" as const;
+  if (
+    periodStart === `${year}-01-01` &&
+    [`${year}-03-31`, `${year}-06-30`, `${year}-09-30`].includes(periodEnd)
+  )
+    return "year_to_date" as const;
+  const quarterMonth = ["03-31", "06-30", "09-30", "12-31"].find(
+    (end) => `${year}-${end}` === periodEnd,
+  );
+  if (!quarterMonth) return "unknown" as const;
+  const quarterStart =
+    quarterMonth === "03-31"
+      ? `${year}-01-01`
+      : quarterMonth === "06-30"
+        ? `${year}-04-01`
+        : quarterMonth === "09-30"
+          ? `${year}-07-01`
+          : `${year}-10-01`;
+  return periodStart === quarterStart
+    ? ("quarterly" as const)
+    : ("unknown" as const);
+}
+
+function accountValue(period: AccountMap, account: string) {
   return period.get(account)?.value ?? null;
 }
 
-function sumAccountValues(period: PeriodAccounts, accounts: string[]) {
+function accountLabel(period: AccountMap, account: string) {
+  return period.get(account)?.label ?? null;
+}
+
+function accountVersion(period: AccountMap, account: string) {
+  const version = period.get(account)?.version;
+  return version === null || version === undefined ? null : String(version);
+}
+
+function normalizedAccountLabel(value: string | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function selectedAccount(
+  accounts: AccountMap,
+  acceptedCodes: string[],
+  acceptedLabels: string[],
+): SelectedAccount | null {
+  const candidates = [...accounts.entries()]
+    .filter(
+      ([code, account]) =>
+        acceptedCodes.includes(code) &&
+        acceptedLabels.includes(
+          normalizedAccountLabel(account.label ?? undefined),
+        ),
+    )
+    .map(([code, account]) => ({ ...account, code }));
+  return candidates.length === 1 ? candidates[0]! : null;
+}
+
+const consolidatedNetIncomeLabels = [
+  "LUCRO/PREJUIZO CONSOLIDADO DO PERIODO",
+  "LUCRO OU PREJUIZO CONSOLIDADO DO PERIODO",
+  "LUCRO OU PREJUIZO LIQUIDO CONSOLIDADO DO PERIODO",
+];
+const consolidatedEquityLabels = ["PATRIMONIO LIQUIDO CONSOLIDADO"];
+
+function sumAccountValues(period: AccountMap, accounts: string[]) {
   const values = accounts.map((account) => accountValue(period, account));
-  if (values.every((value) => value === null)) return null;
-  return values
-    .reduce((total, value) => total + Number(value ?? 0), 0)
+  if (values.some((value) => value === null)) return null;
+  return (values as string[])
+    .reduce((total, value) => total + Number(value), 0)
     .toFixed(2);
 }
 
@@ -201,23 +314,42 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
           if (normalizeCvmCode(row.CD_CVM) !== normalizeCvmCode(cvmCode))
             return;
           cvmCodeMatches += 1;
-          if (row.ORDEM_EXERC !== "ÚLTIMO") return;
+          const exerciseOrder = normalizedExerciseOrder(row.ORDEM_EXERC);
+          if (
+            !exerciseOrder ||
+            (document === "DFP" && exerciseOrder !== "last")
+          )
+            return;
           latestPeriodMatches += 1;
           if (!requiredAccounts.has(row.CD_CONTA ?? "")) return;
           requiredAccountMatches += 1;
-          const referenceDate = row.DT_REFER;
-          if (!referenceDate) return;
-          const version = Number(row.VERSAO ?? "0");
-          const key = `${referenceDate}:${row.CD_CONTA}`;
-          const period =
-            periods.get(referenceDate) ?? new Map<string, AccountValue>();
-          const current = period.get(row.CD_CONTA);
-          if (!current || version >= current.version) {
-            period.set(row.CD_CONTA, {
-              version: Number.isFinite(version) ? version : 0,
+          const filingReferenceDate = normalizedDate(row.DT_REFER);
+          const periodEnd =
+            normalizedDate(row.DT_FIM_EXERC) ?? filingReferenceDate;
+          const periodStart = normalizedDate(row.DT_INI_EXERC);
+          if (!filingReferenceDate || !periodEnd) return;
+          const parsedVersion = Number(row.VERSAO ?? "");
+          const version = Number.isFinite(parsedVersion) ? parsedVersion : null;
+          const periodKey = `${periodEnd}:${periodStart}:${exerciseOrder}:${filingReferenceDate}`;
+          const period = periods.get(periodKey) ?? {
+            accounts: new Map<string, AccountValue>(),
+            periodStart,
+            periodEnd,
+            filingReferenceDate,
+            exerciseOrder,
+          };
+          const current = period.accounts.get(row.CD_CONTA);
+          if (
+            !current ||
+            current.version === null ||
+            (version !== null && version >= current.version)
+          ) {
+            period.accounts.set(row.CD_CONTA, {
+              version,
               value: normalizedValue(row.VL_CONTA, row.ESCALA_MOEDA),
+              label: row.DS_CONTA ?? null,
             });
-            periods.set(referenceDate, period);
+            periods.set(periodKey, period);
           }
           matchedRows += 1;
         };
@@ -272,19 +404,69 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       periods: periods.size,
       durationMs: Date.now() - startedAt,
     });
-    return [...periods.entries()].map(([referenceDate, accounts]) => ({
-      referenceDate,
-      periodType:
-        document === "DFP" ? ("annual" as const) : ("interim" as const),
-      sourceDocument: document,
-      revenue: accountValue(accounts, "3.01"),
-      netIncome: accountValue(accounts, "3.11"),
-      equity: accountValue(accounts, "2.03"),
-      assets: accountValue(accounts, "1"),
-      liabilities: accountValue(accounts, "2"),
-      cash: accountValue(accounts, "1.01.01"),
-      debt: sumAccountValues(accounts, ["2.01.04", "2.02.01"]),
-    }));
+    const latestByPeriod = new Map<string, PeriodAccounts>();
+    for (const period of periods.values()) {
+      const key = `${period.periodEnd}:${period.periodStart}:${period.exerciseOrder}`;
+      const existing = latestByPeriod.get(key);
+      if (
+        !existing ||
+        existing.filingReferenceDate < period.filingReferenceDate
+      )
+        latestByPeriod.set(key, period);
+    }
+    return [...latestByPeriod.values()].map(
+      ({
+        accounts,
+        periodStart,
+        periodEnd,
+        filingReferenceDate,
+        exerciseOrder,
+      }) => {
+        const netIncome = selectedAccount(
+          accounts,
+          ["3.09", "3.11"],
+          consolidatedNetIncomeLabels,
+        );
+        const equity = selectedAccount(
+          accounts,
+          ["2.03", "2.07", "2.08"],
+          consolidatedEquityLabels,
+        );
+        return {
+          referenceDate: periodEnd,
+          periodStart,
+          periodEnd,
+          periodType:
+            document === "DFP" ? ("annual" as const) : ("interim" as const),
+          sourceDocument: document,
+          exerciseOrder,
+          filingReferenceDate,
+          periodBasis: normalizedPeriodBasis(document, periodStart, periodEnd),
+          isDerived: false,
+          revenueVersion: accountVersion(accounts, "3.01"),
+          revenueAccountLabel: accountLabel(accounts, "3.01"),
+          netIncomeVersion:
+            netIncome?.version === null || netIncome === null
+              ? null
+              : String(netIncome.version),
+          netIncomeAccount: netIncome?.code ?? null,
+          netIncomeConcept: netIncome ? "consolidated_net_income" : null,
+          equityVersion:
+            equity?.version === null || equity === null
+              ? null
+              : String(equity.version),
+          equityAccount: equity?.code ?? null,
+          equityConcept: equity ? "consolidated_equity" : null,
+          revenue: accountValue(accounts, "3.01"),
+          netIncome: netIncome?.value ?? null,
+          equity: equity?.value ?? null,
+          assets: accountValue(accounts, "1"),
+          liabilities: accountValue(accounts, "2"),
+          cash: accountValue(accounts, "1.01.01"),
+          debt: sumAccountValues(accounts, ["2.01.04", "2.02.01"]),
+        };
+      },
+    );
   }
 
   async getByTicker({ ticker, cnpj }: { ticker: string; cnpj: string | null }) {
