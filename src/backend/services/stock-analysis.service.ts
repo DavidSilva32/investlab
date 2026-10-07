@@ -4,7 +4,10 @@ import { BrapiMarketDataProvider } from "@/backend/providers/brapi-market-data.p
 import { CvmFundamentalsProvider } from "@/backend/providers/cvm-fundamentals.provider";
 import type { FundamentalPeriod } from "@/backend/providers/fundamentals.provider";
 import type { FundamentalsProvider } from "@/backend/providers/fundamentals.provider";
-import type { MarketDataProvider } from "@/backend/providers/market-data.provider";
+import type {
+  MarketData,
+  MarketDataProvider,
+} from "@/backend/providers/market-data.provider";
 import {
   stockFundamentalsRepository,
   type StockFundamentalsRepository,
@@ -21,6 +24,31 @@ const cacheDurationMs = 1000 * 60 * 60 * 24;
 function numericValue(value: string | null) {
   const parsed = value === null ? Number.NaN : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeCnpj(value: string | null | undefined) {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function normalizeCachedPeriods(
+  cached: Awaited<ReturnType<StockFundamentalsRepository["listByTicker"]>>,
+): FundamentalPeriod[] {
+  return cached.map(({ sourceDocument, fetchedAt, ...period }) => ({
+    ...period,
+    periodEnd: period.periodEnd ?? period.referenceDate,
+    periodType: period.periodType as "annual" | "interim",
+    sourceDocument: sourceDocument as "DFP" | "ITR",
+    exerciseOrder: period.exerciseOrder === "previous" ? "previous" : "last",
+    periodBasis:
+      period.periodBasis === "annual" ||
+      period.periodBasis === "year_to_date" ||
+      period.periodBasis === "quarterly" ||
+      period.periodBasis === "trailing_twelve_months" ||
+      period.periodBasis === "unknown"
+        ? period.periodBasis
+        : "unknown",
+    isDerived: false,
+  }));
 }
 
 function normalizedAccountLabel(value: string | null | undefined) {
@@ -439,23 +467,7 @@ export class StockAnalysisService {
       cnpjAvailable: Boolean(market.cnpj),
     });
     const periods: FundamentalPeriod[] = cacheValid
-      ? cached.map(({ sourceDocument, fetchedAt, ...period }) => ({
-          ...period,
-          periodEnd: period.periodEnd ?? period.referenceDate,
-          periodType: period.periodType as "annual" | "interim",
-          sourceDocument: sourceDocument as "DFP" | "ITR",
-          exerciseOrder:
-            period.exerciseOrder === "previous" ? "previous" : "last",
-          periodBasis:
-            period.periodBasis === "annual" ||
-            period.periodBasis === "year_to_date" ||
-            period.periodBasis === "quarterly" ||
-            period.periodBasis === "trailing_twelve_months" ||
-            period.periodBasis === "unknown"
-              ? period.periodBasis
-              : "unknown",
-          isDerived: false,
-        }))
+      ? normalizeCachedPeriods(cached)
       : await this.refreshFundamentals(market.ticker, market.cnpj, requestId);
 
     const ltmPeriods = ltmFlowPeriods(periods);
@@ -467,6 +479,63 @@ export class StockAnalysisService {
         market.marketCap,
         market.priceUpdatedAt,
       ),
+    };
+  }
+
+  async getFundamentalsByIssuer(
+    rawTicker: unknown,
+    rawExpectedCnpj: unknown,
+    requestId?: string,
+  ): Promise<
+    MarketData & {
+      fundamentals: FundamentalPeriod[];
+      indicators: AnalysisIndicator[];
+    }
+  > {
+    const parsedTicker = tickerSchema.safeParse(rawTicker);
+    if (!parsedTicker.success)
+      throw new ApplicationError(parsedTicker.error.issues[0]!.message, 400);
+    const expectedCnpj = normalizeCnpj(
+      typeof rawExpectedCnpj === "string" ? rawExpectedCnpj : null,
+    );
+    if (expectedCnpj.length !== 14)
+      throw new ApplicationError(
+        "Não foi possível confirmar o CNPJ do emissor na CVM.",
+        422,
+      );
+
+    const ticker = parsedTicker.data;
+    const cached = await this.repository.listByTicker(ticker);
+    const cacheIdentityMatches =
+      cached.length > 0 &&
+      cached.every((period) => normalizeCnpj(period.cnpj) === expectedCnpj);
+    const cacheFresh =
+      cached.length > 0 &&
+      Date.now() - cached[0]!.fetchedAt.getTime() < cacheDurationMs;
+    const cacheValid = cacheFresh && cacheIdentityMatches;
+    logger.info("stock_fundamentals_cache_checked", {
+      requestId,
+      ticker,
+      cachedPeriods: cached.length,
+      cacheValid,
+      cnpjAvailable: true,
+      cacheIdentityMatches,
+    });
+    const periods = cacheValid
+      ? normalizeCachedPeriods(cached)
+      : await this.refreshFundamentals(ticker, expectedCnpj, requestId);
+    const ltmPeriods = ltmFlowPeriods(periods);
+    return {
+      ticker,
+      cnpj: expectedCnpj,
+      companyName: null,
+      price: null,
+      marketCap: null,
+      changePercent: null,
+      priceUpdatedAt: null,
+      history: [],
+      fundamentals: [...periods, ...ltmPeriods],
+      indicators: calculateAnalysisIndicators(periods),
     };
   }
 

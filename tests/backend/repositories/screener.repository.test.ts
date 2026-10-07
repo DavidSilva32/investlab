@@ -63,6 +63,50 @@ const sqlFor = (expression: unknown) =>
 describe("ScreenerRepository", () => {
   beforeEach(() => mocks.getDatabaseClient.mockReset());
 
+  it("returns only current issuer and ticker metadata for comparison", async () => {
+    const expected = [
+      {
+        ticker: "PETR4",
+        cnpj: "33000167000101",
+        sector: "Petróleo e Gás",
+      },
+      {
+        ticker: "SANB11",
+        cnpj: "90400888000142",
+        sector: "Bancos",
+      },
+    ];
+    let whereCondition: unknown;
+    const query = {
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn((condition: unknown) => {
+        whereCondition = condition;
+        return Promise.resolve(expected);
+      }),
+    };
+    mocks.getDatabaseClient.mockReturnValue({ select: vi.fn(() => query) });
+
+    await expect(
+      new ScreenerRepository().getComparisonMetadata(["PETR4", "SANB11"]),
+    ).resolves.toBe(expected);
+    expect(query.innerJoin).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(query.where).toHaveBeenCalledOnce();
+    expect(sqlFor(whereCondition).params).toEqual(
+      expect.arrayContaining(["PETR4", "SANB11", "stock", "unit", true]),
+    );
+  });
+
+  it("does not query the screener database for an empty comparison selection", async () => {
+    await expect(
+      new ScreenerRepository().getComparisonMetadata([]),
+    ).resolves.toEqual([]);
+    expect(mocks.getDatabaseClient).not.toHaveBeenCalled();
+  });
+
   it("fails closed when a ticker has no persisted issuer context", async () => {
     const builder = {
       from: vi.fn().mockReturnThis(),
@@ -534,6 +578,7 @@ describe("ScreenerRepository", () => {
     expect(securitySql.sql).toContain('"isActive" =');
     expect(securitySql.sql).toContain('"baseTicker" is null');
     expect(securitySql.params).toContain("stock");
+    expect(securitySql.params).not.toContain("unit");
     expect(securitySql.params).toContain(true);
     const factSql = sqlFor(predicates.get(screenerFinancialFacts));
     expect(factSql.params).toEqual(

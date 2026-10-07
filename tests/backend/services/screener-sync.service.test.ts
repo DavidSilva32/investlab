@@ -75,6 +75,25 @@ const annualFact = (
     )[accountCode] ?? "Lucro",
   value: String(value),
 });
+const emptyShareCapitalProvider = () => ({
+  getAnnualFacts: vi.fn().mockResolvedValue({
+    records: [],
+    diagnostics: {
+      archiveYear: 2026,
+      sourceArchive: "fre_cia_aberta_2026.zip",
+      filesRead: 0,
+      rowsRead: 0,
+      records: 0,
+      documentsMatched: 0,
+      documentsWithoutMetadata: 0,
+      ambiguousDocuments: 0,
+      treasuryPositionRecords: 0,
+      ingestionStatus: "COMPLETED" as const,
+      unavailableCoverageReasons: [],
+      unsupportedEventTables: [],
+    },
+  }),
+});
 
 function setup(
   overrides: {
@@ -112,7 +131,7 @@ function setup(
 ) {
   const registry = new Map<string, CvmCompanyRecord>([
     ["33000167000101", company("33000167000101", "9512", "Petróleo e Gás")],
-    ["11222333000181", company("11222333000181", "1234", "Bancos")],
+    ["90400888000142", company("90400888000142", "1234", "Bancos")],
     ["22222333000182", company("22222333000182", "5678", "Energia Elétrica")],
   ]);
   const catalog = overrides.catalog ?? [
@@ -153,7 +172,7 @@ function setup(
         name: "Vale",
         subtype: "stock",
         active: true,
-        cnpj: "11222333000181",
+        cnpj: "90400888000142",
         changed: false,
       },
       TUPY3: {
@@ -194,6 +213,14 @@ function setup(
         subtype: "stock",
         active: true,
         cnpj: "99999999999999",
+        changed: false,
+      },
+      BPAC11: {
+        ticker: "BPAC11",
+        name: "Unit without confirmed company",
+        subtype: "stock",
+        active: true,
+        cnpj: null,
         changed: false,
       },
     } as const;
@@ -733,6 +760,7 @@ describe("ScreenerSyncService", () => {
       "NOCNPJ3",
       "BADLEN3",
       "MISSING3",
+      "BPAC11",
     ]);
     expect(context.cvm.getAnnualFacts.mock.calls.map(([year]) => year)).toEqual(
       [2020, 2021, 2022, 2023, 2024, 2025],
@@ -748,7 +776,7 @@ describe("ScreenerSyncService", () => {
     };
     expect(saved.issuers.map((issuer) => issuer.cnpj)).toEqual([
       "33000167000101",
-      "11222333000181",
+      "90400888000142",
     ]);
     expect(
       saved.securities.find((security) => security.ticker === "PETR4F"),
@@ -818,10 +846,111 @@ describe("ScreenerSyncService", () => {
       expect.objectContaining({
         runId: "run-1",
         catalogCount: 12,
-        profileCount: 8,
+        profileCount: 9,
       }),
     );
     expect(context.repository.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("persists an active unit only after its exact CVM issuer CNPJ is confirmed", async () => {
+    const context = setup({
+      catalog: [stock("SANB11", "unit")],
+      profile: async (ticker) => ({
+        ticker,
+        name: "Santander unit",
+        subtype: "stock",
+        active: true,
+        cnpj: "90400888000142",
+        changed: false,
+      }),
+      facts: async (year) =>
+        year === 2025
+          ? [
+              {
+                ...annualFact(2025, "3.11", 100),
+                issuerCnpj: "90400888000142",
+              },
+            ]
+          : [],
+      shareCapitalProvider: emptyShareCapitalProvider(),
+    });
+
+    const result = await context.service.sync();
+    const saved = context.saved[0] as {
+      issuers: CvmCompanyRecord[];
+      securities: Array<{
+        ticker: string;
+        issuerCnpj: string;
+        subtype: string;
+        baseTicker: string | null;
+      }>;
+    };
+
+    expect(result.securities).toBe(1);
+    expect(context.brapi.getProfile).toHaveBeenCalledWith("SANB11");
+    expect(saved.issuers).toContainEqual(
+      expect.objectContaining({ cnpj: "90400888000142", sector: "Bancos" }),
+    );
+    expect(saved.securities).toEqual([
+      expect.objectContaining({
+        ticker: "SANB11",
+        issuerCnpj: "90400888000142",
+        subtype: "unit",
+        baseTicker: null,
+      }),
+    ]);
+    expect(
+      context.repository.saveShareClassReconciliations,
+    ).toHaveBeenCalledWith("run-1", [
+      expect.objectContaining({
+        ticker: "SANB11",
+        issuerCnpj: "90400888000142",
+        issuerIdentityStatus: "CNPJ_MATCHED",
+        unitCompositionStatus: "UNAVAILABLE",
+      }),
+    ]);
+  });
+
+  it("keeps an active unit without a confirmed CNPJ unavailable exactly once", async () => {
+    const context = setup({
+      catalog: [stock("PETR3"), stock("SANB11", "unit")],
+      profile: async (ticker) =>
+        ticker === "SANB11"
+          ? {
+              ticker,
+              name: "Santander unit",
+              subtype: "stock",
+              active: true,
+              cnpj: null,
+              changed: false,
+            }
+          : {
+              ticker,
+              name: "Petrobras ON",
+              subtype: "stock",
+              active: true,
+              cnpj: "33000167000101",
+              changed: false,
+            },
+      shareCapitalProvider: emptyShareCapitalProvider(),
+    });
+
+    await context.service.sync();
+    const reconciliations = (context.repository.saveShareClassReconciliations
+      .mock.calls[0]?.[1] ?? []) as Array<{ ticker: string }>;
+
+    expect(
+      reconciliations.filter(
+        (reconciliation) => reconciliation.ticker === "SANB11",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        ticker: "SANB11",
+        issuerCnpj: null,
+        issuerIdentityStatus: "UNAVAILABLE",
+        unitCompositionStatus: "UNAVAILABLE",
+      }),
+    ]);
   });
 
   it("keeps the first equal-version fact when source filename and row are identical", async () => {
@@ -933,7 +1062,7 @@ describe("ScreenerSyncService", () => {
           stage: "brapi_profiles",
           errorType: "BrapiScreenerProviderError",
           profilesAttempted: 1,
-          profilesTotal: 8,
+          profilesTotal: 9,
           ticker: "PETR3",
           externalEndpoint: "stocks/profile",
           externalStatus: 200,

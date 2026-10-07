@@ -1199,6 +1199,184 @@ describe("StockAnalysisService cache and failures", () => {
     expect(repository.save).not.toHaveBeenCalled();
   });
 
+  it("loads issuer fundamentals from an identity-matched cache without market data", async () => {
+    const cachedPeriod = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: null,
+      exerciseOrder: "last",
+      periodBasis: "annual",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      cnpj: "33000167000101",
+      revenue: "100",
+      netIncome: "10",
+      equity: "50",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+      fetchedAt: new Date(),
+    };
+    const marketProvider = {
+      getByTicker: vi.fn().mockRejectedValue(new Error("market unavailable")),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const fundamentalsProvider = { getByTicker: vi.fn() };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+    );
+
+    const result = await service.getFundamentalsByIssuer(
+      "PETR4",
+      "33.000.167/0001-01",
+    );
+
+    expect(result).toMatchObject({
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+      price: null,
+      marketCap: null,
+      priceUpdatedAt: null,
+      fundamentals: [expect.objectContaining({ referenceDate: "2025-12-31" })],
+    });
+    expect(marketProvider.getByTicker).not.toHaveBeenCalled();
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a fresh cache when its CNPJ differs from the expected issuer", async () => {
+    const cachedPeriod = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: null,
+      exerciseOrder: "last",
+      periodBasis: "annual",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      cnpj: "99000167000101",
+      revenue: "100",
+      netIncome: "10",
+      equity: "50",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+      fetchedAt: new Date(),
+    };
+    const refreshed = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: "2026-03-20",
+      exerciseOrder: "last" as const,
+      periodBasis: "annual" as const,
+      periodType: "annual" as const,
+      sourceDocument: "DFP" as const,
+      revenue: "200",
+      netIncome: "20",
+      equity: "100",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    };
+    const marketProvider = {
+      getByTicker: vi.fn(),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([refreshed]),
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+    );
+
+    const result = await service.getFundamentalsByIssuer(
+      "PETR4",
+      "33000167000101",
+    );
+
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledWith({
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+    });
+    expect(repository.save).toHaveBeenCalledWith(
+      "PETR4",
+      "33000167000101",
+      expect.any(String),
+      [refreshed],
+    );
+    expect(result.fundamentals[0]?.netIncome).toBe("20");
+    expect(marketProvider.getByTicker).not.toHaveBeenCalled();
+  });
+
+  it("refreshes stale issuer cache and rejects invalid issuer identity", async () => {
+    const stalePeriod = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: null,
+      exerciseOrder: "last",
+      periodBasis: "annual",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      cnpj: "33000167000101",
+      revenue: "100",
+      netIncome: "10",
+      equity: "50",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+      fetchedAt: new Date(Date.now() - 1000 * 60 * 60 * 25),
+    };
+    const marketProvider = {
+      getByTicker: vi.fn(),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const fundamentalsProvider = { getByTicker: vi.fn().mockResolvedValue([]) };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([stalePeriod]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+    );
+
+    await service.getFundamentalsByIssuer("PETR4", "33000167000101");
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
+    expect(repository.save).toHaveBeenCalledOnce();
+    await expect(
+      service.getFundamentalsByIssuer("PETR4", "invalid"),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    await expect(
+      service.getFundamentalsByIssuer("PETR4", undefined),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    await expect(
+      service.getFundamentalsByIssuer("bad", "33000167000101"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it("surfaces the missing-CNPJ application error", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue({ ...market, cnpj: null }),
