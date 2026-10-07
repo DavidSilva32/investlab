@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { CvmFundamentalsProvider } from "@/backend/providers/cvm-fundamentals.provider";
+import type { FundamentalPeriod } from "@/backend/providers/fundamentals.provider";
 
 const cnpj = "33000167000101";
 const cadHeader = "CNPJ_CIA;CD_CVM;DENOM_SOCIAL;SIT";
@@ -56,6 +57,8 @@ describe("CvmFundamentalsProvider", () => {
     const year = new Date().getUTCFullYear();
     const dfpRows = [
       row("3.01", "100", { VERSAO: "abc" }),
+      row("3.01", "1.234,50", { VERSAO: "2" }),
+      row("3.01", "888", { VERSAO: "" }),
       row("3.01", "1.234,50", { VERSAO: "2" }),
       row("3.01", "999", { VERSAO: "1" }),
       row("3.11", "20"),
@@ -141,11 +144,29 @@ describe("CvmFundamentalsProvider", () => {
                 DT_INI_EXERC: "2025-01-01",
                 DT_FIM_EXERC: "2025-12-31",
               }),
+              row("3.01", "5", {
+                DT_REFER: "2026-04-01",
+                DT_INI_EXERC: "2025-01-01",
+                DT_FIM_EXERC: "2025-12-31",
+              }),
             ]),
           ),
         ),
       )
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(
+          csvZip(
+            "dfp_cia_aberta_DRE_con_2023.csv",
+            documentCsv([
+              row("3.01", "5", {
+                DT_REFER: "2026-04-01",
+                DT_INI_EXERC: "2025-01-01",
+                DT_FIM_EXERC: "2025-12-31",
+              }),
+            ]),
+          ),
+        ),
+      )
       .mockResolvedValueOnce(
         new Response(csvZip("itr_cia_aberta_DRE_con_2026.csv", itr)),
       );
@@ -168,18 +189,6 @@ describe("CvmFundamentalsProvider", () => {
           liabilities: null,
           cash: null,
           debt: null,
-        }),
-        expect.objectContaining({
-          referenceDate: "2025-12-31",
-          periodType: "annual",
-          sourceDocument: "DFP",
-          revenue: "1234500.00",
-          netIncome: "20000.00",
-          equity: "1.50",
-          assets: "40000.00",
-          liabilities: "10000.00",
-          cash: "5000.00",
-          debt: "10000.00",
         }),
         expect.objectContaining({
           referenceDate: "2025-12-31",
@@ -223,6 +232,13 @@ describe("CvmFundamentalsProvider", () => {
         }),
       ]),
     );
+    expect(
+      periods.filter(
+        (period) =>
+          period.sourceDocument === "DFP" &&
+          period.referenceDate === "2025-12-31",
+      ),
+    ).toHaveLength(1);
     expect(fetcher).toHaveBeenCalledTimes(5);
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
       "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
@@ -231,6 +247,140 @@ describe("CvmFundamentalsProvider", () => {
       `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${year - 3}.zip`,
       `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${year}.zip`,
     ]);
+  });
+
+  it("marks a conflicting equal-version account unavailable without losing other accounts", async () => {
+    const year = new Date().getUTCFullYear();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          csvZip(
+            `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+            documentCsv([
+              row("3.01", "100", { VERSAO: "2" }),
+              row("3.01", "200", { VERSAO: "2" }),
+              row("3.11", "20"),
+              row("2.03", "30"),
+            ]),
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+
+    expect(periods[0]).toMatchObject({
+      revenue: null,
+      revenueAccountLabel: null,
+      netIncome: "20000.00",
+      equity: "30000.00",
+    });
+  });
+
+  it("deduplicates periods returned without an explicit end date", async () => {
+    const provider = new CvmFundamentalsProvider(
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+        ),
+    );
+    const readDocument = vi.spyOn(
+      provider as unknown as {
+        readDocument: (...args: unknown[]) => Promise<FundamentalPeriod[]>;
+      },
+      "readDocument",
+    );
+    const period = {
+      referenceDate: "2025-12-31",
+      periodStart: null,
+      periodType: "annual" as const,
+      sourceDocument: "DFP" as const,
+      exerciseOrder: "last" as const,
+      filingReferenceDate: null,
+      periodBasis: "annual" as const,
+      isDerived: false,
+      revenue: "100",
+      netIncome: null,
+      equity: null,
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    };
+    readDocument
+      .mockResolvedValueOnce([
+        period,
+        { ...period, revenue: "200" },
+        { ...period, filingReferenceDate: "2026-04-01", revenue: "300" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const periods = await provider.getByTicker({ ticker: "PETR4", cnpj });
+
+    expect(periods).toHaveLength(1);
+    expect(periods[0]).toMatchObject({
+      referenceDate: "2025-12-31",
+      filingReferenceDate: "2026-04-01",
+      revenue: "300",
+    });
+    expect(periods[0]).not.toHaveProperty("periodEnd");
+  });
+
+  it("keeps a financial result unavailable when one accepted account is ambiguous", async () => {
+    const year = new Date().getUTCFullYear();
+    const period = {
+      DT_REFER: `${year}-06-30`,
+      DT_INI_EXERC: `${year}-01-01`,
+      DT_FIM_EXERC: `${year}-06-30`,
+    };
+    const itr = documentCsv([
+      row("3.09", "20", { ...period, VERSAO: "2" }),
+      row("3.09", "21", { ...period, VERSAO: "2" }),
+      row("3.11", "30", { ...period, VERSAO: "1" }),
+    ]);
+    const emptyAnnual = csvZip(
+      `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(emptyAnnual))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
+      );
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "SANB11",
+      cnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: `${year}-06-30`,
+          netIncome: null,
+          netIncomeAccount: null,
+          netIncomeConcept: null,
+        }),
+      ]),
+    );
   });
 
   it("rejects a missing CNPJ before making a request", async () => {

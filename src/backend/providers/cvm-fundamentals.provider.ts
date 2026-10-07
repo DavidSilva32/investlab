@@ -27,6 +27,7 @@ type AccountValue = {
   version: number | null;
   value: string | null;
   label: string | null;
+  ambiguous?: boolean;
 };
 type SelectedAccount = AccountValue & { code: string };
 type PeriodAccounts = {
@@ -167,13 +168,15 @@ function selectedAccount(
   acceptedCodes: string[],
   acceptedLabels: string[],
 ): SelectedAccount | null {
-  const candidates = [...accounts.entries()]
-    .filter(
-      ([code, account]) =>
-        acceptedCodes.includes(code) &&
-        acceptedLabels.includes(
-          normalizedAccountLabel(account.label ?? undefined),
-        ),
+  const acceptedAccounts = [...accounts.entries()].filter(([code]) =>
+    acceptedCodes.includes(code),
+  );
+  if (acceptedAccounts.some(([, account]) => account.ambiguous)) return null;
+  const candidates = acceptedAccounts
+    .filter(([, account]) =>
+      acceptedLabels.includes(
+        normalizedAccountLabel(account.label ?? undefined),
+      ),
     )
     .map(([code, account]) => ({ ...account, code }));
   return candidates.length === 1 ? candidates[0]! : null;
@@ -341,13 +344,28 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
           const current = period.accounts.get(row.CD_CONTA);
           if (
             !current ||
-            current.version === null ||
-            (version !== null && version >= current.version)
+            (version !== null &&
+              (current.version === null || version > current.version))
           ) {
             period.accounts.set(row.CD_CONTA, {
               version,
               value: normalizedValue(row.VL_CONTA, row.ESCALA_MOEDA),
               label: row.DS_CONTA ?? null,
+            });
+            periods.set(periodKey, period);
+          } else if (
+            version === current.version &&
+            !current.ambiguous &&
+            (current.value !==
+              normalizedValue(row.VL_CONTA, row.ESCALA_MOEDA) ||
+              normalizedAccountLabel(current.label ?? undefined) !==
+                normalizedAccountLabel(row.DS_CONTA))
+          ) {
+            period.accounts.set(row.CD_CONTA, {
+              ...current,
+              value: null,
+              label: null,
+              ambiguous: true,
             });
             periods.set(periodKey, period);
           }
@@ -511,7 +529,25 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       });
       return [];
     });
-    const periods = [...annual, ...quarterly].sort((left, right) =>
+    const latestByPeriod = new Map<string, FundamentalPeriod>();
+    for (const period of [...annual, ...quarterly]) {
+      const key = [
+        period.sourceDocument,
+        period.periodStart ?? "",
+        period.periodEnd ?? period.referenceDate,
+        period.exerciseOrder,
+      ].join(":");
+      const existing = latestByPeriod.get(key);
+      if (!existing) {
+        latestByPeriod.set(key, period);
+        continue;
+      }
+      const filingReferenceDate = period.filingReferenceDate ?? "";
+      const existingFilingReferenceDate = existing.filingReferenceDate ?? "";
+      if (filingReferenceDate > existingFilingReferenceDate)
+        latestByPeriod.set(key, period);
+    }
+    const periods = [...latestByPeriod.values()].sort((left, right) =>
       right.referenceDate.localeCompare(left.referenceDate),
     );
     if (!periods.length)

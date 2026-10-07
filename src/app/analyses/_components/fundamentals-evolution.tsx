@@ -6,7 +6,10 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import type { AnalysisPeriod } from "./stock-analysis-types";
+import {
+  annualAnalysisPeriods,
+  type AnalysisPeriod,
+} from "./stock-analysis-types";
 
 const metrics = [
   { key: "revenue", label: "Receita", color: "var(--chart-category-1)" },
@@ -37,18 +40,12 @@ export function FundamentalsEvolution({
 }: {
   periods: AnalysisPeriod[];
 }) {
-  const annual = periods
-    .filter((period) => period.sourceDocument === "DFP")
-    .slice()
-    .sort((left, right) =>
-      left.referenceDate.localeCompare(right.referenceDate),
-    )
-    .map((period) => ({
-      year: period.referenceDate.slice(0, 4),
-      revenue: value(period.revenue),
-      netIncome: value(period.netIncome),
-      equity: value(period.equity),
-    }));
+  const annual = annualAnalysisPeriods(periods).map((period) => ({
+    year: period.referenceDate.slice(0, 4),
+    revenue: value(period.revenue),
+    netIncome: value(period.netIncome),
+    equity: value(period.equity),
+  }));
 
   if (!annual.length) return null;
 

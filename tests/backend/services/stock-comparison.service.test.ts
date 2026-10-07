@@ -3,7 +3,7 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import { StockAnalysisService } from "@/backend/services/stock-analysis.service";
 import { StockComparisonService } from "@/backend/services/stock-comparison.service";
 
-const now = new Date("2026-10-06T12:00:00.000Z");
+const now = new Date();
 type TestAnalysis = Awaited<
   ReturnType<StockAnalysisService["getFundamentalsByIssuer"]>
 >;

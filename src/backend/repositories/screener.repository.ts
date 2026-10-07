@@ -2,10 +2,12 @@ import {
   and,
   desc,
   eq,
+  gt,
   gte,
   inArray,
   isNotNull,
   isNull,
+  lte,
   lt,
 } from "drizzle-orm";
 import {
@@ -47,6 +49,80 @@ export class ScreenerRepository {
           eq(screenerSecurities.isActive, true),
         ),
       );
+  }
+
+  async getValidatedAnalysisQuote(ticker: string) {
+    const now = new Date();
+    const earliestFreshObservation = new Date(
+      now.getTime() - 7 * 24 * 60 * 60 * 1000,
+    );
+    const [quote] = await getDatabaseClient()
+      .select({
+        ticker: screenerMarketSnapshotQuotes.requestedTicker,
+        returnedTicker: screenerMarketSnapshotQuotes.returnedTicker,
+        issuerCnpj: screenerIssuers.cnpj,
+        companyName: screenerIssuers.name,
+        price: screenerMarketSnapshotQuotes.price,
+        marketCap: screenerMarketSnapshotQuotes.marketCap,
+        quoteObservedAt: screenerMarketSnapshotQuotes.quoteObservedAt,
+        snapshotMarketCap: screenerMarketSnapshots.marketCap,
+        snapshotObservedAt: screenerMarketSnapshots.observedAt,
+        snapshotQuoteObservedAt: screenerMarketSnapshots.quoteObservedAt,
+      })
+      .from(screenerMarketSnapshotQuotes)
+      .innerJoin(
+        screenerMarketSnapshots,
+        eq(screenerMarketSnapshotQuotes.snapshotId, screenerMarketSnapshots.id),
+      )
+      .innerJoin(
+        screenerSecurities,
+        and(
+          eq(
+            screenerSecurities.ticker,
+            screenerMarketSnapshotQuotes.requestedTicker,
+          ),
+          eq(screenerSecurities.issuerCnpj, screenerMarketSnapshots.issuerCnpj),
+          eq(screenerSecurities.isActive, true),
+        ),
+      )
+      .innerJoin(
+        screenerIssuers,
+        eq(screenerIssuers.cnpj, screenerMarketSnapshots.issuerCnpj),
+      )
+      .where(
+        and(
+          eq(screenerMarketSnapshotQuotes.requestedTicker, ticker),
+          eq(screenerMarketSnapshotQuotes.returnedTicker, ticker),
+          eq(screenerMarketSnapshotQuotes.validationResult, "VALIDATED"),
+          eq(screenerMarketSnapshots.classSemanticsValidated, true),
+          gt(screenerMarketSnapshotQuotes.price, "0"),
+          gt(screenerMarketSnapshotQuotes.marketCap, "0"),
+          gt(screenerMarketSnapshots.marketCap, "0"),
+          eq(
+            screenerMarketSnapshotQuotes.marketCap,
+            screenerMarketSnapshots.marketCap,
+          ),
+          eq(
+            screenerMarketSnapshotQuotes.quoteObservedAt,
+            screenerMarketSnapshots.quoteObservedAt,
+          ),
+          gte(
+            screenerMarketSnapshotQuotes.quoteObservedAt,
+            earliestFreshObservation,
+          ),
+          lte(screenerMarketSnapshotQuotes.quoteObservedAt, now),
+          gte(
+            screenerMarketSnapshots.quoteObservedAt,
+            earliestFreshObservation,
+          ),
+          lte(screenerMarketSnapshots.quoteObservedAt, now),
+          gte(screenerMarketSnapshots.observedAt, earliestFreshObservation),
+          lte(screenerMarketSnapshots.observedAt, now),
+        ),
+      )
+      .orderBy(desc(screenerMarketSnapshotQuotes.quoteObservedAt))
+      .limit(1);
+    return quote ?? null;
   }
 
   async getStockValuationContext(ticker: string) {

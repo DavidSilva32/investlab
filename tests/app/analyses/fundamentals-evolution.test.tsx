@@ -70,6 +70,14 @@ describe("FundamentalsEvolution", () => {
             equity: "600000",
           },
           {
+            referenceDate: "2025-12-31",
+            filingReferenceDate: "2026-04-01",
+            sourceDocument: "DFP",
+            revenue: "1250000",
+            netIncome: "155000",
+            equity: "610000",
+          },
+          {
             referenceDate: "2026-12-31",
             sourceDocument: "DFP",
             revenue: null,

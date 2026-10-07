@@ -24,7 +24,10 @@ import { FundamentalsEvolution } from "./fundamentals-evolution";
 import { FundamentalsGrid } from "./fundamentals-grid";
 import { PriceHistoryChart } from "./price-history-chart";
 import { StockAnalysisReading } from "./stock-analysis-reading";
-import type { StockAnalysis } from "./stock-analysis-types";
+import {
+  annualAnalysisPeriods,
+  type StockAnalysis,
+} from "./stock-analysis-types";
 
 type TickerOption = { ticker: string; name: string };
 const recentTickersKey = "investlab:analyses:recent-tickers";
@@ -363,9 +366,7 @@ export function StockAnalysisDashboard({
       </div>
     );
 
-  const annual = analysis.fundamentals.filter(
-    (period) => period.sourceDocument === "DFP",
-  );
+  const annual = annualAnalysisPeriods(analysis.fundamentals);
   const interim = analysis.fundamentals.filter(
     (period) =>
       period.sourceDocument === "ITR" &&
@@ -426,10 +427,13 @@ export function StockAnalysisDashboard({
               <p className="text-xs text-muted-foreground">
                 {analysis.priceUpdatedAt &&
                 Number.isFinite(Date.parse(analysis.priceUpdatedAt))
-                  ? `Cotação observada em ${new Intl.DateTimeFormat("pt-BR", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    }).format(new Date(analysis.priceUpdatedAt))}`
+                  ? `${analysis.priceIsStale ? "Última cotação observada; não representa cotação atual" : "Cotação observada"} em ${new Intl.DateTimeFormat(
+                      "pt-BR",
+                      {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      },
+                    ).format(new Date(analysis.priceUpdatedAt))}`
                   : "Data da cotação não informada"}
               </p>
             </div>
@@ -479,7 +483,10 @@ export function StockAnalysisDashboard({
           )}
         </CardHeader>
         <CardContent>
-          <PriceHistoryChart points={points} />
+          <PriceHistoryChart
+            points={points}
+            unavailable={analysis.historyStatus === "unavailable"}
+          />
         </CardContent>
       </Card>
       <Card>
@@ -490,6 +497,21 @@ export function StockAnalysisDashboard({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          {analysis.fundamentalsIsStale && analysis.fundamentalsFetchedAt && (
+            <p
+              role="status"
+              className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-sm text-muted-foreground"
+            >
+              Não foi possível obter os demonstrativos mais recentes. Exibimos
+              os últimos dados validados, obtidos em{" "}
+              {new Intl.DateTimeFormat("pt-BR", {
+                dateStyle: "short",
+                timeStyle: "short",
+                timeZone: "America/Sao_Paulo",
+              }).format(new Date(analysis.fundamentalsFetchedAt))}
+              . Os períodos de referência permanecem os informados pela CVM.
+            </p>
+          )}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {analysis.indicators.map((indicator) => (
               <FundamentalIndicatorCard

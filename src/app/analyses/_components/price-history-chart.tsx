@@ -30,13 +30,20 @@ const chartConfig = {
 
 export function PriceHistoryChart({
   points,
+  unavailable = false,
 }: {
   points: StockAnalysis["history"];
+  unavailable?: boolean;
 }) {
   if (points.length < 2)
     return (
-      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-        Não há histórico suficiente para montar o gráfico neste intervalo.
+      <div
+        role={unavailable ? "status" : undefined}
+        className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+      >
+        {unavailable
+          ? "Não foi possível carregar o histórico de cotações agora. Os preços desse período estão indisponíveis."
+          : "Não há histórico suficiente para montar o gráfico neste intervalo."}
       </div>
     );
 

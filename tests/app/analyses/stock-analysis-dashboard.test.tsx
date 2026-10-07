@@ -135,6 +135,30 @@ afterEach(() => {
 });
 
 describe("StockAnalysisDashboard", () => {
+  it("labels the last observed quote and the retrieval time of stale CVM fundamentals", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          priceIsStale: true,
+          fundamentalsIsStale: true,
+          fundamentalsFetchedAt: "2026-10-01T14:30:00.000Z",
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    expect((await screen.findByRole("status")).textContent).toMatch(
+      /Não foi possível obter os demonstrativos mais recentes.*obtidos em/,
+    );
+    expect(
+      screen.getByText(
+        /Última cotação observada; não representa cotação atual/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("toasts a selected ticker API failure without duplicating it inline", async () => {
     vi.useFakeTimers();
     const fetcher = vi.fn((input: RequestInfo | URL) =>
@@ -454,14 +478,22 @@ describe("StockAnalysisDashboard", () => {
   it("shows the no-history state and retries a generic error", async () => {
     const fetcher = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ ...analysis, history: [] }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...analysis,
+          history: [],
+          historyStatus: "unavailable",
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse({ message: "erro" }, 500));
     vi.stubGlobal("fetch", fetcher);
     const { unmount } = render(
       <StockAnalysisDashboard initialTicker={"PETR4"} />,
     );
     expect(
-      await screen.findByText(/não há histórico suficiente/i),
+      await screen.findByText(
+        /Não foi possível carregar o histórico de cotações/,
+      ),
     ).toBeTruthy();
     unmount();
 

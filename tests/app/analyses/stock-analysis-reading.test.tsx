@@ -193,6 +193,37 @@ describe("StockAnalysisReading", () => {
     expect(screen.queryByText("Receita anual")).toBeNull();
   });
 
+  it("chooses one annual DFP observation per year using the latest filing", () => {
+    render(
+      <StockAnalysisReading
+        periods={[
+          {
+            ...annualPeriod,
+            referenceDate: "2023-12-31",
+            filingReferenceDate: "2024-03-15",
+            netIncome: "10000",
+          },
+          {
+            ...annualPeriod,
+            referenceDate: "2023-12-31",
+            filingReferenceDate: "2024-04-15",
+            netIncome: "20000",
+          },
+          {
+            ...annualPeriod,
+            referenceDate: "2024-12-31",
+            filingReferenceDate: "2025-03-15",
+            netIncome: "30000",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Exercício 2024")).toBeTruthy();
+    expect(screen.getByText(/Aumentou R\$\s?10\.000/)).toBeTruthy();
+    expect(screen.queryByText(/Aumentou R\$\s?20\.000/)).toBeNull();
+  });
+
   it("marks unchanged numeric values as neutral without a percentage", () => {
     render(
       <StockAnalysisReading

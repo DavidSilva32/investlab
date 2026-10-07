@@ -7,6 +7,7 @@ export type MarketData = {
   changePercent: number | null;
   priceUpdatedAt: string | null;
   history: Array<{ date: string; close: number }>;
+  historyStatus?: "available" | "empty" | "unavailable";
 };
 export type MarketTicker = { ticker: string; name: string };
 export type MarketQuote = {
