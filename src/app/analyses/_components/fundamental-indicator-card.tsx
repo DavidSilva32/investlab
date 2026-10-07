@@ -20,6 +20,7 @@ const dateTimeLabel = (value: string) => {
     ? new Intl.DateTimeFormat("pt-BR", {
         dateStyle: "short",
         timeStyle: "short",
+        timeZone: "America/Sao_Paulo",
       }).format(timestamp)
     : null;
 };

@@ -55,7 +55,7 @@ describe("FundamentalIndicatorCard", () => {
     ).toBeTruthy();
   });
 
-  it("shows separate LTM fundamentals and market quote dates", () => {
+  it("shows separate LTM and market dates using São Paulo quote time", () => {
     render(
       <FundamentalIndicatorCard
         indicator={{
