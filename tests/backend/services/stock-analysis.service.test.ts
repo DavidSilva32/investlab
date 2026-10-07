@@ -540,6 +540,33 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
     unavailableReason: expect.stringContaining("lucro LTM encerrado em"),
   });
 
+  const sameBalanceReportedAsQuarterly = {
+    ...periods[1]!,
+    periodStart: "2026-04-01",
+    periodBasis: "quarterly" as const,
+    equity: periods[1]!.equity,
+  };
+  expect(
+    calculateAnalysisIndicators(
+      [...periods, sameBalanceReportedAsQuarterly],
+      240,
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: 30 });
+
+  const conflictingSameCutoffBalance = {
+    ...sameBalanceReportedAsQuarterly,
+    equity: "91",
+  };
+  expect(
+    calculateAnalysisIndicators(
+      [...periods, conflictingSameCutoffBalance],
+      240,
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({
+    value: null,
+    unavailableReason: expect.stringContaining("lucro LTM encerrado em"),
+  });
+
   const mismatchedIncomeConcept = periods.map((period) =>
     period.sourceDocument === "DFP"
       ? { ...period, netIncomeConcept: "other_income_concept" }
@@ -618,6 +645,161 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       "demonstrações financeiras anuais",
     ),
   });
+});
+
+it("reconciles ITUB4 LTM ROE when the same CVM balance is reported twice", () => {
+  const base = {
+    periodType: "interim" as const,
+    sourceDocument: "ITR" as const,
+    periodBasis: "year_to_date" as const,
+    filingReferenceDate: "2026-08-10",
+    equityVersion: "1",
+    equityAccount: "2.07",
+    equityConcept: "consolidated_equity",
+    revenue: null,
+    revenueVersion: null,
+    revenueAccountLabel: null,
+    assets: null,
+    liabilities: null,
+    cash: null,
+    debt: null,
+  };
+  const periods = [
+    {
+      ...base,
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      periodType: "annual" as const,
+      sourceDocument: "DFP" as const,
+      periodBasis: "annual" as const,
+      filingReferenceDate: "2026-03-20",
+      exerciseOrder: "last" as const,
+      netIncome: "45849000",
+      netIncomeVersion: "1",
+      netIncomeAccount: "3.09",
+      netIncomeConcept: "consolidated_net_income",
+      equity: "210000000",
+      equityVersion: "1",
+    },
+    {
+      ...base,
+      referenceDate: "2026-06-30",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-06-30",
+      exerciseOrder: "last" as const,
+      netIncome: "24199000",
+      netIncomeVersion: "1",
+      netIncomeAccount: "3.09",
+      netIncomeConcept: "consolidated_net_income",
+      equity: "228026000",
+    },
+    {
+      ...base,
+      referenceDate: "2025-06-30",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-06-30",
+      exerciseOrder: "previous" as const,
+      netIncome: "22105000",
+      netIncomeVersion: "1",
+      netIncomeAccount: "3.09",
+      netIncomeConcept: "consolidated_net_income",
+      equity: "218451000",
+    },
+  ];
+  const quarterlyBalance = {
+    ...periods[1]!,
+    periodStart: "2026-04-01",
+    periodBasis: "quarterly" as const,
+  };
+
+  expect(
+    calculateAnalysisIndicators([...periods, quarterlyBalance], 240).find(
+      ({ key }) => key === "roe",
+    ),
+  ).toMatchObject({
+    value: expect.closeTo(21.48, 2),
+    referenceDate: "2026-06-30",
+    periodBasis: "trailing_twelve_months",
+  });
+  expect(
+    calculateAnalysisIndicators(
+      [...periods, { ...quarterlyBalance, equity: "228027000" }],
+      240,
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: null });
+});
+
+it("keeps CSAN3 margin and P/VP when the opening equity needed for ROE is unavailable", () => {
+  const common = {
+    revenueVersion: "1",
+    revenueAccountLabel: "Receita operacional consolidada",
+    netIncomeVersion: "1",
+    netIncomeAccount: "3.11",
+    netIncomeConcept: "consolidated_net_income",
+    equityVersion: "1",
+    equityAccount: "2.07",
+    equityConcept: "consolidated_equity",
+    assets: null,
+    liabilities: null,
+    cash: null,
+    debt: null,
+  };
+  const indicators = calculateAnalysisIndicators(
+    [
+      {
+        ...common,
+        referenceDate: "2025-12-31",
+        periodStart: "2025-01-01",
+        periodEnd: "2025-12-31",
+        filingReferenceDate: "2026-03-20",
+        exerciseOrder: "last",
+        periodBasis: "annual",
+        periodType: "annual",
+        sourceDocument: "DFP",
+        revenue: "120",
+        netIncome: "12",
+        equity: null,
+      },
+      {
+        ...common,
+        referenceDate: "2026-06-30",
+        periodStart: "2026-01-01",
+        periodEnd: "2026-06-30",
+        filingReferenceDate: "2026-08-10",
+        exerciseOrder: "last",
+        periodBasis: "year_to_date",
+        periodType: "interim",
+        sourceDocument: "ITR",
+        revenue: "70",
+        netIncome: "8",
+        equity: "500",
+      },
+      {
+        ...common,
+        referenceDate: "2025-06-30",
+        periodStart: "2025-01-01",
+        periodEnd: "2025-06-30",
+        filingReferenceDate: "2026-08-10",
+        exerciseOrder: "previous",
+        periodBasis: "year_to_date",
+        periodType: "interim",
+        sourceDocument: "ITR",
+        revenue: "50",
+        netIncome: "5",
+        equity: null,
+      },
+    ],
+    1000,
+  );
+
+  expect(indicators).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ key: "netMargin", value: (15 / 140) * 100 }),
+      expect.objectContaining({ key: "pb", value: 2 }),
+      expect.objectContaining({ key: "roe", value: null }),
+    ]),
+  );
 });
 
 it("keeps valid LTM income and ROE when revenue is unavailable", () => {
@@ -1060,6 +1242,51 @@ it("uses the reported reference date when a legacy balance lacks period metadata
     referenceDate: "2025-06-30",
     periodBasis: "point_in_time",
     sourceDocument: "ITR",
+  });
+});
+
+it("makes P/VP unavailable for conflicting balances at the latest cutoff", () => {
+  const balance = {
+    referenceDate: "2025-06-30",
+    periodStart: "2025-01-01",
+    periodEnd: "2025-06-30",
+    filingReferenceDate: "2025-08-10",
+    sourceDocument: "ITR" as const,
+    periodType: "interim" as const,
+    periodBasis: "year_to_date" as const,
+    exerciseOrder: "last" as const,
+    equity: "100",
+    equityVersion: "2",
+    equityAccount: "2.07",
+    equityConcept: "consolidated_equity",
+    revenue: null,
+    netIncome: null,
+    assets: null,
+    liabilities: null,
+    cash: null,
+    debt: null,
+  };
+  const quarterlyEquivalent = {
+    ...balance,
+    periodStart: "2025-04-01",
+    periodBasis: "quarterly" as const,
+  };
+
+  expect(
+    calculateAnalysisIndicators([balance, quarterlyEquivalent], 200).find(
+      ({ key }) => key === "pb",
+    ),
+  ).toMatchObject({ value: 2, referenceDate: "2025-06-30" });
+  expect(
+    calculateAnalysisIndicators(
+      [balance, { ...quarterlyEquivalent, equity: "110" }],
+      200,
+    ).find(({ key }) => key === "pb"),
+  ).toMatchObject({
+    value: null,
+    referenceDate: null,
+    unavailableReason:
+      "Indisponível: há saldos de patrimônio líquido conflitantes em 2025-06-30; não foi possível reconciliar o P/VP.",
   });
 });
 
@@ -1993,6 +2220,7 @@ describe("StockAnalysisService cache and failures", () => {
       marketProvider,
       fundamentalsProvider,
       repository,
+      { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
     await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
@@ -2004,6 +2232,77 @@ describe("StockAnalysisService cache and failures", () => {
       cnpj: null,
     });
     expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("resolves a missing BRAPI profile CNPJ from the exact active ticker on first and repeated requests", async () => {
+    const marketWithoutProfile = {
+      ...market,
+      cnpj: null,
+      priceUpdatedAt: new Date().toISOString(),
+    };
+    const marketProvider = {
+      getByTicker: vi.fn().mockResolvedValue(marketWithoutProfile),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([]),
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+    };
+    const screener = {
+      getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+      getComparisonMetadata: vi
+        .fn()
+        .mockResolvedValue([{ ticker: "PETR4", cnpj: "33.000.167/0001-01" }]),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+      screener,
+    );
+
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+    });
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+    });
+    expect(screener.getComparisonMetadata).toHaveBeenCalledTimes(2);
+    expect(screener.getComparisonMetadata).toHaveBeenCalledWith(["PETR4"]);
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledTimes(2);
+    expect(fundamentalsProvider.getByTicker).toHaveBeenNthCalledWith(1, {
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+    });
+  });
+
+  it("fails closed when an active ticker CNPJ conflicts with the BRAPI profile", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(market),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+      {
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+        getComparisonMetadata: vi
+          .fn()
+          .mockResolvedValue([{ ticker: "PETR4", cnpj: "11222333000181" }]),
+      },
+    );
+
+    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+      statusCode: 422,
+      message: "Não foi possível confirmar o CNPJ do emissor para este ticker.",
+    });
   });
 
   it("wraps unexpected fundamentals refresh errors for the route boundary", async () => {

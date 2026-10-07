@@ -65,36 +65,44 @@ export function FundamentalsEvolution({
             <h3 id={`${id}-title`} className="font-medium">
               {metric.label}
             </h3>
-            <ChartContainer
-              config={config}
-              className="mt-2 h-52 w-full aspect-auto"
-            >
-              <BarChart data={annual} accessibilityLayer>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="year" tickLine={false} axisLine={false} />
-                <YAxis
-                  width={64}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(number: number) =>
-                    compactMoney.format(number)
-                  }
-                />
-                <Tooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      formatter={(value) => exactMoney.format(Number(value))}
-                    />
-                  }
-                />
-                <Bar
-                  dataKey={metric.key}
-                  fill={`var(--color-${metric.key})`}
-                  radius={4}
-                />
-              </BarChart>
-            </ChartContainer>
+            {annual.some((period) => period[metric.key] !== null) ? (
+              <ChartContainer
+                config={config}
+                className="mt-2 h-52 w-full aspect-auto"
+              >
+                <BarChart data={annual} accessibilityLayer>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="year" tickLine={false} axisLine={false} />
+                  <YAxis
+                    width={64}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(number: number) =>
+                      compactMoney.format(number)
+                    }
+                  />
+                  <Tooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        formatter={(value) => exactMoney.format(Number(value))}
+                      />
+                    }
+                  />
+                  <Bar
+                    dataKey={metric.key}
+                    fill={`var(--color-${metric.key})`}
+                    radius={4}
+                  />
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <p role="status" className="mt-2 text-sm text-muted-foreground">
+                Não há valores anuais de{" "}
+                {metric.label.toLocaleLowerCase("pt-BR")} disponíveis nos
+                demonstrativos DFP.
+              </p>
+            )}
           </section>
         );
       })}

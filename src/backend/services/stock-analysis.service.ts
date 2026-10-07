@@ -348,6 +348,38 @@ function ltmFlowPeriods(periods: FundamentalPeriod[]) {
   });
 }
 
+function deduplicateEquivalentBalances(periods: FundamentalPeriod[]) {
+  const unique = new Map<string, FundamentalPeriod>();
+  const unverified: FundamentalPeriod[] = [];
+  for (const period of periods) {
+    const periodEnd = period.periodEnd ?? period.referenceDate;
+    const exerciseOrder = period.exerciseOrder ?? "last";
+    if (
+      !period.sourceDocument ||
+      !period.filingReferenceDate ||
+      !period.equityVersion ||
+      !period.equityAccount ||
+      !period.equityConcept ||
+      numericValue(period.equity) === null
+    ) {
+      unverified.push(period);
+      continue;
+    }
+    const key = JSON.stringify([
+      period.sourceDocument,
+      periodEnd,
+      period.filingReferenceDate,
+      exerciseOrder,
+      period.equityVersion,
+      period.equityAccount,
+      period.equityConcept,
+      period.equity,
+    ]);
+    if (!unique.has(key)) unique.set(key, period);
+  }
+  return [...unique.values(), ...unverified];
+}
+
 export function calculateAnalysisIndicators(
   periods: FundamentalPeriod[],
   marketCap: number | null = null,
@@ -404,37 +436,51 @@ export function calculateAnalysisIndicators(
     revenue !== 0
       ? (netIncome / revenue) * 100
       : null;
-  const latestBalance = periods
-    .filter(
-      (period) =>
-        period.exerciseOrder !== "previous" &&
-        numericValue(period.equity) !== null,
-    )
-    .sort((left, right) =>
-      (right.periodEnd ?? right.referenceDate).localeCompare(
-        left.periodEnd ?? left.referenceDate,
-      ),
-    )[0];
+  const equityBalancePeriods = periods.filter(
+    (period) =>
+      period.exerciseOrder !== "previous" &&
+      numericValue(period.equity) !== null,
+  );
+  const latestBalanceDate = equityBalancePeriods
+    .map((period) => period.periodEnd ?? period.referenceDate)
+    .sort((left, right) => right.localeCompare(left))[0];
+  const latestBalances = latestBalanceDate
+    ? deduplicateEquivalentBalances(
+        periods.filter(
+          (period) =>
+            period.exerciseOrder !== "previous" &&
+            (period.periodEnd ?? period.referenceDate) === latestBalanceDate &&
+            numericValue(period.equity) !== null,
+        ),
+      )
+    : [];
+  const latestBalance = latestBalances.length === 1 ? latestBalances[0] : null;
+  const latestBalanceIsAmbiguous =
+    latestBalanceDate !== undefined && latestBalances.length > 1;
   const latestEquity = latestBalance
     ? numericValue(latestBalance.equity)
     : null;
   const latestBalanceAtFlowEnd = roeFlowPeriod
-    ? periods.filter(
-        (period) =>
-          (period.periodEnd ?? period.referenceDate) ===
-            roeFlowPeriod.periodEnd &&
-          (period.exerciseOrder ?? "last") === "last",
+    ? deduplicateEquivalentBalances(
+        periods.filter(
+          (period) =>
+            (period.periodEnd ?? period.referenceDate) ===
+              roeFlowPeriod.periodEnd &&
+            (period.exerciseOrder ?? "last") === "last",
+        ),
       )
     : [];
   const openingBalances =
     usesLtmRoe && ltm
-      ? periods.filter(
-          (period) =>
-            period.sourceDocument === "ITR" &&
-            period.exerciseOrder === "previous" &&
-            period.filingReferenceDate === ltm.filingReferenceDate &&
-            (period.periodEnd ?? period.referenceDate) ===
-              subtractUtcYear(ltm.periodEnd!),
+      ? deduplicateEquivalentBalances(
+          periods.filter(
+            (period) =>
+              period.sourceDocument === "ITR" &&
+              period.exerciseOrder === "previous" &&
+              period.filingReferenceDate === ltm.filingReferenceDate &&
+              (period.periodEnd ?? period.referenceDate) ===
+                subtractUtcYear(ltm.periodEnd!),
+          ),
         )
       : [];
   const openingBalance = usesLtmRoe
@@ -535,7 +581,9 @@ export function calculateAnalysisIndicators(
       unavailableReason:
         pb === null
           ? hasMarketCap
-            ? "Indisponível: as demonstrações financeiras anuais mais recentes não informam patrimônio líquido positivo compatível."
+            ? latestBalanceIsAmbiguous
+              ? `Indisponível: há saldos de patrimônio líquido conflitantes em ${latestBalanceDate}; não foi possível reconciliar o P/VP.`
+              : "Indisponível: as demonstrações financeiras anuais mais recentes não informam patrimônio líquido positivo compatível."
             : unavailableMarketValue
           : null,
       referenceDate:
@@ -603,7 +651,10 @@ export class StockAnalysisService {
     private readonly screener: Pick<
       ScreenerRepository,
       "getValidatedAnalysisQuote"
-    > = screenerRepository,
+    > &
+      Partial<
+        Pick<ScreenerRepository, "getComparisonMetadata">
+      > = screenerRepository,
   ) {}
 
   async getByTicker(rawTicker: unknown, requestId?: string) {
@@ -611,6 +662,16 @@ export class StockAnalysisService {
     if (!parsed.success)
       throw new ApplicationError(parsed.error.issues[0]!.message, 400);
 
+    const issuerMetadataPromise = this.screener.getComparisonMetadata
+      ? this.screener.getComparisonMetadata([parsed.data]).catch((error) => {
+          logger.warn("stock_analysis_issuer_lookup_failed", {
+            requestId,
+            ticker: parsed.data,
+            error,
+          });
+          return [];
+        })
+      : Promise.resolve([]);
     let market: MarketData | null = null;
     let marketError: unknown = null;
     try {
@@ -621,6 +682,38 @@ export class StockAnalysisService {
       }
     } catch (error) {
       marketError = error;
+    }
+    let issuerIdentityConflict = false;
+    if (market) {
+      const providerCnpj = normalizeCnpj(market.cnpj);
+      const issuerMatches = await issuerMetadataPromise;
+      const exactMatches = issuerMatches.filter(
+        (issuer) =>
+          issuer.ticker === parsed.data &&
+          normalizeCnpj(issuer.cnpj).length === 14,
+      );
+      const linkedCnpis = [
+        ...new Set(exactMatches.map((issuer) => normalizeCnpj(issuer.cnpj))),
+      ];
+      if (providerCnpj.length !== 14 && linkedCnpis.length === 1) {
+        market = { ...market, cnpj: linkedCnpis[0]! };
+      } else if (providerCnpj.length !== 14) {
+        market = { ...market, cnpj: null };
+      } else if (
+        linkedCnpis.length > 1 ||
+        (linkedCnpis.length === 1 && linkedCnpis[0] !== providerCnpj)
+      ) {
+        issuerIdentityConflict = true;
+      }
+    }
+    if (issuerIdentityConflict) {
+      throw new ApplicationError(
+        "Não foi possível confirmar o CNPJ do emissor para este ticker.",
+        422,
+      );
+    }
+    if (market && normalizeCnpj(market.cnpj).length !== 14) {
+      market = { ...market, cnpj: null };
     }
     const expectedCnpj = market ? normalizeCnpj(market.cnpj) || null : null;
     const now = Date.now();

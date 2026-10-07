@@ -5,6 +5,20 @@ function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status });
 }
 
+function waitForAbort(signal: AbortSignal) {
+  return new Promise<Response>((_resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("The operation was aborted", "AbortError"));
+      return;
+    }
+    signal.addEventListener(
+      "abort",
+      () => reject(new DOMException("The operation was aborted", "AbortError")),
+      { once: true },
+    );
+  });
+}
+
 const quote = (data: Record<string, unknown> = {}) => ({
   results: [{ symbol: "PETR4", data }],
 });
@@ -354,6 +368,189 @@ describe("BrapiMarketDataProvider", () => {
       new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
     ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
     expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("bounds the required quote request to fifteen seconds", async () => {
+    const controllers: AbortController[] = [];
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((duration) => {
+        expect(duration).toBe(15_000);
+        const controller = new AbortController();
+        controllers.push(controller);
+        return controller.signal;
+      });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation((_input, init) =>
+        waitForAbort(init?.signal as AbortSignal),
+      );
+
+    try {
+      const resultPromise = new BrapiMarketDataProvider(fetcher).getByTicker(
+        "PETR4",
+      );
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+      expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(controllers[0]?.signal);
+      controllers[0]!.abort();
+      await expect(resultPromise).rejects.toThrow();
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it("keeps profile optional when its bounded request times out", async () => {
+    const controllers: AbortController[] = [];
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((duration) => {
+        expect(duration).toBe(15_000);
+        const controller = new AbortController();
+        controllers.push(controller);
+        return controller.signal;
+      });
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.includes("/stocks/quote"))
+        return Promise.resolve(
+          jsonResponse(quote({ regularMarketPrice: 50, marketCap: 200 })),
+        );
+      if (url.includes("/stocks/profile"))
+        return waitForAbort(init?.signal as AbortSignal);
+      return Promise.resolve(
+        jsonResponse({
+          results: [
+            {
+              data: { historicalDataPrice: [{ date: 1767225600, close: 49 }] },
+            },
+          ],
+        }),
+      );
+    });
+
+    try {
+      const resultPromise = new BrapiMarketDataProvider(fetcher).getByTicker(
+        "PETR4",
+      );
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+      expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(controllers[0]?.signal);
+      expect(fetcher.mock.calls[1]?.[1]?.signal).toBe(controllers[1]?.signal);
+      expect(fetcher.mock.calls[2]?.[1]?.signal).toBe(controllers[2]?.signal);
+      controllers[1]!.abort();
+
+      await expect(resultPromise).resolves.toMatchObject({
+        ticker: "PETR4",
+        cnpj: null,
+        price: 50,
+        history: [{ date: "2026-01-01", close: 49 }],
+        historyStatus: "available",
+      });
+      expect(fetcher).toHaveBeenCalledTimes(3);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it("falls back to one year when the five-year history request times out", async () => {
+    const controllers: AbortController[] = [];
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((duration) => {
+        expect(duration).toBe(15_000);
+        const controller = new AbortController();
+        controllers.push(controller);
+        return controller.signal;
+      });
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.includes("/stocks/quote"))
+        return Promise.resolve(
+          jsonResponse(quote({ regularMarketPrice: 50, marketCap: 200 })),
+        );
+      if (url.includes("/stocks/profile"))
+        return Promise.resolve(jsonResponse({}));
+      if (url.includes("range=5y")) {
+        const signal = init?.signal as AbortSignal;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: () => waitForAbort(signal),
+        } as Response);
+      }
+      return Promise.resolve(
+        jsonResponse({
+          results: [
+            {
+              data: { historicalDataPrice: [{ date: 1767225600, close: 49 }] },
+            },
+          ],
+        }),
+      );
+    });
+
+    try {
+      const resultPromise = new BrapiMarketDataProvider(fetcher).getByTicker(
+        "PETR4",
+      );
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+      controllers[2]!.abort();
+
+      await expect(resultPromise).resolves.toMatchObject({
+        price: 50,
+        history: [{ date: "2026-01-01", close: 49 }],
+        historyStatus: "available",
+      });
+      expect(fetcher).toHaveBeenCalledTimes(4);
+      expect(fetcher.mock.calls[2]?.[0]).toContain("range=5y");
+      expect(fetcher.mock.calls[3]?.[0]).toContain("range=1y");
+      expect(controllers).toHaveLength(4);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  it("returns unavailable history after both attempts time out while retaining the quote", async () => {
+    const controllers: AbortController[] = [];
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((duration) => {
+        expect(duration).toBe(15_000);
+        const controller = new AbortController();
+        controllers.push(controller);
+        return controller.signal;
+      });
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.includes("/stocks/quote"))
+        return Promise.resolve(
+          jsonResponse(quote({ regularMarketPrice: 50, marketCap: 200 })),
+        );
+      if (url.includes("/stocks/profile"))
+        return Promise.resolve(jsonResponse({}));
+      return waitForAbort(init?.signal as AbortSignal);
+    });
+
+    try {
+      const resultPromise = new BrapiMarketDataProvider(fetcher).getByTicker(
+        "PETR4",
+      );
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+      controllers[2]!.abort();
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(4));
+      controllers[3]!.abort();
+
+      await expect(resultPromise).resolves.toMatchObject({
+        price: 50,
+        history: [],
+        historyStatus: "unavailable",
+      });
+      expect(fetcher.mock.calls[2]?.[0]).toContain("range=5y");
+      expect(fetcher.mock.calls[3]?.[0]).toContain("range=1y");
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 
   it.each([

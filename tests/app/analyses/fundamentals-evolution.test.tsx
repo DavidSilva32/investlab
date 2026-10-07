@@ -52,7 +52,7 @@ vi.mock("recharts", () => ({
 
 describe("FundamentalsEvolution", () => {
   it("charts annual DFP series separately and formats exact tooltip values", () => {
-    render(
+    const { container } = render(
       <FundamentalsEvolution
         periods={[
           {
@@ -116,5 +116,43 @@ describe("FundamentalsEvolution", () => {
   it("renders nothing when annual statements are absent", () => {
     const { container } = render(<FundamentalsEvolution periods={[]} />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it("shows an accessible unavailable state for annual equity without mixing ITR", () => {
+    const { container } = render(
+      <FundamentalsEvolution
+        periods={[
+          {
+            referenceDate: "2024-12-31",
+            sourceDocument: "DFP",
+            revenue: "100",
+            netIncome: "10",
+            equity: null,
+          },
+          {
+            referenceDate: "2025-12-31",
+            sourceDocument: "DFP",
+            revenue: "120",
+            netIncome: "12",
+            equity: null,
+          },
+          {
+            referenceDate: "2026-06-30",
+            sourceDocument: "ITR",
+            revenue: "70",
+            netIncome: "7",
+            equity: "500",
+          },
+        ]}
+      />,
+    );
+
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      "Não há valores anuais de patrimônio líquido disponíveis nos demonstrativos DFP.",
+    );
+    expect(
+      container.querySelectorAll('[data-testid="chart-config-colors"]'),
+    ).toHaveLength(2);
+    expect(container.querySelector("[data-years='2024,2025']")).toBeTruthy();
   });
 });

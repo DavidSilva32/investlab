@@ -77,6 +77,7 @@ const historySchema = z
   .loose();
 
 class RetryableMarketDataError extends Error {}
+const requestTimeoutMs = 15_000;
 
 export class BrapiMarketDataProvider implements MarketDataProvider {
   constructor(
@@ -113,19 +114,29 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       );
     if (!response.ok)
       throw new Error(`BRAPI request failed: ${response.status}`);
-    return response.json();
+    try {
+      return await response.json();
+    } catch (error) {
+      if (signal?.aborted)
+        throw new RetryableMarketDataError("BRAPI request timed out", {
+          cause: error,
+        });
+      throw error;
+    }
   }
 
   private async getHistoricalPrices(symbol: string) {
     try {
       return await this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=5y&interval=1d`,
+        AbortSignal.timeout(requestTimeoutMs),
       );
     } catch (error) {
       if (!(error instanceof RetryableMarketDataError)) throw error;
 
       return this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
+        AbortSignal.timeout(requestTimeoutMs),
       );
     }
   }
@@ -146,7 +157,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     const symbol = encodeURIComponent(ticker);
     const payload = await this.request(
       `/api/v2/stocks/quote?symbols=${symbol}`,
-      AbortSignal.timeout(15_000),
+      AbortSignal.timeout(requestTimeoutMs),
     );
     const quote = quoteSchema.parse(payload).results[0]!;
     const observedAt = quote.data.regularMarketTime
@@ -166,9 +177,13 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     const symbol = encodeURIComponent(ticker);
     const quotePayload = await this.request(
       `/api/v2/stocks/quote?symbols=${symbol}`,
+      AbortSignal.timeout(requestTimeoutMs),
     );
     const [profileResult, historyResult] = await Promise.allSettled([
-      this.request(`/api/v2/stocks/profile?symbols=${symbol}`),
+      this.request(
+        `/api/v2/stocks/profile?symbols=${symbol}`,
+        AbortSignal.timeout(requestTimeoutMs),
+      ),
       this.getHistoricalPrices(symbol),
     ]);
     const quote = quoteSchema.parse(quotePayload).results[0];
