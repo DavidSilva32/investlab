@@ -169,6 +169,17 @@ describe("StockAnalysisDashboard", () => {
     );
     render(<StockAnalysisDashboard initialTicker="PETR4" />);
 
+    const learningLink = await screen.findByRole("link", {
+      name: "Aprender sobre Ações e BDRs",
+    });
+    expect(learningLink.textContent).toContain("Aprender sobre Ações e BDRs");
+    expect(learningLink.closest("div")?.textContent).toContain(
+      "Ativo consultado",
+    );
+    expect(learningLink.getAttribute("href")).toBe(
+      "/learn?class=brazilian_equities#class-content",
+    );
+
     expect((await screen.findByRole("status")).textContent).toMatch(
       /Não foi possível obter os demonstrativos mais recentes.*obtidos em/,
     );
@@ -214,6 +225,9 @@ describe("StockAnalysisDashboard", () => {
     expect(
       screen.getByRole("button", { name: "Tentar novamente" }),
     ).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: "Aprender sobre Ações e BDRs" }),
+    ).toBeNull();
   });
 
   it("updates the share URL and ignores an older ticker response", async () => {
@@ -493,6 +507,9 @@ describe("StockAnalysisDashboard", () => {
     render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
     expect(screen.getByText("Carregando análise...")).toBeTruthy();
     expect(screen.getByRole("generic", { busy: true })).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: "Aprender sobre Ações e BDRs" }),
+    ).toBeNull();
   });
 
   it("shows the no-history state and retries a generic error", async () => {
@@ -621,6 +638,9 @@ it("returns to search when a successful response has no analysis body", async ()
   });
   expect(screen.getByLabelText("Pesquisar ação")).toBeTruthy();
   expect(screen.queryByText("Ativo consultado")).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: "Aprender sobre Ações e BDRs" }),
+  ).toBeNull();
 });
 
 it("starts with an empty search and does not fetch a default company", () => {

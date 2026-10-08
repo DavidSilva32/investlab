@@ -5,6 +5,7 @@ import {
   formatStrategyPercentage,
   formatStrategyTooltip,
   StrategyAllocationChart,
+  shouldRenderStrategyPercentageLabel,
 } from "@/app/strategy/_components/strategy-allocation-chart";
 import {
   getStrategyAssetClassColor,
@@ -98,6 +99,25 @@ describe("StrategyAllocationChart", () => {
     expect(screen.getByText("ETFs internacionais")).toBeTruthy();
     expect(screen.getByText("Fundos imobiliários (FIIs)")).toBeTruthy();
     expect(screen.getAllByText("40%").length).toBeGreaterThan(0);
-    expect(screen.queryByText("10%")).toBeNull();
+    expect(screen.getAllByText("10%").length).toBeGreaterThan(0);
+  });
+});
+
+describe("shouldRenderStrategyPercentageLabel", () => {
+  it("shows 10 percent when the segment is wide enough for its label", () => {
+    expect(shouldRenderStrategyPercentageLabel(10, 40)).toBe(true);
+  });
+
+  it("hides labels that would not fit inside a narrow segment", () => {
+    expect(shouldRenderStrategyPercentageLabel(10, 28)).toBe(false);
+  });
+
+  it("does not render a label for a zero-value segment", () => {
+    expect(shouldRenderStrategyPercentageLabel(0, 100)).toBe(false);
+  });
+
+  it("does not render a label when value or segment width is invalid", () => {
+    expect(shouldRenderStrategyPercentageLabel(Number.NaN, 100)).toBe(false);
+    expect(shouldRenderStrategyPercentageLabel(10, Number.NaN)).toBe(false);
   });
 });

@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Search, RefreshCw, Clock3 } from "lucide-react";
+import Link from "next/link";
+import { BookOpen, ChevronDown, Search, RefreshCw, Clock3 } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
+import { getLearningClassHref } from "@/lib/asset-class-learning";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -408,9 +410,18 @@ export function StockAnalysisDashboard({
       <Card>
         <CardContent className="grid gap-4 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1fr)] sm:items-center sm:gap-8">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Ativo consultado
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Ativo consultado
+              </p>
+              <Link
+                href={getLearningClassHref("brazilian_equities")}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <BookOpen aria-hidden="true" className="size-3.5" />
+                Aprender sobre Ações e BDRs
+              </Link>
+            </div>
             <h2 className="mt-1 truncate text-xl font-semibold tracking-tight sm:text-2xl">
               {analysis.ticker} ·{" "}
               {analysis.companyName ?? "Empresa não informada"}
