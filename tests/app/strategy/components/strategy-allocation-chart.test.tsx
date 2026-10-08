@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   formatStrategyPercentage,
   formatStrategyTooltip,
+  renderStrategyPercentageLabel,
   StrategyAllocationChart,
   shouldRenderStrategyPercentageLabel,
 } from "@/app/strategy/_components/strategy-allocation-chart";
@@ -119,5 +120,11 @@ describe("shouldRenderStrategyPercentageLabel", () => {
   it("does not render a label when value or segment width is invalid", () => {
     expect(shouldRenderStrategyPercentageLabel(Number.NaN, 100)).toBe(false);
     expect(shouldRenderStrategyPercentageLabel(10, Number.NaN)).toBe(false);
+  });
+});
+
+describe("renderStrategyPercentageLabel", () => {
+  it("returns no label when the chart provides no segment geometry", () => {
+    expect(renderStrategyPercentageLabel({ value: 10 })).toBeNull();
   });
 });
