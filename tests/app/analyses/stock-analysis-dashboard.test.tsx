@@ -23,15 +23,24 @@ vi.mock("sonner", () => ({
 vi.mock("recharts", () => ({
   CartesianGrid: () => null,
   Bar: () => null,
+  Cell: () => null,
   BarChart: ({
     children,
     data,
   }: {
     children: React.ReactNode;
-    data: Array<{ periodLabel?: string }>;
+    data: Array<{
+      periodLabel?: string;
+      equity?: number | null;
+      sourceDocument?: string | null;
+      referenceDate?: string | null;
+    }>;
   }) => (
     <div
       data-periods={data.map((point) => point.periodLabel ?? "").join(",")}
+      data-equity={data.map((point) => point.equity ?? "").join(",")}
+      data-sources={data.map((point) => point.sourceDocument ?? "").join(",")}
+      data-references={data.map((point) => point.referenceDate ?? "").join(",")}
       data-testid="annual-chart"
     >
       {children}
@@ -717,33 +726,31 @@ it("shows the annual fact reading and keeps statement detail collapsed", async (
   expect(screen.getByText("Receita anual")).toBeTruthy();
   expect(screen.getByText("Resultado positivo")).toBeTruthy();
   expect(
-    screen.getByText(/Patrimônio líquido mostra saldos reportados/),
-  ).toBeTruthy();
-  expect(
     screen.getByText(
-      "Saldos intermediários ITR, identificados pela data-base real.",
+      "Compare a evolução da receita, do lucro líquido e do patrimônio líquido nos períodos informados.",
     ),
   ).toBeTruthy();
-  expect(
-    screen
-      .getAllByTestId("annual-chart")
-      .map((chart) => chart.getAttribute("data-periods")),
-  ).toEqual(["2024,2025", "2024,2025", "30/06/2026"]);
+  const charts = screen.getAllByTestId("annual-chart");
+  expect(charts.map((chart) => chart.getAttribute("data-periods"))).toEqual([
+    "2024,2025",
+    "2024,2025",
+    "2026",
+  ]);
+  expect(charts[2].getAttribute("data-equity")).toBe("550000");
+  expect(charts[2].getAttribute("data-references")).toBe("2026-06-30");
   expect(
     screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
   ).toBeNull();
   expect(
     screen.queryByText(/P\/L e P\/VP usam o valor de mercado da BRAPI/),
   ).toBeNull();
-  expect(screen.queryByText(/Informações trimestrais \(ITR\)/)).toBeNull();
+  expect(screen.queryByText("Períodos intermediários")).toBeNull();
   await userEvent.setup().click(
     screen.getByRole("button", {
       name: /ver demonstrativos e detalhes técnicos/i,
     }),
   );
-  expect(
-    await screen.findByText(/Informações trimestrais \(ITR\)/),
-  ).toBeTruthy();
+  expect(await screen.findByText("Períodos intermediários")).toBeTruthy();
   expect(
     screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
   ).toBeNull();

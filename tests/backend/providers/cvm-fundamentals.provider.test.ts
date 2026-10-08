@@ -59,6 +59,11 @@ function priorAnnualDfpResponse(currentYear: number) {
           DT_INI_EXERC: `${year}-01-01`,
           DT_FIM_EXERC: `${year}-12-31`,
         }),
+        row("2.07", "1.000", {
+          DT_REFER: `${year}-12-31`,
+          DT_INI_EXERC: `${year}-01-01`,
+          DT_FIM_EXERC: `${year}-12-31`,
+        }),
       ]),
     ),
   );
@@ -83,6 +88,103 @@ function issuerCsv(rows: string[]) {
 }
 
 describe("CvmFundamentalsProvider", () => {
+  it("loads the fifth annual archive and only the missing historical balance archive", async () => {
+    const currentYear = new Date().getUTCFullYear();
+    const requestedUrls: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv(["33.000.167/0001-01;09512;PETROBRAS;ATIVA"]),
+        );
+      if (url.includes("/DFP/")) {
+        const year = Number(url.match(/dfp_cia_aberta_(\d{4})\.zip$/)?.[1]);
+        const date = `${year}-12-31`;
+        const accounts = [
+          row("3.01", String(year), {
+            DT_REFER: date,
+            DT_INI_EXERC: `${year}-01-01`,
+            DT_FIM_EXERC: date,
+          }),
+          row("3.09", String(year / 10), {
+            DT_REFER: date,
+            DT_INI_EXERC: `${year}-01-01`,
+            DT_FIM_EXERC: date,
+          }),
+        ];
+        accounts.push(
+          row("2.07", String(year * 10), {
+            DT_REFER: date,
+            DT_INI_EXERC:
+              year === currentYear - 4 ? `${year}-10-01` : `${year}-01-01`,
+            DT_FIM_EXERC: date,
+          }),
+        );
+        return new Response(
+          csvZip(`dfp_cia_aberta_DRE_con_${year}.csv`, documentCsv(accounts)),
+        );
+      }
+      if (url.endsWith(`/itr_cia_aberta_${currentYear - 4}.zip`))
+        return new Response(
+          csvZip(
+            `itr_cia_aberta_BPA_con_${currentYear - 4}.csv`,
+            documentCsv([
+              row("2.07", "222", {
+                DT_REFER: `${currentYear - 4}-09-30`,
+                DT_INI_EXERC: `${currentYear - 4}-01-01`,
+                DT_FIM_EXERC: `${currentYear - 4}-09-30`,
+              }),
+            ]),
+          ),
+        );
+      if (url.endsWith(`/itr_cia_aberta_${currentYear}.zip`))
+        return new Response(
+          csvZip(`itr_cia_aberta_DRE_con_${currentYear}.csv`, documentCsv([])),
+        );
+      return new Response(null, { status: 404 });
+    });
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj: "33.000.167/0001-01",
+    });
+
+    expect(requestedUrls).toContain(
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${currentYear - 4}.zip`,
+    );
+    expect(requestedUrls).toContain(
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear - 4}.zip`,
+    );
+    expect(requestedUrls.filter((url) => url.includes("/ITR/"))).toEqual([
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear - 4}.zip`,
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear}.zip`,
+    ]);
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceDocument: "DFP",
+          referenceDate: `${currentYear - 4}-12-31`,
+          revenue: `${(currentYear - 4) * 1_000}.00`,
+          periodBasis: "annual",
+          equity: null,
+        }),
+        expect.objectContaining({
+          sourceDocument: "DFP",
+          referenceDate: `${currentYear - 4}-12-31`,
+          periodStart: `${currentYear - 4}-10-01`,
+          periodBasis: "unknown",
+          equity: `${(currentYear - 4) * 10_000}.00`,
+        }),
+        expect.objectContaining({
+          sourceDocument: "ITR",
+          referenceDate: `${currentYear - 4}-09-30`,
+          equity: "222000.00",
+        }),
+      ]),
+    );
+  });
+
   it("uses the latest supported YTD period when deciding whether prior-year ITR is needed", async () => {
     const year = new Date().getUTCFullYear();
     const marchEnd = `${year}-03-31`;
@@ -472,10 +574,34 @@ describe("CvmFundamentalsProvider", () => {
                 DT_INI_EXERC: "2025-01-01",
                 DT_FIM_EXERC: "2025-12-31",
               }),
+              row("2.07", "40", {
+                DT_REFER: "2024-12-31",
+                DT_INI_EXERC: "2024-01-01",
+                DT_FIM_EXERC: "2024-12-31",
+              }),
               row("3.01", "5", {
                 DT_REFER: "2026-04-01",
                 DT_INI_EXERC: "2025-01-01",
                 DT_FIM_EXERC: "2025-12-31",
+              }),
+              row("2.07", "30", {
+                DT_REFER: "2023-12-31",
+                DT_INI_EXERC: "2023-01-01",
+                DT_FIM_EXERC: "2023-12-31",
+              }),
+            ]),
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          csvZip(
+            "dfp_cia_aberta_DRE_con_2022.csv",
+            documentCsv([
+              row("2.07", "20", {
+                DT_REFER: "2022-12-31",
+                DT_INI_EXERC: "2022-01-01",
+                DT_FIM_EXERC: "2022-12-31",
               }),
             ]),
           ),
@@ -567,12 +693,13 @@ describe("CvmFundamentalsProvider", () => {
           period.referenceDate === "2025-12-31",
       ),
     ).toHaveLength(1);
-    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(fetcher).toHaveBeenCalledTimes(6);
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
       "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
       `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${year - 1}.zip`,
       `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${year - 2}.zip`,
       `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${year - 3}.zip`,
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${year - 4}.zip`,
       `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${year}.zip`,
     ]);
   });
@@ -1080,17 +1207,18 @@ describe("CvmFundamentalsProvider", () => {
       `dfp_cia_aberta_DRE_con_${year - 1}.csv`,
       documentCsv([]),
     );
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(issuerCsv(["33.000.167/0001-01;9512;Petrobras;ATIVO"])),
-      )
-      .mockResolvedValueOnce(new Response(emptyAnnual))
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(
-        new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr)),
-      );
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv(["33.000.167/0001-01;9512;Petrobras;ATIVO"]),
+        );
+      if (url.endsWith(`/dfp_cia_aberta_${year - 1}.zip`))
+        return new Response(emptyAnnual);
+      if (url.includes("/ITR/") && url.endsWith(`/itr_cia_aberta_${year}.zip`))
+        return new Response(csvZip(`itr_cia_aberta_DRE_con_${year}.csv`, itr));
+      return new Response(null, { status: 404 });
+    });
 
     const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
       ticker: "SANB11",

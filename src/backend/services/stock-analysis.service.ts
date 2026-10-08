@@ -25,7 +25,7 @@ const tickerSchema = z
   .regex(/^[A-Z]{4}[0-9]{1,2}$/, "Informe um ticker B3 válido.");
 const cacheDurationMs = 1000 * 60 * 60 * 24;
 const quoteFreshnessMs = 7 * 24 * 60 * 60 * 1000;
-const fundamentalsNormalizationRevision = "cvm-v2";
+const fundamentalsNormalizationRevision = "cvm-v4";
 
 function currentFundamentalsSourceVersion() {
   return `${new Date().getUTCFullYear()}-${fundamentalsNormalizationRevision}`;

@@ -226,6 +226,24 @@ function needsPriorYearLtmRoeBalances(
   );
 }
 
+function hasYearEndEquity(periods: FundamentalPeriod[], year: number) {
+  return periods.some(
+    (period) =>
+      period.sourceDocument === "DFP" &&
+      period.periodType === "annual" &&
+      period.periodBasis === "annual" &&
+      period.exerciseOrder === "last" &&
+      period.referenceDate === `${year}-12-31` &&
+      period.periodStart === `${year}-01-01` &&
+      period.periodEnd === `${year}-12-31` &&
+      period.equity !== null &&
+      Number.isFinite(Number(period.equity)) &&
+      Boolean(period.equityVersion) &&
+      ["2.03", "2.07", "2.08"].includes(period.equityAccount ?? "") &&
+      period.equityConcept === "consolidated_equity",
+  );
+}
+
 function accountValue(period: AccountMap, account: string) {
   return period.get(account)?.value ?? null;
 }
@@ -626,7 +644,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       ticker,
     );
     const previousAnnual = await Promise.all(
-      [currentYear - 2, currentYear - 3].map((year) =>
+      [currentYear - 2, currentYear - 3, currentYear - 4].map((year) =>
         this.readDocument(
           "DFP",
           year,
@@ -637,6 +655,27 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       ),
     );
     annual.push(...previousAnnual.flat());
+    const historicalItr = await Promise.all(
+      [currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4]
+        .filter((year) => !hasYearEndEquity(annual, year))
+        .map((year) =>
+          this.readDocument(
+            "ITR",
+            year,
+            normalizedCnpj,
+            issuer.code,
+            ticker,
+          ).catch((error) => {
+            logger.warn("stock_fundamentals_cvm_historical_itr_unavailable", {
+              ticker,
+              cnpj: normalizedCnpj,
+              year,
+              error,
+            });
+            return [];
+          }),
+        ),
+    );
     const quarterly = await this.readDocument(
       "ITR",
       currentYear,
@@ -668,7 +707,12 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         })
       : [];
     const latestByPeriod = new Map<string, FundamentalPeriod>();
-    for (const period of [...annual, ...quarterly, ...previousQuarterly]) {
+    for (const period of [
+      ...annual,
+      ...quarterly,
+      ...historicalItr.flat(),
+      ...previousQuarterly,
+    ]) {
       const key = [
         period.sourceDocument,
         period.periodStart ?? "",

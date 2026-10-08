@@ -1612,7 +1612,7 @@ describe("StockAnalysisService cache and failures", () => {
     expect(repository.save).toHaveBeenCalledWith(
       "PETR4",
       "33000167000101",
-      `${new Date().getUTCFullYear()}-cvm-v2`,
+      `${new Date().getUTCFullYear()}-cvm-v4`,
       expect.any(Array),
     );
   });
@@ -1634,7 +1634,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v2`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -2272,7 +2272,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v2`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
