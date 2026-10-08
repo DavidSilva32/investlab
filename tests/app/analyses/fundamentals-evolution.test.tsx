@@ -167,6 +167,40 @@ describe("FundamentalsEvolution", () => {
     ).toBeTruthy();
   });
 
+  it("shows per-metric status when annual values and equity balances are empty", () => {
+    render(
+      <FundamentalsEvolution
+        periods={[
+          {
+            referenceDate: "2025-12-31",
+            sourceDocument: "DFP",
+            periodType: "annual",
+            periodBasis: "annual",
+            revenue: null,
+            netIncome: null,
+            equity: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Não há valores anuais de receita disponíveis nos demonstrativos DFP.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Não há valores anuais de lucro líquido disponíveis nos demonstrativos DFP.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Não há saldos de patrimônio líquido válidos nos períodos DFP ou ITR disponíveis.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows dated ITR balances when annual DFP equity is absent", () => {
     const { container } = render(
       <FundamentalsEvolution
@@ -227,6 +261,14 @@ describe("FundamentalsEvolution", () => {
             revenue: "100",
             netIncome: "10",
             equity: "700",
+          },
+          {
+            referenceDate: "2026/09/30",
+            sourceDocument: "ITR",
+            periodType: "interim",
+            revenue: "100",
+            netIncome: "10",
+            equity: "750",
           },
           {
             referenceDate: "2026-09-30",
