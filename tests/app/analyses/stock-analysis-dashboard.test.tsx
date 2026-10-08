@@ -23,8 +23,19 @@ vi.mock("sonner", () => ({
 vi.mock("recharts", () => ({
   CartesianGrid: () => null,
   Bar: () => null,
-  BarChart: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="annual-chart">{children}</div>
+  BarChart: ({
+    children,
+    data,
+  }: {
+    children: React.ReactNode;
+    data: Array<{ periodLabel?: string }>;
+  }) => (
+    <div
+      data-periods={data.map((point) => point.periodLabel ?? "").join(",")}
+      data-testid="annual-chart"
+    >
+      {children}
+    </div>
   ),
   Line: () => null,
   Legend: () => null,
@@ -686,12 +697,14 @@ it("shows the annual fact reading and keeps statement detail collapsed", async (
             referenceDate: "2024-12-31",
             revenue: "900000",
             netIncome: "80000",
+            equity: null,
           },
           {
             ...analysis.fundamentals[0],
             referenceDate: "2025-12-31",
             revenue: "1000000",
             netIncome: "100000",
+            equity: null,
           },
           analysis.fundamentals[1],
         ],
@@ -703,6 +716,19 @@ it("shows the annual fact reading and keeps statement detail collapsed", async (
   expect(await screen.findByText("Lucro líquido do exercício")).toBeTruthy();
   expect(screen.getByText("Receita anual")).toBeTruthy();
   expect(screen.getByText("Resultado positivo")).toBeTruthy();
+  expect(
+    screen.getByText(/Patrimônio líquido mostra saldos reportados/),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Saldos intermediários ITR, identificados pela data-base real.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getAllByTestId("annual-chart")
+      .map((chart) => chart.getAttribute("data-periods")),
+  ).toEqual(["2024,2025", "2024,2025", "30/06/2026"]);
   expect(
     screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
   ).toBeNull();
