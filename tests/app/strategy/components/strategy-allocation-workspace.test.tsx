@@ -218,6 +218,25 @@ describe("StrategyAllocationWorkspace", () => {
     ).toBeTruthy();
   });
 
+  it("shows one decorative class image in each row of the composition editor", () => {
+    render(<StrategyAllocationWorkspace {...baseProps} />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelectorAll("img")).toHaveLength(0);
+
+    openEditor();
+
+    const classRows = screen.getByRole("dialog").querySelectorAll("section");
+    expect(classRows).toHaveLength(4);
+    classRows.forEach((row) => {
+      const image = row.querySelector("img");
+      expect(image).not.toBeNull();
+      expect(image!.getAttribute("alt")).toBe("");
+      expect(image!.className).toContain("object-cover");
+      expect(image!.className).toContain("shrink-0");
+    });
+  });
+
   it("shows zero current value when a class has no classified positions", () => {
     render(
       <StrategyAllocationWorkspace

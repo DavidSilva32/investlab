@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { toast } from "sonner";
 import {
   ArrowDown,
@@ -56,6 +57,10 @@ import {
   getStrategyAssetClassColor,
   type StrategyAllocationPercentages,
 } from "@/lib/strategy-allocation";
+import fixedIncomeImage from "../../../../docs/design/references/strategy/class-imagery/fixed-income-office.webp";
+import brazilianEquitiesImage from "../../../../docs/design/references/strategy/class-imagery/brazilian-equities.webp";
+import internationalEtfsImage from "../../../../docs/design/references/strategy/class-imagery/international-etfs.webp";
+import fiisImage from "../../../../docs/design/references/strategy/class-imagery/fiis.webp";
 import {
   StrategyAllocationChart,
   type StrategyCompositionRow,
@@ -244,6 +249,12 @@ export function StrategyAllocationWorkspace({
     brazilian_equities: ChartColumnIncreasing,
     international_etfs: Globe,
     fiis: Building,
+  } as const;
+  const classImages = {
+    fixed_income: fixedIncomeImage,
+    brazilian_equities: brazilianEquitiesImage,
+    international_etfs: internationalEtfsImage,
+    fiis: fiisImage,
   } as const;
 
   function updateDraft(
@@ -467,7 +478,7 @@ export function StrategyAllocationWorkspace({
             <div className="space-y-3">
               {strategyAssetClasses.map(({ id, label }) => {
                 const color = getStrategyAssetClassColor(id);
-                const Icon = classIcons[id];
+                const image = classImages[id];
                 const current = currentById.get(id);
                 const percentageCents = parseStrategyPercentage(draft[id]);
                 return (
@@ -481,16 +492,14 @@ export function StrategyAllocationWorkspace({
                     }}
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <span
-                        aria-hidden="true"
-                        className="flex size-11 shrink-0 items-center justify-center rounded-full"
-                        style={{
-                          color,
-                          backgroundColor: `color-mix(in srgb, ${color} 16%, var(--card))`,
-                        }}
-                      >
-                        <Icon aria-hidden="true" className="size-5" />
-                      </span>
+                      <Image
+                        src={image}
+                        alt=""
+                        width={96}
+                        height={72}
+                        sizes="96px"
+                        className="h-[4.5rem] w-24 shrink-0 rounded-lg object-cover"
+                      />
                       <div className="min-w-0">
                         <h3
                           id={`strategy-${id}-label`}
