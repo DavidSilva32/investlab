@@ -21,6 +21,7 @@
 - Experiência/rota: `/strategy`, Sheet **Editar composição** aberto.
 - Componente: `strategy-allocation-workspace.tsx`.
 - Estado: composição planejada completa; todos os quatro IDs estão presentes; tema escuro; desktop.
+- Apresentação escolhida: fotos e descrições curtas somente no Sheet **Editar composição**. A visão principal conserva ícones, percentuais e gráfico porque já resume as mesmas classes; adicionar quatro fotos ali repetiria a composição e aumentaria a altura sem apoiar uma decisão diferente.
 - Origem: fotos geradas com o image generation integrado em 08/10/2026. A imagem enviada pelo usuário orientou o conceito de fotografia por classe, sem ser usada como imagem-alvo. Os arquivos foram convertidos para WebP, largura máxima de 960 px, qualidade 82.
 - Elementos sintéticos: valores atuais e percentuais servem apenas para mostrar a composição. A referência não define uma alocação recomendada.
 - Contexto omitido: a página Estratégia sob o Sheet não aparece; a imagem foca o componente de edição.

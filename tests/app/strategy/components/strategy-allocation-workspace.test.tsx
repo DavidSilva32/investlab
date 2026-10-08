@@ -228,6 +228,18 @@ describe("StrategyAllocationWorkspace", () => {
 
     const classRows = screen.getByRole("dialog").querySelectorAll("section");
     expect(classRows).toHaveLength(4);
+    expect(classRows[0]?.textContent).toContain(
+      "Títulos com prazo, remuneração e liquidez que variam conforme o produto.",
+    );
+    expect(classRows[1]?.textContent).toContain(
+      "Exposição a empresas brasileiras por meio de ações e BDRs.",
+    );
+    expect(classRows[2]?.textContent).toContain(
+      "ETFs com exposição a mercados fora do Brasil.",
+    );
+    expect(classRows[3]?.textContent).toContain(
+      "Podem investir em imóveis, recebíveis imobiliários ou ambos.",
+    );
     classRows.forEach((row) => {
       const image = row.querySelector("img");
       expect(image).not.toBeNull();
@@ -235,6 +247,12 @@ describe("StrategyAllocationWorkspace", () => {
       expect(image!.className).toContain("object-cover");
       expect(image!.className).toContain("shrink-0");
     });
+    expect(document.querySelectorAll("img")).toHaveLength(4);
+    expect(
+      Array.from(document.querySelectorAll("img")).every((image) =>
+        screen.getByRole("dialog").contains(image),
+      ),
+    ).toBe(true);
   });
 
   it("shows zero current value when a class has no classified positions", () => {
