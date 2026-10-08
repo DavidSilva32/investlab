@@ -730,6 +730,186 @@ it("reconciles ITUB4 LTM ROE when the same CVM balance is reported twice", () =>
   ).toMatchObject({ value: null });
 });
 
+it("uses the exact prior-year ITR equity when period end is implicit", () => {
+  const periods = [
+    {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: "2026-03-20",
+      exerciseOrder: "last" as const,
+      periodBasis: "annual" as const,
+      periodType: "annual" as const,
+      sourceDocument: "DFP" as const,
+      revenue: "500",
+      revenueVersion: "dfp-7",
+      revenueAccountLabel: "Receita operacional consolidada",
+      netIncome: "180",
+      netIncomeVersion: "dfp-4",
+      netIncomeAccount: "3.09",
+      netIncomeConcept: "consolidated_net_income",
+      equity: "150",
+      equityVersion: "dfp-3",
+      equityAccount: "2.07",
+      equityConcept: "consolidated_equity",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    },
+    {
+      referenceDate: "2026-06-30",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-06-30",
+      filingReferenceDate: "2026-08-10",
+      exerciseOrder: "last" as const,
+      periodBasis: "year_to_date" as const,
+      periodType: "interim" as const,
+      sourceDocument: "ITR" as const,
+      revenue: "260",
+      revenueVersion: "itr-1",
+      revenueAccountLabel: "Receita operacional consolidada",
+      netIncome: "100",
+      netIncomeVersion: "itr-1",
+      netIncomeAccount: "3.09",
+      netIncomeConcept: "consolidated_net_income",
+      equity: "200",
+      equityVersion: "itr-1",
+      equityAccount: "2.07",
+      equityConcept: "consolidated_equity",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    },
+    {
+      referenceDate: "2025-06-30",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-06-30",
+      filingReferenceDate: "2026-08-10",
+      exerciseOrder: "previous" as const,
+      periodBasis: "year_to_date" as const,
+      periodType: "interim" as const,
+      sourceDocument: "ITR" as const,
+      revenue: "140",
+      revenueVersion: "itr-1",
+      revenueAccountLabel: "Receita operacional consolidada",
+      netIncome: "40",
+      netIncomeVersion: "itr-1",
+      netIncomeAccount: "3.09",
+      netIncomeConcept: "consolidated_net_income",
+      equity: null,
+      equityVersion: null,
+      equityAccount: null,
+      equityConcept: null,
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    },
+    {
+      referenceDate: "2025-06-30",
+      periodStart: null,
+      filingReferenceDate: "2025-08-07",
+      exerciseOrder: "last" as const,
+      periodBasis: "unknown" as const,
+      periodType: "interim" as const,
+      sourceDocument: "ITR" as const,
+      revenue: null,
+      revenueVersion: null,
+      revenueAccountLabel: null,
+      netIncome: null,
+      netIncomeVersion: null,
+      netIncomeAccount: null,
+      netIncomeConcept: null,
+      equity: "80",
+      equityVersion: "different-filing-version",
+      equityAccount: "2.07",
+      equityConcept: "consolidated_equity",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    },
+  ];
+
+  expect(
+    calculateAnalysisIndicators(periods).find(({ key }) => key === "roe"),
+  ).toMatchObject({
+    value: expect.closeTo(171.43, 2),
+    referenceDate: "2026-06-30",
+  });
+  expect(
+    calculateAnalysisIndicators(
+      periods.filter(
+        (period) =>
+          period.sourceDocument !== "ITR" || period.periodEnd !== "2025-06-30",
+      ),
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: null });
+
+  const currentFilingComparator = {
+    ...periods[2]!,
+    equity: "100",
+    equityVersion: "itr-1",
+    equityAccount: "2.07",
+    equityConcept: "consolidated_equity",
+  };
+  expect(
+    calculateAnalysisIndicators(
+      periods.map((period, index) =>
+        index === 2 ? currentFilingComparator : period,
+      ),
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: expect.closeTo(160, 2) });
+
+  expect(
+    calculateAnalysisIndicators([
+      ...periods.slice(0, 2),
+      { ...currentFilingComparator, equityVersion: "itr-2" },
+      periods[3]!,
+    ]).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: null });
+
+  expect(
+    calculateAnalysisIndicators([
+      ...periods,
+      {
+        ...periods[2]!,
+        periodStart: null,
+        periodBasis: "unknown" as const,
+        revenue: null,
+        revenueVersion: null,
+        revenueAccountLabel: null,
+        netIncome: null,
+        netIncomeVersion: null,
+        netIncomeAccount: null,
+        netIncomeConcept: null,
+        equity: "100",
+        equityVersion: "itr-1",
+        equityAccount: "2.07",
+        equityConcept: "consolidated_equity",
+      },
+      {
+        ...periods[2]!,
+        periodStart: null,
+        periodBasis: "unknown" as const,
+        revenue: null,
+        revenueVersion: null,
+        revenueAccountLabel: null,
+        netIncome: null,
+        netIncomeVersion: null,
+        netIncomeAccount: null,
+        netIncomeConcept: null,
+        equity: "110",
+        equityVersion: "itr-1",
+        equityAccount: "2.07",
+        equityConcept: "consolidated_equity",
+      },
+    ]).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: null });
+});
+
 it("keeps CSAN3 margin and P/VP when the opening equity needed for ROE is unavailable", () => {
   const common = {
     revenueVersion: "1",
@@ -1384,6 +1564,59 @@ describe("StockAnalysisService cache and failures", () => {
     await expect(service.getByTicker("PETR4")).rejects.toBe(failure);
   });
 
+  it("refreshes a recent cache entry with an old normalization revision", async () => {
+    const marketProvider = {
+      getByTicker: vi.fn().mockResolvedValue(market),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([
+        {
+          referenceDate: "2025-12-31",
+          periodStart: "2025-01-01",
+          periodEnd: "2025-12-31",
+          filingReferenceDate: "2026-03-20",
+          exerciseOrder: "last",
+          periodBasis: "annual",
+          periodType: "annual",
+          sourceDocument: "DFP",
+          revenue: "200",
+          netIncome: "20",
+          equity: "100",
+          assets: null,
+          liabilities: null,
+          cash: null,
+          debt: null,
+        },
+      ]),
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([
+        expiredCachePeriod({
+          fetchedAt: new Date(),
+          sourceVersion: String(new Date().getUTCFullYear()),
+        }),
+      ]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+    );
+
+    await service.getByTicker("PETR4");
+
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
+    expect(repository.save).toHaveBeenCalledWith(
+      "PETR4",
+      "33000167000101",
+      `${new Date().getUTCFullYear()}-cvm-v4`,
+      expect.any(Array),
+    );
+  });
+
   it("uses a recent fundamentals cache", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue(market),
@@ -1401,6 +1634,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -2038,6 +2272,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
       revenue: "100",
       netIncome: "10",
       equity: "50",

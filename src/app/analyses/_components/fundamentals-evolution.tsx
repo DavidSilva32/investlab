@@ -1,6 +1,14 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   ChartContainer,
   ChartTooltipContent,
@@ -24,6 +32,15 @@ const metrics = [
     color: "var(--chart-category-4)",
   },
 ] as const;
+type MetricKey = (typeof metrics)[number]["key"];
+type ChartPoint = {
+  periodLabel: string;
+  referenceDate: string | null;
+  revenue: number | null;
+  netIncome: number | null;
+  equity: number | null;
+  isPartial: boolean;
+};
 const exactMoney = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -40,26 +57,26 @@ export function FundamentalsEvolution({
 }: {
   periods: AnalysisPeriod[];
 }) {
-  const annual = annualAnalysisPeriods(periods).map((period) => ({
-    periodLabel: period.referenceDate.slice(0, 4),
-    revenue: value(period.revenue),
-    netIncome: value(period.netIncome),
-    equity: value(period.equity),
-  }));
-  const equity = equityBalancePeriods(periods);
-
-  if (!annual.length && !equity.length)
+  const currentYear = new Date().getUTCFullYear();
+  const years = Array.from(
+    { length: 5 },
+    (_, index) => currentYear - 4 + index,
+  );
+  const annual = flowPeriods(periods, years, currentYear);
+  const equity = equityBalancePeriods(periods, years, currentYear);
+  if (periods.length === 0)
     return (
       <p role="status" className="text-sm text-muted-foreground">
-        Não há demonstrativos anuais ou saldos de patrimônio líquido disponíveis
-        nos dados recebidos.
+        Não há dados suficientes para mostrar a evolução dos fundamentos
+        financeiros.
       </p>
     );
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       {metrics.map((metric) => {
-        const chartData = metric.key === "equity" ? equity : annual;
+        const allPoints = metric.key === "equity" ? equity : annual;
+        const chartData = visibleChartPoints(allPoints, metric.key);
         const config: ChartConfig = {
           [metric.key]: { label: metric.label, color: metric.color },
         };
@@ -73,11 +90,6 @@ export function FundamentalsEvolution({
             <h3 id={`${id}-title`} className="font-medium">
               {metric.label}
             </h3>
-            {metric.key === "equity" && chartData.length > 0 && (
-              <p className="mt-2 text-sm text-muted-foreground">
-                {equityDescription(equity)}
-              </p>
-            )}
             {chartData.some((period) => period[metric.key] !== null) ? (
               <ChartContainer
                 config={config}
@@ -102,6 +114,9 @@ export function FundamentalsEvolution({
                     cursor={false}
                     content={
                       <ChartTooltipContent
+                        labelFormatter={(label, payload) =>
+                          tooltipLabel(metric.key, String(label), payload)
+                        }
                         formatter={(value) => exactMoney.format(Number(value))}
                       />
                     }
@@ -110,14 +125,21 @@ export function FundamentalsEvolution({
                     dataKey={metric.key}
                     fill={`var(--color-${metric.key})`}
                     radius={4}
-                  />
+                  >
+                    {chartData.map((point) => (
+                      <Cell
+                        key={point.periodLabel}
+                        fillOpacity={point.isPartial ? 0.62 : 1}
+                      />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ChartContainer>
             ) : (
               <p role="status" className="mt-2 text-sm text-muted-foreground">
                 {metric.key === "equity"
-                  ? "Não há saldos de patrimônio líquido válidos nos períodos DFP ou ITR disponíveis."
-                  : `Não há valores anuais de ${metric.label.toLocaleLowerCase("pt-BR")} disponíveis nos demonstrativos DFP.`}
+                  ? "Não há saldos de patrimônio líquido disponíveis para os períodos selecionados."
+                  : `Não há valores de ${metric.label.toLocaleLowerCase("pt-BR")} disponíveis para os períodos selecionados.`}
               </p>
             )}
           </section>
@@ -133,57 +155,134 @@ function value(source: string | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function equityBalancePeriods(periods: AnalysisPeriod[]) {
-  const byDate = new Map<string, AnalysisPeriod>();
-  const candidates = [
-    ...annualAnalysisPeriods(periods).filter(
-      (period) => value(period.equity) !== null,
-    ),
-    ...periods.filter(
+function visibleChartPoints(points: ChartPoint[], key: MetricKey) {
+  const available = points.filter((point) => point[key] !== null);
+  return available.length === 5 ? available : available.slice(-3);
+}
+
+function flowPeriods(
+  periods: AnalysisPeriod[],
+  years: number[],
+  currentYear: number,
+): ChartPoint[] {
+  const annual = annualAnalysisPeriods(periods);
+  return years.map((year) => {
+    const yearLabel = String(year);
+    if (year === currentYear) {
+      const partial = latestCurrentYearYtd(periods, year);
+      return {
+        periodLabel: yearLabel,
+        referenceDate: partial?.referenceDate ?? null,
+        revenue: partial ? value(partial.revenue) : null,
+        netIncome: partial ? value(partial.netIncome) : null,
+        equity: null,
+        isPartial: partial !== null,
+      };
+    }
+
+    const period = annual.find(
+      (candidate) =>
+        candidate.referenceDate.slice(0, 4) === yearLabel &&
+        (value(candidate.revenue) !== null ||
+          value(candidate.netIncome) !== null),
+    );
+    return {
+      periodLabel: yearLabel,
+      referenceDate: period?.referenceDate ?? null,
+      revenue: value(period?.revenue ?? null),
+      netIncome: value(period?.netIncome ?? null),
+      equity: null,
+      isPartial: false,
+    };
+  });
+}
+
+function latestCurrentYearYtd(periods: AnalysisPeriod[], year: number) {
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  return (
+    periods
+      .filter((period) => {
+        const end = period.periodEnd ?? period.referenceDate;
+        return (
+          period.sourceDocument === "ITR" &&
+          period.periodType !== "annual" &&
+          period.periodBasis === "year_to_date" &&
+          period.isDerived !== true &&
+          period.periodStart === yearStart &&
+          isValidReferenceDate(period.referenceDate) &&
+          isValidReferenceDate(end) &&
+          end === period.referenceDate &&
+          period.referenceDate.slice(0, 4) === String(year) &&
+          period.referenceDate < yearEnd &&
+          (value(period.revenue) !== null || value(period.netIncome) !== null)
+        );
+      })
+      .sort((left, right) =>
+        left.referenceDate === right.referenceDate
+          ? (right.filingReferenceDate ?? "").localeCompare(
+              left.filingReferenceDate ?? "",
+            )
+          : right.referenceDate.localeCompare(left.referenceDate),
+      )[0] ?? null
+  );
+}
+
+function equityBalancePeriods(
+  periods: AnalysisPeriod[],
+  years: number[],
+  currentYear: number,
+): ChartPoint[] {
+  const annual = annualAnalysisPeriods(periods);
+  return years.map((year) => {
+    const yearLabel = String(year);
+    const annualBalance = annual.find(
+      (period) =>
+        period.referenceDate === `${yearLabel}-12-31` &&
+        value(period.equity) !== null,
+    );
+    const interimBalances = periods.filter(
       (period) =>
         period.sourceDocument === "ITR" &&
         period.periodType !== "annual" &&
-        !period.isDerived &&
+        period.isDerived !== true &&
+        period.referenceDate.slice(0, 4) === yearLabel &&
+        isValidReferenceDate(period.referenceDate) &&
         value(period.equity) !== null,
-    ),
-  ];
-  for (const period of candidates) {
-    if (
-      !isValidReferenceDate(period.referenceDate) ||
-      value(period.equity) === null
-    )
-      continue;
-    const existing = byDate.get(period.referenceDate);
-    if (
-      !existing ||
-      (existing.sourceDocument === "ITR" && period.sourceDocument === "DFP") ||
-      (existing.sourceDocument === period.sourceDocument &&
-        (period.filingReferenceDate ?? "") >
-          (existing.filingReferenceDate ?? ""))
-    )
-      byDate.set(period.referenceDate, period);
-  }
-  return [...byDate.values()]
-    .sort((left, right) =>
-      left.referenceDate.localeCompare(right.referenceDate),
-    )
-    .map((period) => ({
-      periodLabel: formatReferenceDate(period.referenceDate),
+    );
+    const interimBalance = interimBalances.sort((left, right) =>
+      left.referenceDate === right.referenceDate
+        ? (right.filingReferenceDate ?? "").localeCompare(
+            left.filingReferenceDate ?? "",
+          )
+        : right.referenceDate.localeCompare(left.referenceDate),
+    )[0];
+    const selected =
+      year === currentYear ? interimBalance : (annualBalance ?? interimBalance);
+    return {
+      periodLabel: yearLabel,
+      referenceDate: selected?.referenceDate ?? null,
       revenue: null,
       netIncome: null,
-      equity: value(period.equity),
-      sourceDocument: period.sourceDocument,
-    }));
+      equity: value(selected?.equity ?? null),
+      isPartial:
+        year === currentYear &&
+        selected?.referenceDate !== `${yearLabel}-12-31`,
+    };
+  });
 }
 
-function equityDescription(equity: ReturnType<typeof equityBalancePeriods>) {
-  const hasAnnual = equity.some((period) => period.sourceDocument === "DFP");
-  const hasInterim = equity.some((period) => period.sourceDocument === "ITR");
-  if (hasAnnual && hasInterim)
-    return "Saldos DFP anuais e ITR intermediários, com a data-base de cada ponto.";
-  if (hasInterim)
-    return "Saldos intermediários ITR, identificados pela data-base real.";
-  return "Saldos anuais DFP, identificados pela data-base real.";
+function tooltipLabel(
+  metric: MetricKey,
+  label: string,
+  payload: ReadonlyArray<{ payload?: unknown }>,
+) {
+  const point = payload[0]?.payload as ChartPoint | undefined;
+  if (!point) return label;
+  if (metric === "equity" && point.referenceDate)
+    return `Data-base: ${formatReferenceDate(point.referenceDate)}`;
+  if (point.isPartial) return `${point.periodLabel} · Período parcial`;
+  return label;
 }
 
 function formatReferenceDate(value: string) {

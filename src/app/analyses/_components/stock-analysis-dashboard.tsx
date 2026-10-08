@@ -530,8 +530,8 @@ export function StockAnalysisDashboard({
         <CardHeader>
           <CardTitle>Evolução dos fundamentos financeiros</CardTitle>
           <CardDescription>
-            Receita e lucro líquido comparam DFP anuais. Patrimônio líquido
-            mostra saldos reportados com suas datas-base.
+            Compare a evolução da receita, do lucro líquido e do patrimônio
+            líquido nos períodos informados.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -569,7 +569,7 @@ export function StockAnalysisDashboard({
                 className="space-y-3"
               >
                 <h3 id="annual-evidence-title" className="font-medium">
-                  Demonstrações financeiras anuais (DFP)
+                  Períodos anuais
                 </h3>
                 <FundamentalsGrid periods={annual} type="DFP" />
               </section>
@@ -579,7 +579,7 @@ export function StockAnalysisDashboard({
               >
                 <div>
                   <h3 id="interim-evidence-title" className="font-medium">
-                    Informações trimestrais (ITR)
+                    Períodos intermediários
                   </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Valores acumulados no exercício até cada data; não
@@ -599,8 +599,9 @@ export function StockAnalysisDashboard({
                       Trimestres isolados informados
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Estes valores cobrem apenas o trimestre indicado; os ITR
-                      acumulados permanecem em uma seção separada.
+                      Estes valores cobrem apenas o trimestre indicado; os
+                      demonstrativos intermediários acumulados permanecem em uma
+                      seção separada.
                     </p>
                   </div>
                   <FundamentalsGrid periods={discreteQuarters} type="ITR" />
