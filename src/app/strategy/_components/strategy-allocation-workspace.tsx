@@ -2,10 +2,12 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowRight,
+  BookOpen,
   Building,
   ChartColumnIncreasing,
   ChevronRight,
@@ -38,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { getApiMessage } from "@/lib/api-message";
+import { getLearningClassHref } from "@/lib/asset-class-learning";
 import {
   formatAmountInput,
   getCurrencyInputSelection,
@@ -57,10 +60,6 @@ import {
   getStrategyAssetClassColor,
   type StrategyAllocationPercentages,
 } from "@/lib/strategy-allocation";
-import fixedIncomeImage from "../../../../docs/design/references/strategy/class-imagery/fixed-income-office.webp";
-import brazilianEquitiesImage from "../../../../docs/design/references/strategy/class-imagery/brazilian-equities.webp";
-import internationalEtfsImage from "../../../../docs/design/references/strategy/class-imagery/international-etfs.webp";
-import fiisImage from "../../../../docs/design/references/strategy/class-imagery/fiis.webp";
 import {
   StrategyAllocationChart,
   type StrategyCompositionRow,
@@ -251,10 +250,10 @@ export function StrategyAllocationWorkspace({
     fiis: Building,
   } as const;
   const classImages = {
-    fixed_income: fixedIncomeImage,
-    brazilian_equities: brazilianEquitiesImage,
-    international_etfs: internationalEtfsImage,
-    fiis: fiisImage,
+    fixed_income: "/images/asset-classes/fixed-income-office.webp",
+    brazilian_equities: "/images/asset-classes/brazilian-equities.webp",
+    international_etfs: "/images/asset-classes/international-etfs.webp",
+    fiis: "/images/asset-classes/fiis.webp",
   } as const;
   function updateDraft(
     id: (typeof strategyAssetClasses)[number]["id"],
@@ -416,7 +415,10 @@ export function StrategyAllocationWorkspace({
                         const Icon = classIcons[id];
                         const color = getStrategyAssetClassColor(id);
                         return (
-                          <li key={id} className="flex items-center gap-2">
+                          <li
+                            key={id}
+                            className="flex flex-wrap items-center gap-2"
+                          >
                             <Icon
                               aria-hidden="true"
                               className="size-4 shrink-0"
@@ -428,6 +430,17 @@ export function StrategyAllocationWorkspace({
                             <span className="font-semibold tabular-nums">
                               {percentText(allocationToShow![id])}%
                             </span>
+                            <Link
+                              href={getLearningClassHref(id)}
+                              aria-label={`Aprender sobre ${label}`}
+                              className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            >
+                              <BookOpen
+                                aria-hidden="true"
+                                className="size-3.5"
+                              />
+                              Aprender
+                            </Link>
                           </li>
                         );
                       })}

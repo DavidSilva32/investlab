@@ -182,6 +182,14 @@ describe("StrategyAllocationWorkspace", () => {
     expect(screen.getByText("Patrimônio de longo prazo")).toBeTruthy();
     expect(screen.getByText("Distribuição atual")).toBeTruthy();
     expect(screen.getAllByText("30,00%").length).toBeGreaterThan(0);
+    expect(screen.getByText("10%")).toBeTruthy();
+    const learningLink = screen.getByRole("link", {
+      name: "Aprender sobre Fundos imobiliários (FIIs)",
+    });
+    expect(learningLink.getAttribute("href")).toBe(
+      "/learn?class=fiis#class-content",
+    );
+    expect(learningLink.textContent).toBe("Aprender");
     input("Renda fixa planejada em porcentagem");
     expect(screen.getByRole("dialog").className).toContain("sm:max-w-2xl");
     expect(input("Renda fixa planejada em porcentagem").value).toBe("40,00");

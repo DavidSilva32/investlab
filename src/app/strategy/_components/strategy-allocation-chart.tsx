@@ -35,6 +35,25 @@ export function formatStrategyPercentage(value: unknown) {
   return `${Number(value).toFixed(2).replace(".", ",")}%`;
 }
 
+export function shouldRenderStrategyPercentageLabel(
+  value: unknown,
+  segmentWidth: unknown,
+) {
+  const percentage = Number(value);
+  const width = Number(segmentWidth);
+  if (
+    !Number.isFinite(percentage) ||
+    percentage <= 0 ||
+    !Number.isFinite(width)
+  )
+    return false;
+
+  const label = `${percentage.toString().replace(".", ",")}%`;
+  const estimatedTextWidth = label.length * 7.2;
+  const horizontalPadding = 8;
+  return width >= estimatedTextWidth + horizontalPadding;
+}
+
 export function StrategyTooltipEntry({
   value,
   name,
@@ -64,6 +83,50 @@ export function StrategyTooltipEntry({
 
 export function formatStrategyTooltip(value: unknown, name: unknown) {
   return <StrategyTooltipEntry value={value} name={String(name)} />;
+}
+
+export function renderStrategyPercentageLabel({
+  value,
+  viewBox,
+}: {
+  value?: unknown;
+  viewBox?: unknown;
+}) {
+  const geometry =
+    typeof viewBox === "object" && viewBox !== null
+      ? (viewBox as Record<string, unknown>)
+      : undefined;
+  const x = geometry?.x;
+  const y = geometry?.y;
+  const width = geometry?.width;
+  const height = geometry?.height;
+
+  if (
+    !shouldRenderStrategyPercentageLabel(value, width) ||
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    typeof width !== "number" ||
+    typeof height !== "number"
+  ) {
+    return null;
+  }
+
+  return (
+    <text
+      x={x + width / 2}
+      y={y + height / 2}
+      dy="0.35em"
+      textAnchor="middle"
+      fill="#fff"
+      stroke="rgba(0, 0, 0, 0.55)"
+      strokeWidth={2}
+      fontSize={12}
+      fontWeight={700}
+      style={{ paintOrder: "stroke" }}
+    >
+      {`${Number(value).toString().replace(".", ",")}%`}
+    </text>
+  );
 }
 
 export function StrategyAllocationChart({
@@ -119,22 +182,7 @@ export function StrategyAllocationChart({
               fill={`var(--color-${id})`}
               isAnimationActive={false}
             >
-              <LabelList
-                dataKey={id}
-                position="inside"
-                fill="#fff"
-                stroke="rgba(0, 0, 0, 0.55)"
-                strokeWidth={2}
-                fontSize={12}
-                fontWeight={700}
-                style={{ paintOrder: "stroke" }}
-                formatter={(value: number | string) => {
-                  const percentage = Number(value);
-                  return percentage >= 12
-                    ? `${percentage.toString().replace(".", ",")}%`
-                    : "";
-                }}
-              />
+              <LabelList dataKey={id} content={renderStrategyPercentageLabel} />
             </Bar>
           ))}
         </BarChart>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  BookOpen,
   Compass,
   Download,
   LayoutDashboard,
@@ -21,6 +22,7 @@ const navigation = [
   { href: "/", label: "Dashboard", Icon: LayoutDashboard },
   { href: "/portfolio", label: "Carteira", Icon: WalletCards },
   { href: "/strategy", label: "Estratégia", Icon: Compass },
+  { href: "/learn", label: "Aprender", Icon: BookOpen },
   { href: "/imports", label: "Importações", Icon: Download },
   { href: "/analyses", label: "Análises", Icon: BarChart3 },
   { href: "/settings", label: "Configurações", Icon: Settings },
@@ -42,6 +44,7 @@ function Navigation({ pathname }: { pathname: string }) {
       {navigation.map(({ href, label, Icon }) => {
         const active =
           pathname === href ||
+          (href === "/learn" && pathname?.startsWith("/learn")) ||
           (href === "/analyses" && pathname?.startsWith("/analyses"));
         return (
           <Link

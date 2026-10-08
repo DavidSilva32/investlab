@@ -49,6 +49,11 @@ describe("AppShell", () => {
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(
       screen
+        .getAllByRole("link", { name: "Aprender" })
+        .every((link) => link.getAttribute("href") === "/learn"),
+    ).toBe(true);
+    expect(
+      screen
         .getByRole("link", { name: "InvestLab, página inicial" })
         .getAttribute("href"),
     ).toBe("/");
