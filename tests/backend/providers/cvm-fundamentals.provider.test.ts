@@ -48,6 +48,22 @@ function documentCsv(rows: string[]) {
   return [documentHeader, ...rows].join("\n");
 }
 
+function priorAnnualDfpResponse(currentYear: number) {
+  const year = currentYear - 1;
+  return new Response(
+    csvZip(
+      `dfp_cia_aberta_DRE_con_${year}.csv`,
+      documentCsv([
+        row("3.09", "100", {
+          DT_REFER: `${year}-12-31`,
+          DT_INI_EXERC: `${year}-01-01`,
+          DT_FIM_EXERC: `${year}-12-31`,
+        }),
+      ]),
+    ),
+  );
+}
+
 function documentCsvWithoutAccountLabels(rows: string[]) {
   const cells = documentHeader.split(";");
   const labelIndex = cells.indexOf("DS_CONTA");
@@ -67,6 +83,304 @@ function issuerCsv(rows: string[]) {
 }
 
 describe("CvmFundamentalsProvider", () => {
+  it("uses the latest supported YTD period when deciding whether prior-year ITR is needed", async () => {
+    const year = new Date().getUTCFullYear();
+    const marchEnd = `${year}-03-31`;
+    const currentEnd = `${year}-06-30`;
+    const priorMarchEnd = `${year - 1}-03-31`;
+    const priorEnd = `${year - 1}-06-30`;
+    const currentItrRows = [
+      row("3.09", "30", {
+        DT_REFER: marchEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: marchEnd,
+      }),
+      row("2.07", "1050", {
+        DT_REFER: marchEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: marchEnd,
+      }),
+      row("3.09", "20", {
+        DT_REFER: marchEnd,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: priorMarchEnd,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+      row("3.09", "60", {
+        DT_REFER: currentEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: currentEnd,
+      }),
+      row("2.07", "1100", {
+        DT_REFER: currentEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: currentEnd,
+      }),
+      row("3.09", "50", {
+        DT_REFER: currentEnd,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: priorEnd,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+      row("2.07", "1000", {
+        DT_REFER: currentEnd,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: priorEnd,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+    ];
+    const requestedUrls: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv(["33.000.167/0001-01;09512;PETROBRAS;ATIVA"]),
+        );
+      if (url.endsWith(`/dfp_cia_aberta_${year - 1}.zip`))
+        return priorAnnualDfpResponse(year);
+      if (url.includes("/DFP/"))
+        return new Response(
+          csvZip(`dfp_cia_aberta_DRE_con_${year}.csv`, documentCsv([])),
+        );
+      if (url.endsWith(`/itr_cia_aberta_${year}.zip`))
+        return new Response(
+          csvZip(
+            `itr_cia_aberta_DRE_con_${year}.csv`,
+            documentCsv(currentItrRows),
+          ),
+        );
+      return new Response(null, { status: 404 });
+    });
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj: "33.000.167/0001-01",
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: priorEnd,
+          exerciseOrder: "previous",
+          equity: "1000000.00",
+          equityAccount: "2.07",
+          equityConcept: "consolidated_equity",
+          filingReferenceDate: currentEnd,
+        }),
+      ]),
+    );
+    expect(requestedUrls).not.toContain(
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${year - 1}.zip`,
+    );
+  });
+
+  it("skips prior-year ITR when an eligible YTD flow has no ending equity", async () => {
+    const year = new Date().getUTCFullYear();
+    const currentEnd = `${year}-06-30`;
+    const priorEnd = `${year - 1}-06-30`;
+    const currentItrRows = [
+      row("3.09", "60", {
+        DT_REFER: currentEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: currentEnd,
+      }),
+      row("3.09", "50", {
+        DT_REFER: currentEnd,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: priorEnd,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+    ];
+    const requestedUrls: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv(["33.000.167/0001-01;09512;PETROBRAS;ATIVA"]),
+        );
+      if (url.endsWith(`/dfp_cia_aberta_${year - 1}.zip`))
+        return priorAnnualDfpResponse(year);
+      if (url.includes("/DFP/"))
+        return new Response(
+          csvZip(`dfp_cia_aberta_DRE_con_${year}.csv`, documentCsv([])),
+        );
+      if (url.endsWith(`/itr_cia_aberta_${year}.zip`))
+        return new Response(
+          csvZip(
+            `itr_cia_aberta_DRE_con_${year}.csv`,
+            documentCsv(currentItrRows),
+          ),
+        );
+      return new Response(null, { status: 404 });
+    });
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj: "33.000.167/0001-01",
+    });
+
+    expect(requestedUrls).not.toContain(
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${year - 1}.zip`,
+    );
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: currentEnd,
+          netIncome: "60000.00",
+          equity: null,
+        }),
+        expect.objectContaining({
+          referenceDate: priorEnd,
+          exerciseOrder: "previous",
+          netIncome: "50000.00",
+          equity: null,
+        }),
+      ]),
+    );
+  });
+
+  it("fetches prior-year ITR when a later YTD period lacks opening equity despite an earlier complete period", async () => {
+    const year = new Date().getUTCFullYear();
+    const marchEnd = `${year}-03-31`;
+    const juneEnd = `${year}-06-30`;
+    const priorMarchEnd = `${year - 1}-03-31`;
+    const priorJuneEnd = `${year - 1}-06-30`;
+    let historicalArchiveAvailable = true;
+    const currentItrRows = [
+      row("3.09", "30", {
+        DT_REFER: marchEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: marchEnd,
+      }),
+      row("2.07", "1050", {
+        DT_REFER: marchEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: marchEnd,
+      }),
+      row("3.09", "20", {
+        DT_REFER: marchEnd,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: priorMarchEnd,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+      row("2.07", "1000", {
+        DT_REFER: marchEnd,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: priorMarchEnd,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+      row("3.09", "60", {
+        DT_REFER: juneEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: juneEnd,
+      }),
+      row("2.07", "1100", {
+        DT_REFER: juneEnd,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: juneEnd,
+      }),
+      row("3.09", "50", {
+        DT_REFER: juneEnd,
+        DT_INI_EXERC: `${year - 1}-01-01`,
+        DT_FIM_EXERC: priorJuneEnd,
+        ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+      }),
+    ];
+    const requestedUrls: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv(["33.000.167/0001-01;09512;PETROBRAS;ATIVA"]),
+        );
+      if (url.endsWith(`/dfp_cia_aberta_${year - 1}.zip`))
+        return priorAnnualDfpResponse(year);
+      if (url.includes("/DFP/"))
+        return new Response(
+          csvZip(`dfp_cia_aberta_DRE_con_${year}.csv`, documentCsv([])),
+        );
+      if (url.endsWith(`/itr_cia_aberta_${year}.zip`))
+        return new Response(
+          csvZip(
+            `itr_cia_aberta_DRE_con_${year}.csv`,
+            documentCsv(currentItrRows),
+          ),
+        );
+      if (url.endsWith(`/itr_cia_aberta_${year - 1}.zip`)) {
+        if (!historicalArchiveAvailable)
+          return new Response(null, { status: 404 });
+        return new Response(
+          csvZip(
+            `itr_cia_aberta_DRE_con_${year - 1}.csv`,
+            documentCsv([
+              row("2.07", "1000", {
+                DT_REFER: priorJuneEnd,
+                DT_INI_EXERC: `${year - 1}-01-01`,
+                DT_FIM_EXERC: priorJuneEnd,
+              }),
+            ]),
+          ),
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj: "33.000.167/0001-01",
+    });
+
+    expect(requestedUrls).toContain(
+      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${year - 1}.zip`,
+    );
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: priorJuneEnd,
+          periodEnd: priorJuneEnd,
+          exerciseOrder: "last",
+          equity: "1000000.00",
+          equityAccount: "2.07",
+          equityConcept: "consolidated_equity",
+        }),
+      ]),
+    );
+
+    historicalArchiveAvailable = false;
+    const fallbackPeriods = await new CvmFundamentalsProvider(
+      fetcher,
+    ).getByTicker({
+      ticker: "PETR4",
+      cnpj: "33.000.167/0001-01",
+    });
+
+    expect(fallbackPeriods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: juneEnd,
+          periodEnd: juneEnd,
+          exerciseOrder: "last",
+          equity: "1100000.00",
+          equityAccount: "2.07",
+          equityConcept: "consolidated_equity",
+        }),
+      ]),
+    );
+    expect(fallbackPeriods).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          periodEnd: priorJuneEnd,
+          exerciseOrder: "last",
+          equity: "1000000.00",
+          equityAccount: "2.07",
+        }),
+      ]),
+    );
+  });
+
   it("normalizes issuer data and streamed DFP and ITR accounts, preferring the latest version", async () => {
     const year = new Date().getUTCFullYear();
     const dfpRows = [

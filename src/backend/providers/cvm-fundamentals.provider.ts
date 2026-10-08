@@ -143,6 +143,89 @@ function normalizedPeriodBasis(
     : ("unknown" as const);
 }
 
+function needsPriorYearLtmRoeBalances(
+  annualPeriods: FundamentalPeriod[],
+  itrPeriods: FundamentalPeriod[],
+) {
+  const usableEquity = (period: FundamentalPeriod) =>
+    period.equity !== null &&
+    Number.isFinite(Number(period.equity)) &&
+    Boolean(period.equityVersion) &&
+    Boolean(period.equityAccount) &&
+    period.equityConcept === "consolidated_equity";
+  const hasSupportedNetIncome = (period: FundamentalPeriod) =>
+    period.netIncome !== null &&
+    Number.isFinite(Number(period.netIncome)) &&
+    Boolean(period.netIncomeVersion) &&
+    Boolean(period.netIncomeAccount) &&
+    period.netIncomeConcept === "consolidated_net_income";
+  const currentFlows = itrPeriods.filter(
+    (period) =>
+      period.sourceDocument === "ITR" &&
+      period.periodBasis === "year_to_date" &&
+      period.exerciseOrder === "last" &&
+      Boolean(period.periodStart) &&
+      Boolean(period.periodEnd) &&
+      Boolean(period.filingReferenceDate) &&
+      period.periodStart === `${period.periodEnd?.slice(0, 4)}-01-01` &&
+      hasSupportedNetIncome(period),
+  );
+  const supportedFlows = currentFlows.filter((current) => {
+    const priorDate = `${Number(current.periodEnd!.slice(0, 4)) - 1}${current.periodEnd!.slice(4)}`;
+    const annual = annualPeriods.filter(
+      (period) =>
+        period.sourceDocument === "DFP" &&
+        period.periodType === "annual" &&
+        period.periodBasis === "annual" &&
+        period.exerciseOrder === "last" &&
+        period.periodStart === `${priorDate.slice(0, 4)}-01-01` &&
+        period.periodEnd === `${priorDate.slice(0, 4)}-12-31` &&
+        hasSupportedNetIncome(period) &&
+        period.netIncomeConcept === current.netIncomeConcept,
+    );
+    const comparative = itrPeriods.filter(
+      (comparative) =>
+        comparative.sourceDocument === "ITR" &&
+        comparative.periodBasis === "year_to_date" &&
+        comparative.exerciseOrder === "previous" &&
+        comparative.filingReferenceDate === current.filingReferenceDate &&
+        comparative.periodStart === `${priorDate.slice(0, 4)}-01-01` &&
+        (comparative.periodEnd ?? comparative.referenceDate) === priorDate &&
+        hasSupportedNetIncome(comparative) &&
+        comparative.netIncomeVersion === current.netIncomeVersion &&
+        comparative.netIncomeAccount === current.netIncomeAccount &&
+        comparative.netIncomeConcept === current.netIncomeConcept,
+    );
+    return annual.length === 1 && comparative.length === 1;
+  });
+  if (supportedFlows.length === 0) return false;
+  const latestSupportedFlow = supportedFlows.sort((left, right) =>
+    right.periodEnd!.localeCompare(left.periodEnd!),
+  )[0]!;
+  const endingBalance = itrPeriods.find(
+    (balance) =>
+      balance.sourceDocument === "ITR" &&
+      balance.exerciseOrder === "last" &&
+      balance.filingReferenceDate === latestSupportedFlow.filingReferenceDate &&
+      (balance.periodEnd ?? balance.referenceDate) ===
+        latestSupportedFlow.periodEnd &&
+      usableEquity(balance),
+  );
+  if (!endingBalance) return false;
+  const priorDate = `${Number(latestSupportedFlow.periodEnd!.slice(0, 4)) - 1}${latestSupportedFlow.periodEnd!.slice(4)}`;
+  return !itrPeriods.some(
+    (opening) =>
+      opening.sourceDocument === "ITR" &&
+      opening.exerciseOrder === "previous" &&
+      opening.filingReferenceDate === latestSupportedFlow.filingReferenceDate &&
+      (opening.periodEnd ?? opening.referenceDate) === priorDate &&
+      usableEquity(opening) &&
+      opening.equityAccount === endingBalance.equityAccount &&
+      opening.equityConcept === endingBalance.equityConcept &&
+      opening.equityVersion === endingBalance.equityVersion,
+  );
+}
+
 function accountValue(period: AccountMap, account: string) {
   return period.get(account)?.value ?? null;
 }
@@ -568,8 +651,24 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       });
       return [];
     });
+    const previousQuarterly = needsPriorYearLtmRoeBalances(annual, quarterly)
+      ? await this.readDocument(
+          "ITR",
+          currentYear - 1,
+          normalizedCnpj,
+          issuer.code,
+          ticker,
+        ).catch((error) => {
+          logger.warn("stock_fundamentals_cvm_prior_itr_unavailable", {
+            ticker,
+            cnpj: normalizedCnpj,
+            error,
+          });
+          return [];
+        })
+      : [];
     const latestByPeriod = new Map<string, FundamentalPeriod>();
-    for (const period of [...annual, ...quarterly]) {
+    for (const period of [...annual, ...quarterly, ...previousQuarterly]) {
       const key = [
         period.sourceDocument,
         period.periodStart ?? "",

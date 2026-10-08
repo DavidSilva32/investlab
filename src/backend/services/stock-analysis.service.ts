@@ -25,10 +25,24 @@ const tickerSchema = z
   .regex(/^[A-Z]{4}[0-9]{1,2}$/, "Informe um ticker B3 válido.");
 const cacheDurationMs = 1000 * 60 * 60 * 24;
 const quoteFreshnessMs = 7 * 24 * 60 * 60 * 1000;
+const fundamentalsNormalizationRevision = "cvm-v2";
+
+function currentFundamentalsSourceVersion() {
+  return `${new Date().getUTCFullYear()}-${fundamentalsNormalizationRevision}`;
+}
 
 function numericValue(value: string | null) {
   const parsed = value === null ? Number.NaN : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isUsableConsolidatedEquity(period: FundamentalPeriod) {
+  return (
+    period.equityConcept === "consolidated_equity" &&
+    ["2.03", "2.07", "2.08"].includes(period.equityAccount ?? "") &&
+    Boolean(period.equityVersion) &&
+    numericValue(period.equity) !== null
+  );
 }
 
 function normalizeCnpj(value: string | null | undefined) {
@@ -466,11 +480,12 @@ export function calculateAnalysisIndicators(
           (period) =>
             (period.periodEnd ?? period.referenceDate) ===
               roeFlowPeriod.periodEnd &&
-            (period.exerciseOrder ?? "last") === "last",
+            (period.exerciseOrder ?? "last") === "last" &&
+            isUsableConsolidatedEquity(period),
         ),
       )
     : [];
-  const openingBalances =
+  const currentFilingOpeningBalances =
     usesLtmRoe && ltm
       ? deduplicateEquivalentBalances(
           periods.filter(
@@ -478,11 +493,29 @@ export function calculateAnalysisIndicators(
               period.sourceDocument === "ITR" &&
               period.exerciseOrder === "previous" &&
               period.filingReferenceDate === ltm.filingReferenceDate &&
+              isUsableConsolidatedEquity(period) &&
               (period.periodEnd ?? period.referenceDate) ===
                 subtractUtcYear(ltm.periodEnd!),
           ),
         )
       : [];
+  const priorFilingOpeningBalances =
+    usesLtmRoe && ltm && currentFilingOpeningBalances.length === 0
+      ? deduplicateEquivalentBalances(
+          periods.filter(
+            (period) =>
+              period.sourceDocument === "ITR" &&
+              period.exerciseOrder === "last" &&
+              isUsableConsolidatedEquity(period) &&
+              (period.periodEnd ?? period.referenceDate) ===
+                subtractUtcYear(ltm.periodEnd!),
+          ),
+        )
+      : [];
+  const openingBalances =
+    currentFilingOpeningBalances.length > 0
+      ? currentFilingOpeningBalances
+      : priorFilingOpeningBalances;
   const openingBalance = usesLtmRoe
     ? openingBalances.length === 1
       ? openingBalances[0]
@@ -521,8 +554,11 @@ export function calculateAnalysisIndicators(
         latestBalanceAtFlowEnd[0]!.equityConcept ===
           openingBalance.equityConcept &&
         latestBalanceAtFlowEnd[0]!.equityVersion &&
-        latestBalanceAtFlowEnd[0]!.equityVersion ===
-          openingBalance.equityVersion,
+        openingBalance.equityVersion &&
+        (openingBalance.filingReferenceDate !==
+          latestBalanceAtFlowEnd[0]!.filingReferenceDate ||
+          latestBalanceAtFlowEnd[0]!.equityVersion ===
+            openingBalance.equityVersion),
       )
     : Boolean(
         latestAnnual &&
@@ -790,6 +826,9 @@ export class StockAnalysisService {
     const cacheValid =
       cached.length > 0 &&
       cacheIdentityMatches &&
+      cached.every(
+        (period) => period.sourceVersion === currentFundamentalsSourceVersion(),
+      ) &&
       Date.now() - cached[0].fetchedAt.getTime() < cacheDurationMs;
     logger.info("stock_fundamentals_cache_checked", {
       requestId,
@@ -892,6 +931,9 @@ export class StockAnalysisService {
       cached.every((period) => normalizeCnpj(period.cnpj) === expectedCnpj);
     const cacheFresh =
       cached.length > 0 &&
+      cached.every(
+        (period) => period.sourceVersion === currentFundamentalsSourceVersion(),
+      ) &&
       Date.now() - cached[0]!.fetchedAt.getTime() < cacheDurationMs;
     const cacheValid = cacheFresh && cacheIdentityMatches;
     logger.info("stock_fundamentals_cache_checked", {
@@ -953,7 +995,7 @@ export class StockAnalysisService {
       await this.repository.save(
         ticker,
         cnpj,
-        String(new Date().getUTCFullYear()),
+        currentFundamentalsSourceVersion(),
         periods,
       );
       logger.info("stock_fundamentals_persisted", {
