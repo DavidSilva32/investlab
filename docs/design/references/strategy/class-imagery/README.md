@@ -2,12 +2,12 @@
 
 ## Proposta visual
 
-| Arquivo | ID oficial | Nome | Uso e texto alternativo |
-| --- | --- | --- | --- |
-| [fixed-income-office.webp](./fixed-income-office.webp) | `fixed_income` | Renda fixa | Notebook com interface discreta de títulos, documentos e instituição financeira ao fundo. |
-| [brazilian-equities.webp](./brazilian-equities.webp) | `brazilian_equities` | Ações e BDRs | Distrito empresarial brasileiro. |
-| [international-etfs.webp](./international-etfs.webp) | `international_etfs` | ETFs internacionais | Distrito empresarial global visto de um porto. |
-| [fiis.webp](./fiis.webp) | `fiis` | Fundos imobiliários (FIIs) | Galpão logístico como exemplo de imóvel que pode compor alguns FIIs. |
+| Arquivo                                                | ID oficial           | Nome                       | Uso e texto alternativo                                                                   |
+| ------------------------------------------------------ | -------------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| [fixed-income-office.webp](./fixed-income-office.webp) | `fixed_income`       | Renda fixa                 | Notebook com interface discreta de títulos, documentos e instituição financeira ao fundo. |
+| [brazilian-equities.webp](./brazilian-equities.webp)   | `brazilian_equities` | Ações e BDRs               | Distrito empresarial brasileiro.                                                          |
+| [international-etfs.webp](./international-etfs.webp)   | `international_etfs` | ETFs internacionais        | Distrito empresarial global visto de um porto.                                            |
+| [fiis.webp](./fiis.webp)                               | `fiis`               | Fundos imobiliários (FIIs) | Galpão logístico como exemplo de imóvel que pode compor alguns FIIs.                      |
 
 ### Microtextos propostos
 

@@ -15,9 +15,8 @@ O mockup serve como referência visual da marca e de seu uso no menu lateral e n
 
 ## Estados de entrega
 
-| Estado                      | Situação                                                                  |
-| --------------------------- | ------------------------------------------------------------------------- |
-| Referência existente        | Sim; mockup fornecido e aprovado pelo usuário para orientar a identidade. |
-| Implementação               | Logo aplicado no shell e favicon vetorial configurado no App Router.      |
+| Estado                       | Situação                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| Referência existente         | Sim; mockup fornecido e aprovado pelo usuário para orientar a identidade. |
+| Implementação                | Logo aplicado no shell e favicon vetorial configurado no App Router.      |
 | Comparação visual em browser | Pendente; não há captura real da aplicação registrada nesta referência.   |
-
