@@ -11,6 +11,7 @@ import {
   Settings,
   WalletCards,
 } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { LogoutButton } from "@/components/logout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -28,12 +29,10 @@ function Brand() {
   return (
     <Link
       href="/"
-      className="flex items-center gap-2.5 font-semibold tracking-tight"
+      aria-label="InvestLab, página inicial"
+      className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <span className="grid size-8 place-items-center rounded-lg bg-brand text-sm font-bold text-brand-foreground">
-        I
-      </span>
-      InvestLab
+      <BrandLogo />
     </Link>
   );
 }
@@ -73,7 +72,7 @@ export function AppShell({
         <div className="px-1 py-2">
           <Brand />
         </div>
-        <div className="mt-10">
+        <div className="mt-8">
           <Navigation pathname={pathname} />
         </div>
         <div className="mt-auto border-t border-border/70 pt-5">

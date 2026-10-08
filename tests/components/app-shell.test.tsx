@@ -12,13 +12,20 @@ vi.mock("next/link", () => ({
     children,
     className,
     "aria-current": ariaCurrent,
+    "aria-label": ariaLabel,
   }: {
     href: string;
     children: React.ReactNode;
     className?: string;
     "aria-current"?: "page";
+    "aria-label"?: string;
   }) => (
-    <a href={href} className={className} aria-current={ariaCurrent}>
+    <a
+      href={href}
+      className={className}
+      aria-current={ariaCurrent}
+      aria-label={ariaLabel}
+    >
       {children}
     </a>
   ),
@@ -27,6 +34,7 @@ vi.mock("@/components/logout-button", () => ({
   LogoutButton: () => <button>Sair</button>,
 }));
 import { AppShell } from "@/components/app-shell";
+import { BrandLogo } from "@/components/brand-logo";
 
 afterEach(cleanup);
 
@@ -39,6 +47,26 @@ describe("AppShell", () => {
       </AppShell>,
     );
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
+    expect(
+      screen
+        .getByRole("link", { name: "InvestLab, página inicial" })
+        .getAttribute("href"),
+    ).toBe("/");
+    const symbol = screen.getByTestId("investlab-symbol");
+    expect(symbol.getAttribute("aria-hidden")).toBe("true");
+    const gradientIds = Array.from(
+      symbol.querySelectorAll("linearGradient"),
+    ).map((gradient) => gradient.id);
+    const paintReferences = Array.from(
+      symbol.querySelectorAll("[fill], [stroke]"),
+    )
+      .map(
+        (shape) => shape.getAttribute("fill") ?? shape.getAttribute("stroke"),
+      )
+      .filter((paint) => paint?.startsWith("url(#"))
+      .map((paint) => paint?.slice(5, -1));
+    expect(paintReferences.length).toBeGreaterThan(0);
+    paintReferences.forEach((id) => expect(gradientIds).toContain(id));
     expect(screen.getAllByText("Carteira").length).toBeGreaterThan(1);
     expect(screen.getAllByText("Usuário autorizado").length).toBeGreaterThan(0);
     expect(
@@ -46,6 +74,12 @@ describe("AppShell", () => {
         .getAllByRole("link", { name: "Carteira" })
         .every((link) => link.getAttribute("aria-current") === "page"),
     ).toBe(true);
+  });
+
+  it("supports the isolated symbol variant", () => {
+    render(<BrandLogo symbolOnly />);
+    expect(screen.getByTestId("investlab-symbol")).toBeTruthy();
+    expect(screen.queryByText("InvestLab")).toBeNull();
   });
 
   it("keeps the analysis navigation active on nested analysis paths", () => {
