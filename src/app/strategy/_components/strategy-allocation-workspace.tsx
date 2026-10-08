@@ -256,15 +256,6 @@ export function StrategyAllocationWorkspace({
     international_etfs: internationalEtfsImage,
     fiis: fiisImage,
   } as const;
-  const classDescriptions = {
-    fixed_income:
-      "Títulos com prazo, remuneração e liquidez que variam conforme o produto.",
-    brazilian_equities:
-      "Exposição a empresas brasileiras por meio de ações e BDRs.",
-    international_etfs: "ETFs com exposição a mercados fora do Brasil.",
-    fiis: "Podem investir em imóveis, recebíveis imobiliários ou ambos.",
-  } as const;
-
   function updateDraft(
     id: (typeof strategyAssetClasses)[number]["id"],
     value: string,
@@ -515,9 +506,6 @@ export function StrategyAllocationWorkspace({
                         >
                           {label}
                         </h3>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {classDescriptions[id]}
-                        </p>
                         <p className="mt-1 text-sm text-muted-foreground">
                           Valor atual
                         </p>

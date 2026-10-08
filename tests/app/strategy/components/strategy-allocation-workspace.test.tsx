@@ -228,18 +228,6 @@ describe("StrategyAllocationWorkspace", () => {
 
     const classRows = screen.getByRole("dialog").querySelectorAll("section");
     expect(classRows).toHaveLength(4);
-    expect(classRows[0]?.textContent).toContain(
-      "Títulos com prazo, remuneração e liquidez que variam conforme o produto.",
-    );
-    expect(classRows[1]?.textContent).toContain(
-      "Exposição a empresas brasileiras por meio de ações e BDRs.",
-    );
-    expect(classRows[2]?.textContent).toContain(
-      "ETFs com exposição a mercados fora do Brasil.",
-    );
-    expect(classRows[3]?.textContent).toContain(
-      "Podem investir em imóveis, recebíveis imobiliários ou ambos.",
-    );
     classRows.forEach((row) => {
       const image = row.querySelector("img");
       expect(image).not.toBeNull();
