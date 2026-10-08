@@ -528,13 +528,14 @@ export function StockAnalysisDashboard({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Evolução dos fundamentos anuais</CardTitle>
+          <CardTitle>Evolução dos fundamentos financeiros</CardTitle>
           <CardDescription>
-            Comparação visual entre os exercícios anuais informados.
+            Receita e lucro líquido comparam DFP anuais. Patrimônio líquido
+            mostra saldos reportados com suas datas-base.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <FundamentalsEvolution periods={annual} />
+          <FundamentalsEvolution periods={analysis.fundamentals} />
         </CardContent>
       </Card>
       <Collapsible>

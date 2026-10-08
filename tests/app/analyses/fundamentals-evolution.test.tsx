@@ -33,10 +33,20 @@ vi.mock("recharts", () => ({
     data,
     children,
   }: {
-    data: Array<{ year: string }>;
+    data: Array<{
+      periodLabel: string;
+      equity: number | null;
+      sourceDocument?: string;
+    }>;
     children: React.ReactNode;
   }) => (
-    <div data-years={data.map((point) => point.year).join(",")}>{children}</div>
+    <div
+      data-periods={data.map((point) => point.periodLabel).join(",")}
+      data-equity={data.map((point) => point.equity ?? "").join(",")}
+      data-sources={data.map((point) => point.sourceDocument ?? "").join(",")}
+    >
+      {children}
+    </div>
   ),
   CartesianGrid: () => null,
   Legend: () => null,
@@ -91,6 +101,14 @@ describe("FundamentalsEvolution", () => {
             netIncome: "70000",
             equity: "550000",
           },
+          {
+            referenceDate: "2025-12-31",
+            sourceDocument: "ITR",
+            periodType: "interim",
+            revenue: null,
+            netIncome: null,
+            equity: "620000",
+          },
         ]}
       />,
     );
@@ -108,17 +126,48 @@ describe("FundamentalsEvolution", () => {
       "var(--chart-category-4)",
     ]);
     expect(
-      document.querySelector("[data-years='2024,2025,2026']"),
+      document.querySelector("[data-periods='2024,2025,2026']"),
     ).toBeTruthy();
+    const equityChart = document.querySelector(
+      "[data-periods='31/12/2024,30/06/2025,31/12/2025,31/12/2026']",
+    );
+    expect(equityChart?.getAttribute("data-sources")).toBe("DFP,ITR,DFP,DFP");
+    expect(equityChart?.getAttribute("data-equity")).toBe(
+      "500000,550000,610000,0",
+    );
     expect(screen.getAllByTestId("compact-tick").length).toBe(3);
   });
 
-  it("renders nothing when annual statements are absent", () => {
-    const { container } = render(<FundamentalsEvolution periods={[]} />);
-    expect(container.firstChild).toBeNull();
+  it("shows a status when neither annual statements nor equity balances exist", () => {
+    render(<FundamentalsEvolution periods={[]} />);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Não há demonstrativos anuais ou saldos de patrimônio líquido disponíveis nos dados recebidos.",
+    );
   });
 
-  it("shows an accessible unavailable state for annual equity without mixing ITR", () => {
+  it("labels an annual-only equity series as DFP", () => {
+    render(
+      <FundamentalsEvolution
+        periods={[
+          {
+            referenceDate: "2025-12-31",
+            sourceDocument: "DFP",
+            periodType: "annual",
+            periodBasis: "annual",
+            revenue: "120",
+            netIncome: "12",
+            equity: "500",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText("Saldos anuais DFP, identificados pela data-base real."),
+    ).toBeTruthy();
+  });
+
+  it("shows dated ITR balances when annual DFP equity is absent", () => {
     const { container } = render(
       <FundamentalsEvolution
         periods={[
@@ -137,22 +186,89 @@ describe("FundamentalsEvolution", () => {
             equity: null,
           },
           {
+            referenceDate: "2026-03-31",
+            filingReferenceDate: "2026-05-01",
+            sourceDocument: "ITR",
+            periodType: "interim",
+            revenue: null,
+            netIncome: null,
+            equity: "450",
+          },
+          {
+            referenceDate: "2026-03-31",
+            filingReferenceDate: "2026-05-15",
+            sourceDocument: "ITR",
+            periodType: "interim",
+            revenue: null,
+            netIncome: null,
+            equity: "460",
+          },
+          {
             referenceDate: "2026-06-30",
             sourceDocument: "ITR",
+            periodType: "interim",
             revenue: "70",
             netIncome: "7",
             equity: "500",
+          },
+          {
+            referenceDate: "2026-12-31",
+            sourceDocument: "ITR",
+            periodType: "interim",
+            isDerived: true,
+            revenue: "90",
+            netIncome: "9",
+            equity: "600",
+          },
+          {
+            referenceDate: "2026-99-99",
+            sourceDocument: "ITR",
+            periodType: "interim",
+            revenue: "100",
+            netIncome: "10",
+            equity: "700",
+          },
+          {
+            referenceDate: "2026-09-30",
+            sourceDocument: "ITR",
+            periodType: "annual",
+            revenue: "100",
+            netIncome: "10",
+            equity: "800",
+          },
+          {
+            referenceDate: "2026-09-30",
+            sourceDocument: "ITR",
+            periodType: "interim",
+            revenue: "not-a-number",
+            netIncome: null,
+            equity: "not-a-number",
           },
         ]}
       />,
     );
 
-    expect(container.querySelector('[role="status"]')?.textContent).toBe(
-      "Não há valores anuais de patrimônio líquido disponíveis nos demonstrativos DFP.",
-    );
+    expect(
+      screen.getByText(
+        "Saldos intermediários ITR, identificados pela data-base real.",
+      ),
+    ).toBeTruthy();
     expect(
       container.querySelectorAll('[data-testid="chart-config-colors"]'),
-    ).toHaveLength(2);
-    expect(container.querySelector("[data-years='2024,2025']")).toBeTruthy();
+    ).toHaveLength(3);
+    expect(container.querySelector("[data-periods='2024,2025']")).toBeTruthy();
+    expect(
+      container.querySelector("[data-periods='31/03/2026,30/06/2026']"),
+    ).toBeTruthy();
+    expect(
+      container
+        .querySelector("[data-periods='31/03/2026,30/06/2026']")
+        ?.getAttribute("data-equity"),
+    ).toBe("460,500");
+    expect(
+      container
+        .querySelector("[data-periods='31/03/2026,30/06/2026']")
+        ?.getAttribute("data-sources"),
+    ).toBe("ITR,ITR");
   });
 });
