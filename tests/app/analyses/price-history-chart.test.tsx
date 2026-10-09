@@ -1,15 +1,14 @@
 ﻿// @vitest-environment jsdom
+import { Children, isValidElement } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PriceHistoryChart } from "@/app/analyses/_components/price-history-chart";
 
 vi.mock("recharts", () => ({
-  CartesianGrid: () => null,
-  Line: ({ stroke }: { stroke: string }) => (
-    <div data-stroke={stroke} data-testid="price-line" />
+  Area: ({ stroke, fill }: { stroke: string; fill: string }) => (
+    <div data-fill={fill} data-stroke={stroke} data-testid="price-area" />
   ),
-  Legend: () => null,
-  LineChart: ({
+  AreaChart: ({
     children,
     data,
   }: {
@@ -20,9 +19,13 @@ vi.mock("recharts", () => ({
       data-points={data.map((point) => point.date).join(",")}
       data-testid="price-chart"
     >
-      {children}
+      {Children.toArray(children).filter(
+        (child) => !isValidElement(child) || child.type !== "defs",
+      )}
     </div>
   ),
+  CartesianGrid: () => null,
+  Legend: () => null,
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -56,8 +59,11 @@ describe("PriceHistoryChart", () => {
     expect(chart.querySelector("style")?.textContent).toContain(
       "--color-close: var(--primary)",
     );
-    expect(screen.getByTestId("price-line").dataset.stroke).toBe(
+    expect(screen.getByTestId("price-area").dataset.stroke).toBe(
       "var(--color-close)",
+    );
+    expect(screen.getByTestId("price-area").dataset.fill).toBe(
+      "url(#price-history-area)",
     );
     expect(screen.getByTestId("month-label").textContent).toMatch(/jan/i);
     expect(screen.getByTestId("price-label").textContent).toContain("10,00");

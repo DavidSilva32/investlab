@@ -10,15 +10,23 @@ Estados da atualização: referência criada: sim; contexto funcional revisado: 
 
 ## Análise individual
 
-| Experiência e estado                                                                                                                                                          | Origem                                                                                                                                         | Conteúdo representado                                                                                                                                                                                                                                                       | Implementação e validação                                                                                                |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Aba “Análise individual” em `/analyses?ticker=ABCD3`, consulta carregada com “1 ano” selecionado. Tema escuro; enquadramento do conteúdo, sem o cabeçalho global do AppShell. | [individual-analysis-reference.png](./individual-analysis-reference.png), proposta gerada pelo imagegen integrado; não é captura da aplicação. | Busca de ticker; resumo da cotação e suas variações; histórico de preços de fechamento e períodos disponíveis; P/L, P/VP, ROE e margem líquida com origem/período; leitura dos dados anuais; evolução de receita, lucro líquido e patrimônio; detalhes técnicos recolhidos. | Referência aprovada e implementada. Testes focados e typecheck passaram; comparação visual real desktop/mobile pendente. |
+| Experiência e estado                                                                                                                                                          | Origem                                                                                                                                         | Conteúdo representado                                                                                                                                                                                                                                             | Implementação e validação                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aba “Análise individual” em `/analyses?ticker=ABCD3`, consulta carregada com “1 ano” selecionado. Tema escuro; enquadramento do conteúdo, sem o cabeçalho global do AppShell. | [individual-analysis-reference.png](./individual-analysis-reference.png), proposta gerada pelo imagegen integrado; não é captura da aplicação. | Busca de ticker; resumo da cotação e suas variações; histórico preenchido de preços de fechamento; indicadores explicados em português; leitura dos dados anuais; evolução de cinco anos de receita, lucro líquido e patrimônio; detalhes de períodos recolhidos. | Referência e direção visual aprovadas; ajustes desta issue em implementação. Testes focados passaram; comparação visual real desktop/mobile pendente. |
 
 Os valores, ticker, empresa, datas e séries da imagem são sintéticos e ilustram somente campos suportados. A variação no período exclui dividendos, como informa a interface. Os períodos disponíveis dependem da cobertura retornada. A leitura anual pode variar conforme os demonstrativos recebidos; não é classificação, recomendação ou previsão.
 
 A proposta remove o bloco genérico “Sobre os dados financeiros”, conforme pedido do usuário. A origem e o período permanecem junto a cada indicador; os detalhes técnicos ficam dedicados aos demonstrativos e às informações específicas do ativo. A cotação não recebeu fonte ou data inventada.
 
 Não incluir máximas, mínimas, volume, setor, subsetor, Tag Along, liquidez, outros indicadores ausentes do código, estimativa de preço-alvo, ações de compra/venda ou recomendação. A proposta antiga foi substituída; seu verde e seus dados sem suporte não são referência ativa.
+
+## Proposta de simplificação — issue #125
+
+[`individual-analysis-simplification-proposal-issue-125.png`](./individual-analysis-simplification-proposal-issue-125.png) é uma referência desktop gerada pelo imagegen integrado em 09/10/2026 para `/analyses?ticker=ABCD3`, aba “Análise individual”, consulta carregada e período “1 ano” selecionado. É uma proposta, não uma captura do produto. O enquadramento mostra somente o conteúdo da aba e omite o AppShell.
+
+A composição agrupa a cotação e o desempenho do período, o gráfico preenchido de preços, quatro indicadores com nomes explicativos, a leitura anual existente, a evolução de cinco anos da receita, do lucro líquido e do patrimônio e os demonstrativos em uma área recolhida. Os valores, ticker, empresa, datas e séries são sintéticos. Não representam fonte real nem afirmam dados de um emissor específico.
+
+Estados da proposta em 09/10/2026: referência criada e revisada: sim; direção aprovada pelo usuário: sim; ajustes de interface em andamento. A implementação mantém os cinco anos de evolução, simplifica os termos visíveis, conserva resultados anuais e trimestrais em detalhes recolhidos, e usa área preenchida no histórico de preços. A comparação visual real desktop/mobile permanece pendente.
 
 ## Cores
 
@@ -28,9 +36,9 @@ Usar superfícies neutras e identidade azul. O histórico de cotação usa a cor
 
 - Referência atualizada: sim.
 - Contexto funcional do estado ilustrado: revisado nos componentes ativos.
-- Aprovação visual do usuário: aprovada.
-- Implementação desta proposta: concluída; os indicadores ocupam a área principal e o bloco genérico sobre dados financeiros foi removido.
-- Verificação estrutural: testes focados, ESLint, typecheck e `git diff --check` passaram.
+- Aprovação visual da direção e dos ajustes: aprovada pelo usuário em 09/10/2026.
+- Implementação: em andamento; interface compacta, linguagem simples, cinco anos preservados e histórico de preço com área preenchida.
+- Validação: testes focados (66), cobertura (2.037 testes e 100% em todas as métricas), ESLint, typecheck, Prettier e build passaram.
 - Comparação visual real e capturas desktop/mobile: pendentes.
 
 ## Comparar empresas

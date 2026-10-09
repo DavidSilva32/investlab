@@ -1,4 +1,4 @@
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
@@ -53,11 +53,17 @@ export function PriceHistoryChart({
       className="h-64 w-full aspect-auto"
       aria-label="Gráfico do histórico de preço de fechamento"
     >
-      <LineChart
+      <AreaChart
         accessibilityLayer
         data={points}
         margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
       >
+        <defs>
+          <linearGradient id="price-history-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="date"
@@ -84,15 +90,16 @@ export function PriceHistoryChart({
             />
           }
         />
-        <Line
+        <Area
           type="monotone"
           dataKey="close"
           stroke="var(--color-close)"
           strokeWidth={2}
+          fill="url(#price-history-area)"
           dot={false}
           activeDot={{ r: 4 }}
         />
-      </LineChart>
+      </AreaChart>
     </ChartContainer>
   );
 }

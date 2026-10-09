@@ -29,6 +29,13 @@ vi.mock("sonner", () => ({
   },
 }));
 vi.mock("recharts", () => ({
+  Area: () => null,
+  AreaChart: ({ data }: { data: Array<{ date: string }> }) => (
+    <div
+      data-points={data.map((point) => point.date).join(",")}
+      data-testid="price-chart"
+    />
+  ),
   CartesianGrid: () => null,
   Bar: () => null,
   Cell: () => null,
@@ -54,22 +61,7 @@ vi.mock("recharts", () => ({
       {children}
     </div>
   ),
-  Line: () => null,
   Legend: () => null,
-  LineChart: ({
-    children,
-    data,
-  }: {
-    children: React.ReactNode;
-    data: Array<{ date: string }>;
-  }) => (
-    <div
-      data-points={data.map((point) => point.date).join(",")}
-      data-testid="price-chart"
-    >
-      {children}
-    </div>
-  ),
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -163,7 +155,7 @@ afterEach(() => {
 });
 
 describe("StockAnalysisDashboard", () => {
-  it("labels the last observed quote and the retrieval time of stale CVM fundamentals", async () => {
+  it("labels the last observed quote and retrieval time of stale financial data", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -188,9 +180,11 @@ describe("StockAnalysisDashboard", () => {
       "/learn?class=brazilian_equities#class-content",
     );
 
-    expect((await screen.findByRole("status")).textContent).toMatch(
-      /Não foi possível obter os demonstrativos mais recentes.*obtidos em/,
-    );
+    expect(
+      await screen.findByText(
+        /Não foi possível atualizar os dados financeiros.*obtidos em/,
+      ),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         /Última cotação observada; não representa cotação atual/,
@@ -330,14 +324,16 @@ describe("StockAnalysisDashboard", () => {
     expect(
       screen.getByText("Variação do preço no período · 1 ano"),
     ).toBeTruthy();
-    expect(screen.getByText("Sem dividendos")).toBeTruthy();
+    expect(screen.getByText("Não inclui dividendos")).toBeTruthy();
     const assetSummary = screen.getByText("Ativo consultado").closest(".grid");
     expect(assetSummary?.children[0].textContent).toContain("PETR4");
     expect(assetSummary?.children[0].textContent).toMatch(/R\$\s*30,00/);
     expect(assetSummary?.children[1].textContent).toContain(
       "Variação do preço no período",
     );
-    expect(assetSummary?.children[1].textContent).toContain("Sem dividendos");
+    expect(assetSummary?.children[1].textContent).toContain(
+      "Não inclui dividendos",
+    );
     expect(screen.getByText(/\+24(?:,00)?%/).className).toContain(
       "text-status-success",
     );
@@ -351,13 +347,21 @@ describe("StockAnalysisDashboard", () => {
     expect(screen.getByText("8.4x")).toBeTruthy();
     expect(screen.getByText("1.2x")).toBeTruthy();
     expect(screen.getByText("18.4%")).toBeTruthy();
-    expect(screen.getByText("Sem demonstrativo compatível")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Não há dados suficientes de receita e lucro para este indicador.",
+      ),
+    ).toBeTruthy();
     await userEvent.setup().click(
       screen.getByRole("button", {
-        name: /ver demonstrativos e detalhes técnicos/i,
+        name: /ver dados detalhados/i,
       }),
     );
-    expect(await screen.findByText(/acumulados no exercício/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Mostra o total desde o começo do ano/),
+    ).toBeTruthy();
+    expect(await screen.findByText(/De onde vêm estes dados/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\b(DFP|ITR|LTM)\b/);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "1 mês" }));
@@ -576,7 +580,9 @@ describe("StockAnalysisDashboard", () => {
     render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: /ajuda sobre p\/l/i }),
+      await screen.findByRole("button", {
+        name: /ajuda sobre preço em relação ao lucro/i,
+      }),
     );
     expect(
       await screen.findByText(/Compara o valor de mercado da empresa/i),
@@ -619,11 +625,17 @@ it("handles missing company and price data with no available history interval", 
   expect(within(periodChange!).getByText("Indisponível")).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", {
-      name: /ver demonstrativos e detalhes técnicos/i,
+      name: /ver dados detalhados/i,
     }),
   );
-  expect(screen.getAllByText(/Sem demonstra/)).toHaveLength(2);
-  expect(screen.getByText(/Sem informa/)).toBeTruthy();
+  expect(
+    screen.getByText("Não há resultados anuais disponíveis."),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Não há atualizações financeiras disponíveis durante o ano.",
+    ),
+  ).toBeTruthy();
 });
 
 it("returns to search when a successful response has no analysis body", async () => {
@@ -781,35 +793,36 @@ it("shows the annual fact reading and keeps statement detail collapsed", async (
   );
   render(<StockAnalysisDashboard initialTicker="PETR4" />);
 
-  expect(await screen.findByText("Lucro líquido do exercício")).toBeTruthy();
+  expect(await screen.findByText("Lucro líquido do ano")).toBeTruthy();
   expect(screen.getByText("Receita anual")).toBeTruthy();
   expect(screen.getByText("Resultado positivo")).toBeTruthy();
   expect(
     screen.getByText(
-      "Compare a evolução da receita, do lucro líquido e do patrimônio líquido nos períodos informados.",
+      "Receita, lucro e patrimônio da empresa em cada ano disponível.",
     ),
   ).toBeTruthy();
   const charts = screen.getAllByTestId("annual-chart");
   expect(charts.map((chart) => chart.getAttribute("data-periods"))).toEqual([
-    "2024,2025",
-    "2024,2025",
-    "2026",
+    "2022,2023,2024,2025,2026",
+    "2022,2023,2024,2025,2026",
+    "2022,2023,2024,2025,2026",
   ]);
-  expect(charts[2].getAttribute("data-equity")).toBe("550000");
-  expect(charts[2].getAttribute("data-references")).toBe("2026-06-30");
+  expect(charts[2].getAttribute("data-equity")).toBe(",,,,550000");
+  expect(charts[2].getAttribute("data-references")).toBe(",,,,2026-06-30");
   expect(
     screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
   ).toBeNull();
   expect(
     screen.queryByText(/P\/L e P\/VP usam o valor de mercado da BRAPI/),
   ).toBeNull();
-  expect(screen.queryByText("Períodos intermediários")).toBeNull();
+  expect(screen.queryByText("Atualizações durante o ano")).toBeNull();
   await userEvent.setup().click(
     screen.getByRole("button", {
-      name: /ver demonstrativos e detalhes técnicos/i,
+      name: /ver dados detalhados/i,
     }),
   );
-  expect(await screen.findByText("Períodos intermediários")).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/\b(DFP|ITR|LTM)\b/);
+  expect(await screen.findByText("Atualizações durante o ano")).toBeTruthy();
   expect(
     screen.queryByRole("heading", { name: "Sobre os dados financeiros" }),
   ).toBeNull();
@@ -854,17 +867,23 @@ it("separates accumulated and isolated ITR periods and handles missing quote tim
   expect(await screen.findByText("Data da cotação não informada")).toBeTruthy();
   await userEvent.setup().click(
     screen.getByRole("button", {
-      name: /ver demonstrativos e detalhes técnicos/i,
+      name: /ver dados detalhados/i,
     }),
   );
   expect(
     await screen.findByRole("heading", {
-      name: "Trimestres isolados informados",
+      name: "Resultados de cada trimestre",
     }),
   ).toBeTruthy();
-  expect(screen.getByText("Receita acumulada no exercício")).toBeTruthy();
+  expect(screen.getByText("Receita acumulada no ano")).toBeTruthy();
   expect(screen.getByText("Receita do trimestre")).toBeTruthy();
-  expect(screen.getAllByText(/Comparativo informado até/)).toHaveLength(1);
+  expect(
+    screen.getByRole("heading", { name: "Resultados de cada trimestre" }),
+  ).toBeTruthy();
+  expect(screen.getAllByText(/Mesmo período do ano anterior até/)).toHaveLength(
+    1,
+  );
+  expect(document.body.textContent).not.toMatch(/\b(DFP|ITR|LTM)\b/);
 });
 
 it("ignores a stale request rejection after a newer ticker has loaded", async () => {
@@ -889,6 +908,6 @@ it("ignores a stale request rejection after a newer ticker has loaded", async ()
     await Promise.resolve();
   });
 
-  expect(await screen.findByText("Indicadores fundamentalistas")).toBeTruthy();
+  expect(await screen.findByText("Indicadores financeiros")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
 });

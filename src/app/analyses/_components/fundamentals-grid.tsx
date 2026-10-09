@@ -90,8 +90,8 @@ export function FundamentalsGrid({
     return (
       <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
         {type === "DFP"
-          ? "Sem demonstrações financeiras anuais disponíveis."
-          : "Sem informações trimestrais disponíveis."}
+          ? "Não há resultados anuais disponíveis."
+          : "Não há atualizações financeiras disponíveis durante o ano."}
       </div>
     );
 
@@ -103,11 +103,7 @@ export function FundamentalsGrid({
           className="rounded-lg border bg-card p-4 shadow-sm"
         >
           <h3 className="font-medium">
-            {type === "ITR"
-              ? period.exerciseOrder === "previous"
-                ? "Comparativo informado até "
-                : "Demonstrativo informado em "
-              : ""}
+            {periodLabelPrefix(period, type)}
             {dateLabel(period.referenceDate)}
           </h3>
           <dl className="mt-3 space-y-2 text-sm">
@@ -148,21 +144,29 @@ function flowLabel(
   type: "DFP" | "ITR",
 ) {
   if (type === "DFP") return label;
+  if (
+    period.exerciseOrder === "previous" &&
+    period.periodBasis === "year_to_date"
+  )
+    return `${label} no mesmo período do ano anterior`;
   const periodDescription =
     period.periodBasis === "year_to_date"
       ? label === "Receita"
-        ? "acumulada no exercício"
-        : "acumulado no exercício"
+        ? "acumulada no ano"
+        : "acumulado no ano"
       : period.periodBasis === "quarterly"
         ? "do trimestre"
-        : "com período não identificado";
-  const comparative =
-    period.exerciseOrder === "previous"
-      ? label === "Receita"
-        ? "comparativa "
-        : "comparativo "
-      : "";
-  return `${label} ${comparative}${periodDescription}`;
+        : "em período não informado";
+  return `${label} ${periodDescription}`;
+}
+
+function periodLabelPrefix(period: AnalysisPeriod, type: "DFP" | "ITR") {
+  if (type === "DFP") return "";
+  if (period.exerciseOrder === "previous")
+    return "Mesmo período do ano anterior até ";
+  if (period.periodBasis === "quarterly") return "Trimestre encerrado em ";
+  if (period.periodBasis === "year_to_date") return "Acumulado no ano até ";
+  return "Informações publicadas em ";
 }
 
 function FundamentalValue({

@@ -24,7 +24,11 @@ describe("FundamentalIndicatorCard", () => {
     expect(screen.getByText("8.4x")).toBeTruthy();
     expect(screen.getByText(/Cotação observada em/)).toBeTruthy();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ajuda sobre Preço em relação ao lucro",
+      }),
+    );
     expect(
       await screen.findByText(/Compara o valor de mercado da empresa/i),
     ).toBeTruthy();
@@ -34,7 +38,7 @@ describe("FundamentalIndicatorCard", () => {
     ).toBeNull();
   });
 
-  it("keeps a precise unavailable reason", () => {
+  it("uses a plain-language unavailable message instead of backend jargon", () => {
     render(
       <FundamentalIndicatorCard
         indicator={{
@@ -50,7 +54,7 @@ describe("FundamentalIndicatorCard", () => {
     expect(screen.getByText("Indisponível")).toBeTruthy();
     expect(
       screen.getByText(
-        "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados.",
+        "Não há dados suficientes de lucro e patrimônio ao longo do tempo.",
       ),
     ).toBeTruthy();
   });
@@ -72,7 +76,7 @@ describe("FundamentalIndicatorCard", () => {
 
     expect(
       screen.getByText(
-        /LTM encerrado em 30 de jun\. de 2026 · Cotação observada em 19\/09\/2026, 15:30/,
+        /Últimos 12 meses até 30 de jun\. de 2026 · Cotação observada em 19\/09\/2026, 15:30/,
       ),
     ).toBeTruthy();
   });
@@ -91,7 +95,7 @@ describe("FundamentalIndicatorCard", () => {
     );
 
     expect(screen.getByText("1.2x")).toBeTruthy();
-    expect(screen.getByText(/Acumulado no exercício até/)).toBeTruthy();
+    expect(screen.getByText(/Acumulado no ano até/)).toBeTruthy();
   });
 
   it("labels point-in-time balances and quarterly periods separately", () => {
@@ -134,7 +138,7 @@ describe("FundamentalIndicatorCard", () => {
         }}
       />,
     );
-    expect(screen.getByText(/Acumulado no exercício até/)).toBeTruthy();
+    expect(screen.getByText(/Acumulado no ano até/)).toBeTruthy();
   });
 
   it("makes an invalid market quote timestamp explicit", () => {

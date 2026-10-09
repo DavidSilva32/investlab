@@ -25,10 +25,16 @@ const dateTimeLabel = (value: string) => {
     : null;
 };
 const names: Record<AnalysisIndicator["key"], string> = {
-  pe: "P/L",
-  pb: "P/VP",
-  roe: "ROE",
-  netMargin: "Margem líquida",
+  pe: "Preço em relação ao lucro",
+  pb: "Preço em relação ao patrimônio",
+  roe: "Retorno do patrimônio",
+  netMargin: "Margem de lucro",
+};
+const unavailableMessages: Record<AnalysisIndicator["key"], string> = {
+  pe: "Não há dados suficientes de preço e lucro para este indicador.",
+  pb: "Não há dados suficientes de preço e patrimônio para este indicador.",
+  roe: "Não há dados suficientes de lucro e patrimônio ao longo do tempo.",
+  netMargin: "Não há dados suficientes de receita e lucro para este indicador.",
 };
 const help: Record<
   AnalysisIndicator["key"],
@@ -36,35 +42,35 @@ const help: Record<
 > = {
   pe: {
     definition:
-      "Compara o valor de mercado da empresa com o lucro líquido dos últimos 12 meses quando os períodos oficiais são compatíveis; sem essa base, usa o exercício anual mais recente.",
+      "Compara o valor de mercado da empresa com o lucro dos últimos 12 meses quando há dados compatíveis; sem essa base, usa o resultado anual mais recente.",
     reading:
-      "Um P/L maior pode refletir expectativas de crescimento; um menor pode indicar preço mais baixo em relação ao lucro.",
+      "Um valor mais alto pode refletir expectativas de crescimento; um menor pode indicar preço mais baixo em relação ao lucro.",
     caution:
-      "Lucro negativo torna a relação pouco útil. Compare empresas do mesmo setor e considere dívida, ciclo e itens não recorrentes.",
+      "Se a empresa teve prejuízo, essa comparação pode ajudar menos. Considere também o setor, as dívidas e resultados fora do comum.",
   },
   pb: {
     definition:
-      "Compara o valor de mercado com o patrimônio líquido contábil informado na data-base mais recente.",
+      "Compara o valor de mercado da empresa com o patrimônio informado na data mais recente.",
     reading:
-      "Um P/VP maior indica preço mais alto em relação ao patrimônio; um menor pode refletir desconto ou riscos percebidos.",
+      "Um valor maior indica preço mais alto em relação ao patrimônio; um menor pode refletir desconto ou riscos percebidos.",
     caution:
-      "O patrimônio contábil não mede sozinho o valor dos ativos ou a capacidade de gerar lucro. Setor e composição do balanço importam.",
+      "O patrimônio informado não mostra sozinho o valor dos bens ou a capacidade de gerar lucro. O setor e as dívidas também importam.",
   },
   roe: {
     definition:
-      "Relaciona o lucro líquido do período ao patrimônio líquido médio entre a data inicial e a data final informadas.",
+      "Compara o lucro do período com o patrimônio médio da empresa entre as datas informadas.",
     reading:
-      "Um ROE maior mostra mais lucro em relação ao patrimônio usado; um menor pode indicar retorno mais baixo nesse período.",
+      "Um valor maior mostra mais lucro em relação ao patrimônio considerado; um menor indica retorno mais baixo nesse período.",
     caution:
-      "Dívida, patrimônio muito pequeno ou negativo e ganhos não recorrentes podem distorcer a taxa. Verifique vários exercícios.",
+      "Dívidas, patrimônio muito pequeno ou negativo e ganhos fora do comum podem afetar o resultado. Compare vários anos.",
   },
   netMargin: {
     definition:
-      "É a parcela da receita que resta como lucro líquido no mesmo demonstrativo.",
+      "Mostra quanto da receita da empresa restou como lucro no mesmo período.",
     reading:
       "Uma margem maior indica mais lucro por unidade de receita; uma menor pode refletir custos, despesas ou pressão competitiva.",
     caution:
-      "Margens variam muito entre setores. Itens não recorrentes e demonstrativos intermediários acumulados afetam a comparação.",
+      "A margem varia muito entre setores. Custos, ganhos fora do comum e períodos parciais também afetam a comparação.",
   },
 };
 
@@ -80,19 +86,19 @@ export function FundamentalIndicatorCard({
       : `${indicator.value.toFixed(1)}${usesRatio ? "x" : "%"}`;
   const periodLabel =
     indicator.periodBasis === "trailing_twelve_months"
-      ? "LTM encerrado em"
+      ? "Últimos 12 meses até"
       : indicator.periodBasis === "year_to_date"
-        ? "Acumulado no exercício até"
+        ? "Acumulado no ano até"
         : indicator.periodBasis === "point_in_time"
           ? "Saldo informado em"
           : indicator.periodBasis === "quarterly"
             ? "Trimestre encerrado em"
             : indicator.sourceDocument === "ITR"
-              ? "Acumulado no exercício até"
-              : "Exercício anual encerrado em";
+              ? "Acumulado no ano até"
+              : "Ano encerrado em";
   const fundamentalsReference = indicator.referenceDate
     ? `${periodLabel} ${dateLabel(indicator.referenceDate)}`
-    : indicator.unavailableReason;
+    : unavailableMessages[indicator.key];
   const marketReference = usesRatio
     ? indicator.marketDataDate
       ? dateTimeLabel(indicator.marketDataDate)
