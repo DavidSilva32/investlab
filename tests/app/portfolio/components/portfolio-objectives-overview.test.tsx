@@ -103,7 +103,7 @@ describe("PortfolioObjectivesOverview", () => {
   it("shows the known partial distribution, missing data and accessible objective actions", () => {
     const onCreate = vi.fn();
     const onOpen = vi.fn();
-    render(
+    const { container } = render(
       <PortfolioObjectivesOverview
         data={{
           objectives,
@@ -134,6 +134,7 @@ describe("PortfolioObjectivesOverview", () => {
     );
 
     expect(screen.getByText("Conhecido · parcial")).toBeTruthy();
+    expect(container.querySelector("[class*='xl:grid-cols-3']")).toBeNull();
     expect(screen.getAllByText(/R\$\s*1\.000,00/)).toHaveLength(2);
     const chart = screen.getByRole("img", {
       name: "Gráfico de rosca dos valores conhecidos por destino",

@@ -91,19 +91,22 @@ export function PortfolioObjectiveCard({
         onClick={() => onOpen(objective)}
       >
         <CardContent className="w-full space-y-4 p-4 pr-14 sm:p-5 sm:pr-14">
-          <span className="flex items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <span className="grid w-full grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 gap-y-3">
+            <span className="row-span-2 flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               {isReserve ? (
                 <PiggyBank aria-hidden="true" className="size-5" />
               ) : (
                 <Target aria-hidden="true" className="size-5" />
               )}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold">
+            <span className="min-w-0">
+              <span className="block break-words font-semibold">
                 {objective.name}
               </span>
-              <Badge variant="outline" className={purposeClass}>
+              <Badge
+                variant="outline"
+                className={`${purposeClass} whitespace-normal text-left`}
+              >
                 {isReserve
                   ? "Reserva"
                   : objective.purpose === "LONG_TERM_INVESTMENT"
@@ -113,7 +116,7 @@ export function PortfolioObjectiveCard({
                       : "Classificação pendente"}
               </Badge>
             </span>
-            <span className="shrink-0 text-right">
+            <span className="col-span-2 flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-left">
               <span className="block font-semibold tabular-nums">
                 {objective.currentValue === null
                   ? "Indisponível"

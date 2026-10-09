@@ -36,6 +36,28 @@ export const strategyAssetClassById = Object.fromEntries(
 ) as Record<StrategyAssetClassId, (typeof strategyAssetClasses)[number]>;
 export const neutralAssetClassColor = "var(--asset-class-neutral)";
 
+export function getStrategyAssetClassId(position: {
+  product: string;
+  assetClass: string | null;
+  geography: string | null;
+}): StrategyAssetClassId | null {
+  const normalize = (value: string | null | undefined) =>
+    (value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("pt-BR");
+  const product = normalize(position.product);
+  const assetClass = normalize(position.assetClass);
+  const geography = normalize(position.geography);
+  if (/\b(fii|fiis|fundo imobiliario)\b/.test(product)) return "fiis";
+  if (/\betf\b/.test(product) && ["exterior", "global"].includes(geography))
+    return "international_etfs";
+  if (assetClass === "renda fixa") return "fixed_income";
+  if (assetClass === "renda variavel" && geography === "brasil")
+    return "brazilian_equities";
+  return null;
+}
+
 export function getStrategyAssetClassColor(id: StrategyAssetClassId | null) {
   return id
     ? `var(${strategyAssetClassById[id].colorToken})`

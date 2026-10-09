@@ -53,6 +53,7 @@ export type ObjectivePosition = {
   positionCount: number;
   value: number | null;
   valueCents?: string | null;
+  knownValueCents?: string | null;
   referenceDate?: string | null;
   unvaluedPositions: number;
   objectiveId: string | null;

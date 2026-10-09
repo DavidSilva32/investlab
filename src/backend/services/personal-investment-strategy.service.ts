@@ -9,6 +9,7 @@ import { todayInSaoPaulo } from "@/lib/valuation-date";
 import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
 import { calculateReservePriorityAmounts } from "@/lib/contribution-allocation";
 import {
+  getStrategyAssetClassId,
   simulateStrategyContribution,
   strategyAssetClasses,
   type StrategyAllocationPercentages,
@@ -69,25 +70,6 @@ type Position = {
   unvaluedPositions: number;
 };
 
-const normalize = (value: string | null | undefined) =>
-  (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR");
-
-function groupFor(position: Position) {
-  const product = normalize(position.product);
-  const assetClass = normalize(position.assetClass);
-  const geography = normalize(position.geography);
-  if (/\b(fii|fiis|fundo imobiliario)\b/.test(product)) return "fiis";
-  if (/\betf\b/.test(product) && ["exterior", "global"].includes(geography))
-    return "international_etfs";
-  if (assetClass === "renda fixa") return "fixed_income";
-  if (assetClass === "renda variavel" && geography === "brasil")
-    return "brazilian_equities";
-  return null;
-}
-
 export class PersonalInvestmentStrategyService {
   constructor(
     private readonly positions = portfolioPositionService,
@@ -143,7 +125,7 @@ export class PersonalInvestmentStrategyService {
     );
     let unclassifiedKnownCents = 0n;
     for (const position of longTermKnown) {
-      const group = groupFor(position);
+      const group = getStrategyAssetClassId(position);
       if (group) {
         classValues.set(
           group,
@@ -337,7 +319,7 @@ export class PersonalInvestmentStrategyService {
     let unclassifiedKnownValueCents = 0n;
     for (const position of longTerm) {
       if (position.valueCents === null) continue;
-      const group = groupFor(position);
+      const group = getStrategyAssetClassId(position);
       if (group) {
         currentValuesCents[group] = (
           BigInt(currentValuesCents[group]) + BigInt(position.valueCents)

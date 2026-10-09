@@ -45,6 +45,10 @@ describe("PortfolioObjectiveCard", () => {
       />,
     );
 
+    expect(
+      document.querySelector("[class*='grid-cols-[2.5rem_minmax(0,1fr)]']"),
+    ).toBeTruthy();
+
     expect(screen.getByText("Subtotal conhecido: R$ 400,00")).toBeTruthy();
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),

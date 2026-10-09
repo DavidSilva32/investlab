@@ -8,6 +8,8 @@ import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import type { PortfolioObjective } from "./portfolio-objective-card";
+import type { ObjectivePosition } from "./portfolio-objective-assignment";
+import { LongTermAllocationBreakdown } from "./long-term-allocation-breakdown";
 import {
   PortfolioObjectiveBalanceTracking,
   type ObjectiveBalanceTrackingData,
@@ -15,6 +17,7 @@ import {
 
 type Props = {
   objective: PortfolioObjective;
+  positions?: ObjectivePosition[];
   onEdit: () => void;
   onManagePositions: () => void;
   onConfigureReserve: () => void;
@@ -29,6 +32,7 @@ type Props = {
 
 export function PortfolioObjectiveDetail({
   objective,
+  positions = [],
   onEdit,
   onManagePositions,
   onConfigureReserve,
@@ -55,13 +59,21 @@ export function PortfolioObjectiveDetail({
                 <div className="flex flex-wrap items-center gap-2">
                   <CardTitle className="text-lg">{objective.name}</CardTitle>
                   <Badge variant={isReserve ? "secondary" : "outline"}>
-                    {isReserve ? "Reserva" : "Objetivo pessoal"}
+                    {isReserve
+                      ? "Reserva"
+                      : objective.purpose === "LONG_TERM_INVESTMENT"
+                        ? "Investimento de longo prazo"
+                        : objective.purpose === "PERSONAL_GOAL"
+                          ? "Objetivo pessoal"
+                          : "Classificação pendente"}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {isReserve
                     ? "A reserva mantém a configuração e os critérios próprios atuais."
-                    : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
+                    : objective.purpose === "LONG_TERM_INVESTMENT"
+                      ? "Ativos da carteira separados pela sua estratégia de longo prazo."
+                      : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
                 </p>
               </div>
             </div>
@@ -178,6 +190,9 @@ export function PortfolioObjectiveDetail({
           )}
         </CardContent>
       </Card>
+      {!isReserve && objective.purpose === "LONG_TERM_INVESTMENT" && (
+        <LongTermAllocationBreakdown positions={positions} />
+      )}
       <PortfolioObjectiveBalanceTracking
         objectiveId={objective.id}
         objectiveName={objective.name}

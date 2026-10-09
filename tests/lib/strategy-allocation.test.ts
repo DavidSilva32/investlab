@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getStrategyAssetClassId,
   getStrategyAssetClassColor,
   neutralAssetClassColor,
   strategyAssetClassById,
@@ -111,6 +112,44 @@ describe("simulateStrategyContribution", () => {
 });
 
 describe("strategy asset class metadata", () => {
+  it("classifies positions using the strategy's shared asset groups", () => {
+    expect(
+      getStrategyAssetClassId({
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+      }),
+    ).toBe("fixed_income");
+    expect(
+      getStrategyAssetClassId({
+        product: "Ação ordinária",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+    ).toBe("brazilian_equities");
+    expect(
+      getStrategyAssetClassId({
+        product: "ETF de índice",
+        assetClass: "Renda variável",
+        geography: "Exterior",
+      }),
+    ).toBe("international_etfs");
+    expect(
+      getStrategyAssetClassId({
+        product: "Fundo Imobiliário",
+        assetClass: "Fundos",
+        geography: "Brasil",
+      }),
+    ).toBe("fiis");
+    expect(
+      getStrategyAssetClassId({
+        product: "Ação estrangeira",
+        assetClass: "Renda variável",
+        geography: "Exterior",
+      }),
+    ).toBeNull();
+  });
+
   it("centralizes official labels, semantic token keys, and stable IDs", () => {
     expect(
       strategyAssetClasses.map(({ id, label, colorToken }) => [
