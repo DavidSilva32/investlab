@@ -268,7 +268,15 @@ export function PortfolioObjectivesOverview({
       </Card>
 
       {hasLongTermObjective && (
-        <LongTermAllocationBreakdown positions={longTermPositions} />
+        <LongTermAllocationBreakdown
+          positions={longTermPositions}
+          missingPositionCount={data.objectives
+            .filter((objective) => objective.purpose === "LONG_TERM_INVESTMENT")
+            .reduce(
+              (count, objective) => count + objective.missingPositionCount,
+              0,
+            )}
+        />
       )}
 
       <section aria-labelledby="objectives-summary-title" className="space-y-3">

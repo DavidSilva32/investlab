@@ -9,6 +9,7 @@ export type ObjectivePosition = {
   maturityAt?: string | null;
   institution: string | null;
   assetClass: string | null;
+  subClass?: string | null;
   geography?: string | null;
   positionCount: number;
   value: number | null;

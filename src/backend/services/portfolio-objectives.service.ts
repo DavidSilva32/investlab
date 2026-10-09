@@ -126,7 +126,11 @@ type RawPosition = Record<string, unknown> & {
   convertedValueBrl?: string | number | null;
   currency?: string | null;
   referenceDate?: string | null;
-  classification?: { assetClass: string | null; geography?: string | null };
+  classification?: {
+    assetClass: string | null;
+    subClass?: string | null;
+    geography?: string | null;
+  };
   issuer?: string | null;
   indexer?: string | null;
   regimeType?: string | null;
@@ -1051,6 +1055,7 @@ export class PortfolioObjectivesService {
         maturityAt: string | null;
         institution: string | null;
         assetClass: string | null;
+        subClass: string | null;
         geography: string | null;
         positionCount: number;
         valueCents: bigint | null;
@@ -1088,6 +1093,14 @@ export class PortfolioObjectivesService {
           existing.maturityAt = null;
         if (existing.geography !== (position.classification?.geography ?? null))
           existing.geography = null;
+        if (
+          existing.assetClass !== (position.classification?.assetClass ?? null)
+        )
+          existing.assetClass = null;
+        if (existing.subClass !== (position.classification?.subClass ?? null))
+          existing.subClass = null;
+        if (existing.referenceDate !== (position.referenceDate ?? null))
+          existing.referenceDate = null;
         if (
           existing.estimationBaseDate !== (position.estimationBaseDate ?? null)
         )
@@ -1132,6 +1145,7 @@ export class PortfolioObjectivesService {
         maturityAt: position.maturityAt ?? null,
         institution: position.institution,
         assetClass: position.classification?.assetClass ?? null,
+        subClass: position.classification?.subClass ?? null,
         geography: position.classification?.geography ?? null,
         positionCount: 1,
         valueCents: cents,

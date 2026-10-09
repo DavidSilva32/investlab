@@ -24,6 +24,7 @@ type StrategyData = {
     positionCount: number;
     assignedPositionCount: number;
     unclassifiedKnownValueCents: string;
+    unclassifiedPositionCount: number;
     classes: StrategyClassValue[];
   };
   destinationsNeedingPurposeConfirmation: number;
@@ -170,7 +171,7 @@ export function PersonalInvestmentStrategy() {
 
       {(data.valuationDates.length > 1 ||
         data.longTermWealth.unvaluedPositionCount > 0 ||
-        BigInt(data.longTermWealth.unclassifiedKnownValueCents) > 0n) && (
+        data.longTermWealth.unclassifiedPositionCount > 0) && (
         <Alert>
           <AlertTitle>Cobertura dos valores</AlertTitle>
           <AlertDescription>
@@ -178,8 +179,11 @@ export function PersonalInvestmentStrategy() {
               `As posições têm datas efetivas diferentes: ${data.valuationDates.map(formatDate).join(", ")}. `}
             {data.longTermWealth.unvaluedPositionCount > 0 &&
               `${data.longTermWealth.unvaluedPositionCount} posição(ões) não têm valor conhecido. `}
-            {BigInt(data.longTermWealth.unclassifiedKnownValueCents) > 0n &&
-              `${formatCurrencyCents(data.longTermWealth.unclassifiedKnownValueCents)} não se enquadram nos quatro grupos mostrados.`}
+            {BigInt(data.longTermWealth.unclassifiedKnownValueCents) > 0n
+              ? `${formatCurrencyCents(data.longTermWealth.unclassifiedKnownValueCents)} em posições sem classe identificada não se enquadram nos quatro grupos mostrados.`
+              : data.longTermWealth.unclassifiedPositionCount > 0
+                ? `${data.longTermWealth.unclassifiedPositionCount} posição(ões) não têm classe identificada.`
+                : null}
           </AlertDescription>
         </Alert>
       )}

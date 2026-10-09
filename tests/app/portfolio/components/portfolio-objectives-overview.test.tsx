@@ -245,10 +245,15 @@ describe("PortfolioObjectivesOverview", () => {
       name: "Investimento de longo prazo",
       purpose: "LONG_TERM_INVESTMENT",
     };
+    const secondLongTermObjective: PortfolioObjective = {
+      ...longTermObjective,
+      id: "long-term-2",
+      name: "Aposentadoria",
+    };
     render(
       <PortfolioObjectivesOverview
         data={{
-          objectives: [longTermObjective],
+          objectives: [longTermObjective, secondLongTermObjective],
           positions: [
             {
               assetKey: "etf-global",
@@ -267,16 +272,33 @@ describe("PortfolioObjectivesOverview", () => {
               objectiveName: "Investimento de longo prazo",
               objectivePurpose: "LONG_TERM_INVESTMENT",
             },
+            {
+              assetKey: "cdb-long-term",
+              product: "CDB",
+              assetCode: "CDB1",
+              institution: null,
+              assetClass: "Renda fixa",
+              geography: "Brasil",
+              positionCount: 1,
+              value: 3000,
+              valueCents: "300000",
+              knownValueCents: "300000",
+              referenceDate: "2026-10-01",
+              unvaluedPositions: 0,
+              objectiveId: "long-term-2",
+              objectiveName: "Aposentadoria",
+              objectivePurpose: "LONG_TERM_INVESTMENT",
+            },
           ],
           destinationSummary: {
             categories: [
               { key: "reserve", value: 0, percentage: 0 },
               { key: "personal", value: 0, percentage: 0 },
-              { key: "long_term", value: 12486, percentage: 100 },
+              { key: "long_term", value: 15486, percentage: 100 },
               { key: "purpose_unknown", value: 0, percentage: 0 },
               { key: "unassigned", value: 0, percentage: 0 },
             ],
-            knownTotal: 12486,
+            knownTotal: 15486,
             missingPositionCount: 0,
             unvaluedPositionCount: 0,
           },
@@ -295,11 +317,12 @@ describe("PortfolioObjectivesOverview", () => {
     );
 
     expect(
-      screen.getByText("Composição do investimento de longo prazo"),
+      screen.getByText("Composição atual do investimento de longo prazo"),
     ).toBeTruthy();
     expect(screen.getByText("ETFs internacionais")).toBeTruthy();
+    expect(screen.getByText("Renda fixa")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Ver estratégia e próximo aporte" }),
+      screen.getByRole("link", { name: "Comparar com a estratégia" }),
     ).toBeTruthy();
   });
 });

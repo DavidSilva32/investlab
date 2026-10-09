@@ -13,6 +13,7 @@ const position = (
   positionCount: 1,
   product,
   valueCents,
+  knownValueCents: valueCents ?? "0",
   objectiveId: objectivePurpose ? "assigned" : null,
   objectivePurpose,
   assetClass: null,
@@ -125,10 +126,13 @@ describe("PersonalInvestmentStrategyService", () => {
         estimatedThrough: "2026-10-01",
       }),
       position("ETF Exterior", "300", "LONG_TERM_INVESTMENT", {
+        assetClass: "Renda variável",
         geography: "Exterior",
         maturityAt: "2027-10-02",
       }),
-      position("FII", "400", "LONG_TERM_INVESTMENT"),
+      position("FII", "400", "LONG_TERM_INVESTMENT", {
+        assetClass: "Fundos",
+      }),
       position("Outro ativo", "500", "LONG_TERM_INVESTMENT"),
       position("Sem valor", null, "LONG_TERM_INVESTMENT"),
       position("Meta pessoal", "600", "PERSONAL_GOAL"),
@@ -215,7 +219,7 @@ describe("PersonalInvestmentStrategyService", () => {
 
   it("returns empty zero-known totals without treating any position as long-term", async () => {
     const { service } = makeService([
-      position("Reserva", null, "RESERVE"),
+      position("Reserva", null, "RESERVE", { knownValueCents: undefined }),
       position("Unclassified legacy", "250", null, { objectiveId: "legacy" }),
       position("Livre", "100", null, { objectiveId: null }),
     ]);
@@ -243,6 +247,7 @@ describe("PersonalInvestmentStrategyService", () => {
         geography: "Brasil",
       }),
       position("ETF Exterior", "1", "LONG_TERM_INVESTMENT", {
+        assetClass: "Renda variável",
         geography: "Exterior",
       }),
     ]);
@@ -273,6 +278,39 @@ describe("PersonalInvestmentStrategyService", () => {
     expect(result.longTermMaturityDates).toEqual([
       { date: "2028-10-02", count: 3 },
     ]);
+  });
+
+  it("includes known cents from partially unvalued position groups", async () => {
+    const partial = position("Ação ordinária", null, "LONG_TERM_INVESTMENT", {
+      assetClass: "Renda variável",
+      geography: "Brasil",
+      knownValueCents: "12345",
+      unvaluedPositions: 1,
+    });
+    const { service } = makeService([partial]);
+    const result = await service.getOverview();
+
+    expect(result.longTermWealth.knownValueCents).toBe("12345");
+    expect(result.longTermWealth.unvaluedPositionCount).toBe(1);
+    expect(result.longTermWealth.classes).toContainEqual(
+      expect.objectContaining({
+        id: "brazilian_equities",
+        knownValueCents: "12345",
+        percentageBasisPoints: 10000,
+      }),
+    );
+  });
+
+  it("falls back to the position value when legacy data lacks known cents", async () => {
+    const legacy = position("CDB", "875", "LONG_TERM_INVESTMENT", {
+      assetClass: "Renda fixa",
+      knownValueCents: undefined,
+    });
+    const { service } = makeService([legacy]);
+    const result = await service.getOverview();
+
+    expect(result.totalWealth.knownValueCents).toBe("875");
+    expect(result.longTermWealth.knownValueCents).toBe("875");
   });
 
   it("restores persisted answers and the chosen direction", async () => {
@@ -613,8 +651,12 @@ describe("PersonalInvestmentStrategyService", () => {
 
   it("marks contribution projections incomplete when long-term values lack coverage", async () => {
     const { service } = makeService([
-      position("Unknown long-term asset", "250", "LONG_TERM_INVESTMENT"),
-      position("Unvalued CDB", null, "LONG_TERM_INVESTMENT"),
+      position("Unknown long-term asset", "250", "LONG_TERM_INVESTMENT", {
+        knownValueCents: undefined,
+      }),
+      position("Unvalued CDB", null, "LONG_TERM_INVESTMENT", {
+        knownValueCents: undefined,
+      }),
     ]);
     const result = await service.simulateContribution({
       contributionAmount: 10,
