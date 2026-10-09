@@ -43,6 +43,7 @@ export function AssetClassLearningDetail({
       {content.availability === "available" ? (
         <div className="overflow-hidden rounded-xl border border-border/70 bg-black">
           <video
+            key={content.videoSrc}
             className="aspect-video w-full"
             controls
             playsInline
