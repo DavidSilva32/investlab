@@ -73,6 +73,28 @@ describe("LearningLibrary", () => {
 });
 
 describe("AssetClassLearningCard", () => {
+  it("shows the coming-soon state when a class has no published video", () => {
+    const originalContent = assetClassLearningContent.fiis;
+
+    try {
+      assetClassLearningContent.fiis = {
+        imageSrc: originalContent.imageSrc,
+        thumbnailSrc: originalContent.thumbnailSrc,
+        description: originalContent.description,
+        availability: "coming-soon",
+      };
+
+      render(<AssetClassLearningCard id="fiis" selected={false} />);
+
+      const card = screen.getByRole("link");
+      expect(card.textContent).toContain("em breve");
+      expect(card.textContent).not.toContain("Assistir");
+      expect(card.querySelector("video")).toBeNull();
+    } finally {
+      assetClassLearningContent.fiis = originalContent;
+    }
+  });
+
   it("shows each class description and availability while linking to the detail anchor", () => {
     render(<LearningLibrary selectedClass="fiis" />);
 
