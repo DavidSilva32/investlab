@@ -36,7 +36,8 @@ export const assetClassLearningContent: Record<
     thumbnailSrc: "/images/asset-classes/brazilian-equities.webp",
     description:
       "Entenda participações em empresas listadas no Brasil e os recibos de ações negociados no país.",
-    availability: "coming-soon",
+    availability: "available",
+    videoSrc: "/videos/brazilian_equities.mp4",
   },
   international_etfs: {
     imageSrc: "/images/asset-classes/international-etfs.webp",
