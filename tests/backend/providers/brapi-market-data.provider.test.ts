@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrapiMarketDataProvider } from "@/backend/providers/brapi-market-data.provider";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -24,6 +24,9 @@ const quote = (data: Record<string, unknown> = {}) => ({
 });
 
 describe("BrapiMarketDataProvider", () => {
+  beforeEach(() => vi.stubEnv("BRAPI_TOKEN", ""));
+  afterEach(() => vi.unstubAllEnvs());
+
   it("loads only a quote and parses issuer market capitalization and quote time", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       jsonResponse(

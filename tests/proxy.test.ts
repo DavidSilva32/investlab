@@ -49,4 +49,11 @@ describe("proxy authentication", () => {
     verify.mockResolvedValue(true);
     expect((await proxy(new NextRequest("http://test/"))).status).toBe(200);
   });
+
+  it("keeps login public and redirects an authenticated login without caching", async () => {
+    verify.mockResolvedValue(true);
+    const response = await proxy(new NextRequest("http://test/login"));
+    expect(response.headers.get("location")).toBe("http://test/");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
 });

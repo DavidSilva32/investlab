@@ -9,6 +9,10 @@ describe("session", () => {
       true,
     );
   });
+  it("rejects a signed token without an identity", async () => {
+    vi.stubEnv("AUTH_SECRET", "s".repeat(32));
+    expect(await verifySession(await createSession(""))).toBe(false);
+  });
   it("rejects absent, malformed and tampered sessions", async () => {
     vi.stubEnv("AUTH_SECRET", "s".repeat(32));
     expect(await verifySession()).toBe(false);
