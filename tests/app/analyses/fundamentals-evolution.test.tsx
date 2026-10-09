@@ -228,7 +228,7 @@ describe("FundamentalsEvolution", () => {
     expect(screen.getAllByTestId("exact-tooltip")).toHaveLength(3);
   });
 
-  it("falls back to the latest three complete years without blank year categories", () => {
+  it("keeps five year categories when one year has no source value", () => {
     const recentPeriods = periods().filter(
       (period) => period.referenceDate.slice(0, 4) !== "2022",
     );
@@ -237,12 +237,19 @@ describe("FundamentalsEvolution", () => {
     );
 
     const charts = container.querySelectorAll(
-      "[data-periods='2024,2025,2026']",
+      "[data-periods='2022,2023,2024,2025,2026']",
     );
     expect(charts).toHaveLength(3);
-    expect(charts[0].getAttribute("data-revenue")).toBe("202400,202500,450");
-    expect(charts[1].getAttribute("data-net-income")).toBe("20240,20250,45");
-    expect(charts[2].getAttribute("data-equity")).toBe("2024000,2025000,26000");
+    expect(charts[0].getAttribute("data-revenue")).toBe(
+      ",202300,202400,202500,450",
+    );
+    expect(charts[1].getAttribute("data-net-income")).toBe(
+      ",20230,20240,20250,45",
+    );
+    expect(charts[2].getAttribute("data-equity")).toBe(
+      ",2023000,2024000,2025000,26000",
+    );
+    expect(screen.getAllByRole("status").length).toBeGreaterThan(0);
   });
 
   it("keeps valid annual balances ahead of intermediate balances and ignores invalid partial flows", () => {
@@ -288,12 +295,16 @@ describe("FundamentalsEvolution", () => {
     const charts = [...container.querySelectorAll("[data-periods]")];
     expect(charts).toHaveLength(3);
     expect(charts.map((chart) => chart.getAttribute("data-periods"))).toEqual([
-      "2023,2024,2025",
-      "2023,2024,2025",
-      "2024,2025,2026",
+      "2022,2023,2024,2025,2026",
+      "2022,2023,2024,2025,2026",
+      "2022,2023,2024,2025,2026",
     ]);
-    expect(charts[0].getAttribute("data-revenue")).toBe("202300,202400,202500");
-    expect(charts[2].getAttribute("data-equity")).toBe("2024000,2025000,26000");
+    expect(charts[0].getAttribute("data-revenue")).toBe(
+      ",202300,202400,202500,",
+    );
+    expect(charts[2].getAttribute("data-equity")).toBe(
+      ",2023000,2024000,2025000,26000",
+    );
   });
 
   it("keeps annual equity-only records out of flows while displaying their balance", () => {
@@ -339,12 +350,18 @@ describe("FundamentalsEvolution", () => {
 
     const charts = [...container.querySelectorAll("[data-periods]")];
     expect(charts).toHaveLength(3);
-    expect(charts[0].getAttribute("data-periods")).toBe("2024,2025");
-    expect(charts[0].getAttribute("data-revenue")).toBe("100,200");
-    expect(charts[1].getAttribute("data-periods")).toBe("2024,2025");
-    expect(charts[1].getAttribute("data-net-income")).toBe("10,20");
-    expect(charts[2].getAttribute("data-periods")).toBe("2023");
-    expect(charts[2].getAttribute("data-equity")).toBe("3000");
+    expect(charts[0].getAttribute("data-periods")).toBe(
+      "2022,2023,2024,2025,2026",
+    );
+    expect(charts[0].getAttribute("data-revenue")).toBe(",,100,200,");
+    expect(charts[1].getAttribute("data-periods")).toBe(
+      "2022,2023,2024,2025,2026",
+    );
+    expect(charts[1].getAttribute("data-net-income")).toBe(",,10,20,");
+    expect(charts[2].getAttribute("data-periods")).toBe(
+      "2022,2023,2024,2025,2026",
+    );
+    expect(charts[2].getAttribute("data-equity")).toBe(",3000,,,");
   });
 
   it("ignores unsupported periods, invalid numeric values, and malformed equity dates", () => {
@@ -399,8 +416,10 @@ describe("FundamentalsEvolution", () => {
 
     const charts = [...container.querySelectorAll("[data-periods]")];
     expect(charts).toHaveLength(1);
-    expect(charts[0].getAttribute("data-periods")).toBe("2025");
-    expect(charts[0].getAttribute("data-revenue")).toBe("100");
+    expect(charts[0].getAttribute("data-periods")).toBe(
+      "2022,2023,2024,2025,2026",
+    );
+    expect(charts[0].getAttribute("data-revenue")).toBe(",,,100,");
     expect(
       screen.getByText(
         "Não há valores de lucro líquido disponíveis para os períodos selecionados.",
@@ -492,11 +511,13 @@ describe("FundamentalsEvolution", () => {
 
     const charts = [...container.querySelectorAll("[data-periods]")];
     expect(charts).toHaveLength(3);
-    expect(charts[0].getAttribute("data-periods")).toBe("2026");
-    expect(charts[0].getAttribute("data-revenue")).toBe("250");
-    expect(charts[1].getAttribute("data-net-income")).toBe("25");
-    expect(charts[2].getAttribute("data-equity")).toBe("55000");
-    expect(charts[2].getAttribute("data-references")).toBe("2026-06-30");
+    expect(charts[0].getAttribute("data-periods")).toBe(
+      "2022,2023,2024,2025,2026",
+    );
+    expect(charts[0].getAttribute("data-revenue")).toBe(",,,,250");
+    expect(charts[1].getAttribute("data-net-income")).toBe(",,,,25");
+    expect(charts[2].getAttribute("data-equity")).toBe(",,,,55000");
+    expect(charts[2].getAttribute("data-references")).toBe(",,,,2026-06-30");
   });
 
   it("uses a current-year YTD period when only net income is available", () => {
@@ -520,8 +541,10 @@ describe("FundamentalsEvolution", () => {
 
     const charts = [...container.querySelectorAll("[data-periods]")];
     expect(charts).toHaveLength(1);
-    expect(charts[0].getAttribute("data-periods")).toBe("2026");
-    expect(charts[0].getAttribute("data-net-income")).toBe("12");
+    expect(charts[0].getAttribute("data-periods")).toBe(
+      "2022,2023,2024,2025,2026",
+    );
+    expect(charts[0].getAttribute("data-net-income")).toBe(",,,,12");
   });
 
   it("shows a simple status when no periods arrive", () => {

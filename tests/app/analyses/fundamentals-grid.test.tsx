@@ -28,7 +28,9 @@ describe("FundamentalsGrid", () => {
   it("explains when the requested statement type is unavailable", () => {
     render(<FundamentalsGrid type="ITR" periods={[]} />);
     expect(
-      screen.getByText("Sem informações trimestrais disponíveis."),
+      screen.getByText(
+        "Não há atualizações financeiras disponíveis durante o ano.",
+      ),
     ).toBeTruthy();
   });
 
@@ -77,9 +79,9 @@ describe("FundamentalsGrid", () => {
       />,
     );
 
-    expect(screen.getByText(/Comparativo informado até/)).toBeTruthy();
+    expect(screen.getByText(/Mesmo período do ano anterior até/)).toBeTruthy();
     expect(
-      screen.getByText("Receita comparativa acumulada no exercício"),
+      screen.getByText("Receita no mesmo período do ano anterior"),
     ).toBeTruthy();
 
     rerender(
@@ -98,11 +100,9 @@ describe("FundamentalsGrid", () => {
       />,
     );
 
+    expect(screen.getByText("Receita em período não informado")).toBeTruthy();
     expect(
-      screen.getByText("Receita com período não identificado"),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Lucro líquido com período não identificado"),
+      screen.getByText("Lucro líquido em período não informado"),
     ).toBeTruthy();
     expect(screen.getByText(/Patrimônio líquido \(saldo em/)).toBeTruthy();
   });
@@ -361,8 +361,8 @@ it("labels accumulated interim data and marks invalid values as unavailable", ()
     />,
   );
 
-  expect(screen.getByText("Receita acumulada no exercício")).toBeTruthy();
-  expect(screen.getByText("Lucro líquido acumulado no exercício")).toBeTruthy();
+  expect(screen.getByText("Receita acumulada no ano")).toBeTruthy();
+  expect(screen.getByText("Lucro líquido acumulado no ano")).toBeTruthy();
   expect(
     screen.getByText(/Patrimônio líquido \(saldo em 30 de jun/),
   ).toBeTruthy();

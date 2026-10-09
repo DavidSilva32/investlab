@@ -37,9 +37,9 @@ describe("StockAnalysisReading", () => {
       />,
     );
 
-    expect(screen.getByText("Lucro líquido do exercício")).toBeTruthy();
+    expect(screen.getByText("Lucro líquido do ano")).toBeTruthy();
     expect(screen.getAllByText(/R\$\s?120\.000/)).toHaveLength(2);
-    expect(screen.getByText("Exercício 2024")).toBeTruthy();
+    expect(screen.getByText("Ano 2024")).toBeTruthy();
     expect(screen.getByText("Receita anual")).toBeTruthy();
     expect(screen.getByText(/R\$\s?1\.000\.000/)).toBeTruthy();
     expect(
@@ -48,9 +48,7 @@ describe("StockAnalysisReading", () => {
     expect(screen.getByText(/Aumentou R\$\s?20\.000 \(\+20%\)/)).toBeTruthy();
     expect(screen.getAllByText("2023 → 2024")).toHaveLength(2);
     expect(screen.queryByText(/recomendação de investimento/)).toBeNull();
-    const resultRow = screen
-      .getByText("Lucro líquido do exercício")
-      .closest(".grid");
+    const resultRow = screen.getByText("Lucro líquido do ano").closest(".grid");
     const comparisonRow = screen.getByText("Receita anual").closest(".grid");
     expect(resultRow?.className).toBe(comparisonRow?.className);
     expect(resultRow?.children[1].className).toContain("sm:border-l");
@@ -71,9 +69,7 @@ describe("StockAnalysisReading", () => {
     expect(screen.getByText("Resultado negativo")).toBeTruthy();
     expect(screen.getByText(/-R\$\s?25\.000/)).toBeTruthy();
     expect(container.querySelector(".text-status-danger")).toBeTruthy();
-    expect(
-      screen.getByText(/Sem períodos anuais consecutivos e alinhados/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Ainda não há dois anos seguidos/)).toBeTruthy();
   });
 
   it("shows zero and unavailable latest profit explicitly", () => {
@@ -138,9 +134,7 @@ describe("StockAnalysisReading", () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Sem períodos anuais consecutivos e alinhados/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Ainda não há dois anos seguidos/)).toBeTruthy();
     expect(
       container.querySelectorAll(
         "ul[aria-label='Síntese dos dados anuais'] > li",
@@ -187,9 +181,7 @@ describe("StockAnalysisReading", () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Sem períodos anuais consecutivos e alinhados/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Ainda não há dois anos seguidos/)).toBeTruthy();
     expect(screen.queryByText("Receita anual")).toBeNull();
   });
 
@@ -219,7 +211,7 @@ describe("StockAnalysisReading", () => {
       />,
     );
 
-    expect(screen.getByText("Exercício 2024")).toBeTruthy();
+    expect(screen.getByText("Ano 2024")).toBeTruthy();
     expect(screen.getByText(/Aumentou R\$\s?10\.000/)).toBeTruthy();
     expect(screen.queryByText(/Aumentou R\$\s?20\.000/)).toBeNull();
   });
@@ -247,9 +239,7 @@ describe("StockAnalysisReading", () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Sem períodos anuais consecutivos e alinhados/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Ainda não há dois anos seguidos/)).toBeTruthy();
     expect(screen.queryByText("Receita anual")).toBeNull();
     expect(screen.queryByText("Lucro líquido anual")).toBeNull();
   });
@@ -263,19 +253,19 @@ describe("StockAnalysisReading", () => {
       screen.getByRole("button", { name: /como ler estes dados/i }),
     );
     expect(
-      await screen.findByText(/Mudanças de critérios contábeis/),
+      await screen.findByText(/Mudanças na forma como a empresa apresenta/),
     ).toBeTruthy();
     expect(
-      screen.getByText(/duração exata dos períodos não é validada/),
+      screen.getByText(/duração exata dos períodos pode variar/),
     ).toBeTruthy();
-    expect(screen.getByText(/sem ajuste pela inflação/)).toBeTruthy();
+    expect(screen.getByText(/sem correção pela inflação/)).toBeTruthy();
   });
 
   it("explains when annual statements are unavailable", () => {
     render(<StockAnalysisReading periods={[]} />);
 
     expect(
-      screen.getByText(/Ainda não há demonstrações anuais disponíveis/),
+      screen.getByText(/Ainda não há dados anuais suficientes/),
     ).toBeTruthy();
   });
 });

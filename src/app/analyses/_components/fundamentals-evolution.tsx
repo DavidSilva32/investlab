@@ -76,7 +76,7 @@ export function FundamentalsEvolution({
     <div className="grid gap-4 lg:grid-cols-3">
       {metrics.map((metric) => {
         const allPoints = metric.key === "equity" ? equity : annual;
-        const chartData = visibleChartPoints(allPoints, metric.key);
+        const chartData = allPoints;
         const config: ChartConfig = {
           [metric.key]: { label: metric.label, color: metric.color },
         };
@@ -91,50 +91,63 @@ export function FundamentalsEvolution({
               {metric.label}
             </h3>
             {chartData.some((period) => period[metric.key] !== null) ? (
-              <ChartContainer
-                config={config}
-                className="mt-2 h-52 w-full aspect-auto"
-              >
-                <BarChart data={chartData} accessibilityLayer>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="periodLabel"
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    width={64}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(number: number) =>
-                      compactMoney.format(number)
-                    }
-                  />
-                  <Tooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(label, payload) =>
-                          tooltipLabel(metric.key, String(label), payload)
-                        }
-                        formatter={(value) => exactMoney.format(Number(value))}
-                      />
-                    }
-                  />
-                  <Bar
-                    dataKey={metric.key}
-                    fill={`var(--color-${metric.key})`}
-                    radius={4}
+              <>
+                {chartData.some((point) => point[metric.key] === null) && (
+                  <p
+                    role="status"
+                    className="mt-2 text-xs text-muted-foreground"
                   >
-                    {chartData.map((point) => (
-                      <Cell
-                        key={point.periodLabel}
-                        fillOpacity={point.isPartial ? 0.62 : 1}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
+                    Alguns anos não têm dados disponíveis; eles não são tratados
+                    como zero.
+                  </p>
+                )}
+                <ChartContainer
+                  config={config}
+                  className="mt-2 h-52 w-full aspect-auto"
+                >
+                  <BarChart data={chartData} accessibilityLayer>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="periodLabel"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      width={64}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(number: number) =>
+                        compactMoney.format(number)
+                      }
+                    />
+                    <Tooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(label, payload) =>
+                            tooltipLabel(metric.key, String(label), payload)
+                          }
+                          formatter={(value) =>
+                            exactMoney.format(Number(value))
+                          }
+                        />
+                      }
+                    />
+                    <Bar
+                      dataKey={metric.key}
+                      fill={`var(--color-${metric.key})`}
+                      radius={4}
+                    >
+                      {chartData.map((point) => (
+                        <Cell
+                          key={point.periodLabel}
+                          fillOpacity={point.isPartial ? 0.62 : 1}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              </>
             ) : (
               <p role="status" className="mt-2 text-sm text-muted-foreground">
                 {metric.key === "equity"
@@ -153,11 +166,6 @@ function value(source: string | null) {
   if (source === null) return null;
   const parsed = Number(source);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function visibleChartPoints(points: ChartPoint[], key: MetricKey) {
-  const available = points.filter((point) => point[key] !== null);
-  return available.length === 5 ? available : available.slice(-3);
 }
 
 function flowPeriods(

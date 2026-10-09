@@ -79,9 +79,9 @@ function Result({
   return (
     <div className="grid gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)] sm:items-center">
       <div className="min-w-0">
-        <p className="text-sm font-medium">Lucro líquido do exercício</p>
+        <p className="text-sm font-medium">Lucro líquido do ano</p>
         <p className="text-xs tabular-nums text-muted-foreground">
-          Exercício {periodLabel(latest)}
+          Ano {periodLabel(latest)}
         </p>
       </div>
       <div className="min-w-0 sm:border-l sm:pl-4">
@@ -121,7 +121,7 @@ function Comparison({
       ? "Aumentou"
       : movement === "down"
         ? "Diminuiu"
-        : "Sem variação nominal";
+        : "Mesmo valor em reais";
   const variation =
     movement === "same"
       ? "Mesmo valor"
@@ -170,8 +170,8 @@ export function StockAnalysisReading({
   if (!latest) {
     return (
       <p className="text-sm text-muted-foreground">
-        Ainda não há demonstrações anuais disponíveis para resumir a situação
-        financeira desta empresa.
+        Ainda não há dados anuais suficientes para resumir a situação financeira
+        desta empresa.
       </p>
     );
   }
@@ -210,15 +210,15 @@ export function StockAnalysisReading({
         ) : (
           <li className="flex items-center gap-2 border-t py-3 text-xs text-muted-foreground">
             <CircleHelp className="size-4 shrink-0" aria-hidden="true" />
-            Sem períodos anuais consecutivos e alinhados com valores suficientes
-            para comparar receita e lucro.
+            Ainda não há dois anos seguidos com dados suficientes para comparar
+            receita e lucro.
           </li>
         )}
       </ul>
       <Collapsible>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
           <span className="text-xs text-muted-foreground">
-            Valores anuais nominais, sem ajuste pela inflação.
+            Valores em reais, sem correção pela inflação.
           </span>
           <CollapsibleTrigger asChild>
             <Button
@@ -237,14 +237,12 @@ export function StockAnalysisReading({
         </div>
         <CollapsibleContent>
           <p className="pt-2 text-xs leading-relaxed text-muted-foreground">
-            Comparamos exercícios anuais consecutivos com a mesma data de
-            encerramento informada e valores numéricos disponíveis. A duração
-            exata dos períodos não é validada pelos dados recebidos. A variação
-            em reais mostra a diferença nominal; o percentual é exibido apenas
-            quando o valor do exercício anterior é positivo. Mudanças de
-            critérios contábeis ou reclassificações não são ajustadas. Lucro e
-            crescimento não indicam, por si só, qualidade da empresa nem
-            recomendação de investimento.
+            Comparamos anos seguidos com datas e valores disponíveis. A duração
+            exata dos períodos pode variar. A diferença em reais e o percentual
+            são mostrados somente quando a comparação é possível. Mudanças na
+            forma como a empresa apresenta os dados não são ajustadas. Lucro e
+            crescimento, por si só, não indicam a qualidade da empresa nem
+            recomendam um investimento.
           </p>
         </CollapsibleContent>
       </Collapsible>

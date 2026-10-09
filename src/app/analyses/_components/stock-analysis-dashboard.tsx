@@ -496,7 +496,9 @@ export function StockAnalysisDashboard({
                 ? "Indisponível"
                 : pricePercent.format(priceChange)}
             </p>
-            <p className="text-xs text-muted-foreground">Sem dividendos</p>
+            <p className="text-xs text-muted-foreground">
+              Não inclui dividendos
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -538,9 +540,9 @@ export function StockAnalysisDashboard({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Indicadores fundamentalistas</CardTitle>
+          <CardTitle>Indicadores financeiros</CardTitle>
           <CardDescription>
-            Indicadores disponíveis e uma síntese dos dados anuais.
+            Os dados disponíveis para esta empresa.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -549,14 +551,14 @@ export function StockAnalysisDashboard({
               role="status"
               className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-sm text-muted-foreground"
             >
-              Não foi possível obter os demonstrativos mais recentes. Exibimos
-              os últimos dados validados, obtidos em{" "}
+              Não foi possível atualizar os dados financeiros. Exibimos os
+              últimos dados conferidos, obtidos em{" "}
               {new Intl.DateTimeFormat("pt-BR", {
                 dateStyle: "short",
                 timeStyle: "short",
                 timeZone: "America/Sao_Paulo",
               }).format(new Date(analysis.fundamentalsFetchedAt))}
-              . Os períodos de referência permanecem os informados pela CVM.
+              . As datas continuam sendo as publicadas pela empresa.
             </p>
           )}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -568,17 +570,16 @@ export function StockAnalysisDashboard({
             ))}
           </div>
           <div className="border-t pt-4">
-            <h3 className="mb-3 text-sm font-medium">Leitura do InvestLab</h3>
+            <h3 className="mb-3 text-sm font-medium">O que os dados mostram</h3>
             <StockAnalysisReading periods={annual} />
           </div>
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Evolução dos fundamentos financeiros</CardTitle>
+          <CardTitle>Como os números mudaram nos últimos cinco anos</CardTitle>
           <CardDescription>
-            Compare a evolução da receita, do lucro líquido e do patrimônio
-            líquido nos períodos informados.
+            Receita, lucro e patrimônio da empresa em cada ano disponível.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -596,7 +597,7 @@ export function StockAnalysisDashboard({
                     variant="ghost"
                     className="h-auto justify-between gap-3 p-0 text-left hover:bg-transparent"
                   >
-                    <span>Ver demonstrativos e detalhes técnicos</span>
+                    <span>Ver dados detalhados</span>
                     <ChevronDown
                       className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]_&]:rotate-180"
                       aria-hidden="true"
@@ -605,18 +606,38 @@ export function StockAnalysisDashboard({
                 </CollapsibleTrigger>
               </h2>
               <CardDescription className="mt-1">
-                Valores anuais e informações trimestrais acumuladas.
+                Resultados por período, origem dos dados e como os números são
+                calculados.
               </CardDescription>
             </div>
           </CardHeader>
           <CollapsibleContent>
             <CardContent className="space-y-6 pt-0">
               <section
+                aria-labelledby="analysis-data-origin-title"
+                className="space-y-2 rounded-lg bg-muted/40 p-4 text-sm"
+              >
+                <h3 id="analysis-data-origin-title" className="font-medium">
+                  De onde vêm estes dados
+                </h3>
+                <p className="text-muted-foreground">
+                  Os dados financeiros vêm de relatórios públicos das empresas,
+                  consultados na Comissão de Valores Mobiliários. As cotações
+                  vêm de uma fonte de dados do mercado. As datas mostram a que
+                  período cada valor se refere.
+                </p>
+                <p className="text-muted-foreground">
+                  A variação do preço não inclui dividendos e não representa o
+                  retorno total do investimento. Valores ausentes não são
+                  tratados como zero.
+                </p>
+              </section>
+              <section
                 aria-labelledby="annual-evidence-title"
                 className="space-y-3"
               >
                 <h3 id="annual-evidence-title" className="font-medium">
-                  Períodos anuais
+                  Resultados anuais
                 </h3>
                 <FundamentalsGrid periods={annual} type="DFP" />
               </section>
@@ -626,12 +647,11 @@ export function StockAnalysisDashboard({
               >
                 <div>
                   <h3 id="interim-evidence-title" className="font-medium">
-                    Períodos intermediários
+                    Atualizações durante o ano
                   </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Valores acumulados no exercício até cada data; não
-                    representam trimestres isolados nem devem ser comparados
-                    diretamente com os exercícios anuais.
+                    Mostra o total desde o começo do ano até a data indicada.
+                    Para comparar anos completos, use os resultados anuais.
                   </p>
                 </div>
                 <FundamentalsGrid periods={interim} type="ITR" />
@@ -643,12 +663,11 @@ export function StockAnalysisDashboard({
                 >
                   <div>
                     <h3 id="quarterly-evidence-title" className="font-medium">
-                      Trimestres isolados informados
+                      Resultados de cada trimestre
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Estes valores cobrem apenas o trimestre indicado; os
-                      demonstrativos intermediários acumulados permanecem em uma
-                      seção separada.
+                      Cada valor considera somente o trimestre indicado. Os
+                      valores acumulados no ano aparecem na seção anterior.
                     </p>
                   </div>
                   <FundamentalsGrid periods={discreteQuarters} type="ITR" />
