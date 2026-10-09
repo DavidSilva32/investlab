@@ -1,6 +1,7 @@
 ﻿// @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+const routerReplace = vi.hoisted(() => vi.fn());
 vi.mock("@/components/app-page-skeleton", () => ({
   AppContentSkeleton: () => <p>Carregando dashboard...</p>,
 }));
@@ -30,6 +31,19 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
 }));
 
 import { DashboardClient } from "@/app/_components/dashboard-client";
+import { QueryProvider } from "@/components/query-provider";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: routerReplace }),
+}));
+
+function renderDashboard() {
+  return render(
+    <QueryProvider>
+      <DashboardClient />
+    </QueryProvider>,
+  );
+}
 
 const overview = {
   positions: [],
@@ -45,6 +59,7 @@ describe("DashboardClient", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    routerReplace.mockReset();
   });
 
   it("loads known unassigned wealth from the objectives API", async () => {
@@ -57,7 +72,7 @@ describe("DashboardClient", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardClient />);
+    renderDashboard();
 
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
     expect(
@@ -81,7 +96,7 @@ describe("DashboardClient", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardClient />);
+    renderDashboard();
 
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Dashboard indisponível pela API.",
@@ -104,7 +119,7 @@ describe("DashboardClient", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardClient />);
+    renderDashboard();
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível carregar o dashboard.",
     );
@@ -122,7 +137,7 @@ describe("DashboardClient", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardClient />);
+    renderDashboard();
     await screen.findByText("Resumo do dashboard");
 
     fetchMock.mockRejectedValueOnce(new Error("private transport detail"));
@@ -136,6 +151,8 @@ describe("DashboardClient", () => {
     expect(
       screen.getByRole("button", { name: "Tentar novamente" }),
     ).toBeTruthy();
+    screen.getByRole("button", { name: "Tentar novamente" }).click();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
   it("shows a safe API message when a later dashboard refresh fails", async () => {
@@ -147,7 +164,7 @@ describe("DashboardClient", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardClient />);
+    renderDashboard();
     await screen.findByText("Resumo do dashboard");
     fetchMock.mockImplementationOnce(() =>
       Promise.resolve({
@@ -173,7 +190,7 @@ describe("DashboardClient", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardClient />);
+    renderDashboard();
 
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
     expect(
@@ -193,7 +210,7 @@ describe("DashboardClient", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardClient />);
+    renderDashboard();
     expect(
       await screen.findByText("Patrimônio sem destino indisponível"),
     ).toBeTruthy();
@@ -209,6 +226,23 @@ describe("DashboardClient", () => {
     ).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/portfolio/objectives");
+  });
+
+  it("redirects an unauthorized session to login but avoids a login loop", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
+    );
+    renderDashboard();
+    await screen.findByText("Resumo do dashboard");
+
+    window.dispatchEvent(new Event("auth:unauthorized"));
+    expect(routerReplace).toHaveBeenCalledWith("/login");
+
+    routerReplace.mockClear();
+    window.history.replaceState(null, "", "/login");
+    window.dispatchEvent(new Event("auth:unauthorized"));
+    expect(routerReplace).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -228,7 +262,7 @@ describe("DashboardClient", () => {
         ),
       );
 
-      render(<DashboardClient />);
+      renderDashboard();
 
       expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
       expect(

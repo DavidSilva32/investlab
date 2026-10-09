@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,8 @@ import type {
   PortfolioConcentration,
 } from "@/lib/portfolio-concentration";
 import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 const loadErrorMessage = "Não foi possível carregar a alocação.";
 
@@ -31,41 +34,18 @@ export function PortfolioAllocation({
 }: {
   nextContributionGuidance?: ContributionGuidance;
 }) {
-  const [positions, setPositions] = useState<PortfolioPosition[] | null>(null);
-  const [concentrations, setConcentrations] = useState<Record<
-    ConcentrationDimension,
-    PortfolioConcentration
-  > | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const load = useCallback(() => {
-    let failureMessage = loadErrorMessage;
-    fetch("/api/portfolio/allocation")
-      .then(async (response) => {
-        const body: unknown = await response.json();
-        if (!response.ok) {
-          failureMessage = getApiMessage(body, loadErrorMessage);
-          throw new Error("portfolio_allocation_load_failed");
-        }
-        const data = body as {
-          positions: PortfolioPosition[];
-          concentrations: Record<
-            ConcentrationDimension,
-            PortfolioConcentration
-          >;
-        };
-        setPositions(data.positions);
-        setConcentrations(data.concentrations);
-        setError(null);
-      })
-      .catch(() => setError(failureMessage));
-  }, []);
-
-  useEffect(() => {
-    load();
-    window.addEventListener("portfolio:updated", load);
-    return () => window.removeEventListener("portfolio:updated", load);
-  }, [load]);
+  const allocationQuery = useQuery({
+    queryKey: queryKeys.portfolio.allocation(),
+    queryFn: () =>
+      apiRequest<{
+        positions: PortfolioPosition[];
+        concentrations: Record<ConcentrationDimension, PortfolioConcentration>;
+      }>("/api/portfolio/allocation", undefined, loadErrorMessage),
+  });
+  const positions = allocationQuery.data?.positions ?? null;
+  const concentrations = allocationQuery.data?.concentrations ?? null;
+  const error = allocationQuery.error?.message ?? null;
 
   async function patchClassification(
     body: unknown,
@@ -91,7 +71,7 @@ export function PortfolioAllocation({
           successMessage(result as { count?: number; message?: string }),
         ),
       );
-      load();
+      window.dispatchEvent(new Event("portfolio:updated"));
       return true;
     } catch {
       toast.error("Não foi possível salvar a classificação.");
@@ -142,7 +122,11 @@ export function PortfolioAllocation({
         {error ? (
           <div role="alert" className="space-y-3 text-sm text-destructive">
             <p>{error}</p>
-            <Button type="button" variant="outline" onClick={load}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void allocationQuery.refetch()}
+            >
               Tentar novamente
             </Button>
           </div>

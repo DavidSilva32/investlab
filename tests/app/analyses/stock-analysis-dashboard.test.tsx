@@ -3,15 +3,23 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderBase,
   screen,
   within,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { StockAnalysisDashboard } from "@/app/analyses/_components/stock-analysis-dashboard";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
+import type { ReactNode } from "react";
+
+function render(ui: ReactNode) {
+  return renderBase(<QueryClientWrapper>{ui}</QueryClientWrapper>);
+}
 
 vi.mock("sonner", () => ({
   toast: {
@@ -191,7 +199,6 @@ describe("StockAnalysisDashboard", () => {
   });
 
   it("toasts a selected ticker API failure without duplicating it inline", async () => {
-    vi.useFakeTimers();
     const fetcher = vi.fn((input: RequestInfo | URL) =>
       String(input).includes("/search?")
         ? Promise.resolve(
@@ -208,18 +215,19 @@ describe("StockAnalysisDashboard", () => {
       target: { value: "Vale" },
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(251);
-      await Promise.resolve();
+      await new Promise((resolve) => window.setTimeout(resolve, 251));
     });
-    fireEvent.click(screen.getByRole("option", { name: /VALE3.*Vale/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VALE3.*Vale/ }));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(toast.error).toHaveBeenCalledWith(
-      "Consulta indisponível para Vale.",
-      { id: "stock-analysis-load" },
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Consulta indisponível para Vale.",
+        { id: "stock-analysis-load" },
+      ),
     );
     expect(screen.queryByRole("alert")).toBeNull();
     expect(
@@ -231,7 +239,6 @@ describe("StockAnalysisDashboard", () => {
   });
 
   it("updates the share URL and ignores an older ticker response", async () => {
-    vi.useFakeTimers();
     let resolveInitial!: (response: Response) => void;
     const initialResponse = new Promise<Response>((resolve) => {
       resolveInitial = resolve;
@@ -254,17 +261,12 @@ describe("StockAnalysisDashboard", () => {
     });
     vi.stubGlobal("fetch", fetcher);
     render(<StockAnalysisDashboard initialTicker="PETR4" />);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-      await Promise.resolve();
-    });
     const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "Vale" } });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(251);
-      await Promise.resolve();
+      await new Promise((resolve) => window.setTimeout(resolve, 251));
     });
-    fireEvent.click(screen.getByRole("option", { name: /VALE3.*Vale/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /VALE3.*Vale/ }));
     expect(window.location.search).toBe("?ticker=VALE3");
     await act(async () => {
       await Promise.resolve();
@@ -275,10 +277,7 @@ describe("StockAnalysisDashboard", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getByText(/VALE3.*Vale/)).toBeTruthy();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
+    expect(await screen.findByText(/VALE3.*Vale/)).toBeTruthy();
     expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
       "VALE3",
     );
@@ -652,6 +651,18 @@ it("starts with an empty search and does not fetch a default company", () => {
   expect(fetcher).not.toHaveBeenCalled();
 });
 
+it("renders the server snapshot without reading browser storage", () => {
+  const queryClient = new QueryClient();
+  const markup = renderToString(
+    <QueryClientProvider client={queryClient}>
+      <StockAnalysisDashboard />
+    </QueryClientProvider>,
+  );
+
+  expect(markup).toContain("Encontre uma empresa para analisar");
+  queryClient.clear();
+});
+
 it("offers recent tickers stored locally and lets the user resume one", async () => {
   window.localStorage.setItem(
     "investlab:analyses:recent-tickers",
@@ -688,6 +699,34 @@ it("ignores recent ticker storage that is not an array", async () => {
 
   expect(await screen.findByLabelText("Pesquisar ação")).toBeTruthy();
   expect(screen.queryByText("Consultadas recentemente")).toBeNull();
+});
+
+it("treats inaccessible recent ticker storage as empty", () => {
+  const storageRead = vi
+    .spyOn(Storage.prototype, "getItem")
+    .mockImplementation(() => {
+      throw new Error("Storage access denied");
+    });
+
+  render(<StockAnalysisDashboard />);
+
+  expect(screen.getByLabelText("Pesquisar ação")).toBeTruthy();
+  expect(screen.queryByText("Consultadas recentemente")).toBeNull();
+  storageRead.mockRestore();
+});
+
+it("keeps the stock search available when browser storage is blocked", () => {
+  const storageRead = vi
+    .spyOn(Storage.prototype, "getItem")
+    .mockImplementation(() => {
+      throw new Error("Storage is unavailable");
+    });
+
+  render(<StockAnalysisDashboard />);
+
+  expect(screen.getByLabelText("Pesquisar ação")).toBeTruthy();
+  expect(screen.queryByText("Consultadas recentemente")).toBeNull();
+  storageRead.mockRestore();
 });
 
 it("moves a newly consulted ticker to the front and keeps only five unique entries", async () => {
@@ -829,7 +868,6 @@ it("separates accumulated and isolated ITR periods and handles missing quote tim
 });
 
 it("ignores a stale request rejection after a newer ticker has loaded", async () => {
-  vi.useFakeTimers();
   let rejectInitial!: (reason?: unknown) => void;
   const staleResponse = new Promise<Response>((_resolve, reject) => {
     rejectInitial = reject;
@@ -841,10 +879,6 @@ it("ignores a stale request rejection after a newer ticker has loaded", async ()
   vi.stubGlobal("fetch", fetcher);
   render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-  });
-
-  await act(async () => {
     window.history.pushState({}, "", "/analyses?ticker=VALE3");
     window.dispatchEvent(new PopStateEvent("popstate"));
     await Promise.resolve();
@@ -855,6 +889,6 @@ it("ignores a stale request rejection after a newer ticker has loaded", async ()
     await Promise.resolve();
   });
 
-  expect(screen.getByText("Indicadores fundamentalistas")).toBeTruthy();
+  expect(await screen.findByText("Indicadores fundamentalistas")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
 });

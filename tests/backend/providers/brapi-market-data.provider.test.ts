@@ -35,9 +35,8 @@ describe("BrapiMarketDataProvider", () => {
         }),
       ),
     );
-    const result = await new BrapiMarketDataProvider(fetcher).getQuoteByTicker(
-      "PETR4",
-    );
+    const provider = new BrapiMarketDataProvider(fetcher, "");
+    const result = await provider.getQuoteByTicker("PETR4");
     expect(result).toEqual({
       ticker: "PETR4",
       companyName: "Petrobras PN",
@@ -47,6 +46,7 @@ describe("BrapiMarketDataProvider", () => {
     });
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls[0]?.[0]).toContain("/stocks/quote?symbols=PETR4");
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: undefined });
   });
 
   it("keeps a missing quote timestamp unavailable", async () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
@@ -13,7 +14,8 @@ import {
   Save,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -77,6 +79,12 @@ type Opportunity = {
 };
 type Draft = { value: string; source: string; asOf: string };
 type Drafts = Record<string, Draft>;
+type OpportunitiesPayload = {
+  opportunities?: Opportunity[];
+  settings?: { bazinTargetYield?: number };
+  classificationStatus?: "resolved" | "partial" | "unavailable";
+  classificationLookupFailures?: number;
+};
 
 const definitions: Array<{ key: InputKey; label: string; unit: string }> = [
   { key: "graham_eps", label: "Lucro por ação (LPA)", unit: "R$/ação" },
@@ -225,80 +233,73 @@ export function PortfolioOpportunities({
 }: {
   enabled?: boolean;
 }) {
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [drafts, setDrafts] = useState<Drafts>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [classificationStatus, setClassificationStatus] = useState<
-    "resolved" | "partial" | "unavailable"
-  >("resolved");
-  const [classificationLookupFailures, setClassificationLookupFailures] =
-    useState(0);
+  const [draftOverrides, setDraftOverrides] = useState<Drafts>({});
   const [saving, setSaving] = useState<string | null>(null);
-  const [targetYield, setTargetYield] = useState("6");
+  const [targetYieldOverride, setTargetYieldOverride] = useState<string | null>(
+    null,
+  );
   const [savingTargetYield, setSavingTargetYield] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    let failureMessage =
-      "Não foi possível carregar as oportunidades da carteira.";
-    try {
-      const response = await fetch("/api/analyses/portfolio-opportunities");
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        failureMessage = getApiMessage(body, failureMessage);
-        throw new Error("Portfolio opportunity request failed");
+  const queryClient = useQueryClient();
+  const opportunitiesQuery = useQuery({
+    queryKey: queryKeys.analyses.opportunities(),
+    enabled,
+    queryFn: () =>
+      apiRequest<OpportunitiesPayload>(
+        "/api/analyses/portfolio-opportunities",
+        undefined,
+        "Não foi possível carregar as oportunidades da carteira.",
+      ),
+  });
+  const opportunities = opportunitiesQuery.data?.opportunities ?? [];
+  const drafts = {
+    ...opportunities.reduce<Drafts>((result, item) => {
+      for (const input of item.inputs) {
+        result[getDraftKey(item.ticker, input.inputKey)] = {
+          value: input.value === null ? "" : String(input.value),
+          source: input.source ?? "",
+          asOf: input.asOf ?? new Date().toISOString().slice(0, 10),
+        };
       }
-      const next =
-        (body as { opportunities?: Opportunity[] }).opportunities ?? [];
-      const nextTargetYield = (
-        body as { settings?: { bazinTargetYield?: number } }
-      ).settings?.bazinTargetYield;
-      const nextClassificationStatus = (
-        body as {
-          classificationStatus?: "resolved" | "partial" | "unavailable";
-        }
-      ).classificationStatus;
-      const nextClassificationLookupFailures = (
-        body as { classificationLookupFailures?: number }
-      ).classificationLookupFailures;
-      setClassificationStatus(nextClassificationStatus ?? "resolved");
-      setClassificationLookupFailures(nextClassificationLookupFailures ?? 0);
-      if (
-        typeof nextTargetYield === "number" &&
-        Number.isFinite(nextTargetYield)
-      )
-        setTargetYield(String(nextTargetYield));
-      setOpportunities(next);
-      setDrafts((current) => {
-        const updated = { ...current };
-        for (const item of next) {
-          for (const input of item.inputs) {
-            const key = getDraftKey(item.ticker, input.inputKey);
-            if (!(key in updated)) {
-              updated[key] = {
-                value: input.value === null ? "" : String(input.value),
-                source: input.source ?? "",
-                asOf: input.asOf ?? new Date().toISOString().slice(0, 10),
-              };
-            }
-          }
-        }
-        return updated;
-      });
-    } catch (cause) {
-      setError(failureMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return result;
+    }, {}),
+    ...draftOverrides,
+  };
+  const configuredTargetYield =
+    opportunitiesQuery.data?.settings?.bazinTargetYield;
+  const targetYield =
+    targetYieldOverride ??
+    (typeof configuredTargetYield === "number" &&
+    Number.isFinite(configuredTargetYield)
+      ? String(configuredTargetYield)
+      : "6");
+  const loading = opportunitiesQuery.isPending;
+  const error =
+    !opportunitiesQuery.data && opportunitiesQuery.error instanceof Error
+      ? opportunitiesQuery.error.message
+      : null;
+  const classificationStatus =
+    opportunitiesQuery.data?.classificationStatus ?? "resolved";
+  const classificationLookupFailures =
+    opportunitiesQuery.data?.classificationLookupFailures ?? 0;
 
   useEffect(() => {
-    if (!enabled) return;
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [enabled, load]);
+    const refreshAfterPortfolioUpdate = () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.analyses.opportunities(),
+      });
+    };
+    window.addEventListener("portfolio:updated", refreshAfterPortfolioUpdate);
+    return () =>
+      window.removeEventListener(
+        "portfolio:updated",
+        refreshAfterPortfolioUpdate,
+      );
+  }, [queryClient]);
+
+  const load = useCallback(
+    () => opportunitiesQuery.refetch(),
+    [opportunitiesQuery],
+  );
 
   function updateDraft(
     ticker: string,
@@ -307,10 +308,10 @@ export function PortfolioOpportunities({
     value: string,
   ) {
     const draftKey = getDraftKey(ticker, key);
-    setDrafts((current) => ({
+    setDraftOverrides((current) => ({
       ...current,
       [draftKey]: {
-        ...(current[draftKey] ?? { value: "", source: "", asOf: "" }),
+        ...(drafts[draftKey] ?? { value: "", source: "", asOf: "" }),
         [field]: value,
       },
     }));
@@ -325,26 +326,26 @@ export function PortfolioOpportunities({
     setSaving(getDraftKey(ticker, inputKey));
     let failureMessage = "Não foi possível salvar o dado manual.";
     try {
-      const response = await fetch("/api/analyses/portfolio-opportunities", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ticker,
-          inputKey,
-          value: Number(draft.value.replace(",", ".")),
-          source: draft.source,
-          asOf: draft.asOf,
-        }),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        failureMessage = getApiMessage(body, failureMessage);
-        throw new Error("Manual input request failed");
-      }
+      await apiRequest(
+        "/api/analyses/portfolio-opportunities",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ticker,
+            inputKey,
+            value: Number(draft.value.replace(",", ".")),
+            source: draft.source,
+            asOf: draft.asOf,
+          }),
+        },
+        failureMessage,
+      );
       toast.success("Dado manual salvo com origem e data.");
-      await load();
-    } catch {
-      toast.error(failureMessage);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.analyses.opportunities(),
+      });
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : failureMessage);
     } finally {
       setSaving(null);
     }
@@ -359,23 +360,31 @@ export function PortfolioOpportunities({
     setSavingTargetYield(true);
     let failureMessage = "Não foi possível atualizar a taxa configurada.";
     try {
-      const response = await fetch(
+      await apiRequest(
         "/api/analyses/portfolio-opportunities/settings",
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
           body: JSON.stringify({ bazinTargetYield: value }),
         },
+        failureMessage,
       );
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        failureMessage = getApiMessage(body, failureMessage);
-        throw new Error("Bazin setting request failed");
-      }
       toast.success("Taxa-alvo global atualizada.");
-      await load();
-    } catch {
-      toast.error(failureMessage);
+      setTargetYieldOverride(null);
+      queryClient.setQueryData<OpportunitiesPayload>(
+        queryKeys.analyses.opportunities(),
+        (current) =>
+          current
+            ? {
+                ...current,
+                settings: { ...current.settings, bazinTargetYield: value },
+              }
+            : current,
+      );
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.analyses.opportunities(),
+      });
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : failureMessage);
     } finally {
       setSavingTargetYield(false);
     }
@@ -497,7 +506,9 @@ export function PortfolioOpportunities({
                   max="100"
                   step="0.1"
                   value={targetYield}
-                  onChange={(event) => setTargetYield(event.target.value)}
+                  onChange={(event) =>
+                    setTargetYieldOverride(event.target.value)
+                  }
                 />
               </label>
               <Button

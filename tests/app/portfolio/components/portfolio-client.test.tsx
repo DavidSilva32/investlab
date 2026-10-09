@@ -77,6 +77,24 @@ vi.mock("@/app/portfolio/_components/portfolio-details", () => ({
 import { PortfolioClient } from "@/app/portfolio/_components/portfolio-client";
 import { getPortfolioInsights } from "@/lib/portfolio-insights";
 import { getPortfolioConcentration } from "@/lib/portfolio-concentration";
+import { QueryProvider } from "@/components/query-provider";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
+
+function renderPortfolio(
+  activeView: "overview" | "positions" | "movements",
+  initial?: {
+    initialObjectivesOpen?: boolean;
+    initialObjectiveId?: string | null;
+    initialObjectiveScreen?: string | null;
+  },
+) {
+  return render(
+    <QueryProvider>
+      <PortfolioClient activeView={activeView} {...initial} />
+    </QueryProvider>,
+  );
+}
 
 const overview = {
   positions: [],
@@ -111,7 +129,7 @@ describe("PortfolioClient", () => {
         .mockResolvedValue({ ok: true, json: async () => ({ positions: [] }) }),
     );
 
-    render(<PortfolioClient activeView={activeView} />);
+    renderPortfolio(activeView);
 
     expect(await screen.findByText(text)).toBeTruthy();
     expect(fetch).toHaveBeenCalledWith("/api/portfolio");
@@ -126,7 +144,7 @@ describe("PortfolioClient", () => {
       vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
     );
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
     const pushState = vi.spyOn(window.history, "pushState");
     const replaceState = vi.spyOn(window.history, "replaceState");
 
@@ -186,7 +204,7 @@ describe("PortfolioClient", () => {
       vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
     );
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
 
     const user = userEvent.setup();
     await user.click(
@@ -223,7 +241,7 @@ describe("PortfolioClient", () => {
       vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
     );
     const user = userEvent.setup();
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
 
     await user.click(
       await screen.findByRole("button", { name: "Objetivos e destinos" }),
@@ -254,14 +272,11 @@ describe("PortfolioClient", () => {
       "/portfolio?panel=objectives&objective=reserve&screen=reserve-settings",
     );
 
-    render(
-      <PortfolioClient
-        activeView="overview"
-        initialObjectivesOpen
-        initialObjectiveId="reserve"
-        initialObjectiveScreen="reserve-settings"
-      />,
-    );
+    renderPortfolio("overview", {
+      initialObjectivesOpen: true,
+      initialObjectiveId: "reserve",
+      initialObjectiveScreen: "reserve-settings",
+    });
 
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByTestId("objective-route").textContent).toBe(
@@ -308,7 +323,7 @@ describe("PortfolioClient", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<PortfolioClient activeView="positions" />);
+    renderPortfolio("positions");
     await screen.findByText("Posições");
 
     window.dispatchEvent(new Event("portfolio:updated"));
@@ -317,20 +332,27 @@ describe("PortfolioClient", () => {
   });
 
   it("announces an initial API failure and allows a retry", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        json: async () => ({ message: "Carteira indisponível pela API." }),
-      })
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ positions: [] }),
-      });
+    let overviewRequest = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/portfolio/allocation") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            classDistribution: getPortfolioConcentration([], "assetClass"),
+          }),
+        });
+      }
+      overviewRequest += 1;
+      return overviewRequest === 1
+        ? Promise.resolve({
+            ok: false,
+            json: async () => ({ message: "Carteira indisponível pela API." }),
+          })
+        : Promise.resolve({ ok: true, json: async () => overview });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
 
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Carteira indisponível pela API.",
@@ -345,17 +367,24 @@ describe("PortfolioClient", () => {
   });
 
   it("uses a fixed fallback for a network failure on the initial load", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("private transport detail"))
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ positions: [] }),
-      });
+    let overviewRequest = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/portfolio/allocation") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            classDistribution: getPortfolioConcentration([], "assetClass"),
+          }),
+        });
+      }
+      overviewRequest += 1;
+      return overviewRequest === 1
+        ? Promise.reject(new Error("private transport detail"))
+        : Promise.resolve({ ok: true, json: async () => overview });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
 
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível carregar a carteira.",
@@ -380,7 +409,7 @@ describe("PortfolioClient", () => {
       .mockRejectedValueOnce(new Error("network"));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
     await screen.findByText("Valor conhecido da carteira");
 
     window.dispatchEvent(new Event("portfolio:updated"));
@@ -407,7 +436,7 @@ describe("PortfolioClient", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
     await screen.findByText("Valor conhecido da carteira");
     window.dispatchEvent(new Event("portfolio:updated"));
 
@@ -424,7 +453,7 @@ describe("PortfolioClient", () => {
       .mockResolvedValueOnce({ ok: false, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
 
     expect(
       await screen.findByText("Não foi possível carregar esta distribuição."),
@@ -443,7 +472,7 @@ describe("PortfolioClient", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<PortfolioClient activeView="overview" />);
+    renderPortfolio("overview");
 
     expect(
       await screen.findByText("Não há valores classificados disponíveis."),

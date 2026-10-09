@@ -1,84 +1,52 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMemo } from "react";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
 import type { UnassignedPortfolioSummary } from "@/app/_components/dashboard-unassigned-summary";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
-import { getApiMessage } from "@/lib/api-message";
+import {
+  usePortfolioObjectives,
+  usePortfolioOverview,
+} from "@/lib/queries/portfolio";
 
 type Overview = Parameters<typeof DashboardSummary>[0] & {
   positions: NonNullable<Parameters<typeof DashboardSummary>[0]["positions"]>;
 };
 
-const loadErrorMessage = "Não foi possível carregar o dashboard.";
-
 export function DashboardClient() {
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [unassignedSummary, setUnassignedSummary] =
-    useState<UnassignedPortfolioSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const overviewQuery = usePortfolioOverview<Overview>(
+    "Não foi possível carregar o dashboard.",
+  );
+  const objectivesQuery = usePortfolioObjectives<{
+    unassignedKnownValue: number;
+    unassignedPositionCount: number;
+    unassignedUnvaluedPositionCount: number;
+  }>();
+  const overview = overviewQuery.data;
+  const unassignedSummary = useMemo<UnassignedPortfolioSummary | null>(() => {
+    const data = objectivesQuery.data;
+    if (objectivesQuery.isError) return { status: "unavailable" };
+    if (!data) return null;
+    if (
+      typeof data.unassignedKnownValue !== "number" ||
+      !Number.isFinite(data.unassignedKnownValue) ||
+      !Number.isInteger(data.unassignedPositionCount) ||
+      !Number.isInteger(data.unassignedUnvaluedPositionCount)
+    ) {
+      return { status: "unavailable" };
+    }
+    return {
+      status: "loaded",
+      knownValue: data.unassignedKnownValue,
+      positionCount: data.unassignedPositionCount,
+      unvaluedPositionCount: data.unassignedUnvaluedPositionCount,
+    };
+  }, [objectivesQuery.data, objectivesQuery.isError]);
 
-  const loadUnassignedSummary = useCallback(() => {
-    fetch("/api/portfolio/objectives")
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.message);
-        return body;
-      })
-      .then((data) => {
-        if (
-          typeof data.unassignedKnownValue !== "number" ||
-          !Number.isFinite(data.unassignedKnownValue) ||
-          !Number.isInteger(data.unassignedPositionCount) ||
-          !Number.isInteger(data.unassignedUnvaluedPositionCount)
-        ) {
-          throw new Error("Invalid objectives summary");
-        }
-        setUnassignedSummary({
-          status: "loaded",
-          knownValue: data.unassignedKnownValue,
-          positionCount: data.unassignedPositionCount,
-          unvaluedPositionCount: data.unassignedUnvaluedPositionCount,
-        });
-      })
-      .catch(() => setUnassignedSummary({ status: "unavailable" }));
-  }, []);
-
-  const loadOverview = useCallback(() => {
-    let failureMessage = loadErrorMessage;
-    fetch("/api/portfolio")
-      .then(async (response) => {
-        const body: unknown = await response.json();
-        if (!response.ok) {
-          failureMessage = getApiMessage(body, loadErrorMessage);
-          throw new Error("dashboard_portfolio_load_failed");
-        }
-        return body as Overview;
-      })
-      .then((data) => {
-        setOverview({
-          positions: data.positions,
-          insights: data.insights,
-          emergencyReserve: data.emergencyReserve,
-          contributionAllocationMode:
-            data.contributionAllocationMode ?? "legacy",
-        });
-        setError(null);
-        loadUnassignedSummary();
-      })
-      .catch(() => {
-        setError(failureMessage);
-      });
-  }, [loadUnassignedSummary]);
-
-  useEffect(() => {
-    loadOverview();
-    window.addEventListener("portfolio:updated", loadOverview);
-    return () => window.removeEventListener("portfolio:updated", loadOverview);
-  }, [loadOverview]);
-
-  if (error && !overview)
+  const error =
+    overviewQuery.error instanceof Error ? overviewQuery.error.message : null;
+  if (overviewQuery.isError && !overview)
     return (
       <div role="alert" className="space-y-3 text-sm text-destructive">
         <p>{error}</p>
@@ -86,7 +54,7 @@ export function DashboardClient() {
           type="button"
           variant="link"
           className="h-auto p-0 text-foreground"
-          onClick={loadOverview}
+          onClick={() => void overviewQuery.refetch()}
         >
           Tentar novamente
         </Button>
@@ -99,14 +67,14 @@ export function DashboardClient() {
       <p className="text-sm text-muted-foreground">
         Visão geral do patrimônio e próximos passos
       </p>
-      {error && (
+      {overviewQuery.isError && error && (
         <div role="alert" className="space-y-2 text-sm text-destructive">
           <p>{error}</p>
           <Button
             type="button"
             variant="link"
             className="h-auto p-0 text-foreground"
-            onClick={loadOverview}
+            onClick={() => void overviewQuery.refetch()}
           >
             Tentar novamente
           </Button>
@@ -115,7 +83,7 @@ export function DashboardClient() {
       <DashboardSummary
         {...overview}
         unassignedSummary={unassignedSummary}
-        onRetryUnassigned={loadUnassignedSummary}
+        onRetryUnassigned={() => void objectivesQuery.refetch()}
       />
     </div>
   );

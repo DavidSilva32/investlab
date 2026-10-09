@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Command,
   CommandEmpty,
@@ -14,7 +15,8 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
-import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 type TickerOption = { ticker: string; name: string };
 
@@ -30,15 +32,42 @@ export function AnalysisStockSearch({
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(ticker);
   const [queryTicker, setQueryTicker] = useState(ticker);
-  const [options, setOptions] = useState<TickerOption[]>([]);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const tickerIsSynchronized = queryTicker === ticker;
   const canSearch =
     tickerIsSynchronized &&
     query.trim().length >= 2 &&
     query.trim().toUpperCase() !== ticker;
+  const normalizedQuery = debouncedQuery.trim();
+  const debouncing = canSearch && normalizedQuery !== query.trim();
+  const searchQuery = useQuery({
+    queryKey: queryKeys.analyses.search(normalizedQuery),
+    enabled:
+      tickerIsSynchronized &&
+      normalizedQuery.length >= 2 &&
+      normalizedQuery.toUpperCase() !== ticker,
+    queryFn: async ({ signal }) => {
+      const body = await apiRequest<{ results?: TickerOption[] }>(
+        `/api/analyses/stocks/search?q=${encodeURIComponent(normalizedQuery)}`,
+        { signal },
+        "Não foi possível pesquisar ações agora.",
+      );
+      const seenTickers = new Set<string>();
+      return (body.results ?? []).filter((option) => {
+        const normalizedTicker = option.ticker.toUpperCase();
+        if (seenTickers.has(normalizedTicker)) return false;
+        seenTickers.add(normalizedTicker);
+        return true;
+      });
+    },
+  });
+  const options = canSearch && !debouncing ? (searchQuery.data ?? []) : [];
+  const searching = debouncing || searchQuery.isFetching;
+  const searchError =
+    canSearch && searchQuery.error instanceof Error
+      ? searchQuery.error.message
+      : null;
 
   useEffect(() => {
     inputRef.current?.setAttribute("aria-expanded", String(open && canSearch));
@@ -49,10 +78,7 @@ export function AnalysisStockSearch({
     const timer = window.setTimeout(() => {
       setQueryTicker(ticker);
       setQuery(ticker);
-      setOptions([]);
       setOpen(false);
-      setSearching(false);
-      setSearchError(null);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [ticker, tickerIsSynchronized]);
@@ -61,57 +87,16 @@ export function AnalysisStockSearch({
     if (!tickerIsSynchronized) return;
     const normalized = query.trim();
     if (normalized.length < 2 || normalized.toUpperCase() === ticker) return;
-
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      setSearching(true);
-      setSearchError(null);
-      try {
-        const response = await fetch(
-          `/api/analyses/stocks/search?q=${encodeURIComponent(normalized)}`,
-          { signal: controller.signal },
-        );
-        const body = (await response.json()) as {
-          results?: TickerOption[];
-          message?: string;
-        };
-        if (!response.ok) {
-          setSearchError(
-            getApiMessage(body, "Não foi possível pesquisar ações agora."),
-          );
-          setOptions([]);
-          setOpen(true);
-          return;
-        }
-        if (controller.signal.aborted) return;
-        const seenTickers = new Set<string>();
-        const uniqueResults = (body.results ?? []).filter((option) => {
-          const normalizedTicker = option.ticker.toUpperCase();
-          if (seenTickers.has(normalizedTicker)) return false;
-          seenTickers.add(normalizedTicker);
-          return true;
-        });
-        setOptions(uniqueResults);
-        setOpen(true);
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") return;
-        setOptions([]);
-        setOpen(true);
-        setSearchError("Não foi possível pesquisar ações agora.");
-      } finally {
-        if (!controller.signal.aborted) setSearching(false);
-      }
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(normalized);
+      setOpen(true);
     }, 250);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
+    return () => window.clearTimeout(timer);
   }, [query, ticker, tickerIsSynchronized]);
 
   function select(option: TickerOption) {
     setQuery(option.ticker);
     setOpen(false);
-    setOptions([]);
     onSelect(option);
   }
 
@@ -138,12 +123,6 @@ export function AnalysisStockSearch({
                 onFocus={() => options.length > 0 && setOpen(true)}
                 onValueChange={(value) => {
                   setQuery(value);
-                  setOptions([]);
-                  setSearchError(null);
-                  setSearching(
-                    value.trim().length >= 2 &&
-                      value.trim().toUpperCase() !== ticker,
-                  );
                   setOpen(true);
                 }}
               />

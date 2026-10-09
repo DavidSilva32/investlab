@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -24,6 +25,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 type MarketDataStatus = {
   latestQuote: { quoteObservedAt: string; sourceTicker: string } | null;
@@ -37,7 +40,6 @@ type MarketDataStatus = {
     skippedFreshIssuers: number;
   };
 };
-class ApiResponseError extends Error {}
 const statusErrorFallback = "Não foi possível consultar os dados de mercado.";
 
 const dateTime = new Intl.DateTimeFormat("pt-BR", {
@@ -55,53 +57,26 @@ function ageLabel(value: string) {
 }
 
 export function MarketDataSettings() {
-  const [status, setStatus] = useState<MarketDataStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery({
+    queryKey: queryKeys.settings.marketData(),
+    queryFn: () =>
+      apiRequest<MarketDataStatus>(
+        "/api/settings/market-data",
+        { cache: "no-store" },
+        statusErrorFallback,
+      ),
+  });
+  const status = statusQuery.data ?? null;
+  const loading = statusQuery.isPending;
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const loadStatus = useCallback(async () => {
-    const response = await fetch("/api/settings/market-data", {
-      cache: "no-store",
-    });
-    const body = (await response.json()) as MarketDataStatus & {
-      message?: string;
-    };
-    if (!response.ok)
-      throw new ApiResponseError(getApiMessage(body, statusErrorFallback));
-    setStatus(body);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/settings/market-data", { cache: "no-store" })
-      .then(async (response) => {
-        const body = (await response.json()) as MarketDataStatus & {
-          message?: string;
-        };
-        if (!response.ok)
-          throw new ApiResponseError(getApiMessage(body, statusErrorFallback));
-        return body;
-      })
-      .then((body) => {
-        if (!cancelled) setStatus(body);
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled)
-          setError(
-            loadError instanceof ApiResponseError && loadError.message
-              ? loadError.message
-              : statusErrorFallback,
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const loadStatus = async () => {
+    const result = await statusQuery.refetch();
+    if (result.error) setError(result.error.message);
+  };
 
   async function refresh() {
     setRefreshing(true);
@@ -147,15 +122,10 @@ export function MarketDataSettings() {
           return;
         }
       }
-      try {
-        await loadStatus();
-      } catch (statusLoadError) {
-        setError(
-          statusLoadError instanceof ApiResponseError
-            ? statusLoadError.message
-            : statusErrorFallback,
-        );
-      }
+      await loadStatus();
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.analyses.all,
+      });
       const unavailableSummary =
         unavailable === 1
           ? "; 1 emissor indisponível"
@@ -171,11 +141,7 @@ export function MarketDataSettings() {
     } catch {
       toast.error("Não foi possível atualizar os dados de mercado.");
       setNotice(null);
-      try {
-        await loadStatus();
-      } catch {
-        /* Mantém a falha da atualização como mensagem principal. */
-      }
+      await loadStatus();
     } finally {
       setRefreshing(false);
     }
@@ -225,13 +191,13 @@ export function MarketDataSettings() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {error && (
+        {(error || statusQuery.error) && (
           <div
             role="alert"
             className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
           >
             <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-            <span>{error}</span>
+            <span>{error ?? statusQuery.error!.message}</span>
           </div>
         )}
         {notice && (

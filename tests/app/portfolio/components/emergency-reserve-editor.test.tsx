@@ -2,17 +2,23 @@
 import {
   cleanup,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
+import { queryKeys } from "@/lib/query-keys";
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
 
 async function openReservePositions(user = userEvent.setup()) {
   const triggers = await screen.findAllByRole("button", {
@@ -109,6 +115,27 @@ const editorData = {
   ],
 };
 
+function RefreshReservePreview() {
+  const queryClient = useQueryClient();
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.portfolio.emergencyReservePreview({
+            expenses: 3000,
+            months: 6,
+            selectedAssetKeys: [keyA],
+          }),
+          exact: true,
+        })
+      }
+    >
+      Atualizar prévia
+    </button>
+  );
+}
+
 describe("EmergencyReserveEditor", () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -174,6 +201,41 @@ describe("EmergencyReserveEditor", () => {
     expect(
       screen.queryByRole("button", { name: /Buscar grupos pelo valor/ }),
     ).toBeNull();
+  });
+
+  it("shows cached preview data while a background preview refresh is in flight", async () => {
+    const pendingRefresh = new Promise<Response>(() => undefined);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => editorData })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ...editorData.calculation,
+          monthlyExpenses: 3000,
+          targetValue: 18000,
+          targetValueCents: "1800000",
+        }),
+      })
+      .mockReturnValueOnce(pendingRefresh);
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(
+      <>
+        <EmergencyReserveEditor />
+        <RefreshReservePreview />
+      </>,
+    );
+
+    const expenses = await screen.findByLabelText("Custo mensal");
+    await user.clear(expenses);
+    await user.type(expenses, "3000");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("R$ 18.000,00")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Atualizar prévia" }));
+    expect(await screen.findAllByText("Calculando...")).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("labels a same-date complete estimate without the approximate qualifier", async () => {

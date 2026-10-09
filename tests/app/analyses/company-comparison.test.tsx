@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render as renderBase, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompanyComparison } from "@/app/analyses/_components/company-comparison";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
+import type { ReactNode } from "react";
+
+function render(ui: ReactNode) {
+  return renderBase(<QueryClientWrapper>{ui}</QueryClientWrapper>);
+}
 
 vi.mock("@/app/analyses/_components/analysis-stock-search", () => ({
   AnalysisStockSearch: ({

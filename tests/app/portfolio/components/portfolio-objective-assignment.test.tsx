@@ -15,6 +15,7 @@ import {
 } from "@/app/portfolio/_components/portfolio-objective-assignment";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
 
 const goals: PortfolioObjective[] = [
   {
@@ -141,7 +142,7 @@ const positions: ObjectivePosition[] = [
 ];
 
 function render(ui: ReactElement) {
-  const result = rtlRender(ui);
+  const result = rtlRender(ui, { wrapper: QueryClientWrapper });
   const finder = result.queryByRole("button", {
     name: /Buscar uma combinação pelo valor/,
   });

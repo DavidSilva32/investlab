@@ -1,10 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { BookOpen, ChevronDown, Search, RefreshCw, Clock3 } from "lucide-react";
 import { toast } from "sonner";
-import { getApiMessage } from "@/lib/api-message";
+import { ApiError, apiRequestWithResponse } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { getLearningClassHref } from "@/lib/asset-class-learning";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +42,11 @@ import {
 
 type TickerOption = { ticker: string; name: string };
 const recentTickersKey = "investlab:analyses:recent-tickers";
+const recentTickersUpdatedEvent = "investlab:analyses:recent-tickers-updated";
 const recentTickerLimit = 5;
+const emptyRecentTickers: TickerOption[] = [];
+let recentTickersSnapshot: TickerOption[] | null = null;
+let recentTickersStorageValue: string | null | undefined;
 
 function readRecentTickers(): TickerOption[] {
   try {
@@ -65,9 +78,41 @@ function saveRecentTicker(option: TickerOption) {
       ...readRecentTickers().filter((item) => item.ticker !== option.ticker),
     ].slice(0, recentTickerLimit);
     window.localStorage.setItem(recentTickersKey, JSON.stringify(recent));
+    recentTickersStorageValue = JSON.stringify(recent);
+    recentTickersSnapshot = recent;
+    window.dispatchEvent(new Event(recentTickersUpdatedEvent));
   } catch {
     // Recent tickers are a convenience and must not interrupt an analysis.
   }
+}
+
+function subscribeToRecentTickers(onStoreChange: () => void) {
+  const refresh = () => {
+    recentTickersStorageValue = window.localStorage.getItem(recentTickersKey);
+    recentTickersSnapshot = readRecentTickers();
+    onStoreChange();
+  };
+  window.addEventListener(recentTickersUpdatedEvent, refresh);
+  window.addEventListener("storage", refresh);
+  return () => {
+    window.removeEventListener(recentTickersUpdatedEvent, refresh);
+    window.removeEventListener("storage", refresh);
+  };
+}
+
+function getRecentTickersSnapshot() {
+  try {
+    const storageValue = window.localStorage.getItem(recentTickersKey);
+    if (storageValue !== recentTickersStorageValue) {
+      recentTickersStorageValue = storageValue;
+      recentTickersSnapshot = readRecentTickers();
+    }
+  } catch {
+    recentTickersStorageValue = null;
+    recentTickersSnapshot = emptyRecentTickers;
+  }
+  recentTickersSnapshot ??= readRecentTickers();
+  return recentTickersSnapshot;
 }
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -120,89 +165,96 @@ export function StockAnalysisDashboard({
 }: {
   initialTicker?: string;
 }) {
-  const [analysis, setAnalysis] = useState<StockAnalysis | null>(null);
-  const [recentTickers, setRecentTickers] = useState<TickerOption[]>([]);
+  const recentTickers = useSyncExternalStore(
+    subscribeToRecentTickers,
+    getRecentTickersSnapshot,
+    () => emptyRecentTickers,
+  );
   const [selectedTicker, setSelectedTicker] = useState(initialTicker);
-  const requestSequence = useRef(0);
-  const [error, setError] = useState<string | null>(null);
-  const [showErrorInline, setShowErrorInline] = useState(false);
-  const [loading, setLoading] = useState(Boolean(initialTicker));
-  const [retryRemaining, setRetryRemaining] = useState(0);
+  const [notifiedTicker, setNotifiedTicker] = useState<string | null>(null);
+  const pendingNotification = useRef<string | null>(null);
+  const [clockNow, setClockNow] = useState(0);
   const [days, setDays] = useState(365);
-
-  const load = useCallback(async (ticker: string, notify = false) => {
-    const sequence = ++requestSequence.current;
-    const toastId = "stock-analysis-load";
-    if (notify)
-      toast.loading(`Consultando dados de ${ticker}...`, { id: toastId });
-    setLoading(true);
-    setError(null);
-    setShowErrorInline(false);
-    setRetryRemaining(0);
-    let failureMessage =
-      "Não foi possível consultar a ação agora. Tente novamente em instantes.";
-    try {
-      const response = await fetch(
-        `/api/analyses/stocks/${encodeURIComponent(ticker)}`,
+  const analysisQuery = useQuery({
+    queryKey: queryKeys.analyses.stock(selectedTicker.toUpperCase()),
+    enabled: Boolean(selectedTicker),
+    queryFn: async () => {
+      const { data } = await apiRequestWithResponse<StockAnalysis>(
+        `/api/analyses/stocks/${encodeURIComponent(selectedTicker)}`,
+        undefined,
+        "Não foi possível consultar a ação agora. Tente novamente em instantes.",
       );
-      const body = await response.json();
-      const retryAfter = Number(response.headers.get("retry-after"));
-      if (sequence !== requestSequence.current) return;
-      if (
-        response.status === 429 &&
-        Number.isFinite(retryAfter) &&
-        retryAfter > 0
-      )
-        setRetryRemaining(Math.ceil(retryAfter));
-      if (!response.ok) {
-        failureMessage = getApiMessage(
-          body,
-          "Não foi possível consultar a ação agora. Tente novamente em instantes.",
-        );
-        throw new Error("API request failed");
-      }
-      if (body) {
-        const loadedAnalysis = body as StockAnalysis;
-        setAnalysis(loadedAnalysis);
-        saveRecentTicker({
-          ticker: ticker.toUpperCase(),
-          name: loadedAnalysis.companyName ?? ticker.toUpperCase(),
-        });
-        setRecentTickers(readRecentTickers());
-      } else {
-        setAnalysis(null);
-      }
-      if (notify)
-        toast.success(
-          getApiMessage(body, `Dados de ${ticker} carregados com sucesso.`),
-          {
-            id: toastId,
-          },
-        );
-    } catch {
-      if (sequence !== requestSequence.current) return;
-      setAnalysis(null);
-      if (notify) toast.error(failureMessage, { id: toastId });
-      setError(failureMessage);
-      setShowErrorInline(!notify);
-    } finally {
-      if (sequence === requestSequence.current) setLoading(false);
+      return data;
+    },
+  });
+  const analysis = selectedTicker ? (analysisQuery.data ?? null) : null;
+  const error =
+    !analysis && analysisQuery.error instanceof Error
+      ? analysisQuery.error.message
+      : null;
+  const showErrorInline = notifiedTicker !== selectedTicker;
+  const loading = Boolean(selectedTicker) && analysisQuery.isPending;
+  const retryAfter =
+    analysisQuery.error instanceof ApiError &&
+    analysisQuery.error.status === 429
+      ? Number(analysisQuery.error.retryAfter)
+      : 0;
+  const retryStartedAt = analysisQuery.errorUpdatedAt;
+  const retryRemaining =
+    Number.isFinite(retryAfter) && retryAfter > 0 && retryStartedAt > 0
+      ? Math.max(
+          0,
+          Math.ceil(
+            retryAfter - ((clockNow || retryStartedAt) - retryStartedAt) / 1000,
+          ),
+        )
+      : 0;
+
+  const load = useCallback(
+    (ticker: string) => {
+      toast.loading(`Consultando dados de ${ticker}...`, {
+        id: "stock-analysis-load",
+      });
+      pendingNotification.current = ticker;
+      setSelectedTicker(ticker);
+      setNotifiedTicker(ticker);
+      if (ticker === selectedTicker) void analysisQuery.refetch();
+    },
+    [analysisQuery, selectedTicker],
+  );
+
+  useEffect(() => {
+    const loadedAnalysis = analysisQuery.data;
+    if (!loadedAnalysis) return;
+    saveRecentTicker({
+      ticker: loadedAnalysis.ticker.toUpperCase(),
+      name: loadedAnalysis.companyName ?? loadedAnalysis.ticker.toUpperCase(),
+    });
+    if (pendingNotification.current === loadedAnalysis.ticker) {
+      toast.success(
+        `Dados de ${loadedAnalysis.ticker} carregados com sucesso.`,
+        {
+          id: "stock-analysis-load",
+        },
+      );
+      pendingNotification.current = null;
     }
-  }, []);
+  }, [analysisQuery.data]);
 
   useEffect(() => {
-    if (!initialTicker) return;
-    const timer = window.setTimeout(() => void load(initialTicker), 0);
-    return () => window.clearTimeout(timer);
-  }, [initialTicker, load]);
+    const queryError = analysisQuery.error;
+    if (!queryError) return;
+    if (pendingNotification.current === selectedTicker) {
+      toast.error(queryError.message, { id: "stock-analysis-load" });
+      pendingNotification.current = null;
+    }
+  }, [analysisQuery.error, analysisQuery.errorUpdatedAt, selectedTicker]);
 
   useEffect(() => {
-    const timer = window.setTimeout(
-      () => setRecentTickers(readRecentTickers()),
-      0,
-    );
-    return () => window.clearTimeout(timer);
-  }, []);
+    if (!retryAfter || !retryStartedAt) return;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [retryAfter, retryStartedAt]);
 
   useEffect(() => {
     function handlePopState() {
@@ -215,38 +267,22 @@ export function StockAnalysisDashboard({
         : "";
       setSelectedTicker(ticker);
       setDays(365);
-      if (ticker) {
-        void load(ticker);
-      } else {
-        requestSequence.current += 1;
-        setAnalysis(null);
-        setError(null);
-        setLoading(false);
-      }
+      setNotifiedTicker(null);
+      pendingNotification.current = null;
     }
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [load]);
-
-  useEffect(() => {
-    if (retryRemaining <= 0) return;
-    const timer = window.setInterval(
-      () => setRetryRemaining((seconds) => Math.max(0, seconds - 1)),
-      1000,
-    );
-    return () => window.clearInterval(timer);
-  }, [retryRemaining]);
+  }, []);
 
   const selectTicker = useCallback(
     (option: TickerOption) => {
       const ticker = option.ticker.toUpperCase();
-      setSelectedTicker(ticker);
       const url = new URL(window.location.href);
       url.searchParams.set("ticker", ticker);
       window.history.pushState({}, "", url);
       setDays(365);
-      void load(ticker, true);
+      void load(ticker);
     },
     [load],
   );
@@ -298,7 +334,7 @@ export function StockAnalysisDashboard({
               type="button"
               variant="outline"
               disabled={retryRemaining > 0}
-              onClick={() => void load(selectedTicker, true)}
+              onClick={() => void load(selectedTicker)}
             >
               <RefreshCw className="size-4" aria-hidden="true" />
               {retryRemaining > 0

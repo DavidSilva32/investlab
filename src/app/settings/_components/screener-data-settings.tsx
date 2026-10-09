@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -24,6 +25,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 type SyncStatus = {
   lastSuccessfulCompletedAt: string | null;
@@ -39,7 +42,6 @@ type SyncStatus = {
     errorMessage: string | null;
   };
 };
-class ApiResponseError extends Error {}
 const statusErrorFallback =
   "Não foi possível consultar o status da sincronização.";
 
@@ -65,40 +67,28 @@ function formatDuration(durationMs: number) {
 }
 
 export function ScreenerDataSettings() {
-  const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery({
+    queryKey: queryKeys.settings.screener(),
+    queryFn: () =>
+      apiRequest<SyncStatus>(
+        "/api/settings/screener",
+        { cache: "no-store" },
+        statusErrorFallback,
+      ),
+  });
+  const status = statusQuery.data ?? null;
+  const loading = statusQuery.isPending;
   const [syncing, setSyncing] = useState(false);
   const [syncStartedAt, setSyncStartedAt] = useState(() => Date.now());
   const [syncCurrentTime, setSyncCurrentTime] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
 
-  const getStatus = useCallback(async () => {
-    const response = await fetch("/api/settings/screener", {
-      cache: "no-store",
-    });
-    const body = (await response.json()) as SyncStatus & {
-      message?: string;
-    };
-    if (!response.ok)
-      throw new ApiResponseError(getApiMessage(body, statusErrorFallback));
-    return body;
-  }, []);
-
   const loadStatus = useCallback(async () => {
-    setLoading(true);
     setError(null);
-    try {
-      setStatus(await getStatus());
-    } catch (loadError) {
-      setError(
-        loadError instanceof ApiResponseError && loadError.message
-          ? loadError.message
-          : statusErrorFallback,
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [getStatus]);
+    const result = await statusQuery.refetch();
+    if (result.error) setError(result.error.message);
+  }, [statusQuery]);
 
   useEffect(() => {
     if (!syncing) return;
@@ -107,28 +97,6 @@ export function ScreenerDataSettings() {
     }, 1000);
     return () => window.clearInterval(interval);
   }, [syncing]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getStatus()
-      .then((body) => {
-        if (!cancelled) setStatus(body);
-      })
-      .catch((loadError: unknown) => {
-        if (!cancelled)
-          setError(
-            loadError instanceof ApiResponseError && loadError.message
-              ? loadError.message
-              : statusErrorFallback,
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [getStatus]);
 
   async function synchronize() {
     const startedAt = Date.now();
@@ -155,6 +123,9 @@ export function ScreenerDataSettings() {
       toast.success(
         getApiMessage(body, "Sincronização concluída com sucesso."),
       );
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.analyses.all,
+      });
     } catch {
       toast.error(
         "A sincronização não foi concluída. Consulte o status abaixo.",
@@ -208,7 +179,7 @@ export function ScreenerDataSettings() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {error && (
+        {(error || statusQuery.error) && (
           <div
             role="alert"
             className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
@@ -217,7 +188,7 @@ export function ScreenerDataSettings() {
               className="mt-0.5 size-4 shrink-0"
               aria-hidden="true"
             />
-            <span>{error}</span>
+            <span>{error ?? statusQuery.error!.message}</span>
           </div>
         )}
         {syncing && (

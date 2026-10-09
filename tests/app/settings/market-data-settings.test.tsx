@@ -1,9 +1,18 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { MarketDataSettings } from "@/app/settings/_components/market-data-settings";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -95,6 +104,7 @@ describe("MarketDataSettings", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/settings/market-data", {
       cache: "no-store",
+      headers: {},
     });
   });
 

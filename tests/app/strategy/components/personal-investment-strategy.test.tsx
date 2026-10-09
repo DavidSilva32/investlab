@@ -3,13 +3,17 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersonalInvestmentStrategy } from "@/app/strategy/_components/personal-investment-strategy";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
 
 const baseData = {
   valuationDate: "2026-10-02",
@@ -121,7 +125,14 @@ describe("PersonalInvestmentStrategy", () => {
     ).toBeTruthy();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
+      // React Query schedules the query function after notifying its observer.
+      // Flush that microtask before advancing the request timeout itself.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.runAllTimersAsync();
     });
 
     expect(
@@ -266,7 +277,19 @@ describe("PersonalInvestmentStrategy", () => {
             },
           }),
         )
-        .mockResolvedValueOnce(jsonResponse({ allocationActive: true })),
+        .mockResolvedValueOnce(jsonResponse({ allocationActive: true }))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            ...baseData,
+            savedAllocationPercentages: {
+              fixed_income: 40,
+              brazilian_equities: 30,
+              international_etfs: 20,
+              fiis: 10,
+            },
+            allocationActive: true,
+          }),
+        ),
     );
     const user = userEvent.setup();
     render(<PersonalInvestmentStrategy />);

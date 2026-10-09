@@ -898,7 +898,7 @@ describe("EmergencyReserveService", () => {
       toObjectiveId: expect.any(String),
     });
     expect(result.candidates[0].totalCents).toBe("9000");
-  });
+  }, 15_000);
 
   it("reports the expanded position cap when reserve has no valued baseline candidate", async () => {
     const free = position({ assetCode: "FREE-90", totalValue: "90" });

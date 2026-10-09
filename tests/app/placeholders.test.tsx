@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/app-shell", () => ({
@@ -15,23 +16,31 @@ import AnalysesPage from "@/app/analyses/page";
 import ImportsPage from "@/app/imports/page";
 import SettingsPage from "@/app/settings/page";
 
+function renderWithQueryClient(element: React.ReactNode) {
+  return renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      {element}
+    </QueryClientProvider>,
+  );
+}
+
 describe("secondary pages", () => {
   it("renders each planned area with its context", async () => {
-    expect(renderToStaticMarkup(<ImportsPage />)).toContain(
+    expect(renderWithQueryClient(<ImportsPage />)).toContain(
       "Importe posições ou movimentações da B3",
     );
     expect(
-      renderToStaticMarkup(
+      renderWithQueryClient(
         await AnalysesPage({ searchParams: Promise.resolve({}) }),
       ),
     ).toContain("Minha carteira");
-    expect(renderToStaticMarkup(<SettingsPage />)).toContain(
+    expect(renderWithQueryClient(<SettingsPage />)).toContain(
       "Fundamentos e cadastro",
     );
   });
 
   it("opens a shared analysis with the ticker from the query string", async () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderWithQueryClient(
       await AnalysesPage({
         searchParams: Promise.resolve({ ticker: "VALE3" }),
       }),

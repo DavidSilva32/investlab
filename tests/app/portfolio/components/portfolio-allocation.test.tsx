@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,10 +12,14 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
 import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
 import {
   getPortfolioConcentration,
   type ConcentrationDimension,
 } from "@/lib/portfolio-concentration";
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
 
 const pointerCaptureMethods = [
   "hasPointerCapture",

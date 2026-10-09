@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import LoginPage from "@/app/login/page";
 import { LogoutButton } from "@/components/logout-button";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
 
 const push = vi.hoisted(() => vi.fn());
 
@@ -114,7 +115,11 @@ describe("authentication interface", () => {
     );
 
     await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/"));
-    render(<LogoutButton />);
+    render(
+      <QueryClientWrapper>
+        <LogoutButton />
+      </QueryClientWrapper>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Sair" }));
     await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
   });

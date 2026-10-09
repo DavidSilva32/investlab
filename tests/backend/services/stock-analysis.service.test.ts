@@ -5,6 +5,13 @@ import {
   StockAnalysisService,
 } from "@/backend/services/stock-analysis.service";
 
+function rejectedScreenerLookups() {
+  return {
+    getComparisonMetadata: vi.fn().mockRejectedValue(new Error("offline")),
+    getValidatedAnalysisQuote: vi.fn().mockRejectedValue(new Error("offline")),
+  };
+}
+
 describe("StockAnalysisService ticker search", () => {
   it("trims a valid search query and returns provider matches", async () => {
     const marketProvider = {
@@ -68,6 +75,7 @@ describe("StockAnalysisService", () => {
       marketProvider,
       fundamentalsProvider,
       repository,
+      rejectedScreenerLookups(),
     );
 
     await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
@@ -167,6 +175,7 @@ describe("StockAnalysisService", () => {
       marketProvider,
       fundamentalsProvider,
       repository,
+      rejectedScreenerLookups(),
     );
 
     const result = await service.getByTicker("PETR4");
@@ -1604,6 +1613,7 @@ describe("StockAnalysisService cache and failures", () => {
       marketProvider,
       fundamentalsProvider,
       repository,
+      rejectedScreenerLookups(),
     );
 
     await service.getByTicker("PETR4");
@@ -1685,6 +1695,7 @@ describe("StockAnalysisService cache and failures", () => {
       marketProvider,
       fundamentalsProvider,
       repository,
+      rejectedScreenerLookups(),
     );
 
     const result = await service.getByTicker(" petr4 ");
@@ -2553,6 +2564,7 @@ describe("StockAnalysisService cache and failures", () => {
       marketProvider,
       fundamentalsProvider,
       { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      rejectedScreenerLookups(),
     );
 
     await expect(service.getByTicker("PETR4")).rejects.toMatchObject({

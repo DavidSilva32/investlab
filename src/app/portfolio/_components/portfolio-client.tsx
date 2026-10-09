@@ -1,9 +1,12 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, List, Target } from "lucide-react";
 import { toast } from "sonner";
-import { getApiMessage } from "@/lib/api-message";
+import {
+  usePortfolioAllocation,
+  usePortfolioOverview,
+} from "@/lib/queries/portfolio";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
 import { ReferenceRates } from "@/components/reference-rates";
@@ -36,15 +39,6 @@ type Overview = {
   nextContributionGuidance: ContributionGuidance;
 };
 
-type ClassificationState =
-  | { status: "loading" }
-  | {
-      status: "loaded";
-      positions: ClassifiedPosition[];
-      classDistribution: PortfolioConcentration;
-    }
-  | { status: "unavailable" };
-
 const loadErrorMessage = "Não foi possível carregar a carteira.";
 
 export function PortfolioClient({
@@ -58,17 +52,32 @@ export function PortfolioClient({
   initialObjectiveId?: string | null;
   initialObjectiveScreen?: string | null;
 }) {
-  const [overview, setOverview] = useState<Overview | null>(null);
+  const overviewQuery = usePortfolioOverview<Overview>(loadErrorMessage);
+  const allocationQuery = usePortfolioAllocation<{
+    classDistribution: PortfolioConcentration;
+  }>(activeView === "overview");
+  const overview = overviewQuery.data;
+  const classification = useMemo(() => {
+    if (allocationQuery.isError) return { status: "unavailable" as const };
+    if (allocationQuery.data) {
+      return {
+        status: "loaded" as const,
+        classDistribution: allocationQuery.data.classDistribution,
+      };
+    }
+    return { status: "loading" as const };
+  }, [allocationQuery.data, allocationQuery.isError]);
   const [objectivesRoute, setObjectivesRoute] = useState({
     open: initialObjectivesOpen,
     objectiveId: initialObjectiveId,
     screen: initialObjectiveScreen,
   });
-  const [classification, setClassification] = useState<ClassificationState>({
-    status: "loading",
-  });
-  const [error, setError] = useState<string | null>(null);
-  const hasLoadedOverview = useRef(false);
+
+  useEffect(() => {
+    if (overviewQuery.isError && overview) {
+      toast.error(overviewQuery.error.message);
+    }
+  }, [overview, overviewQuery.error, overviewQuery.isError]);
 
   useEffect(() => {
     const syncFromUrl = () => {
@@ -107,58 +116,14 @@ export function PortfolioClient({
     [],
   );
 
-  const loadOverview = useCallback(() => {
-    let failureMessage = loadErrorMessage;
-    fetch("/api/portfolio")
-      .then(async (response) => {
-        const body: unknown = await response.json();
-        if (!response.ok) {
-          failureMessage = getApiMessage(body, loadErrorMessage);
-          throw new Error("portfolio_request_failed");
-        }
-        return body as Overview;
-      })
-      .then((data) => {
-        hasLoadedOverview.current = true;
-        setOverview(data);
-        setError(null);
-        if (activeView === "overview") {
-          setClassification({ status: "loading" });
-          fetch("/api/portfolio/allocation")
-            .then(async (response) => {
-              if (!response.ok) throw new Error("allocation unavailable");
-              return response.json();
-            })
-            .then((allocation) => {
-              setClassification({
-                status: "loaded",
-                positions: allocation.positions ?? [],
-                classDistribution: allocation.classDistribution,
-              });
-            })
-            .catch(() => setClassification({ status: "unavailable" }));
-        }
-      })
-      .catch(() => {
-        if (hasLoadedOverview.current) toast.error(failureMessage);
-        else setError(failureMessage);
-      });
-  }, [activeView]);
-
-  useEffect(() => {
-    loadOverview();
-    window.addEventListener("portfolio:updated", loadOverview);
-    return () => window.removeEventListener("portfolio:updated", loadOverview);
-  }, [loadOverview]);
-
-  if (error && !overview)
+  if (overviewQuery.isError && !overview)
     return (
       <div role="alert" className="space-y-3 text-sm text-destructive">
-        <p>{error}</p>
+        <p>{overviewQuery.error.message}</p>
         <Button
           type="button"
           className="text-foreground underline underline-offset-4"
-          onClick={loadOverview}
+          onClick={() => void overviewQuery.refetch()}
         >
           Tentar novamente
         </Button>
