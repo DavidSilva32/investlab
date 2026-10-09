@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrapiDividendsProvider } from "@/backend/providers/brapi-dividends.provider";
 
 function successfulResponse(body: unknown) {
@@ -6,6 +6,9 @@ function successfulResponse(body: unknown) {
 }
 
 describe("BrapiDividendsProvider", () => {
+  beforeEach(() => vi.stubEnv("BRAPI_TOKEN", ""));
+  afterEach(() => vi.unstubAllEnvs());
+
   const now = () => new Date("2026-10-02T12:00:00.000Z");
 
   it("queries a rolling twelve-month window and sums only cash payments by payment date", async () => {

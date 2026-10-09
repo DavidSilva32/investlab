@@ -9,6 +9,10 @@ describe("session", () => {
       true,
     );
   });
+  it("rejects a signed token without an identity", async () => {
+    vi.stubEnv("AUTH_SECRET", "s".repeat(32));
+    expect(await verifySession(await createSession(""))).toBe(false);
+  });
   it("rejects absent, malformed and tampered sessions", async () => {
     vi.stubEnv("AUTH_SECRET", "s".repeat(32));
     expect(await verifySession()).toBe(false);
@@ -16,6 +20,8 @@ describe("session", () => {
     const token = await createSession("user@test.com");
     expect(await verifySession(`${token}x`)).toBe(false);
     expect(await verifySession(`x${token.slice(1)}`)).toBe(false);
+    expect(await verifySession("%%%.__invalid__")).toBe(false);
+    expect(await verifySession("payload.bad.signature")).toBe(false);
   });
   it("requires a secret", async () => {
     vi.stubEnv("AUTH_SECRET", "");

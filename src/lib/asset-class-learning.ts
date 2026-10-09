@@ -36,21 +36,24 @@ export const assetClassLearningContent: Record<
     thumbnailSrc: "/images/asset-classes/brazilian-equities.webp",
     description:
       "Entenda participações em empresas listadas no Brasil e os recibos de ações negociados no país.",
-    availability: "coming-soon",
+    availability: "available",
+    videoSrc: "/videos/brazilian_equities.mp4",
   },
   international_etfs: {
     imageSrc: "/images/asset-classes/international-etfs.webp",
     thumbnailSrc: "/images/asset-classes/international-etfs.webp",
     description:
       "Conheça fundos negociados em bolsa que oferecem exposição a mercados internacionais.",
-    availability: "coming-soon",
+    availability: "available",
+    videoSrc: "/videos/international_etfs.mp4",
   },
   fixed_income: {
     imageSrc: "/images/asset-classes/fixed-income-office.webp",
     thumbnailSrc: "/images/asset-classes/fixed-income-office.webp",
     description:
       "Conheça instrumentos de dívida e as diferentes formas de exposição à renda fixa.",
-    availability: "coming-soon",
+    availability: "available",
+    videoSrc: "/videos/fixed_income.mp4",
   },
 };
 

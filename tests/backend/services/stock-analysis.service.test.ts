@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApplicationError } from "@/backend/errors/application-error";
+
+vi.mock("@/backend/repositories/screener.repository", () => ({
+  screenerRepository: {
+    getComparisonMetadata: vi.fn().mockResolvedValue([]),
+    getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+  },
+}));
+
 import {
   calculateAnalysisIndicators,
   StockAnalysisService,
@@ -232,6 +240,77 @@ describe("StockAnalysisService", () => {
         }),
       ]),
     );
+  });
+});
+
+describe("StockAnalysisService optional Screener lookups", () => {
+  const market = {
+    ticker: "PETR4",
+    companyName: "Petrobras",
+    cnpj: "33000167000101",
+    price: 30,
+    marketCap: 300,
+    changePercent: 1.2,
+    priceUpdatedAt: "2026-09-19T00:00:00.000Z",
+    history: [],
+  };
+
+  it("continues analysis when issuer metadata lookup fails", async () => {
+    const logger = await import("@/infrastructure/logging/logger");
+    const warn = vi.spyOn(logger.logger, "warn").mockImplementation(() => {});
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(market),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      {
+        getComparisonMetadata: vi.fn().mockRejectedValue(new Error("offline")),
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+      },
+    );
+
+    await expect(
+      service.getByTicker("PETR4", "request-id"),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+    });
+    expect(warn).toHaveBeenCalledWith(
+      "stock_analysis_issuer_lookup_failed",
+      expect.objectContaining({ requestId: "request-id" }),
+    );
+    warn.mockRestore();
+  });
+
+  it("continues analysis when historical validated quote lookup fails", async () => {
+    const logger = await import("@/infrastructure/logging/logger");
+    const warn = vi.spyOn(logger.logger, "warn").mockImplementation(() => {});
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(null),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      {
+        getComparisonMetadata: vi.fn().mockResolvedValue([]),
+        getValidatedAnalysisQuote: vi
+          .fn()
+          .mockRejectedValue(new Error("offline")),
+      },
+    );
+
+    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
+      statusCode: 502,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      "stock_analysis_last_quote_lookup_failed",
+      expect.objectContaining({ ticker: "PETR4" }),
+    );
+    warn.mockRestore();
   });
 });
 

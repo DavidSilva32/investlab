@@ -7,6 +7,8 @@ import {
 import { strategyAssetClasses } from "@/lib/strategy-allocation";
 
 describe("asset class learning links", () => {
+  const officialClassIds = strategyAssetClasses.map(({ id }) => id);
+
   it("builds direct links with a stable class query and content anchor", () => {
     expect(getLearningClassHref("fiis")).toBe(
       "/learn?class=fiis#class-content",
@@ -16,38 +18,27 @@ describe("asset class learning links", () => {
     );
   });
 
-  it("keeps image and availability metadata keyed by the official class ids", () => {
+  it("keeps image, thumbnail, and video metadata keyed by every official class id", () => {
     expect(Object.keys(assetClassLearningContent).sort()).toEqual(
-      strategyAssetClasses.map(({ id }) => id).sort(),
+      officialClassIds.sort(),
     );
-    expect(assetClassLearningContent.fiis).toMatchObject({
-      imageSrc: "/images/asset-classes/fiis.webp",
-      thumbnailSrc: "/images/asset-classes/fiis.webp",
-      availability: "available",
-      videoSrc: "/videos/fiis.mp4",
-    });
-    const thumbnailSources = strategyAssetClasses.map(
-      ({ id }) => assetClassLearningContent[id].thumbnailSrc,
-    );
-    expect(thumbnailSources).toEqual(
-      strategyAssetClasses.map(
-        ({ id }) => assetClassLearningContent[id].imageSrc,
-      ),
-    );
-    expect(new Set(thumbnailSources).size).toBe(strategyAssetClasses.length);
-    for (const id of [
-      "fixed_income",
-      "brazilian_equities",
-      "international_etfs",
-    ] as const) {
-      expect(assetClassLearningContent[id]).toMatchObject({
-        availability: "coming-soon",
-      });
-      expect(assetClassLearningContent[id].imageSrc).toMatch(
-        /^\/images\/asset-classes\//,
-      );
-      expect("videoSrc" in assetClassLearningContent[id]).toBe(false);
+
+    for (const { id } of strategyAssetClasses) {
+      const content = assetClassLearningContent[id];
+
+      expect(content.availability).toBe("available");
+      expect(content.imageSrc).toMatch(/^\/images\/asset-classes\/.+\.webp$/);
+      expect(content.thumbnailSrc).toBe(content.imageSrc);
+      expect(content.videoSrc).toBe(`/videos/${id}.mp4`);
     }
+
+    expect(
+      new Set(
+        strategyAssetClasses.map(
+          ({ id }) => assetClassLearningContent[id].imageSrc,
+        ),
+      ).size,
+    ).toBe(strategyAssetClasses.length);
   });
 
   it("resolves only a single official class id", () => {
