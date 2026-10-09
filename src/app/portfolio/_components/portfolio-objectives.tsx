@@ -395,9 +395,6 @@ export function PortfolioObjectives({
           {view.kind === "detail" && activeObjective && (
             <PortfolioObjectiveDetail
               objective={activeObjective}
-              positions={data.positions.filter(
-                (position) => position.objectiveId === activeObjective.id,
-              )}
               onEdit={() =>
                 setView({
                   kind: "edit",

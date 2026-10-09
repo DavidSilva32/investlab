@@ -111,27 +111,10 @@ describe("PortfolioObjectiveDetail", () => {
     expect(screen.queryByText(/Falta/)).toBeNull();
   });
 
-  it("shows the strategy breakdown for long-term goals and labels personal goals", () => {
+  it("labels long-term and personal goals in their detail view", () => {
     const { rerender } = render(
       <PortfolioObjectiveDetail
         objective={{ ...objective, purpose: "LONG_TERM_INVESTMENT" }}
-        positions={[
-          {
-            assetKey: "etf",
-            product: "ETF de índice",
-            assetCode: "VTI",
-            institution: null,
-            assetClass: "Renda variável",
-            geography: "Exterior",
-            positionCount: 1,
-            value: 250,
-            valueCents: "25000",
-            knownValueCents: "25000",
-            unvaluedPositions: 0,
-            objectiveId: "trip",
-            objectiveName: "Investimento",
-          },
-        ]}
         onEdit={vi.fn()}
         onManagePositions={vi.fn()}
         onConfigureReserve={vi.fn()}
@@ -142,11 +125,6 @@ describe("PortfolioObjectiveDetail", () => {
       screen.getByText(
         "Ativos da carteira separados pela sua estratégia de longo prazo.",
       ),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("img", {
-        name: "Gráfico da composição do investimento de longo prazo",
-      }),
     ).toBeTruthy();
 
     rerender(

@@ -8,8 +8,6 @@ import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import type { PortfolioObjective } from "./portfolio-objective-card";
-import type { ObjectivePosition } from "./portfolio-objective-assignment";
-import { LongTermAllocationBreakdown } from "./long-term-allocation-breakdown";
 import {
   PortfolioObjectiveBalanceTracking,
   type ObjectiveBalanceTrackingData,
@@ -17,7 +15,6 @@ import {
 
 type Props = {
   objective: PortfolioObjective;
-  positions?: ObjectivePosition[];
   onEdit: () => void;
   onManagePositions: () => void;
   onConfigureReserve: () => void;
@@ -32,7 +29,6 @@ type Props = {
 
 export function PortfolioObjectiveDetail({
   objective,
-  positions = [],
   onEdit,
   onManagePositions,
   onConfigureReserve,
@@ -190,9 +186,6 @@ export function PortfolioObjectiveDetail({
           )}
         </CardContent>
       </Card>
-      {!isReserve && objective.purpose === "LONG_TERM_INVESTMENT" && (
-        <LongTermAllocationBreakdown positions={positions} />
-      )}
       <PortfolioObjectiveBalanceTracking
         objectiveId={objective.id}
         objectiveName={objective.name}

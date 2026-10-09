@@ -107,6 +107,7 @@ describe("PortfolioObjectivesOverview", () => {
       <PortfolioObjectivesOverview
         data={{
           objectives,
+          positions: [],
           destinationSummary: {
             categories: [
               { key: "reserve", value: 250, percentage: 25 },
@@ -198,6 +199,7 @@ describe("PortfolioObjectivesOverview", () => {
       <PortfolioObjectivesOverview
         data={{
           objectives: [],
+          positions: [],
           destinationSummary: {
             categories: [
               { key: "reserve", value: 0, percentage: 0 },
@@ -233,6 +235,71 @@ describe("PortfolioObjectivesOverview", () => {
       screen.getByText(
         "Nenhum objetivo pessoal cadastrado. Você pode começar por uma meta que já tenha em mente.",
       ),
+    ).toBeTruthy();
+  });
+
+  it("shows the long-term class allocation directly in the objectives overview", () => {
+    const longTermObjective: PortfolioObjective = {
+      ...objectives[1]!,
+      id: "long-term",
+      name: "Investimento de longo prazo",
+      purpose: "LONG_TERM_INVESTMENT",
+    };
+    render(
+      <PortfolioObjectivesOverview
+        data={{
+          objectives: [longTermObjective],
+          positions: [
+            {
+              assetKey: "etf-global",
+              product: "ETF de índice",
+              assetCode: "VT",
+              institution: null,
+              assetClass: "Renda variável",
+              geography: "Exterior",
+              positionCount: 1,
+              value: 12486,
+              valueCents: "1248600",
+              knownValueCents: "1248600",
+              referenceDate: "2026-10-01",
+              unvaluedPositions: 0,
+              objectiveId: "long-term",
+              objectiveName: "Investimento de longo prazo",
+              objectivePurpose: "LONG_TERM_INVESTMENT",
+            },
+          ],
+          destinationSummary: {
+            categories: [
+              { key: "reserve", value: 0, percentage: 0 },
+              { key: "personal", value: 0, percentage: 0 },
+              { key: "long_term", value: 12486, percentage: 100 },
+              { key: "purpose_unknown", value: 0, percentage: 0 },
+              { key: "unassigned", value: 0, percentage: 0 },
+            ],
+            knownTotal: 12486,
+            missingPositionCount: 0,
+            unvaluedPositionCount: 0,
+          },
+          unassignedKnownValue: 0,
+          unassignedPositionCount: 0,
+          unassignedUnvaluedPositionCount: 0,
+        }}
+        deleting={false}
+        deleteObjectiveId={null}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+        onCreate={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Composição do investimento de longo prazo"),
+    ).toBeTruthy();
+    expect(screen.getByText("ETFs internacionais")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Ver estratégia e próximo aporte" }),
     ).toBeTruthy();
   });
 });

@@ -15,15 +15,18 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { formatCurrency } from "@/lib/utils";
+import type { ObjectivePosition } from "./portfolio-objective-assignment";
 import {
   PortfolioObjectiveCard,
   type PortfolioObjective,
 } from "./portfolio-objective-card";
 import { Cell, Pie, PieChart } from "recharts";
 import { ChevronDown, Plus } from "lucide-react";
+import { LongTermAllocationBreakdown } from "./long-term-allocation-breakdown";
 
 type Data = {
   objectives: PortfolioObjective[];
+  positions: ObjectivePosition[];
   destinationSummary: {
     categories: Array<{
       key:
@@ -100,6 +103,12 @@ export function PortfolioObjectivesOverview({
   const unvaluedCount = data.destinationSummary.unvaluedPositionCount;
   const incompleteCount = missingCount + unvaluedCount;
   const chartData = categories.filter((category) => category.value > 0);
+  const hasLongTermObjective = data.objectives.some(
+    (objective) => objective.purpose === "LONG_TERM_INVESTMENT",
+  );
+  const longTermPositions = data.positions.filter(
+    (position) => position.objectivePurpose === "LONG_TERM_INVESTMENT",
+  );
 
   return (
     <div className="space-y-5">
@@ -257,6 +266,10 @@ export function PortfolioObjectivesOverview({
           </Collapsible>
         </CardContent>
       </Card>
+
+      {hasLongTermObjective && (
+        <LongTermAllocationBreakdown positions={longTermPositions} />
+      )}
 
       <section aria-labelledby="objectives-summary-title" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
