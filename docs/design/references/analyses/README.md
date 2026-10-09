@@ -20,6 +20,14 @@ A proposta remove o bloco genérico “Sobre os dados financeiros”, conforme p
 
 Não incluir máximas, mínimas, volume, setor, subsetor, Tag Along, liquidez, outros indicadores ausentes do código, estimativa de preço-alvo, ações de compra/venda ou recomendação. A proposta antiga foi substituída; seu verde e seus dados sem suporte não são referência ativa.
 
+## Proposta de simplificação — issue #125
+
+[`individual-analysis-simplification-proposal-issue-125.png`](./individual-analysis-simplification-proposal-issue-125.png) é uma referência desktop gerada pelo imagegen integrado em 09/10/2026 para `/analyses?ticker=ABCD3`, aba “Análise individual”, consulta carregada e período “1 ano” selecionado. É uma proposta, não uma captura do produto. O enquadramento mostra somente o conteúdo da aba e omite o AppShell.
+
+A composição agrupa a cotação e o desempenho do período, o gráfico de preços, os quatro indicadores atuais (P/L, P/VP, ROE e margem líquida), a leitura anual existente, a evolução de receita, lucro líquido e patrimônio e o disclosure de demonstrativos. Os valores, ticker, empresa, datas e séries são sintéticos. Não representam fonte real nem afirmam dados de um emissor específico.
+
+Estados da proposta em 09/10/2026: referência criada: sim; contexto funcional revisado nos componentes ativos: sim; novo layout implementado: não, aguardando aprovação visual explícita; verificação estrutural do novo layout: pendente; comparação visual real: não realizada; aprovação do usuário: pendente. A referência aprovada e a implementação atuais acima permanecem como estado do produto até a aprovação desta proposta.
+
 ## Cores
 
 Usar superfícies neutras e identidade azul. O histórico de cotação usa a cor de identidade `primary`. Os gráficos de fundamentos são séries genéricas, sem significado de classe: usar tokens `chart-category-*`. Não aplicar cores de classes específicas porque a aba não identifica uma classe da Estratégia.
