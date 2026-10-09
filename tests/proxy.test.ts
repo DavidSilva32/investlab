@@ -5,16 +5,16 @@ vi.mock("@/infrastructure/auth/session", () => ({
   sessionCookieName: "session",
   verifySession: verify,
 }));
-import { proxy } from "../proxy";
+import { proxy } from "../src/proxy";
 describe("proxy authentication", () => {
   it("redirects unauthenticated pages and rejects APIs", async () => {
     verify.mockResolvedValue(false);
     expect(
       (await proxy(new NextRequest("http://test/"))).headers.get("location"),
     ).toContain("/login");
-    expect(
-      (await proxy(new NextRequest("http://test/api/screener"))).status,
-    ).toBe(401);
+    const response = await proxy(new NextRequest("http://test/api/screener"));
+    expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
   it("requires a session for the remaining screener API routes", async () => {
     verify.mockResolvedValue(false);

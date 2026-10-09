@@ -16,6 +16,8 @@ describe("session", () => {
     const token = await createSession("user@test.com");
     expect(await verifySession(`${token}x`)).toBe(false);
     expect(await verifySession(`x${token.slice(1)}`)).toBe(false);
+    expect(await verifySession("%%%.__invalid__")).toBe(false);
+    expect(await verifySession("payload.bad.signature")).toBe(false);
   });
   it("requires a secret", async () => {
     vi.stubEnv("AUTH_SECRET", "");
