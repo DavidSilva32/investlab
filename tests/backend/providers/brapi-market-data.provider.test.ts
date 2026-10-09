@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrapiMarketDataProvider } from "@/backend/providers/brapi-market-data.provider";
 
+vi.mock("@/infrastructure/logging/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status });
 }
@@ -26,6 +30,55 @@ const quote = (data: Record<string, unknown> = {}) => ({
 describe("BrapiMarketDataProvider", () => {
   beforeEach(() => vi.stubEnv("BRAPI_TOKEN", ""));
   afterEach(() => vi.unstubAllEnvs());
+
+  it("starts profile and price history while waiting for the quote", async () => {
+    let releaseQuote!: (response: Response) => void;
+    const quoteResponse = new Promise<Response>((resolve) => {
+      releaseQuote = resolve;
+    });
+    const fetcher = vi.fn<typeof fetch>((input) => {
+      const url = String(input);
+      if (url.includes("/stocks/quote")) return quoteResponse;
+      if (url.includes("/stocks/profile"))
+        return Promise.resolve(
+          jsonResponse({ results: [{ data: { cnpj: "33.000.167/0001-01" } }] }),
+        );
+      return Promise.resolve(
+        jsonResponse({
+          results: [
+            {
+              data: { historicalDataPrice: [{ date: 1767225600, close: 49 }] },
+            },
+          ],
+        }),
+      );
+    });
+
+    const resultPromise = new BrapiMarketDataProvider(fetcher).getByTicker(
+      "PETR4",
+    );
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://brapi.dev/api/v2/stocks/quote?symbols=PETR4",
+      "https://brapi.dev/api/v2/stocks/profile?symbols=PETR4",
+      "https://brapi.dev/api/v2/stocks/historical?symbols=PETR4&range=5y&interval=1d",
+    ]);
+
+    releaseQuote(
+      jsonResponse(
+        quote({
+          regularMarketPrice: 50,
+          marketCap: 200,
+          regularMarketTime: "2026-01-01T12:00:00Z",
+        }),
+      ),
+    );
+    await expect(resultPromise).resolves.toMatchObject({
+      cnpj: "33000167000101",
+      price: 50,
+      history: [{ date: "2026-01-01", close: 49 }],
+    });
+  });
 
   it("loads only a quote and parses issuer market capitalization and quote time", async () => {
     const fetcher = vi.fn().mockResolvedValue(
@@ -89,7 +142,9 @@ describe("BrapiMarketDataProvider", () => {
       statusCode: 429,
       retryAfterSeconds: 60,
     });
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher.mock.calls[1]?.[1]?.signal?.aborted).toBe(true);
+    expect(fetcher.mock.calls[2]?.[1]?.signal?.aborted).toBe(true);
   });
 
   it.each([null, "not-a-date"])(
@@ -373,7 +428,7 @@ describe("BrapiMarketDataProvider", () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
-  it("bounds the required quote request to fifteen seconds", async () => {
+  it("bounds the required quote request and cancels optional requests on failure", async () => {
     const controllers: AbortController[] = [];
     const timeoutSpy = vi
       .spyOn(AbortSignal, "timeout")
@@ -393,11 +448,13 @@ describe("BrapiMarketDataProvider", () => {
       const resultPromise = new BrapiMarketDataProvider(fetcher).getByTicker(
         "PETR4",
       );
-      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
       expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(controllers[0]?.signal);
       controllers[0]!.abort();
       await expect(resultPromise).rejects.toThrow();
-      expect(fetcher).toHaveBeenCalledOnce();
+      expect(fetcher).toHaveBeenCalledTimes(3);
+      expect(fetcher.mock.calls[1]?.[1]?.signal?.aborted).toBe(true);
+      expect(fetcher.mock.calls[2]?.[1]?.signal?.aborted).toBe(true);
     } finally {
       timeoutSpy.mockRestore();
     }
@@ -438,8 +495,14 @@ describe("BrapiMarketDataProvider", () => {
       );
       await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
       expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(controllers[0]?.signal);
-      expect(fetcher.mock.calls[1]?.[1]?.signal).toBe(controllers[1]?.signal);
-      expect(fetcher.mock.calls[2]?.[1]?.signal).toBe(controllers[2]?.signal);
+      expect(fetcher.mock.calls[1]?.[1]?.signal).not.toBe(
+        controllers[1]?.signal,
+      );
+      expect(fetcher.mock.calls[2]?.[1]?.signal).not.toBe(
+        controllers[2]?.signal,
+      );
+      expect(fetcher.mock.calls[1]?.[1]?.signal?.aborted).toBe(false);
+      expect(fetcher.mock.calls[2]?.[1]?.signal?.aborted).toBe(false);
       controllers[1]!.abort();
 
       await expect(resultPromise).resolves.toMatchObject({

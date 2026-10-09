@@ -7,6 +7,9 @@ vi.mock("@/backend/repositories/screener.repository", () => ({
     getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
   },
 }));
+vi.mock("@/infrastructure/logging/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
 
 import {
   calculateAnalysisIndicators,
@@ -2651,6 +2654,52 @@ describe("StockAnalysisService cache and failures", () => {
       message:
         "Não foi possível consultar os demonstrativos oficiais da CVM agora.",
     });
+  });
+
+  it("shares concurrent fundamentals cache misses and persists the refresh once", async () => {
+    let releaseProvider!: (periods: never[]) => void;
+    const providerGate = new Promise<never[]>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const fundamentalsProvider = {
+      getByTicker: vi.fn(() => providerGate),
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      fundamentalsProvider,
+      repository,
+      rejectedScreenerLookups(),
+    );
+
+    const first = service.getFundamentalsByIssuer("PETR4", "33000167000101");
+    const second = service.getFundamentalsByIssuer(
+      "PETR4",
+      "33.000.167/0001-01",
+    );
+    await vi.waitFor(() =>
+      expect(repository.listByTicker).toHaveBeenCalledTimes(2),
+    );
+    await vi.waitFor(() =>
+      expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce(),
+    );
+    await Promise.resolve();
+    releaseProvider([]);
+
+    const results = await Promise.all([first, second]);
+    expect(results.map((result) => result.cnpj)).toEqual([
+      "33000167000101",
+      "33000167000101",
+    ]);
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
+    expect(repository.save).toHaveBeenCalledOnce();
   });
 });
 

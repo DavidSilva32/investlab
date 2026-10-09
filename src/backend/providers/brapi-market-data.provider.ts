@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
+import { logger } from "@/infrastructure/logging/logger";
 import type {
   MarketData,
   MarketDataProvider,
@@ -86,6 +87,14 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
   ) {}
 
   private async request(path: string, signal?: AbortSignal) {
+    const startedAt = Date.now();
+    const operation = new URL(path, "https://brapi.dev").pathname
+      .split("/")
+      .at(-1);
+    const ticker = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get(
+      "symbols",
+    );
+    const logContext = { provider: "brapi", operation, ticker };
     let response: Response;
     try {
       response = await this.fetcher(`https://brapi.dev${path}`, {
@@ -97,26 +106,57 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         next: { revalidate: 300 },
       });
     } catch (error) {
+      logger.warn("stock_market_provider_request_failed", {
+        ...logContext,
+        durationMs: Date.now() - startedAt,
+      });
       throw new RetryableMarketDataError("BRAPI request failed", {
         cause: error,
       });
     }
     if (response.status === 429) {
+      logger.info("stock_market_provider_request_completed", {
+        ...logContext,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
       throw new ApplicationError(
         "Consulta de mercado temporariamente indisponível. Tente novamente em instantes.",
         429,
         parseRetryAfterSeconds(response.headers.get("retry-after")),
       );
     }
-    if (!response.ok && (response.status === 408 || response.status >= 500))
+    if (!response.ok && (response.status === 408 || response.status >= 500)) {
+      logger.info("stock_market_provider_request_completed", {
+        ...logContext,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
       throw new RetryableMarketDataError(
         `BRAPI request failed: ${response.status}`,
       );
-    if (!response.ok)
+    }
+    if (!response.ok) {
+      logger.info("stock_market_provider_request_completed", {
+        ...logContext,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
       throw new Error(`BRAPI request failed: ${response.status}`);
+    }
     try {
-      return await response.json();
+      const payload = await response.json();
+      logger.info("stock_market_provider_request_completed", {
+        ...logContext,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
+      return payload;
     } catch (error) {
+      logger.warn("stock_market_provider_response_invalid", {
+        ...logContext,
+        durationMs: Date.now() - startedAt,
+      });
       if (signal?.aborted)
         throw new RetryableMarketDataError("BRAPI request timed out", {
           cause: error,
@@ -125,18 +165,21 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     }
   }
 
-  private async getHistoricalPrices(symbol: string) {
+  private async getHistoricalPrices(symbol: string, parentSignal: AbortSignal) {
+    const signal = () =>
+      AbortSignal.any([parentSignal, AbortSignal.timeout(requestTimeoutMs)]);
     try {
       return await this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=5y&interval=1d`,
-        AbortSignal.timeout(requestTimeoutMs),
+        signal(),
       );
     } catch (error) {
-      if (!(error instanceof RetryableMarketDataError)) throw error;
+      if (!(error instanceof RetryableMarketDataError) || parentSignal.aborted)
+        throw error;
 
       return this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
-        AbortSignal.timeout(requestTimeoutMs),
+        signal(),
       );
     }
   }
@@ -175,17 +218,30 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
   }
   async getByTicker(ticker: string): Promise<MarketData> {
     const symbol = encodeURIComponent(ticker);
-    const quotePayload = await this.request(
+    const optionalRequests = new AbortController();
+    const quoteRequest = this.request(
       `/api/v2/stocks/quote?symbols=${symbol}`,
       AbortSignal.timeout(requestTimeoutMs),
     );
-    const [profileResult, historyResult] = await Promise.allSettled([
+    const optionalResults = Promise.allSettled([
       this.request(
         `/api/v2/stocks/profile?symbols=${symbol}`,
-        AbortSignal.timeout(requestTimeoutMs),
+        AbortSignal.any([
+          optionalRequests.signal,
+          AbortSignal.timeout(requestTimeoutMs),
+        ]),
       ),
-      this.getHistoricalPrices(symbol),
+      this.getHistoricalPrices(symbol, optionalRequests.signal),
     ]);
+    let quotePayload: unknown;
+    try {
+      quotePayload = await quoteRequest;
+    } catch (error) {
+      optionalRequests.abort();
+      void optionalResults;
+      throw error;
+    }
+    const [profileResult, historyResult] = await optionalResults;
     const quote = quoteSchema.parse(quotePayload).results[0];
     const cnpj =
       profileResult.status === "fulfilled"
