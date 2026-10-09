@@ -55,13 +55,21 @@ export function PortfolioObjectiveDetail({
                 <div className="flex flex-wrap items-center gap-2">
                   <CardTitle className="text-lg">{objective.name}</CardTitle>
                   <Badge variant={isReserve ? "secondary" : "outline"}>
-                    {isReserve ? "Reserva" : "Objetivo pessoal"}
+                    {isReserve
+                      ? "Reserva"
+                      : objective.purpose === "LONG_TERM_INVESTMENT"
+                        ? "Investimento de longo prazo"
+                        : objective.purpose === "PERSONAL_GOAL"
+                          ? "Objetivo pessoal"
+                          : "Classificação pendente"}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {isReserve
                     ? "A reserva mantém a configuração e os critérios próprios atuais."
-                    : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
+                    : objective.purpose === "LONG_TERM_INVESTMENT"
+                      ? "Ativos da carteira separados pela sua estratégia de longo prazo."
+                      : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
                 </p>
               </div>
             </div>

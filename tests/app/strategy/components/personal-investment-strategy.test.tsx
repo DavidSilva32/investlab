@@ -24,6 +24,7 @@ const baseData = {
     positionCount: 4,
     assignedPositionCount: 4,
     unclassifiedKnownValueCents: "0",
+    unclassifiedPositionCount: 0,
     classes: [
       {
         id: "fixed_income",
@@ -156,6 +157,7 @@ describe("PersonalInvestmentStrategy", () => {
             ...baseData.longTermWealth,
             unvaluedPositionCount: 1,
             unclassifiedKnownValueCents: "500",
+            unclassifiedPositionCount: 1,
           },
           destinationsNeedingPurposeConfirmation: 2,
         }),
@@ -177,7 +179,46 @@ describe("PersonalInvestmentStrategy", () => {
     expect(
       screen.getByText(/1 posição\(ões\) não têm valor conhecido/),
     ).toBeTruthy();
-    expect(screen.getByText(/R\$\s*5,00 não se enquadram/)).toBeTruthy();
+    expect(
+      screen.getByText(/R\$\s*5,00 em posições sem classe identificada/),
+    ).toBeTruthy();
+  });
+
+  it("reports ambiguous positions that have no known classified value", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          longTermWealth: {
+            ...baseData.longTermWealth,
+            unclassifiedKnownValueCents: "0",
+            unclassifiedPositionCount: 1,
+          },
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
+    expect(
+      await screen.findByText(/1 posição\(ões\) não têm classe identificada/),
+    ).toBeTruthy();
+  });
+
+  it("does not show a classification warning when all positions are classifiable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          valuationDates: ["2026-10-01", "2026-10-02"],
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
+    expect(await screen.findByText("Cobertura dos valores")).toBeTruthy();
+    expect(screen.queryByText(/não têm classe identificada/)).toBeNull();
   });
 
   it("explains the empty state when no position is assigned to long term", async () => {

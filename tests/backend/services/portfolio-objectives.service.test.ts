@@ -95,7 +95,15 @@ describe("PortfolioObjectivesService", () => {
 
   it("builds the overview from a supplied evaluated position snapshot", async () => {
     const evaluatedPositions = [
-      imported({ canonicalValueCents: "12345", estimatedValue: 123.45 }),
+      imported({
+        canonicalValueCents: "12345",
+        estimatedValue: 123.45,
+        classification: {
+          assetClass: "Renda variável",
+          subClass: "Ação ordinária",
+          geography: "Brasil",
+        },
+      }),
     ];
 
     const result = await new PortfolioObjectivesService().getOverview(
@@ -107,9 +115,68 @@ describe("PortfolioObjectivesService", () => {
     expect(result.positions[0]).toMatchObject({
       value: 123.45,
       valueCents: "12345",
+      assetClass: "Renda variável",
+      subClass: "Ação ordinária",
+      geography: "Brasil",
     });
     expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
     expect(mocks.classifyPositions).not.toHaveBeenCalled();
+  });
+
+  it("does not report one reference date for grouped values from different dates", async () => {
+    const result = await new PortfolioObjectivesService().getOverview(
+      undefined,
+      "2026-09-30",
+      [
+        imported({ canonicalValueCents: "10000", referenceDate: "2026-09-29" }),
+        imported({ canonicalValueCents: "20000", referenceDate: "2026-09-30" }),
+      ],
+    );
+
+    expect(result.positions).toHaveLength(1);
+    expect(result.positions[0]).toMatchObject({
+      valueCents: "30000",
+      referenceDate: null,
+    });
+  });
+
+  it("keeps conflicting grouped asset classifications unknown", async () => {
+    const result = await new PortfolioObjectivesService().getOverview(
+      undefined,
+      "2026-09-30",
+      [
+        imported({
+          canonicalValueCents: "10000",
+          classification: {
+            assetClass: "Renda variável",
+            subClass: "Ação ordinária",
+            geography: "Brasil",
+          },
+        }),
+        imported({
+          canonicalValueCents: "20000",
+          classification: {
+            assetClass: "Fundos",
+            subClass: "FII",
+            geography: "Brasil",
+          },
+        }),
+        imported({
+          canonicalValueCents: "30000",
+          classification: undefined,
+          referenceDate: null,
+        }),
+      ],
+    );
+
+    expect(result.positions).toHaveLength(1);
+    expect(result.positions[0]).toMatchObject({
+      assetClass: null,
+      subClass: null,
+      geography: null,
+      knownValueCents: "60000",
+      referenceDate: null,
+    });
   });
 
   it("separates long-term destination values and keeps legacy goals unclassified until confirmed", async () => {

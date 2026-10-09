@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  getStrategyAssetClassId,
+  summarizeStrategyAllocation,
   getStrategyAssetClassColor,
   neutralAssetClassColor,
   strategyAssetClassById,
@@ -111,6 +113,44 @@ describe("simulateStrategyContribution", () => {
 });
 
 describe("strategy asset class metadata", () => {
+  it("classifies positions using the strategy's shared asset groups", () => {
+    expect(
+      getStrategyAssetClassId({
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+      }),
+    ).toBe("fixed_income");
+    expect(
+      getStrategyAssetClassId({
+        product: "Ação ordinária",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+    ).toBe("brazilian_equities");
+    expect(
+      getStrategyAssetClassId({
+        product: "ETF de índice",
+        assetClass: "Renda variável",
+        geography: "Exterior",
+      }),
+    ).toBe("international_etfs");
+    expect(
+      getStrategyAssetClassId({
+        product: "Fundo Imobiliário",
+        assetClass: "Fundos",
+        geography: "Brasil",
+      }),
+    ).toBe("fiis");
+    expect(
+      getStrategyAssetClassId({
+        product: "Ação estrangeira",
+        assetClass: "Renda variável",
+        geography: "Exterior",
+      }),
+    ).toBeNull();
+  });
+
   it("centralizes official labels, semantic token keys, and stable IDs", () => {
     expect(
       strategyAssetClasses.map(({ id, label, colorToken }) => [
@@ -137,7 +177,7 @@ describe("strategy asset class metadata", () => {
     );
     expect(
       strategyAssetClassById.brazilian_equities.groupingDescription,
-    ).toContain("geografia Brasil");
+    ).toContain("BDRs identificados");
     expect(
       strategyAssetClassById.international_etfs.groupingDescription,
     ).toContain("Exterior ou Global");
@@ -155,5 +195,154 @@ describe("strategy asset class metadata", () => {
     );
     expect(getStrategyAssetClassColor("fiis")).toBe("var(--asset-class-fiis)");
     expect(getStrategyAssetClassColor(null)).toBe(neutralAssetClassColor);
+  });
+
+  it("keeps ambiguous Brazilian equities and incomplete ETFs unclassified", () => {
+    expect(
+      getStrategyAssetClassId({
+        product: "Ativo de renda variável",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+    ).toBeNull();
+    expect(
+      getStrategyAssetClassId({
+        product: "PETR4",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+    ).toBeNull();
+    expect(
+      getStrategyAssetClassId({
+        product: "ETF de índice",
+        assetClass: null,
+        geography: "Exterior",
+      }),
+    ).toBeNull();
+  });
+
+  it("requires class evidence to identify equities, BDRs, international ETFs, and FIIs", () => {
+    expect(
+      getStrategyAssetClassId({
+        product: "Ação ordinária",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+    ).toBe("brazilian_equities");
+    expect(
+      getStrategyAssetClassId({
+        product: "BDR",
+        assetClass: "Renda variável",
+        geography: null,
+      }),
+    ).toBe("brazilian_equities");
+    expect(
+      getStrategyAssetClassId({
+        product: "ETF de ações",
+        assetClass: "Renda variável",
+        geography: "Global",
+      }),
+    ).toBe("international_etfs");
+    expect(
+      getStrategyAssetClassId({
+        product: "Fundo Imobiliário",
+        assetClass: "Fundos",
+        geography: "Brasil",
+      }),
+    ).toBe("fiis");
+    expect(
+      getStrategyAssetClassId({
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+      }),
+    ).toBe("fixed_income");
+    expect(
+      getStrategyAssetClassId({
+        product: "ETF renda fixa",
+        assetClass: "Renda fixa",
+        geography: "Exterior",
+      }),
+    ).toBe("fixed_income");
+    expect(
+      getStrategyAssetClassId({
+        product: "Fundo",
+        subClass: "FII",
+        assetClass: "Fundos",
+        geography: "Brasil",
+      }),
+    ).toBe("fiis");
+    expect(
+      getStrategyAssetClassId({
+        product: "Fundo de investimento",
+        assetClass: "Fundos",
+        geography: "Brasil",
+      }),
+    ).toBeNull();
+    expect(
+      getStrategyAssetClassId({
+        product: "Ativo",
+        subClass: "Ação ordinária",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+      }),
+    ).toBe("brazilian_equities");
+  });
+
+  it("calculates shares in integer basis points from known cents only", () => {
+    const summary = summarizeStrategyAllocation([
+      {
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+        knownValueCents: "10000",
+      },
+      {
+        product: "Ação ordinária",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+        knownValueCents: "30000",
+      },
+      {
+        product: "Produto não identificado",
+        assetClass: null,
+        geography: null,
+        knownValueCents: "10000",
+      },
+      {
+        product: "Sem avaliação",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+        knownValueCents: "0",
+        valueCents: null,
+      },
+    ]);
+
+    expect(summary.knownValueCents).toBe("50000");
+    expect(summary.unclassifiedKnownValueCents).toBe("10000");
+    expect(
+      summary.classes.map(({ percentageBasisPoints }) => percentageBasisPoints),
+    ).toEqual([2000, 6000, 0, 0]);
+    expect(summary.unclassifiedPercentageBasisPoints).toBe(2000);
+  });
+
+  it("defaults missing money fields to zero while preserving a supplied value", () => {
+    const summary = summarizeStrategyAllocation([
+      {
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+        valueCents: "875",
+      },
+      {
+        product: "Produto sem identificação",
+        assetClass: null,
+      },
+    ]);
+
+    expect(summary.knownValueCents).toBe("875");
+    expect(summary.classes[0]?.knownValueCents).toBe("875");
+    expect(summary.unclassifiedKnownValueCents).toBe("0");
+    expect(summary.unclassifiedPositionCount).toBe(1);
   });
 });

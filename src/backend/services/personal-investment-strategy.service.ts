@@ -6,9 +6,10 @@ import { portfolioObjectivesService } from "@/backend/services/portfolio-objecti
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { todayInSaoPaulo } from "@/lib/valuation-date";
-import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
 import { calculateReservePriorityAmounts } from "@/lib/contribution-allocation";
 import {
+  getStrategyAssetClassId,
+  summarizeStrategyAllocation,
   simulateStrategyContribution,
   strategyAssetClasses,
   type StrategyAllocationPercentages,
@@ -62,31 +63,14 @@ type Position = {
   objectiveId: string | null;
   objectivePurpose: string | null;
   assetClass: string | null;
+  subClass: string | null;
   geography: string | null;
+  knownValueCents: string;
   maturityAt: string | null;
   estimatedThrough: string | null;
   referenceDate: string | null;
   unvaluedPositions: number;
 };
-
-const normalize = (value: string | null | undefined) =>
-  (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR");
-
-function groupFor(position: Position) {
-  const product = normalize(position.product);
-  const assetClass = normalize(position.assetClass);
-  const geography = normalize(position.geography);
-  if (/\b(fii|fiis|fundo imobiliario)\b/.test(product)) return "fiis";
-  if (/\betf\b/.test(product) && ["exterior", "global"].includes(geography))
-    return "international_etfs";
-  if (assetClass === "renda fixa") return "fixed_income";
-  if (assetClass === "renda variavel" && geography === "brasil")
-    return "brazilian_equities";
-  return null;
-}
 
 export class PersonalInvestmentStrategyService {
   constructor(
@@ -114,21 +98,16 @@ export class PersonalInvestmentStrategyService {
       classified,
     );
     const positions = objectiveOverview.positions as Position[];
-    const known = positions.filter((position) => position.valueCents !== null);
-    const totalCents = known.reduce(
-      (total, position) => total + BigInt(position.valueCents!),
+    const totalCents = positions.reduce(
+      (total, position) =>
+        total + BigInt(position.knownValueCents ?? position.valueCents ?? "0"),
       0n,
     );
     const longTerm = positions.filter(
       (position) => position.objectivePurpose === "LONG_TERM_INVESTMENT",
     );
-    const longTermKnown = longTerm.filter(
-      (position) => position.valueCents !== null,
-    );
-    const longTermCents = longTermKnown.reduce(
-      (total, position) => total + BigInt(position.valueCents!),
-      0n,
-    );
+    const allocation = summarizeStrategyAllocation(longTerm);
+    const longTermCents = BigInt(allocation.knownValueCents);
     const dates = [
       ...new Set(
         longTerm
@@ -138,34 +117,6 @@ export class PersonalInvestmentStrategyService {
           .filter((date): date is string => date !== null),
       ),
     ].sort();
-    const classValues = new Map<string, bigint>(
-      groups.map(({ id }) => [id, 0n]),
-    );
-    let unclassifiedKnownCents = 0n;
-    for (const position of longTermKnown) {
-      const group = groupFor(position);
-      if (group) {
-        classValues.set(
-          group,
-          classValues.get(group)! + BigInt(position.valueCents!),
-        );
-      } else {
-        unclassifiedKnownCents += BigInt(position.valueCents!);
-      }
-    }
-    const classifiedCents = groups.reduce(
-      (sum, group) => sum + classValues.get(group.id)!,
-      0n,
-    );
-    const representedBasisPoints =
-      longTermCents === 0n
-        ? 0n
-        : (classifiedCents * 10000n + longTermCents / 2n) / longTermCents;
-    const classBasisPoints = allocateCentsByProportionalGap(
-      groups.map((group) => classValues.get(group.id)!),
-      representedBasisPoints,
-      false,
-    );
     const saved = await this.repository.get(requestId);
     const maturityCounts = new Map<string, number>();
     for (const position of longTerm) {
@@ -204,18 +155,9 @@ export class PersonalInvestmentStrategyService {
         assignedPositionCount: longTerm
           .filter((position) => position.objectiveId !== null)
           .reduce((sum, position) => sum + position.positionCount, 0),
-        unclassifiedKnownValueCents: unclassifiedKnownCents.toString(),
-        classes: groups.map(({ id, label }, index) => {
-          const knownValueCents = classValues.get(id)!;
-          const percentageBasisPoints = classBasisPoints[index];
-          return {
-            id,
-            label,
-            knownValueCents: knownValueCents.toString(),
-            percentageBasisPoints: Number(percentageBasisPoints),
-            currentPercentage: Number(percentageBasisPoints) / 100,
-          };
-        }),
+        unclassifiedKnownValueCents: allocation.unclassifiedKnownValueCents,
+        unclassifiedPositionCount: allocation.unclassifiedPositionCount,
+        classes: allocation.classes,
       },
       longTermMaturityDates: [...maturityCounts]
         .map(([date, count]) => ({ date, count }))
@@ -336,14 +278,17 @@ export class PersonalInvestmentStrategyService {
     ) as Record<(typeof groups)[number]["id"], string>;
     let unclassifiedKnownValueCents = 0n;
     for (const position of longTerm) {
-      if (position.valueCents === null) continue;
-      const group = groupFor(position);
+      const knownValueCents = BigInt(
+        position.knownValueCents ?? position.valueCents ?? "0",
+      );
+      if (knownValueCents === 0n) continue;
+      const group = getStrategyAssetClassId(position);
       if (group) {
         currentValuesCents[group] = (
-          BigInt(currentValuesCents[group]) + BigInt(position.valueCents)
+          BigInt(currentValuesCents[group]) + knownValueCents
         ).toString();
       } else {
-        unclassifiedKnownValueCents += BigInt(position.valueCents);
+        unclassifiedKnownValueCents += knownValueCents;
       }
     }
     const result = simulateStrategyContribution({

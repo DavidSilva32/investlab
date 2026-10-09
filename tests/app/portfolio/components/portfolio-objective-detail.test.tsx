@@ -111,6 +111,33 @@ describe("PortfolioObjectiveDetail", () => {
     expect(screen.queryByText(/Falta/)).toBeNull();
   });
 
+  it("labels long-term and personal goals in their detail view", () => {
+    const { rerender } = render(
+      <PortfolioObjectiveDetail
+        objective={{ ...objective, purpose: "LONG_TERM_INVESTMENT" }}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Investimento de longo prazo")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Ativos da carteira separados pela sua estratégia de longo prazo.",
+      ),
+    ).toBeTruthy();
+
+    rerender(
+      <PortfolioObjectiveDetail
+        objective={{ ...objective, purpose: "PERSONAL_GOAL" }}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Objetivo pessoal")).toBeTruthy();
+  });
+
   it("supports the optional balance-save action when it is omitted", async () => {
     const user = userEvent.setup();
     render(
