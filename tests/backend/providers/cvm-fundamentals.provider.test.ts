@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import { CvmFundamentalsProvider } from "@/backend/providers/cvm-fundamentals.provider";
 import type { FundamentalPeriod } from "@/backend/providers/fundamentals.provider";
 
+vi.mock("@/infrastructure/logging/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 const cnpj = "33000167000101";
 const cadHeader = "CNPJ_CIA;CD_CVM;DENOM_SOCIAL;SIT";
 const documentHeader =
@@ -88,6 +92,45 @@ function issuerCsv(rows: string[]) {
 }
 
 describe("CvmFundamentalsProvider", () => {
+  it("starts the current interim archive while required annual archives load", async () => {
+    const currentYear = new Date().getUTCFullYear();
+    const currentAnnualUrl = `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${currentYear - 1}.zip`;
+    const currentInterimUrl = `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear}.zip`;
+    const requestedUrls: string[] = [];
+    let releaseAnnual!: (response: Response) => void;
+    const annualResponse = new Promise<Response>((resolve) => {
+      releaseAnnual = resolve;
+    });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv(["33.000.167/0001-01;09512;PETROBRAS;ATIVA"]),
+        );
+      if (url === currentAnnualUrl) return annualResponse;
+      return new Response(null, { status: 404 });
+    });
+
+    const result = new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj,
+    });
+    let interimRequested = false;
+    try {
+      await vi.waitFor(
+        () => expect(requestedUrls).toContain(currentInterimUrl),
+        { timeout: 100 },
+      );
+      interimRequested = true;
+    } catch {
+      // Release the blocked DFP response before asserting so failures settle.
+    }
+    releaseAnnual(priorAnnualDfpResponse(currentYear));
+    expect(interimRequested).toBe(true);
+    await expect(result).resolves.toHaveLength(1);
+  });
+
   it("loads the fifth annual archive and only the missing historical balance archive", async () => {
     const currentYear = new Date().getUTCFullYear();
     const requestedUrls: string[] = [];
@@ -156,10 +199,14 @@ describe("CvmFundamentalsProvider", () => {
     expect(requestedUrls).toContain(
       `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear - 4}.zip`,
     );
-    expect(requestedUrls.filter((url) => url.includes("/ITR/"))).toEqual([
-      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear - 4}.zip`,
-      `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear}.zip`,
-    ]);
+    expect(
+      new Set(requestedUrls.filter((url) => url.includes("/ITR/"))),
+    ).toEqual(
+      new Set([
+        `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear - 4}.zip`,
+        `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${currentYear}.zip`,
+      ]),
+    );
     expect(periods).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

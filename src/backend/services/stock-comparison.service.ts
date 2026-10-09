@@ -8,6 +8,7 @@ import {
   screenerRepository,
   type ScreenerRepository,
 } from "@/backend/repositories/screener.repository";
+import { logger } from "@/infrastructure/logging/logger";
 import { classifyCvmSector } from "@/lib/cvm-sector-classification";
 
 const comparisonRequestSchema = z.object({
@@ -474,6 +475,7 @@ export class StockComparisonService {
   ) {}
 
   async compare(rawRequest: unknown, requestId?: string) {
+    const startedAt = Date.now();
     const parsed = comparisonRequestSchema.safeParse(rawRequest);
     if (!parsed.success)
       throw new ApplicationError(
@@ -482,8 +484,10 @@ export class StockComparisonService {
       );
 
     const tickers = parsed.data.tickers;
+    const metadataStartedAt = Date.now();
     const metadataRows =
       await this.marketRepository.getComparisonMetadata(tickers);
+    const metadataReadMs = Date.now() - metadataStartedAt;
     const rowsByTicker = new Map<string, Metadata[]>();
     for (const row of metadataRows) {
       const rows = rowsByTicker.get(row.ticker) ?? [];
@@ -508,60 +512,60 @@ export class StockComparisonService {
         400,
       );
 
-    const loaded = await Promise.all(
-      selectedMetadata.map(async (metadata): Promise<Candidate> => {
-        try {
-          const analysis = await this.analysisService.getFundamentalsByIssuer(
-            metadata.ticker,
-            metadata.cnpj,
-            requestId,
-          );
-          const identityVerified =
-            analysis.ticker.toUpperCase() === metadata.ticker.toUpperCase() &&
-            normalizeCnpj(analysis.cnpj) === normalizeCnpj(metadata.cnpj);
-          return {
-            metadata,
-            selectedTickers: [metadata.ticker],
-            analysis,
-            analysisError: null,
-            identityVerified,
-          };
-        } catch (error) {
-          return {
-            metadata,
-            selectedTickers: [metadata.ticker],
-            analysis: null,
-            analysisError:
-              error instanceof ApplicationError
-                ? error.message
-                : "Não foi possível consultar os dados CVM e de mercado deste emissor.",
-            identityVerified: false,
-          };
-        }
-      }),
-    );
-
-    const byCnpj = new Map<string, Candidate[]>();
-    for (const candidate of loaded) {
-      const cnpj = normalizeCnpj(candidate.metadata.cnpj);
-      const group = byCnpj.get(cnpj) ?? [];
-      group.push(candidate);
-      byCnpj.set(cnpj, group);
+    const fundamentalsStartedAt = Date.now();
+    const metadataByIssuer = new Map<string, Metadata[]>();
+    for (const metadata of selectedMetadata) {
+      const cnpj = normalizeCnpj(metadata.cnpj);
+      const issuerTickers = metadataByIssuer.get(cnpj) ?? [];
+      issuerTickers.push(metadata);
+      metadataByIssuer.set(cnpj, issuerTickers);
     }
-    const candidates = [...byCnpj.values()].map((group) => {
-      const chosen = group[0]!;
-      return {
-        ...chosen,
-        metadata: {
-          ...chosen.metadata,
-          cnpj: normalizeCnpj(chosen.metadata.cnpj),
+
+    const loaded = await Promise.all(
+      [...metadataByIssuer.values()].map(
+        async (issuerTickers): Promise<Candidate> => {
+          const metadata = issuerTickers[0]!;
+          try {
+            const analysis = await this.analysisService.getFundamentalsByIssuer(
+              metadata.ticker,
+              metadata.cnpj,
+              requestId,
+            );
+            const identityVerified =
+              analysis.ticker.toUpperCase() === metadata.ticker.toUpperCase() &&
+              normalizeCnpj(analysis.cnpj) === normalizeCnpj(metadata.cnpj);
+            return {
+              metadata,
+              selectedTickers: issuerTickers.map((item) => item.ticker),
+              analysis,
+              analysisError: null,
+              identityVerified,
+            };
+          } catch (error) {
+            return {
+              metadata,
+              selectedTickers: issuerTickers.map((item) => item.ticker),
+              analysis: null,
+              analysisError:
+                error instanceof ApplicationError
+                  ? error.message
+                  : "Não foi possível consultar os dados CVM e de mercado deste emissor.",
+              identityVerified: false,
+            };
+          }
         },
-        selectedTickers: group.map((item) => item.metadata.ticker),
-        identityVerified: group.every((item) => item.identityVerified),
-        analysisError:
-          group.find((item) => item.analysisError)?.analysisError ?? null,
-      };
-    });
+      ),
+    );
+    const fundamentalsLoadMs = Date.now() - fundamentalsStartedAt;
+
+    const calculationStartedAt = Date.now();
+    const candidates = loaded.map((candidate) => ({
+      ...candidate,
+      metadata: {
+        ...candidate.metadata,
+        cnpj: normalizeCnpj(candidate.metadata.cnpj),
+      },
+    }));
     const rows = compareCandidates(candidates);
     const roe = buildFundamentalCells(candidates, "roe");
     const netMargin = buildFundamentalCells(candidates, "netMargin");
@@ -572,6 +576,15 @@ export class StockComparisonService {
       fundamentals: { roe: roe[index]!, netMargin: netMargin[index]! },
       valuation: { pe: pe[index]!, pb: pb[index]! },
     }));
+    logger.info("stock_comparison_stage_timing", {
+      requestId,
+      selectedTickerCount: tickers.length,
+      issuerCount: companies.length,
+      metadataReadMs,
+      fundamentalsLoadMs,
+      calculationMs: Date.now() - calculationStartedAt,
+      totalMs: Date.now() - startedAt,
+    });
     const sector = candidates[0]?.metadata.sector ?? null;
     return {
       sector,

@@ -3,6 +3,10 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import { StockAnalysisService } from "@/backend/services/stock-analysis.service";
 import { StockComparisonService } from "@/backend/services/stock-comparison.service";
 
+vi.mock("@/infrastructure/logging/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 const now = new Date();
 type TestAnalysis = Awaited<
   ReturnType<StockAnalysisService["getFundamentalsByIssuer"]>
@@ -208,7 +212,7 @@ describe("StockComparisonService", () => {
       metadata("PETR4", 1, "Petróleo e Gás", "33.000.167/0001-01"),
       metadata("VALE3", 2, "Petróleo e Gás", "33000167000102"),
     ];
-    const { service } = makeService(records);
+    const { service, stockAnalysis } = makeService(records);
 
     const result = await service.compare({
       tickers: ["PETR3", "PETR4", "VALE3"],
@@ -216,6 +220,12 @@ describe("StockComparisonService", () => {
 
     expect(result.companies).toHaveLength(2);
     expect(result.companies[0]?.selectedTickers).toEqual(["PETR3", "PETR4"]);
+    expect(stockAnalysis.getFundamentalsByIssuer).toHaveBeenCalledTimes(2);
+    expect(stockAnalysis.getFundamentalsByIssuer).toHaveBeenCalledWith(
+      "PETR3",
+      sharedCnpj,
+      undefined,
+    );
     expect(result.companies.map((company) => company.ticker)).toEqual([
       "PETR3",
       "VALE3",

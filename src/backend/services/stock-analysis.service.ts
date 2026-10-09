@@ -677,6 +677,11 @@ export type AnalysisIndicator = {
 };
 
 export class StockAnalysisService {
+  private readonly fundamentalsRefreshes = new Map<
+    string,
+    Promise<FundamentalPeriod[]>
+  >();
+
   constructor(
     private readonly marketProvider: MarketDataProvider = new BrapiMarketDataProvider(),
     private readonly fundamentalsProvider: FundamentalsProvider = new CvmFundamentalsProvider(),
@@ -698,6 +703,8 @@ export class StockAnalysisService {
     if (!parsed.success)
       throw new ApplicationError(parsed.error.issues[0]!.message, 400);
 
+    const startedAt = Date.now();
+    const issuerMetadataStartedAt = Date.now();
     const issuerMetadataPromise = this.screener.getComparisonMetadata
       ? this.screener.getComparisonMetadata([parsed.data]).catch((error) => {
           logger.warn("stock_analysis_issuer_lookup_failed", {
@@ -710,6 +717,7 @@ export class StockAnalysisService {
       : Promise.resolve([]);
     let market: MarketData | null = null;
     let marketError: unknown = null;
+    const marketStartedAt = Date.now();
     try {
       market = await this.marketProvider.getByTicker(parsed.data);
       if (market.ticker.toUpperCase() !== parsed.data) {
@@ -719,10 +727,13 @@ export class StockAnalysisService {
     } catch (error) {
       marketError = error;
     }
+    const marketProviderMs = Date.now() - marketStartedAt;
     let issuerIdentityConflict = false;
+    let issuerMetadataMs = 0;
     if (market) {
       const providerCnpj = normalizeCnpj(market.cnpj);
       const issuerMatches = await issuerMetadataPromise;
+      issuerMetadataMs = Date.now() - issuerMetadataStartedAt;
       const exactMatches = issuerMatches.filter(
         (issuer) =>
           issuer.ticker === parsed.data &&
@@ -772,7 +783,9 @@ export class StockAnalysisService {
       quoteAge <= quoteFreshnessMs,
     );
     let priceIsStale = marketPriceIsUsable && quoteAge > quoteFreshnessMs;
+    let quoteFallbackMs = 0;
     if (!hasCurrentQuote) {
+      const quoteFallbackStartedAt = Date.now();
       const quote = await this.screener
         .getValidatedAnalysisQuote(parsed.data)
         .catch((error) => {
@@ -782,6 +795,7 @@ export class StockAnalysisService {
           });
           return null;
         });
+      quoteFallbackMs = Date.now() - quoteFallbackStartedAt;
       if (validLastObservedQuote(quote, parsed.data, expectedCnpj, now)) {
         const quoteDate = quote!.quoteObservedAt!.toISOString();
         // Screener stores isolated validated observations, not a daily time series.
@@ -815,7 +829,9 @@ export class StockAnalysisService {
         502,
       );
     }
+    const cacheReadStartedAt = Date.now();
     const cached = await this.repository.listByTicker(market.ticker);
+    const cacheReadMs = Date.now() - cacheReadStartedAt;
     const cacheIdentityMatches =
       cached.length > 0 &&
       cached.every(
@@ -837,14 +853,17 @@ export class StockAnalysisService {
       cacheValid,
       cacheIdentityMatches,
       cnpjAvailable: Boolean(market.cnpj),
+      repositoryReadMs: cacheReadMs,
     });
     let fundamentalsIsStale = false;
     let fundamentalsFetchedAt: string | null = cacheValid
       ? cached[0]!.fetchedAt.toISOString()
       : null;
+    let fundamentalsRefreshMs = 0;
     let periods: FundamentalPeriod[];
     if (cacheValid) periods = normalizeCachedPeriods(cached);
     else {
+      const refreshStartedAt = Date.now();
       try {
         const fetchedAt = new Date();
         const refreshed = await this.refreshFundamentals(
@@ -852,6 +871,7 @@ export class StockAnalysisService {
           market.cnpj,
           requestId,
         );
+        fundamentalsRefreshMs = Date.now() - refreshStartedAt;
         fundamentalsFetchedAt = fetchedAt.toISOString();
         const validatedCache = refreshed.length
           ? null
@@ -869,6 +889,7 @@ export class StockAnalysisService {
           });
         } else periods = refreshed;
       } catch (error) {
+        fundamentalsRefreshMs = Date.now() - refreshStartedAt;
         const validatedCache = validatedCachedFundamentals(
           cached,
           normalizeCnpj(market.cnpj),
@@ -888,6 +909,17 @@ export class StockAnalysisService {
     }
 
     const ltmPeriods = ltmFlowPeriods(periods);
+    logger.info("stock_analysis_stage_timing", {
+      requestId,
+      ticker: market.ticker,
+      marketProviderMs,
+      issuerMetadataMs,
+      quoteFallbackMs,
+      cacheReadMs,
+      fundamentalsCacheHit: cacheValid,
+      fundamentalsRefreshMs,
+      totalMs: Date.now() - startedAt,
+    });
     return {
       ...market,
       priceIsStale,
@@ -912,6 +944,7 @@ export class StockAnalysisService {
       indicators: AnalysisIndicator[];
     }
   > {
+    const startedAt = Date.now();
     const parsedTicker = tickerSchema.safeParse(rawTicker);
     if (!parsedTicker.success)
       throw new ApplicationError(parsedTicker.error.issues[0]!.message, 400);
@@ -925,7 +958,9 @@ export class StockAnalysisService {
       );
 
     const ticker = parsedTicker.data;
+    const cacheReadStartedAt = Date.now();
     const cached = await this.repository.listByTicker(ticker);
+    const cacheReadMs = Date.now() - cacheReadStartedAt;
     const cacheIdentityMatches =
       cached.length > 0 &&
       cached.every((period) => normalizeCnpj(period.cnpj) === expectedCnpj);
@@ -943,10 +978,31 @@ export class StockAnalysisService {
       cacheValid,
       cnpjAvailable: true,
       cacheIdentityMatches,
+      repositoryReadMs: cacheReadMs,
     });
-    const periods = cacheValid
-      ? normalizeCachedPeriods(cached)
-      : await this.refreshFundamentals(ticker, expectedCnpj, requestId);
+    let refreshMs = 0;
+    let periods: FundamentalPeriod[];
+    if (cacheValid) periods = normalizeCachedPeriods(cached);
+    else {
+      const refreshStartedAt = Date.now();
+      try {
+        periods = await this.refreshFundamentals(
+          ticker,
+          expectedCnpj,
+          requestId,
+        );
+      } finally {
+        refreshMs = Date.now() - refreshStartedAt;
+      }
+    }
+    logger.info("stock_issuer_fundamentals_stage_timing", {
+      requestId,
+      ticker,
+      repositoryReadMs: cacheReadMs,
+      fundamentalsCacheHit: cacheValid,
+      refreshMs,
+      totalMs: Date.now() - startedAt,
+    });
     const ltmPeriods = ltmFlowPeriods(periods);
     return {
       ticker,
@@ -977,6 +1033,39 @@ export class StockAnalysisService {
     cnpj: string | null,
     requestId?: string,
   ) {
+    const sourceVersion = currentFundamentalsSourceVersion();
+    const refreshKey = `${ticker}:${normalizeCnpj(cnpj)}:${sourceVersion}`;
+    const pendingRefresh = this.fundamentalsRefreshes.get(refreshKey);
+    if (pendingRefresh) {
+      logger.info("stock_fundamentals_refresh_reused", {
+        requestId,
+        ticker,
+        cnpjAvailable: Boolean(cnpj),
+      });
+      return pendingRefresh;
+    }
+
+    const refresh = this.fetchAndPersistFundamentals(
+      ticker,
+      cnpj,
+      sourceVersion,
+      requestId,
+    );
+    this.fundamentalsRefreshes.set(refreshKey, refresh);
+    try {
+      return await refresh;
+    } finally {
+      this.fundamentalsRefreshes.delete(refreshKey);
+    }
+  }
+
+  private async fetchAndPersistFundamentals(
+    ticker: string,
+    cnpj: string | null,
+    sourceVersion: string,
+    requestId?: string,
+  ) {
+    const startedAt = Date.now();
     logger.info("stock_fundamentals_refresh_started", {
       requestId,
       ticker,
@@ -992,16 +1081,12 @@ export class StockAnalysisService {
           "Não foi possível associar o ativo à CVM.",
           422,
         );
-      await this.repository.save(
-        ticker,
-        cnpj,
-        currentFundamentalsSourceVersion(),
-        periods,
-      );
+      await this.repository.save(ticker, cnpj, sourceVersion, periods);
       logger.info("stock_fundamentals_persisted", {
         requestId,
         ticker,
         periods: periods.length,
+        durationMs: Date.now() - startedAt,
       });
       return periods;
     } catch (error) {
@@ -1009,6 +1094,7 @@ export class StockAnalysisService {
         requestId,
         ticker,
         stage: "cvm_refresh",
+        durationMs: Date.now() - startedAt,
         error,
       });
       if (error instanceof ApplicationError) throw error;

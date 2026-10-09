@@ -343,6 +343,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
   constructor(private readonly fetcher: typeof fetch = fetch) {}
 
   private async resolveIssuer(cnpj: string, ticker: string) {
+    const startedAt = Date.now();
     const response = await this.fetcher(
       `${cvmBaseUrl}/CAD/DADOS/cad_cia_aberta.csv`,
     );
@@ -374,6 +375,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       cnpj,
       cvmCode: resolvedIssuer.code,
       status: resolvedIssuer.status,
+      durationMs: Date.now() - startedAt,
     });
     return resolvedIssuer;
   }
@@ -636,14 +638,14 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     const normalizedCnpj = normalizeCnpj(cnpj);
     const issuer = await this.resolveIssuer(normalizedCnpj, ticker);
     const currentYear = new Date().getUTCFullYear();
-    const annual = await this.readDocument(
+    const annualPromise = this.readDocument(
       "DFP",
       currentYear - 1,
       normalizedCnpj,
       issuer.code,
       ticker,
     );
-    const previousAnnual = await Promise.all(
+    const previousAnnualPromise = Promise.all(
       [currentYear - 2, currentYear - 3, currentYear - 4].map((year) =>
         this.readDocument(
           "DFP",
@@ -654,7 +656,26 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         ).catch(() => []),
       ),
     );
-    annual.push(...previousAnnual.flat());
+    const quarterlyPromise = this.readDocument(
+      "ITR",
+      currentYear,
+      normalizedCnpj,
+      issuer.code,
+      ticker,
+    ).catch((error) => {
+      logger.warn("stock_fundamentals_cvm_itr_unavailable", {
+        ticker,
+        cnpj: normalizedCnpj,
+        error,
+      });
+      return [];
+    });
+    const [currentAnnual, previousAnnual, quarterly] = await Promise.all([
+      annualPromise,
+      previousAnnualPromise,
+      quarterlyPromise,
+    ]);
+    const annual = [currentAnnual, ...previousAnnual].flat();
     const historicalItr = await Promise.all(
       [currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4]
         .filter((year) => !hasYearEndEquity(annual, year))
@@ -676,20 +697,6 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
           }),
         ),
     );
-    const quarterly = await this.readDocument(
-      "ITR",
-      currentYear,
-      normalizedCnpj,
-      issuer.code,
-      ticker,
-    ).catch((error) => {
-      logger.warn("stock_fundamentals_cvm_itr_unavailable", {
-        ticker,
-        cnpj: normalizedCnpj,
-        error,
-      });
-      return [];
-    });
     const previousQuarterly = needsPriorYearLtmRoeBalances(annual, quarterly)
       ? await this.readDocument(
           "ITR",
