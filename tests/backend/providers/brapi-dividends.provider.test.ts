@@ -54,7 +54,7 @@ describe("BrapiDividendsProvider", () => {
         results: [{ symbol: "VALE3", data: { cashDividends: [] } }],
       }),
     );
-    const provider = new BrapiDividendsProvider(fetcher, undefined, now);
+    const provider = new BrapiDividendsProvider(fetcher, "", now);
     await expect(provider.getLastTwelveMonths("VALE3")).resolves.toMatchObject({
       value: null,
       observedPayments: 0,
@@ -72,7 +72,7 @@ describe("BrapiDividendsProvider", () => {
         .mockResolvedValue(
           successfulResponse({ results: [{ symbol: "VALE3", data: {} }] }),
         );
-      const provider = new BrapiDividendsProvider(fetcher, undefined);
+      const provider = new BrapiDividendsProvider(fetcher, "");
       await expect(
         provider.getLastTwelveMonths("VALE3"),
       ).resolves.toMatchObject({

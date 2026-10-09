@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,8 @@ import {
 } from "@/lib/portfolio-money";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 type Holding = {
   assetKey: string;
@@ -100,7 +103,17 @@ type PendingTransfer = {
 const loadErrorMessage = "Não foi possível carregar a configuração da reserva.";
 
 export function EmergencyReserveEditor() {
-  const [data, setData] = useState<EditorData | null>(null);
+  const reserveQuery = useQuery({
+    queryKey: queryKeys.portfolio.emergencyReserve(),
+    queryFn: () =>
+      apiRequest<EditorData>(
+        "/api/emergency-reserve",
+        undefined,
+        loadErrorMessage,
+      ),
+  });
+  const queryClient = useQueryClient();
+  const data = reserveQuery.data ?? null;
   const [monthlyExpenses, setMonthlyExpenses] = useState("");
   const [targetMonths, setTargetMonths] = useState("");
   const [customMonths, setCustomMonths] = useState("");
@@ -108,57 +121,33 @@ export function EmergencyReserveEditor() {
     "custom",
   );
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const loading = reserveQuery.isPending;
   const [saving, setSaving] = useState(false);
-  const [previewCalculation, setPreviewCalculation] =
-    useState<EmergencyReserveCalculation | null>(null);
-  const [previewFailed, setPreviewFailed] = useState(false);
+  const [previewInput, setPreviewInput] = useState<{
+    expenses: number;
+    months: number;
+    selectedAssetKeys: string[];
+  } | null>(null);
   const [pendingTransfer, setPendingTransfer] =
     useState<PendingTransfer | null>(null);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
 
-  const loadData = useCallback(() => {
-    fetch("/api/emergency-reserve")
-      .then(async (response) => {
-        const body: unknown = await response.json();
-        if (!response.ok) {
-          setError(
-            getApiMessage(
-              body,
-              "Não foi possível carregar a configuração da reserva.",
-            ),
-          );
-          return;
-        }
-        const data = body as EditorData;
-        setData(data);
-        setMonthlyExpenses(data.monthlyExpenses?.toString() ?? "");
-        setTargetMonths(data.targetMonths?.toString() ?? "");
-        const loadedMonths = data.targetMonths?.toString() ?? "";
-        setCustomMonths(loadedMonths);
-        setMonthChoice(
-          loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
-            ? loadedMonths
-            : "custom",
-        );
-        setSelectedKeys(new Set(data.selectedAssetKeys));
-        setPreviewCalculation(null);
-        setPreviewFailed(false);
-        setError(null);
-      })
-      .catch(() => {
-        setError(loadErrorMessage);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
   useEffect(() => {
-    loadData();
-    window.addEventListener("portfolio:updated", loadData);
-    return () => window.removeEventListener("portfolio:updated", loadData);
-  }, [loadData]);
+    if (!data) return;
+    // Hydrate the editable form from the cached query response.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMonthlyExpenses(data.monthlyExpenses?.toString() ?? "");
+    setTargetMonths(data.targetMonths?.toString() ?? "");
+    const loadedMonths = data.targetMonths?.toString() ?? "";
+    setCustomMonths(loadedMonths);
+    setMonthChoice(
+      loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
+        ? loadedMonths
+        : "custom",
+    );
+    setSelectedKeys(new Set(data.selectedAssetKeys));
+  }, [data]);
 
   const selectedKeysSignature = [...selectedKeys].sort().join("|");
   useEffect(() => {
@@ -175,39 +164,45 @@ export function EmergencyReserveEditor() {
     ) {
       return;
     }
-    const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch("/api/emergency-reserve", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          monthlyExpenses: expenses,
-          targetMonths: months,
-          selectedAssetKeys: selectedKeysSignature
-            ? selectedKeysSignature.split("|")
-            : [],
-        }),
-      })
-        .then(async (response) => {
-          const body: unknown = await response.json();
-          if (!response.ok) throw new Error("reserve_preview_failed");
-          return typeof body === "object" &&
-            body !== null &&
-            "calculation" in body
-            ? (body as EditorData).calculation
-            : (body as EmergencyReserveCalculation);
-        })
-        .then(setPreviewCalculation)
-        .catch(() => {
-          if (!controller.signal.aborted) setPreviewFailed(true);
-        });
+      setPreviewInput({
+        expenses,
+        months,
+        selectedAssetKeys: selectedKeysSignature
+          ? selectedKeysSignature.split("|")
+          : [],
+      });
     }, 200);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
+    return () => window.clearTimeout(timer);
   }, [data, monthlyExpenses, selectedKeysSignature, targetMonths]);
+
+  const previewQuery = useQuery({
+    queryKey: queryKeys.portfolio.emergencyReservePreview(previewInput),
+    enabled: Boolean(
+      previewInput &&
+      previewInput.expenses === Number(monthlyExpenses) &&
+      previewInput.months === Number(targetMonths) &&
+      previewInput.selectedAssetKeys.join("|") === selectedKeysSignature,
+    ),
+    queryFn: async ({ signal }) => {
+      const body = await apiRequest<EditorData | EmergencyReserveCalculation>(
+        "/api/emergency-reserve",
+        {
+          method: "PATCH",
+          signal,
+          body: JSON.stringify({
+            monthlyExpenses: previewInput!.expenses,
+            targetMonths: previewInput!.months,
+            selectedAssetKeys: previewInput!.selectedAssetKeys,
+          }),
+        },
+        "Não foi possível atualizar a prévia da reserva.",
+      );
+      return typeof body === "object" && body !== null && "calculation" in body
+        ? (body as EditorData).calculation
+        : (body as EmergencyReserveCalculation);
+    },
+  });
 
   async function save(
     event?: React.FormEvent<HTMLFormElement>,
@@ -262,7 +257,10 @@ export function EmergencyReserveEditor() {
         return;
       }
       const savedData = body as EditorData;
-      setData(savedData);
+      queryClient.setQueryData(
+        queryKeys.portfolio.emergencyReserve(),
+        savedData,
+      );
       setMonthlyExpenses(savedData.monthlyExpenses?.toString() ?? "");
       setTargetMonths(savedData.targetMonths?.toString() ?? "");
       const loadedMonths = savedData.targetMonths?.toString() ?? "";
@@ -273,8 +271,7 @@ export function EmergencyReserveEditor() {
           : "custom",
       );
       setSelectedKeys(new Set(savedData.selectedAssetKeys));
-      setPreviewCalculation(null);
-      setPreviewFailed(false);
+      setPreviewInput(null);
       const transferMessage = transfers.length
         ? createTransferSuccessMessage(transfers, transferImpacts)
         : null;
@@ -296,8 +293,6 @@ export function EmergencyReserveEditor() {
   }
 
   function toggleHolding(assetKey: string) {
-    setPreviewCalculation(null);
-    setPreviewFailed(false);
     setSelectedKeys((current) => {
       const next = new Set(current);
       if (next.has(assetKey)) next.delete(assetKey);
@@ -315,6 +310,16 @@ export function EmergencyReserveEditor() {
     targetMonths === (data.targetMonths?.toString() ?? "") &&
     selectedKeysSignature === [...data.selectedAssetKeys].sort().join("|"),
   );
+  const previewMatchesCurrentDraft = Boolean(
+    previewInput &&
+    previewInput.expenses === Number(monthlyExpenses) &&
+    previewInput.months === Number(targetMonths) &&
+    previewInput.selectedAssetKeys.join("|") === selectedKeysSignature,
+  );
+  const previewCalculation = previewMatchesCurrentDraft
+    ? (previewQuery.data ?? null)
+    : null;
+  const previewFailed = previewMatchesCurrentDraft && previewQuery.isError;
   const visibleCalculation =
     previewCalculation ?? (hasCurrentDraft ? data!.calculation : null);
   const selectedHasIncompleteValues =
@@ -331,7 +336,7 @@ export function EmergencyReserveEditor() {
   const previewLoading =
     hasValidReserveTarget &&
     !hasCurrentDraft &&
-    previewCalculation === null &&
+    (previewCalculation === null || previewQuery.isFetching) &&
     !previewFailed;
 
   return (
@@ -339,11 +344,11 @@ export function EmergencyReserveEditor() {
       <p
         className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
         aria-live="polite"
-        role={error && !data ? "alert" : "status"}
+        role={reserveQuery.error && !data ? "alert" : "status"}
       >
         {loading
           ? "Carregando configuração..."
-          : error && !data
+          : reserveQuery.error && !data
             ? loadErrorMessage
             : data?.configured
               ? `Meta pessoal de ${data.targetMonths} meses`
@@ -372,15 +377,14 @@ export function EmergencyReserveEditor() {
           <div className="h-72 animate-pulse rounded-xl bg-muted" />
         </div>
       )}
-      {error && !data && (
+      {reserveQuery.error && !data && (
         <div role="alert" className="space-y-3 text-sm text-destructive">
-          <p>{error}</p>
+          <p>{reserveQuery.error.message}</p>
           <Button
             type="button"
             variant="outline"
             onClick={() => {
-              setLoading(true);
-              loadData();
+              void reserveQuery.refetch();
             }}
           >
             Tentar novamente
@@ -409,8 +413,6 @@ export function EmergencyReserveEditor() {
                       step="0.01"
                       value={monthlyExpenses}
                       onChange={(event) => {
-                        setPreviewCalculation(null);
-                        setPreviewFailed(false);
                         setMonthlyExpenses(event.target.value);
                       }}
                       aria-describedby="reserve-cost-help"
@@ -439,8 +441,6 @@ export function EmergencyReserveEditor() {
                           }
                           aria-pressed={monthChoice === choice}
                           onClick={() => {
-                            setPreviewCalculation(null);
-                            setPreviewFailed(false);
                             if (monthChoice === "custom")
                               setCustomMonths(targetMonths);
                             setMonthChoice(choice);
@@ -470,8 +470,6 @@ export function EmergencyReserveEditor() {
                           step="1"
                           value={targetMonths}
                           onChange={(event) => {
-                            setPreviewCalculation(null);
-                            setPreviewFailed(false);
                             setTargetMonths(event.target.value);
                             setCustomMonths(event.target.value);
                           }}
@@ -556,8 +554,6 @@ export function EmergencyReserveEditor() {
                     return false;
                   }
                   setSelectedKeys(new Set(assetKeys));
-                  setPreviewCalculation(null);
-                  setPreviewFailed(false);
                   setTransferSuccess(null);
                 }}
               />
@@ -633,8 +629,6 @@ export function EmergencyReserveEditor() {
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            setPreviewCalculation(null);
-                            setPreviewFailed(false);
                             const visibleKeys = new Set(
                               data.holdings.map((holding) => holding.assetKey),
                             );

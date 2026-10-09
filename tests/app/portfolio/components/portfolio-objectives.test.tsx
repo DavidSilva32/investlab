@@ -2,7 +2,7 @@
 import {
   cleanup,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   within,
   waitFor,
@@ -13,6 +13,10 @@ import { PortfolioObjectives } from "@/app/portfolio/_components/portfolio-objec
 import type { ObjectivePosition } from "@/app/portfolio/_components/portfolio-objective-assignment";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));

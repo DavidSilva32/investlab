@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PortfolioObjectiveOrganizer } from "@/app/portfolio/_components/portfolio-objective-organizer";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
@@ -102,6 +103,7 @@ function renderOrganizer(
       onCompleted={vi.fn()}
       {...props}
     />,
+    { wrapper: QueryClientWrapper },
   );
 }
 

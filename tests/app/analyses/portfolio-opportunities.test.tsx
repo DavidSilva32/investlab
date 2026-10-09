@@ -3,15 +3,23 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderBase,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { PortfolioOpportunities } from "@/app/analyses/_components/portfolio-opportunities";
+import * as apiClient from "@/lib/api-client";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
+import type { ReactNode } from "react";
+
+function render(ui: ReactNode) {
+  return renderBase(<QueryClientWrapper>{ui}</QueryClientWrapper>);
+}
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -92,9 +100,36 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("PortfolioOpportunities", () => {
+  it("reloads portfolio opportunities after a financial portfolio update", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          opportunities: [opportunity],
+          settings: { bazinTargetYield: 6 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<PortfolioOpportunities />);
+
+    expect(await screen.findByText("PETR4")).toBeTruthy();
+    await act(async () => {
+      window.dispatchEvent(new Event("portfolio:updated"));
+    });
+
+    expect(
+      await screen.findByText("Nenhuma ação importada encontrada"),
+    ).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("shows skeleton while the carteira is loading", async () => {
     vi.stubGlobal(
       "fetch",
@@ -412,6 +447,41 @@ describe("PortfolioOpportunities", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("invalidates and reloads if the opportunities cache was evicted during save", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        opportunities: [opportunity],
+        settings: { bazinTargetYield: 6 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderBase(
+      <QueryClientProvider client={queryClient}>
+        <PortfolioOpportunities />
+      </QueryClientProvider>,
+    );
+    const rate = await screen.findByLabelText("Percentual anual");
+    const updateCache = vi
+      .spyOn(queryClient, "setQueryData")
+      .mockImplementation((_, updater) => {
+        if (typeof updater === "function")
+          (updater as (current: undefined) => unknown)(undefined);
+        return undefined;
+      });
+
+    await userEvent.clear(rate);
+    await userEvent.type(rate, "7");
+    await userEvent.click(screen.getByRole("button", { name: /salvar taxa/i }));
+
+    expect(updateCache).toHaveBeenCalledOnce();
+    expect(toast.success).toHaveBeenCalledWith("Taxa-alvo global atualizada.");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    queryClient.clear();
+  });
+
   it.each([
     ["0", "Informe uma taxa anual maior que 0% e de até 100%."],
     ["101", "Informe uma taxa anual maior que 0% e de até 100%."],
@@ -540,6 +610,45 @@ describe("PortfolioOpportunities", () => {
       expect(toast.error).toHaveBeenCalledWith("Valor rejeitado."),
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses safe fallbacks when mutation rejections are not Error instances", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          opportunities: [opportunity],
+          settings: { bazinTargetYield: 6 },
+        }),
+      ),
+    );
+    render(<PortfolioOpportunities />);
+    await screen.findByText("PETR4");
+    const request = vi.spyOn(apiClient, "apiRequest");
+    request.mockRejectedValueOnce("private manual rejection");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Informar ou atualizar dados manuais",
+      }),
+    );
+    const value = document.getElementById("PETR4-graham_eps-value")!;
+    const form = value.closest("form")!;
+    await userEvent.click(within(form).getByRole("button", { name: "Salvar" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar o dado manual.",
+      ),
+    );
+
+    vi.mocked(toast.error).mockClear();
+    request.mockRejectedValueOnce("private settings rejection");
+    await userEvent.click(screen.getByRole("button", { name: /salvar taxa/i }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível atualizar a taxa configurada.",
+      ),
+    );
   });
 
   it("saves per-share evidence with source and date, separate from the automatic observation", async () => {

@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AnalysesTabs } from "@/app/analyses/_components/analyses-tabs";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
 
 vi.mock("@/app/analyses/_components/stock-analysis-dashboard", () => ({
   StockAnalysisDashboard: ({ initialTicker }: { initialTicker?: string }) => (
@@ -16,6 +22,9 @@ vi.mock("@/app/analyses/_components/company-comparison", () => ({
 }));
 
 afterEach(cleanup);
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
 
 const opportunity = {
   ticker: "PETR4",

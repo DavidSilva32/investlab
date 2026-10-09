@@ -3,12 +3,23 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderBase,
   screen,
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalysisStockSearch } from "@/app/analyses/_components/analysis-stock-search";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
+import type { ReactNode } from "react";
+
+function render(ui: ReactNode) {
+  const result = renderBase(<QueryClientWrapper>{ui}</QueryClientWrapper>);
+  return {
+    ...result,
+    rerender: (next: ReactNode) =>
+      result.rerender(<QueryClientWrapper>{next}</QueryClientWrapper>),
+  };
+}
 
 beforeEach(() => {
   vi.stubGlobal(
@@ -30,9 +41,12 @@ const response = (
   results: Array<{ ticker: string; name: string }>,
   status = 200,
 ) => new Response(JSON.stringify({ results }), { status });
-async function advanceSearch() {
+async function advanceSearch(waitForRequest = true) {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(251);
+    await new Promise((resolve) => window.setTimeout(resolve, 251));
+  });
+  if (!waitForRequest) return;
+  await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -74,7 +88,6 @@ describe("AnalysisStockSearch", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("searches dynamically and selects a ticker by click", async () => {
-    vi.useFakeTimers();
     const fetcher = vi
       .fn()
       .mockResolvedValue(response([{ ticker: "VALE3", name: "Vale S.A." }]));
@@ -88,7 +101,9 @@ describe("AnalysisStockSearch", () => {
     fireEvent.change(input, { target: { value: "Vale" } });
     expect(input.getAttribute("aria-expanded")).toBe("true");
     await advanceSearch();
-    const option = screen.getByRole("option", { name: /VALE3.*Vale S\.A\./ });
+    const option = await screen.findByRole("option", {
+      name: /VALE3.*Vale S\.A\./,
+    });
     expect(fetcher).toHaveBeenCalledWith(
       "/api/analyses/stocks/search?q=Vale",
       expect.any(Object),
@@ -102,7 +117,6 @@ describe("AnalysisStockSearch", () => {
   });
 
   it("renders only the first result for tickers that differ by letter case", async () => {
-    vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -118,33 +132,35 @@ describe("AnalysisStockSearch", () => {
     });
     await advanceSearch();
 
-    expect(screen.getAllByRole("option", { name: /petr4/i })).toHaveLength(1);
     expect(
-      screen.getByRole("option", { name: /primeiro resultado/ }),
+      await screen.findAllByRole("option", { name: /petr4/i }),
+    ).toHaveLength(1);
+    expect(
+      await screen.findByRole("option", { name: /primeiro resultado/ }),
     ).toBeTruthy();
     expect(screen.queryByRole("option", { name: /duplicado/ })).toBeNull();
   });
 
   it("does not search short or currently selected input and supports an empty result", async () => {
-    vi.useFakeTimers();
     const fetcher = vi.fn().mockResolvedValue(response([]));
     vi.stubGlobal("fetch", fetcher);
     render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
     const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "V" } });
-    await advanceSearch();
+    await advanceSearch(false);
     fireEvent.change(input, { target: { value: "PETR4" } });
     await advanceSearch();
     expect(fetcher).not.toHaveBeenCalled();
     fireEvent.change(input, { target: { value: "ZZZ" } });
     await advanceSearch();
-    expect(screen.getByRole("status").textContent).toBe(
-      "Nenhuma ação encontrada.",
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Nenhuma ação encontrada.",
+      ),
     );
   });
 
   it("shows a helpful error when the search API fails", async () => {
-    vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response("{}", { status: 503 })),
@@ -154,13 +170,14 @@ describe("AnalysisStockSearch", () => {
       target: { value: "Vale" },
     });
     await advanceSearch();
-    expect(screen.getByRole("status").textContent).toBe(
-      "Não foi possível pesquisar ações agora.",
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Não foi possível pesquisar ações agora.",
+      ),
     );
   });
 
   it("shows a safe fallback for a rejected network request", async () => {
-    vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
     fireEvent.change(screen.getByRole("combobox"), {
@@ -169,13 +186,14 @@ describe("AnalysisStockSearch", () => {
 
     await advanceSearch();
 
-    expect(screen.getByRole("status").textContent).toBe(
-      "Não foi possível pesquisar ações agora.",
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Não foi possível pesquisar ações agora.",
+      ),
     );
   });
 
   it("treats a successful response without results as an empty search", async () => {
-    vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
       vi
@@ -189,13 +207,14 @@ describe("AnalysisStockSearch", () => {
 
     await advanceSearch();
 
-    expect(screen.getByRole("status").textContent).toBe(
-      "Nenhuma ação encontrada.",
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Nenhuma ação encontrada.",
+      ),
     );
   });
 
   it("preserves a safe API message in the autocomplete status", async () => {
-    vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -212,13 +231,14 @@ describe("AnalysisStockSearch", () => {
       target: { value: "Vale" },
     });
     await advanceSearch();
-    expect(screen.getByRole("status").textContent).toBe(
-      "Catálogo temporariamente indisponível.",
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Catálogo temporariamente indisponível.",
+      ),
     );
   });
 
   it("clears prior options before debounce so Enter cannot select stale results", async () => {
-    vi.useFakeTimers();
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(response([{ ticker: "PETR3", name: "Petrobras" }]))
@@ -230,7 +250,7 @@ describe("AnalysisStockSearch", () => {
     expect(input.getAttribute("aria-expanded")).toBe("false");
     fireEvent.change(input, { target: { value: "Petr" } });
     await advanceSearch();
-    expect(screen.getByRole("option", { name: /PETR3/ })).toBeTruthy();
+    expect(await screen.findByRole("option", { name: /PETR3/ })).toBeTruthy();
     fireEvent.change(input, { target: { value: "Vale" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onSelect).not.toHaveBeenCalled();
@@ -238,18 +258,14 @@ describe("AnalysisStockSearch", () => {
     await advanceSearch();
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input.getAttribute("aria-autocomplete")).toBe("list");
-    expect(
-      screen
-        .getByRole("option", { name: /VALE3/ })
-        .getAttribute("aria-selected"),
-    ).toBe("true");
+    const result = await screen.findByRole("option", { name: /VALE3/ });
+    expect(result.getAttribute("aria-selected")).toBe("true");
     fireEvent.keyDown(input, { key: "ArrowUp" });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith({ ticker: "VALE3", name: "Vale" });
   });
 
   it("supports Escape and keeps unresolved requests from replacing newer results", async () => {
-    vi.useFakeTimers();
     let resolveOld!: (result: Response) => void;
     const oldResponse = new Promise<Response>((resolve) => {
       resolveOld = resolve;
@@ -262,7 +278,7 @@ describe("AnalysisStockSearch", () => {
     render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
     const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "Petr" } });
-    await advanceSearch();
+    await advanceSearch(false);
     fireEvent.change(input, { target: { value: "Vale" } });
     await advanceSearch();
     resolveOld(response([{ ticker: "PETR3", name: "Petrobras" }]));
@@ -270,7 +286,7 @@ describe("AnalysisStockSearch", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getByRole("option", { name: /VALE3/ })).toBeTruthy();
+    expect(await screen.findByRole("option", { name: /VALE3/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /PETR3/ })).toBeNull();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
@@ -278,7 +294,6 @@ describe("AnalysisStockSearch", () => {
     expect(screen.getByRole("listbox")).toBeTruthy();
   });
   it("silently ignores a request rejected by its abort signal", async () => {
-    vi.useFakeTimers();
     const fetcher = vi
       .fn()
       .mockImplementationOnce(
@@ -301,7 +316,9 @@ describe("AnalysisStockSearch", () => {
     fireEvent.change(input, { target: { value: "Vale" } });
     await advanceSearch();
 
-    expect(screen.getByRole("option", { name: /VALE3.*Vale/ })).toBeTruthy();
+    expect(
+      await screen.findByRole("option", { name: /VALE3.*Vale/ }),
+    ).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
   });
 });

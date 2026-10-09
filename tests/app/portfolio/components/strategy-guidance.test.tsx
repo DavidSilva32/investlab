@@ -49,4 +49,21 @@ describe("StrategyGuidance", () => {
       screen.getByText(/não chegou com os dados da carteira/i),
     ).toBeTruthy();
   });
+
+  it("labels guidance based on the configured investment strategy", () => {
+    render(
+      <StrategyGuidance
+        nextContributionGuidance={{
+          status: "target_gap",
+          title: "Considere Renda fixa para o próximo aporte",
+          explanation: "A carteira está abaixo da meta registrada.",
+          allocationMode: "strategy",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Orientação da Estratégia" }),
+    ).toBeTruthy();
+  });
 });

@@ -1,6 +1,7 @@
 ﻿import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { QueryProvider } from "@/components/query-provider";
 import { application } from "@/lib/application";
 import "./globals.css";
 
@@ -21,8 +22,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster />
+          <QueryProvider>
+            {children}
+            <Toaster />
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

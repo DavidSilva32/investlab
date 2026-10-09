@@ -1,6 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { toast } from "sonner";
-import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency } from "@/lib/utils";
 import { isFutureValuationDate, todayInSaoPaulo } from "@/lib/valuation-date";
 import {
@@ -115,11 +117,6 @@ type Props = {
   targetObjectiveName?: string;
 };
 
-type SearchState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "result"; result: EmergencyReservePositionSuggestions };
-
 export function PositionCombinationSuggestions({
   holdings,
   onApply,
@@ -138,10 +135,31 @@ export function PositionCombinationSuggestions({
   const [valuationDate, setValuationDate] = useState(todayInSaoPaulo);
   const amountInputRef = useRef<HTMLInputElement>(null);
   const selectionRef = useRef<CurrencyInputSelection | null>(null);
-  const [search, setSearch] = useState<SearchState>({ status: "idle" });
+  const [searchRequest, setSearchRequest] = useState<{
+    targetAmount: number;
+    valuationDate: string;
+    body: Record<string, string | number | null>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState(requestFilter?.defaultValue ?? "");
   const [draftSelected, setDraftSelected] = useState(false);
+  const searchQuery = useQuery({
+    queryKey: queryKeys.portfolio.positionSuggestions(endpoint, searchRequest),
+    enabled: searchRequest !== null,
+    queryFn: () =>
+      apiRequest<EmergencyReservePositionSuggestions>(
+        endpoint,
+        {
+          method: "POST",
+          body: JSON.stringify(searchRequest?.body),
+        },
+        "Não foi possível buscar combinações agora. Tente novamente.",
+      ),
+  });
+
+  useEffect(() => {
+    if (searchQuery.error) toast.error(searchQuery.error.message);
+  }, [searchQuery.error]);
 
   useLayoutEffect(() => {
     const input = amountInputRef.current;
@@ -157,50 +175,35 @@ export function PositionCombinationSuggestions({
     const target = parseBrazilianAmount(amount);
     if (!Number.isFinite(target) || target <= 0) {
       setError("Informe um valor maior que zero para comparar as posições.");
-      setSearch({ status: "idle" });
+      setSearchRequest(null);
       return;
     }
     if (!valuationDate || isFutureValuationDate(valuationDate)) {
       setError(
         "Informe uma data de consulta válida, igual ou anterior a hoje.",
       );
-      setSearch({ status: "idle" });
+      setSearchRequest(null);
       return;
     }
 
     setError(null);
-    setSearch({ status: "loading" });
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          targetAmount: target,
-          valuationDate,
-          ...requestBody,
-          ...(requestFilter ? { [requestFilter.key]: filter } : {}),
-        }),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        toast.error(
-          getApiMessage(
-            body,
-            "Não foi possível buscar combinações agora. Tente novamente.",
-          ),
-        );
-        setSearch({ status: "idle" });
-        return;
-      }
-      setSearch({
-        status: "result",
-        result: body as EmergencyReservePositionSuggestions,
-      });
-    } catch {
-      setSearch({ status: "idle" });
-      toast.error(
-        "Não foi possível buscar combinações agora. Tente novamente.",
-      );
+    const request = {
+      targetAmount: target,
+      valuationDate,
+      body: {
+        targetAmount: target,
+        valuationDate,
+        ...requestBody,
+        ...(requestFilter ? { [requestFilter.key]: filter } : {}),
+      },
+    };
+    if (
+      searchRequest &&
+      JSON.stringify(searchRequest) === JSON.stringify(request)
+    ) {
+      void searchQuery.refetch();
+    } else {
+      setSearchRequest(request);
     }
   }
 
@@ -237,7 +240,7 @@ export function PositionCombinationSuggestions({
                 type="text"
                 inputMode="numeric"
                 autoComplete="off"
-                disabled={search.status === "loading"}
+                disabled={searchQuery.isFetching}
                 placeholder="R$ 0,00"
                 value={amount}
                 onChange={(event) => {
@@ -254,7 +257,7 @@ export function PositionCombinationSuggestions({
                   );
                   setAmount(nextAmount);
                   setError(null);
-                  setSearch({ status: "idle" });
+                  setSearchRequest(null);
                   setDraftSelected(false);
                 }}
                 aria-invalid={Boolean(error)}
@@ -278,7 +281,7 @@ export function PositionCombinationSuggestions({
                   value={filter}
                   onValueChange={(value) => {
                     setFilter(value);
-                    setSearch({ status: "idle" });
+                    setSearchRequest(null);
                   }}
                 >
                   <SelectTrigger id="position-combination-filter">
@@ -301,7 +304,7 @@ export function PositionCombinationSuggestions({
                 value={valuationDate}
                 onChange={(value) => {
                   setValuationDate(value);
-                  setSearch({ status: "idle" });
+                  setSearchRequest(null);
                 }}
                 required
               />
@@ -310,11 +313,9 @@ export function PositionCombinationSuggestions({
               type="button"
               className="shrink-0"
               onClick={() => void findSuggestions()}
-              disabled={search.status === "loading"}
+              disabled={searchQuery.isFetching}
             >
-              {search.status === "loading"
-                ? "Comparando…"
-                : "Buscar combinações"}
+              {searchQuery.isFetching ? "Comparando…" : "Buscar combinações"}
             </Button>
           </div>
           {comparisonDetails && (
@@ -350,14 +351,14 @@ export function PositionCombinationSuggestions({
               {error}
             </p>
           )}
-          {search.status === "loading" && (
+          {searchQuery.isFetching && (
             <p role="status" className="text-sm text-muted-foreground">
               Comparando combinações de valores…
             </p>
           )}
-          {search.status === "result" && (
+          {searchQuery.data && (
             <SuggestionResults
-              result={search.result}
+              result={searchQuery.data}
               targetObjectiveName={targetObjectiveName}
               target={parseBrazilianAmount(amount)}
               holdings={holdings}

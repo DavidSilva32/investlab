@@ -1,9 +1,18 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { ScreenerDataSettings } from "@/app/settings/_components/screener-data-settings";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const response = (body: unknown, ok = true) =>
   Promise.resolve({ ok, json: () => Promise.resolve(body) });
@@ -75,6 +84,7 @@ describe("ScreenerDataSettings", () => {
     );
     expect(fetchMock).toHaveBeenLastCalledWith("/api/settings/screener", {
       cache: "no-store",
+      headers: {},
     });
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(

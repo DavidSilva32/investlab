@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/ui/sonner", () => ({
   Toaster: () => <div data-testid="toaster" />,
 }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 
 import RootLayout, { metadata } from "@/app/layout";
 

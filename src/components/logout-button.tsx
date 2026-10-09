@@ -1,15 +1,18 @@
 ﻿"use client";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 export function LogoutButton() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   return (
     <Button
       variant="ghost"
       className="w-full justify-start text-muted-foreground hover:text-foreground"
       onClick={async () => {
         await fetch("/api/auth/logout", { method: "POST" });
+        queryClient.clear();
         router.push("/login");
       }}
     >

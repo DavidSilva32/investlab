@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
@@ -14,6 +15,8 @@ import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-re
 import { PortfolioObjectiveOrganizer } from "@/app/portfolio/_components/portfolio-objective-organizer";
 import { Button } from "@/components/ui/button";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import type { SuggestionCandidate } from "@/app/portfolio/_components/position-combination-suggestions";
 
 type AssignmentTransfer = NonNullable<SuggestionCandidate["transfers"]>[number];
@@ -69,7 +72,16 @@ export function PortfolioObjectives({
     screen?: string | null,
   ) => void;
 } = {}) {
-  const [data, setData] = useState<ObjectivesData | null>(null);
+  const objectivesQuery = useQuery({
+    queryKey: queryKeys.portfolio.objectives(),
+    queryFn: () =>
+      apiRequest<ObjectivesData>(
+        "/api/portfolio/objectives",
+        undefined,
+        loadErrorMessage,
+      ),
+  });
+  const data = objectivesQuery.data ?? null;
   const [view, setView] = useState<View>(() =>
     getViewFromNavigation(navigation),
   );
@@ -80,40 +92,15 @@ export function PortfolioObjectives({
   ]);
   const [appliedNavigationKey, setAppliedNavigationKey] =
     useState(navigationKey);
-  const [loading, setLoading] = useState(true);
+  const loading = objectivesQuery.isPending;
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [deleteObjectiveId, setDeleteObjectiveId] = useState<string | null>(
     null,
   );
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    let failureMessage = loadErrorMessage;
-    try {
-      const response = await fetch("/api/portfolio/objectives");
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        failureMessage = getApiMessage(body, loadErrorMessage);
-        throw new Error("portfolio_objectives_load_failed");
-      }
-      setData(body as ObjectivesData);
-      setError(null);
-    } catch {
-      setError(failureMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadData(), 0);
-    window.addEventListener("portfolio:updated", loadData);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("portfolio:updated", loadData);
-    };
-  }, [loadData]);
+  const loadData = async () => {
+    await objectivesQuery.refetch();
+  };
 
   if (navigationKey !== appliedNavigationKey) {
     setAppliedNavigationKey(navigationKey);
@@ -322,9 +309,9 @@ export function PortfolioObjectives({
           Carregando objetivos e posições…
         </p>
       )}
-      {error && !data && (
+      {objectivesQuery.error && !data && (
         <div role="alert" className="space-y-3 text-sm text-destructive">
-          <p>{error}</p>
+          <p>{objectivesQuery.error.message}</p>
           <Button
             type="button"
             variant="outline"

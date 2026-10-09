@@ -1,9 +1,20 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render as renderBase,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { ScreenerDashboard } from "@/app/analyses/_components/screener-dashboard";
+import { QueryClientWrapper } from "../../utils/query-client-wrapper";
+import type { ReactNode } from "react";
+
+function render(ui: ReactNode) {
+  return renderBase(<QueryClientWrapper>{ui}</QueryClientWrapper>);
+}
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -84,9 +95,7 @@ describe("ScreenerDashboard", () => {
     render(<ScreenerDashboard />);
 
     expect(await screen.findByText("Petrobras")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith("/api/screener", {
-      cache: "no-store",
-    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/screener");
     expect(
       screen
         .getByRole("link", { name: "PETR3 · Analisar" })
@@ -315,7 +324,6 @@ describe("ScreenerDashboard", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(
         "/api/screener?positiveProfitYears=3&equityPositive=true&minimumRoe=10&minimumNetMargin=5",
-        { cache: "no-store" },
       ),
     );
   });
@@ -373,7 +381,6 @@ describe("ScreenerDashboard", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(
         "/api/screener?maximumPe=12&maximumPb=2",
-        { cache: "no-store" },
       ),
     );
   });
@@ -541,9 +548,7 @@ describe("ScreenerDashboard", () => {
     await user.click(screen.getByRole("button", { name: "Aplicar filtros" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchMock).toHaveBeenLastCalledWith("/api/screener", {
-      cache: "no-store",
-    });
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/screener");
   });
 
   it("reports load failures and retries the same local query", async () => {
@@ -557,9 +562,7 @@ describe("ScreenerDashboard", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(await screen.findByText("Petrobras")).toBeTruthy();
-    expect(fetchMock).toHaveBeenLastCalledWith("/api/screener", {
-      cache: "no-store",
-    });
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/screener");
   });
 
   it("clears applied filters and reloads the unfiltered universe", async () => {
@@ -576,9 +579,7 @@ describe("ScreenerDashboard", () => {
     await user.type(profitYears, "2");
     await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenLastCalledWith("/api/screener", {
-        cache: "no-store",
-      }),
+      expect(fetchMock).toHaveBeenLastCalledWith("/api/screener"),
     );
     expect((profitYears as HTMLInputElement).value).toBe("");
   });

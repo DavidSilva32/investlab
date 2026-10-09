@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { Fragment, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AnalysisStockSearch } from "./analysis-stock-search";
-import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 
 type TickerOption = { ticker: string; name: string };
 type MetricCell = {
@@ -134,60 +136,71 @@ export function CompanyComparison({
   const [selected, setSelected] = useState<TickerOption[]>(
     initialOption ? [initialOption] : [],
   );
-  const [result, setResult] = useState<ComparisonResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [submittedTickers, setSubmittedTickers] = useState<string[]>([]);
+  const [shouldCompare, setShouldCompare] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const comparisonQuery = useQuery({
+    queryKey: queryKeys.analyses.comparison(submittedTickers),
+    enabled: shouldCompare && submittedTickers.length > 0,
+    queryFn: () =>
+      apiRequest<ComparisonResult>(
+        "/api/analyses/companies/compare",
+        {
+          method: "POST",
+          body: JSON.stringify({ tickers: submittedTickers }),
+        },
+        "Não foi possível comparar as empresas agora.",
+      ),
+  });
+  const result = comparisonQuery.data ?? null;
+  const loading = comparisonQuery.isFetching;
+  const queryError =
+    shouldCompare && comparisonQuery.error instanceof Error
+      ? comparisonQuery.error.message
+      : null;
+  const error = actionError ?? queryError;
+  const displayedSelection =
+    shouldCompare && result
+      ? result.companies.map((company) => ({
+          ticker: company.ticker,
+          name: company.name,
+        }))
+      : selected;
 
   function addTicker(option: TickerOption) {
     setSearchTicker(option.ticker);
-    setError(null);
-    setResult(null);
-    if (selected.some((item) => item.ticker === option.ticker)) return;
-    if (selected.length >= 5) {
-      setError("É possível comparar até cinco empresas por vez.");
+    setActionError(null);
+    setSubmittedTickers([]);
+    setShouldCompare(false);
+    if (displayedSelection.some((item) => item.ticker === option.ticker))
+      return;
+    if (displayedSelection.length >= 5) {
+      setActionError("É possível comparar até cinco empresas por vez.");
       return;
     }
-    setSelected((current) => [...current, option]);
+    setSelected([...displayedSelection, option]);
   }
 
   function removeTicker(ticker: string) {
-    setSelected((current) => current.filter((item) => item.ticker !== ticker));
-    setResult(null);
-    setError(null);
+    setSelected(displayedSelection.filter((item) => item.ticker !== ticker));
+    setSubmittedTickers([]);
+    setShouldCompare(false);
+    setActionError(null);
   }
 
-  async function compare() {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    try {
-      const response = await fetch("/api/analyses/companies/compare", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          tickers: selected.map((item) => item.ticker),
-        }),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        setError(
-          getApiMessage(body, "Não foi possível comparar as empresas agora."),
-        );
-        return;
-      }
-      const comparison = body as ComparisonResult;
-      setResult(comparison);
-      setSelected(
-        comparison.companies.map((company) => ({
-          ticker: company.ticker,
-          name: company.name,
-        })),
-      );
-    } catch {
-      setError("Não foi possível comparar as empresas agora.");
-    } finally {
-      setLoading(false);
+  function compare() {
+    setActionError(null);
+    const tickers = displayedSelection.map((item) => item.ticker);
+    if (
+      shouldCompare &&
+      tickers.length === submittedTickers.length &&
+      tickers.every((ticker, index) => ticker === submittedTickers[index])
+    ) {
+      void comparisonQuery.refetch();
+      return;
     }
+    setSubmittedTickers(tickers);
+    setShouldCompare(true);
   }
 
   const rows = result?.companies ?? [];
@@ -250,7 +263,7 @@ export function CompanyComparison({
             aria-label="Empresas selecionadas"
             className="flex min-h-11 flex-wrap content-center gap-2"
           >
-            {selected.map((option) => (
+            {displayedSelection.map((option) => (
               <span
                 key={option.ticker}
                 className="inline-flex h-10 items-center gap-2 rounded-lg border bg-muted px-3 text-sm"
@@ -268,7 +281,7 @@ export function CompanyComparison({
                 </Button>
               </span>
             ))}
-            {selected.length === 0 && (
+            {displayedSelection.length === 0 && (
               <span className="text-sm text-muted-foreground">
                 Nenhuma empresa selecionada
               </span>
@@ -276,12 +289,12 @@ export function CompanyComparison({
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 md:justify-end">
             <div className="min-w-32 text-sm text-muted-foreground md:text-right">
-              {selected.length} de 5 empresas selecionadas
+              {displayedSelection.length} de 5 empresas selecionadas
             </div>
             <Button
               type="button"
               onClick={compare}
-              disabled={loading || selected.length < 2}
+              disabled={loading || displayedSelection.length < 2}
             >
               {loading ? "Comparando…" : "Comparar selecionadas"}
             </Button>
@@ -299,7 +312,7 @@ export function CompanyComparison({
               {error}
             </p>
           )}
-          {selected.length < 2 && !result && !error && (
+          {displayedSelection.length < 2 && !result && !error && (
             <p className="text-sm text-muted-foreground md:col-span-3">
               Selecione mais uma empresa para iniciar a comparação.
             </p>

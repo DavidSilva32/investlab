@@ -14,6 +14,7 @@ vi.mock("sonner", () => ({ toast }));
 
 import { PositionCombinationSuggestions } from "@/app/portfolio/_components/position-combination-suggestions";
 import { todayInSaoPaulo } from "@/lib/valuation-date";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
 
 const holdings = [
   {
@@ -49,7 +50,7 @@ afterEach(() => {
 });
 
 function render(ui: ReactElement) {
-  const result = rtlRender(ui);
+  const result = rtlRender(ui, { wrapper: QueryClientWrapper });
   fireEvent.click(
     result.getByRole("button", { name: /Buscar uma combinação pelo valor/ }),
   );

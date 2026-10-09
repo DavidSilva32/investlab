@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowRightLeft, LoaderCircle, Search, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,6 +31,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { formatAmountInput, parseBrazilianAmount } from "@/lib/currency-input";
 import {
   centsToDecimalString,
@@ -153,9 +156,30 @@ export function PortfolioObjectiveOrganizer({
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(objectives.map((objective) => [objective.id, ""])),
   );
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewRequest, setPreviewRequest] = useState<{
+    valuationDate: string;
+    balances: Array<{ objectiveId: string; amount: number }>;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const previewQuery = useQuery({
+    queryKey: queryKeys.portfolio.objectiveAllocationPreview(previewRequest),
+    enabled: previewRequest !== null,
+    queryFn: () =>
+      apiRequest<Preview>(
+        "/api/portfolio/objectives/allocation/preview",
+        {
+          method: "POST",
+          body: JSON.stringify(previewRequest),
+        },
+        previewErrorMessage,
+      ),
+  });
+  const preview = previewQuery.data ?? null;
+
+  useEffect(() => {
+    if (previewQuery.error) toast.error(previewQuery.error.message);
+  }, [previewQuery.error]);
 
   function collectBalances() {
     const balances: Array<{ objectiveId: string; amount: number }> = [];
@@ -191,28 +215,7 @@ export function PortfolioObjectiveOrganizer({
   async function searchAllocation() {
     const balances = collectBalances();
     if (!balances) return;
-    setBusy(true);
-    setPreview(null);
-    try {
-      const response = await fetch(
-        "/api/portfolio/objectives/allocation/preview",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ valuationDate, balances }),
-        },
-      );
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        toast.error(getApiMessage(body, previewErrorMessage));
-        return;
-      }
-      setPreview(body as Preview);
-    } catch {
-      toast.error(previewErrorMessage);
-    } finally {
-      setBusy(false);
-    }
+    setPreviewRequest({ valuationDate, balances });
   }
 
   async function confirmAllocation(acceptPartial = false) {
@@ -280,7 +283,7 @@ export function PortfolioObjectiveOrganizer({
               value={valuationDate}
               onChange={(value) => {
                 setValuationDate(value);
-                setPreview(null);
+                setPreviewRequest(null);
                 setFormError(null);
               }}
               required
@@ -311,7 +314,7 @@ export function PortfolioObjectiveOrganizer({
                         ...current,
                         [objective.id]: formatBalanceInput(event.target.value),
                       }));
-                      setPreview(null);
+                      setPreviewRequest(null);
                       setFormError(null);
                     }}
                   />
@@ -345,9 +348,9 @@ export function PortfolioObjectiveOrganizer({
               type="button"
               className="w-full sm:w-auto"
               onClick={() => void searchAllocation()}
-              disabled={busy}
+              disabled={busy || previewQuery.isFetching}
             >
-              {busy ? (
+              {busy || previewQuery.isFetching ? (
                 <LoaderCircle aria-hidden="true" className="animate-spin" />
               ) : (
                 <Search aria-hidden="true" />
@@ -359,7 +362,7 @@ export function PortfolioObjectiveOrganizer({
               variant="outline"
               className="w-full sm:w-auto"
               onClick={onCancel}
-              disabled={busy}
+              disabled={busy || previewQuery.isFetching}
             >
               Voltar
             </Button>

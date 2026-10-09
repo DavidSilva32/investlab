@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getApiMessage } from "@/lib/api-message";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
 import {
   StrategyAllocationWorkspace,
@@ -36,61 +37,36 @@ function formatDate(value: string) {
 }
 
 export function PersonalInvestmentStrategy() {
-  const [data, setData] = useState<StrategyData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    void (async () => {
+  const queryClient = useQueryClient();
+  const { data, error, isPending, refetch } = useQuery({
+    queryKey: queryKeys.portfolio.strategy(),
+    queryFn: async () => {
+      const controller = new AbortController();
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
+        const request = apiRequest<StrategyData>(
+          "/api/portfolio/strategy",
+          { signal: controller.signal },
+          "Não foi possível carregar sua estratégia.",
+        );
         const timeout = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => {
             controller.abort();
-            reject(new Error("strategy-request-timeout"));
+            reject(
+              new Error(
+                "A carteira demorou mais que 30 segundos para responder. Tente carregar novamente.",
+              ),
+            );
           }, 30_000);
         });
-        const request = (async () => {
-          const response = await fetch("/api/portfolio/strategy", {
-            signal: controller.signal,
-          });
-          const body: unknown = await response.json();
-          if (!response.ok) {
-            throw new Error(
-              getApiMessage(body, "Não foi possível carregar sua estratégia."),
-            );
-          }
-          return body;
-        })();
-        const body = await Promise.race([request, timeout]);
-        if (active) setData(body as StrategyData);
-      } catch (failure) {
-        if (active) {
-          setError(
-            failure instanceof Error &&
-              failure.message === "strategy-request-timeout"
-              ? "A carteira demorou mais que 30 segundos para responder. Tente carregar novamente."
-              : failure instanceof Error
-                ? failure.message
-                : "Não foi possível carregar sua estratégia.",
-          );
-        }
+        return await Promise.race([request, timeout]);
       } finally {
         clearTimeout(timeoutId);
-        if (active) setLoading(false);
       }
-    })();
-    return () => {
-      active = false;
-      controller.abort();
-      clearTimeout(timeoutId);
-    };
-  }, [attempt]);
+    },
+  });
 
-  if (loading) {
+  if (isPending) {
     return (
       <div
         role="status"
@@ -153,21 +129,17 @@ export function PersonalInvestmentStrategy() {
       </div>
     );
   }
-  if (!data || error) {
+  if (error) {
     return (
       <Alert variant="destructive">
         <AlertTitle>Não foi possível abrir a estratégia</AlertTitle>
         <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-          <span>{error}</span>
+          <span>{error.message}</span>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => {
-              setLoading(true);
-              setError(null);
-              setAttempt((current) => current + 1);
-            }}
+            onClick={() => void refetch()}
           >
             Tentar novamente
           </Button>
@@ -254,12 +226,20 @@ export function PersonalInvestmentStrategy() {
           savedAllocationPercentages={data.savedAllocationPercentages}
           allocationActive={data.allocationActive}
           onSaved={(allocationPercentages) =>
-            setData({
-              ...data,
-              savedAllocationPercentages: allocationPercentages,
-            })
+            queryClient.setQueryData<StrategyData>(
+              queryKeys.portfolio.strategy(),
+              { ...data, savedAllocationPercentages: allocationPercentages },
+            )
           }
-          onActivated={() => setData({ ...data, allocationActive: true })}
+          onActivated={() =>
+            queryClient.setQueryData<StrategyData>(
+              queryKeys.portfolio.strategy(),
+              {
+                ...data,
+                allocationActive: true,
+              },
+            )
+          }
         />
       )}
       <p className="text-xs text-muted-foreground">
