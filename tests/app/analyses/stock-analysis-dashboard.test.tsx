@@ -74,6 +74,7 @@ const analysis = {
   ticker: "PETR4",
   cnpj: "33000167000101",
   companyName: "Petrobras",
+  logoUrl: "https://icons.brapi.dev/icons/PETR4.svg",
   price: 30,
   priceUpdatedAt: "2026-09-19T15:30:00-03:00",
   changePercent: -1.25,
@@ -172,6 +173,12 @@ describe("StockAnalysisDashboard", () => {
     const learningLink = await screen.findByRole("link", {
       name: "Aprender sobre Ações e BDRs",
     });
+    expect(
+      screen
+        .getByRole("img", { name: "Identidade de Petrobras" })
+        .querySelector("img")
+        ?.getAttribute("src"),
+    ).toBe(analysis.logoUrl);
     expect(learningLink.textContent).toContain("Aprender sobre Ações e BDRs");
     expect(learningLink.closest("div")?.textContent).toContain(
       "Ativo consultado",
@@ -281,7 +288,9 @@ describe("StockAnalysisDashboard", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(await screen.findByText(/VALE3.*Vale/)).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "VALE3 · Vale" }),
+    ).toBeTruthy();
     expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
       "VALE3",
     );
@@ -292,7 +301,9 @@ describe("StockAnalysisDashboard", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     await waitFor(() => {
-      expect(screen.getByText(/PETR4.*Petrobras/)).toBeTruthy();
+      expect(
+        screen.getByRole("heading", { name: "PETR4 · Petrobras" }),
+      ).toBeTruthy();
       expect(screen.getAllByRole("combobox")).toHaveLength(1);
       expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
         "PETR4",
@@ -507,7 +518,9 @@ describe("StockAnalysisDashboard", () => {
     render(<StockAnalysisDashboard initialTicker="PETR4" />);
 
     expect(await screen.findByText("Ativo consultado")).toBeTruthy();
-    expect(screen.getByText(/PETR4.*Petrobras/)).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "PETR4 · Petrobras" }),
+    ).toBeTruthy();
   });
 
   it("shows a loading state before the request resolves", () => {
@@ -1030,6 +1043,20 @@ it("keeps the stock search available when browser storage is blocked", () => {
   storageRead.mockRestore();
 });
 
+it("stores recent ticker metadata when the analysis has no logo", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(jsonResponse({ ...analysis, logoUrl: null })),
+  );
+  render(<StockAnalysisDashboard initialTicker="PETR4" />);
+  await screen.findByRole("heading", { name: "PETR4 · Petrobras" });
+  expect(
+    JSON.parse(
+      window.localStorage.getItem("investlab:analyses:recent-tickers") ?? "[]",
+    )[0],
+  ).toEqual({ ticker: "PETR4", name: "Petrobras" });
+});
+
 it("moves a newly consulted ticker to the front and keeps only five unique entries", async () => {
   window.localStorage.setItem(
     "investlab:analyses:recent-tickers",
@@ -1050,7 +1077,11 @@ it("moves a newly consulted ticker to the front and keeps only five unique entri
     window.localStorage.getItem("investlab:analyses:recent-tickers") ?? "[]",
   ) as Array<{ ticker: string; name: string }>;
   expect(recent).toHaveLength(5);
-  expect(recent[0]).toEqual({ ticker: "PETR4", name: "Petrobras" });
+  expect(recent[0]).toEqual({
+    ticker: "PETR4",
+    name: "Petrobras",
+    logoUrl: analysis.logoUrl,
+  });
   expect(new Set(recent.map(({ ticker }) => ticker)).size).toBe(5);
 });
 

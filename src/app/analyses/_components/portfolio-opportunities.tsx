@@ -38,6 +38,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AssetLogo } from "@/components/asset-logo";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 
@@ -58,6 +59,7 @@ type Method = {
 };
 type Opportunity = {
   ticker: string;
+  logoUrl?: string | null;
   name: string;
   quantity: number;
   positionDate: string | null;
@@ -559,10 +561,18 @@ export function PortfolioOpportunities({
           >
             <CardHeader className="gap-3 border-b bg-muted/20 p-4 sm:flex-row sm:items-start sm:justify-between lg:flex-col lg:justify-center lg:border-b-0 lg:border-r lg:p-6">
               <div className="space-y-1">
-                <CardTitle className="text-xl">
-                  {item.ticker}{" "}
-                  <span className="font-normal text-muted-foreground">
-                    · {item.name}
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <AssetLogo
+                    ticker={item.ticker}
+                    name={item.name}
+                    logoUrl={item.logoUrl}
+                    size="md"
+                  />
+                  <span>
+                    {item.ticker}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      · {item.name}
+                    </span>
                   </span>
                 </CardTitle>
                 <CardDescription>

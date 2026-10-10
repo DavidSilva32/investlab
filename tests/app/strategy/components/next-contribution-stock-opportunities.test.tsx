@@ -30,6 +30,7 @@ const opportunities = {
   opportunities: [
     {
       ticker: "ABEV3",
+      logoUrl: "https://icons.brapi.dev/icons/ABEV3.svg",
       name: "Ambev S.A.",
       quantity: 12,
       price: 14.3,
@@ -136,6 +137,14 @@ describe("NextContributionStockOpportunities", () => {
       await screen.findByRole("link", { name: "Abrir análise de ABEV3" }),
     ).toBeTruthy();
     expect(screen.getByText("Ambev S.A.")).toBeTruthy();
+    expect(
+      document
+        .querySelector('img[src="https://icons.brapi.dev/icons/ABEV3.svg"]')
+        ?.getAttribute("loading"),
+    ).toBe("lazy");
+    expect(
+      screen.getByRole("img", { name: "Identidade de Ambev S.A." }),
+    ).toBeTruthy();
     expect(screen.getByText(/R\$\s*14,30/)).toBeTruthy();
     expect(
       screen.getByText("Qualidade · 0/1 indicadores avaliáveis atendidos"),
@@ -198,7 +207,9 @@ describe("NextContributionStockOpportunities", () => {
     );
     render(<NextContributionStockOpportunities />);
 
-    expect(await screen.findByText("ABEV3")).toBeTruthy();
+    expect(
+      await screen.findByRole("img", { name: "Identidade de Ambev S.A." }),
+    ).toBeTruthy();
     expect(
       screen.getByText("Não foi possível confirmar 2 ativo(s)."),
     ).toBeTruthy();
@@ -393,7 +404,9 @@ describe("NextContributionStockOpportunities", () => {
     );
     render(<NextContributionStockOpportunities />);
 
-    expect(await screen.findByText("ABEV3")).toBeTruthy();
+    expect(
+      await screen.findByRole("img", { name: "Identidade de Ambev S.A." }),
+    ).toBeTruthy();
     expect(screen.getByLabelText("ABEV3 P/L: Sem dado confiável")).toBeTruthy();
     expect(
       screen.getByLabelText("ABEV3 P/VP: Sem dado confiável"),
@@ -558,7 +571,9 @@ describe("NextContributionStockOpportunities", () => {
     );
     render(<NextContributionStockOpportunities />);
 
-    expect(await screen.findByText("ABEV3")).toBeTruthy();
+    expect(
+      await screen.findByRole("img", { name: "Identidade de Ambev S.A." }),
+    ).toBeTruthy();
     expect(screen.getByLabelText("ABEV3 P/L: Sem dado confiável")).toBeTruthy();
     expect(
       screen.getByLabelText("ABEV3 P/VP: Sem dado confiável"),

@@ -31,6 +31,137 @@ describe("BrapiMarketDataProvider", () => {
   beforeEach(() => vi.stubEnv("BRAPI_TOKEN", ""));
   afterEach(() => vi.unstubAllEnvs());
 
+  it.each([
+    { logoUrl: "https://icons.brapi.dev/icons/PETR4.svg" },
+    { logourl: "https://icons.brapi.dev/icons/PETR4.svg" },
+  ])("reuses quote logo variants without another request: %j", async (logo) => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(quote(logo)));
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getQuoteByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      logoUrl: "https://icons.brapi.dev/icons/PETR4.svg",
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("accepts result-level logos in the complete analysis payload", async () => {
+    const fetcher = vi.fn<typeof fetch>((input) =>
+      Promise.resolve(
+        jsonResponse(
+          String(input).includes("/stocks/quote")
+            ? {
+                results: [
+                  {
+                    symbol: "PETR4",
+                    logourl: "https://icons.brapi.dev/icons/PETR4.svg",
+                    data: { regularMarketPrice: 42 },
+                  },
+                ],
+              }
+            : String(input).includes("/stocks/profile")
+              ? { results: [] }
+              : { results: [{ data: { historicalDataPrice: [] } }] },
+        ),
+      ),
+    );
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      logoUrl: "https://icons.brapi.dev/icons/PETR4.svg",
+      price: 42,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("ignores malformed and unsafe logo metadata without losing quotes", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        results: [
+          {
+            symbol: "PETR4",
+            logoUrl: false,
+            logourl: "",
+            data: {
+              logoUrl: { src: "bad" },
+              logourl: "https://evil.example/PETR4.svg",
+              regularMarketPrice: 42,
+            },
+          },
+        ],
+      }),
+    );
+    const result = await new BrapiMarketDataProvider(fetcher).getQuoteByTicker(
+      "PETR4",
+    );
+    expect(result.price).toBe(42);
+    expect(result).not.toHaveProperty("logoUrl");
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it.each([null, "malformed", 42, []])(
+    "preserves searchable assets when ancillary data is malformed: %j",
+    async (data) => {
+      const fetcher = vi.fn().mockResolvedValue(
+        jsonResponse({
+          results: [{ symbol: "PETR4", name: "Petrobras", data }],
+        }),
+      );
+      await expect(
+        new BrapiMarketDataProvider(fetcher).searchTickers("PETR"),
+      ).resolves.toEqual([{ ticker: "PETR4", name: "Petrobras" }]);
+      expect(fetcher).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("reuses search logos at both contract levels and skips invalid candidates", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        results: [
+          {
+            symbol: "PETR4",
+            name: "Petrobras",
+            data: {
+              logoUrl: "https://evil.example/icon.svg",
+              logourl: "https://icons.brapi.dev/icons/PETR4.svg",
+            },
+          },
+          {
+            symbol: "VALE3",
+            name: "Vale",
+            logoUrl: "https://icons.brapi.dev/icons/VALE3.svg",
+          },
+          {
+            symbol: "BBAS3",
+            name: "Banco do Brasil",
+            logourl: "https://icons.brapi.dev/icons/BBAS3.svg",
+          },
+          { symbol: "WEGE3", name: "Weg", data: {}, logoUrl: null },
+        ],
+      }),
+    );
+    await expect(
+      new BrapiMarketDataProvider(fetcher).searchTickers("a"),
+    ).resolves.toEqual([
+      {
+        ticker: "PETR4",
+        name: "Petrobras",
+        logoUrl: "https://icons.brapi.dev/icons/PETR4.svg",
+      },
+      {
+        ticker: "VALE3",
+        name: "Vale",
+        logoUrl: "https://icons.brapi.dev/icons/VALE3.svg",
+      },
+      {
+        ticker: "BBAS3",
+        name: "Banco do Brasil",
+        logoUrl: "https://icons.brapi.dev/icons/BBAS3.svg",
+      },
+      { ticker: "WEGE3", name: "Weg" },
+    ]);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("starts profile and price history while waiting for the quote", async () => {
     let releaseQuote!: (response: Response) => void;
     const quoteResponse = new Promise<Response>((resolve) => {

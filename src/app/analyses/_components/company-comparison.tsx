@@ -10,6 +10,7 @@ import {
   MinusCircle,
   X,
 } from "lucide-react";
+import { AssetLogo } from "@/components/asset-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +24,7 @@ import type {
   StockCriterionResult,
 } from "@/lib/stock-criteria-evaluation";
 
-type TickerOption = { ticker: string; name: string };
+type TickerOption = { ticker: string; name: string; logoUrl?: string | null };
 type MetricCell = {
   value: number | null;
   referenceDate: string | null;
@@ -37,6 +38,7 @@ type MetricCell = {
 };
 type ComparisonCompany = {
   ticker: string;
+  logoUrl?: string | null;
   selectedTickers: string[];
   name: string;
   cnpj: string;
@@ -329,6 +331,7 @@ export function CompanyComparison({
       ? result.companies.map((company) => ({
           ticker: company.ticker,
           name: company.name,
+          logoUrl: company.logoUrl,
         }))
       : selected;
 
@@ -434,6 +437,12 @@ export function CompanyComparison({
                 key={option.ticker}
                 className="inline-flex h-10 items-center gap-2 rounded-lg border bg-muted px-3 text-sm"
               >
+                <AssetLogo
+                  ticker={option.ticker}
+                  name={option.name}
+                  logoUrl={option.logoUrl}
+                  size="sm"
+                />
                 <span className="font-semibold">{option.ticker}</span>
                 <Button
                   type="button"
@@ -544,7 +553,15 @@ export function CompanyComparison({
                         className="min-w-52 p-3 align-top"
                       >
                         <div className="space-y-1">
-                          <p className="font-semibold">{company.ticker}</p>
+                          <div className="flex items-center gap-2">
+                            <AssetLogo
+                              ticker={company.ticker}
+                              name={company.name}
+                              logoUrl={company.logoUrl}
+                              size="sm"
+                            />
+                            <p className="font-semibold">{company.ticker}</p>
+                          </div>
                           <p className="font-normal text-muted-foreground">
                             {company.name}
                           </p>

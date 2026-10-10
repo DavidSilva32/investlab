@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { ApiError, apiRequest, apiRequestWithResponse } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { getLearningClassHref } from "@/lib/asset-class-learning";
+import { AssetLogo } from "@/components/asset-logo";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -40,7 +41,7 @@ import {
   type StockAnalysis,
 } from "./stock-analysis-types";
 
-type TickerOption = { ticker: string; name: string };
+type TickerOption = { ticker: string; name: string; logoUrl?: string | null };
 const recentTickersKey = "investlab:analyses:recent-tickers";
 const recentTickersUpdatedEvent = "investlab:analyses:recent-tickers-updated";
 const recentTickerLimit = 5;
@@ -289,6 +290,7 @@ export function StockAnalysisDashboard({
     saveRecentTicker({
       ticker: loadedAnalysis.ticker.toUpperCase(),
       name: loadedAnalysis.companyName ?? loadedAnalysis.ticker.toUpperCase(),
+      ...(loadedAnalysis.logoUrl ? { logoUrl: loadedAnalysis.logoUrl } : {}),
     });
     if (pendingNotification.current === loadedAnalysis.ticker) {
       toast.success(
@@ -420,7 +422,7 @@ export function StockAnalysisDashboard({
     return (
       <div className="space-y-4">
         {search}
-        <AnalysisSkeleton />
+        <AnalysisSkeleton ticker={selectedTicker} />
       </div>
     );
   if (error)
@@ -568,10 +570,18 @@ export function StockAnalysisDashboard({
                 Aprender sobre Ações e BDRs
               </Link>
             </div>
-            <h2 className="mt-1 truncate text-xl font-semibold tracking-tight sm:text-2xl">
-              {analysis.ticker} ·{" "}
-              {analysis.companyName ?? "Empresa não informada"}
-            </h2>
+            <div className="mt-1 flex min-w-0 items-center gap-3">
+              <AssetLogo
+                ticker={analysis.ticker}
+                name={analysis.companyName}
+                logoUrl={analysis.logoUrl}
+                size="lg"
+              />
+              <h2 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">
+                {analysis.ticker} ·{" "}
+                {analysis.companyName ?? "Empresa não informada"}
+              </h2>
+            </div>
             <div className="mt-2">
               <p className="text-3xl font-semibold tracking-tight tabular-nums">
                 {analysis.price === null ? "—" : money.format(analysis.price)}

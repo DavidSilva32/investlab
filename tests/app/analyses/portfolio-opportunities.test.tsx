@@ -25,6 +25,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const opportunity = {
   ticker: "PETR4",
+  logoUrl: "https://icons.brapi.dev/icons/PETR4.svg",
   name: "Petrobras PN",
   quantity: 12,
   positionDate: "2026-09-30",
@@ -119,7 +120,9 @@ describe("PortfolioOpportunities", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<PortfolioOpportunities />);
 
-    expect(await screen.findByText("PETR4")).toBeTruthy();
+    expect(
+      await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" }),
+    ).toBeTruthy();
     await act(async () => {
       window.dispatchEvent(new Event("portfolio:updated"));
     });
@@ -269,8 +272,13 @@ describe("PortfolioOpportunities", () => {
 
   it("renders quotes, both references, source periods, dividend limitation and accessible help", async () => {
     render(<PortfolioOpportunities />);
-    const card = await screen.findByText(/PETR4/);
+    const card = await screen.findByRole("img", {
+      name: "Identidade de Petrobras PN",
+    });
     expect(card).toBeTruthy();
+    expect(card.querySelector("img")?.getAttribute("src")).toBe(
+      "https://icons.brapi.dev/icons/PETR4.svg",
+    );
     expect(screen.getByText("Número de Graham")).toBeTruthy();
     expect(screen.getByText("Preço-teto de Bazin")).toBeTruthy();
     expect(
@@ -365,7 +373,7 @@ describe("PortfolioOpportunities", () => {
       ),
     );
     render(<PortfolioOpportunities />);
-    await screen.findByText(/PETR4/);
+    await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     expect(screen.getByText("Na referência calculada")).toBeTruthy();
     expect(screen.getByText(/acima da referência/i)).toBeTruthy();
     expect(screen.getByText(/ficam em lados diferentes/i)).toBeTruthy();
@@ -526,7 +534,7 @@ describe("PortfolioOpportunities", () => {
       .mockRejectedValueOnce(new Error("private transport detail"));
     vi.stubGlobal("fetch", fetchMock);
     render(<PortfolioOpportunities />);
-    await screen.findByText("PETR4");
+    await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
         name: "Informar ou atualizar dados manuais",
@@ -552,7 +560,7 @@ describe("PortfolioOpportunities", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<PortfolioOpportunities />);
-    await screen.findByText("PETR4");
+    await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
         name: "Informar ou atualizar dados manuais",
@@ -596,7 +604,7 @@ describe("PortfolioOpportunities", () => {
       .mockResolvedValueOnce(response({ message: "Valor rejeitado." }, false));
     vi.stubGlobal("fetch", fetchMock);
     render(<PortfolioOpportunities />);
-    await screen.findByText("PETR4");
+    await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
         name: "Informar ou atualizar dados manuais",
@@ -634,7 +642,7 @@ describe("PortfolioOpportunities", () => {
       ),
     );
     render(<PortfolioOpportunities />);
-    await screen.findByText("PETR4");
+    await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     const request = vi.spyOn(apiClient, "apiRequest");
     request.mockRejectedValueOnce("private manual rejection");
 
@@ -680,7 +688,7 @@ describe("PortfolioOpportunities", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
     render(<PortfolioOpportunities />);
-    await screen.findByText("PETR4");
+    await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
         name: "Informar ou atualizar dados manuais",
