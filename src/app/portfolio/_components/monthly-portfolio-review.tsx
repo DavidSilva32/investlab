@@ -197,38 +197,36 @@ export function MonthlyPortfolioReview({
         )}
         {!loading && !error && hasHistory && review && (
           <div className="space-y-2">
-            {review.history.length > 1 && (
-              <div className="flex justify-end">
-                <div
-                  className="inline-flex rounded-lg border bg-muted/40 p-1"
-                  role="group"
-                  aria-label="Tipo de gráfico"
+            <div className="flex justify-end">
+              <div
+                className="inline-flex rounded-lg border bg-muted/40 p-1"
+                role="group"
+                aria-label="Tipo de gráfico"
+              >
+                <Button
+                  type="button"
+                  variant={chartType === "area" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="size-8 rounded-md"
+                  aria-label="Gráfico de área"
+                  aria-pressed={chartType === "area"}
+                  onClick={() => setChartType("area")}
                 >
-                  <Button
-                    type="button"
-                    variant={chartType === "area" ? "secondary" : "ghost"}
-                    size="icon"
-                    className="size-8 rounded-md"
-                    aria-label="Gráfico de área"
-                    aria-pressed={chartType === "area"}
-                    onClick={() => setChartType("area")}
-                  >
-                    <ChartSpline aria-hidden="true" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={chartType === "bar" ? "secondary" : "ghost"}
-                    size="icon"
-                    className="size-8 rounded-md"
-                    aria-label="Gráfico de barras"
-                    aria-pressed={chartType === "bar"}
-                    onClick={() => setChartType("bar")}
-                  >
-                    <ChartNoAxesColumnIncreasing aria-hidden="true" />
-                  </Button>
-                </div>
+                  <ChartSpline aria-hidden="true" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={chartType === "bar" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="size-8 rounded-md"
+                  aria-label="Gráfico de barras"
+                  aria-pressed={chartType === "bar"}
+                  onClick={() => setChartType("bar")}
+                >
+                  <ChartNoAxesColumnIncreasing aria-hidden="true" />
+                </Button>
               </div>
-            )}
+            </div>
             <PortfolioEvolutionChart
               type={chartType}
               id={chartId}
