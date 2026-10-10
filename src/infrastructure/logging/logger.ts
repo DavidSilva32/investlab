@@ -1,3 +1,8 @@
+import {
+  getCurrentLogContext,
+  runWithLogContext,
+} from "@/infrastructure/logging/request-context";
+
 type LogContext = {
   error?: unknown;
   [key: string]: unknown;
@@ -18,6 +23,7 @@ function write(
     level,
     event,
     timestamp: new Date().toISOString(),
+    ...getCurrentLogContext(),
     ...safeContext,
     ...(error ? { error: serializeError(error) } : {}),
   };
@@ -25,6 +31,8 @@ function write(
 }
 
 export const logger = {
+  withContext: <T>(context: LogContext, operation: () => T) =>
+    runWithLogContext(context, operation),
   info: (event: string, context?: LogContext) => write("info", event, context),
   warn: (event: string, context?: LogContext) => write("warn", event, context),
   error: (event: string, context?: LogContext) =>

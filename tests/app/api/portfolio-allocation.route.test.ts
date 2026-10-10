@@ -6,7 +6,12 @@ const controller = vi.hoisted(() => ({
   update: vi.fn(),
   updateTargets: vi.fn(),
 }));
-const logger = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
+const logger = vi.hoisted(() => ({
+  warn: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  withContext: (_context: unknown, operation: () => unknown) => operation(),
+}));
 vi.mock("@/backend/controllers/portfolio-allocation.controller", () => ({
   portfolioAllocationController: controller,
 }));

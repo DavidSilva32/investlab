@@ -6,7 +6,11 @@ vi.mock("@/backend/controllers/screener.controller", () => ({
   screenerController: { search: mocks.search },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
-  logger: { error: mocks.error },
+  logger: {
+    error: mocks.error,
+    info: vi.fn(),
+    withContext: (_context: unknown, operation: () => unknown) => operation(),
+  },
 }));
 
 import { GET } from "@/app/api/screener/route";

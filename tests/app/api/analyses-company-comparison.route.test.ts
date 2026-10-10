@@ -3,7 +3,11 @@ import { ApplicationError } from "@/backend/errors/application-error";
 
 const mocks = vi.hoisted(() => ({
   compare: vi.fn(),
-  logger: { error: vi.fn() },
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    withContext: (_context: unknown, operation: () => unknown) => operation(),
+  },
 }));
 vi.mock("@/backend/controllers/stock-comparison.controller", () => ({
   stockComparisonController: { compare: mocks.compare },

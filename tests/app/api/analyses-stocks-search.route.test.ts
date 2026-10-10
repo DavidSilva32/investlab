@@ -5,7 +5,11 @@ const service = vi.hoisted(() => ({
   searchTickers: vi.fn(),
   getByTicker: vi.fn(),
 }));
-const logger = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn() }));
+const logger = vi.hoisted(() => ({
+  info: vi.fn(),
+  error: vi.fn(),
+  withContext: (_context: unknown, operation: () => unknown) => operation(),
+}));
 vi.mock("@/backend/services/stock-analysis.service", () => ({
   stockAnalysisService: service,
 }));

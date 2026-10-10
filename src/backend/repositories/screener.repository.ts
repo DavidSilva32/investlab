@@ -22,11 +22,13 @@ import {
 } from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { classifyCvmSector } from "@/lib/cvm-sector-classification";
+import { logger } from "@/infrastructure/logging/logger";
 
 export class ScreenerRepository {
   async getComparisonMetadata(tickers: string[]) {
     if (tickers.length === 0) return [];
-    return getDatabaseClient()
+    const startedAt = Date.now();
+    const metadata = await getDatabaseClient()
       .select({
         ticker: screenerSecurities.ticker,
         securityName: screenerSecurities.name,
@@ -49,9 +51,16 @@ export class ScreenerRepository {
           eq(screenerSecurities.isActive, true),
         ),
       );
+    logger.info("screener_repository_comparison_metadata_loaded", {
+      requestedTickers: tickers.length,
+      matchedSecurities: metadata.length,
+      durationMs: Date.now() - startedAt,
+    });
+    return metadata;
   }
 
   async getValidatedAnalysisQuote(ticker: string) {
+    const startedAt = Date.now();
     const now = new Date();
     const earliestFreshObservation = new Date(
       now.getTime() - 7 * 24 * 60 * 60 * 1000,
@@ -122,6 +131,11 @@ export class ScreenerRepository {
       )
       .orderBy(desc(screenerMarketSnapshotQuotes.quoteObservedAt))
       .limit(1);
+    logger.info("screener_repository_validated_quote_loaded", {
+      ticker,
+      quoteAvailable: Boolean(quote),
+      durationMs: Date.now() - startedAt,
+    });
     return quote ?? null;
   }
 

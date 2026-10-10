@@ -7,7 +7,11 @@ const controller = vi.hoisted(() => ({
   saveBazinTargetYield: vi.fn(),
   deleteInput: vi.fn(),
 }));
-const logger = vi.hoisted(() => ({ error: vi.fn() }));
+const logger = vi.hoisted(() => ({
+  error: vi.fn(),
+  info: vi.fn(),
+  withContext: (_context: unknown, operation: () => unknown) => operation(),
+}));
 vi.mock("@/backend/controllers/stock-opportunity-analysis.controller", () => ({
   stockOpportunityAnalysisController: controller,
 }));

@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import {
+  getApiRequestId,
+  withApiRequestLogging,
+} from "@/infrastructure/logging/api-request";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { stockOpportunityAnalysisController } from "@/backend/controllers/stock-opportunity-analysis.controller";
 import { logger } from "@/infrastructure/logging/logger";
@@ -18,23 +21,31 @@ function errorResponse(error: unknown, requestId: string) {
   );
 }
 
-export async function GET(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await stockOpportunityAnalysisController.list(requestId);
-  } catch (error) {
-    return errorResponse(error, requestId);
-  }
-}
+export const GET = withApiRequestLogging(
+  "GET",
+  "/api/analyses/portfolio-opportunities",
+  async function GET(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await stockOpportunityAnalysisController.list(requestId);
+    } catch (error) {
+      return errorResponse(error, requestId);
+    }
+  },
+);
 
-export async function POST(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await stockOpportunityAnalysisController.saveInput(
-      request,
-      requestId,
-    );
-  } catch (error) {
-    return errorResponse(error, requestId);
-  }
-}
+export const POST = withApiRequestLogging(
+  "POST",
+  "/api/analyses/portfolio-opportunities",
+  async function POST(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await stockOpportunityAnalysisController.saveInput(
+        request,
+        requestId,
+      );
+    } catch (error) {
+      return errorResponse(error, requestId);
+    }
+  },
+);

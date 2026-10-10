@@ -1,4 +1,7 @@
-﻿import { randomUUID } from "node:crypto";
+import {
+  getApiRequestId,
+  withApiRequestLogging,
+} from "@/infrastructure/logging/api-request";
 import { cdbRateController } from "@/backend/controllers/cdb-rate.controller";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { logger } from "@/infrastructure/logging/logger";
@@ -22,19 +25,27 @@ const failure = (error: unknown, requestId: string) => {
     },
   );
 };
-export async function PUT(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await cdbRateController.update(await request.json(), requestId);
-  } catch (error) {
-    return failure(error, requestId);
-  }
-}
-export async function POST(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await cdbRateController.create(await request.json(), requestId);
-  } catch (error) {
-    return failure(error, requestId);
-  }
-}
+export const PUT = withApiRequestLogging(
+  "PUT",
+  "/api/cdb-rates",
+  async function PUT(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await cdbRateController.update(await request.json(), requestId);
+    } catch (error) {
+      return failure(error, requestId);
+    }
+  },
+);
+export const POST = withApiRequestLogging(
+  "POST",
+  "/api/cdb-rates",
+  async function POST(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await cdbRateController.create(await request.json(), requestId);
+    } catch (error) {
+      return failure(error, requestId);
+    }
+  },
+);

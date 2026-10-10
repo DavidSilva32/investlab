@@ -4,7 +4,11 @@ vi.mock("@/backend/controllers/screener-market.controller", () => ({
   screenerMarketController: { status: mocks.status },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
-  logger: { error: mocks.error },
+  logger: {
+    error: mocks.error,
+    info: vi.fn(),
+    withContext: (_context: unknown, operation: () => unknown) => operation(),
+  },
 }));
 import { GET } from "@/app/api/settings/market-data/route";
 

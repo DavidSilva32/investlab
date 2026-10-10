@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import {
+  getApiRequestId,
+  withApiRequestLogging,
+} from "@/infrastructure/logging/api-request";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveController } from "@/backend/controllers/emergency-reserve.controller";
 import { logger } from "@/infrastructure/logging/logger";
@@ -31,35 +34,47 @@ function failure(
   );
 }
 
-export async function GET(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await emergencyReserveController.get(requestId);
-  } catch (error) {
-    return failure(error, requestId, "read");
-  }
-}
+export const GET = withApiRequestLogging(
+  "GET",
+  "/api/emergency-reserve",
+  async function GET(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await emergencyReserveController.get(requestId);
+    } catch (error) {
+      return failure(error, requestId, "read");
+    }
+  },
+);
 
-export async function PUT(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await emergencyReserveController.update(
-      await request.json(),
-      requestId,
-    );
-  } catch (error) {
-    return failure(error, requestId, "save");
-  }
-}
+export const PUT = withApiRequestLogging(
+  "PUT",
+  "/api/emergency-reserve",
+  async function PUT(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await emergencyReserveController.update(
+        await request.json(),
+        requestId,
+      );
+    } catch (error) {
+      return failure(error, requestId, "save");
+    }
+  },
+);
 
-export async function PATCH(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await emergencyReserveController.preview(
-      await request.json(),
-      requestId,
-    );
-  } catch (error) {
-    return failure(error, requestId, "read");
-  }
-}
+export const PATCH = withApiRequestLogging(
+  "PATCH",
+  "/api/emergency-reserve",
+  async function PATCH(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await emergencyReserveController.preview(
+        await request.json(),
+        requestId,
+      );
+    } catch (error) {
+      return failure(error, requestId, "read");
+    }
+  },
+);

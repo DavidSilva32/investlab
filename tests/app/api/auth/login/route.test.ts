@@ -14,7 +14,11 @@ vi.mock("@/infrastructure/auth/session", () => ({
   sessionCookieName: "session",
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
-  logger: { error: mocks.logger },
+  logger: {
+    error: mocks.logger,
+    info: vi.fn(),
+    withContext: (_context: unknown, operation: () => unknown) => operation(),
+  },
 }));
 
 import { POST } from "@/app/api/auth/login/route";

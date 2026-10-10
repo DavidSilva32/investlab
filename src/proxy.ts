@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getApiRequestId } from "@/infrastructure/logging/api-request";
+import { logger } from "@/infrastructure/logging/logger";
 import {
   sessionCookieName,
   verifySession,
@@ -19,10 +21,20 @@ export async function proxy(request: NextRequest) {
   }
   if (authenticated || publicPaths.has(pathname)) return NextResponse.next();
   if (pathname.startsWith("/api/")) {
-    return Response.json(
+    const requestId = getApiRequestId(request);
+    logger.withContext({ requestId }, () =>
+      logger.warn("api_request_rejected", {
+        method: request.method,
+        route: pathname,
+        reason: "unauthenticated",
+      }),
+    );
+    const response = Response.json(
       { message: "Não autenticado." },
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
+    response.headers.set("x-request-id", requestId);
+    return response;
   }
   const response = NextResponse.redirect(new URL("/login", request.url));
   response.headers.set("Cache-Control", "no-store");
