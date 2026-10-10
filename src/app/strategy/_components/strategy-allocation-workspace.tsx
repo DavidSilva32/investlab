@@ -625,7 +625,7 @@ export function StrategyAllocationWorkspace({
         </SheetContent>
       </Sheet>
 
-      <Card>
+      <Card id="next-contribution" className="scroll-mt-20">
         <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <CardTitle>Próximo aporte</CardTitle>

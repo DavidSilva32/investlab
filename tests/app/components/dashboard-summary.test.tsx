@@ -63,6 +63,100 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Ver objetivos");
   });
 
+  it("shows canonical destinations and guidance without duplicating unassigned totals or a simulator", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        nextContributionGuidance={{
+          status: "target_gap",
+          title: "Classe abaixo da meta",
+          explanation: "Comparação pessoal",
+          assetClass: "ETFs internacionais",
+          currentPercentage: 10,
+          targetPercentage: 60,
+          allocationMode: "strategy",
+        }}
+        destinationSummary={{
+          categories: [{ key: "unassigned", value: 400, percentage: 100 }],
+          knownTotal: 400,
+          missingPositionCount: 0,
+          unvaluedPositionCount: 0,
+        }}
+        unassignedSummary={{
+          status: "loaded",
+          knownValue: 400,
+          positionCount: 2,
+          unvaluedPositionCount: 0,
+        }}
+      />,
+    );
+    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("ETFs internacionais");
+    expect(html).toContain('href="/strategy#next-contribution"');
+    expect(html).not.toContain("Patrimônio conhecido sem destino");
+    expect(html).not.toContain("Valor disponível");
+  });
+
+  it("reports a destination failure once without a duplicate unassigned error", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        destinationsUnavailable
+        unassignedSummary={{ status: "unavailable" }}
+      />,
+    );
+    expect(html).toContain("Destinos indisponíveis");
+    expect(html).not.toContain("Patrimônio sem destino indisponível");
+  });
+
+  it.each(["reserve_below_target", "reserve_incomplete"] as const)(
+    "avoids repeating the reserve next action for %s",
+    (status) => {
+      const html = renderToStaticMarkup(
+        <DashboardSummary
+          positions={positions}
+          nextContributionGuidance={{
+            status,
+            title: "Revisar reserva",
+            explanation: "Dados da reserva",
+          }}
+          emergencyReserve={{
+            monthlyExpenses: 100,
+            targetMonths: 3,
+            selectedValue: 200,
+            selectedGroups: 1,
+            unvaluedGroups: 0,
+            referenceDate: "2026-09-01",
+            targetValue: 300,
+            coveredMonths: 2,
+            difference: 100,
+            progressPercentage: 66.7,
+            status: "below_target",
+          }}
+        />,
+      );
+      expect(html).toContain("Próximo aporte");
+      expect(html).not.toContain(
+        'aria-labelledby="dashboard-next-action-title"',
+      );
+    },
+  );
+
+  it("keeps the previous simulator accessible in a compact disclosure for legacy targets", async () => {
+    const user = userEvent.setup();
+    render(
+      <DashboardSummary
+        positions={positions}
+        contributionAllocationMode="legacy"
+      />,
+    );
+    expect(screen.queryByRole("textbox")).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Simular com metas anteriores" }),
+    );
+    expect(screen.getByRole("textbox")).toBeTruthy();
+  });
+
   it("uses a two-column layout when an unassigned summary and next action are available", () => {
     render(
       <DashboardSummary
@@ -117,18 +211,11 @@ describe("DashboardSummary", () => {
     expect(html).toContain("R$");
     expect(html).toContain("2 de 2");
     expect(html).toContain("Dados de 01/09/2026");
-    expect(html).toContain("O que merece atenção");
     expect(html).toContain("Fatos da carteira");
-    expect(html).toContain("Tesouro Selic representa 75.0%");
-    expect(html).toContain("Isso descreve a distribuição");
-    expect(html).toContain("Próximo vencimento informado");
-    const attentionSection = html.slice(
-      html.indexOf('aria-labelledby="dashboard-attention-title"'),
-      html.indexOf('aria-labelledby="dashboard-facts-title"'),
-    );
-    expect(attentionSection).not.toContain(
-      "Maior posição na carteira conhecida",
-    );
+    expect(html).toContain("Tesouro Selic");
+    expect(html).toContain("75.0%");
+    expect(html).toContain("Distribuição não mede risco");
+    expect(html).toContain("Próximo vencimento");
     expect(html).toContain("Como ler estes dados");
     expect(html).toContain(
       "lg:grid-cols-[minmax(0,1.5fr)_minmax(10rem,0.7fr)_minmax(12rem,0.8fr)]",
@@ -182,8 +269,6 @@ describe("DashboardSummary", () => {
       />,
     );
 
-    expect(html).toContain("A reserva está abaixo da sua meta pessoal");
-    expect(html).toContain("não é uma recomendação do InvestLab");
     expect(html).toContain('aria-labelledby="dashboard-next-action-title"');
     expect(html).toContain("Acompanhe a evolução da reserva");
     expect(html).not.toContain("Defina sua estratégia de alocação");
@@ -288,7 +373,6 @@ describe("DashboardSummary", () => {
       />,
     );
 
-    expect(html).toContain("Os dados da reserva estão incompletos");
     expect(html).not.toContain("A reserva está abaixo da sua meta pessoal");
     expect(html).toContain("Revise as posições selecionadas como reserva");
     expect(html).toContain('aria-labelledby="dashboard-next-action-title"');
@@ -305,7 +389,6 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Adicione os dados da sua carteira");
     expect(html).toContain('href="/imports"');
     expect(html).toContain("Importar carteira");
-    expect(html).toContain("Ainda não há posições conhecidas");
     expect(html.match(/href="\/imports"/g)).toHaveLength(1);
   });
 
@@ -325,7 +408,6 @@ describe("DashboardSummary", () => {
 
     expect(html).toContain("0 de 1");
     expect(html).toContain("1 sem valor atual");
-    expect(html).toContain("A leitura fica limitada");
     expect(html).toContain("Revise as posições sem valor atual");
   });
 
