@@ -141,9 +141,7 @@ describe("NextContributionStockOpportunities", () => {
       screen.getByText("Qualidade · 0/1 indicadores avaliáveis atendidos"),
     ).toBeTruthy();
     expect(screen.getByLabelText("ABEV3 P/L: Atende, 12,5x")).toBeTruthy();
-    expect(
-      screen.getByLabelText("ABEV3 P/VP: Sem limite configurado, 1,4x"),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("ABEV3 P/VP: Atende, 1,4x")).toBeTruthy();
     expect(screen.getByLabelText("ABEV3 ROE: Não atende, 12%")).toBeTruthy();
     expect(
       screen.getByLabelText("ABEV3 Dív. Líq./EBITDA: Sem dado confiável"),
@@ -165,6 +163,23 @@ describe("NextContributionStockOpportunities", () => {
         .getAttribute("href"),
     ).toBe("/analyses?ticker=ABEV3");
     expect(screen.getByText(/não são ordem de compra/)).toBeTruthy();
+  });
+
+  it("shows the raw P/VP while its optional personal limit is disabled", async () => {
+    window.localStorage.setItem(
+      "investlab:analyses:stock-criteria:v1",
+      JSON.stringify({
+        preset: "custom",
+        maximumPe: 15,
+        maximumPb: null,
+        minimumRoePercent: 15,
+      }),
+    );
+    fetchForSuccess();
+    render(<NextContributionStockOpportunities />);
+    expect(
+      await screen.findByLabelText("ABEV3 P/VP: Sem limite configurado, 1,4x"),
+    ).toBeTruthy();
   });
 
   it("keeps confirmed tickers visible when classification is partial and analysis data fails", async () => {

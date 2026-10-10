@@ -455,15 +455,11 @@ export function PortfolioOpportunities({
                 <ChartColumnIncreasing aria-hidden="true" className="size-7" />
               </span>
               <div className="max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-                  Minha carteira
-                </p>
                 <h2 className="mt-1 text-xl font-semibold tracking-tight">
                   Comparar referências das ações
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Compare referências calculadas para estudo. Os métodos não
-                  definem se uma ação deve receber aporte.
+                  Referências de estudo, sem recomendação de aporte.
                 </p>
               </div>
             </div>
@@ -490,10 +486,6 @@ export function PortfolioOpportunities({
                   aplica o mesmo valor a todas as ações elegíveis.
                 </Help>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Premissa configurável; não representa recomendação de
-                rendimento.
-              </p>
             </div>
             <div className="flex items-end gap-2">
               <label className="space-y-1 text-sm" htmlFor="bazin-target-yield">

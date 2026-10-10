@@ -18,13 +18,13 @@ export const stockCriteriaPresets: Record<
   conservative: {
     preset: "conservative",
     maximumPe: 10,
-    maximumPb: null,
+    maximumPb: 1.5,
     minimumRoePercent: 20,
   },
   balanced: {
     preset: "balanced",
     maximumPe: 15,
-    maximumPb: null,
+    maximumPb: 2.5,
     minimumRoePercent: 15,
   },
 };
@@ -39,14 +39,16 @@ function inferPreset(
 ): StockCriteriaPreset {
   if (
     values.maximumPe === stockCriteriaPresets.conservative.maximumPe &&
-    values.maximumPb === stockCriteriaPresets.conservative.maximumPb &&
+    (values.maximumPb === stockCriteriaPresets.conservative.maximumPb ||
+      values.maximumPb === null) &&
     values.minimumRoePercent ===
       stockCriteriaPresets.conservative.minimumRoePercent
   )
     return "conservative";
   if (
     values.maximumPe === defaultStockCriteriaPreferences.maximumPe &&
-    values.maximumPb === defaultStockCriteriaPreferences.maximumPb &&
+    (values.maximumPb === defaultStockCriteriaPreferences.maximumPb ||
+      values.maximumPb === null) &&
     values.minimumRoePercent ===
       defaultStockCriteriaPreferences.minimumRoePercent
   )
@@ -62,6 +64,11 @@ export function parseStockCriteriaPreferences(
     if (typeof stored !== "object" || stored === null)
       return defaultStockCriteriaPreferences;
     const candidate = stored as Partial<StockCriteriaPreferences>;
+    const preset = candidate.preset;
+    const knownPreset =
+      preset === "conservative" || preset === "balanced" || preset === "custom"
+        ? preset
+        : undefined;
     const values = {
       maximumPe:
         typeof candidate.maximumPe === "number" &&
@@ -71,7 +78,9 @@ export function parseStockCriteriaPreferences(
           : defaultStockCriteriaPreferences.maximumPe,
       maximumPb:
         candidate.maximumPb === null
-          ? null
+          ? knownPreset === "conservative" || knownPreset === "balanced"
+            ? stockCriteriaPresets[knownPreset].maximumPb
+            : null
           : typeof candidate.maximumPb === "number" &&
               Number.isFinite(candidate.maximumPb) &&
               candidate.maximumPb > 0
@@ -84,14 +93,14 @@ export function parseStockCriteriaPreferences(
           ? candidate.minimumRoePercent
           : defaultStockCriteriaPreferences.minimumRoePercent,
     };
+    const resolvedPreset = knownPreset ?? inferPreset(values);
     return {
       ...values,
-      preset:
-        candidate.preset === "conservative" ||
-        candidate.preset === "balanced" ||
-        candidate.preset === "custom"
-          ? candidate.preset
-          : inferPreset(values),
+      maximumPb:
+        values.maximumPb === null && resolvedPreset !== "custom"
+          ? stockCriteriaPresets[resolvedPreset].maximumPb
+          : values.maximumPb,
+      preset: resolvedPreset,
     };
   } catch {
     return defaultStockCriteriaPreferences;

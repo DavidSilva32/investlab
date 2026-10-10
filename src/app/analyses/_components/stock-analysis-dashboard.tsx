@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/card";
 import { AnalysisSkeleton } from "./analysis-skeleton";
 import { AnalysisStockSearch } from "./analysis-stock-search";
-import { FundamentalIndicatorCard } from "./fundamental-indicator-card";
 import { FundamentalsEvolution } from "./fundamentals-evolution";
 import { FundamentalsGrid } from "./fundamentals-grid";
 import { PriceHistoryChart } from "./price-history-chart";
@@ -608,36 +607,7 @@ export function StockAnalysisDashboard({
         </CardContent>
       </Card>
       <Card>
-        <CardHeader>
-          <CardTitle>Indicadores financeiros</CardTitle>
-          <CardDescription>
-            Os dados disponíveis para esta empresa.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {analysis.fundamentalsIsStale && analysis.fundamentalsFetchedAt && (
-            <p
-              role="status"
-              className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-sm text-muted-foreground"
-            >
-              Não foi possível atualizar os dados financeiros. Exibimos os
-              últimos dados conferidos, obtidos em{" "}
-              {new Intl.DateTimeFormat("pt-BR", {
-                dateStyle: "short",
-                timeStyle: "short",
-                timeZone: "America/Sao_Paulo",
-              }).format(new Date(analysis.fundamentalsFetchedAt))}
-              . As datas continuam sendo as publicadas pela empresa.
-            </p>
-          )}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {analysis.indicators.map((indicator) => (
-              <FundamentalIndicatorCard
-                key={indicator.key}
-                indicator={indicator}
-              />
-            ))}
-          </div>
+        <CardContent className="space-y-5 py-5">
           <StockCriteriaSummary analysis={analysis} />
           <div className="border-t pt-4">
             <h3 className="mb-3 text-sm font-medium">O que os dados mostram</h3>

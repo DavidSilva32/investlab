@@ -182,7 +182,7 @@ describe("StockAnalysisDashboard", () => {
 
     expect(
       await screen.findByText(
-        /Não foi possível atualizar os dados financeiros.*obtidos em/,
+        /Valores financeiros desatualizados.*conferidos em/,
       ),
     ).toBeTruthy();
     expect(
@@ -354,13 +354,11 @@ describe("StockAnalysisDashboard", () => {
     ).toBe("true");
     expect(screen.getByRole("button", { name: "6 meses" })).toBeTruthy();
     expect(screen.getByText(/30,00/)).toBeTruthy();
-    expect(screen.getByText("8.4x")).toBeTruthy();
-    expect(screen.getByText("1.2x")).toBeTruthy();
-    expect(screen.getByText("18.4%")).toBeTruthy();
+    expect(screen.getByText("8,4x")).toBeTruthy();
+    expect(screen.getByText("1,2x")).toBeTruthy();
+    expect(screen.getByText("18,4%")).toBeTruthy();
     expect(
-      screen.getByText(
-        "Não há dados suficientes de receita e lucro para este indicador.",
-      ),
+      screen.getByText("Faltam dados compatíveis de receita e lucro."),
     ).toBeTruthy();
     await userEvent.setup().click(
       screen.getByRole("button", {
@@ -681,7 +679,7 @@ describe("StockAnalysisDashboard", () => {
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", {
-        name: /ajuda sobre preço em relação ao lucro/i,
+        name: /ajuda sobre p\/l/i,
       }),
     );
     expect(

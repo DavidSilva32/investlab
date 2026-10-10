@@ -101,7 +101,7 @@ describe("evaluateStockCriteria", () => {
     expect(result.qualityCriteria).not.toHaveProperty("pb");
   });
 
-  it("shows P/VP data without a signal until the user defines a limit", () => {
+  it("evaluates P/VP using the balanced preset limit", () => {
     const result = evaluateStockCriteria(
       input({
         indicators: [
@@ -113,10 +113,10 @@ describe("evaluateStockCriteria", () => {
     );
 
     expect(result.valuationCriteria.pb).toMatchObject({
-      status: "unavailable",
-      reason: "threshold_not_configured",
+      status: "meets",
+      reason: "within_threshold",
       value: 2,
-      threshold: null,
+      threshold: 2.5,
     });
   });
 
@@ -136,6 +136,21 @@ describe("evaluateStockCriteria", () => {
     expect(result.valuationCriteria.pe.status).toBe("not_applicable");
     expect(result.valuationCriteria.pb.status).toBe("meets");
     expect(result.qualityCriteria.roe.status).toBe("not_applicable");
+  });
+
+  it("keeps a missing financial-sector P/L unavailable without a fabricated value", () => {
+    const result = evaluateStockCriteria(
+      input({
+        sector: "Bancos",
+        indicators: [indicator("roe", 18)],
+      }),
+    );
+    expect(result.valuationCriteria.pe).toMatchObject({
+      status: "not_applicable",
+      value: null,
+      threshold: null,
+      reason: "financial_sector_methodology_required",
+    });
   });
 
   it.each([0, -1])("fails known non-positive P/L value %s", (pe) => {
