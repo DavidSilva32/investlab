@@ -58,8 +58,15 @@ export type MonthlyPortfolioSnapshotSummary = {
   valuationReferenceDates: string[];
 };
 
+export type MonthlyPortfolioHistoryPoint = {
+  period: string;
+  summary: MonthlyPortfolioSnapshotSummary;
+  completeness: "complete" | "partial";
+};
+
 export type MonthlyPortfolioReview = {
   availablePeriods: string[];
+  history: MonthlyPortfolioHistoryPoint[];
   selectedPeriod: string | null;
   untrackedManualPositionCount: number;
   status:
@@ -353,6 +360,35 @@ function publicSummary({
   return summary;
 }
 
+function monthlyHistory(
+  periods: string[],
+  snapshots: MonthlyPortfolioSnapshot[],
+  manualObservations: ManualPortfolioObservation[],
+  untrackedManualPositionCount: number,
+): MonthlyPortfolioHistoryPoint[] {
+  return [...periods].sort().map((period) => {
+    const snapshot = snapshots
+      .filter((candidate) => monthOf(candidate.referenceDate!) === period)
+      .sort(latestFirst)[0];
+    const manualPositions = latestManualState(
+      manualObservations,
+      monthEndTimestamp(period),
+    );
+    const close = summarize(snapshot ?? null, period, manualPositions);
+    return {
+      period,
+      summary: publicSummary(close),
+      completeness:
+        untrackedManualPositionCount === 0 &&
+        close.positionCount > 0 &&
+        close.unvaluedPositionCount === 0 &&
+        close.compositionKnown
+          ? "complete"
+          : "partial",
+    };
+  });
+}
+
 function dateAlignment(
   current: MonthlyPortfolioSnapshotSummary,
   currentPeriod: string,
@@ -385,12 +421,14 @@ function dateAlignment(
 
 function emptyResult(
   availablePeriods: string[],
+  history: MonthlyPortfolioHistoryPoint[],
   selectedPeriod: string | null,
   untrackedManualPositionCount: number,
   status: "no_history" | "missing_snapshot",
 ): MonthlyPortfolioReview {
   return {
     availablePeriods,
+    history,
     selectedPeriod,
     untrackedManualPositionCount,
     status,
@@ -462,10 +500,17 @@ export function calculateMonthlyPortfolioReview(
       ),
     ]),
   ].sort((left, right) => right.localeCompare(left));
+  const history = monthlyHistory(
+    availablePeriods,
+    datedSnapshots,
+    allManualObservations,
+    untrackedManualPositionCount,
+  );
   const period = selectedPeriod ?? availablePeriods[0] ?? null;
   if (period === null)
     return emptyResult(
       availablePeriods,
+      history,
       null,
       untrackedManualPositionCount,
       "no_history",
@@ -473,6 +518,7 @@ export function calculateMonthlyPortfolioReview(
   if (!availablePeriods.includes(period))
     return emptyResult(
       availablePeriods,
+      history,
       period,
       untrackedManualPositionCount,
       "missing_snapshot",
@@ -496,6 +542,7 @@ export function calculateMonthlyPortfolioReview(
   if (!previousPeriod) {
     return {
       availablePeriods,
+      history,
       selectedPeriod: period,
       untrackedManualPositionCount,
       status: "no_previous_close",
@@ -530,6 +577,7 @@ export function calculateMonthlyPortfolioReview(
   if (!valuesAvailable) {
     return {
       availablePeriods,
+      history,
       selectedPeriod: period,
       untrackedManualPositionCount,
       status: "insufficient_values",
@@ -562,6 +610,7 @@ export function calculateMonthlyPortfolioReview(
 
   return {
     availablePeriods,
+    history,
     selectedPeriod: period,
     untrackedManualPositionCount,
     status:

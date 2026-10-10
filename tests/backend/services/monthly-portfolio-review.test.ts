@@ -124,6 +124,19 @@ describe("monthly portfolio review calculation", () => {
       },
       flowSeparation: { status: "unavailable" },
     });
+    expect(
+      review.history.map(({ period, summary: periodSummary }) => [
+        period,
+        periodSummary.knownValueCents,
+      ]),
+    ).toEqual([
+      ["2026-01", "10000"],
+      ["2026-02", "11000"],
+      ["2026-03", "12000"],
+    ]);
+    expect(
+      calculateMonthlyPortfolioReview(snapshots, "2026-01").history,
+    ).toEqual(review.history);
   });
 
   it("uses the latest imported file when two snapshots have the same reference date", () => {
@@ -220,6 +233,16 @@ describe("monthly portfolio review calculation", () => {
     expect(review.flowSeparation.explanation).toContain(
       "Não é possível separar aportes de rendimento",
     );
+    expect(
+      review.history.map(({ period, summary: periodSummary, completeness }) => [
+        period,
+        periodSummary.knownValueCents,
+        completeness,
+      ]),
+    ).toEqual([
+      ["2026-06", "101", "partial"],
+      ["2026-07", "201", "partial"],
+    ]);
   });
 
   it("marks gaps as partial when one or more months have no snapshot", () => {
@@ -232,6 +255,38 @@ describe("monthly portfolio review calculation", () => {
       observedChangeCents: "2500",
       gapMonths: 2,
     });
+    expect(review.history.map(({ period }) => period)).toEqual([
+      "2026-01",
+      "2026-04",
+    ]);
+  });
+
+  it("carries recorded manual values forward while retaining the valuation date", () => {
+    const review = calculateMonthlyPortfolioReview(
+      [
+        snapshot("january", "2026-01-31", ["100.00"]),
+        snapshot("march", "2026-03-31", ["150.00"]),
+      ],
+      "2026-03",
+      [
+        manualObservation({
+          positionDate: "2026-01-15",
+          recordedAt: "2026-02-10T12:00:00Z",
+        }),
+      ],
+    );
+
+    expect(
+      review.history.map(({ period, summary: periodSummary }) => [
+        period,
+        periodSummary.knownValueCents,
+        periodSummary.manualPositionDates,
+      ]),
+    ).toEqual([
+      ["2026-01", "10000", []],
+      ["2026-02", "500000", ["2026-01-15"]],
+      ["2026-03", "515000", ["2026-01-15"]],
+    ]);
   });
 
   it("reports a first snapshot without a comparison baseline", () => {

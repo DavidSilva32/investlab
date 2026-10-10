@@ -12,7 +12,10 @@ import {
   YAxis,
 } from "recharts";
 import { ChartNoAxesColumnIncreasing, ChartSpline } from "lucide-react";
-import type { MonthlyPortfolioReview as MonthlyPortfolioReviewData } from "@/backend/services/monthly-portfolio-review";
+import type {
+  MonthlyPortfolioHistoryPoint,
+  MonthlyPortfolioReview as MonthlyPortfolioReviewData,
+} from "@/backend/services/monthly-portfolio-review";
 import { Button } from "@/components/ui/button";
 import {
   ChartContainer,
@@ -95,9 +98,6 @@ export function MonthlyPortfolioReview({
   const [chartType, setChartType] = useState<"area" | "bar">("area");
   const chartId = useId().replace(/:/g, "");
   const selectedChartPeriod = review?.selectedPeriod;
-  const previousPeriod = selectedChartPeriod
-    ? review?.availablePeriods.find((period) => period < selectedChartPeriod)
-    : undefined;
 
   return (
     <Card>
@@ -160,9 +160,46 @@ export function MonthlyPortfolioReview({
             Não há fechamento registrado neste mês.
           </p>
         )}
+        {!loading && !error && review && review.history.length > 1 && (
+          <div className="space-y-2">
+            <div className="flex justify-end">
+              <div
+                className="inline-flex rounded-md border p-0.5"
+                role="group"
+                aria-label="Tipo de gráfico"
+              >
+                <Button
+                  type="button"
+                  variant={chartType === "area" ? "secondary" : "ghost"}
+                  size="icon"
+                  aria-label="Gráfico de área"
+                  aria-pressed={chartType === "area"}
+                  onClick={() => setChartType("area")}
+                >
+                  <ChartSpline aria-hidden="true" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={chartType === "bar" ? "secondary" : "ghost"}
+                  size="icon"
+                  aria-label="Gráfico de barras"
+                  aria-pressed={chartType === "bar"}
+                  onClick={() => setChartType("bar")}
+                >
+                  <ChartNoAxesColumnIncreasing aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+            <PortfolioEvolutionChart
+              type={chartType}
+              id={chartId}
+              history={review.history}
+            />
+          </div>
+        )}
         {!loading && !error && review?.current && (
           <div className="space-y-3">
-            {review.status === "no_previous_close" && (
+            {review.history.length === 1 && (
               <div className="flex flex-col gap-1 rounded-lg border border-dashed p-3 sm:flex-row sm:items-baseline sm:justify-between">
                 <span className="text-sm text-muted-foreground">
                   Primeiro fechamento registrado
@@ -170,89 +207,41 @@ export function MonthlyPortfolioReview({
                 <span className="text-lg font-semibold tabular-nums">
                   {formatCurrencyCents(review.current.knownValueCents)}
                 </span>
-                <span className="sr-only">
-                  Ainda não há outro fechamento para comparar.
-                </span>
               </div>
             )}
-            {review.previous &&
-              review.current &&
-              review.previous.knownValueCents !== null &&
-              review.current.knownValueCents !== null && (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      {review.observedChangeCents !== null && (
-                        <>
-                          <span className="text-sm text-muted-foreground">
-                            {review.status === "partial"
-                              ? "Diferença entre valores conhecidos"
-                              : "Diferença observada"}
-                          </span>
-                          <span className="font-semibold tabular-nums">
-                            {formatChange(review.observedChangeCents)}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <div
-                      className="inline-flex rounded-md border p-0.5"
-                      role="group"
-                      aria-label="Tipo de gráfico"
-                    >
-                      <Button
-                        type="button"
-                        variant={chartType === "area" ? "secondary" : "ghost"}
-                        size="icon"
-                        aria-label="Gráfico de área"
-                        aria-pressed={chartType === "area"}
-                        onClick={() => setChartType("area")}
-                      >
-                        <ChartSpline aria-hidden="true" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={chartType === "bar" ? "secondary" : "ghost"}
-                        size="icon"
-                        aria-label="Gráfico de barras"
-                        aria-pressed={chartType === "bar"}
-                        onClick={() => setChartType("bar")}
-                      >
-                        <ChartNoAxesColumnIncreasing aria-hidden="true" />
-                      </Button>
-                    </div>
-                  </div>
-                  <PortfolioEvolutionChart
-                    type={chartType}
-                    id={chartId}
-                    points={[
-                      {
-                        month:
-                          previousPeriod ??
-                          review.previous.referenceDate.slice(0, 7),
-                        value: centsToChartValue(
-                          review.previous.knownValueCents,
-                        ),
-                        cents: review.previous.knownValueCents,
-                      },
-                      {
-                        month:
-                          selectedChartPeriod ??
-                          review.current.referenceDate.slice(0, 7),
-                        value: centsToChartValue(
-                          review.current.knownValueCents,
-                        ),
-                        cents: review.current.knownValueCents,
-                      },
-                    ]}
-                  />
+            {review.history.length > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="text-sm text-muted-foreground">
+                    {formatMonth(
+                      selectedChartPeriod ??
+                        review.current.referenceDate.slice(0, 7),
+                    )}
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatCurrencyCents(review.current.knownValueCents)}
+                  </span>
+                  {review.observedChangeCents !== null && (
+                    <>
+                      <span className="text-sm text-muted-foreground">
+                        {review.status === "partial"
+                          ? "Diferença entre valores conhecidos"
+                          : "Diferença observada"}
+                      </span>
+                      <span className="text-sm font-medium tabular-nums">
+                        {formatChange(review.observedChangeCents)}
+                      </span>
+                    </>
+                  )}
                 </div>
-              )}
-            {review.status === "no_previous_close" && (
-              <p className="text-xs text-muted-foreground">
-                Registre outro fechamento para comparar os períodos.
-              </p>
+              </div>
             )}
+            {review.status === "no_previous_close" &&
+              review.history.length === 1 && (
+                <p className="text-xs text-muted-foreground">
+                  Registre outro fechamento para comparar os períodos.
+                </p>
+              )}
             {review.status === "insufficient_values" && (
               <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
                 Não há valores suficientes nos dois períodos para comparar.
@@ -344,11 +333,23 @@ export function MonthlyPortfolioReview({
   );
 }
 
-type EvolutionPoint = {
-  month: string;
-  value: number;
-  cents: string;
-};
+type EvolutionPoint =
+  | {
+      month: string;
+      value: number | null;
+      cents: string | null;
+      referenceDate: string;
+      isPartial: boolean;
+      hasRecord: true;
+    }
+  | {
+      month: string;
+      value: null;
+      cents: null;
+      referenceDate: null;
+      isPartial: false;
+      hasRecord: false;
+    };
 
 const evolutionChartConfig = {
   value: { label: "Patrimônio conhecido", color: "var(--primary)" },
@@ -361,123 +362,193 @@ function centsToChartValue(cents: string) {
   return Number(whole) + Number(fractional) / 100;
 }
 
+function chartPoints(
+  history: MonthlyPortfolioHistoryPoint[],
+): EvolutionPoint[] {
+  const pointsByMonth = new Map(history.map((point) => [point.period, point]));
+  const [firstYear, firstMonth] = history[0].period.split("-").map(Number);
+  const lastPoint = history[history.length - 1];
+  const [lastYear, lastMonth] = lastPoint.period.split("-").map(Number);
+  const points: EvolutionPoint[] = [];
+  let year = firstYear;
+  let month = firstMonth;
+
+  while (year < lastYear || (year === lastYear && month <= lastMonth)) {
+    const period = `${year}-${String(month).padStart(2, "0")}`;
+    const historyPoint = pointsByMonth.get(period);
+    if (historyPoint) {
+      const { summary } = historyPoint;
+      points.push({
+        month: period,
+        value:
+          summary.knownValueCents === null
+            ? null
+            : centsToChartValue(summary.knownValueCents),
+        cents: summary.knownValueCents,
+        referenceDate: summary.referenceDate,
+        isPartial: historyPoint.completeness === "partial",
+        hasRecord: true,
+      });
+    } else {
+      points.push({
+        month: period,
+        value: null,
+        cents: null,
+        referenceDate: null,
+        isPartial: false,
+        hasRecord: false,
+      });
+    }
+
+    if (month === 12) {
+      year += 1;
+      month = 1;
+    } else {
+      month += 1;
+    }
+  }
+
+  return points;
+}
+
 function PortfolioEvolutionChart({
   type,
   id,
-  points,
+  history,
 }: {
   type: "area" | "bar";
   id: string;
-  points: EvolutionPoint[];
+  history: MonthlyPortfolioHistoryPoint[];
 }) {
-  const dateLabel = (month: string) => formatMonth(month);
+  const points = chartPoints(history);
+  const minimumChartWidth = Math.max(320, points.length * 40);
   const tooltip = (
     <ChartTooltipContent
       labelFormatter={(label) =>
-        typeof label === "string" ? dateLabel(label) : ""
+        typeof label === "string" ? formatMonth(label) : ""
       }
-      formatter={(_value, _name, item) =>
-        formatCurrencyCents(item.payload.cents)
-      }
+      formatter={(_value, _name, item) => {
+        const point = item.payload as EvolutionPoint;
+        const amount = formatCurrencyCents(point.cents);
+        const referenceDate = point.referenceDate
+          ? ` · referência ${formatDate(point.referenceDate)}`
+          : "";
+        return `${amount}${point.isPartial ? " · parcial" : ""}${referenceDate}`;
+      }}
     />
   );
 
   return (
     <>
       <p className="sr-only">
-        Patrimônio conhecido: {formatCurrencyCents(points[0].cents)} em{" "}
-        {dateLabel(points[0].month)} e {formatCurrencyCents(points[1].cents)} em{" "}
-        {dateLabel(points[1].month)}. A diferença observada não representa
-        rentabilidade.
+        {points
+          .map((point) =>
+            point.hasRecord
+              ? `${formatMonth(point.month)}: ${formatCurrencyCents(point.cents)}${point.isPartial ? ", valor parcial" : ""}, referência ${formatDate(point.referenceDate)}`
+              : `${formatMonth(point.month)}: sem fechamento registrado`,
+          )
+          .join(". ")}
+        . A série mostra valores registrados, não rentabilidade.
       </p>
-      <ChartContainer
-        config={evolutionChartConfig}
-        className="h-52 w-full aspect-auto sm:h-60"
-        aria-label="Gráfico da evolução do patrimônio conhecido"
+      <div
+        className="overflow-x-auto overscroll-x-contain"
+        role="region"
+        tabIndex={0}
+        aria-label="Deslize horizontalmente para ver todos os meses"
       >
-        {type === "area" ? (
-          <AreaChart
-            accessibilityLayer
-            data={points}
-            margin={{ top: 12, right: 12, left: 8, bottom: 0 }}
-          >
-            <defs>
-              <linearGradient
-                id={`portfolio-area-${id}`}
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
-                <stop
-                  offset="0%"
-                  stopColor="var(--primary)"
-                  stopOpacity={0.3}
-                />
-                <stop
-                  offset="95%"
-                  stopColor="var(--primary)"
-                  stopOpacity={0.02}
-                />
-              </linearGradient>
-            </defs>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="month"
-              tickLine={false}
-              axisLine={false}
-              minTickGap={24}
-              tickFormatter={formatShortMonth}
-            />
-            <YAxis
-              width={72}
-              domain={[0, "auto"]}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={compactCurrency}
-            />
-            <Tooltip cursor={false} content={tooltip} />
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="var(--color-value)"
-              strokeWidth={2}
-              fill={`url(#portfolio-area-${id})`}
-              dot={{ r: 3 }}
-              activeDot={{ r: 4 }}
-            />
-          </AreaChart>
-        ) : (
-          <BarChart
-            accessibilityLayer
-            data={points}
-            margin={{ top: 12, right: 12, left: 8, bottom: 0 }}
-          >
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="month"
-              tickLine={false}
-              axisLine={false}
-              minTickGap={24}
-              tickFormatter={formatShortMonth}
-            />
-            <YAxis
-              width={72}
-              domain={[0, "auto"]}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={compactCurrency}
-            />
-            <Tooltip cursor={false} content={tooltip} />
-            <Bar
-              dataKey="value"
-              fill="var(--color-value)"
-              radius={4}
-              isAnimationActive
-            />
-          </BarChart>
-        )}
-      </ChartContainer>
+        <ChartContainer
+          config={evolutionChartConfig}
+          className="h-52 w-full aspect-auto sm:h-60"
+          style={{ minWidth: `${minimumChartWidth}px` }}
+          aria-label="Gráfico da evolução do patrimônio conhecido"
+        >
+          {type === "area" ? (
+            <AreaChart
+              accessibilityLayer
+              data={points}
+              margin={{ top: 12, right: 12, left: 8, bottom: 0 }}
+            >
+              <defs>
+                <linearGradient
+                  id={`portfolio-area-${id}`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="0%"
+                    stopColor="var(--primary)"
+                    stopOpacity={0.3}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor="var(--primary)"
+                    stopOpacity={0.02}
+                  />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={false}
+                minTickGap={32}
+                interval="preserveStartEnd"
+                tickFormatter={formatShortMonth}
+              />
+              <YAxis
+                width={72}
+                domain={[0, "auto"]}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={compactCurrency}
+              />
+              <Tooltip cursor={false} content={tooltip} />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="var(--color-value)"
+                strokeWidth={2}
+                fill={`url(#portfolio-area-${id})`}
+                dot={false}
+                activeDot={{ r: 4 }}
+                connectNulls={false}
+              />
+            </AreaChart>
+          ) : (
+            <BarChart
+              accessibilityLayer
+              data={points}
+              margin={{ top: 12, right: 12, left: 8, bottom: 0 }}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={false}
+                minTickGap={32}
+                interval="preserveStartEnd"
+                tickFormatter={formatShortMonth}
+              />
+              <YAxis
+                width={72}
+                domain={[0, "auto"]}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={compactCurrency}
+              />
+              <Tooltip cursor={false} content={tooltip} />
+              <Bar
+                dataKey="value"
+                fill="var(--color-value)"
+                radius={4}
+                isAnimationActive
+              />
+            </BarChart>
+          )}
+        </ChartContainer>
+      </div>
     </>
   );
 }

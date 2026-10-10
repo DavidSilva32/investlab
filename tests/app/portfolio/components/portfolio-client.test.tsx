@@ -109,9 +109,12 @@ const overview = {
 };
 const monthlyReview = {
   availablePeriods: [],
+  history: [],
   selectedPeriod: null,
+  untrackedManualPositionCount: 0,
   status: "no_history" as const,
   dateAlignment: "unavailable" as const,
+  compositionCoverage: "unknown" as const,
   current: null,
   previous: null,
   observedChangeCents: null,

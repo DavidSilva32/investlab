@@ -16,12 +16,13 @@ vi.mock("recharts", () => {
     type,
   }: {
     children: React.ReactNode;
-    data: Array<{ month: string; value: number }>;
+    data: Array<{ month: string; value: number | null }>;
     type: string;
   }) => (
     <div
       aria-label="Gráfico da evolução do patrimônio conhecido"
       data-months={data.map((point) => point.month).join(",")}
+      data-values={data.map((point) => point.value ?? "null").join(",")}
       data-testid={`${type}-chart`}
     >
       {type === "area"
@@ -74,14 +75,45 @@ vi.mock("@/components/ui/chart", async (importOriginal) => {
       const formatter = props.formatter as (
         value: number,
         name: string,
-        item: { payload: { cents: string } },
+        item: {
+          payload: {
+            cents: string;
+            isPartial: boolean;
+            referenceDate: string | null;
+          };
+        },
         index: number,
         payload: unknown[],
       ) => React.ReactNode;
       return (
         <span data-testid="chart-tooltip">
           {labelFormatter("2026-07")} / {labelFormatter(2026)} /{" "}
-          {formatter(12.5, "value", { payload: { cents: "125050" } }, 0, [])}
+          {formatter(
+            12.5,
+            "value",
+            {
+              payload: {
+                cents: "125050",
+                isPartial: true,
+                referenceDate: "2026-07-31",
+              },
+            },
+            0,
+            [],
+          )}
+          {formatter(
+            12.5,
+            "value",
+            {
+              payload: {
+                cents: "125050",
+                isPartial: false,
+                referenceDate: null,
+              },
+            },
+            1,
+            [],
+          )}
         </span>
       );
     },
@@ -119,23 +151,64 @@ const summary = (
 };
 const review = (
   overrides: Partial<MonthlyPortfolioReviewData> = {},
-): MonthlyPortfolioReviewData => ({
-  availablePeriods: ["2026-08", "2026-07"],
-  selectedPeriod: "2026-08",
-  untrackedManualPositionCount: 0,
-  status: "ready",
-  dateAlignment: "aligned",
-  compositionCoverage: "equivalent",
-  current: summary(),
-  previous: summary({
-    referenceDate: "2026-07-31",
-    knownValueCents: "120050",
-  }),
-  observedChangeCents: "5000",
-  gapMonths: 0,
-  flowSeparation: { status: "unavailable", explanation: flowExplanation },
-  ...overrides,
-});
+): MonthlyPortfolioReviewData => {
+  const availablePeriods = overrides.availablePeriods ?? ["2026-08", "2026-07"];
+  const selectedPeriod =
+    overrides.selectedPeriod === undefined
+      ? "2026-08"
+      : overrides.selectedPeriod;
+  const current =
+    overrides.current === undefined ? summary() : overrides.current;
+  const previous =
+    overrides.previous === undefined
+      ? summary({ referenceDate: "2026-07-31", knownValueCents: "120050" })
+      : overrides.previous;
+  const toHistoryPoint = (
+    period: string,
+    snapshot: MonthlyPortfolioSnapshotSummary,
+  ) => ({
+    period,
+    summary: snapshot,
+    completeness:
+      snapshot.knownValueCents !== null && snapshot.unvaluedPositionCount === 0
+        ? ("complete" as const)
+        : ("partial" as const),
+  });
+  const currentPeriod =
+    selectedPeriod ?? current?.referenceDate.slice(0, 7) ?? "2026-08";
+  const previousPeriod = availablePeriods.find(
+    (period) => period < currentPeriod,
+  );
+  const history =
+    overrides.history ??
+    [
+      ...(previous
+        ? [
+            toHistoryPoint(
+              previousPeriod ?? previous.referenceDate.slice(0, 7),
+              previous,
+            ),
+          ]
+        : []),
+      ...(current ? [toHistoryPoint(currentPeriod, current)] : []),
+    ].sort((left, right) => left.period.localeCompare(right.period));
+
+  return {
+    availablePeriods,
+    history,
+    selectedPeriod,
+    untrackedManualPositionCount: 0,
+    status: "ready",
+    dateAlignment: "aligned",
+    compositionCoverage: "equivalent",
+    current,
+    previous,
+    observedChangeCents: "5000",
+    gapMonths: 0,
+    flowSeparation: { status: "unavailable", explanation: flowExplanation },
+    ...overrides,
+  };
+};
 const renderReview = (
   data: MonthlyPortfolioReviewData | undefined,
   options: { loading?: boolean; error?: string } = {},
@@ -206,7 +279,7 @@ describe("MonthlyPortfolioReview", () => {
   it("keeps the summary compact and puts source dates and limits in details", () => {
     renderReview(review());
     expect(screen.getByText("Evolução patrimonial")).toBeTruthy();
-    expect(screen.getByText("Diferença observada")).toBeTruthy();
+    expect(screen.getByText(/Diferença/)).toBeTruthy();
     expect(screen.getByText("+R$ 50,00")).toBeTruthy();
     expect(screen.getByText(/R\$ 1\.200,50.*R\$ 1\.250,50/s)).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
@@ -221,11 +294,13 @@ describe("MonthlyPortfolioReview", () => {
     expect(screen.getByTestId("x-axis-month").textContent).toMatch(/jul/i);
     expect(screen.getByTestId("y-axis").textContent).toMatch(/R\$/);
     expect(screen.getByTestId("chart-tooltip").textContent).toMatch(
-      /julho de 2026.*R\$\s1\.250,50/,
+      /julho de 2026.*R\$\s1\.250,50.*parcial.*31\/07\/2026.*R\$\s1\.250,50/,
     );
     expect(document.querySelector("details")?.open).toBe(false);
     fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(screen.getByText("31/07/2026", { exact: false })).toBeTruthy();
+    expect(
+      screen.getAllByText("31/07/2026", { exact: false }).length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText(/registro em 01\/09\/2026/)).toHaveLength(2);
     expect(screen.getAllByText(/importada em 02\/09\/2026/)).toHaveLength(2);
     expect(screen.getByText(new RegExp(flowExplanation))).toBeTruthy();
@@ -254,11 +329,133 @@ describe("MonthlyPortfolioReview", () => {
     expect(screen.getByTestId("area-chart")).toBeTruthy();
   });
 
+  it("plots all recorded months and leaves gaps blank instead of interpolating them", () => {
+    const current = summary({
+      referenceDate: "2026-04-30",
+      knownValueCents: "12500",
+    });
+    const previous = summary({
+      referenceDate: "2026-01-31",
+      knownValueCents: "10000",
+    });
+    renderReview(
+      review({
+        selectedPeriod: "2026-04",
+        availablePeriods: ["2026-04", "2026-01"],
+        current,
+        previous,
+        history: [
+          {
+            period: "2026-01",
+            summary: previous,
+            completeness: "complete",
+          },
+          {
+            period: "2026-04",
+            summary: current,
+            completeness: "complete",
+          },
+        ],
+      }),
+    );
+
+    const chart = screen.getByTestId("area-chart");
+    expect(chart.getAttribute("data-months")).toBe(
+      "2026-01,2026-02,2026-03,2026-04",
+    );
+    expect(chart.getAttribute("data-values")).toBe("100,null,null,125");
+    expect(
+      screen.getByText(/fevereiro de 2026: sem fechamento registrado/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/rentabilidade/i)).toBeTruthy();
+  });
+
+  it("keeps partially known history as an exact partial point without treating it as zero", () => {
+    const partial = summary({
+      referenceDate: "2026-03-31",
+      knownValueCents: "12345",
+      positionCount: 3,
+      valuedPositionCount: 2,
+      unvaluedPositionCount: 1,
+    });
+    const earlier = summary({
+      referenceDate: "2026-01-31",
+      knownValueCents: "10000",
+    });
+    const unvalued = summary({
+      referenceDate: "2026-02-28",
+      knownValueCents: null,
+      positionCount: 1,
+      valuedPositionCount: 0,
+      unvaluedPositionCount: 1,
+    });
+    renderReview(
+      review({
+        selectedPeriod: "2026-03",
+        availablePeriods: ["2026-03", "2026-02", "2026-01"],
+        current: partial,
+        previous: unvalued,
+        status: "partial",
+        history: [
+          { period: "2026-01", summary: earlier, completeness: "complete" },
+          { period: "2026-02", summary: unvalued, completeness: "partial" },
+          { period: "2026-03", summary: partial, completeness: "partial" },
+        ],
+      }),
+    );
+
+    expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
+      "100,null,123.45",
+    );
+    expect(screen.getByText(/valor parcial/)).toBeTruthy();
+    expect(screen.getByText(/Há posições sem valor conhecido/)).toBeTruthy();
+  });
+
+  it("gives long histories a scrollable chart area sized for each month", () => {
+    const history = Array.from({ length: 24 }, (_, index) => {
+      const monthIndex = index + 1;
+      const year = 2024 + Math.floor(index / 12);
+      const month = String(((monthIndex - 1) % 12) + 1).padStart(2, "0");
+      const period = `${year}-${month}`;
+      return {
+        period,
+        summary: summary({
+          referenceDate: `${period}-28`,
+          knownValueCents: String((index + 1) * 10000),
+        }),
+        completeness: "complete" as const,
+      };
+    });
+    const selected = history[history.length - 1];
+    renderReview(
+      review({
+        availablePeriods: history.map(({ period }) => period).reverse(),
+        selectedPeriod: selected.period,
+        current: selected.summary,
+        previous: history[history.length - 2].summary,
+        history,
+      }),
+    );
+
+    const scrollRegion = screen.getByRole("region", {
+      name: "Deslize horizontalmente para ver todos os meses",
+    });
+    expect(scrollRegion.className).toContain("overflow-x-auto");
+    expect(
+      document.querySelector("[data-chart]")?.getAttribute("style"),
+    ).toContain("min-width: 960px");
+    const renderedMonths = screen
+      .getByTestId("area-chart")
+      .getAttribute("data-months");
+    expect(renderedMonths).not.toBeNull();
+    expect(renderedMonths?.split(",")).toHaveLength(24);
+  });
+
   it("does not invent a difference if the service has no comparable delta", () => {
     renderReview(review({ observedChangeCents: null }));
 
     expect(screen.getByTestId("area-chart")).toBeTruthy();
-    expect(screen.queryByText("Diferença observada")).toBeNull();
+    expect(screen.queryByText(/Diferença/)).toBeNull();
     expect(screen.queryByText(/R\$ 0,00/)).toBeNull();
   });
 
@@ -276,6 +473,7 @@ describe("MonthlyPortfolioReview", () => {
     renderReview(
       review({
         status: "no_previous_close",
+        availablePeriods: ["2026-08"],
         previous: null,
         observedChangeCents: null,
       }),
@@ -332,7 +530,7 @@ describe("MonthlyPortfolioReview", () => {
         observedChangeCents: "-1000",
       }),
     );
-    expect(screen.getByText("Diferença entre valores conhecidos")).toBeTruthy();
+    expect(screen.getByText(/Diferença/)).toBeTruthy();
     expect(
       screen.getByText(
         (_, element) =>
@@ -414,7 +612,7 @@ describe("MonthlyPortfolioReview", () => {
     ).toBeTruthy();
   });
 
-  it("does not draw a comparison when one close has no known value", () => {
+  it("keeps unknown historical values as gaps without treating them as zero", () => {
     renderReview(
       review({
         status: "partial",
@@ -429,7 +627,9 @@ describe("MonthlyPortfolioReview", () => {
     expect(
       screen.getByText(/A cobertura da carteira não pode ser confirmada/),
     ).toBeTruthy();
-    expect(screen.queryByTestId("area-chart")).toBeNull();
+    expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
+      "1200.5,null",
+    );
     expect(screen.queryByTestId("bar-chart")).toBeNull();
   });
 
