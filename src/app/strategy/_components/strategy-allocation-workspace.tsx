@@ -64,6 +64,7 @@ import {
   StrategyAllocationChart,
   type StrategyCompositionRow,
 } from "./strategy-allocation-chart";
+import { NextContributionStockOpportunities } from "./next-contribution-stock-opportunities";
 
 export type StrategyClassValue = {
   id: string;
@@ -626,11 +627,13 @@ export function StrategyAllocationWorkspace({
       </Sheet>
 
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle>Próximo aporte</CardTitle>
-          <CardDescription>
-            Simule a divisão. Nada será movimentado.
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Próximo aporte</CardTitle>
+            <CardDescription>
+              Simule a divisão. Nada será movimentado.
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -666,6 +669,7 @@ export function StrategyAllocationWorkspace({
               {simulating ? "Calculando…" : "Simular aporte"}
             </Button>
           </div>
+          <NextContributionStockOpportunities />
           {simulation && (
             <div
               className="space-y-4 rounded-lg border bg-muted/20 p-4 sm:p-5"

@@ -12,6 +12,14 @@ import { StrategyAllocationWorkspace } from "@/app/strategy/_components/strategy
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
+vi.mock(
+  "@/app/strategy/_components/next-contribution-stock-opportunities",
+  () => ({
+    NextContributionStockOpportunities: () => (
+      <div data-testid="next-contribution-stock-opportunities" />
+    ),
+  }),
+);
 
 Object.defineProperty(globalThis, "ResizeObserver", {
   configurable: true,
@@ -181,6 +189,9 @@ describe("StrategyAllocationWorkspace", () => {
     ).toBeTruthy();
     expect(screen.getByText("Patrimônio de longo prazo")).toBeTruthy();
     expect(screen.getByText("Distribuição atual")).toBeTruthy();
+    expect(
+      screen.getByTestId("next-contribution-stock-opportunities"),
+    ).toBeTruthy();
     expect(screen.getAllByText("30,00%").length).toBeGreaterThan(0);
     expect(screen.getByText("10%")).toBeTruthy();
     const learningLink = screen.getByRole("link", {

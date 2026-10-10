@@ -1,6 +1,6 @@
 ﻿// @vitest-environment jsdom
 import { Children, isValidElement } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PriceHistoryChart } from "@/app/analyses/_components/price-history-chart";
 
@@ -74,18 +74,63 @@ describe("PriceHistoryChart", () => {
 
   it("explains when the selected interval has insufficient history", () => {
     render(<PriceHistoryChart points={[{ date: "2026-01-01", close: 10 }]} />);
-    expect(screen.getByText(/hist.rico suficiente/i)).toBeTruthy();
+    expect(screen.getByText(/hist.rico insuficiente/i)).toBeTruthy();
   });
 
-  it("explains when the market data source could not load history", () => {
-    render(<PriceHistoryChart points={[]} unavailable />);
+  it("explains a temporary source failure and offers a focused retry", () => {
+    const onRetry = vi.fn();
+    render(
+      <PriceHistoryChart
+        points={[]}
+        status="unavailable"
+        failure={{ reason: "rate_limited", retryAfterSeconds: 8 }}
+        retryAfterSeconds={8}
+        onRetry={onRetry}
+      />,
+    );
 
     expect(screen.getByRole("status").textContent).toMatch(
-      /Não foi possível carregar o histórico de cotações agora/,
+      /provedor limitou consultas recentes/i,
     );
     expect(screen.getByRole("status").textContent).not.toContain(
       "histórico suficiente",
     );
+    const retry = screen.getByRole("button", { name: "Aguarde 8s" });
+    expect((retry as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes an empty provider history from a temporary failure", () => {
+    render(<PriceHistoryChart points={[]} status="empty" />);
+    expect(
+      screen.getByText("Sem cotações para este ativo ou período"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /tentar novamente/i }),
+    ).toBeNull();
+  });
+
+  it("shows recovery progress after a retry fails", () => {
+    render(
+      <PriceHistoryChart
+        points={[]}
+        status="unavailable"
+        failure={{ reason: "provider_error" }}
+        retrying
+        retryError
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Não foi possível atualizar agora. Tente novamente."),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Atualizando…" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
   });
 });
 vi.mock("@/components/ui/chart", async () => {

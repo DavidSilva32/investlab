@@ -1,3 +1,20 @@
+export type MarketHistoryFailure = {
+  reason:
+    | "rate_limited"
+    | "authentication"
+    | "timeout"
+    | "provider_error"
+    | "invalid_response";
+  retryAfterSeconds?: number;
+};
+
+export type MarketHistoryResult = {
+  ticker: string;
+  history: Array<{ date: string; close: number }>;
+  historyStatus: "available" | "empty" | "unavailable";
+  historyFailure?: MarketHistoryFailure;
+};
+
 export type MarketData = {
   ticker: string;
   companyName: string | null;
@@ -8,6 +25,7 @@ export type MarketData = {
   priceUpdatedAt: string | null;
   history: Array<{ date: string; close: number }>;
   historyStatus?: "available" | "empty" | "unavailable";
+  historyFailure?: MarketHistoryFailure;
 };
 export type MarketTicker = { ticker: string; name: string };
 export type MarketQuote = {
@@ -19,6 +37,10 @@ export type MarketQuote = {
 };
 export interface MarketDataProvider {
   getByTicker(ticker: string): Promise<MarketData>;
+  getHistoryByTicker?(
+    ticker: string,
+    options?: { bypassCache?: boolean },
+  ): Promise<MarketHistoryResult>;
   getQuoteByTicker(ticker: string): Promise<MarketQuote>;
   searchTickers(query: string): Promise<MarketTicker[]>;
 }

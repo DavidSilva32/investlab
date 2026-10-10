@@ -24,6 +24,8 @@ export const queryKeys = {
     all: ["analyses"] as const,
     search: (query: string) => ["analyses", "search", query] as const,
     stock: (ticker: string) => ["analyses", "stock", ticker] as const,
+    stockHistory: (ticker: string) =>
+      ["analyses", "stock", ticker, "history"] as const,
     comparison: (tickers: string[]) =>
       ["analyses", "comparison", ...tickers] as const,
     screener: (filters: unknown) => ["analyses", "screener", filters] as const,

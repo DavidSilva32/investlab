@@ -68,11 +68,13 @@ describe("ScreenerRepository", () => {
     const expected = [
       {
         ticker: "PETR4",
+        subType: "stock",
         cnpj: "33000167000101",
         sector: "Petróleo e Gás",
       },
       {
         ticker: "SANB11",
+        subType: "unit",
         cnpj: "90400888000142",
         sector: "Bancos",
       },
@@ -86,7 +88,8 @@ describe("ScreenerRepository", () => {
         return Promise.resolve(expected);
       }),
     };
-    mocks.getDatabaseClient.mockReturnValue({ select: vi.fn(() => query) });
+    const select = vi.fn(() => query);
+    mocks.getDatabaseClient.mockReturnValue({ select });
 
     await expect(
       new ScreenerRepository().getComparisonMetadata(["PETR4", "SANB11"]),
@@ -94,6 +97,9 @@ describe("ScreenerRepository", () => {
     expect(query.innerJoin).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
+    );
+    expect(select).toHaveBeenCalledWith(
+      expect.objectContaining({ subType: screenerSecurities.subType }),
     );
     expect(query.where).toHaveBeenCalledOnce();
     expect(sqlFor(whereCondition).params).toEqual(

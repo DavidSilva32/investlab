@@ -32,6 +32,7 @@ export class ScreenerRepository {
       .select({
         ticker: screenerSecurities.ticker,
         securityName: screenerSecurities.name,
+        subType: screenerSecurities.subType,
         securityUpdatedAt: screenerSecurities.updatedAt,
         cnpj: screenerIssuers.cnpj,
         cvmCode: screenerIssuers.cvmCode,

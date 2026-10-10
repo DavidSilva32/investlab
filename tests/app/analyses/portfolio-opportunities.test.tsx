@@ -274,6 +274,9 @@ describe("PortfolioOpportunities", () => {
     expect(screen.getByText("Número de Graham")).toBeTruthy();
     expect(screen.getByText("Preço-teto de Bazin")).toBeTruthy();
     expect(
+      screen.getByRole("link", { name: "Ver critérios" }).getAttribute("href"),
+    ).toBe("/analyses?ticker=PETR4");
+    expect(
       screen.getAllByText("abaixo da referência", { exact: false }).length,
     ).toBeGreaterThan(0);
     expect(screen.getByText(/não confirmou a completude/i)).toBeTruthy();
@@ -284,6 +287,14 @@ describe("PortfolioOpportunities", () => {
       screen.getByRole("button", { name: "Sobre Número de Graham" }),
     );
     expect(await screen.findByText(/raiz quadrada de 22,5/i)).toBeTruthy();
+    await userEvent.hover(
+      screen.getByRole("button", { name: "Sobre Preço-teto de Bazin" }),
+    );
+    expect(
+      await screen.findByText(
+        /não confirma que os proventos sejam recorrentes/i,
+      ),
+    ).toBeTruthy();
     expect(
       within(
         screen.getByText("Taxa-alvo global do Bazin").parentElement!,

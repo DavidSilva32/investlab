@@ -20,6 +20,7 @@ function metadata(
 ) {
   return {
     ticker,
+    subType: ticker.endsWith("11") ? "unit" : "stock",
     securityName: `${ticker} ON`,
     securityUpdatedAt: now,
     cnpj,

@@ -1,4 +1,6 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { AlertCircle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   ChartContainer,
   ChartTooltip,
@@ -6,6 +8,17 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import type { StockAnalysis } from "./stock-analysis-types";
+
+const failureMessages: Record<
+  NonNullable<StockAnalysis["historyFailure"]>["reason"],
+  string
+> = {
+  rate_limited: "O provedor limitou consultas recentes.",
+  authentication: "A autenticação da fonte de cotações falhou.",
+  timeout: "A consulta de histórico demorou mais que o esperado.",
+  provider_error: "A fonte de cotações está temporariamente indisponível.",
+  invalid_response: "A fonte retornou dados de histórico inválidos.",
+};
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -30,20 +43,72 @@ const chartConfig = {
 
 export function PriceHistoryChart({
   points,
-  unavailable = false,
+  status = "available",
+  failure,
+  retrying = false,
+  retryError = false,
+  retryAfterSeconds = 0,
+  onRetry,
 }: {
   points: StockAnalysis["history"];
-  unavailable?: boolean;
+  status?: "available" | "empty" | "unavailable";
+  failure?: StockAnalysis["historyFailure"];
+  retrying?: boolean;
+  retryError?: boolean;
+  retryAfterSeconds?: number;
+  onRetry?: () => void;
 }) {
   if (points.length < 2)
     return (
       <div
-        role={unavailable ? "status" : undefined}
-        className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+        role={status === "unavailable" ? "status" : undefined}
+        className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
       >
-        {unavailable
-          ? "Não foi possível carregar o histórico de cotações agora. Os preços desse período estão indisponíveis."
-          : "Não há histórico suficiente para montar o gráfico neste intervalo."}
+        <div className="flex min-w-0 items-start gap-3">
+          <span
+            className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full ${status === "unavailable" ? "bg-status-warning/10 text-status-warning" : "bg-muted text-muted-foreground"}`}
+          >
+            <AlertCircle className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              {status === "unavailable"
+                ? "Histórico temporariamente indisponível"
+                : status === "empty"
+                  ? "Sem cotações para este ativo ou período"
+                  : "Histórico insuficiente para montar o gráfico"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {retryError
+                ? "Não foi possível atualizar agora. Tente novamente."
+                : status === "unavailable" && failure
+                  ? failureMessages[failure.reason]
+                  : status === "empty"
+                    ? "A fonte não retornou preços de fechamento neste intervalo."
+                    : "O gráfico precisa de pelo menos dois fechamentos observados."}
+            </p>
+          </div>
+        </div>
+        {status === "unavailable" && onRetry && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={retrying || retryAfterSeconds > 0}
+            onClick={onRetry}
+          >
+            <RefreshCw
+              className={`size-4 ${retrying ? "motion-safe:animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            {retrying
+              ? "Atualizando…"
+              : retryAfterSeconds > 0
+                ? `Aguarde ${retryAfterSeconds}s`
+                : "Tentar novamente"}
+          </Button>
+        )}
       </div>
     );
 

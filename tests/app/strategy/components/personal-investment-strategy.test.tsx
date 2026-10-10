@@ -70,6 +70,16 @@ function jsonResponse(body: unknown, ok = true) {
   return Promise.resolve({ ok, json: () => Promise.resolve(body) });
 }
 
+function opportunitiesResponse() {
+  return {
+    opportunities: [],
+    asOf: "2026-10-02",
+    classificationStatus: "resolved",
+    classificationLookupFailures: 0,
+    settings: { bazinTargetYield: 6, initializedAt: null },
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -109,7 +119,11 @@ describe("PersonalInvestmentStrategy", () => {
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
 
     expect(await screen.findByText("Patrimônio de longo prazo")).toBeTruthy();
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([url]) => url === "/api/portfolio/strategy"),
+    ).toHaveLength(2);
   });
 
   it("shows a page skeleton while loading and converts a hung request into a retryable error", async () => {
@@ -250,11 +264,11 @@ describe("PersonalInvestmentStrategy", () => {
   });
 
   it("saves a new composition through the editor and updates the saved state", async () => {
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(baseData))
-      .mockResolvedValueOnce(
-        jsonResponse({
+    const request = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/analyses/portfolio-opportunities")
+        return jsonResponse(opportunitiesResponse());
+      if (init?.method === "POST")
+        return jsonResponse({
           message: "Composição salva.",
           allocationPercentages: {
             fixed_income: 0,
@@ -262,8 +276,9 @@ describe("PersonalInvestmentStrategy", () => {
             international_etfs: 20,
             fiis: 50,
           },
-        }),
-      );
+        });
+      return jsonResponse(baseData);
+    });
     vi.stubGlobal("fetch", request);
     const user = userEvent.setup();
     render(<PersonalInvestmentStrategy />);
@@ -305,32 +320,21 @@ describe("PersonalInvestmentStrategy", () => {
   it("updates the page state after the user explicitly activates Strategy", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          jsonResponse({
-            ...baseData,
-            savedAllocationPercentages: {
-              fixed_income: 40,
-              brazilian_equities: 30,
-              international_etfs: 20,
-              fiis: 10,
-            },
-          }),
-        )
-        .mockResolvedValueOnce(jsonResponse({ allocationActive: true }))
-        .mockResolvedValueOnce(
-          jsonResponse({
-            ...baseData,
-            savedAllocationPercentages: {
-              fixed_income: 40,
-              brazilian_equities: 30,
-              international_etfs: 20,
-              fiis: 10,
-            },
-            allocationActive: true,
-          }),
-        ),
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/analyses/portfolio-opportunities")
+          return jsonResponse(opportunitiesResponse());
+        if (init?.method === "POST")
+          return jsonResponse({ allocationActive: true });
+        return jsonResponse({
+          ...baseData,
+          savedAllocationPercentages: {
+            fixed_income: 40,
+            brazilian_equities: 30,
+            international_etfs: 20,
+            fiis: 10,
+          },
+        });
+      }),
     );
     const user = userEvent.setup();
     render(<PersonalInvestmentStrategy />);

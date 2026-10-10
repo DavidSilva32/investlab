@@ -1,10 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const playwrightPort = process.env.PLAYWRIGHT_PORT ?? "3000";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: `http://127.0.0.1:${playwrightPort}`,
     trace: "on-first-retry",
     launchOptions: {
       executablePath:
@@ -12,9 +14,9 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: "pnpm dev",
-    url: "http://127.0.0.1:3000",
-    reuseExistingServer: !process.env.CI,
+    command: `pnpm exec next dev --hostname 127.0.0.1 --port ${playwrightPort}`,
+    url: `http://127.0.0.1:${playwrightPort}`,
+    reuseExistingServer: !process.env.CI && !process.env.PLAYWRIGHT_PORT,
     env: {
       AUTH_SECRET: "investlab-e2e-auth-secret-2026!!",
     },

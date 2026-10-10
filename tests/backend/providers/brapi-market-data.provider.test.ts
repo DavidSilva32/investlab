@@ -302,7 +302,9 @@ describe("BrapiMarketDataProvider", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse(quote({ shortName: "Nome curto" })))
       .mockResolvedValueOnce(jsonResponse({}))
-      .mockResolvedValueOnce(jsonResponse({}));
+      .mockResolvedValueOnce(
+        jsonResponse({ results: [{ data: { historicalDataPrice: [] } }] }),
+      );
 
     await expect(
       new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
@@ -382,7 +384,11 @@ describe("BrapiMarketDataProvider", () => {
       );
     await expect(
       new BrapiMarketDataProvider(rateLimited).getByTicker("PETR4"),
-    ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
+    ).resolves.toMatchObject({
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "rate_limited", retryAfterSeconds: 30 },
+    });
     expect(rateLimited).toHaveBeenCalledTimes(3);
 
     const unavailable = vi
@@ -426,6 +432,109 @@ describe("BrapiMarketDataProvider", () => {
       new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
     ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
     expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("bypasses HTTP cache for a focused history retry and separates empty from malformed data", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ results: [{ data: { historicalDataPrice: [] } }] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({}));
+    const provider = new BrapiMarketDataProvider(fetcher);
+
+    await expect(
+      provider.getHistoryByTicker("PETR4", { bypassCache: true }),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+      history: [],
+      historyStatus: "empty",
+    });
+    await expect(
+      provider.getHistoryByTicker("PETR4", { bypassCache: true }),
+    ).resolves.toMatchObject({
+      historyStatus: "unavailable",
+      historyFailure: { reason: "invalid_response" },
+    });
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "https://brapi.dev/api/v2/stocks/historical?symbols=PETR4&range=5y&interval=1d",
+    );
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ cache: "no-store" });
+    expect(fetcher.mock.calls[0]?.[1]).not.toHaveProperty("next");
+  });
+
+  it("exposes rate-limit and authentication states for an isolated history request", async () => {
+    const rateLimited = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(null, { status: 429, headers: { "retry-after": "15" } }),
+      );
+    await expect(
+      new BrapiMarketDataProvider(rateLimited).getHistoryByTicker("PETR4", {
+        bypassCache: true,
+      }),
+    ).resolves.toMatchObject({
+      historyStatus: "unavailable",
+      historyFailure: { reason: "rate_limited", retryAfterSeconds: 15 },
+    });
+    const unauthorized = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 401 }));
+    await expect(
+      new BrapiMarketDataProvider(unauthorized).getHistoryByTicker("PETR4", {
+        bypassCache: true,
+      }),
+    ).resolves.toMatchObject({
+      historyStatus: "unavailable",
+      historyFailure: { reason: "authentication" },
+    });
+  });
+
+  it("classifies rate limits without Retry-After and provider HTTP 408 separately", async () => {
+    const rateLimited = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 429 }));
+    await expect(
+      new BrapiMarketDataProvider(rateLimited).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      historyStatus: "unavailable",
+      historyFailure: { reason: "rate_limited" },
+    });
+
+    const timedOut = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 408 }));
+    await expect(
+      new BrapiMarketDataProvider(timedOut).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      historyStatus: "unavailable",
+      historyFailure: { reason: "timeout" },
+    });
+    expect(timedOut).toHaveBeenCalledTimes(2);
+    expect(String(timedOut.mock.calls[1]?.[0])).toContain("range=1y");
+  });
+
+  it("classifies an aborted provider fetch as a timeout before retrying the shorter range", async () => {
+    const timeoutSignal = AbortSignal.abort(
+      new DOMException("The request timed out", "TimeoutError"),
+    );
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockReturnValue(timeoutSignal);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error("offline"));
+    try {
+      await expect(
+        new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+      ).resolves.toMatchObject({
+        historyStatus: "unavailable",
+        historyFailure: { reason: "timeout" },
+      });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 
   it("bounds the required quote request and cancels optional requests on failure", async () => {
@@ -647,4 +756,43 @@ describe("BrapiMarketDataProvider", () => {
       ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
     },
   );
+
+  it("classifies malformed JSON as an invalid provider response", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: vi.fn().mockRejectedValue(new SyntaxError("invalid json")),
+    } as unknown as Response);
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "invalid_response" },
+    });
+  });
+
+  it("does not attach a different symbol's history to the requested ticker", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        results: [
+          {
+            symbol: "VALE3",
+            data: { historicalDataPrice: [{ date: 1767225600, close: 49 }] },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "invalid_response" },
+    });
+  });
 });

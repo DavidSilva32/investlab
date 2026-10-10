@@ -3,12 +3,24 @@
 import Link from "next/link";
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleHelp,
+  CircleX,
+  MinusCircle,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AnalysisStockSearch } from "./analysis-stock-search";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import { classifyCvmSector } from "@/lib/cvm-sector-classification";
+import { useStockCriteriaPreferences } from "@/lib/stock-criteria-preferences";
+import type {
+  StockCriteriaStatus,
+  StockCriterionResult,
+} from "@/lib/stock-criteria-evaluation";
 
 type TickerOption = { ticker: string; name: string };
 type MetricCell = {
@@ -48,17 +60,33 @@ const basisLabels: Record<string, string> = {
   point_in_time: "saldo na data-base",
 };
 
+function isValidIsoDate(value: string | null): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const timestamp = Date.parse(`${value}T00:00:00.000Z`);
+  return (
+    Number.isFinite(timestamp) &&
+    new Date(timestamp).toISOString().slice(0, 10) === value
+  );
+}
+
+function hasValidTimestamp(value: string | null) {
+  return Boolean(value && Number.isFinite(Date.parse(value)));
+}
+
 function dateLabel(value: string | null) {
   if (!value) return null;
-  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(date)
-    : null;
+  const datePart = value.slice(0, 10);
+  if (!isValidIsoDate(datePart)) return null;
+  const timestamp = Date.parse(
+    value.length === 10 ? `${value}T00:00:00.000Z` : value,
+  );
+  if (!Number.isFinite(timestamp)) return null;
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(timestamp);
 }
 
 function cellDateLabel(cell: MetricCell) {
@@ -124,6 +152,137 @@ function renderCell(cell: MetricCell, kind: "percent" | "multiple") {
   );
 }
 
+function ComparisonCriterionStatus({
+  company,
+  keyName,
+  preferences,
+}: {
+  company: ComparisonCompany;
+  keyName: "roe" | "pe" | "pb";
+  preferences: ReturnType<typeof useStockCriteriaPreferences>;
+}) {
+  const cell =
+    keyName === "roe"
+      ? company.fundamentals.roe
+      : keyName === "pe"
+        ? company.valuation.pe
+        : company.valuation.pb;
+  const classification = classifyCvmSector(company.sector);
+  const normalizedSector = (company.sector ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("pt-BR");
+  const isBankSector = normalizedSector === "BANCOS";
+  const supportedSector =
+    classification === "financial" || classification === "non_financial";
+  const financialRoeNotApplicable =
+    keyName === "roe" && classification === "financial" && !isBankSector;
+  const peNotApplicable = keyName === "pe" && classification === "financial";
+  const isValuation = keyName !== "roe";
+  const hasComparablePeriod =
+    keyName !== "roe"
+      ? true
+      : isBankSector
+        ? cell.periodBasis === "trailing_twelve_months"
+        : cell.periodBasis === "annual" ||
+          cell.periodBasis === "trailing_twelve_months";
+  const hasSource = Boolean(cell.sourceDocument && cell.sourceSummary);
+  const baseComparable =
+    company.identityVerified &&
+    supportedSector &&
+    cell.value !== null &&
+    Number.isFinite(cell.value) &&
+    isValidIsoDate(cell.referenceDate) &&
+    hasSource &&
+    cell.unavailableReason === null &&
+    hasComparablePeriod &&
+    (!isValuation || hasValidTimestamp(cell.marketDataDate));
+  let criterion: StockCriterionResult;
+  if (financialRoeNotApplicable || peNotApplicable) {
+    criterion = {
+      status: "not_applicable",
+      reason: "financial_sector_methodology_required",
+      value: null,
+      threshold: null,
+    };
+  } else if (!baseComparable || (keyName !== "roe" && cell.value! <= 0)) {
+    criterion = {
+      status: "unavailable",
+      reason: "indicator_unavailable",
+      value: null,
+      threshold: null,
+    };
+  } else if (keyName === "pb" && preferences.maximumPb === null) {
+    criterion = {
+      status: "unavailable",
+      reason: "threshold_not_configured",
+      value: cell.value,
+      threshold: null,
+    };
+  } else {
+    const threshold =
+      keyName === "roe"
+        ? preferences.minimumRoePercent
+        : keyName === "pe"
+          ? preferences.maximumPe
+          : preferences.maximumPb!;
+    const meets =
+      keyName === "roe" ? cell.value! >= threshold : cell.value! <= threshold;
+    criterion = {
+      status: meets ? "meets" : "fails",
+      reason: meets ? "within_threshold" : "outside_threshold",
+      value: cell.value,
+      threshold,
+    };
+  }
+  const status = criterion.status;
+  const keyLabel = keyName === "pe" ? "P/L" : keyName === "pb" ? "P/VP" : "ROE";
+  const presentation = {
+    meets: {
+      label:
+        keyName === "roe"
+          ? `Acima do mínimo · ${percent.format(criterion.threshold!)}%`
+          : `Até ${multiple.format(criterion.threshold!)}x`,
+      className:
+        "border-status-success/30 bg-status-success/10 text-status-success",
+      Icon: CheckCircle2,
+    },
+    fails: {
+      label:
+        keyName === "roe"
+          ? `Abaixo do mínimo · ${percent.format(criterion.threshold!)}%`
+          : `Acima de ${multiple.format(criterion.threshold!)}x`,
+      className:
+        "border-status-warning/30 bg-status-warning/10 text-status-warning",
+      Icon: CircleX,
+    },
+    unavailable: {
+      label:
+        criterion.reason === "threshold_not_configured"
+          ? `P/VP ${multiple.format(criterion.value!)}x · sem limite`
+          : `${keyLabel} sem base confiável`,
+      className: "border-border bg-muted/50 text-muted-foreground",
+      Icon: CircleHelp,
+    },
+    not_applicable: {
+      label: `${keyLabel} não se aplica`,
+      className: "border-border bg-muted/50 text-muted-foreground",
+      Icon: MinusCircle,
+    },
+  }[status];
+  const Icon = presentation.Icon;
+  return (
+    <span
+      className={`mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${presentation.className}`}
+      aria-label={`${keyLabel}: ${presentation.label}`}
+    >
+      <Icon className="size-3.5" aria-hidden="true" />
+      {presentation.label}
+    </span>
+  );
+}
+
 export function CompanyComparison({
   initialTicker = "",
 }: {
@@ -139,6 +298,7 @@ export function CompanyComparison({
   const [submittedTickers, setSubmittedTickers] = useState<string[]>([]);
   const [shouldCompare, setShouldCompare] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const criteriaPreferences = useStockCriteriaPreferences();
   const comparisonQuery = useQuery({
     queryKey: queryKeys.analyses.comparison(submittedTickers),
     enabled: shouldCompare && submittedTickers.length > 0,
@@ -208,12 +368,14 @@ export function CompanyComparison({
     ? dateLabel(result.sectorMetadataAsOf)
     : null;
   const metricRows: Array<{
+    key: "roe" | "netMargin" | "pe" | "pb";
     label: string;
     kind: "percent" | "multiple";
     group: "Fundamentos" | "Valuation";
     get: (company: ComparisonCompany) => MetricCell;
   }> = [
     {
+      key: "roe",
       label:
         result?.sector === "Bancos" ? "ROE contábil simplificado LTM" : "ROE",
       kind: "percent",
@@ -221,18 +383,21 @@ export function CompanyComparison({
       get: (company) => company.fundamentals.roe,
     },
     {
+      key: "netMargin",
       label: "Margem líquida",
       kind: "percent",
       group: "Fundamentos",
       get: (company) => company.fundamentals.netMargin,
     },
     {
+      key: "pe",
       label: "P/L",
       kind: "multiple",
       group: "Valuation",
       get: (company) => company.valuation.pe,
     },
     {
+      key: "pb",
       label: "P/VP",
       kind: "multiple",
       group: "Valuation",
@@ -399,6 +564,15 @@ export function CompanyComparison({
                             {rows.map((company) => (
                               <td key={company.cnpj} className="p-3 align-top">
                                 {renderCell(row.get(company), row.kind)}
+                                {(row.key === "roe" ||
+                                  row.key === "pe" ||
+                                  row.key === "pb") && (
+                                  <ComparisonCriterionStatus
+                                    company={company}
+                                    keyName={row.key}
+                                    preferences={criteriaPreferences}
+                                  />
+                                )}
                               </td>
                             ))}
                           </tr>

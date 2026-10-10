@@ -734,6 +734,9 @@ export class StockAnalysisService {
     const marketProviderMs = Date.now() - marketStartedAt;
     let issuerIdentityConflict = false;
     let issuerMetadataMs = 0;
+    let issuerSector: string | null = null;
+    let issuerSubType: string | null = null;
+    let issuerMetadataUpdatedAt: Date | null = null;
     if (market) {
       const providerCnpj = normalizeCnpj(market.cnpj);
       const issuerMatches = await issuerMetadataPromise;
@@ -755,6 +758,14 @@ export class StockAnalysisService {
         (linkedCnpis.length === 1 && linkedCnpis[0] !== providerCnpj)
       ) {
         issuerIdentityConflict = true;
+      }
+      const linkedIssuer = exactMatches.filter(
+        (issuer) => normalizeCnpj(issuer.cnpj) === normalizeCnpj(market!.cnpj),
+      );
+      if (linkedIssuer.length === 1) {
+        issuerSector = linkedIssuer[0]!.sector;
+        issuerSubType = linkedIssuer[0]!.subType;
+        issuerMetadataUpdatedAt = linkedIssuer[0]!.issuerMetadataUpdatedAt;
       }
     }
     if (issuerIdentityConflict) {
@@ -926,6 +937,10 @@ export class StockAnalysisService {
     });
     return {
       ...market,
+      issuerSector,
+      issuerMetadataUpdatedAt,
+      instrumentType:
+        issuerSubType === "stock" ? ("stock" as const) : ("unknown" as const),
       priceIsStale,
       fundamentalsIsStale,
       fundamentalsFetchedAt,
@@ -936,6 +951,32 @@ export class StockAnalysisService {
         market.priceUpdatedAt,
       ),
     };
+  }
+
+  async getHistoryByTicker(rawTicker: unknown, requestId?: string) {
+    const parsed = tickerSchema.safeParse(rawTicker);
+    if (!parsed.success)
+      throw new ApplicationError(parsed.error.issues[0]!.message, 400);
+    if (!this.marketProvider.getHistoryByTicker)
+      throw new ApplicationError(
+        "A fonte atual não permite atualizar o histórico isoladamente.",
+        501,
+      );
+    logger.info("stock_analysis_history_requested", {
+      requestId,
+      ticker: parsed.data,
+    });
+    const history = await this.marketProvider.getHistoryByTicker(parsed.data, {
+      bypassCache: true,
+    });
+    logger.info("stock_analysis_history_responded", {
+      requestId,
+      ticker: history.ticker,
+      status: history.historyStatus,
+      points: history.history.length,
+      failureReason: history.historyFailure?.reason,
+    });
+    return history;
   }
 
   async getFundamentalsByIssuer(
