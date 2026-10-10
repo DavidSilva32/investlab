@@ -3,6 +3,7 @@
 import { Bar, BarChart, Cell, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
+import { Skeleton } from "@/components/ui/skeleton";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import { neutralAssetClassColor } from "@/lib/strategy-allocation";
 import { formatCurrency } from "@/lib/utils";
@@ -78,9 +79,22 @@ function DistributionChart({
       </CardHeader>
       <CardContent>
         {loading ? (
-          <p role="status" className="py-5 text-sm text-muted-foreground">
-            Carregando distribuição…
-          </p>
+          <div
+            role="status"
+            aria-label={`Carregando ${title.toLowerCase()}`}
+            aria-busy="true"
+            className="space-y-4 py-2"
+          >
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="space-y-2">
+                <div className="flex justify-between gap-3">
+                  <Skeleton className="h-3 w-32 max-w-[60%]" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+                <Skeleton className="h-2.5 w-full" />
+              </div>
+            ))}
+          </div>
         ) : items === null ? (
           <p role="status" className="py-5 text-sm text-muted-foreground">
             Não foi possível carregar esta distribuição.

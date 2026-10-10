@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AnalysisStockSearch } from "./analysis-stock-search";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
@@ -465,12 +466,31 @@ export function CompanyComparison({
             </Button>
           </div>
           {loading && (
-            <p
+            <div
               role="status"
-              className="text-sm text-muted-foreground md:col-span-3"
+              aria-label="Carregando comparação das empresas"
+              aria-busy="true"
+              className="space-y-3 md:col-span-3"
             >
-              Consultando demonstrações oficiais da CVM…
-            </p>
+              <span className="sr-only">
+                Consultando demonstrações oficiais da CVM…
+              </span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {Array.from(
+                  { length: Math.max(displayedSelection.length, 2) },
+                  (_, index) => (
+                    <div key={index} className="rounded-lg border p-3">
+                      <Skeleton className="h-4 w-24" />
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        {Array.from({ length: 4 }, (_, metric) => (
+                          <Skeleton key={metric} className="h-12 w-full" />
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
           )}
           {error && (
             <p role="alert" className="text-sm text-destructive md:col-span-3">

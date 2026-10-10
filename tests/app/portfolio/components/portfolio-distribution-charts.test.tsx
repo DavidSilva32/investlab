@@ -156,7 +156,7 @@ describe("PortfolioDistributionCharts", () => {
         loading
       />,
     );
-    expect(screen.getByText("Carregando distribuição…")).toBeTruthy();
+    expect(screen.getByRole("status", { name: /Carregando/ })).toBeTruthy();
 
     rerender(
       <PortfolioDistributionCharts

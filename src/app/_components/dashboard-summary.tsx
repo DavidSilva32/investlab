@@ -25,6 +25,7 @@ export function DashboardSummary({
   insights,
   emergencyReserve,
   unassignedSummary,
+  unassignedLoading,
   onRetryUnassigned,
   contributionAllocationMode,
 }: {
@@ -32,6 +33,7 @@ export function DashboardSummary({
   insights: PortfolioInsights;
   emergencyReserve?: EmergencyReserveCalculation;
   unassignedSummary?: UnassignedPortfolioSummary | null;
+  unassignedLoading?: boolean;
   onRetryUnassigned?: () => void;
   contributionAllocationMode?: "legacy" | "strategy" | "unavailable";
 }) {
@@ -48,7 +50,8 @@ export function DashboardSummary({
   });
   const hasUnassignedSummary =
     unassignedSummary !== null && unassignedSummary !== undefined;
-  const hasLowerSummaryContent = hasUnassignedSummary || nextAction !== null;
+  const hasLowerSummaryContent =
+    hasUnassignedSummary || unassignedLoading || nextAction !== null;
 
   return (
     <div className="space-y-4">
@@ -68,6 +71,7 @@ export function DashboardSummary({
         >
           <DashboardUnassignedSummary
             summary={unassignedSummary}
+            loading={unassignedLoading}
             onRetry={onRetryUnassigned}
           />
           <DashboardNextAction action={nextAction} />

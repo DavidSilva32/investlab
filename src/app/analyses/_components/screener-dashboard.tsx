@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ScreenerResultsList,
@@ -383,9 +384,26 @@ export function ScreenerDashboard() {
       )}
 
       {loading && (
-        <Card aria-busy="true">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Consultando dados locais do screener…
+        <Card aria-busy="true" aria-label="Carregando resultados">
+          <CardContent className="space-y-4 pt-6" role="status">
+            <span className="sr-only">
+              Consultando dados locais do screener…
+            </span>
+            <div className="flex items-center justify-between gap-4">
+              <Skeleton className="h-5 w-56" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="rounded-lg border p-4">
+                <Skeleton className="h-5 w-48 max-w-full" />
+                <Skeleton className="mt-2 h-3 w-64 max-w-full" />
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {Array.from({ length: 4 }, (_, metric) => (
+                    <Skeleton key={metric} className="h-14 w-full" />
+                  ))}
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -370,11 +371,11 @@ export function EmergencyReserveEditor() {
           aria-hidden="true"
         >
           <div className="grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
-            <div className="h-16 animate-pulse rounded-md bg-muted" />
-            <div className="h-16 animate-pulse rounded-md bg-muted" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
           </div>
-          <div className="h-40 animate-pulse rounded-xl bg-muted" />
-          <div className="h-72 animate-pulse rounded-xl bg-muted" />
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-72 w-full rounded-xl" />
         </div>
       )}
       {reserveQuery.error && !data && (
