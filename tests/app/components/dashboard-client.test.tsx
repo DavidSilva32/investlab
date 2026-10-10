@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 const routerReplace = vi.hoisted(() => vi.fn());
@@ -9,12 +9,22 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
   DashboardSummary: ({
     unassignedSummary,
     onRetryUnassigned,
+    destinationSummary,
+    nextContributionGuidance,
   }: {
+    destinationSummary?: { knownTotal: number };
+    nextContributionGuidance?: { assetClass: string };
     unassignedSummary: { status: string } | null;
     onRetryUnassigned: () => void;
   }) => (
     <>
       <p>Resumo do dashboard</p>
+      {destinationSummary && (
+        <p>Total por destinos: {destinationSummary.knownTotal}</p>
+      )}
+      {nextContributionGuidance && (
+        <p>Classe para revisar: {nextContributionGuidance.assetClass}</p>
+      )}
       {unassignedSummary?.status === "loaded" && (
         <p>Resumo sem destino disponível</p>
       )}
@@ -83,6 +93,31 @@ describe("DashboardClient", () => {
     ).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
+  });
+
+  it("reuses overview guidance and destination data without market requests", async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === "/api/portfolio"
+            ? {
+                ...overview,
+                nextContributionGuidance: { assetClass: "ETFs internacionais" },
+              }
+            : {
+                ...objectivesOverview,
+                destinationSummary: { knownTotal: 1250 },
+              },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderDashboard();
+    expect(
+      await screen.findByText("Classe para revisar: ETFs internacionais"),
+    ).toBeTruthy();
+    expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("announces an initial API failure and allows a retry", async () => {

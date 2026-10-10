@@ -11,6 +11,12 @@ import type {
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { ContributionAssistant } from "@/app/_components/contribution-assistant";
+import { DashboardContributionOverview } from "@/app/_components/dashboard-contribution-overview";
+import {
+  DashboardDestinationsOverview,
+  type DashboardDestinationSummary,
+} from "@/app/_components/dashboard-destinations-overview";
+import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 import {
   DashboardNextAction,
   getDashboardNextAction,
@@ -27,7 +33,10 @@ export function DashboardSummary({
   unassignedSummary,
   unassignedLoading,
   onRetryUnassigned,
+  nextContributionGuidance,
   contributionAllocationMode,
+  destinationSummary,
+  destinationsUnavailable,
 }: {
   positions: PortfolioInsightPosition[];
   insights: PortfolioInsights;
@@ -36,44 +45,79 @@ export function DashboardSummary({
   unassignedLoading?: boolean;
   onRetryUnassigned?: () => void;
   contributionAllocationMode?: "legacy" | "strategy" | "unavailable";
+  nextContributionGuidance?: ContributionGuidance;
+  destinationSummary?: DashboardDestinationSummary | null;
+  destinationsUnavailable?: boolean;
 }) {
   const reserveIncomplete = Boolean(
     emergencyReserve &&
     (emergencyReserve.unvaluedGroups > 0 ||
       (emergencyReserve.missingSelectionCount ?? 0) > 0),
   );
-  const nextAction = getDashboardNextAction({
+  const candidateAction = getDashboardNextAction({
     positionCount: positions.length,
     missingValueCount: insights.unvaluedPositions,
     reserveIncomplete,
     reserve: emergencyReserve,
   });
+  const nextAction =
+    nextContributionGuidance?.status === "reserve_below_target" ||
+    nextContributionGuidance?.status === "reserve_incomplete"
+      ? null
+      : candidateAction;
   const hasUnassignedSummary =
-    unassignedSummary !== null && unassignedSummary !== undefined;
-  const hasLowerSummaryContent =
-    hasUnassignedSummary || unassignedLoading || nextAction !== null;
+    !destinationSummary &&
+    !destinationsUnavailable &&
+    unassignedSummary !== null &&
+    unassignedSummary !== undefined;
+  const hasLowerSummaryContent = hasUnassignedSummary || nextAction !== null;
 
   return (
     <div className="space-y-4">
       <DashboardWealthSummary positions={positions} insights={insights} />
 
+      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+        <DashboardContributionOverview guidance={nextContributionGuidance} />
+        <DashboardDestinationsOverview
+          summary={destinationSummary}
+          loading={unassignedLoading}
+          unavailable={destinationsUnavailable}
+          onRetry={onRetryUnassigned}
+        />
+      </div>
+
+      {contributionAllocationMode === "legacy" && (
+        <Collapsible
+          id="legacy-contribution"
+          className="scroll-mt-20 rounded-lg border p-3"
+        >
+          <CollapsibleTrigger className="group inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-sm text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Simular com metas anteriores
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 transition-transform group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3">
+            <ContributionAssistant allocationMode="legacy" />
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
       <section aria-labelledby="dashboard-reserve-title">
         <EmergencyReserveSummary calculation={emergencyReserve} />
       </section>
-
-      <ContributionAssistant
-        allocationMode={contributionAllocationMode ?? "legacy"}
-      />
 
       {hasLowerSummaryContent && (
         <div
           className={`grid gap-3 [&>section]:h-full [&>section>div]:h-full ${hasUnassignedSummary && nextAction ? "xl:grid-cols-2" : "grid-cols-1"}`}
         >
-          <DashboardUnassignedSummary
-            summary={unassignedSummary}
-            loading={unassignedLoading}
-            onRetry={onRetryUnassigned}
-          />
+          {hasUnassignedSummary && (
+            <DashboardUnassignedSummary
+              summary={unassignedSummary}
+              onRetry={onRetryUnassigned}
+            />
+          )}
           <DashboardNextAction action={nextAction} />
         </div>
       )}

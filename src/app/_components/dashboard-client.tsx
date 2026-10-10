@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { DashboardDestinationSummary } from "@/app/_components/dashboard-destinations-overview";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
 import type { UnassignedPortfolioSummary } from "@/app/_components/dashboard-unassigned-summary";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
@@ -19,6 +20,7 @@ export function DashboardClient() {
     "Não foi possível carregar o dashboard.",
   );
   const objectivesQuery = usePortfolioObjectives<{
+    destinationSummary?: DashboardDestinationSummary;
     unassignedKnownValue: number;
     unassignedPositionCount: number;
     unassignedUnvaluedPositionCount: number;
@@ -79,6 +81,8 @@ export function DashboardClient() {
       )}
       <DashboardSummary
         {...overview}
+        destinationSummary={objectivesQuery.data?.destinationSummary}
+        destinationsUnavailable={objectivesQuery.isError}
         unassignedSummary={unassignedSummary}
         unassignedLoading={objectivesQuery.isPending}
         onRetryUnassigned={() => void objectivesQuery.refetch()}
