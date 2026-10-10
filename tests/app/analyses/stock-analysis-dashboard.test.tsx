@@ -564,6 +564,197 @@ describe("StockAnalysisDashboard", () => {
     );
   });
 
+  it("automatically retries one transient history failure once", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...analysis,
+          history: [],
+          historyStatus: "unavailable",
+          historyFailure: { reason: "provider_error" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ticker: "PETR4",
+          history: [
+            { date: "2025-09-19", close: 25 },
+            { date: "2026-09-19", close: 31 },
+          ],
+          historyStatus: "available",
+        }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    expect(
+      await screen.findByText("Histórico temporariamente indisponível"),
+    ).toBeTruthy();
+    const chart = await screen.findByTestId("price-chart");
+    expect(chart.dataset.points).toBe("2025-09-19,2026-09-19");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      "/api/analyses/stocks/PETR4/history",
+    );
+  }, 10_000);
+
+  it("waits for a short Retry-After before one automatic history retry", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...analysis,
+          history: [],
+          historyStatus: "unavailable",
+          historyFailure: { reason: "rate_limited", retryAfterSeconds: 0.5 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ticker: "PETR4",
+          history: [
+            { date: "2025-09-19", close: 25 },
+            { date: "2026-09-19", close: 31 },
+          ],
+          historyStatus: "available",
+        }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("price-chart").dataset.points).toBe(
+      "2025-09-19,2026-09-19",
+    );
+  });
+
+  it("does not automatically retry when Retry-After exceeds its safe window", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        ...analysis,
+        history: [],
+        historyStatus: "unavailable",
+        historyFailure: { reason: "rate_limited", retryAfterSeconds: 301 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(301_000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a manual history retry cancel the scheduled automatic retry", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...analysis,
+          history: [],
+          historyStatus: "unavailable",
+          historyFailure: { reason: "provider_error" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ticker: "PETR4",
+          history: [
+            { date: "2025-09-19", close: 25 },
+            { date: "2026-09-19", close: 31 },
+          ],
+          historyStatus: "available",
+        }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await screen.findByText("Histórico temporariamente indisponível");
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    const chart = await screen.findByTestId("price-chart");
+    expect(chart.dataset.points).toBe("2025-09-19,2026-09-19");
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels the pending automatic history retry when the analysis unmounts", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse({
+        ...analysis,
+        history: [],
+        historyStatus: "unavailable",
+        historyFailure: { reason: "timeout" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const view = render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    view.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["authentication", "http_error", "invalid_response"] as const)(
+    "does not automatically retry definitive history failures (%s)",
+    async (reason) => {
+      vi.useFakeTimers();
+      const fetcher = vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          history: [],
+          historyStatus: "unavailable",
+          historyFailure: { reason },
+        }),
+      );
+      vi.stubGlobal("fetch", fetcher);
+      render(<StockAnalysisDashboard initialTicker="PETR4" />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("honors Retry-After, counts down, then enables retry", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(

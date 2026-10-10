@@ -184,6 +184,10 @@ export function StockAnalysisDashboard({
   const [notifiedTicker, setNotifiedTicker] = useState<string | null>(null);
   const pendingNotification = useRef<string | null>(null);
   const [clockNow, setClockNow] = useState(0);
+  const automaticHistoryRetries = useRef(new Set<string>());
+  const automaticHistoryRetryTimer = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const [days, setDays] = useState(365);
   const analysisQuery = useQuery({
     queryKey: queryKeys.analyses.stock(selectedTicker.toUpperCase()),
@@ -212,6 +216,7 @@ export function StockAnalysisDashboard({
         "Não foi possível atualizar o histórico agora.",
       ),
   });
+  const refetchHistory = historyRetryQuery.refetch;
   const analysis = selectedTicker ? (analysisQuery.data ?? null) : null;
   const error =
     !analysis && analysisQuery.error instanceof Error
@@ -314,6 +319,52 @@ export function StockAnalysisDashboard({
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [retryAfter, retryStartedAt, historyRetryAfter, historyRetryStartedAt]);
+
+  useEffect(() => {
+    const currentAnalysis = analysisQuery.data;
+    const ticker = selectedTicker.toUpperCase();
+    const failure = currentAnalysis?.historyFailure;
+    if (
+      !ticker ||
+      !currentAnalysis ||
+      currentAnalysis.ticker.toUpperCase() !== ticker ||
+      currentAnalysis.historyStatus !== "unavailable" ||
+      !failure ||
+      automaticHistoryRetries.current.has(ticker)
+    )
+      return;
+
+    const retryDelayMs =
+      failure.reason === "timeout" || failure.reason === "provider_error"
+        ? 1_000
+        : failure.reason === "rate_limited" &&
+            Number.isFinite(failure.retryAfterSeconds) &&
+            failure.retryAfterSeconds! <= 300
+          ? Math.max(1_000, failure.retryAfterSeconds! * 1_000)
+          : null;
+    if (retryDelayMs === null) return;
+
+    automaticHistoryRetryTimer.current = setTimeout(() => {
+      automaticHistoryRetryTimer.current = null;
+      automaticHistoryRetries.current.add(ticker);
+      void refetchHistory();
+    }, retryDelayMs);
+
+    return () => {
+      if (automaticHistoryRetryTimer.current)
+        clearTimeout(automaticHistoryRetryTimer.current);
+      automaticHistoryRetryTimer.current = null;
+    };
+  }, [analysisQuery.data, refetchHistory, selectedTicker]);
+
+  const retryHistoryManually = useCallback(() => {
+    const ticker = selectedTicker.toUpperCase();
+    automaticHistoryRetries.current.add(ticker);
+    if (automaticHistoryRetryTimer.current)
+      clearTimeout(automaticHistoryRetryTimer.current);
+    automaticHistoryRetryTimer.current = null;
+    void refetchHistory();
+  }, [refetchHistory, selectedTicker]);
 
   useEffect(() => {
     function handlePopState() {
@@ -602,7 +653,7 @@ export function StockAnalysisDashboard({
             retrying={historyRetryQuery.isFetching}
             retryError={historyRetryQuery.error instanceof Error}
             retryAfterSeconds={historyRetryRemaining}
-            onRetry={() => void historyRetryQuery.refetch()}
+            onRetry={retryHistoryManually}
           />
         </CardContent>
       </Card>

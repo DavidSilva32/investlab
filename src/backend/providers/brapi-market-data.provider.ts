@@ -111,7 +111,14 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     const ticker = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get(
       "symbols",
     );
-    const logContext = { provider: "brapi", operation, ticker };
+    const query = new URLSearchParams(path.slice(path.indexOf("?") + 1));
+    const logContext = {
+      provider: "brapi",
+      operation,
+      ticker,
+      cacheMode,
+      ...(query.has("range") ? { range: query.get("range") } : {}),
+    };
     let response: Response;
     try {
       response = await this.fetcher(`https://brapi.dev${path}`, {
@@ -210,6 +217,14 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       if (!(error instanceof RetryableMarketDataError) || parentSignal.aborted)
         throw error;
 
+      logger.warn("stock_market_history_range_fallback", {
+        provider: "brapi",
+        ticker: decodeURIComponent(symbol),
+        fromRange: "5y",
+        toRange: "1y",
+        reason: error.reason,
+      });
+
       return this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
         signal(),
@@ -245,6 +260,8 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       string,
       { close: number; conflictingValues: boolean }
     >();
+    let omittedPoints = 0;
+    let conflictingDates = 0;
     for (const point of points) {
       if (
         !Number.isFinite(point.date) ||
@@ -252,10 +269,15 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         point.close === undefined ||
         !Number.isFinite(point.close) ||
         point.close <= 0
-      )
+      ) {
+        omittedPoints += 1;
         continue;
+      }
       const date = new Date(point.date * 1000);
-      if (!Number.isFinite(date.getTime())) continue;
+      if (!Number.isFinite(date.getTime())) {
+        omittedPoints += 1;
+        continue;
+      }
       const dateKey = date.toISOString().slice(0, 10);
       const existing = pointsByDate.get(dateKey);
       if (!existing)
@@ -263,15 +285,22 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
           close: point.close,
           conflictingValues: false,
         });
-      else if (existing.close !== point.close)
+      else if (existing.close !== point.close && !existing.conflictingValues) {
+        conflictingDates += 1;
         pointsByDate.set(dateKey, { ...existing, conflictingValues: true });
+      }
     }
     const history = [...pointsByDate.entries()]
       .filter(([, point]) => !point.conflictingValues)
       .map(([date, point]) => ({ date, close: point.close }))
       .sort((left, right) => left.date.localeCompare(right.date));
     if (history.length > 0)
-      return { ticker, history, historyStatus: "available" };
+      return {
+        ticker,
+        history,
+        historyStatus:
+          omittedPoints > 0 || conflictingDates > 0 ? "partial" : "available",
+      };
     if (points.length === 0)
       return { ticker, history: [], historyStatus: "empty" };
     return {
@@ -295,6 +324,8 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       (error.status === 401 || error.status === 403)
     )
       return { reason: "authentication" };
+    if (error instanceof MarketDataHttpError)
+      return { reason: "http_error", httpStatus: error.status };
     if (error instanceof InvalidMarketDataResponseError)
       return { reason: "invalid_response" };
     if (error instanceof RetryableMarketDataError)
@@ -321,6 +352,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         provider: "brapi",
         ticker: normalizedTicker,
         reason: failure.reason,
+        httpStatus: failure.httpStatus,
         retryAfterSeconds: failure.retryAfterSeconds,
       });
       return {

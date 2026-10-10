@@ -1,7 +1,7 @@
 ﻿// @vitest-environment jsdom
 import { Children, isValidElement } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PriceHistoryChart } from "@/app/analyses/_components/price-history-chart";
 
 vi.mock("recharts", () => ({
@@ -39,6 +39,8 @@ vi.mock("recharts", () => ({
 }));
 
 describe("PriceHistoryChart", () => {
+  afterEach(cleanup);
+
   it("renders the chronological points with a visible theme color", () => {
     render(
       <PriceHistoryChart
@@ -75,6 +77,43 @@ describe("PriceHistoryChart", () => {
   it("explains when the selected interval has insufficient history", () => {
     render(<PriceHistoryChart points={[{ date: "2026-01-01", close: 10 }]} />);
     expect(screen.getByText(/hist.rico insuficiente/i)).toBeTruthy();
+  });
+
+  it("retains available points and explains omitted quotations in partial history", () => {
+    render(
+      <PriceHistoryChart
+        points={[
+          { date: "2026-01-01", close: 10 },
+          { date: "2026-01-02", close: 11 },
+        ]}
+        status="partial"
+      />,
+    );
+    expect(screen.getByTestId("price-chart").dataset.points).toBe(
+      "2026-01-01,2026-01-02",
+    );
+    expect(
+      screen.getByText("Algumas cotações incompletas foram ignoradas."),
+    ).toBeTruthy();
+  });
+
+  it("shows a compact partial state and keeps manual retry available", () => {
+    const onRetry = vi.fn();
+    render(
+      <PriceHistoryChart
+        points={[{ date: "2026-01-01", close: 10 }]}
+        status="partial"
+        onRetry={onRetry}
+      />,
+    );
+    expect(screen.getByText("Histórico parcial")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Algumas cotações foram ignoradas por estarem incompletas.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 
   it("explains a temporary source failure and offers a focused retry", () => {

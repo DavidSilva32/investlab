@@ -365,7 +365,7 @@ describe("NextContributionStockOpportunities", () => {
 
     expect(await screen.findByText("Cotação indisponível")).toBeTruthy();
     expect(screen.getByText(/demonstrações consultadas/)).toBeTruthy();
-    expect(screen.getByLabelText("ABEV3 P/L: Não aplicável")).toBeTruthy();
+    expect(screen.getByLabelText("ABEV3 P/L: Atende, 12,5x")).toBeTruthy();
     expect(
       screen.getByLabelText("ABEV3 Dív. Líq./EBITDA: Não aplicável"),
     ).toBeTruthy();

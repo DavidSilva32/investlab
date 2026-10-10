@@ -287,7 +287,7 @@ describe("BrapiMarketDataProvider", () => {
         { date: "2025-12-31", close: 30 },
         { date: "2026-01-02", close: 33 },
       ],
-      historyStatus: "available",
+      historyStatus: "partial",
     });
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       "https://brapi.dev/api/v2/stocks/quote?symbols=PETR4%2FSA",
@@ -318,6 +318,34 @@ describe("BrapiMarketDataProvider", () => {
       priceUpdatedAt: null,
       history: [],
       historyStatus: "empty",
+    });
+  });
+
+  it("preserves valid historical closes and marks omitted malformed points as partial", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              data: {
+                historicalDataPrice: [
+                  { date: 1767225600, close: 31 },
+                  { date: 1767312000, close: null },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      history: [{ date: "2026-01-01", close: 31 }],
+      historyStatus: "partial",
     });
   });
 

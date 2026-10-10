@@ -216,12 +216,20 @@ export function FundamentalIndicatorCard({
     stale,
     notApplicableReason,
   );
+  const cardTone =
+    !stale && criterion?.status === "meets"
+      ? "border-status-success/25 bg-status-success/5"
+      : !stale && criterion?.status === "fails"
+        ? "border-status-warning/30 bg-status-warning/5"
+        : stale
+          ? "border-status-warning/20 bg-status-warning/5"
+          : "border-border bg-card";
 
   return (
     <article
       role="listitem"
       aria-label={`${names[indicator.key]}: ${value}${criterion?.threshold ? `, referência ${metricNumber.format(criterion.threshold)}${usesRatio ? "x" : "%"}` : ""}, ${status.label}`}
-      className="rounded-lg border bg-card p-3 shadow-sm transition-colors motion-safe:hover:border-primary/30"
+      className={`rounded-lg border p-3 shadow-sm transition-colors motion-safe:hover:border-primary/30 ${cardTone}`}
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">

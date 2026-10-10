@@ -923,7 +923,14 @@ export class StockAnalysisService {
       }
     }
 
+    const normalizationStartedAt = Date.now();
     const ltmPeriods = ltmFlowPeriods(periods);
+    const indicators = calculateAnalysisIndicators(
+      periods,
+      market.marketCap,
+      market.priceUpdatedAt,
+    );
+    const normalizationMs = Date.now() - normalizationStartedAt;
     logger.info("stock_analysis_stage_timing", {
       requestId,
       ticker: market.ticker,
@@ -933,6 +940,8 @@ export class StockAnalysisService {
       cacheReadMs,
       fundamentalsCacheHit: cacheValid,
       fundamentalsRefreshMs,
+      normalizationMs,
+      normalizedPeriods: periods.length + ltmPeriods.length,
       totalMs: Date.now() - startedAt,
     });
     return {
@@ -947,11 +956,7 @@ export class StockAnalysisService {
       fundamentalsIsStale,
       fundamentalsFetchedAt,
       fundamentals: [...periods, ...ltmPeriods],
-      indicators: calculateAnalysisIndicators(
-        periods,
-        market.marketCap,
-        market.priceUpdatedAt,
-      ),
+      indicators,
     };
   }
 

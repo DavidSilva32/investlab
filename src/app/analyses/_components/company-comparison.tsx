@@ -178,15 +178,19 @@ function ComparisonCriterionStatus({
     classification === "financial" || classification === "non_financial";
   const financialRoeNotApplicable =
     keyName === "roe" && classification === "financial" && !isBankSector;
-  const peNotApplicable = keyName === "pe" && classification === "financial";
+  const peNotApplicable =
+    keyName === "pe" && classification === "financial" && !isBankSector;
   const isValuation = keyName !== "roe";
   const hasComparablePeriod =
-    keyName !== "roe"
-      ? true
-      : isBankSector
-        ? cell.periodBasis === "trailing_twelve_months"
-        : cell.periodBasis === "annual" ||
-          cell.periodBasis === "trailing_twelve_months";
+    keyName === "pe"
+      ? cell.periodBasis === "annual" ||
+        cell.periodBasis === "trailing_twelve_months"
+      : keyName === "pb"
+        ? true
+        : isBankSector
+          ? cell.periodBasis === "trailing_twelve_months"
+          : cell.periodBasis === "annual" ||
+            cell.periodBasis === "trailing_twelve_months";
   const hasSource = Boolean(cell.sourceDocument && cell.sourceSummary);
   const baseComparable =
     company.identityVerified &&
