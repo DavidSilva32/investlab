@@ -125,7 +125,7 @@ export function MonthlyPortfolioReview({
 
   return (
     <Card>
-      <CardHeader className="flex flex-wrap items-center gap-x-4 gap-y-3 space-y-0 pb-2">
+      <CardHeader className="flex-row flex-wrap items-center gap-x-3 gap-y-2 space-y-0 p-3 sm:px-4 lg:flex-nowrap">
         <div className="flex shrink-0 items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <ChartSpline aria-hidden="true" className="size-4" />

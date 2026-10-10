@@ -483,6 +483,13 @@ describe("MonthlyPortfolioReview", () => {
         observedChangeCents: null,
       }),
     );
+    const title = screen.getByRole("heading", {
+      name: "Evolução patrimonial",
+    });
+    const header = title.parentElement?.parentElement?.parentElement;
+    expect(header?.className).toContain("flex-row");
+    expect(header?.className).not.toContain("flex-col");
+    expect(header?.className).not.toContain("p-6");
     expect(screen.getByText("30/09/2026")).toBeTruthy();
     expect(screen.getByText("R$ 1.250,50")).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
