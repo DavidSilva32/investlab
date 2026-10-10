@@ -109,9 +109,12 @@ const overview = {
 };
 const monthlyReview = {
   availablePeriods: [],
+  history: [],
   selectedPeriod: null,
+  untrackedManualPositionCount: 0,
   status: "no_history" as const,
   dateAlignment: "unavailable" as const,
+  compositionCoverage: "unknown" as const,
   current: null,
   previous: null,
   observedChangeCents: null,
@@ -200,9 +203,9 @@ describe("PortfolioClient", () => {
     renderPortfolio("overview");
     expect(await screen.findByText("Fechamentos indisponíveis.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    await screen.findByRole("combobox", { name: "Mês do fechamento" });
+    await screen.findByRole("combobox", { name: "Mês de referência" });
     await user.click(
-      screen.getByRole("combobox", { name: "Mês do fechamento" }),
+      screen.getByRole("combobox", { name: "Mês de referência" }),
     );
     await user.click(screen.getByRole("option", { name: "julho de 2026" }));
 
