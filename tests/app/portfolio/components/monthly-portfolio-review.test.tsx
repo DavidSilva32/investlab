@@ -18,7 +18,14 @@ const summary = (
     referenceDate,
     importedAt: "2026-09-01T12:00:00.000Z",
     sources: ["B3"],
-    sourceReferences: [{ source: "B3", referenceDate }],
+    sourceReferences: [
+      {
+        source: "B3",
+        referenceDate,
+        recordedAt: "2026-09-01T12:00:00.000Z",
+        importedAt: "2026-09-02T12:00:00.000Z",
+      },
+    ],
     positionCount: 2,
     valuedPositionCount: 2,
     unvaluedPositionCount: 0,
@@ -38,6 +45,7 @@ const review = (
   untrackedManualPositionCount: 0,
   status: "ready",
   dateAlignment: "aligned",
+  compositionCoverage: "equivalent",
   current: summary(),
   previous: summary({
     referenceDate: "2026-07-31",
@@ -113,7 +121,7 @@ describe("MonthlyPortfolioReview", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
-  it("shows the observed change with dates, values, coverage and the flow caveat", () => {
+  it("keeps the summary compact and puts source dates and limits in details", () => {
     renderReview(review());
     expect(screen.getByText("Fechamento mensal")).toBeTruthy();
     expect(screen.getByText("Variação observada")).toBeTruthy();
@@ -131,8 +139,12 @@ describe("MonthlyPortfolioReview", () => {
           element.textContent?.replace(/\u00a0/g, " ") === "R$ 1.250,50",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("31/07/2026", { exact: false })).toBeTruthy();
     expect(screen.getAllByText(/2 de 2 posições com valor/)).toHaveLength(2);
+    expect(document.querySelector("details")?.open).toBe(false);
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
+    expect(screen.getByText("31/07/2026", { exact: false })).toBeTruthy();
+    expect(screen.getAllByText(/registro em 01\/09\/2026/)).toHaveLength(2);
+    expect(screen.getAllByText(/importada em 02\/09\/2026/)).toHaveLength(2);
     expect(screen.getByText(new RegExp(flowExplanation))).toBeTruthy();
     expect(screen.getByLabelText("Mês do fechamento")).toBeTruthy();
   });
@@ -214,7 +226,7 @@ describe("MonthlyPortfolioReview", () => {
           element.textContent?.replace(/\u00a0/g, " ") === "-R$ 10,00",
       ),
     ).toBeTruthy();
-    expect(screen.getByText(/Comparação parcial/)).toBeTruthy();
+    expect(screen.getByText(/Há posições sem valor conhecido/)).toBeTruthy();
   });
 
   it("explains that manually maintained positions need a saved baseline", () => {
@@ -225,13 +237,66 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
     expect(
-      screen.getByText(/1 posição manual sem histórico de alterações/),
+      screen.getByText(/O histórico manual ainda não cobre os dois períodos/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
+    expect(
+      screen.getByText(/1 posição manual sem histórico anterior/),
     ).toBeTruthy();
     expect(
-      screen.getByText(/Comparação parcial: há posições manuais/),
+      screen.getByText(/Valores substituídos antes do primeiro registro/),
     ).toBeTruthy();
+  });
+
+  it("explains when source composition cannot be identified", () => {
+    renderReview(
+      review({
+        status: "partial",
+        compositionCoverage: "unknown",
+      }),
+    );
+
     expect(
-      screen.getByText(/valores substituídos antes desse ponto/),
+      screen.getByText(/Não foi possível confirmar todas as posições/),
+    ).toBeTruthy();
+  });
+
+  it("explains changed source composition and missing months in a partial close", () => {
+    const { rerender } = render(
+      <MonthlyPortfolioReview
+        review={review({ status: "partial", compositionCoverage: "changed" })}
+        selectedPeriod={null}
+        loading={false}
+        onPeriodChange={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/As fontes ou posições mudaram/)).toBeTruthy();
+
+    rerender(
+      <MonthlyPortfolioReview
+        review={review({ status: "partial", gapMonths: 1 })}
+        selectedPeriod={null}
+        loading={false}
+        onPeriodChange={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(/Faltam fechamentos em meses intermediários/),
+    ).toBeTruthy();
+  });
+
+  it("uses clear plural wording for multiple manual positions without history", () => {
+    renderReview(
+      review({
+        status: "partial",
+        untrackedManualPositionCount: 2,
+      }),
+    );
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
+    expect(
+      screen.getByText(/2 posições manuais sem histórico anterior/),
     ).toBeTruthy();
   });
 
@@ -248,7 +313,7 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
     expect(
-      screen.getByText(/não tem posições registradas com valor conhecido/),
+      screen.getByText(/A cobertura da carteira não pode ser confirmada/),
     ).toBeTruthy();
     expect(
       screen.getByText(
@@ -267,10 +332,11 @@ describe("MonthlyPortfolioReview", () => {
         previous: summary({ valuationMethods: ["CURVA"] }),
       }),
     );
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
+    expect(screen.getByText(/Há 1 mês sem fechamento/)).toBeTruthy();
     expect(
-      screen.getByText(/Não há registro de posições para 1 mês/),
+      screen.getByText(/critérios de avaliação registrados mudaram/),
     ).toBeTruthy();
-    expect(screen.getByText(/critérios de avaliação diferentes/)).toBeTruthy();
   });
 
   it("uses plural wording for multiple missing months and method-list length changes", () => {
@@ -281,14 +347,11 @@ describe("MonthlyPortfolioReview", () => {
         previous: summary({ valuationMethods: ["MTM"] }),
       }),
     );
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
+    expect(screen.getByText(/Há 2 meses sem fechamento/)).toBeTruthy();
     expect(
-      Array.from(document.querySelectorAll("p")).some(
-        (element) =>
-          element.textContent?.includes("2") &&
-          element.textContent?.includes("entre essas datas"),
-      ),
-    ).toBe(true);
-    expect(screen.getByText(/critérios de avaliação diferentes/)).toBeTruthy();
+      screen.getByText(/critérios de avaliação registrados mudaram/),
+    ).toBeTruthy();
   });
 
   it("does not report evaluation changes when methods match", () => {
@@ -298,7 +361,10 @@ describe("MonthlyPortfolioReview", () => {
         previous: summary({ valuationMethods: ["CURVA", "MTM"] }),
       }),
     );
-    expect(screen.queryByText(/critérios de avaliação diferentes/)).toBeNull();
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
+    expect(
+      screen.queryByText(/critérios de avaliação registrados mudaram/),
+    ).toBeNull();
   });
 
   it("shows the dates and caveat for manually converted foreign values", () => {
@@ -312,16 +378,19 @@ describe("MonthlyPortfolioReview", () => {
             {
               source: "Valor informado",
               referenceDate: "2026-08-31",
-              recordedAt: "2026-09-01",
+              recordedAt: "2026-09-01T12:00:00.000Z",
             },
           ],
         }),
       }),
     );
 
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
     expect(screen.getByText(/Datas dos valores manuais/)).toBeTruthy();
-    expect(screen.getByText(/Conversão para reais em/)).toBeTruthy();
-    expect(screen.getByText(/cotação que você registrou/)).toBeTruthy();
+    expect(screen.getByText(/Conversão para reais/)).toBeTruthy();
+    expect(
+      screen.getByText(/Ele pode refletir uma cotação de data diferente/),
+    ).toBeTruthy();
   });
 
   it("shows the date alignment warning and plural manual wording", () => {
@@ -332,15 +401,18 @@ describe("MonthlyPortfolioReview", () => {
         untrackedManualPositionCount: 2,
         current: summary({
           sourceReferences: [
-            { source: "Valor informado", referenceDate: "2026-07-31" },
+            {
+              source: "Valor informado",
+              referenceDate: "2026-07-31",
+              recordedAt: "2026-07-31T12:00:00.000Z",
+            },
           ],
         }),
       }),
     );
 
-    expect(screen.getAllByText(/s manuais/)).toHaveLength(2);
     expect(
-      screen.getByText(/não tem valor atualizado para o mês selecionado/),
+      screen.getByText(/O histórico manual ainda não cobre os dois períodos/),
     ).toBeTruthy();
   });
 
@@ -353,10 +425,7 @@ describe("MonthlyPortfolioReview", () => {
     );
 
     expect(
-      screen.getByText(/as fontes usam datas de referência diferentes/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/as datas das fontes precisam ser conferidas/),
+      screen.getByText(/As datas de avaliação não coincidem/),
     ).toBeTruthy();
   });
 
@@ -366,7 +435,11 @@ describe("MonthlyPortfolioReview", () => {
         selectedPeriod: null,
         current: summary({
           sourceReferences: [
-            { source: "Valor informado", referenceDate: "2026-08-31" },
+            {
+              source: "Valor informado",
+              referenceDate: "2026-08-31",
+              recordedAt: "2026-08-31T12:00:00.000Z",
+            },
           ],
         }),
       }),
@@ -375,8 +448,9 @@ describe("MonthlyPortfolioReview", () => {
     expect(
       screen.getByRole("combobox", { name: "Mês do fechamento" }).textContent,
     ).toContain("Escolha um mês");
+    fireEvent.click(screen.getByText("Ver datas, fontes e limites"));
     expect(
-      screen.getByText(/Último valor manual: em 31\/08\/2026/),
+      screen.getByText(/Valor informado: posição avaliada em 31\/08\/2026/),
     ).toBeTruthy();
   });
 });

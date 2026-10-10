@@ -80,15 +80,29 @@ describe("PortfolioService", () => {
         id: "snapshot-1",
         referenceDate: "2026-01-31",
         createdAt: "2026-02-01T12:00:00Z",
+        importedAt: "2026-02-01T12:01:00Z",
         source: "B3",
-        positions: [{ totalValue: "100.00", valuationSource: "FECHAMENTO" }],
+        positions: [
+          {
+            identity: "asset-a",
+            totalValue: "100.00",
+            valuationSource: "FECHAMENTO",
+          },
+        ],
       },
       {
         id: "snapshot-2",
         referenceDate: "2026-02-28",
         createdAt: "2026-03-01T12:00:00Z",
+        importedAt: "2026-03-01T12:01:00Z",
         source: "B3",
-        positions: [{ totalValue: "120.00", valuationSource: "FECHAMENTO" }],
+        positions: [
+          {
+            identity: "asset-a",
+            totalValue: "120.00",
+            valuationSource: "FECHAMENTO",
+          },
+        ],
       },
     ]);
 

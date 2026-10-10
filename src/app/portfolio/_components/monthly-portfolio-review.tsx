@@ -1,9 +1,4 @@
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  CalendarDays,
-  Minus,
-} from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import type { MonthlyPortfolioReview as MonthlyPortfolioReviewData } from "@/backend/services/monthly-portfolio-review";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +22,11 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
   year: "numeric",
   timeZone: "UTC",
 });
+const timestampFormatter = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeStyle: "short",
+  timeZone: "America/Sao_Paulo",
+});
 
 function formatDate(value: string) {
   return dateFormatter.format(new Date(`${value}T00:00:00Z`));
@@ -34,6 +34,10 @@ function formatDate(value: string) {
 
 function formatMonth(value: string) {
   return monthFormatter.format(new Date(`${value}-01T00:00:00Z`));
+}
+
+function formatTimestamp(value: string) {
+  return timestampFormatter.format(new Date(value));
 }
 
 function formatChange(value: string) {
@@ -125,19 +129,6 @@ export function MonthlyPortfolioReview({
             Não há um registro de posições para este mês.
           </p>
         )}
-        {!loading &&
-          !error &&
-          (review?.untrackedManualPositionCount ?? 0) > 0 && (
-            <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-              {review!.untrackedManualPositionCount} posição
-              {review!.untrackedManualPositionCount === 1
-                ? " manual"
-                : "s manuais"}{" "}
-              sem histórico de alterações. O último valor salvo entra a partir
-              da data registrada; valores substituídos antes desse ponto não
-              podem ser recuperados. Cada novo salvamento será guardado.
-            </p>
-          )}
         {!loading && !error && review?.current && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -197,59 +188,83 @@ export function MonthlyPortfolioReview({
             )}
             {review.status === "partial" && (
               <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                {review.untrackedManualPositionCount > 0
-                  ? "Comparação parcial: há posições manuais sem histórico completo; saldos anteriores não estão disponíveis."
-                  : review.current.positionCount === 0 ||
-                      review.previous?.positionCount === 0
-                    ? "Comparação parcial: um dos fechamentos não tem posições registradas com valor conhecido. A diferença não representa toda a carteira."
-                    : review.dateAlignment === "aligned"
-                      ? "Comparação parcial. Há posições sem valor em pelo menos um dos fechamentos; a diferença não representa toda a carteira."
-                      : "Comparação parcial; as datas das fontes precisam ser conferidas."}
+                {partialExplanation(review)} A diferença considera apenas os
+                valores conhecidos.
               </p>
             )}
-            {review.dateAlignment === "outdated" && (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                Comparação parcial: pelo menos uma fonte não tem valor
-                atualizado para o mês selecionado. Confira as datas exibidas.
-              </p>
-            )}
-            {review.dateAlignment === "different_dates" && (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                Comparação parcial: as fontes usam datas de referência
-                diferentes. Confira as datas exibidas antes de comparar.
-              </p>
-            )}
-            {review.gapMonths > 0 && (
-              <p className="flex items-start gap-2 text-sm text-muted-foreground">
-                <CalendarDays
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0"
-                />
-                Não há registro de posições para {review.gapMonths} mês
-                {review.gapMonths === 1 ? "" : "es"} entre essas datas.
-              </p>
-            )}
-            {review.previous &&
-              changedMethods(
-                review.previous.valuationMethods,
-                review.current.valuationMethods,
-              ) && (
-                <p className="text-sm text-muted-foreground">
-                  Os arquivos registram critérios de avaliação diferentes.
+            <details className="group rounded-lg border px-3 py-2 text-sm">
+              <summary className="cursor-pointer font-medium">
+                Ver datas, fontes e limites
+              </summary>
+              <div className="mt-3 space-y-3 text-muted-foreground">
+                {review.untrackedManualPositionCount > 0 && (
+                  <p>
+                    {review.untrackedManualPositionCount === 1
+                      ? "1 posição manual"
+                      : `${review.untrackedManualPositionCount} posições manuais`}{" "}
+                    sem histórico anterior. Valores substituídos antes do
+                    primeiro registro não podem ser recuperados.
+                  </p>
+                )}
+                {review.previous && (
+                  <p>
+                    Fontes iguais:{" "}
+                    {review.compositionCoverage === "equivalent"
+                      ? "sim"
+                      : "não comprovado"}
+                    .
+                    {review.gapMonths > 0 && (
+                      <>
+                        {" "}
+                        Há {review.gapMonths}{" "}
+                        {review.gapMonths === 1 ? "mês" : "meses"} sem
+                        fechamento entre os períodos.
+                      </>
+                    )}
+                  </p>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <SnapshotSources
+                    title={
+                      review.previous
+                        ? "Período anterior"
+                        : "Período selecionado"
+                    }
+                    snapshot={review.previous ?? review.current}
+                  />
+                  {review.previous && (
+                    <SnapshotSources
+                      title="Período selecionado"
+                      snapshot={review.current}
+                    />
+                  )}
+                </div>
+                {review.previous &&
+                  changedMethods(
+                    review.previous.valuationMethods,
+                    review.current.valuationMethods,
+                  ) && (
+                    <p>
+                      Os critérios de avaliação registrados mudaram entre os
+                      períodos.
+                    </p>
+                  )}
+                {(review.current.valuationMethods.includes(
+                  "MANUAL_CONVERTED",
+                ) ||
+                  review.previous?.valuationMethods.includes(
+                    "MANUAL_CONVERTED",
+                  )) && (
+                  <p>
+                    Para ativos em outra moeda, usamos o valor em reais
+                    informado. Ele pode refletir uma cotação de data diferente.
+                  </p>
+                )}
+                <p className="border-t pt-3">
+                  {review.flowSeparation.explanation}
                 </p>
-              )}
-            {(review.current.valuationMethods.includes("MANUAL_CONVERTED") ||
-              review.previous?.valuationMethods.includes(
-                "MANUAL_CONVERTED",
-              )) && (
-              <p className="text-sm text-muted-foreground">
-                Ativos em outra moeda usam o valor em reais informado por você.
-                A variação também pode refletir a cotação que você registrou.
-              </p>
-            )}
-            <p className="border-t pt-3 text-sm text-muted-foreground">
-              {review.flowSeparation.explanation}
-            </p>
+              </div>
+            </details>
           </div>
         )}
       </CardContent>
@@ -264,8 +279,6 @@ function SnapshotAmount({
   title: string;
   snapshot: NonNullable<MonthlyPortfolioReviewData["current"]>;
 }) {
-  const partial = snapshot.unvaluedPositionCount > 0;
-  const formatDates = (dates: string[]) => dates.map(formatDate).join(", ");
   return (
     <div className="min-w-0 rounded-lg border p-3">
       <p className="text-xs font-medium text-muted-foreground">{title}</p>
@@ -273,29 +286,71 @@ function SnapshotAmount({
         {formatCurrencyCents(snapshot.knownValueCents)}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        {snapshot.sourceReferences
-          .map(({ source, referenceDate, recordedAt }) =>
-            source === "Valor informado"
-              ? `Último valor manual: em ${formatDate(referenceDate)}${recordedAt ? `, salvo em ${formatDate(recordedAt)}` : ""}`
-              : `${source} · ${formatDate(referenceDate)}`,
-          )
-          .join(" · ")}
-      </p>
-      {snapshot.manualPositionDates.length > 1 && (
-        <p className="text-xs text-muted-foreground">
-          Datas dos valores manuais: {formatDates(snapshot.manualPositionDates)}
-        </p>
-      )}
-      {snapshot.manualConversionDates.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Conversão para reais em: {formatDates(snapshot.manualConversionDates)}
-        </p>
-      )}
-      <p className="text-xs text-muted-foreground">
         {snapshot.valuedPositionCount} de {snapshot.positionCount} posições com
-        valor
-        {partial && ` · ${snapshot.unvaluedPositionCount} sem valor`}
+        valor conhecido
+        {snapshot.unvaluedPositionCount > 0 &&
+          ` · ${snapshot.unvaluedPositionCount} sem valor`}
       </p>
     </div>
   );
+}
+
+function SnapshotSources({
+  title,
+  snapshot,
+}: {
+  title: string;
+  snapshot: NonNullable<MonthlyPortfolioReviewData["current"]>;
+}) {
+  return (
+    <section className="min-w-0 space-y-1">
+      <h3 className="font-medium text-foreground">{title}</h3>
+      {snapshot.sourceReferences.map((reference, index) => (
+        <p key={`${reference.source}-${reference.referenceDate}-${index}`}>
+          {reference.source}: posição avaliada em{" "}
+          {formatDate(reference.referenceDate)}
+          {reference.recordedAt &&
+            ` · ${reference.source === "Valor informado" ? "salvo" : "registro"} em ${formatTimestamp(reference.recordedAt)}`}
+          {reference.importedAt &&
+            ` · importada em ${formatTimestamp(reference.importedAt)}`}
+        </p>
+      ))}
+      {snapshot.manualPositionDates.length > 0 && (
+        <p>
+          Datas dos valores manuais:{" "}
+          {snapshot.manualPositionDates.map(formatDate).join(", ")}
+        </p>
+      )}
+      {snapshot.manualConversionDates.length > 0 && (
+        <p>
+          Conversão para reais:{" "}
+          {snapshot.manualConversionDates.map(formatDate).join(", ")}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function partialExplanation(review: MonthlyPortfolioReviewData) {
+  if (review.untrackedManualPositionCount > 0)
+    return "O histórico manual ainda não cobre os dois períodos.";
+  if (
+    (review.current && review.current.unvaluedPositionCount > 0) ||
+    (review.previous && review.previous.unvaluedPositionCount > 0)
+  ) {
+    return "Há posições sem valor conhecido.";
+  }
+  if (
+    review.dateAlignment === "outdated" ||
+    review.dateAlignment === "different_dates"
+  ) {
+    return "As datas de avaliação não coincidem.";
+  }
+  if (review.compositionCoverage === "changed")
+    return "As fontes ou posições mudaram entre os períodos.";
+  if (review.compositionCoverage === "unknown")
+    return "Não foi possível confirmar todas as posições nos dois períodos.";
+  if (review.gapMonths > 0)
+    return "Faltam fechamentos em meses intermediários.";
+  return "A cobertura da carteira não pode ser confirmada.";
 }

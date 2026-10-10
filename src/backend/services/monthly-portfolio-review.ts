@@ -4,8 +4,10 @@ export type MonthlyPortfolioSnapshot = {
   id: string;
   referenceDate: string | null;
   createdAt: Date | string;
+  importedAt: Date | string;
   source: string;
   positions: Array<{
+    identity: string | null;
     totalValue: string | null;
     valuationSource: string | null;
   }>;
@@ -44,6 +46,7 @@ export type MonthlyPortfolioSnapshotSummary = {
     source: string;
     referenceDate: string;
     recordedAt?: string;
+    importedAt?: string;
   }>;
   positionCount: number;
   valuedPositionCount: number;
@@ -67,6 +70,7 @@ export type MonthlyPortfolioReview = {
     | "ready"
     | "partial";
   dateAlignment: "aligned" | "different_dates" | "outdated" | "unavailable";
+  compositionCoverage: "equivalent" | "changed" | "unknown";
   current: MonthlyPortfolioSnapshotSummary | null;
   previous: MonthlyPortfolioSnapshotSummary | null;
   observedChangeCents: string | null;
@@ -75,6 +79,11 @@ export type MonthlyPortfolioReview = {
     status: "unavailable";
     explanation: string;
   };
+};
+
+type SummarizedClose = MonthlyPortfolioSnapshotSummary & {
+  compositionKeys: string[];
+  compositionKnown: boolean;
 };
 
 const flowExplanation =
@@ -123,11 +132,6 @@ function saoPauloParts(value: Date) {
 function monthOfTimestamp(value: number) {
   const { year, month } = saoPauloParts(new Date(value));
   return `${year}-${String(month).padStart(2, "0")}`;
-}
-
-function dateInSaoPaulo(value: number) {
-  const { year, month, day } = saoPauloParts(new Date(value));
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function localDateTimeInSaoPaulo(year: number, month: number, day: number) {
@@ -199,7 +203,7 @@ function summarize(
   snapshot: MonthlyPortfolioSnapshot | null,
   period: string,
   manualPositions: ManualPortfolioObservation[],
-) {
+): SummarizedClose {
   const b3Positions = snapshot?.positions ?? [];
   const b3Values = b3Positions.map((position) =>
     decimalToCents(position.totalValue),
@@ -225,16 +229,23 @@ function summarize(
   )[0];
   const sourceReferences = [
     ...(snapshot
-      ? [{ source: "B3", referenceDate: snapshot.referenceDate! }]
+      ? [
+          {
+            source: "B3",
+            referenceDate: snapshot.referenceDate!,
+            recordedAt: new Date(timestamp(snapshot.createdAt)).toISOString(),
+            importedAt: new Date(timestamp(snapshot.importedAt)).toISOString(),
+          },
+        ]
       : []),
     ...(latestManualObservation
       ? [
           {
             source: "Valor informado",
             referenceDate: latestManualObservation.positionDate,
-            recordedAt: dateInSaoPaulo(
+            recordedAt: new Date(
               timestamp(latestManualObservation.recordedAt),
-            ),
+            ).toISOString(),
           },
         ]
       : []),
@@ -244,7 +255,7 @@ function summarize(
     .sort()
     .at(-1);
   const importedAt = [
-    ...(snapshot ? [timestamp(snapshot.createdAt)] : []),
+    ...(snapshot ? [timestamp(snapshot.importedAt)] : []),
     ...manualPositions.map((position) => timestamp(position.recordedAt)),
   ]
     .filter(Number.isFinite)
@@ -297,9 +308,49 @@ function summarize(
       ...new Set([
         ...(snapshot?.referenceDate ? [snapshot.referenceDate] : []),
         ...activeManual.map((position) => position.positionDate),
+        ...activeManual.flatMap((position) =>
+          position.currency !== "BRL" && position.convertedValueBrl !== null
+            ? position.conversionDate
+              ? [position.conversionDate]
+              : []
+            : [],
+        ),
       ]),
     ].sort(),
-  } satisfies MonthlyPortfolioSnapshotSummary;
+    compositionKeys: [
+      ...b3Positions.flatMap((position) =>
+        position.identity ? [`b3:${position.identity}`] : [],
+      ),
+      ...activeManual.map((position) => `manual:${position.assetKey}`),
+    ].sort(),
+    compositionKnown:
+      b3Positions.every((position) => position.identity !== null) &&
+      activeManual.every((position) => Boolean(position.assetKey)),
+  };
+}
+
+function compositionCoverage(
+  current: SummarizedClose,
+  previous: SummarizedClose,
+): MonthlyPortfolioReview["compositionCoverage"] {
+  if (!current.compositionKnown || !previous.compositionKnown) return "unknown";
+  if (
+    current.compositionKeys.length !== previous.compositionKeys.length ||
+    current.compositionKeys.some(
+      (key, index) => key !== previous.compositionKeys[index],
+    )
+  ) {
+    return "changed";
+  }
+  return "equivalent";
+}
+
+function publicSummary({
+  compositionKeys: _compositionKeys,
+  compositionKnown: _compositionKnown,
+  ...summary
+}: SummarizedClose): MonthlyPortfolioSnapshotSummary {
+  return summary;
 }
 
 function dateAlignment(
@@ -344,6 +395,7 @@ function emptyResult(
     untrackedManualPositionCount,
     status,
     dateAlignment: "unavailable",
+    compositionCoverage: "unknown",
     current: null,
     previous: null,
     observedChangeCents: null,
@@ -428,10 +480,15 @@ export function calculateMonthlyPortfolioReview(
 
   const currentEnd = monthEndTimestamp(period);
   const currentSnapshot = datedSnapshots
-    .filter((snapshot) => timestamp(snapshot.referenceDate!) <= currentEnd)
+    .filter((snapshot) => monthOf(snapshot.referenceDate!) === period)
     .sort(latestFirst)[0];
   const currentManual = latestManualState(allManualObservations, currentEnd);
-  const current = summarize(currentSnapshot ?? null, period, currentManual);
+  const currentClose = summarize(
+    currentSnapshot ?? null,
+    period,
+    currentManual,
+  );
+  const current = publicSummary(currentClose);
   const previousPeriod = availablePeriods.find(
     (available) => available < period,
   );
@@ -443,6 +500,7 @@ export function calculateMonthlyPortfolioReview(
       untrackedManualPositionCount,
       status: "no_previous_close",
       dateAlignment: "unavailable",
+      compositionCoverage: "unknown",
       current,
       previous: null,
       observedChangeCents: null,
@@ -453,14 +511,15 @@ export function calculateMonthlyPortfolioReview(
 
   const previousEnd = monthEndTimestamp(previousPeriod);
   const previousSnapshot = datedSnapshots
-    .filter((snapshot) => timestamp(snapshot.referenceDate!) <= previousEnd)
+    .filter((snapshot) => monthOf(snapshot.referenceDate!) === previousPeriod)
     .sort(latestFirst)[0];
   const previousManual = latestManualState(allManualObservations, previousEnd);
-  const previous = summarize(
+  const previousClose = summarize(
     previousSnapshot ?? null,
     previousPeriod,
     previousManual,
   );
+  const previous = publicSummary(previousClose);
   const gapMonths = Math.max(
     0,
     monthIndex(period) - monthIndex(previousPeriod) - 1,
@@ -475,6 +534,7 @@ export function calculateMonthlyPortfolioReview(
       untrackedManualPositionCount,
       status: "insufficient_values",
       dateAlignment: "unavailable",
+      compositionCoverage: "unknown",
       current,
       previous,
       observedChangeCents: null,
@@ -490,6 +550,12 @@ export function calculateMonthlyPortfolioReview(
     previous.positionCount > 0 &&
     previous.unvaluedPositionCount === 0;
   const alignment = dateAlignment(current, period, previous, previousPeriod);
+  const composition = compositionCoverage(currentClose, previousClose);
+  const sourceSetsMatch =
+    current.sources.length === previous.sources.length &&
+    current.sources.every(
+      (source, index) => source === previous.sources[index],
+    );
   const observedChangeCents = (
     BigInt(current.knownValueCents!) - BigInt(previous.knownValueCents!)
   ).toString();
@@ -498,8 +564,16 @@ export function calculateMonthlyPortfolioReview(
     availablePeriods,
     selectedPeriod: period,
     untrackedManualPositionCount,
-    status: complete && alignment === "aligned" ? "ready" : "partial",
+    status:
+      complete &&
+      alignment === "aligned" &&
+      composition === "equivalent" &&
+      sourceSetsMatch &&
+      gapMonths === 0
+        ? "ready"
+        : "partial",
     dateAlignment: alignment,
+    compositionCoverage: sourceSetsMatch ? composition : "changed",
     current,
     previous,
     observedChangeCents,

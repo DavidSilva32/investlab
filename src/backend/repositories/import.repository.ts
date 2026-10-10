@@ -377,6 +377,7 @@ export class ImportRepository {
           referenceDate: positionSnapshots.referenceDate,
           importReferenceDate: imports.referenceDate,
           createdAt: positionSnapshots.createdAt,
+          importedAt: imports.createdAt,
           source: imports.origin,
         })
         .from(positionSnapshots)
@@ -397,6 +398,14 @@ export class ImportRepository {
       const positions = await getDatabaseClient()
         .select({
           snapshotId: positionItems.snapshotId,
+          product: positionItems.product,
+          institution: positionItems.institution,
+          issuer: positionItems.issuer,
+          assetCode: positionItems.assetCode,
+          indexer: positionItems.indexer,
+          regimeType: positionItems.regimeType,
+          issuedAt: positionItems.issuedAt,
+          maturityAt: positionItems.maturityAt,
           totalValue: positionItems.totalValue,
           valuationSource: positionItems.valuationSource,
         })
@@ -414,6 +423,28 @@ export class ImportRepository {
       for (const position of positions) {
         const existing = positionsBySnapshot.get(position.snapshotId) ?? [];
         existing.push({
+          identity: position.assetCode?.trim()
+            ? JSON.stringify([
+                position.assetCode.trim().toUpperCase(),
+                position.product.trim().toLocaleUpperCase("pt-BR"),
+                position.institution?.trim().toLocaleUpperCase("pt-BR") ?? null,
+                position.issuer?.trim().toLocaleUpperCase("pt-BR") ?? null,
+              ])
+            : position.product.trim() &&
+                position.institution?.trim() &&
+                position.issuer?.trim() &&
+                position.maturityAt
+              ? JSON.stringify([
+                  position.product.trim().toLocaleUpperCase("pt-BR"),
+                  position.institution.trim().toLocaleUpperCase("pt-BR"),
+                  position.issuer.trim().toLocaleUpperCase("pt-BR"),
+                  position.indexer?.trim().toLocaleUpperCase("pt-BR") ?? null,
+                  position.regimeType?.trim().toLocaleUpperCase("pt-BR") ??
+                    null,
+                  position.issuedAt,
+                  position.maturityAt,
+                ])
+              : null,
           totalValue: position.totalValue,
           valuationSource: position.valuationSource,
         });
@@ -424,6 +455,7 @@ export class ImportRepository {
         id: snapshot.id,
         referenceDate: snapshot.referenceDate ?? snapshot.importReferenceDate,
         createdAt: snapshot.createdAt,
+        importedAt: snapshot.importedAt,
         source: snapshot.source,
         positions: positionsBySnapshot.get(snapshot.id) ?? [],
       }));
