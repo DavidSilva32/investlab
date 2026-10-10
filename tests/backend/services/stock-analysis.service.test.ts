@@ -2684,7 +2684,7 @@ describe("StockAnalysisService cache and failures", () => {
     });
   });
 
-  it("keeps a uniquely matched unit sector but does not classify it as stock", async () => {
+  it("treats a uniquely matched CVM unit as a confirmed equity instrument", async () => {
     const service = new StockAnalysisService(
       {
         getByTicker: vi.fn().mockResolvedValue({
@@ -2714,7 +2714,7 @@ describe("StockAnalysisService cache and failures", () => {
     await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
       issuerSector: "Energia elétrica",
       issuerMetadataUpdatedAt: new Date("2026-10-02T00:00:00.000Z"),
-      instrumentType: "unknown",
+      instrumentType: "stock",
     });
   });
 

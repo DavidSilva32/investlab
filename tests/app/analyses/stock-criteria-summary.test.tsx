@@ -7,10 +7,6 @@ import { StockCriteriaSummary } from "@/app/analyses/_components/stock-criteria-
 import type { StockAnalysis } from "@/app/analyses/_components/stock-analysis-types";
 
 const preferencesKey = "investlab:analyses:stock-criteria:v1";
-const summaryText = async () =>
-  (
-    await screen.findByRole("region", { name: "Critérios de análise" })
-  ).textContent?.replace(/\s+/g, " ");
 
 function analysis(overrides: Partial<StockAnalysis> = {}): StockAnalysis {
   return {
@@ -80,476 +76,316 @@ describe("StockCriteriaSummary", () => {
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it("shows criteria statuses without a universal score and leaves missing metrics neutral", async () => {
+  it("integrates each indicator and its evaluation in one compact card", async () => {
     render(<StockCriteriaSummary analysis={analysis()} />);
 
-    expect(await summaryText()).toContain("2 sinais avaliáveis");
-    expect(screen.getByText("P/L")).toBeTruthy();
-    expect(screen.getByText(/Setor CVM: Alimentos/)).toBeTruthy();
-    expect(screen.getByText(/CVM 02\/10\/2026/)).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Indicadores financeiros" }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("heading", { name: "P/L" })).toHaveLength(1);
     expect(
       screen.getByRole("listitem", {
-        name: /ROE: 12% · mín. 15%, Fora do limite/,
+        name: /P\/L: 12,0x, referência 15,0x, Dentro do limite/,
       }),
     ).toBeTruthy();
     expect(
       screen.getByRole("listitem", {
-        name: /P\/L: 12x · máx. 15x, Dentro do limite/,
+        name: /P\/VP: 1,8x, referência 2,5x, Dentro do limite/,
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("listitem", {
-        name: /P\/VP: 1,8x · sem limite, Sem limite configurado/,
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/DY não é exibido sem cobertura recorrente completa/),
-    ).toBeTruthy();
-    expect(screen.queryByText(/score/i)).toBeNull();
+    expect(screen.getByText("Margem Líquida")).toBeTruthy();
+    expect(screen.queryByText("Critérios de análise")).toBeNull();
+
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
-    expect(await screen.findByText(/Demonstrações:/)).toBeTruthy();
-    expect(screen.getByText(/Cotação: 01\/10\/2026/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/VP" }));
+    expect(await screen.findByText(/Cotação observada em/)).toBeTruthy();
     expect(
-      await screen.findByText(
-        "O P/VP tem dado válido, mas não há limite definido para este múltiplo.",
-      ),
+      screen.getByText(/Referência configurada: máximo de 15x/),
     ).toBeTruthy();
   });
 
-  it("loads saved browser preferences and allows editing and restoring defaults", async () => {
+  it("keeps raw numbers visible while stale data cannot generate criterion signals", () => {
+    render(
+      <StockCriteriaSummary
+        analysis={analysis({ priceIsStale: true, fundamentalsIsStale: true })}
+      />,
+    );
+    expect(
+      screen.getByRole("listitem", { name: /P\/L: 12,0x, Desatualizado/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", { name: /ROE: 12,0%, Desatualizado/ }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Limites suspensos/i)).toBeTruthy();
+  });
+
+  it("shows financial-sector valuation values with method-specific applicability", () => {
+    render(
+      <StockCriteriaSummary analysis={analysis({ issuerSector: "Bancos" })} />,
+    );
+    expect(
+      screen.getByRole("listitem", { name: /P\/L: 12,0x, Não aplicável/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", {
+        name: /P\/VP: 1,8x, referência 2,5x, Dentro do limite/,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", {
+        name: /Margem Líquida: 5.0%, Não aplicável/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("does not clamp a mathematically possible margin above one hundred percent", () => {
+    render(
+      <StockCriteriaSummary
+        analysis={analysis({
+          indicators: analysis().indicators.map((indicator) =>
+            indicator.key === "netMargin"
+              ? { ...indicator, value: 215.1 }
+              : indicator,
+          ),
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole("listitem", {
+        name: /Margem Líquida: 215,1%, Informativo/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("uses sector-specific neutral status for unknown sectors and unconfirmed instruments", () => {
+    render(
+      <StockCriteriaSummary
+        analysis={analysis({ issuerSector: null, instrumentType: "unknown" })}
+      />,
+    );
+    expect(
+      screen.getByRole("listitem", { name: /P\/L: 12,0x, Sem dados/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", {
+        name: /Margem Líquida: 5.0%, Não aplicável/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("loads saved custom preferences and allows editing and saving them", async () => {
     window.localStorage.setItem(
       preferencesKey,
-      JSON.stringify({ maximumPe: 10, maximumPb: 1.2, minimumRoePercent: 8 }),
+      JSON.stringify({
+        preset: "custom",
+        maximumPe: 10,
+        maximumPb: 1.2,
+        minimumRoePercent: 8,
+      }),
     );
     const user = userEvent.setup();
     render(<StockCriteriaSummary analysis={analysis()} />);
-
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    const peInput = await screen.findByLabelText("P/L máximo");
-    expect((peInput as HTMLInputElement).value).toBe("10");
+    await user.click(screen.getByRole("button", { name: "Limites" }));
+    expect(
+      (screen.getByLabelText("P/L máximo") as HTMLInputElement).value,
+    ).toBe("10");
     expect(
       (screen.getByLabelText("ROE mínimo (%)") as HTMLInputElement).value,
     ).toBe("8");
     expect(
       (screen.getByLabelText("P/VP máximo") as HTMLInputElement).value,
     ).toBe("1.2");
-    await user.clear(peInput);
-    await user.type(peInput, "11");
-    const pbInput = screen.getByLabelText("P/VP máximo");
-    await user.clear(pbInput);
-    await user.type(pbInput, "1.7");
-    const roeInput = screen.getByLabelText("ROE mínimo (%)");
-    await user.clear(roeInput);
-    await user.type(roeInput, "9");
+    await user.clear(screen.getByLabelText("P/L máximo"));
+    await user.type(screen.getByLabelText("P/L máximo"), "11");
     await user.click(screen.getByRole("button", { name: "Salvar limites" }));
-
     expect(
-      await screen.findByText("Critérios salvos neste navegador."),
+      await screen.findByText("Limites salvos neste navegador."),
     ).toBeTruthy();
     expect(
       JSON.parse(window.localStorage.getItem(preferencesKey) ?? "{}"),
     ).toEqual({
       preset: "custom",
       maximumPe: 11,
-      maximumPb: 1.7,
-      minimumRoePercent: 9,
+      maximumPb: 1.2,
+      minimumRoePercent: 8,
     });
+  });
 
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    await user.click(
-      await screen.findByRole("button", { name: "Restaurar padrões" }),
-    );
+  it("switches to custom mode when the user edits optional thresholds", async () => {
+    const user = userEvent.setup();
+    render(<StockCriteriaSummary analysis={analysis()} />);
+    await user.click(screen.getByRole("button", { name: "Limites" }));
+    await user.click(screen.getByRole("button", { name: /Personalizado/ }));
+    const pb = screen.getByLabelText("P/VP máximo");
+    await user.clear(pb);
+    await user.type(pb, "1.8");
+    const roe = screen.getByLabelText("ROE mínimo (%)");
+    await user.clear(roe);
+    await user.type(roe, "12");
+    expect((pb as HTMLInputElement).value).toBe("1.8");
+    expect((roe as HTMLInputElement).value).toBe("12");
+  });
+
+  it("falls back to defaults when stored preferences are malformed or inaccessible", () => {
+    window.localStorage.setItem(preferencesKey, "not-json");
+    const first = render(<StockCriteriaSummary analysis={analysis()} />);
     expect(
-      await screen.findByText("Padrões restaurados neste navegador."),
+      screen.getByRole("listitem", { name: /P\/VP: 1,8x, referência 2,5x/ }),
     ).toBeTruthy();
+    first.unmount();
+
+    window.localStorage.removeItem(preferencesKey);
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("Storage unavailable");
+    });
+    render(<StockCriteriaSummary analysis={analysis()} />);
+    expect(
+      screen.getByRole("listitem", { name: /P\/VP: 1,8x, referência 2,5x/ }),
+    ).toBeTruthy();
+  });
+
+  it("handles missing or invalid ROE equity data and dialog dismissal", async () => {
+    const user = userEvent.setup();
+    const withoutRoeDate = analysis({
+      indicators: analysis().indicators.map((indicator) =>
+        indicator.key === "roe"
+          ? { ...indicator, referenceDate: null }
+          : indicator,
+      ),
+    });
+    const view = render(<StockCriteriaSummary analysis={withoutRoeDate} />);
+    await user.click(screen.getByRole("button", { name: "Limites" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    const invalidEquity = analysis({
+      fundamentals: analysis().fundamentals.map((period) => ({
+        ...period,
+        equity: "not-a-number",
+      })),
+    });
+    view.rerender(<StockCriteriaSummary analysis={invalidEquity} />);
+    expect(
+      screen.getByRole("listitem", { name: /ROE: 12,0%, Sem dados/ }),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    [
+      "Conservador",
+      "P/L máximo",
+      "10",
+      "P/VP máximo",
+      "1.5",
+      "ROE mínimo (%)",
+      "20",
+    ],
+    [
+      "Equilibrado",
+      "P/L máximo",
+      "15",
+      "P/VP máximo",
+      "2.5",
+      "ROE mínimo (%)",
+      "15",
+    ],
+  ])(
+    "applies the %s preset including its P/VP reference",
+    async (preset, peLabel, pe, pbLabel, pb, roeLabel, roe) => {
+      const user = userEvent.setup();
+      render(<StockCriteriaSummary analysis={analysis()} />);
+      await user.click(screen.getByRole("button", { name: "Limites" }));
+      await user.click(
+        screen.getByRole("button", { name: new RegExp(preset) }),
+      );
+      expect((screen.getByLabelText(peLabel) as HTMLInputElement).value).toBe(
+        pe,
+      );
+      expect((screen.getByLabelText(pbLabel) as HTMLInputElement).value).toBe(
+        pb,
+      );
+      expect((screen.getByLabelText(roeLabel) as HTMLInputElement).value).toBe(
+        roe,
+      );
+    },
+  );
+
+  it("allows disabling optional P/VP, rejects invalid limits, and restores defaults", async () => {
+    const user = userEvent.setup();
+    render(<StockCriteriaSummary analysis={analysis()} />);
+    await user.click(screen.getByRole("button", { name: "Limites" }));
+    await user.click(screen.getByLabelText("Ativo"));
+    expect(
+      (screen.getByLabelText("P/VP máximo") as HTMLInputElement).disabled,
+    ).toBe(true);
+    const pe = screen.getByLabelText("P/L máximo");
+    await user.clear(pe);
+    await user.type(pe, "0");
+    await user.click(screen.getByRole("button", { name: "Salvar limites" }));
+    expect(
+      await screen.findByText("Use limites maiores que zero."),
+    ).toBeTruthy();
+    await user.clear(pe);
+    await user.type(pe, "15");
+    await user.click(screen.getByRole("button", { name: "Salvar limites" }));
+    await user.click(screen.getByRole("button", { name: "Limites" }));
+    await user.click(screen.getByRole("button", { name: "Restaurar padrões" }));
+    expect(await screen.findByText("Padrões restaurados.")).toBeTruthy();
     expect(window.localStorage.getItem(preferencesKey)).toBeNull();
   });
 
-  it("applies a preset to the editable thresholds", async () => {
+  it("restores defaults locally when browser storage cannot be written or removed", async () => {
     const user = userEvent.setup();
     render(<StockCriteriaSummary analysis={analysis()} />);
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    await user.click(
-      await screen.findByRole("button", { name: /Conservador/ }),
-    );
-    expect(
-      (screen.getByLabelText("P/L máximo") as HTMLInputElement).value,
-    ).toBe("10");
-    expect(
-      (screen.getByLabelText("ROE mínimo (%)") as HTMLInputElement).value,
-    ).toBe("20");
-    expect(
-      (screen.getByLabelText("P/VP máximo") as HTMLInputElement).value,
-    ).toBe("");
-    await user.click(screen.getByRole("button", { name: /Equilibrado/ }));
-    expect(
-      (screen.getByLabelText("P/L máximo") as HTMLInputElement).value,
-    ).toBe("15");
-    expect(
-      (screen.getByLabelText("ROE mínimo (%)") as HTMLInputElement).value,
-    ).toBe("15");
-    await user.click(screen.getByRole("button", { name: /Personalizado/ }));
-    expect(
-      (screen.getByLabelText("P/L máximo") as HTMLInputElement).value,
-    ).toBe("15");
-    expect(
-      (screen.getByLabelText("ROE mínimo (%)") as HTMLInputElement).value,
-    ).toBe("15");
+    await user.click(screen.getByRole("button", { name: "Limites" }));
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
     await user.click(screen.getByRole("button", { name: "Salvar limites" }));
     expect(
-      await screen.findByText("Critérios salvos neste navegador."),
+      await screen.findByText("Limites ativos até fechar esta página."),
+    ).toBeTruthy();
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    await user.click(screen.getByRole("button", { name: "Limites" }));
+    await user.click(screen.getByRole("button", { name: "Restaurar padrões" }));
+    expect(
+      await screen.findByText("Padrões restaurados até fechar esta página."),
     ).toBeTruthy();
   });
 
-  it("recognizes previously saved conservative values without an explicit preset", async () => {
+  it("recognizes legacy conservative browser preferences and malformed or inaccessible storage", () => {
     window.localStorage.setItem(
       preferencesKey,
       JSON.stringify({ maximumPe: 10, maximumPb: null, minimumRoePercent: 20 }),
     );
-    const user = userEvent.setup();
-    render(<StockCriteriaSummary analysis={analysis()} />);
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-
+    const { unmount } = render(<StockCriteriaSummary analysis={analysis()} />);
     expect(
-      await screen.findByRole("button", { name: /Conservador/, pressed: true }),
-    ).toBeTruthy();
-  });
-
-  it("uses a singular count and explains bank ROE period limits on demand", async () => {
-    const user = userEvent.setup();
-    render(
-      <StockCriteriaSummary
-        analysis={analysis({
-          issuerSector: "Bancos",
-          indicators: analysis().indicators.map((item) =>
-            item.key === "pe" || item.key === "pb"
-              ? { ...item, value: null }
-              : item,
-          ),
-        })}
-      />,
-    );
-    expect(await summaryText()).toContain("0 sinais avaliáveis");
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre ROE" }));
-    expect(
-      await screen.findByText(
-        "Para bancos, o ROE só é comparado com lucro dos últimos 12 meses.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("uses singular wording when exactly one indicator can be assessed", async () => {
-    render(
-      <StockCriteriaSummary
-        analysis={analysis({
-          indicators: analysis().indicators.map((item) =>
-            item.key === "pe" || item.key === "pb"
-              ? { ...item, value: null }
-              : item,
-          ),
-        })}
-      />,
-    );
-    expect(await summaryText()).toContain("1 sinal avaliável");
-  });
-
-  it("explains unreliable multiples when their data or value cannot be compared", async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <StockCriteriaSummary
-        analysis={analysis({
-          indicators: analysis().indicators.map((item) =>
-            item.key === "pe" ? { ...item, value: -2 } : item,
-          ),
-        })}
-      />,
-    );
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
-    expect(
-      await screen.findByText(/O múltiplo precisa ser positivo/),
-    ).toBeTruthy();
-
-    await user.keyboard("{Escape}");
-    rerender(
-      <StockCriteriaSummary
-        analysis={analysis({
-          indicators: analysis().indicators.map((item) =>
-            item.key === "pe" ? { ...item, marketDataDate: null } : item,
-          ),
-        })}
-      />,
-    );
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
-    expect(
-      await screen.findByText(
-        "A data da cotação usada no múltiplo não está disponível.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("rejects non-positive configured limits", async () => {
-    const user = userEvent.setup();
-    render(<StockCriteriaSummary analysis={analysis()} />);
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    const peInput = await screen.findByLabelText("P/L máximo");
-    await user.clear(peInput);
-    await user.type(peInput, "0");
-    await user.click(screen.getByRole("button", { name: "Salvar limites" }));
-    expect(
-      await screen.findByText("Informe limites maiores que zero."),
-    ).toBeTruthy();
-    expect(window.localStorage.getItem(preferencesKey)).toBeNull();
-  });
-
-  it("does not present stale or sector-unknown financial data as a signal", async () => {
-    render(
-      <StockCriteriaSummary
-        analysis={analysis({ fundamentalsIsStale: true, issuerSector: null })}
-      />,
-    );
-    expect(await screen.findByText(/demonstrações antigas/i)).toBeTruthy();
-    expect(await summaryText()).toContain("0 sinais avaliáveis");
-  });
-
-  it("renders ambiguous instrument as unavailable rather than not applicable", async () => {
-    render(
-      <StockCriteriaSummary
-        analysis={analysis({
-          instrumentType: "unknown",
-          issuerSector: "Emp. Adm. Part. - Bancos",
-        })}
-      />,
-    );
-    expect(await summaryText()).toContain("0 sinais avaliáveis");
-    expect(screen.getAllByText("Sem base confiável").length).toBeGreaterThan(0);
-  });
-
-  it("shows explicit non-applicability for a confirmed FII", async () => {
-    render(
-      <StockCriteriaSummary analysis={analysis({ instrumentType: "fii" })} />,
-    );
-    expect(await summaryText()).toContain("0 sinais avaliáveis");
-    expect(screen.getAllByText("Não se aplica").length).toBeGreaterThan(0);
-  });
-
-  it("uses defaults for individually invalid preference values", async () => {
-    window.localStorage.setItem(
-      preferencesKey,
-      JSON.stringify({
-        maximumPe: 0,
-        maximumPb: "15",
-        minimumRoePercent: "15",
+      screen.getByRole("listitem", {
+        name: /P\/VP: 1,8x, referência 1,5x, Fora do limite/,
       }),
-    );
-    const user = userEvent.setup();
-    render(<StockCriteriaSummary analysis={analysis()} />);
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    expect(
-      ((await screen.findByLabelText("P/L máximo")) as HTMLInputElement).value,
-    ).toBe("15");
-    expect(
-      (screen.getByLabelText("ROE mínimo (%)") as HTMLInputElement).value,
-    ).toBe("15");
-    expect(
-      (screen.getByLabelText("P/VP máximo") as HTMLInputElement).value,
-    ).toBe("");
-  });
-
-  it("keeps sector rules neutral and explains missing reference dates", async () => {
-    const user = userEvent.setup();
-    const financial = analysis({
-      issuerSector: "Bancos",
-      indicators: analysis().indicators.map((item) =>
-        item.key === "roe"
-          ? { ...item, periodBasis: "trailing_twelve_months" as const }
-          : item,
-      ),
-    });
-    render(<StockCriteriaSummary analysis={financial} />);
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
-    expect(
-      await screen.findByText(
-        "Este indicador não usa a mesma metodologia para este setor.",
-      ),
     ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre ROIC" }));
-    expect(
-      screen.getByText(
-        "Este indicador não usa a mesma metodologia para este setor.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("handles invalid or absent dates and unconfirmed sectors neutrally", async () => {
-    const user = userEvent.setup();
-    const invalidDate = analysis({
-      issuerSector: null,
-      issuerMetadataUpdatedAt: "invalid",
-      indicators: analysis().indicators.map((item) =>
-        item.key === "pe"
-          ? { ...item, referenceDate: "invalid", marketDataDate: "invalid" }
-          : item.key === "roe"
-            ? { ...item, referenceDate: null, sourceDocument: null }
-            : item,
-      ),
-    });
-    render(<StockCriteriaSummary analysis={invalidDate} />);
-    expect(await screen.findByText(/Setor CVM:.*não confirmado/)).toBeTruthy();
-    expect(screen.getByText(/CVM data indisponível/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
-    expect(
-      await screen.findByText(/Demonstrações: data indisponível/),
-    ).toBeTruthy();
-    expect(screen.getByText(/Data da cotação indisponível/)).toBeTruthy();
-    expect(
-      screen.getByText(
-        "O setor não está confirmado para aplicar estes critérios.",
-      ),
-    ).toBeTruthy();
-    await user.keyboard("{Escape}");
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre ROE" }));
-    expect(
-      screen.getByText(/Data-base das demonstrações indisponível/),
-    ).toBeTruthy();
-  });
-
-  it("renders the same initial thresholds during server rendering", () => {
-    expect(
-      renderToString(<StockCriteriaSummary analysis={analysis()} />),
-    ).toContain("Critérios de análise");
-  });
-
-  it("does not use ROE when its equity source is missing or invalid", async () => {
-    const missingSource = analysis({
-      indicators: analysis().indicators.map((item) =>
-        item.key === "roe" ? { ...item, referenceDate: null } : item,
-      ),
-    });
-    const { rerender } = render(
-      <StockCriteriaSummary analysis={missingSource} />,
-    );
-    expect(await summaryText()).toContain("1 sinal avaliável");
-    rerender(
-      <StockCriteriaSummary
-        analysis={analysis({
-          fundamentals: analysis().fundamentals.map((period) => ({
-            ...period,
-            equity: "not-a-number",
-          })),
-        })}
-      />,
-    );
-    expect(await summaryText()).toContain("1 sinal avaliável");
-  });
-
-  it("keeps unconfirmed types neutral and handles absent reference metadata", async () => {
-    const user = userEvent.setup();
-    render(
-      <StockCriteriaSummary
-        analysis={analysis({
-          instrumentType: undefined,
-          issuerSector: undefined,
-          issuerMetadataUpdatedAt: undefined,
-          priceIsStale: true,
-          indicators: analysis().indicators.map((item) =>
-            item.key === "pe"
-              ? { ...item, referenceDate: null, marketDataDate: null }
-              : item,
-          ),
-        })}
-      />,
-    );
-    expect(await summaryText()).toContain("0 sinais avaliáveis");
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
-    expect(
-      await screen.findByText(/Data-base das demonstrações indisponível/),
-    ).toBeTruthy();
-    expect(screen.getByText(/Data da cotação indisponível/)).toBeTruthy();
-    await user.keyboard("{Escape}");
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    await user.keyboard("{Escape}");
-  });
-
-  it("keeps ROE unavailable without matching positive equity and explains missing industrial data", async () => {
-    const user = userEvent.setup();
-    render(
-      <StockCriteriaSummary
-        analysis={analysis({
-          fundamentals: [],
-          indicators: analysis().indicators.map((item) =>
-            item.key === "roe"
-              ? { ...item, referenceDate: "2024-12-31" }
-              : item,
-          ),
-        })}
-      />,
-    );
-    const region = await screen.findByRole("region", {
-      name: "Critérios de análise",
-    });
-    expect(region.textContent).toContain("1 sinal avaliável");
-    await user.click(screen.getByRole("button", { name: "Ajuda sobre ROIC" }));
-    expect(
-      await screen.findByText(
-        "A fonte atual ainda não fornece este indicador reconciliado.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Data-base das demonstrações indisponível/),
-    ).toBeTruthy();
-  });
-
-  it("handles invalid storage and storage write restrictions", async () => {
-    window.localStorage.setItem(preferencesKey, "not-json");
-    const user = userEvent.setup();
-    render(<StockCriteriaSummary analysis={analysis()} />);
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    const peInput = await screen.findByLabelText("P/L máximo");
-    expect((peInput as HTMLInputElement).value).toBe("15");
-    await user.clear(peInput);
-    await user.type(peInput, "12");
-    const setItem = vi
-      .spyOn(Storage.prototype, "setItem")
-      .mockImplementation(() => {
-        throw new Error("storage disabled");
-      });
-    await user.click(screen.getByRole("button", { name: "Salvar limites" }));
-    expect(
-      await screen.findByText("Critérios aplicados até fechar esta página."),
-    ).toBeTruthy();
-    setItem.mockRestore();
-  });
-
-  it("handles failure to remove browser preferences when restoring defaults", async () => {
-    const user = userEvent.setup();
-    render(<StockCriteriaSummary analysis={analysis()} />);
-    await user.click(screen.getByRole("button", { name: "Critérios" }));
-    const removeItem = vi
-      .spyOn(Storage.prototype, "removeItem")
-      .mockImplementation(() => {
-        throw new Error("storage disabled");
-      });
-    await user.click(
-      await screen.findByRole("button", { name: "Restaurar padrões" }),
-    );
-    expect(
-      await screen.findByText("Padrões restaurados até fechar esta página."),
-    ).toBeTruthy();
-    removeItem.mockRestore();
-  });
-
-  it("uses defaults when browser storage cannot be read", async () => {
+    unmount();
+    window.localStorage.setItem(preferencesKey, "bad-json");
     const getItem = vi
       .spyOn(Storage.prototype, "getItem")
       .mockImplementation(() => {
-        throw new Error("storage disabled");
+        throw new Error("blocked");
       });
-    render(<StockCriteriaSummary analysis={analysis()} />);
-    expect(await summaryText()).toContain("2 sinais avaliáveis");
+    expect(() =>
+      renderToString(<StockCriteriaSummary analysis={analysis()} />),
+    ).not.toThrow();
     getItem.mockRestore();
+  });
+
+  it("renders compact indicators consistently during server rendering", () => {
+    expect(
+      renderToString(<StockCriteriaSummary analysis={analysis()} />),
+    ).toContain("Margem Líquida");
   });
 });

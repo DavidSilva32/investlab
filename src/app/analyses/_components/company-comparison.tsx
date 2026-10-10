@@ -411,10 +411,6 @@ export function CompanyComparison({
         <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
           Comparar empresas
         </h2>
-        <p className="text-sm text-muted-foreground sm:text-base">
-          Compare empresas do mesmo setor e mostre valores apenas quando período
-          e origem forem compatíveis.
-        </p>
       </header>
 
       <Card>

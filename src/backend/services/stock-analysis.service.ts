@@ -940,7 +940,9 @@ export class StockAnalysisService {
       issuerSector,
       issuerMetadataUpdatedAt,
       instrumentType:
-        issuerSubType === "stock" ? ("stock" as const) : ("unknown" as const),
+        issuerSubType === "stock" || issuerSubType === "unit"
+          ? ("stock" as const)
+          : ("unknown" as const),
       priceIsStale,
       fundamentalsIsStale,
       fundamentalsFetchedAt,

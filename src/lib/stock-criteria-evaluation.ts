@@ -91,7 +91,7 @@ export type StockCriteriaEvaluation = {
 export const defaultStockCriteriaPreferences: StockCriteriaPreferences = {
   preset: "balanced",
   maximumPe: 15,
-  maximumPb: null,
+  maximumPb: 2.5,
   minimumRoePercent: 15,
 };
 
@@ -114,8 +114,12 @@ function unavailable(reason: StockCriterionResult["reason"]) {
   return result("unavailable", reason);
 }
 
-function notApplicable(reason: StockCriterionResult["reason"]) {
-  return result("not_applicable", reason);
+function notApplicable(
+  reason: StockCriterionResult["reason"],
+  value: number | null = null,
+  threshold: number | null = null,
+) {
+  return result("not_applicable", reason, value, threshold);
 }
 
 function indicatorValue(
@@ -321,6 +325,7 @@ export function evaluateStockCriteria(
   if (sectorClassification === "financial") {
     valuationCriteria.pe = notApplicable(
       "financial_sector_methodology_required",
+      pe?.value ?? null,
     );
     valuationCriteria.pb = evaluateMaximum(pb, pbMaximum);
   } else {

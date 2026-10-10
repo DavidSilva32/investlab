@@ -21,12 +21,12 @@ describe("FundamentalIndicatorCard", () => {
         }}
       />,
     );
-    expect(screen.getByText("8.4x")).toBeTruthy();
+    expect(screen.getByText("8,4x")).toBeTruthy();
     expect(screen.getByText(/Cotação observada em/)).toBeTruthy();
     const user = userEvent.setup();
     await user.click(
       screen.getByRole("button", {
-        name: "Ajuda sobre Preço em relação ao lucro",
+        name: "Ajuda sobre P/L",
       }),
     );
     expect(
@@ -53,9 +53,7 @@ describe("FundamentalIndicatorCard", () => {
     );
     expect(screen.getByText("Indisponível")).toBeTruthy();
     expect(
-      screen.getByText(
-        "Não há dados suficientes de lucro e patrimônio ao longo do tempo.",
-      ),
+      screen.getByText("Faltam dados compatíveis de lucro e patrimônio."),
     ).toBeTruthy();
   });
 
@@ -94,7 +92,7 @@ describe("FundamentalIndicatorCard", () => {
       />,
     );
 
-    expect(screen.getByText("1.2x")).toBeTruthy();
+    expect(screen.getByText("1,2x")).toBeTruthy();
     expect(screen.getByText(/Acumulado no ano até/)).toBeTruthy();
   });
 
@@ -158,4 +156,87 @@ describe("FundamentalIndicatorCard", () => {
 
     expect(screen.getByText(/Data da cotação não informada/)).toBeTruthy();
   });
+
+  it.each([
+    ["threshold_not_configured", "Defina um limite nas configurações"],
+    [
+      "financial_sector_methodology_required",
+      "A metodologia atual não compara este indicador neste setor.",
+    ],
+    [
+      "financial_roe_requires_ltm",
+      "Para bancos, o ROE só é comparado com lucro dos últimos 12 meses.",
+    ],
+    [
+      "positive_equity_required",
+      "É necessário patrimônio líquido positivo para avaliar o ROE.",
+    ],
+    [
+      "market_data_date_required",
+      "A data da cotação usada no múltiplo não está disponível.",
+    ],
+    [
+      "positive_multiple_required",
+      "O múltiplo precisa ser positivo para comparação.",
+    ],
+  ] as const)("explains the %s criterion state", async (reason, message) => {
+    render(
+      <FundamentalIndicatorCard
+        indicator={{
+          key:
+            reason === "positive_equity_required" ||
+            reason === "financial_roe_requires_ltm"
+              ? "roe"
+              : "pe",
+          value: 8.4,
+          unavailableReason: null,
+          referenceDate: "2025-12-31",
+          sourceDocument: "DFP",
+          marketDataDate: null,
+        }}
+        criterion={{
+          status: "unavailable",
+          reason,
+          value: 8.4,
+          threshold: null,
+        }}
+      />,
+    );
+    await userEvent.setup().click(
+      screen.getByRole("button", {
+        name: `Ajuda sobre ${reason === "positive_equity_required" || reason === "financial_roe_requires_ltm" ? "ROE" : "P/L"}`,
+      }),
+    );
+    expect(await screen.findByText(new RegExp(message))).toBeTruthy();
+  });
+
+  it.each([
+    [null, "Faltam dados compatíveis de preço e lucro."],
+    [12, "Os dados disponíveis não permitem aplicar este limite."],
+  ] as const)(
+    "explains an otherwise unavailable criterion with value %s",
+    async (value, message) => {
+      render(
+        <FundamentalIndicatorCard
+          indicator={{
+            key: "pe",
+            value,
+            unavailableReason: null,
+            referenceDate: null,
+            sourceDocument: null,
+          }}
+          criterion={{
+            status: "unavailable",
+            reason: "industrial_indicator_not_in_contract",
+            value,
+            threshold: null,
+          }}
+        />,
+      );
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
+      expect((await screen.findAllByText(message)).length).toBeGreaterThan(0);
+    },
+  );
 });

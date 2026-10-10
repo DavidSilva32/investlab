@@ -493,7 +493,7 @@ describe("CompanyComparison", () => {
     expect(screen.getByText("Abaixo do mínimo · 15%")).toBeTruthy();
   });
 
-  it("shows a comparable P/VP without a signal until its limit is configured", async () => {
+  it("shows P/VP comparison signals using the balanced preset", async () => {
     const first = company("PETR3", "33000167000101");
     const second = company("VALE3", "33000167000102");
     first.valuation.pb = metric(1.8);
@@ -515,10 +515,7 @@ describe("CompanyComparison", () => {
       screen.getByRole("button", { name: "Comparar selecionadas" }),
     );
 
-    expect(await screen.findAllByText("P/VP 1,8x · sem limite")).toHaveLength(
-      1,
-    );
-    expect(screen.getByText("P/VP 2,2x · sem limite")).toBeTruthy();
+    expect(await screen.findAllByText("Até 2,5x")).toHaveLength(2);
   });
 
   it("does not apply industrial P/L or bank ROE rules to insurers", async () => {
@@ -557,5 +554,38 @@ describe("CompanyComparison", () => {
     expect(screen.getAllByText("P/L não se aplica")).toHaveLength(2);
     expect(screen.getByText("Até 2,5x")).toBeTruthy();
     expect(screen.getByText("Acima de 2,5x")).toBeTruthy();
+  });
+
+  it("keeps P/VP neutral when its optional custom limit is disabled", async () => {
+    window.localStorage.setItem(
+      stockCriteriaPreferencesStorageKey,
+      JSON.stringify({
+        preset: "custom",
+        maximumPe: 15,
+        maximumPb: null,
+        minimumRoePercent: 15,
+      }),
+    );
+    const first = company("PETR3", "33000167000101");
+    const second = company("VALE3", "33000167000102");
+    first.valuation.pb = metric(1.8);
+    second.valuation.pb = metric(2.2);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sector: "Petróleo e Gás",
+          sectorMetadataAsOf: null,
+          companies: [first, second],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="PETR3" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+    expect(await screen.findAllByText(/P\/VP .* · sem limite/)).toHaveLength(2);
   });
 });
