@@ -119,9 +119,6 @@ export function PortfolioObjectivesOverview({
               <CardTitle className="text-base">
                 Patrimônio por destino
               </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Valores conhecidos das posições atribuídas.
-              </p>
             </div>
             <Badge className="w-fit" variant="outline">
               {incompleteCount > 0 ? "Conhecido · parcial" : "Valor conhecido"}

@@ -86,9 +86,6 @@ export function DashboardObservations({
       >
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">
-              Leitura da carteira
-            </p>
             <h2
               id="dashboard-attention-title"
               className="text-xl font-semibold"
@@ -143,9 +140,6 @@ export function DashboardObservations({
       {portfolioFacts.length > 0 && (
         <section aria-labelledby="dashboard-facts-title" className="space-y-3">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">
-              Dados registrados
-            </p>
             <h2 id="dashboard-facts-title" className="text-xl font-semibold">
               Fatos da carteira
             </h2>

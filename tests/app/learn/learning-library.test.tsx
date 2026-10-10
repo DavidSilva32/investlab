@@ -45,6 +45,8 @@ describe("LearningLibrary", () => {
         name: "Aprenda sobre as classes de ativos",
       }),
     ).toBeTruthy();
+    expect(screen.queryByText("Educação financeira")).toBeNull();
+    expect(screen.queryByText(/Explore conceitos de cada classe/)).toBeNull();
     expect(
       screen.getAllByRole("link", { name: /Abrir conteúdo sobre/ }),
     ).toHaveLength(4);

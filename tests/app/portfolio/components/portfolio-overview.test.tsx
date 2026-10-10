@@ -137,7 +137,7 @@ describe("PortfolioOverview", () => {
     expect(html).toContain("6 de 7");
     expect(html).toContain("posições com valor");
     expect(html).toContain("Principais posições");
-    expect(html).toContain("Ordenadas pelo maior valor conhecido");
+    expect(html).not.toContain("Ordenadas pelo maior valor conhecido");
     expect(html).toContain("Ver todas as posições");
     expect(html).toContain("/portfolio?view=positions");
     expect(html.indexOf("CDB três")).toBeLessThan(

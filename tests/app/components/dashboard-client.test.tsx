@@ -76,6 +76,9 @@ describe("DashboardClient", () => {
 
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
     expect(
+      screen.queryByText("Visão geral do patrimônio e próximos passos"),
+    ).toBeNull();
+    expect(
       await screen.findByText("Resumo sem destino disponível"),
     ).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");

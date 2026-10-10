@@ -163,9 +163,6 @@ export function PortfolioOverview({
               >
                 Principais posições
               </h2>
-              <p className="text-sm text-muted-foreground">
-                Ordenadas pelo maior valor conhecido
-              </p>
             </CardHeader>
             <CardContent className="pt-0">
               {insights.topPositions.length ? (

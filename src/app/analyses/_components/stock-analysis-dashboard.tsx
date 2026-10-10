@@ -10,13 +10,33 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { BookOpen, ChevronDown, Search, RefreshCw, Clock3 } from "lucide-react";
+import {
+  BookOpen,
+  ChevronDown,
+  Search,
+  RefreshCw,
+  Clock3,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, apiRequest, apiRequestWithResponse } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { getLearningClassHref } from "@/lib/asset-class-learning";
 import { AssetLogo } from "@/components/asset-logo";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Collapsible,
   CollapsibleContent,
@@ -556,69 +576,98 @@ export function StockAnalysisDashboard({
     <div className="space-y-4">
       {search}
       <Card>
-        <CardContent className="grid gap-4 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1fr)] sm:items-center sm:gap-8">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Ativo consultado
-              </p>
-              <Link
-                href={getLearningClassHref("brazilian_equities")}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <BookOpen aria-hidden="true" className="size-3.5" />
-                Aprender sobre Ações e BDRs
-              </Link>
-            </div>
-            <div className="mt-1 flex min-w-0 items-center gap-3">
-              <AssetLogo
-                ticker={analysis.ticker}
-                name={analysis.companyName}
-                logoUrl={analysis.logoUrl}
-                size="lg"
-              />
-              <h2 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">
-                {analysis.ticker} ·{" "}
-                {analysis.companyName ?? "Empresa não informada"}
-              </h2>
-            </div>
-            <div className="mt-2">
+        <CardContent className="flex flex-wrap items-center gap-4 py-4 sm:flex-nowrap sm:gap-5">
+          <AssetLogo
+            ticker={analysis.ticker}
+            name={analysis.companyName}
+            logoUrl={analysis.logoUrl}
+            size="xl"
+          />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">
+              {analysis.ticker}
+            </h2>
+            <p
+              className="truncate text-sm text-muted-foreground"
+              title={analysis.companyName ?? undefined}
+            >
+              {analysis.companyName ?? "Empresa não informada"}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
+            <div className="text-left sm:text-right">
               <p className="text-3xl font-semibold tracking-tight tabular-nums">
                 {analysis.price === null ? "—" : money.format(analysis.price)}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p
+                aria-label={
+                  analysis.changePercent === null
+                    ? "Variação do dia não informada"
+                    : `Variação do dia: ${analysis.changePercent.toFixed(2)}%`
+                }
+                className={`inline-flex items-center gap-1 text-sm font-semibold tabular-nums ${analysis.changePercent === null || analysis.changePercent === 0 ? "text-muted-foreground" : analysis.changePercent > 0 ? "text-status-success" : "text-status-danger"}`}
+              >
+                {analysis.changePercent === null ||
+                analysis.changePercent === 0 ? (
+                  <Minus className="size-4" aria-hidden="true" />
+                ) : analysis.changePercent > 0 ? (
+                  <ArrowUpRight className="size-4" aria-hidden="true" />
+                ) : (
+                  <ArrowDownRight className="size-4" aria-hidden="true" />
+                )}
                 {analysis.changePercent === null
-                  ? "Variação do dia não informada"
-                  : `Variação do dia: ${analysis.changePercent.toFixed(2)}%`}
+                  ? "—"
+                  : `${analysis.changePercent > 0 ? "+" : ""}${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(analysis.changePercent)}%`}
+                <span className="sr-only">no dia</span>
               </p>
-              <p className="text-xs text-muted-foreground">
-                {analysis.priceUpdatedAt &&
-                Number.isFinite(Date.parse(analysis.priceUpdatedAt))
-                  ? `${analysis.priceIsStale ? "Última cotação observada; não representa cotação atual" : "Cotação observada"} em ${new Intl.DateTimeFormat(
-                      "pt-BR",
-                      {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      },
-                    ).format(new Date(analysis.priceUpdatedAt))}`
-                  : "Data da cotação não informada"}
-              </p>
+              {analysis.priceIsStale && (
+                <p className="text-xs font-medium text-status-warning">
+                  Cotação desatualizada
+                </p>
+              )}
             </div>
-          </div>
-          <div className="min-w-0 sm:border-l sm:pl-6">
-            <p className="text-xs text-muted-foreground">
-              Variação do preço no período · {selectedIntervalLabel}
-            </p>
-            <p
-              className={`mt-0.5 text-lg font-semibold tabular-nums ${priceChangeTone}`}
-            >
-              {priceChange === null
-                ? "Indisponível"
-                : pricePercent.format(priceChange)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Não inclui dividendos
-            </p>
+            <TooltipProvider>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Data da cotação"
+                    className={
+                      analysis.priceIsStale
+                        ? "text-status-warning"
+                        : "text-muted-foreground"
+                    }
+                  >
+                    <Clock3 className="size-4" aria-hidden="true" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  aria-label="Data da cotação"
+                  className="w-auto max-w-xs text-sm motion-reduce:animate-none"
+                >
+                  {analysis.priceUpdatedAt &&
+                  Number.isFinite(Date.parse(analysis.priceUpdatedAt))
+                    ? `${analysis.priceIsStale ? "Última cotação observada; não representa cotação atual" : "Cotação observada"} em ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(analysis.priceUpdatedAt))}`
+                    : "Data da cotação não informada"}
+                </PopoverContent>
+              </Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" asChild>
+                    <Link
+                      href={getLearningClassHref("brazilian_equities")}
+                      aria-label="Aprender sobre Ações e BDRs"
+                    >
+                      <BookOpen className="size-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="motion-reduce:animate-none">
+                  Aprender sobre Ações e BDRs
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </CardContent>
       </Card>
@@ -626,9 +675,25 @@ export function StockAnalysisDashboard({
         <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <CardTitle>Cotação histórica</CardTitle>
-            <CardDescription>
-              Preços de fechamento em reais. Selecione um período disponível.
-            </CardDescription>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={`Variação do preço no período · ${selectedIntervalLabel}`}
+                    className={`mt-1 rounded-sm text-sm font-semibold tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${priceChangeTone}`}
+                  >
+                    {priceChange === null
+                      ? "Indisponível"
+                      : pricePercent.format(priceChange)}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="motion-reduce:animate-none">
+                  Variação do preço no período · {selectedIntervalLabel}. Não
+                  inclui dividendos.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
           {intervals.length > 0 && (
             <div
