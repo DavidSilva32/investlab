@@ -5,6 +5,7 @@ import { ArrowRight, List, Target } from "lucide-react";
 import { toast } from "sonner";
 import {
   usePortfolioAllocation,
+  useMonthlyPortfolioReview,
   usePortfolioOverview,
 } from "@/lib/queries/portfolio";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
@@ -20,6 +21,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
+import { MonthlyPortfolioReview } from "@/app/portfolio/_components/monthly-portfolio-review";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 import type { PortfolioInsights } from "@/lib/portfolio-insights";
 import type { PortfolioConcentration } from "@/lib/portfolio-concentration";
@@ -56,6 +58,13 @@ export function PortfolioClient({
   const allocationQuery = usePortfolioAllocation<{
     classDistribution: PortfolioConcentration;
   }>(activeView === "overview");
+  const [monthlyReviewPeriod, setMonthlyReviewPeriod] = useState<string | null>(
+    null,
+  );
+  const monthlyReviewQuery = useMonthlyPortfolioReview(
+    monthlyReviewPeriod,
+    activeView === "overview",
+  );
   const overview = overviewQuery.data;
   const classification = useMemo(() => {
     if (allocationQuery.isError) return { status: "unavailable" as const };
@@ -145,6 +154,20 @@ export function PortfolioClient({
             }
             classificationStatus={classification.status}
             summaryContent={<ReferenceRates rates={overview.referenceRates} />}
+            monthlyReviewContent={
+              <MonthlyPortfolioReview
+                review={monthlyReviewQuery.data}
+                selectedPeriod={monthlyReviewPeriod}
+                loading={monthlyReviewQuery.isPending}
+                error={
+                  monthlyReviewQuery.isError
+                    ? monthlyReviewQuery.error.message
+                    : undefined
+                }
+                onPeriodChange={(period) => setMonthlyReviewPeriod(period)}
+                onRetry={() => void monthlyReviewQuery.refetch()}
+              />
+            }
           />
           <div className="grid gap-3 border-t pt-4 sm:grid-cols-2">
             <Sheet

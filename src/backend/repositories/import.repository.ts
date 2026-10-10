@@ -16,6 +16,7 @@ import {
 import type { TreasurySelicLiquidityFact } from "@/backend/types/treasury-selic-liquidity";
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
+import type { MonthlyPortfolioSnapshot } from "@/backend/services/monthly-portfolio-review";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 const sourceSnapshotIdKey = Symbol.for("investlab.positionSnapshotId");
 
@@ -364,6 +365,73 @@ export class ImportRepository {
       });
     } catch (error) {
       logger.error("database_positions_query_failed", { requestId, error });
+      throw error;
+    }
+  }
+
+  async listPositionSnapshots(requestId?: string) {
+    try {
+      const snapshots = await getDatabaseClient()
+        .select({
+          id: positionSnapshots.id,
+          referenceDate: positionSnapshots.referenceDate,
+          importReferenceDate: imports.referenceDate,
+          createdAt: positionSnapshots.createdAt,
+          source: imports.origin,
+        })
+        .from(positionSnapshots)
+        .innerJoin(imports, eq(imports.id, positionSnapshots.importId))
+        .where(
+          and(
+            eq(imports.documentType, "B3_POSITION_XLSX"),
+            eq(imports.status, "CONFIRMED"),
+          ),
+        )
+        .orderBy(
+          asc(positionSnapshots.referenceDate),
+          asc(positionSnapshots.createdAt),
+          asc(positionSnapshots.id),
+        );
+      if (snapshots.length === 0) return [];
+
+      const positions = await getDatabaseClient()
+        .select({
+          snapshotId: positionItems.snapshotId,
+          totalValue: positionItems.totalValue,
+          valuationSource: positionItems.valuationSource,
+        })
+        .from(positionItems)
+        .where(
+          inArray(
+            positionItems.snapshotId,
+            snapshots.map((snapshot) => snapshot.id),
+          ),
+        );
+      const positionsBySnapshot = new Map<
+        string,
+        MonthlyPortfolioSnapshot["positions"]
+      >();
+      for (const position of positions) {
+        const existing = positionsBySnapshot.get(position.snapshotId) ?? [];
+        existing.push({
+          totalValue: position.totalValue,
+          valuationSource: position.valuationSource,
+        });
+        positionsBySnapshot.set(position.snapshotId, existing);
+      }
+
+      return snapshots.map((snapshot): MonthlyPortfolioSnapshot => ({
+        id: snapshot.id,
+        referenceDate: snapshot.referenceDate ?? snapshot.importReferenceDate,
+        createdAt: snapshot.createdAt,
+        source: snapshot.source,
+        positions: positionsBySnapshot.get(snapshot.id) ?? [],
+      }));
+    } catch (error) {
+      logger.error("database_position_snapshot_history_query_failed", {
+        requestId,
+        error,
+      });
       throw error;
     }
   }

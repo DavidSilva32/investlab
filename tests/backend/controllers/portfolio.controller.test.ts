@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const service = vi.hoisted(() => ({
   calculateContribution: vi.fn(),
   getOverview: vi.fn(),
+  getMonthlyReview: vi.fn(),
 }));
 const logger = vi.hoisted(() => ({ info: vi.fn() }));
 vi.mock("@/backend/services/portfolio.service", () => ({
@@ -20,6 +21,34 @@ describe("PortfolioController", () => {
       positions: [],
       movements: [],
     });
+  });
+
+  it("validates an optional month and returns the monthly review", async () => {
+    const review = { selectedPeriod: "2026-08", status: "no_previous_close" };
+    service.getMonthlyReview.mockResolvedValue(review);
+    const controller = new PortfolioController();
+    const response = await controller.monthlyReview(
+      new Request(
+        "http://localhost/api/portfolio/monthly-review?period=2026-08",
+      ),
+      "request-1",
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(review);
+    expect(service.getMonthlyReview).toHaveBeenCalledWith(
+      "2026-08",
+      "request-1",
+    );
+
+    await expect(
+      controller.monthlyReview(
+        new Request(
+          "http://localhost/api/portfolio/monthly-review?period=2026-13",
+        ),
+        "request-2",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(service.getMonthlyReview).toHaveBeenCalledTimes(1);
   });
 });
 

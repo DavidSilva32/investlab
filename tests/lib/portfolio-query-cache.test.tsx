@@ -9,7 +9,10 @@ import {
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryProvider } from "@/components/query-provider";
-import { usePortfolioOverview } from "@/lib/queries/portfolio";
+import {
+  useMonthlyPortfolioReview,
+  usePortfolioOverview,
+} from "@/lib/queries/portfolio";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 
@@ -31,6 +34,19 @@ function NavigationHarness() {
       </button>
       <CachedPage key={page} label={page} />
     </QueryProvider>
+  );
+}
+
+function MonthlyReviewHarness() {
+  const [period, setPeriod] = useState<string | null>(null);
+  const query = useMonthlyPortfolioReview(period);
+  return (
+    <div>
+      <button type="button" onClick={() => setPeriod("2026-08")}>
+        Escolher agosto
+      </button>
+      <p>{query.data?.selectedPeriod ?? "Carregando fechamento…"}</p>
+    </div>
   );
 }
 
@@ -80,5 +96,30 @@ describe("portfolio query cache", () => {
 
     expect(await screen.findByText("Dashboard: Valor atualizado")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keys monthly closes by month and fetches the selected period", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ selectedPeriod: "2026-08" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryProvider>
+        <MonthlyReviewHarness />
+      </QueryProvider>,
+    );
+
+    expect(await screen.findByText("2026-08")).toBeTruthy();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/portfolio/monthly-review",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Escolher agosto" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/portfolio/monthly-review?period=2026-08",
+    );
   });
 });
