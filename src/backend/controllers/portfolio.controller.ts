@@ -16,6 +16,7 @@ const contributionSchema = z.object({
       },
     ),
 });
+const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 
 export class PortfolioController {
   async calculateContribution(request: Request, requestId: string) {
@@ -49,6 +50,22 @@ export class PortfolioController {
       movements: overview.movements.length,
     });
     return Response.json(overview);
+  }
+
+  async monthlyReview(request: Request, requestId: string) {
+    const rawPeriod = new URL(request.url).searchParams.get("period");
+    if (rawPeriod !== null && !monthSchema.safeParse(rawPeriod).success)
+      throw new ApplicationError("Informe um mês válido para comparar.", 400);
+    const review = await portfolioService.getMonthlyReview(
+      rawPeriod,
+      requestId,
+    );
+    logger.info("portfolio_monthly_review_responded", {
+      requestId,
+      period: review.selectedPeriod,
+      status: review.status,
+    });
+    return Response.json(review);
   }
 }
 

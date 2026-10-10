@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const repository = vi.hoisted(() => ({
   listLatestPositions: vi.fn(),
   listMovements: vi.fn(),
+  listPositionSnapshots: vi.fn(),
+}));
+const manualPositionRepository = vi.hoisted(() => ({
+  list: vi.fn(),
+  listSnapshots: vi.fn(),
 }));
 const estimates = vi.hoisted(() => ({ enrich: vi.fn() }));
 const portfolioPositions = vi.hoisted(() => ({
@@ -24,6 +29,9 @@ const strategy = vi.hoisted(() => ({
 }));
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: repository,
+}));
+vi.mock("@/backend/repositories/manual-portfolio-position.repository", () => ({
+  manualPortfolioPositionRepository: manualPositionRepository,
 }));
 vi.mock("@/backend/services/cdb-estimate.service", () => ({
   cdbEstimateService: estimates,
@@ -55,6 +63,9 @@ import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-optio
 describe("PortfolioService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    repository.listPositionSnapshots.mockResolvedValue([]);
+    manualPositionRepository.list.mockResolvedValue([]);
+    manualPositionRepository.listSnapshots.mockResolvedValue([]);
     strategyRepository.get.mockResolvedValue(null);
     portfolioPositions.listCurrent.mockImplementation((requestId) =>
       repository.listLatestPositions(requestId),
@@ -62,6 +73,122 @@ describe("PortfolioService", () => {
     portfolioPositions.enrichImportedPositions.mockImplementation(
       (positions, valuationDate) => estimates.enrich(positions, valuationDate),
     );
+  });
+  it("builds a monthly review from persisted position snapshots", async () => {
+    repository.listPositionSnapshots.mockResolvedValue([
+      {
+        id: "snapshot-1",
+        referenceDate: "2026-01-31",
+        createdAt: "2026-02-01T12:00:00Z",
+        importedAt: "2026-02-01T12:01:00Z",
+        source: "B3",
+        positions: [
+          {
+            identity: "asset-a",
+            totalValue: "100.00",
+            valuationSource: "FECHAMENTO",
+          },
+        ],
+      },
+      {
+        id: "snapshot-2",
+        referenceDate: "2026-02-28",
+        createdAt: "2026-03-01T12:00:00Z",
+        importedAt: "2026-03-01T12:01:00Z",
+        source: "B3",
+        positions: [
+          {
+            identity: "asset-a",
+            totalValue: "120.00",
+            valuationSource: "FECHAMENTO",
+          },
+        ],
+      },
+    ]);
+
+    const review = await new PortfolioService().getMonthlyReview(
+      "2026-02",
+      "request-monthly-review",
+    );
+
+    expect(repository.listPositionSnapshots).toHaveBeenCalledWith(
+      "request-monthly-review",
+    );
+    expect(review).toMatchObject({
+      status: "ready",
+      selectedPeriod: "2026-02",
+      observedChangeCents: "2000",
+    });
+  });
+  it("includes manually reported assets from their immutable observations", async () => {
+    manualPositionRepository.list.mockResolvedValue([
+      { assetKey: "manual:voo" },
+    ]);
+    manualPositionRepository.listSnapshots.mockResolvedValue([
+      {
+        assetKey: "manual:voo",
+        product: "Vanguard S&P 500 ETF",
+        assetCode: "VOO",
+        currency: "USD",
+        totalValue: "1000.00",
+        convertedValueBrl: "5000.00",
+        positionDate: "2026-01-05",
+        conversionDate: "2026-01-05",
+        status: "ACTIVE",
+        recordedAt: "2026-01-05T12:00:00.000Z",
+      },
+      {
+        assetKey: "manual:voo",
+        product: "Vanguard S&P 500 ETF",
+        assetCode: "VOO",
+        currency: "USD",
+        totalValue: "1000.00",
+        convertedValueBrl: "9000.00",
+        positionDate: "2026-02-04",
+        conversionDate: "2026-02-04",
+        status: "ACTIVE",
+        recordedAt: "2026-02-04T12:00:00.000Z",
+      },
+    ]);
+
+    const review = await new PortfolioService().getMonthlyReview("2026-02");
+
+    expect(review).toMatchObject({
+      status: "ready",
+      observedChangeCents: "400000",
+      current: {
+        knownValueCents: "900000",
+        sources: ["Valor informado"],
+        sourceReferences: [
+          { source: "Valor informado", referenceDate: "2026-02-04" },
+        ],
+      },
+      previous: { knownValueCents: "500000" },
+      flowSeparation: { status: "unavailable" },
+    });
+  });
+
+  it("keeps deletion observations out of the current manual total", async () => {
+    manualPositionRepository.listSnapshots.mockResolvedValue([
+      {
+        assetKey: "manual:voo",
+        product: "VOO",
+        assetCode: "VOO",
+        currency: "USD",
+        totalValue: "1000.00",
+        convertedValueBrl: "5000.00",
+        positionDate: "2026-02-10",
+        conversionDate: "2026-02-10",
+        status: "DELETED",
+        recordedAt: "2026-02-10T12:00:00.000Z",
+      },
+    ]);
+
+    const review = await new PortfolioService().getMonthlyReview("2026-02");
+    expect(review).toMatchObject({
+      status: "no_previous_close",
+      current: { positionCount: 0, knownValueCents: "0" },
+    });
   });
   it("loads positions and estimates once, then shares them for allocation, reserve and guidance", async () => {
     const rawPositions = [{ id: "p1" }];

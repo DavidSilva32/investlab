@@ -9,6 +9,7 @@ import {
   portfolioObjectives,
   positionItems,
   positionSnapshots,
+  manualPortfolioPositionSnapshots,
   stockOpportunityManualInputs,
 } from "@/infrastructure/database/schema";
 
@@ -68,5 +69,17 @@ describe("database schema", () => {
       "stock_opportunity_manual_ticker_idx",
     ]);
     expect(config.columns.map((column) => column.name)).toContain("inputKey");
+  });
+
+  it("stores append-only manual portfolio observations by asset and timestamp", () => {
+    const config = getTableConfig(manualPortfolioPositionSnapshots);
+    expect(config.name).toBe("manual_portfolio_position_snapshots");
+    expect(config.indexes.map((index) => index.config.name)).toContain(
+      "manual_portfolio_position_snapshots_asset_recorded_uidx",
+    );
+    expect(config.columns.map((column) => column.name)).toContain(
+      "conversionDate",
+    );
+    expect(config.foreignKeys).toHaveLength(0);
   });
 });

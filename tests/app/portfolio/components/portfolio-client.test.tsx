@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
 
@@ -107,8 +107,41 @@ const overview = {
     explanation: "Sua carteira está abaixo da meta pessoal registrada.",
   },
 };
+const monthlyReview = {
+  availablePeriods: [],
+  selectedPeriod: null,
+  status: "no_history" as const,
+  dateAlignment: "unavailable" as const,
+  current: null,
+  previous: null,
+  observedChangeCents: null,
+  gapMonths: 0,
+  flowSeparation: {
+    status: "unavailable" as const,
+    explanation: "Não é possível separar aportes de rendimento.",
+  },
+};
+const successfulPortfolioFetch = () =>
+  vi.fn((url: string) =>
+    Promise.resolve({
+      ok: true,
+      json: async () =>
+        url.startsWith("/api/portfolio/monthly-review")
+          ? monthlyReview
+          : url === "/api/portfolio/allocation"
+            ? { classDistribution: getPortfolioConcentration([], "assetClass") }
+            : overview,
+    }),
+  );
 
 describe("PortfolioClient", () => {
+  beforeEach(() => {
+    HTMLElement.prototype.hasPointerCapture = () => false;
+    HTMLElement.prototype.setPointerCapture = () => undefined;
+    HTMLElement.prototype.releasePointerCapture = () => undefined;
+    HTMLElement.prototype.scrollIntoView = () => undefined;
+  });
+
   afterEach(() => {
     cleanup();
     window.history.replaceState(null, "", "/portfolio");
@@ -121,13 +154,7 @@ describe("PortfolioClient", () => {
     ["positions", "Posições"],
     ["movements", "Movimentações"],
   ] as const)("loads the %s view through the API", async (activeView, text) => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce({ ok: true, json: async () => overview })
-        .mockResolvedValue({ ok: true, json: async () => ({ positions: [] }) }),
-    );
+    vi.stubGlobal("fetch", successfulPortfolioFetch());
 
     renderPortfolio(activeView);
 
@@ -135,14 +162,59 @@ describe("PortfolioClient", () => {
     expect(fetch).toHaveBeenCalledWith("/api/portfolio");
     if (activeView === "overview") {
       expect(fetch).toHaveBeenCalledWith("/api/portfolio/allocation");
+      expect(fetch).toHaveBeenCalledWith("/api/portfolio/monthly-review");
     }
   });
 
-  it("keeps reference rates by the summary and opens one objectives sheet", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
+  it("retries a monthly close request and refetches after changing months", async () => {
+    let monthlyReviewRequest = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith("/api/portfolio/monthly-review")) {
+        monthlyReviewRequest += 1;
+        return monthlyReviewRequest === 1
+          ? Promise.resolve({
+              ok: false,
+              json: async () => ({ message: "Fechamentos indisponíveis." }),
+            })
+          : Promise.resolve({
+              ok: true,
+              json: async () => ({
+                ...monthlyReview,
+                availablePeriods: ["2026-08", "2026-07"],
+                selectedPeriod: "2026-08",
+              }),
+            });
+      }
+      return url === "/api/portfolio/allocation"
+        ? Promise.resolve({
+            ok: true,
+            json: async () => ({
+              classDistribution: getPortfolioConcentration([], "assetClass"),
+            }),
+          })
+        : Promise.resolve({ ok: true, json: async () => overview });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPortfolio("overview");
+    expect(await screen.findByText("Fechamentos indisponíveis.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await screen.findByRole("combobox", { name: "Mês do fechamento" });
+    await user.click(
+      screen.getByRole("combobox", { name: "Mês do fechamento" }),
     );
+    await user.click(screen.getByRole("option", { name: "julho de 2026" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/portfolio/monthly-review?period=2026-07",
+      ),
+    );
+  });
+
+  it("keeps reference rates by the summary and opens one objectives sheet", async () => {
+    vi.stubGlobal("fetch", successfulPortfolioFetch());
 
     renderPortfolio("overview");
     const pushState = vi.spyOn(window.history, "pushState");
@@ -199,10 +271,7 @@ describe("PortfolioClient", () => {
   });
 
   it("contains objective management in the viewport-sized Sheet", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
-    );
+    vi.stubGlobal("fetch", successfulPortfolioFetch());
 
     renderPortfolio("overview");
 
@@ -236,10 +305,7 @@ describe("PortfolioClient", () => {
   });
 
   it("pushes objective detail changes into the URL", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
-    );
+    vi.stubGlobal("fetch", successfulPortfolioFetch());
     const user = userEvent.setup();
     renderPortfolio("overview");
 
@@ -262,10 +328,7 @@ describe("PortfolioClient", () => {
   });
 
   it("opens deep-linked reserve and objective screens and follows browser navigation", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
-    );
+    vi.stubGlobal("fetch", successfulPortfolioFetch());
     window.history.replaceState(
       null,
       "",
@@ -334,6 +397,9 @@ describe("PortfolioClient", () => {
   it("announces an initial API failure and allows a retry", async () => {
     let overviewRequest = 0;
     const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith("/api/portfolio/monthly-review")) {
+        return Promise.resolve({ ok: true, json: async () => monthlyReview });
+      }
       if (url === "/api/portfolio/allocation") {
         return Promise.resolve({
           ok: true,
@@ -369,6 +435,9 @@ describe("PortfolioClient", () => {
   it("uses a fixed fallback for a network failure on the initial load", async () => {
     let overviewRequest = 0;
     const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith("/api/portfolio/monthly-review")) {
+        return Promise.resolve({ ok: true, json: async () => monthlyReview });
+      }
       if (url === "/api/portfolio/allocation") {
         return Promise.resolve({
           ok: true,
@@ -399,14 +468,22 @@ describe("PortfolioClient", () => {
   });
 
   it("keeps the loaded portfolio visible when a refresh fails", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ positions: [] }),
-      })
-      .mockRejectedValueOnce(new Error("network"));
+    let overviewRequest = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith("/api/portfolio/monthly-review"))
+        return Promise.resolve({ ok: true, json: async () => monthlyReview });
+      if (url === "/api/portfolio/allocation")
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            classDistribution: getPortfolioConcentration([], "assetClass"),
+          }),
+        });
+      overviewRequest += 1;
+      return overviewRequest === 1
+        ? Promise.resolve({ ok: true, json: async () => overview })
+        : Promise.reject(new Error("network"));
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     renderPortfolio("overview");
@@ -423,17 +500,25 @@ describe("PortfolioClient", () => {
   });
 
   it("uses the API message in a refresh toast without duplicating inline feedback", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ positions: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        json: async () => ({ message: "Atualização recusada pela API." }),
-      });
+    let overviewRequest = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith("/api/portfolio/monthly-review"))
+        return Promise.resolve({ ok: true, json: async () => monthlyReview });
+      if (url === "/api/portfolio/allocation")
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            classDistribution: getPortfolioConcentration([], "assetClass"),
+          }),
+        });
+      overviewRequest += 1;
+      return overviewRequest === 1
+        ? Promise.resolve({ ok: true, json: async () => overview })
+        : Promise.resolve({
+            ok: false,
+            json: async () => ({ message: "Atualização recusada pela API." }),
+          });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     renderPortfolio("overview");
@@ -447,10 +532,15 @@ describe("PortfolioClient", () => {
   });
 
   it("shows class distribution as unavailable in the rendered chart when allocation fails", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({ ok: false, json: async () => ({}) });
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        url.startsWith("/api/portfolio/monthly-review")
+          ? { ok: true, json: async () => monthlyReview }
+          : url === "/api/portfolio/allocation"
+            ? { ok: false, json: async () => ({}) }
+            : { ok: true, json: async () => overview },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     renderPortfolio("overview");
@@ -461,15 +551,23 @@ describe("PortfolioClient", () => {
   });
 
   it("shows an empty distribution when allocation succeeds without positions", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          classDistribution: getPortfolioConcentration([], "assetClass"),
-        }),
-      });
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        url.startsWith("/api/portfolio/monthly-review")
+          ? { ok: true, json: async () => monthlyReview }
+          : url === "/api/portfolio/allocation"
+            ? {
+                ok: true,
+                json: async () => ({
+                  classDistribution: getPortfolioConcentration(
+                    [],
+                    "assetClass",
+                  ),
+                }),
+              }
+            : { ok: true, json: async () => overview },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     renderPortfolio("overview");

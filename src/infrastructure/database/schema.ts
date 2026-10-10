@@ -148,6 +148,29 @@ export const manualPortfolioPositions = pgTable("manual_portfolio_positions", {
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+export const manualPortfolioPositionSnapshots = pgTable(
+  "manual_portfolio_position_snapshots",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    assetKey: varchar({ length: 64 }).notNull(),
+    product: text().notNull(),
+    assetCode: varchar({ length: 24 }),
+    currency: varchar({ length: 3 }).notNull(),
+    totalValue: numeric({ precision: 24, scale: 8 }),
+    convertedValueBrl: numeric({ precision: 24, scale: 8 }),
+    positionDate: date().notNull(),
+    conversionDate: date(),
+    valueBasis: varchar({ length: 16 }).notNull(),
+    status: varchar({ length: 16 }).notNull(),
+    recordedAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("manual_portfolio_position_snapshots_asset_recorded_uidx").on(
+      table.assetKey,
+      table.recordedAt,
+    ),
+  ],
+);
 export const cdbRateConfigurations = pgTable("cdb_rate_configurations", {
   id: uuid().defaultRandom().primaryKey(),
   assetCode: text().notNull().unique(),

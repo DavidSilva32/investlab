@@ -5,6 +5,16 @@ describe("queryKeys", () => {
   it("groups portfolio reads under stable portfolio keys", () => {
     expect(queryKeys.portfolio.all).toEqual(["portfolio"]);
     expect(queryKeys.portfolio.overview()).toEqual(["portfolio", "overview"]);
+    expect(queryKeys.portfolio.monthlyReview(null)).toEqual([
+      "portfolio",
+      "monthly-review",
+      "latest",
+    ]);
+    expect(queryKeys.portfolio.monthlyReview("2026-09")).toEqual([
+      "portfolio",
+      "monthly-review",
+      "2026-09",
+    ]);
     expect(queryKeys.portfolio.allocation()).toEqual([
       "portfolio",
       "allocation",

@@ -1,5 +1,6 @@
 import { logger } from "@/infrastructure/logging/logger";
 import { importRepository } from "@/backend/repositories/import.repository";
+import { manualPortfolioPositionRepository } from "@/backend/repositories/manual-portfolio-position.repository";
 import { bcbReferenceRatesService } from "@/backend/services/bcb-reference-rates.service";
 import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
@@ -17,6 +18,7 @@ import {
 import { getPortfolioInsights } from "@/lib/portfolio-insights";
 import { personalInvestmentStrategyRepository } from "@/backend/repositories/personal-investment-strategy.repository";
 import { personalInvestmentStrategyService } from "@/backend/services/personal-investment-strategy.service";
+import { calculateMonthlyPortfolioReview } from "@/backend/services/monthly-portfolio-review";
 
 const unavailableGuidance: ContributionGuidance = {
   status: "unavailable",
@@ -26,6 +28,37 @@ const unavailableGuidance: ContributionGuidance = {
 };
 
 export class PortfolioService {
+  async getMonthlyReview(period?: string | null, requestId?: string) {
+    const [snapshots, manualObservations, currentManualPositions] =
+      await Promise.all([
+        importRepository.listPositionSnapshots(requestId),
+        manualPortfolioPositionRepository.listSnapshots(requestId),
+        manualPortfolioPositionRepository.list(requestId),
+      ]);
+    return calculateMonthlyPortfolioReview(
+      snapshots,
+      period,
+      manualObservations.map((observation) => ({
+        ...observation,
+        status:
+          observation.status === "DELETED"
+            ? ("DELETED" as const)
+            : ("ACTIVE" as const),
+      })),
+      currentManualPositions.map((position) => ({
+        assetKey: position.assetKey,
+        product: position.product,
+        assetCode: position.assetCode,
+        currency: position.currency,
+        totalValue: position.totalValue,
+        convertedValueBrl: position.convertedValueBrl,
+        positionDate: position.positionDate,
+        conversionDate: position.conversionDate,
+        updatedAt: position.updatedAt,
+      })),
+    );
+  }
+
   async calculateContribution(contributionAmount: number, requestId?: string) {
     const strategySettings =
       await personalInvestmentStrategyRepository.get(requestId);

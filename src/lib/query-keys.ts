@@ -2,6 +2,8 @@ export const queryKeys = {
   portfolio: {
     all: ["portfolio"] as const,
     overview: () => ["portfolio", "overview"] as const,
+    monthlyReview: (period: string | null) =>
+      ["portfolio", "monthly-review", period ?? "latest"] as const,
     allocation: () => ["portfolio", "allocation"] as const,
     objectives: () => ["portfolio", "objectives"] as const,
     emergencyReserve: () => ["portfolio", "emergency-reserve"] as const,

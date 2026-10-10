@@ -232,6 +232,13 @@
       "when": 1791335016813,
       "tag": "0032_milky_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791597277996,
+      "tag": "0033_soft_gauntlet",
+      "breakpoints": true
     }
   ]
 }

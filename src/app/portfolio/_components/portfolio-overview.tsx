@@ -66,12 +66,14 @@ export function PortfolioOverview({
   classDistribution,
   classificationStatus,
   summaryContent,
+  monthlyReviewContent,
 }: {
   positions: PortfolioPosition[];
   insights: PortfolioInsights;
   classDistribution: PortfolioConcentration | null;
   classificationStatus: "loading" | "loaded" | "unavailable";
   summaryContent?: React.ReactNode;
+  monthlyReviewContent?: React.ReactNode;
 }) {
   const nextMaturity = insights.upcomingMaturities[0];
   const hasAttention =
@@ -139,6 +141,7 @@ export function PortfolioOverview({
       </Card>
 
       {summaryContent}
+      {monthlyReviewContent}
 
       <PortfolioDistributionCharts
         institutionItems={institutionDistribution}
