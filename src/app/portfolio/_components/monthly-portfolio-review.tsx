@@ -19,7 +19,6 @@ import {
   ChartNoAxesColumnIncreasing,
   ChartSpline,
   Minus,
-  WalletCards,
 } from "lucide-react";
 import type {
   MonthlyPortfolioHistoryPoint,
@@ -31,12 +30,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -91,7 +85,6 @@ export function MonthlyPortfolioReview({
 }) {
   const [chartType, setChartType] = useState<"area" | "bar">("area");
   const chartId = useId().replace(/:/g, "");
-  const selectedChartPeriod = review?.selectedPeriod;
   const hasHistory = Boolean(review?.history.length);
   const singleClose = review?.history.length === 1;
   const selectedHistoryPoint = review?.history.find(
@@ -100,45 +93,111 @@ export function MonthlyPortfolioReview({
   const showPartialWarning =
     review?.status === "partial" ||
     selectedHistoryPoint?.completeness === "partial";
+  const showSelectedSummary =
+    !loading && !error && hasHistory && Boolean(review?.current);
+  const periodSelector =
+    review && review.availablePeriods.length > 1 ? (
+      <div>
+        <label className="sr-only" htmlFor="monthly-review-period">
+          Mês de referência
+        </label>
+        <Select
+          value={selectedPeriod ?? review.selectedPeriod ?? undefined}
+          onValueChange={onPeriodChange}
+        >
+          <SelectTrigger
+            id="monthly-review-period"
+            className="h-8 w-auto gap-1 border-0 bg-transparent px-1 text-xs text-muted-foreground shadow-none"
+          >
+            <CalendarDays aria-hidden="true" className="size-3.5" />
+            <SelectValue placeholder="Escolha um mês" />
+          </SelectTrigger>
+          <SelectContent>
+            {review.availablePeriods.map((period) => (
+              <SelectItem key={period} value={period}>
+                {formatMonth(period)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ) : null;
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <ChartSpline aria-hidden="true" className="size-5" />
+      <CardHeader className="flex flex-wrap items-center gap-x-4 gap-y-3 space-y-0 pb-2">
+        <div className="flex shrink-0 items-center gap-2.5">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ChartSpline aria-hidden="true" className="size-4" />
           </span>
-          <div className="space-y-1">
+          <div>
             <h2 className="text-base font-semibold leading-none tracking-tight">
               Evolução patrimonial
             </h2>
-            <CardDescription>Valores registrados na carteira</CardDescription>
           </div>
         </div>
-        {!singleClose && review && review.availablePeriods.length > 1 && (
-          <div className="grid min-w-40 gap-1.5">
-            <label className="sr-only" htmlFor="monthly-review-period">
-              Mês de referência
-            </label>
-            <Select
-              value={selectedPeriod ?? review.selectedPeriod ?? undefined}
-              onValueChange={onPeriodChange}
+        {showSelectedSummary && review?.current && (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+            {!singleClose && periodSelector ? (
+              periodSelector
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                {formatDate(review.current.referenceDate)}
+              </span>
+            )}
+            <span className="text-base font-semibold tabular-nums tracking-tight">
+              {formatCurrencyCents(review.current.knownValueCents)}
+            </span>
+            {review.history.length > 1 &&
+              review.observedChangeCents !== null && (
+                <span
+                  role="img"
+                  aria-label={`Diferença observada: ${formatChange(review.observedChangeCents)}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs font-medium tabular-nums"
+                >
+                  {BigInt(review.observedChangeCents) < 0n ? (
+                    <ArrowDownRight aria-hidden="true" className="size-3.5" />
+                  ) : BigInt(review.observedChangeCents) > 0n ? (
+                    <ArrowUpRight aria-hidden="true" className="size-3.5" />
+                  ) : (
+                    <Minus aria-hidden="true" className="size-3.5" />
+                  )}
+                  {formatChange(review.observedChangeCents)}
+                </span>
+              )}
+          </div>
+        )}
+        {!loading && !error && !showSelectedSummary && periodSelector && (
+          <div className="ml-auto">{periodSelector}</div>
+        )}
+        {!loading && !error && hasHistory && (
+          <div
+            className="ml-auto inline-flex shrink-0 rounded-lg border bg-muted/40 p-1"
+            role="group"
+            aria-label="Tipo de gráfico"
+          >
+            <Button
+              type="button"
+              variant={chartType === "area" ? "secondary" : "ghost"}
+              size="icon"
+              className="size-8 rounded-md"
+              aria-label="Gráfico de área"
+              aria-pressed={chartType === "area"}
+              onClick={() => setChartType("area")}
             >
-              <SelectTrigger id="monthly-review-period">
-                <CalendarDays
-                  aria-hidden="true"
-                  className="size-4 text-muted-foreground"
-                />
-                <SelectValue placeholder="Escolha um mês" />
-              </SelectTrigger>
-              <SelectContent>
-                {review.availablePeriods.map((period) => (
-                  <SelectItem key={period} value={period}>
-                    {formatMonth(period)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <ChartSpline aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant={chartType === "bar" ? "secondary" : "ghost"}
+              size="icon"
+              className="size-8 rounded-md"
+              aria-label="Gráfico de barras"
+              aria-pressed={chartType === "bar"}
+              onClick={() => setChartType("bar")}
+            >
+              <ChartNoAxesColumnIncreasing aria-hidden="true" />
+            </Button>
           </div>
         )}
       </CardHeader>
@@ -180,93 +239,12 @@ export function MonthlyPortfolioReview({
             Sem fechamento neste mês.
           </p>
         )}
-        {!loading && !error && singleClose && review?.current && (
-          <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <WalletCards aria-hidden="true" className="size-5" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-muted-foreground">
-                {formatDate(review.current.referenceDate)}
-              </p>
-              <p className="text-xl font-semibold tabular-nums tracking-tight sm:text-2xl">
-                {formatCurrencyCents(review.current.knownValueCents)}
-              </p>
-            </div>
-          </div>
-        )}
         {!loading && !error && hasHistory && review && (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <div
-                className="inline-flex rounded-lg border bg-muted/40 p-1"
-                role="group"
-                aria-label="Tipo de gráfico"
-              >
-                <Button
-                  type="button"
-                  variant={chartType === "area" ? "secondary" : "ghost"}
-                  size="icon"
-                  className="size-8 rounded-md"
-                  aria-label="Gráfico de área"
-                  aria-pressed={chartType === "area"}
-                  onClick={() => setChartType("area")}
-                >
-                  <ChartSpline aria-hidden="true" />
-                </Button>
-                <Button
-                  type="button"
-                  variant={chartType === "bar" ? "secondary" : "ghost"}
-                  size="icon"
-                  className="size-8 rounded-md"
-                  aria-label="Gráfico de barras"
-                  aria-pressed={chartType === "bar"}
-                  onClick={() => setChartType("bar")}
-                >
-                  <ChartNoAxesColumnIncreasing aria-hidden="true" />
-                </Button>
-              </div>
-            </div>
-            <PortfolioEvolutionChart
-              type={chartType}
-              id={chartId}
-              history={review.history}
-            />
-          </div>
-        )}
-        {!loading && !error && review?.current && review.history.length > 1 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CalendarDays aria-hidden="true" className="size-4" />
-              <span>
-                {formatMonth(
-                  selectedChartPeriod ??
-                    review.current.referenceDate.slice(0, 7),
-                )}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-semibold tabular-nums">
-                {formatCurrencyCents(review.current.knownValueCents)}
-              </span>
-              {review.observedChangeCents !== null && (
-                <span
-                  role="img"
-                  aria-label={`Diferença observada: ${formatChange(review.observedChangeCents)}`}
-                  className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium tabular-nums"
-                >
-                  {BigInt(review.observedChangeCents) < 0n ? (
-                    <ArrowDownRight aria-hidden="true" className="size-3.5" />
-                  ) : BigInt(review.observedChangeCents) > 0n ? (
-                    <ArrowUpRight aria-hidden="true" className="size-3.5" />
-                  ) : (
-                    <Minus aria-hidden="true" className="size-3.5" />
-                  )}
-                  {formatChange(review.observedChangeCents)}
-                </span>
-              )}
-            </div>
-          </div>
+          <PortfolioEvolutionChart
+            type={chartType}
+            id={chartId}
+            history={review.history}
+          />
         )}
         {!loading && !error && showPartialWarning && review && (
           <p
@@ -416,7 +394,7 @@ function PortfolioEvolutionChart({
       >
         <ChartContainer
           config={evolutionChartConfig}
-          className={`${points.length === 1 ? "h-40 sm:h-44" : "h-52 sm:h-60"} w-full aspect-auto`}
+          className="h-52 w-full aspect-auto sm:h-60"
           style={{ minWidth: `${minimumChartWidth}px` }}
           aria-label="Gráfico da evolução do patrimônio conhecido"
         >
