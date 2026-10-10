@@ -1,6 +1,24 @@
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+"use client";
+
+import { useId, useState } from "react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { ChartNoAxesColumnIncreasing, ChartSpline } from "lucide-react";
 import type { MonthlyPortfolioReview as MonthlyPortfolioReviewData } from "@/backend/services/monthly-portfolio-review";
 import { Button } from "@/components/ui/button";
+import {
+  ChartContainer,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import {
   Card,
   CardContent,
@@ -22,6 +40,11 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
   year: "numeric",
   timeZone: "UTC",
 });
+const shortMonthFormatter = new Intl.DateTimeFormat("pt-BR", {
+  month: "short",
+  year: "2-digit",
+  timeZone: "UTC",
+});
 const timestampFormatter = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "short",
   timeStyle: "short",
@@ -34,6 +57,10 @@ function formatDate(value: string) {
 
 function formatMonth(value: string) {
   return monthFormatter.format(new Date(`${value}-01T00:00:00Z`));
+}
+
+function formatShortMonth(value: string) {
+  return shortMonthFormatter.format(new Date(`${value}-01T00:00:00Z`));
 }
 
 function formatTimestamp(value: string) {
@@ -65,16 +92,21 @@ export function MonthlyPortfolioReview({
   onPeriodChange: (period: string) => void;
   onRetry: () => void;
 }) {
+  const [chartType, setChartType] = useState<"area" | "bar">("area");
+  const chartId = useId().replace(/:/g, "");
+  const selectedChartPeriod = review?.selectedPeriod;
+  const previousPeriod = selectedChartPeriod
+    ? review?.availablePeriods.find((period) => period < selectedChartPeriod)
+    : undefined;
+
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <h2 className="text-base font-semibold leading-none tracking-tight">
-            Fechamento mensal
+            Evolução patrimonial
           </h2>
-          <CardDescription>
-            O que mudou entre os valores registrados na carteira.
-          </CardDescription>
+          <CardDescription>Valores registrados na carteira</CardDescription>
         </div>
         {review && review.availablePeriods.length > 0 && (
           <div className="grid min-w-40 gap-1.5">
@@ -82,7 +114,7 @@ export function MonthlyPortfolioReview({
               className="text-xs font-medium text-muted-foreground"
               htmlFor="monthly-review-period"
             >
-              Mês do fechamento
+              Mês de referência
             </label>
             <Select
               value={selectedPeriod ?? review.selectedPeriod ?? undefined}
@@ -102,7 +134,7 @@ export function MonthlyPortfolioReview({
           </div>
         )}
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {loading && (
           <p className="text-sm text-muted-foreground" role="status">
             Carregando fechamentos importados…
@@ -119,72 +151,112 @@ export function MonthlyPortfolioReview({
           </div>
         )}
         {!loading && !error && review?.status === "no_history" && (
-          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            Ainda não há valores históricos de posições importadas ou manuais
-            para comparar.
+          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+            O histórico aparecerá após o primeiro fechamento da carteira.
           </p>
         )}
         {!loading && !error && review?.status === "missing_snapshot" && (
-          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            Não há um registro de posições para este mês.
+          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+            Não há fechamento registrado neste mês.
           </p>
         )}
         {!loading && !error && review?.current && (
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <SnapshotAmount
-                title={
-                  review.previous ? "Fechamento anterior" : "Último fechamento"
-                }
-                snapshot={review.previous ?? review.current}
-              />
-              {review.previous && (
-                <SnapshotAmount
-                  title="Fechamento selecionado"
-                  snapshot={review.current}
-                />
-              )}
-            </div>
+          <div className="space-y-3">
             {review.status === "no_previous_close" && (
-              <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                Ainda não há outro fechamento importado para comparar.
+              <div className="flex flex-col gap-1 rounded-lg border border-dashed p-3 sm:flex-row sm:items-baseline sm:justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Primeiro fechamento registrado
+                </span>
+                <span className="text-lg font-semibold tabular-nums">
+                  {formatCurrencyCents(review.current.knownValueCents)}
+                </span>
+                <span className="sr-only">
+                  Ainda não há outro fechamento para comparar.
+                </span>
+              </div>
+            )}
+            {review.previous &&
+              review.current &&
+              review.previous.knownValueCents !== null &&
+              review.current.knownValueCents !== null && (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      {review.observedChangeCents !== null && (
+                        <>
+                          <span className="text-sm text-muted-foreground">
+                            {review.status === "partial"
+                              ? "Diferença entre valores conhecidos"
+                              : "Diferença observada"}
+                          </span>
+                          <span className="font-semibold tabular-nums">
+                            {formatChange(review.observedChangeCents)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div
+                      className="inline-flex rounded-md border p-0.5"
+                      role="group"
+                      aria-label="Tipo de gráfico"
+                    >
+                      <Button
+                        type="button"
+                        variant={chartType === "area" ? "secondary" : "ghost"}
+                        size="icon"
+                        aria-label="Gráfico de área"
+                        aria-pressed={chartType === "area"}
+                        onClick={() => setChartType("area")}
+                      >
+                        <ChartSpline aria-hidden="true" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={chartType === "bar" ? "secondary" : "ghost"}
+                        size="icon"
+                        aria-label="Gráfico de barras"
+                        aria-pressed={chartType === "bar"}
+                        onClick={() => setChartType("bar")}
+                      >
+                        <ChartNoAxesColumnIncreasing aria-hidden="true" />
+                      </Button>
+                    </div>
+                  </div>
+                  <PortfolioEvolutionChart
+                    type={chartType}
+                    id={chartId}
+                    points={[
+                      {
+                        month:
+                          previousPeriod ??
+                          review.previous.referenceDate.slice(0, 7),
+                        value: centsToChartValue(
+                          review.previous.knownValueCents,
+                        ),
+                        cents: review.previous.knownValueCents,
+                      },
+                      {
+                        month:
+                          selectedChartPeriod ??
+                          review.current.referenceDate.slice(0, 7),
+                        value: centsToChartValue(
+                          review.current.knownValueCents,
+                        ),
+                        cents: review.current.knownValueCents,
+                      },
+                    ]}
+                  />
+                </div>
+              )}
+            {review.status === "no_previous_close" && (
+              <p className="text-xs text-muted-foreground">
+                Registre outro fechamento para comparar os períodos.
               </p>
             )}
             {review.status === "insufficient_values" && (
               <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                Faltam valores conhecidos em um dos fechamentos para calcular
-                uma variação comparável.
+                Não há valores suficientes nos dois períodos para comparar.
               </p>
-            )}
-            {review.observedChangeCents !== null && (
-              <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-3">
-                {BigInt(review.observedChangeCents) < 0n ? (
-                  <ArrowDownRight
-                    aria-hidden="true"
-                    className="size-5 shrink-0 text-muted-foreground"
-                  />
-                ) : BigInt(review.observedChangeCents) > 0n ? (
-                  <ArrowUpRight
-                    aria-hidden="true"
-                    className="size-5 shrink-0 text-muted-foreground"
-                  />
-                ) : (
-                  <Minus
-                    aria-hidden="true"
-                    className="size-5 shrink-0 text-muted-foreground"
-                  />
-                )}
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">
-                    {review.status === "partial"
-                      ? "Diferença entre valores conhecidos"
-                      : "Variação observada"}
-                  </p>
-                  <p className="font-semibold tabular-nums">
-                    {formatChange(review.observedChangeCents)}
-                  </p>
-                </div>
-              </div>
             )}
             {review.status === "partial" && (
               <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
@@ -193,8 +265,8 @@ export function MonthlyPortfolioReview({
               </p>
             )}
             <details className="group rounded-lg border px-3 py-2 text-sm">
-              <summary className="cursor-pointer font-medium">
-                Ver datas, fontes e limites
+              <summary className="cursor-pointer font-medium text-muted-foreground">
+                Detalhes dos valores
               </summary>
               <div className="mt-3 space-y-3 text-muted-foreground">
                 {review.untrackedManualPositionCount > 0 && (
@@ -272,27 +344,151 @@ export function MonthlyPortfolioReview({
   );
 }
 
-function SnapshotAmount({
-  title,
-  snapshot,
+type EvolutionPoint = {
+  month: string;
+  value: number;
+  cents: string;
+};
+
+const evolutionChartConfig = {
+  value: { label: "Patrimônio conhecido", color: "var(--primary)" },
+} satisfies ChartConfig;
+
+function centsToChartValue(cents: string) {
+  const value = BigInt(cents);
+  const whole = value / 100n;
+  const fractional = value % 100n;
+  return Number(whole) + Number(fractional) / 100;
+}
+
+function PortfolioEvolutionChart({
+  type,
+  id,
+  points,
 }: {
-  title: string;
-  snapshot: NonNullable<MonthlyPortfolioReviewData["current"]>;
+  type: "area" | "bar";
+  id: string;
+  points: EvolutionPoint[];
 }) {
-  return (
-    <div className="min-w-0 rounded-lg border p-3">
-      <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <p className="mt-1 break-words text-lg font-semibold tabular-nums">
-        {formatCurrencyCents(snapshot.knownValueCents)}
-      </p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {snapshot.valuedPositionCount} de {snapshot.positionCount} posições com
-        valor conhecido
-        {snapshot.unvaluedPositionCount > 0 &&
-          ` · ${snapshot.unvaluedPositionCount} sem valor`}
-      </p>
-    </div>
+  const dateLabel = (month: string) => formatMonth(month);
+  const tooltip = (
+    <ChartTooltipContent
+      labelFormatter={(label) =>
+        typeof label === "string" ? dateLabel(label) : ""
+      }
+      formatter={(_value, _name, item) =>
+        formatCurrencyCents(item.payload.cents)
+      }
+    />
   );
+
+  return (
+    <>
+      <p className="sr-only">
+        Patrimônio conhecido: {formatCurrencyCents(points[0].cents)} em{" "}
+        {dateLabel(points[0].month)} e {formatCurrencyCents(points[1].cents)} em{" "}
+        {dateLabel(points[1].month)}. A diferença observada não representa
+        rentabilidade.
+      </p>
+      <ChartContainer
+        config={evolutionChartConfig}
+        className="h-52 w-full aspect-auto sm:h-60"
+        aria-label="Gráfico da evolução do patrimônio conhecido"
+      >
+        {type === "area" ? (
+          <AreaChart
+            accessibilityLayer
+            data={points}
+            margin={{ top: 12, right: 12, left: 8, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient
+                id={`portfolio-area-${id}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="0%"
+                  stopColor="var(--primary)"
+                  stopOpacity={0.3}
+                />
+                <stop
+                  offset="95%"
+                  stopColor="var(--primary)"
+                  stopOpacity={0.02}
+                />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="month"
+              tickLine={false}
+              axisLine={false}
+              minTickGap={24}
+              tickFormatter={formatShortMonth}
+            />
+            <YAxis
+              width={72}
+              domain={[0, "auto"]}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={compactCurrency}
+            />
+            <Tooltip cursor={false} content={tooltip} />
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="var(--color-value)"
+              strokeWidth={2}
+              fill={`url(#portfolio-area-${id})`}
+              dot={{ r: 3 }}
+              activeDot={{ r: 4 }}
+            />
+          </AreaChart>
+        ) : (
+          <BarChart
+            accessibilityLayer
+            data={points}
+            margin={{ top: 12, right: 12, left: 8, bottom: 0 }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="month"
+              tickLine={false}
+              axisLine={false}
+              minTickGap={24}
+              tickFormatter={formatShortMonth}
+            />
+            <YAxis
+              width={72}
+              domain={[0, "auto"]}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={compactCurrency}
+            />
+            <Tooltip cursor={false} content={tooltip} />
+            <Bar
+              dataKey="value"
+              fill="var(--color-value)"
+              radius={4}
+              isAnimationActive
+            />
+          </BarChart>
+        )}
+      </ChartContainer>
+    </>
+  );
+}
+
+function compactCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function SnapshotSources({
