@@ -471,7 +471,8 @@ describe("MonthlyPortfolioReview", () => {
     expect(onPeriodChange).toHaveBeenCalledWith("2026-07");
   });
 
-  it("shows a single close as an isolated area point with a useful summary", () => {
+  it("shows a single close as an isolated point and can switch to one bar", async () => {
+    const user = userEvent.setup();
     renderReview(
       review({
         status: "no_previous_close",
@@ -491,9 +492,20 @@ describe("MonthlyPortfolioReview", () => {
       "visible",
     );
     expect(
-      screen.queryByRole("button", { name: "Gráfico de barras" }),
-    ).toBeNull();
-    expect(screen.queryByTestId("bar-chart")).toBeNull();
+      screen
+        .getByRole("button", { name: "Gráfico de área" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    await user.click(screen.getByRole("button", { name: "Gráfico de barras" }));
+    expect(screen.queryByTestId("area-chart")).toBeNull();
+    expect(screen.getByTestId("bar-chart").getAttribute("data-months")).toBe(
+      "2026-09",
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Gráfico de barras" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(screen.queryByText(/Registre outro fechamento/)).toBeNull();
     expect(screen.queryByText("Detalhes dos valores")).toBeNull();
     expect(screen.getByText(/rentabilidade/i).className).toContain("sr-only");
