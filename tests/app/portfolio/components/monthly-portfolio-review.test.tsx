@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Children, isValidElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,7 +33,12 @@ vi.mock("recharts", () => {
     </div>
   );
   return {
-    Area: () => <span data-testid="area-series" />,
+    Area: ({ dot }: { dot: boolean | object }) => (
+      <span
+        data-testid="area-series"
+        data-dot={dot === false ? "hidden" : "visible"}
+      />
+    ),
     AreaChart: (props: Omit<Parameters<typeof Chart>[0], "type">) => (
       <Chart {...props} type="area" />
     ),
@@ -257,7 +262,7 @@ describe("MonthlyPortfolioReview", () => {
       />,
     );
     expect(
-      screen.getByText(/histórico aparecerá após o primeiro fechamento/),
+      screen.getByText(/Importe um fechamento para ver sua evolução/),
     ).toBeTruthy();
 
     const user = userEvent.setup();
@@ -276,12 +281,13 @@ describe("MonthlyPortfolioReview", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
-  it("keeps the summary compact and puts source dates and limits in details", () => {
+  it("keeps the historical summary compact and omits the technical disclosure", () => {
     renderReview(review());
     expect(screen.getByText("Evolução patrimonial")).toBeTruthy();
-    expect(screen.getByText(/Diferença/)).toBeTruthy();
-    expect(screen.getByText("+R$ 50,00")).toBeTruthy();
-    expect(screen.getByText(/R\$ 1\.200,50.*R\$ 1\.250,50/s)).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: /Diferença observada: \+R\$/ }),
+    ).toBeTruthy();
+    expect(screen.getAllByText(/R\$\s?1\.250,50/).length).toBeGreaterThan(0);
     expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
       "2026-07,2026-08",
     );
@@ -296,14 +302,10 @@ describe("MonthlyPortfolioReview", () => {
     expect(screen.getByTestId("chart-tooltip").textContent).toMatch(
       /julho de 2026.*R\$\s1\.250,50.*parcial.*31\/07\/2026.*R\$\s1\.250,50/,
     );
-    expect(document.querySelector("details")?.open).toBe(false);
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(
-      screen.getAllByText("31/07/2026", { exact: false }).length,
-    ).toBeGreaterThan(0);
-    expect(screen.getAllByText(/registro em 01\/09\/2026/)).toHaveLength(2);
-    expect(screen.getAllByText(/importada em 02\/09\/2026/)).toHaveLength(2);
-    expect(screen.getByText(new RegExp(flowExplanation))).toBeTruthy();
+    expect(document.querySelector("details")).toBeNull();
+    expect(screen.queryByText(/registro em 01\/09\/2026/)).toBeNull();
+    expect(screen.queryByText(/importada em 02\/09\/2026/)).toBeNull();
+    expect(screen.queryByText(new RegExp(flowExplanation))).toBeNull();
     expect(screen.getByLabelText("Mês de referência")).toBeTruthy();
   });
 
@@ -367,7 +369,7 @@ describe("MonthlyPortfolioReview", () => {
     expect(
       screen.getByText(/fevereiro de 2026: sem fechamento registrado/),
     ).toBeTruthy();
-    expect(screen.queryByText(/rentabilidade/i)).toBeTruthy();
+    expect(screen.getByText(/rentabilidade/i).className).toContain("sr-only");
   });
 
   it("keeps partially known history as an exact partial point without treating it as zero", () => {
@@ -408,7 +410,7 @@ describe("MonthlyPortfolioReview", () => {
       "100,null,123.45",
     );
     expect(screen.getByText(/valor parcial/)).toBeTruthy();
-    expect(screen.getByText(/Há posições sem valor conhecido/)).toBeTruthy();
+    expect(screen.getByText("Algumas posições estão sem valor.")).toBeTruthy();
   });
 
   it("gives long histories a scrollable chart area sized for each month", () => {
@@ -469,20 +471,32 @@ describe("MonthlyPortfolioReview", () => {
     expect(onPeriodChange).toHaveBeenCalledWith("2026-07");
   });
 
-  it("shows a first close without inventing a comparison", () => {
+  it("shows a single close as an isolated area point with a useful summary", () => {
     renderReview(
       review({
         status: "no_previous_close",
-        availablePeriods: ["2026-08"],
+        availablePeriods: ["2026-09"],
+        selectedPeriod: "2026-09",
+        current: summary({ referenceDate: "2026-09-30" }),
         previous: null,
         observedChangeCents: null,
       }),
     );
-    expect(screen.getByText("Primeiro fechamento registrado")).toBeTruthy();
-    expect(screen.getByText(/Registre outro fechamento/)).toBeTruthy();
-    expect(screen.queryByTestId("area-chart")).toBeNull();
+    expect(screen.getByText("30/09/2026")).toBeTruthy();
+    expect(screen.getByText("R$ 1.250,50")).toBeTruthy();
+    expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
+      "2026-09",
+    );
+    expect(screen.getByTestId("area-series").getAttribute("data-dot")).toBe(
+      "visible",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Gráfico de barras" }),
+    ).toBeNull();
     expect(screen.queryByTestId("bar-chart")).toBeNull();
-    expect(screen.queryByText(/rentabilidade/i)).toBeNull();
+    expect(screen.queryByText(/Registre outro fechamento/)).toBeNull();
+    expect(screen.queryByText("Detalhes dos valores")).toBeNull();
+    expect(screen.getByText(/rentabilidade/i).className).toContain("sr-only");
   });
 
   it("explains missing periods and insufficient values", () => {
@@ -500,7 +514,7 @@ describe("MonthlyPortfolioReview", () => {
         onRetry={vi.fn()}
       />,
     );
-    expect(screen.getByText(/Não há fechamento registrado/)).toBeTruthy();
+    expect(screen.getByText("Sem fechamento neste mês.")).toBeTruthy();
 
     rerender(
       <MonthlyPortfolioReview
@@ -515,7 +529,9 @@ describe("MonthlyPortfolioReview", () => {
         onRetry={vi.fn()}
       />,
     );
-    expect(screen.getByText(/Não há valores suficientes/)).toBeTruthy();
+    expect(
+      screen.getByText("Valores insuficientes para comparar."),
+    ).toBeTruthy();
   });
 
   it("labels partial totals and never presents them as the full portfolio", () => {
@@ -530,7 +546,9 @@ describe("MonthlyPortfolioReview", () => {
         observedChangeCents: "-1000",
       }),
     );
-    expect(screen.getByText(/Diferença/)).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: /Diferença observada: -R\$/ }),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         (_, element) =>
@@ -538,29 +556,35 @@ describe("MonthlyPortfolioReview", () => {
           element.textContent?.replace(/\u00a0/g, " ") === "-R$ 10,00",
       ),
     ).toBeTruthy();
-    expect(screen.getByText(/Há posições sem valor conhecido/)).toBeTruthy();
+    expect(screen.getByText("Algumas posições estão sem valor.")).toBeTruthy();
   });
 
-  it("explains that manually maintained positions need a saved baseline", () => {
+  it("uses a neutral icon when the observed difference is zero", () => {
+    renderReview(review({ observedChangeCents: "0" }));
+
+    const difference = screen.getByRole("img", {
+      name: /Diferença observada: R\$/,
+    });
+    expect(difference.querySelector(".lucide-minus")).toBeTruthy();
+    expect(difference.querySelector(".lucide-arrow-up-right")).toBeNull();
+    expect(difference.querySelector(".lucide-arrow-down-right")).toBeNull();
+  });
+
+  it("shows concise partial warnings without opening technical details", () => {
     renderReview(
       review({
         status: "partial",
         untrackedManualPositionCount: 1,
       }),
     );
-    expect(
-      screen.getByText(/O histórico manual ainda não cobre os dois períodos/),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(
-      screen.getByText(/1 posição manual sem histórico anterior/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Valores substituídos antes do primeiro registro/),
-    ).toBeTruthy();
+
+    expect(screen.getByText("Histórico manual incompleto.")).toBeTruthy();
+    expect(screen.queryByText("Detalhes dos valores")).toBeNull();
+    expect(screen.queryByText(/salvo em 01\/09\/2026/)).toBeNull();
+    expect(screen.queryByText(/não é possível separar aportes/)).toBeNull();
   });
 
-  it("explains when source composition cannot be identified", () => {
+  it("explains when source composition cannot be identified with a short warning", () => {
     renderReview(
       review({
         status: "partial",
@@ -569,11 +593,11 @@ describe("MonthlyPortfolioReview", () => {
     );
 
     expect(
-      screen.getByText(/Não foi possível confirmar todas as posições/),
+      screen.getByText("Cobertura da carteira não confirmada."),
     ).toBeTruthy();
   });
 
-  it("explains changed source composition and missing months in a partial close", () => {
+  it("uses short warnings for changed coverage and missing months", () => {
     const { rerender } = render(
       <MonthlyPortfolioReview
         review={review({ status: "partial", compositionCoverage: "changed" })}
@@ -583,7 +607,9 @@ describe("MonthlyPortfolioReview", () => {
         onRetry={vi.fn()}
       />,
     );
-    expect(screen.getByText(/As fontes ou posições mudaram/)).toBeTruthy();
+    expect(
+      screen.getByText("A carteira mudou entre os períodos."),
+    ).toBeTruthy();
 
     rerender(
       <MonthlyPortfolioReview
@@ -594,25 +620,10 @@ describe("MonthlyPortfolioReview", () => {
         onRetry={vi.fn()}
       />,
     );
-    expect(
-      screen.getByText(/Faltam fechamentos em meses intermediários/),
-    ).toBeTruthy();
+    expect(screen.getByText("Há meses sem fechamento.")).toBeTruthy();
   });
 
-  it("uses clear plural wording for multiple manual positions without history", () => {
-    renderReview(
-      review({
-        status: "partial",
-        untrackedManualPositionCount: 2,
-      }),
-    );
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(
-      screen.getByText(/2 posições manuais sem histórico anterior/),
-    ).toBeTruthy();
-  });
-
-  it("keeps unknown historical values as gaps without treating them as zero", () => {
+  it("keeps unknown historical values blank and the partial warning concise", () => {
     renderReview(
       review({
         status: "partial",
@@ -624,90 +635,19 @@ describe("MonthlyPortfolioReview", () => {
         observedChangeCents: null,
       }),
     );
-    expect(
-      screen.getByText(/A cobertura da carteira não pode ser confirmada/),
-    ).toBeTruthy();
+    expect(screen.getByText("Comparação parcial.")).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
       "1200.5,null",
     );
     expect(screen.queryByTestId("bar-chart")).toBeNull();
   });
 
-  it("shows skipped months and different valuation criteria", () => {
-    renderReview(
-      review({
-        gapMonths: 1,
-        current: summary({ valuationMethods: ["MTM"] }),
-        previous: summary({ valuationMethods: ["CURVA"] }),
-      }),
-    );
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(screen.getByText(/Há 1 mês sem fechamento/)).toBeTruthy();
-    expect(
-      screen.getByText(/critérios de avaliação registrados mudaram/),
-    ).toBeTruthy();
-  });
-
-  it("uses plural wording for multiple missing months and method-list length changes", () => {
-    renderReview(
-      review({
-        gapMonths: 2,
-        current: summary({ valuationMethods: ["MTM", "FECHAMENTO"] }),
-        previous: summary({ valuationMethods: ["MTM"] }),
-      }),
-    );
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(screen.getByText(/Há 2 meses sem fechamento/)).toBeTruthy();
-    expect(
-      screen.getByText(/critérios de avaliação registrados mudaram/),
-    ).toBeTruthy();
-  });
-
-  it("does not report evaluation changes when methods match", () => {
-    renderReview(
-      review({
-        current: summary({ valuationMethods: ["CURVA", "MTM"] }),
-        previous: summary({ valuationMethods: ["CURVA", "MTM"] }),
-      }),
-    );
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(
-      screen.queryByText(/critérios de avaliação registrados mudaram/),
-    ).toBeNull();
-  });
-
-  it("shows the dates and caveat for manually converted foreign values", () => {
-    renderReview(
-      review({
-        current: summary({
-          valuationMethods: ["MANUAL_CONVERTED"],
-          manualPositionDates: ["2026-08-28", "2026-08-31"],
-          manualConversionDates: ["2026-08-29", "2026-08-31"],
-          sourceReferences: [
-            {
-              source: "Valor informado",
-              referenceDate: "2026-08-31",
-              recordedAt: "2026-09-01T12:00:00.000Z",
-            },
-          ],
-        }),
-      }),
-    );
-
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
-    expect(screen.getByText(/Datas dos valores manuais/)).toBeTruthy();
-    expect(screen.getByText(/Conversão para reais/)).toBeTruthy();
-    expect(
-      screen.getByText(/Ele pode refletir uma cotação de data diferente/),
-    ).toBeTruthy();
-  });
-
-  it("shows the date alignment warning and plural manual wording", () => {
+  it("shows the date alignment warning", () => {
     renderReview(
       review({
         status: "partial",
         dateAlignment: "outdated",
-        untrackedManualPositionCount: 2,
+        untrackedManualPositionCount: 0,
         current: summary({
           sourceReferences: [
             {
@@ -720,9 +660,7 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(
-      screen.getByText(/O histórico manual ainda não cobre os dois períodos/),
-    ).toBeTruthy();
+    expect(screen.getByText("Datas de avaliação diferentes.")).toBeTruthy();
   });
 
   it("explains mixed valuation dates", () => {
@@ -733,9 +671,7 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(
-      screen.getByText(/As datas de avaliação não coincidem/),
-    ).toBeTruthy();
+    expect(screen.getByText("Datas de avaliação diferentes.")).toBeTruthy();
   });
 
   it("supports an unset period and manual records without a save timestamp", () => {
@@ -757,9 +693,9 @@ describe("MonthlyPortfolioReview", () => {
     expect(
       screen.getByRole("combobox", { name: "Mês de referência" }).textContent,
     ).toContain("Escolha um mês");
-    fireEvent.click(screen.getByText("Detalhes dos valores"));
+    expect(screen.queryByText("Detalhes dos valores")).toBeNull();
     expect(
-      screen.getByText(/Valor informado: posição avaliada em 31\/08\/2026/),
-    ).toBeTruthy();
+      screen.queryByText(/Valor informado: posição avaliada em/),
+    ).toBeNull();
   });
 });

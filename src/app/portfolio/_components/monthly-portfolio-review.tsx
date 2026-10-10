@@ -11,7 +11,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ChartNoAxesColumnIncreasing, ChartSpline } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  CalendarDays,
+  ChartNoAxesColumnIncreasing,
+  ChartSpline,
+  Minus,
+  WalletCards,
+} from "lucide-react";
 import type {
   MonthlyPortfolioHistoryPoint,
   MonthlyPortfolioReview as MonthlyPortfolioReviewData,
@@ -48,12 +57,6 @@ const shortMonthFormatter = new Intl.DateTimeFormat("pt-BR", {
   year: "2-digit",
   timeZone: "UTC",
 });
-const timestampFormatter = new Intl.DateTimeFormat("pt-BR", {
-  dateStyle: "short",
-  timeStyle: "short",
-  timeZone: "America/Sao_Paulo",
-});
-
 function formatDate(value: string) {
   return dateFormatter.format(new Date(`${value}T00:00:00Z`));
 }
@@ -66,18 +69,9 @@ function formatShortMonth(value: string) {
   return shortMonthFormatter.format(new Date(`${value}-01T00:00:00Z`));
 }
 
-function formatTimestamp(value: string) {
-  return timestampFormatter.format(new Date(value));
-}
-
 function formatChange(value: string) {
   const cents = BigInt(value);
   return `${cents > 0n ? "+" : ""}${formatCurrencyCents(cents)}`;
-}
-
-function changedMethods(current: string[], previous: string[]) {
-  if (current.length !== previous.length) return true;
-  return current.some((method, index) => method !== previous[index]);
 }
 
 export function MonthlyPortfolioReview({
@@ -98,22 +92,32 @@ export function MonthlyPortfolioReview({
   const [chartType, setChartType] = useState<"area" | "bar">("area");
   const chartId = useId().replace(/:/g, "");
   const selectedChartPeriod = review?.selectedPeriod;
+  const hasHistory = Boolean(review?.history.length);
+  const singleClose = review?.history.length === 1;
+  const selectedHistoryPoint = review?.history.find(
+    (point) => point.period === review.selectedPeriod,
+  );
+  const showPartialWarning =
+    review?.status === "partial" ||
+    selectedHistoryPoint?.completeness === "partial";
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold leading-none tracking-tight">
-            Evolução patrimonial
-          </h2>
-          <CardDescription>Valores registrados na carteira</CardDescription>
+      <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <ChartSpline aria-hidden="true" className="size-5" />
+          </span>
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold leading-none tracking-tight">
+              Evolução patrimonial
+            </h2>
+            <CardDescription>Valores registrados na carteira</CardDescription>
+          </div>
         </div>
-        {review && review.availablePeriods.length > 0 && (
+        {!singleClose && review && review.availablePeriods.length > 1 && (
           <div className="grid min-w-40 gap-1.5">
-            <label
-              className="text-xs font-medium text-muted-foreground"
-              htmlFor="monthly-review-period"
-            >
+            <label className="sr-only" htmlFor="monthly-review-period">
               Mês de referência
             </label>
             <Select
@@ -121,6 +125,10 @@ export function MonthlyPortfolioReview({
               onValueChange={onPeriodChange}
             >
               <SelectTrigger id="monthly-review-period">
+                <CalendarDays
+                  aria-hidden="true"
+                  className="size-4 text-muted-foreground"
+                />
                 <SelectValue placeholder="Escolha um mês" />
               </SelectTrigger>
               <SelectContent>
@@ -136,8 +144,12 @@ export function MonthlyPortfolioReview({
       </CardHeader>
       <CardContent className="space-y-3">
         {loading && (
-          <p className="text-sm text-muted-foreground" role="status">
-            Carregando fechamentos importados…
+          <p
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+            role="status"
+          >
+            <CalendarDays aria-hidden="true" className="size-4" />
+            Carregando histórico…
           </p>
         )}
         {error && (
@@ -151,45 +163,72 @@ export function MonthlyPortfolioReview({
           </div>
         )}
         {!loading && !error && review?.status === "no_history" && (
-          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-            O histórico aparecerá após o primeiro fechamento da carteira.
+          <p
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+            role="status"
+          >
+            <CalendarDays aria-hidden="true" className="size-4 shrink-0" />
+            Importe um fechamento para ver sua evolução.
           </p>
         )}
         {!loading && !error && review?.status === "missing_snapshot" && (
-          <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-            Não há fechamento registrado neste mês.
+          <p
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+            role="status"
+          >
+            <CalendarDays aria-hidden="true" className="size-4 shrink-0" />
+            Sem fechamento neste mês.
           </p>
         )}
-        {!loading && !error && review && review.history.length > 1 && (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <div
-                className="inline-flex rounded-md border p-0.5"
-                role="group"
-                aria-label="Tipo de gráfico"
-              >
-                <Button
-                  type="button"
-                  variant={chartType === "area" ? "secondary" : "ghost"}
-                  size="icon"
-                  aria-label="Gráfico de área"
-                  aria-pressed={chartType === "area"}
-                  onClick={() => setChartType("area")}
-                >
-                  <ChartSpline aria-hidden="true" />
-                </Button>
-                <Button
-                  type="button"
-                  variant={chartType === "bar" ? "secondary" : "ghost"}
-                  size="icon"
-                  aria-label="Gráfico de barras"
-                  aria-pressed={chartType === "bar"}
-                  onClick={() => setChartType("bar")}
-                >
-                  <ChartNoAxesColumnIncreasing aria-hidden="true" />
-                </Button>
-              </div>
+        {!loading && !error && singleClose && review?.current && (
+          <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <WalletCards aria-hidden="true" className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-muted-foreground">
+                {formatDate(review.current.referenceDate)}
+              </p>
+              <p className="text-xl font-semibold tabular-nums tracking-tight sm:text-2xl">
+                {formatCurrencyCents(review.current.knownValueCents)}
+              </p>
             </div>
+          </div>
+        )}
+        {!loading && !error && hasHistory && review && (
+          <div className="space-y-2">
+            {review.history.length > 1 && (
+              <div className="flex justify-end">
+                <div
+                  className="inline-flex rounded-lg border bg-muted/40 p-1"
+                  role="group"
+                  aria-label="Tipo de gráfico"
+                >
+                  <Button
+                    type="button"
+                    variant={chartType === "area" ? "secondary" : "ghost"}
+                    size="icon"
+                    className="size-8 rounded-md"
+                    aria-label="Gráfico de área"
+                    aria-pressed={chartType === "area"}
+                    onClick={() => setChartType("area")}
+                  >
+                    <ChartSpline aria-hidden="true" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={chartType === "bar" ? "secondary" : "ghost"}
+                    size="icon"
+                    className="size-8 rounded-md"
+                    aria-label="Gráfico de barras"
+                    aria-pressed={chartType === "bar"}
+                    onClick={() => setChartType("bar")}
+                  >
+                    <ChartNoAxesColumnIncreasing aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            )}
             <PortfolioEvolutionChart
               type={chartType}
               id={chartId}
@@ -197,136 +236,57 @@ export function MonthlyPortfolioReview({
             />
           </div>
         )}
-        {!loading && !error && review?.current && (
-          <div className="space-y-3">
-            {review.history.length === 1 && (
-              <div className="flex flex-col gap-1 rounded-lg border border-dashed p-3 sm:flex-row sm:items-baseline sm:justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Primeiro fechamento registrado
-                </span>
-                <span className="text-lg font-semibold tabular-nums">
-                  {formatCurrencyCents(review.current.knownValueCents)}
-                </span>
-              </div>
-            )}
-            {review.history.length > 1 && (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <span className="text-sm text-muted-foreground">
-                    {formatMonth(
-                      selectedChartPeriod ??
-                        review.current.referenceDate.slice(0, 7),
-                    )}
-                  </span>
-                  <span className="font-semibold tabular-nums">
-                    {formatCurrencyCents(review.current.knownValueCents)}
-                  </span>
-                  {review.observedChangeCents !== null && (
-                    <>
-                      <span className="text-sm text-muted-foreground">
-                        {review.status === "partial"
-                          ? "Diferença entre valores conhecidos"
-                          : "Diferença observada"}
-                      </span>
-                      <span className="text-sm font-medium tabular-nums">
-                        {formatChange(review.observedChangeCents)}
-                      </span>
-                    </>
+        {!loading && !error && review?.current && review.history.length > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CalendarDays aria-hidden="true" className="size-4" />
+              <span>
+                {formatMonth(
+                  selectedChartPeriod ??
+                    review.current.referenceDate.slice(0, 7),
+                )}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-semibold tabular-nums">
+                {formatCurrencyCents(review.current.knownValueCents)}
+              </span>
+              {review.observedChangeCents !== null && (
+                <span
+                  role="img"
+                  aria-label={`Diferença observada: ${formatChange(review.observedChangeCents)}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium tabular-nums"
+                >
+                  {BigInt(review.observedChangeCents) < 0n ? (
+                    <ArrowDownRight aria-hidden="true" className="size-3.5" />
+                  ) : BigInt(review.observedChangeCents) > 0n ? (
+                    <ArrowUpRight aria-hidden="true" className="size-3.5" />
+                  ) : (
+                    <Minus aria-hidden="true" className="size-3.5" />
                   )}
-                </div>
-              </div>
-            )}
-            {review.status === "no_previous_close" &&
-              review.history.length === 1 && (
-                <p className="text-xs text-muted-foreground">
-                  Registre outro fechamento para comparar os períodos.
-                </p>
+                  {formatChange(review.observedChangeCents)}
+                </span>
               )}
-            {review.status === "insufficient_values" && (
-              <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                Não há valores suficientes nos dois períodos para comparar.
-              </p>
-            )}
-            {review.status === "partial" && (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                {partialExplanation(review)} A diferença considera apenas os
-                valores conhecidos.
-              </p>
-            )}
-            <details className="group rounded-lg border px-3 py-2 text-sm">
-              <summary className="cursor-pointer font-medium text-muted-foreground">
-                Detalhes dos valores
-              </summary>
-              <div className="mt-3 space-y-3 text-muted-foreground">
-                {review.untrackedManualPositionCount > 0 && (
-                  <p>
-                    {review.untrackedManualPositionCount === 1
-                      ? "1 posição manual"
-                      : `${review.untrackedManualPositionCount} posições manuais`}{" "}
-                    sem histórico anterior. Valores substituídos antes do
-                    primeiro registro não podem ser recuperados.
-                  </p>
-                )}
-                {review.previous && (
-                  <p>
-                    Fontes iguais:{" "}
-                    {review.compositionCoverage === "equivalent"
-                      ? "sim"
-                      : "não comprovado"}
-                    .
-                    {review.gapMonths > 0 && (
-                      <>
-                        {" "}
-                        Há {review.gapMonths}{" "}
-                        {review.gapMonths === 1 ? "mês" : "meses"} sem
-                        fechamento entre os períodos.
-                      </>
-                    )}
-                  </p>
-                )}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <SnapshotSources
-                    title={
-                      review.previous
-                        ? "Período anterior"
-                        : "Período selecionado"
-                    }
-                    snapshot={review.previous ?? review.current}
-                  />
-                  {review.previous && (
-                    <SnapshotSources
-                      title="Período selecionado"
-                      snapshot={review.current}
-                    />
-                  )}
-                </div>
-                {review.previous &&
-                  changedMethods(
-                    review.previous.valuationMethods,
-                    review.current.valuationMethods,
-                  ) && (
-                    <p>
-                      Os critérios de avaliação registrados mudaram entre os
-                      períodos.
-                    </p>
-                  )}
-                {(review.current.valuationMethods.includes(
-                  "MANUAL_CONVERTED",
-                ) ||
-                  review.previous?.valuationMethods.includes(
-                    "MANUAL_CONVERTED",
-                  )) && (
-                  <p>
-                    Para ativos em outra moeda, usamos o valor em reais
-                    informado. Ele pode refletir uma cotação de data diferente.
-                  </p>
-                )}
-                <p className="border-t pt-3">
-                  {review.flowSeparation.explanation}
-                </p>
-              </div>
-            </details>
+            </div>
           </div>
+        )}
+        {!loading && !error && showPartialWarning && review && (
+          <p
+            className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300"
+            role="status"
+          >
+            <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
+            {partialExplanation(review)}
+          </p>
+        )}
+        {!loading && !error && review?.status === "insufficient_values" && (
+          <p
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+            role="status"
+          >
+            <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
+            Valores insuficientes para comparar.
+          </p>
         )}
       </CardContent>
     </Card>
@@ -458,7 +418,7 @@ function PortfolioEvolutionChart({
       >
         <ChartContainer
           config={evolutionChartConfig}
-          className="h-52 w-full aspect-auto sm:h-60"
+          className={`${points.length === 1 ? "h-40 sm:h-44" : "h-52 sm:h-60"} w-full aspect-auto`}
           style={{ minWidth: `${minimumChartWidth}px` }}
           aria-label="Gráfico da evolução do patrimônio conhecido"
         >
@@ -466,7 +426,12 @@ function PortfolioEvolutionChart({
             <AreaChart
               accessibilityLayer
               data={points}
-              margin={{ top: 12, right: 12, left: 8, bottom: 0 }}
+              margin={{
+                top: points.length === 1 ? 28 : 12,
+                right: 12,
+                left: 8,
+                bottom: 0,
+              }}
             >
               <defs>
                 <linearGradient
@@ -500,6 +465,7 @@ function PortfolioEvolutionChart({
               <YAxis
                 width={72}
                 domain={[0, "auto"]}
+                hide={points.length === 1}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={compactCurrency}
@@ -511,8 +477,18 @@ function PortfolioEvolutionChart({
                 stroke="var(--color-value)"
                 strokeWidth={2}
                 fill={`url(#portfolio-area-${id})`}
-                dot={false}
-                activeDot={{ r: 4 }}
+                dot={
+                  points.length === 1
+                    ? {
+                        r: 6,
+                        fill: "var(--color-value)",
+                        stroke: "var(--background)",
+                        strokeWidth: 2,
+                      }
+                    : false
+                }
+                activeDot={{ r: 5 }}
+                isAnimationActive={points.length > 1}
                 connectNulls={false}
               />
             </AreaChart>
@@ -562,62 +538,25 @@ function compactCurrency(value: number) {
   }).format(value);
 }
 
-function SnapshotSources({
-  title,
-  snapshot,
-}: {
-  title: string;
-  snapshot: NonNullable<MonthlyPortfolioReviewData["current"]>;
-}) {
-  return (
-    <section className="min-w-0 space-y-1">
-      <h3 className="font-medium text-foreground">{title}</h3>
-      {snapshot.sourceReferences.map((reference, index) => (
-        <p key={`${reference.source}-${reference.referenceDate}-${index}`}>
-          {reference.source}: posição avaliada em{" "}
-          {formatDate(reference.referenceDate)}
-          {reference.recordedAt &&
-            ` · ${reference.source === "Valor informado" ? "salvo" : "registro"} em ${formatTimestamp(reference.recordedAt)}`}
-          {reference.importedAt &&
-            ` · importada em ${formatTimestamp(reference.importedAt)}`}
-        </p>
-      ))}
-      {snapshot.manualPositionDates.length > 0 && (
-        <p>
-          Datas dos valores manuais:{" "}
-          {snapshot.manualPositionDates.map(formatDate).join(", ")}
-        </p>
-      )}
-      {snapshot.manualConversionDates.length > 0 && (
-        <p>
-          Conversão para reais:{" "}
-          {snapshot.manualConversionDates.map(formatDate).join(", ")}
-        </p>
-      )}
-    </section>
-  );
-}
-
 function partialExplanation(review: MonthlyPortfolioReviewData) {
   if (review.untrackedManualPositionCount > 0)
-    return "O histórico manual ainda não cobre os dois períodos.";
+    return "Histórico manual incompleto.";
   if (
     (review.current && review.current.unvaluedPositionCount > 0) ||
     (review.previous && review.previous.unvaluedPositionCount > 0)
   ) {
-    return "Há posições sem valor conhecido.";
+    return "Algumas posições estão sem valor.";
   }
   if (
     review.dateAlignment === "outdated" ||
     review.dateAlignment === "different_dates"
   ) {
-    return "As datas de avaliação não coincidem.";
+    return "Datas de avaliação diferentes.";
   }
   if (review.compositionCoverage === "changed")
-    return "As fontes ou posições mudaram entre os períodos.";
+    return "A carteira mudou entre os períodos.";
   if (review.compositionCoverage === "unknown")
-    return "Não foi possível confirmar todas as posições nos dois períodos.";
-  if (review.gapMonths > 0)
-    return "Faltam fechamentos em meses intermediários.";
-  return "A cobertura da carteira não pode ser confirmada.";
+    return "Cobertura da carteira não confirmada.";
+  if (review.gapMonths > 0) return "Há meses sem fechamento.";
+  return "Comparação parcial.";
 }
