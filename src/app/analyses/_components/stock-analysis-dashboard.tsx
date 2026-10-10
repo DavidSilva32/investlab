@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { BookOpen, ChevronDown, Search, RefreshCw, Clock3 } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError, apiRequestWithResponse } from "@/lib/api-client";
+import { ApiError, apiRequest, apiRequestWithResponse } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { getLearningClassHref } from "@/lib/asset-class-learning";
 import { Button } from "@/components/ui/button";
@@ -133,6 +133,16 @@ const historyIntervals = [
 ];
 const marketClosureToleranceDays = 7;
 
+function retryAfterSeconds(value: string | null) {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const retryAt = Date.parse(value);
+  return Number.isNaN(retryAt)
+    ? 0
+    : Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+}
+
 function periodStart(latestDate: string, days: number) {
   const start = new Date(`${latestDate}T00:00:00Z`);
   const years = days === 365 ? 1 : days === 1825 ? 5 : null;
@@ -188,6 +198,21 @@ export function StockAnalysisDashboard({
       return data;
     },
   });
+  const historyRetryQuery = useQuery({
+    queryKey: queryKeys.analyses.stockHistory(selectedTicker.toUpperCase()),
+    enabled: false,
+    queryFn: () =>
+      apiRequest<
+        Pick<
+          StockAnalysis,
+          "ticker" | "history" | "historyStatus" | "historyFailure"
+        >
+      >(
+        `/api/analyses/stocks/${encodeURIComponent(selectedTicker)}/history`,
+        undefined,
+        "Não foi possível atualizar o histórico agora.",
+      ),
+  });
   const analysis = selectedTicker ? (analysisQuery.data ?? null) : null;
   const error =
     !analysis && analysisQuery.error instanceof Error
@@ -207,6 +232,36 @@ export function StockAnalysisDashboard({
           0,
           Math.ceil(
             retryAfter - ((clockNow || retryStartedAt) - retryStartedAt) / 1000,
+          ),
+        )
+      : 0;
+  const historyFailure =
+    historyRetryQuery.data?.historyFailure ?? analysis?.historyFailure;
+  const historyRetryHttpError =
+    historyRetryQuery.error instanceof ApiError &&
+    historyRetryQuery.error.status === 429
+      ? historyRetryQuery.error
+      : null;
+  const historyRetryAfter = historyRetryHttpError
+    ? retryAfterSeconds(historyRetryHttpError.retryAfter)
+    : historyFailure?.reason === "rate_limited"
+      ? (historyFailure.retryAfterSeconds ?? 0)
+      : 0;
+  const historyRetryStartedAt = historyRetryHttpError
+    ? historyRetryQuery.errorUpdatedAt
+    : historyRetryQuery.data
+      ? historyRetryQuery.dataUpdatedAt
+      : analysisQuery.dataUpdatedAt;
+  const historyRetryRemaining =
+    Number.isFinite(historyRetryAfter) &&
+    historyRetryAfter > 0 &&
+    historyRetryStartedAt > 0
+      ? Math.max(
+          0,
+          Math.ceil(
+            historyRetryAfter -
+              ((clockNow || historyRetryStartedAt) - historyRetryStartedAt) /
+                1000,
           ),
         )
       : 0;
@@ -252,10 +307,14 @@ export function StockAnalysisDashboard({
   }, [analysisQuery.error, analysisQuery.errorUpdatedAt, selectedTicker]);
 
   useEffect(() => {
-    if (!retryAfter || !retryStartedAt) return;
+    if (
+      (!retryAfter || !retryStartedAt) &&
+      (!historyRetryAfter || !historyRetryStartedAt)
+    )
+      return;
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [retryAfter, retryStartedAt]);
+  }, [retryAfter, retryStartedAt, historyRetryAfter, historyRetryStartedAt]);
 
   useEffect(() => {
     function handlePopState() {
@@ -290,10 +349,10 @@ export function StockAnalysisDashboard({
 
   const history = useMemo(
     () =>
-      (analysis?.history ?? [])
+      (historyRetryQuery.data?.history ?? analysis?.history ?? [])
         .slice()
         .sort((left, right) => left.date.localeCompare(right.date)),
-    [analysis],
+    [analysis, historyRetryQuery.data],
   );
   const points = useMemo(() => {
     const latest = history.at(-1);
@@ -535,7 +594,16 @@ export function StockAnalysisDashboard({
         <CardContent>
           <PriceHistoryChart
             points={points}
-            unavailable={analysis.historyStatus === "unavailable"}
+            status={
+              historyRetryQuery.data?.historyStatus ??
+              analysis.historyStatus ??
+              "unavailable"
+            }
+            failure={historyFailure}
+            retrying={historyRetryQuery.isFetching}
+            retryError={historyRetryQuery.error instanceof Error}
+            retryAfterSeconds={historyRetryRemaining}
+            onRetry={() => void historyRetryQuery.refetch()}
           />
         </CardContent>
       </Card>

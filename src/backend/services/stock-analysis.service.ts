@@ -953,6 +953,32 @@ export class StockAnalysisService {
     };
   }
 
+  async getHistoryByTicker(rawTicker: unknown, requestId?: string) {
+    const parsed = tickerSchema.safeParse(rawTicker);
+    if (!parsed.success)
+      throw new ApplicationError(parsed.error.issues[0]!.message, 400);
+    if (!this.marketProvider.getHistoryByTicker)
+      throw new ApplicationError(
+        "A fonte atual não permite atualizar o histórico isoladamente.",
+        501,
+      );
+    logger.info("stock_analysis_history_requested", {
+      requestId,
+      ticker: parsed.data,
+    });
+    const history = await this.marketProvider.getHistoryByTicker(parsed.data, {
+      bypassCache: true,
+    });
+    logger.info("stock_analysis_history_responded", {
+      requestId,
+      ticker: history.ticker,
+      status: history.historyStatus,
+      points: history.history.length,
+      failureReason: history.historyFailure?.reason,
+    });
+    return history;
+  }
+
   async getFundamentalsByIssuer(
     rawTicker: unknown,
     rawExpectedCnpj: unknown,

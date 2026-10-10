@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render as renderBase, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompanyComparison } from "@/app/analyses/_components/company-comparison";
 import { QueryClientWrapper } from "../../utils/query-client-wrapper";
 import type { ReactNode } from "react";
@@ -41,7 +41,10 @@ vi.mock("@/app/analyses/_components/analysis-stock-search", () => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  window.localStorage.clear();
 });
+
+beforeEach(() => window.localStorage.clear());
 
 function metric(
   value: number | null,
@@ -132,9 +135,9 @@ describe("CompanyComparison", () => {
     expect(headers[1]?.textContent).toContain("PETR4");
     expect(headers[2]?.textContent).toContain("VALE3");
     expect(screen.getAllByText("Indisponível").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("ROE abaixo · mín. 15%").length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      screen.getAllByText("Abaixo do mínimo · 15%").length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getAllByText(/DFP 2025 \+ ITR acumulado 2026/).length,
     ).toBeGreaterThan(0);
@@ -268,7 +271,7 @@ describe("CompanyComparison", () => {
     expect(
       await screen.findByText("ROE contábil simplificado LTM"),
     ).toBeTruthy();
-    expect(screen.getByText("ROE abaixo · mín. 15%")).toBeTruthy();
+    expect(screen.getByText("Abaixo do mínimo · 15%")).toBeTruthy();
     expect(screen.getByText("ROE sem base confiável")).toBeTruthy();
 
     cleanup();
@@ -390,9 +393,9 @@ describe("CompanyComparison", () => {
 
       expect(await screen.findByText("ROE sem base confiável")).toBeTruthy();
       expect(
-        screen.getAllByText("ROE abaixo · mín. 15%").length,
+        screen.getAllByText("Abaixo do mínimo · 15%").length,
       ).toBeGreaterThan(0);
-      expect(screen.queryByText("ROE atende · mín. 15%")).toBeNull();
+      expect(screen.queryByText("Acima do mínimo · 15%")).toBeNull();
     },
   );
 
@@ -419,7 +422,9 @@ describe("CompanyComparison", () => {
       screen.getByRole("button", { name: "Comparar selecionadas" }),
     );
 
-    expect(await screen.findAllByText("ROE abaixo · mín. 15%")).toHaveLength(2);
+    expect(await screen.findAllByText("Abaixo do mínimo · 15%")).toHaveLength(
+      2,
+    );
   });
 
   it("uses the shared ROE preference and leaves unverified comparisons neutral", async () => {
@@ -446,7 +451,111 @@ describe("CompanyComparison", () => {
       screen.getByRole("button", { name: "Comparar selecionadas" }),
     );
 
-    expect(await screen.findByText("ROE atende · mín. 10%")).toBeTruthy();
+    expect(await screen.findByText("Acima do mínimo · 10%")).toBeTruthy();
     expect(screen.getByText("ROE sem base confiável")).toBeTruthy();
+  });
+
+  it("shows compact visual states for verified P/L, P/VP and ROE", async () => {
+    window.localStorage.setItem(
+      "investlab:analyses:stock-criteria:v1",
+      JSON.stringify({ maximumPe: 15, maximumPb: 2.5, minimumRoePercent: 15 }),
+    );
+    const belowLimits = company("PETR3", "33000167000101");
+    belowLimits.fundamentals.roe = metric(18);
+    belowLimits.valuation.pe = metric(12);
+    belowLimits.valuation.pb = metric(2);
+    const aboveLimits = company("VALE3", "33000167000102");
+    aboveLimits.fundamentals.roe = metric(-2);
+    aboveLimits.valuation.pe = metric(18);
+    aboveLimits.valuation.pb = metric(3);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sector: "Petróleo e Gás",
+          sectorMetadataAsOf: null,
+          companies: [belowLimits, aboveLimits],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="PETR3" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    expect(await screen.findByText("Até 15x")).toBeTruthy();
+    expect(screen.getByText("Acima de 15x")).toBeTruthy();
+    expect(screen.getByText("Até 2,5x")).toBeTruthy();
+    expect(screen.getByText("Acima de 2,5x")).toBeTruthy();
+    expect(screen.getByText("Acima do mínimo · 15%")).toBeTruthy();
+    expect(screen.getByText("Abaixo do mínimo · 15%")).toBeTruthy();
+  });
+
+  it("shows a comparable P/VP without a signal until its limit is configured", async () => {
+    const first = company("PETR3", "33000167000101");
+    const second = company("VALE3", "33000167000102");
+    first.valuation.pb = metric(1.8);
+    second.valuation.pb = metric(2.2);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sector: "Petróleo e Gás",
+          sectorMetadataAsOf: null,
+          companies: [first, second],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="PETR3" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    expect(await screen.findAllByText("P/VP 1,8x · sem limite")).toHaveLength(
+      1,
+    );
+    expect(screen.getByText("P/VP 2,2x · sem limite")).toBeTruthy();
+  });
+
+  it("does not apply industrial P/L or bank ROE rules to insurers", async () => {
+    window.localStorage.setItem(
+      "investlab:analyses:stock-criteria:v1",
+      JSON.stringify({ maximumPe: 15, maximumPb: 2.5, minimumRoePercent: 15 }),
+    );
+    const first = company("ABCD3", "33000167000101");
+    const second = company("VALE3", "33000167000102");
+    first.sector = "Seguradoras e Corretoras";
+    second.sector = "Seguradoras e Corretoras";
+    first.fundamentals.roe = metric(18);
+    second.fundamentals.roe = metric(20);
+    first.valuation.pe = metric(12);
+    second.valuation.pe = metric(14);
+    first.valuation.pb = metric(1.2);
+    second.valuation.pb = metric(3);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sector: "Seguradoras e Corretoras",
+          sectorMetadataAsOf: null,
+          companies: [first, second],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="ABCD3" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    expect(await screen.findAllByText("ROE não se aplica")).toHaveLength(2);
+    expect(screen.getAllByText("P/L não se aplica")).toHaveLength(2);
+    expect(screen.getByText("Até 2,5x")).toBeTruthy();
+    expect(screen.getByText("Acima de 2,5x")).toBeTruthy();
   });
 });

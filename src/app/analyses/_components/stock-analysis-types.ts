@@ -71,6 +71,15 @@ export type StockAnalysis = {
   fundamentalsFetchedAt?: string | null;
   history: Array<{ date: string; close: number }>;
   historyStatus?: "available" | "empty" | "unavailable";
+  historyFailure?: {
+    reason:
+      | "rate_limited"
+      | "authentication"
+      | "timeout"
+      | "provider_error"
+      | "invalid_response";
+    retryAfterSeconds?: number;
+  };
   fundamentals: AnalysisPeriod[];
   indicators: AnalysisIndicator[];
 };

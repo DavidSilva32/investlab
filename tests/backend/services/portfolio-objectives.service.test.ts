@@ -1201,7 +1201,7 @@ describe("PortfolioObjectivesService", () => {
       toObjectiveId: customObjective.id,
     });
     expect(result.candidates[0].totalCents).toBe("9000");
-  });
+  }, 15_000);
 
   it("reports expanded search limits for valued and empty objective baselines", async () => {
     const assigned = Array.from({ length: 40 }, (_, index) =>

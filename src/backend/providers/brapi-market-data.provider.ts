@@ -3,6 +3,8 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import { logger } from "@/infrastructure/logging/logger";
 import type {
   MarketData,
+  MarketHistoryFailure,
+  MarketHistoryResult,
   MarketDataProvider,
   MarketQuote,
   MarketTicker,
@@ -58,26 +60,37 @@ const profileSchema = z
   .loose();
 const historySchema = z
   .object({
-    results: z
-      .array(
-        z.object({
-          data: z.object({
-            historicalDataPrice: z
-              .array(
-                z.object({
-                  date: z.number(),
-                  close: z.number().nullable().optional(),
-                }),
-              )
-              .optional(),
-          }),
+    results: z.array(
+      z.object({
+        symbol: z.string().optional(),
+        data: z.object({
+          historicalDataPrice: z.array(
+            z.object({
+              date: z.number(),
+              close: z.number().nullable().optional(),
+            }),
+          ),
         }),
-      )
-      .optional(),
+      }),
+    ),
   })
   .loose();
 
-class RetryableMarketDataError extends Error {}
+class RetryableMarketDataError extends Error {
+  constructor(
+    message: string,
+    readonly reason: "timeout" | "provider_error",
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+class MarketDataHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`BRAPI request failed: ${status}`);
+  }
+}
+class InvalidMarketDataResponseError extends Error {}
 const requestTimeoutMs = 15_000;
 
 export class BrapiMarketDataProvider implements MarketDataProvider {
@@ -86,7 +99,11 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     private readonly apiToken = process.env.BRAPI_TOKEN,
   ) {}
 
-  private async request(path: string, signal?: AbortSignal) {
+  private async request(
+    path: string,
+    signal?: AbortSignal,
+    cacheMode: "cache" | "no-store" = "cache",
+  ) {
     const startedAt = Date.now();
     const operation = new URL(path, "https://brapi.dev").pathname
       .split("/")
@@ -101,18 +118,22 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         headers: this.apiToken
           ? { Authorization: `Bearer ${this.apiToken}` }
           : undefined,
-        cache: "force-cache",
+        cache: cacheMode === "cache" ? "force-cache" : "no-store",
         ...(signal ? { signal } : {}),
-        next: { revalidate: 300 },
+        ...(cacheMode === "cache" ? { next: { revalidate: 300 } } : {}),
       });
     } catch (error) {
       logger.warn("stock_market_provider_request_failed", {
         ...logContext,
         durationMs: Date.now() - startedAt,
       });
-      throw new RetryableMarketDataError("BRAPI request failed", {
-        cause: error,
-      });
+      throw new RetryableMarketDataError(
+        "BRAPI request failed",
+        signal?.reason instanceof Error && signal.reason.name === "TimeoutError"
+          ? "timeout"
+          : "provider_error",
+        { cause: error },
+      );
     }
     if (response.status === 429) {
       logger.info("stock_market_provider_request_completed", {
@@ -134,6 +155,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       });
       throw new RetryableMarketDataError(
         `BRAPI request failed: ${response.status}`,
+        response.status === 408 ? "timeout" : "provider_error",
       );
     }
     if (!response.ok) {
@@ -142,7 +164,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         status: response.status,
         durationMs: Date.now() - startedAt,
       });
-      throw new Error(`BRAPI request failed: ${response.status}`);
+      throw new MarketDataHttpError(response.status);
     }
     try {
       const payload = await response.json();
@@ -158,20 +180,31 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         durationMs: Date.now() - startedAt,
       });
       if (signal?.aborted)
-        throw new RetryableMarketDataError("BRAPI request timed out", {
-          cause: error,
-        });
-      throw error;
+        throw new RetryableMarketDataError(
+          "BRAPI request timed out",
+          "timeout",
+          {
+            cause: error,
+          },
+        );
+      throw new InvalidMarketDataResponseError("BRAPI returned invalid JSON", {
+        cause: error,
+      });
     }
   }
 
-  private async getHistoricalPrices(symbol: string, parentSignal: AbortSignal) {
+  private async getHistoricalPrices(
+    symbol: string,
+    parentSignal: AbortSignal,
+    cacheMode: "cache" | "no-store" = "cache",
+  ) {
     const signal = () =>
       AbortSignal.any([parentSignal, AbortSignal.timeout(requestTimeoutMs)]);
     try {
       return await this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=5y&interval=1d`,
         signal(),
+        cacheMode,
       );
     } catch (error) {
       if (!(error instanceof RetryableMarketDataError) || parentSignal.aborted)
@@ -180,7 +213,122 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       return this.request(
         `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
         signal(),
+        cacheMode,
       );
+    }
+  }
+
+  private normalizeHistory(
+    ticker: string,
+    payload: unknown,
+  ): MarketHistoryResult {
+    const parsed = historySchema.safeParse(payload);
+    if (!parsed.success)
+      return {
+        ticker,
+        history: [],
+        historyStatus: "unavailable",
+        historyFailure: { reason: "invalid_response" },
+      };
+    const result = parsed.data.results.find(
+      (item) => !item.symbol || item.symbol.toUpperCase() === ticker,
+    );
+    if (!result)
+      return {
+        ticker,
+        history: [],
+        historyStatus: "unavailable",
+        historyFailure: { reason: "invalid_response" },
+      };
+    const points = result.data.historicalDataPrice;
+    const pointsByDate = new Map<
+      string,
+      { close: number; conflictingValues: boolean }
+    >();
+    for (const point of points) {
+      if (
+        !Number.isFinite(point.date) ||
+        point.close === null ||
+        point.close === undefined ||
+        !Number.isFinite(point.close) ||
+        point.close <= 0
+      )
+        continue;
+      const date = new Date(point.date * 1000);
+      if (!Number.isFinite(date.getTime())) continue;
+      const dateKey = date.toISOString().slice(0, 10);
+      const existing = pointsByDate.get(dateKey);
+      if (!existing)
+        pointsByDate.set(dateKey, {
+          close: point.close,
+          conflictingValues: false,
+        });
+      else if (existing.close !== point.close)
+        pointsByDate.set(dateKey, { ...existing, conflictingValues: true });
+    }
+    const history = [...pointsByDate.entries()]
+      .filter(([, point]) => !point.conflictingValues)
+      .map(([date, point]) => ({ date, close: point.close }))
+      .sort((left, right) => left.date.localeCompare(right.date));
+    if (history.length > 0)
+      return { ticker, history, historyStatus: "available" };
+    if (points.length === 0)
+      return { ticker, history: [], historyStatus: "empty" };
+    return {
+      ticker,
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "invalid_response" },
+    };
+  }
+
+  private historyFailure(error: unknown): MarketHistoryFailure {
+    if (error instanceof ApplicationError && error.statusCode === 429)
+      return {
+        reason: "rate_limited",
+        ...(error.retryAfterSeconds !== undefined
+          ? { retryAfterSeconds: error.retryAfterSeconds }
+          : {}),
+      };
+    if (
+      error instanceof MarketDataHttpError &&
+      (error.status === 401 || error.status === 403)
+    )
+      return { reason: "authentication" };
+    if (error instanceof InvalidMarketDataResponseError)
+      return { reason: "invalid_response" };
+    if (error instanceof RetryableMarketDataError)
+      return { reason: error.reason };
+    return { reason: "provider_error" };
+  }
+
+  async getHistoryByTicker(
+    ticker: string,
+    options: { bypassCache?: boolean } = {},
+  ): Promise<MarketHistoryResult> {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    const controller = new AbortController();
+    try {
+      const payload = await this.getHistoricalPrices(
+        encodeURIComponent(normalizedTicker),
+        controller.signal,
+        options.bypassCache ? "no-store" : "cache",
+      );
+      return this.normalizeHistory(normalizedTicker, payload);
+    } catch (error) {
+      const failure = this.historyFailure(error);
+      logger.warn("stock_market_history_unavailable", {
+        provider: "brapi",
+        ticker: normalizedTicker,
+        reason: failure.reason,
+        retryAfterSeconds: failure.retryAfterSeconds,
+      });
+      return {
+        ticker: normalizedTicker,
+        history: [],
+        historyStatus: "unavailable",
+        historyFailure: failure,
+      };
     }
   }
   async searchTickers(query: string): Promise<MarketTicker[]> {
@@ -249,51 +397,15 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
             .parse(profileResult.value)
             .results?.[0]?.data.cnpj?.replace(/\D/g, "") ?? null)
         : null;
-    const parsedHistory =
+    const historyResultData =
       historyResult.status === "fulfilled"
-        ? historySchema.safeParse(historyResult.value)
-        : null;
-    const points = parsedHistory?.success
-      ? (parsedHistory.data.results?.[0]?.data.historicalDataPrice ?? [])
-      : [];
-    const pointsByDate = new Map<
-      string,
-      { close: number; conflictingValues: boolean }
-    >();
-    for (const point of points) {
-      if (
-        !Number.isFinite(point.date) ||
-        point.close === null ||
-        point.close === undefined ||
-        !Number.isFinite(point.close) ||
-        point.close <= 0
-      )
-        continue;
-      const date = new Date(point.date * 1000);
-      if (!Number.isFinite(date.getTime())) continue;
-      const dateKey = date.toISOString().slice(0, 10);
-      const existing = pointsByDate.get(dateKey);
-      if (!existing)
-        pointsByDate.set(dateKey, {
-          close: point.close,
-          conflictingValues: false,
-        });
-      else if (existing.close !== point.close)
-        pointsByDate.set(dateKey, { ...existing, conflictingValues: true });
-    }
-    const history = [...pointsByDate.entries()]
-      .filter(([, point]) => !point.conflictingValues)
-      .map(([date, point]) => ({ date, close: point.close }))
-      .sort((left, right) => left.date.localeCompare(right.date));
-    const historyStatus =
-      historyResult.status === "rejected" ||
-      (parsedHistory !== null && !parsedHistory.success)
-        ? ("unavailable" as const)
-        : history.length > 0
-          ? ("available" as const)
-          : points.length > 0
-            ? ("unavailable" as const)
-            : ("empty" as const);
+        ? this.normalizeHistory(quote.symbol.toUpperCase(), historyResult.value)
+        : {
+            ticker: quote.symbol.toUpperCase(),
+            history: [],
+            historyStatus: "unavailable" as const,
+            historyFailure: this.historyFailure(historyResult.reason),
+          };
 
     return {
       ticker: quote.symbol,
@@ -303,8 +415,11 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       marketCap: quote.data.marketCap ?? null,
       changePercent: quote.data.regularMarketChangePercent ?? null,
       priceUpdatedAt: quote.data.regularMarketTime ?? null,
-      history,
-      historyStatus,
+      history: historyResultData.history,
+      historyStatus: historyResultData.historyStatus,
+      ...(historyResultData.historyFailure
+        ? { historyFailure: historyResultData.historyFailure }
+        : {}),
     };
   }
 }

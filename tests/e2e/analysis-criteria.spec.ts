@@ -45,7 +45,7 @@ function comparisonCompany(
   };
 }
 
-test("compares only verified ROE signals using the shared criteria preference", async ({
+test("compares verified valuation and quality signals using shared criteria", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -99,9 +99,57 @@ test("compares only verified ROE signals using the shared criteria preference", 
   await page.getByRole("option", { name: /VALE3/ }).click();
   await page.getByRole("button", { name: "Comparar selecionadas" }).click();
 
-  await expect(page.getByText("ROE atende · mín. 10%")).toBeVisible();
+  await expect(
+    page.getByText("Acima do mínimo · 10%", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("ROE sem base confiável")).toBeVisible();
   await expect(
     page.getByText(/Sem ranking, pontuação ou recomendação/),
   ).toBeVisible();
+});
+
+test("recovers unavailable quote history without reloading the stock analysis", async ({
+  page,
+}) => {
+  const analysis = {
+    ticker: "PETR4",
+    cnpj: "33000167000101",
+    companyName: "Petrobras",
+    price: 30,
+    priceUpdatedAt: "2026-09-19T15:30:00-03:00",
+    changePercent: -1.25,
+    history: [],
+    historyStatus: "unavailable",
+    historyFailure: { reason: "rate_limited", retryAfterSeconds: 0 },
+    fundamentals: [],
+    indicators: [],
+  };
+  await page.route("**/api/analyses/stocks/PETR4/history", (route) =>
+    route.fulfill({
+      json: {
+        ticker: "PETR4",
+        history: [
+          { date: "2025-09-19", close: 25 },
+          { date: "2026-09-19", close: 31 },
+        ],
+        historyStatus: "available",
+      },
+    }),
+  );
+  await page.route("**/api/analyses/stocks/PETR4", (route) =>
+    route.fulfill({ json: analysis }),
+  );
+
+  await addSignedInSession(page);
+  await page.goto("/analyses?ticker=PETR4");
+  await expect(
+    page.getByText("Histórico temporariamente indisponível"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Tentar novamente" }).click();
+  await expect(
+    page.getByLabel("Gráfico do histórico de preço de fechamento"),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Histórico temporariamente indisponível"),
+  ).toBeHidden();
 });

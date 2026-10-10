@@ -29,6 +29,7 @@ test("rejects anonymous requests to read and mutation APIs", async ({
 }) => {
   for (const [url, method] of [
     ["/api/portfolio", "GET"],
+    ["/api/analyses/stocks/PETR4/history", "GET"],
     ["/api/positions/manual", "POST"],
   ] as const) {
     const response = await request.fetch(url, { method });

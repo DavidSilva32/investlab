@@ -23,6 +23,8 @@ function indicator(
     referenceDate,
     sourceDocument: referenceDate ? "DFP" : null,
     periodBasis,
+    marketDataDate:
+      key === "pe" || key === "pb" ? "2026-10-01T12:00:00.000Z" : null,
   };
 }
 
@@ -47,7 +49,7 @@ describe("evaluateStockCriteria", () => {
       }),
     );
 
-    expect(result.qualityCriteria.pe).toMatchObject({
+    expect(result.valuationCriteria.pe).toMatchObject({
       status: "meets",
       value: 15,
       threshold: 15,
@@ -67,7 +69,7 @@ describe("evaluateStockCriteria", () => {
       }),
     );
 
-    expect(result.qualityCriteria.pe).toMatchObject({
+    expect(result.valuationCriteria.pe).toMatchObject({
       status: "fails",
       value: 20,
       threshold: 18,
@@ -79,18 +81,128 @@ describe("evaluateStockCriteria", () => {
     });
   });
 
+  it("keeps P/VP in valuation and respects its configured maximum", () => {
+    const result = evaluateStockCriteria(
+      input({
+        indicators: [
+          indicator("pe", 12),
+          indicator("pb", 2),
+          indicator("roe", 18),
+        ],
+        preferences: { maximumPb: 1.8 },
+      }),
+    );
+
+    expect(result.valuationCriteria.pb).toMatchObject({
+      status: "fails",
+      value: 2,
+      threshold: 1.8,
+    });
+    expect(result.qualityCriteria).not.toHaveProperty("pb");
+  });
+
+  it("shows P/VP data without a signal until the user defines a limit", () => {
+    const result = evaluateStockCriteria(
+      input({
+        indicators: [
+          indicator("pe", 12),
+          indicator("pb", 2),
+          indicator("roe", 18),
+        ],
+      }),
+    );
+
+    expect(result.valuationCriteria.pb).toMatchObject({
+      status: "unavailable",
+      reason: "threshold_not_configured",
+      value: 2,
+      threshold: null,
+    });
+  });
+
+  it("allows comparable positive P/VP for financial issuers while excluding P/L", () => {
+    const result = evaluateStockCriteria(
+      input({
+        sector: "Seguradoras e Corretoras",
+        indicators: [
+          indicator("pe", 12),
+          indicator("pb", 1.4),
+          indicator("roe", 18),
+        ],
+        preferences: { maximumPb: 2.5 },
+      }),
+    );
+
+    expect(result.valuationCriteria.pe.status).toBe("not_applicable");
+    expect(result.valuationCriteria.pb.status).toBe("meets");
+    expect(result.qualityCriteria.roe.status).toBe("not_applicable");
+  });
+
   it.each([0, -1])("fails known non-positive P/L value %s", (pe) => {
     const result = evaluateStockCriteria(
       input({ indicators: [indicator("pe", pe), indicator("roe", 18)] }),
     );
-    expect(result.qualityCriteria.pe.status).toBe("fails");
+    expect(result.valuationCriteria.pe.status).toBe("unavailable");
+  });
+
+  it("does not interpret a negative P/VP as an attractive valuation", () => {
+    const result = evaluateStockCriteria(
+      input({
+        indicators: [
+          indicator("pe", 12),
+          indicator("pb", -1),
+          indicator("roe", 18),
+        ],
+      }),
+    );
+    expect(result.valuationCriteria.pb).toMatchObject({
+      status: "unavailable",
+      reason: "positive_multiple_required",
+    });
+  });
+
+  it("requires valid financial and market reference dates for valuation multiples", () => {
+    const invalidFinancialDate = evaluateStockCriteria(
+      input({ indicators: [indicator("pe", 12, "2025-02-30")] }),
+    );
+    expect(invalidFinancialDate.valuationCriteria.pe).toMatchObject({
+      status: "unavailable",
+      reason: "indicator_unavailable",
+    });
+
+    const absentFinancialDate = evaluateStockCriteria(
+      input({ indicators: [indicator("pe", 12, null)] }),
+    );
+    expect(absentFinancialDate.valuationCriteria.pe).toMatchObject({
+      status: "unavailable",
+      reason: "indicator_unavailable",
+    });
+
+    const missingFinancialSource = evaluateStockCriteria(
+      input({
+        indicators: [{ ...indicator("pe", 12), sourceDocument: null }],
+      }),
+    );
+    expect(missingFinancialSource.valuationCriteria.pe.reason).toBe(
+      "indicator_unavailable",
+    );
+
+    const missingMarketDate = evaluateStockCriteria(
+      input({
+        indicators: [{ ...indicator("pe", 12), marketDataDate: null }],
+      }),
+    );
+    expect(missingMarketDate.valuationCriteria.pe).toMatchObject({
+      status: "unavailable",
+      reason: "market_data_date_required",
+    });
   });
 
   it("keeps missing canonical indicators unavailable", () => {
     const result = evaluateStockCriteria(
       input({ indicators: [indicator("pe", null), indicator("roe", null)] }),
     );
-    expect(result.qualityCriteria.pe).toMatchObject({
+    expect(result.valuationCriteria.pe).toMatchObject({
       status: "unavailable",
       reason: "indicator_unavailable",
     });
@@ -141,7 +253,7 @@ describe("evaluateStockCriteria", () => {
       reason: "financial_sector_methodology_required",
     });
     expect(result.qualityCriteria.roic.status).toBe("not_applicable");
-    expect(result.qualityCriteria.pe).toMatchObject({
+    expect(result.valuationCriteria.pe).toMatchObject({
       status: "not_applicable",
       reason: "financial_sector_methodology_required",
     });
@@ -176,7 +288,7 @@ describe("evaluateStockCriteria", () => {
         status: "not_applicable",
         reason: "financial_sector_methodology_required",
       });
-      expect(result.qualityCriteria.pe.status).toBe("not_applicable");
+      expect(result.valuationCriteria.pe.status).toBe("not_applicable");
     },
   );
 
@@ -184,7 +296,7 @@ describe("evaluateStockCriteria", () => {
     "fails closed for ambiguous or unknown sector %s",
     (unknownSector) => {
       const result = evaluateStockCriteria(input({ sector: unknownSector }));
-      expect(result.qualityCriteria.pe).toMatchObject({
+      expect(result.valuationCriteria.pe).toMatchObject({
         status: "unavailable",
         reason: "sector_not_supported",
       });
@@ -209,7 +321,7 @@ describe("evaluateStockCriteria", () => {
 
   it("keeps all criteria unavailable when the instrument type is unconfirmed", () => {
     const result = evaluateStockCriteria(input({ instrument: "unknown" }));
-    expect(result.qualityCriteria.pe).toMatchObject({
+    expect(result.valuationCriteria.pe).toMatchObject({
       status: "unavailable",
       reason: "instrument_type_unconfirmed",
     });
@@ -231,11 +343,7 @@ describe("evaluateStockCriteria", () => {
       input({
         price: 20,
         bazinReferencePrice: 25,
-        dividend: {
-          annualPerShare: 2,
-          asOf: "2025-12-31",
-          recurringCoverageComplete: false,
-        },
+        recurringDividendCoverageComplete: false,
       }),
     );
 
@@ -251,11 +359,7 @@ describe("evaluateStockCriteria", () => {
       input({
         price: 20,
         bazinReferencePrice: 25,
-        dividend: {
-          annualPerShare: 4,
-          asOf: "2025-12-31",
-          recurringCoverageComplete: false,
-        },
+        recurringDividendCoverageComplete: false,
       }),
     );
     expect(result.priceReferences.bazin.status).toBe("unavailable");
@@ -265,11 +369,7 @@ describe("evaluateStockCriteria", () => {
     const unavailable = evaluateStockCriteria(
       input({
         bazinReferencePrice: 21,
-        dividend: {
-          annualPerShare: 2,
-          asOf: "2025-12-31",
-          recurringCoverageComplete: true,
-        },
+        recurringDividendCoverageComplete: true,
       }),
     );
     expect(unavailable.priceReferences.bazin).toMatchObject({
@@ -280,13 +380,9 @@ describe("evaluateStockCriteria", () => {
     const valid = evaluateStockCriteria(
       input({
         price: 20,
+        recurringDividendCoverageComplete: true,
         bazinReferencePrice: 21,
         grahamReferencePrice: 18,
-        dividend: {
-          annualPerShare: 2,
-          asOf: "2025-12-31",
-          recurringCoverageComplete: true,
-        },
       }),
     );
     expect(valid.priceReferences.bazin.status).toBe("meets");

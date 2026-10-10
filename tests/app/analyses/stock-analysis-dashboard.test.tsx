@@ -193,13 +193,24 @@ describe("StockAnalysisDashboard", () => {
   });
 
   it("toasts a selected ticker API failure without duplicating it inline", async () => {
+    let analysisRequests = 0;
+    const user = userEvent.setup();
     const fetcher = vi.fn((input: RequestInfo | URL) =>
       String(input).includes("/search?")
         ? Promise.resolve(
             jsonResponse({ results: [{ ticker: "VALE3", name: "Vale" }] }),
           )
         : Promise.resolve(
-            jsonResponse({ message: "Consulta indisponível para Vale." }, 503),
+            analysisRequests++ === 0
+              ? jsonResponse(
+                  { message: "Consulta indisponível para Vale." },
+                  503,
+                )
+              : jsonResponse({
+                  ...analysis,
+                  ticker: "VALE3",
+                  companyName: "Vale",
+                }),
           ),
     );
     vi.stubGlobal("fetch", fetcher);
@@ -224,12 +235,11 @@ describe("StockAnalysisDashboard", () => {
       ),
     );
     expect(screen.queryByRole("alert")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(await screen.findByText("Ativo consultado")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Tentar novamente" }),
+      screen.getByRole("link", { name: "Aprender sobre Ações e BDRs" }),
     ).toBeTruthy();
-    expect(
-      screen.queryByRole("link", { name: "Aprender sobre Ações e BDRs" }),
-    ).toBeNull();
   });
 
   it("updates the share URL and ignores an older ticker response", async () => {
@@ -515,7 +525,7 @@ describe("StockAnalysisDashboard", () => {
     ).toBeNull();
   });
 
-  it("shows the no-history state and retries a generic error", async () => {
+  it("retries only history after the initial analysis preserved a rate limit", async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(
@@ -523,26 +533,37 @@ describe("StockAnalysisDashboard", () => {
           ...analysis,
           history: [],
           historyStatus: "unavailable",
+          historyFailure: { reason: "rate_limited" },
         }),
       )
-      .mockResolvedValueOnce(jsonResponse({ message: "erro" }, 500));
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ticker: "PETR4",
+          history: [
+            { date: "2025-09-19", close: 25 },
+            { date: "2026-09-19", close: 31 },
+          ],
+          historyStatus: "available",
+        }),
+      );
     vi.stubGlobal("fetch", fetcher);
-    const { unmount } = render(
-      <StockAnalysisDashboard initialTicker={"PETR4"} />,
-    );
-    expect(
-      await screen.findByText(
-        /Não foi possível carregar o histórico de cotações/,
-      ),
-    ).toBeTruthy();
-    unmount();
-
     render(<StockAnalysisDashboard initialTicker={"PETR4"} />);
+    expect(
+      await screen.findByText("Histórico temporariamente indisponível"),
+    ).toBeTruthy();
     const retry = await screen.findByRole("button", {
       name: "Tentar novamente",
     });
     await userEvent.setup().click(retry);
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    await waitFor(() =>
+      expect(screen.getByTestId("price-chart").dataset.points).toBe(
+        "2025-09-19,2026-09-19",
+      ),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      "/api/analyses/stocks/PETR4/history",
+    );
   });
 
   it("honors Retry-After, counts down, then enables retry", async () => {
@@ -574,6 +595,85 @@ describe("StockAnalysisDashboard", () => {
         .hasAttribute("disabled"),
     ).toBe(false);
   });
+
+  it("honors the history provider Retry-After independently of the analysis request", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          history: [],
+          historyStatus: "unavailable",
+          historyFailure: { reason: "rate_limited", retryAfterSeconds: 1 },
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      screen
+        .getByRole("button", { name: "Aguarde 1s" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(
+      screen
+        .getByRole("button", { name: "Tentar novamente" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["seconds", "1", "Aguarde 1s"],
+    ["HTTP date", "Sat, 10 Oct 2026 12:00:01 GMT", "Aguarde 1s"],
+    ["missing header", null, "Tentar novamente"],
+    ["invalid header", "invalid", "Tentar novamente"],
+  ])(
+    "honors Retry-After from a direct history HTTP 429 (%s)",
+    async (_label, retryAfter, expectedButton) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-10T12:00:00.000Z"));
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          jsonResponse({
+            ...analysis,
+            history: [],
+            historyStatus: "unavailable",
+            historyFailure: { reason: "provider_error" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({ message: "temporarily unavailable" }, 429, {
+            ...(retryAfter ? { "retry-after": retryAfter } : {}),
+          }),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      render(<StockAnalysisDashboard initialTicker="PETR4" />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("button", { name: expectedButton })).toBeTruthy();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("opens indicator help by click and closes it with Escape", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
@@ -617,7 +717,7 @@ it("handles missing company and price data with no available history interval", 
 
   expect(screen.getByText(/Empresa/)).toBeTruthy();
   expect(screen.getByText(/Varia.*informada/)).toBeTruthy();
-  expect(screen.getByText("—")).toBeTruthy();
+  expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   expect(screen.queryByRole("button", { name: "1 ano" })).toBeNull();
   const periodChange = screen.getByText(
     /Variação do preço no período/,

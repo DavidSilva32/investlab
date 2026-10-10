@@ -14,7 +14,6 @@ import {
   Coins,
   Globe,
   PiggyBank,
-  Search,
   Settings2,
   TrendingUp,
   WalletCards,
@@ -65,6 +64,7 @@ import {
   StrategyAllocationChart,
   type StrategyCompositionRow,
 } from "./strategy-allocation-chart";
+import { NextContributionStockOpportunities } from "./next-contribution-stock-opportunities";
 
 export type StrategyClassValue = {
   id: string;
@@ -634,12 +634,6 @@ export function StrategyAllocationWorkspace({
               Simule a divisão. Nada será movimentado.
             </CardDescription>
           </div>
-          <Button asChild type="button" variant="outline" size="sm">
-            <Link href="/analyses">
-              <Search className="mr-2 size-4" aria-hidden="true" />
-              Analisar ações da carteira
-            </Link>
-          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -675,6 +669,7 @@ export function StrategyAllocationWorkspace({
               {simulating ? "Calculando…" : "Simular aporte"}
             </Button>
           </div>
+          <NextContributionStockOpportunities />
           {simulation && (
             <div
               className="space-y-4 rounded-lg border bg-muted/20 p-4 sm:p-5"

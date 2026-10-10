@@ -59,6 +59,71 @@ describe("StockAnalysisService ticker search", () => {
   });
 });
 
+describe("StockAnalysisService isolated history refresh", () => {
+  it("normalizes the ticker and bypasses the provider cache", async () => {
+    const historyResult = {
+      ticker: "PETR4",
+      history: [{ date: "2026-09-30", close: 34.2 }],
+      historyStatus: "available" as const,
+    };
+    const getHistoryByTicker = vi.fn().mockResolvedValue(historyResult);
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+        getHistoryByTicker,
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+    );
+
+    await expect(
+      service.getHistoryByTicker(" petr4 ", "history-request"),
+    ).resolves.toEqual(historyResult);
+    expect(getHistoryByTicker).toHaveBeenCalledWith("PETR4", {
+      bypassCache: true,
+    });
+  });
+
+  it("rejects invalid tickers before contacting the provider", async () => {
+    const getHistoryByTicker = vi.fn();
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+        getHistoryByTicker,
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+    );
+
+    await expect(
+      service.getHistoryByTicker("bad ticker"),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(getHistoryByTicker).not.toHaveBeenCalled();
+  });
+
+  it("returns an explicit error when the provider does not support history refresh", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+    );
+
+    await expect(service.getHistoryByTicker("PETR4")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+});
+
 describe("StockAnalysisService", () => {
   it("returns market data when fundamentals are absent from the cache", async () => {
     const marketProvider = {

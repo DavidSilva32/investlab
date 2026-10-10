@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, CircleHelp, CircleX, X } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleHelp,
+  CircleX,
+  MinusCircle,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AnalysisStockSearch } from "./analysis-stock-search";
@@ -11,7 +17,10 @@ import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { classifyCvmSector } from "@/lib/cvm-sector-classification";
 import { useStockCriteriaPreferences } from "@/lib/stock-criteria-preferences";
-import type { StockCriteriaStatus } from "@/lib/stock-criteria-evaluation";
+import type {
+  StockCriteriaStatus,
+  StockCriterionResult,
+} from "@/lib/stock-criteria-evaluation";
 
 type TickerOption = { ticker: string; name: string };
 type MetricCell = {
@@ -58,6 +67,10 @@ function isValidIsoDate(value: string | null): value is string {
     Number.isFinite(timestamp) &&
     new Date(timestamp).toISOString().slice(0, 10) === value
   );
+}
+
+function hasValidTimestamp(value: string | null) {
+  return Boolean(value && Number.isFinite(Date.parse(value)));
 }
 
 function dateLabel(value: string | null) {
@@ -139,66 +152,130 @@ function renderCell(cell: MetricCell, kind: "percent" | "multiple") {
   );
 }
 
-function ComparisonRoeStatus({
+function ComparisonCriterionStatus({
   company,
-  minimumRoePercent,
+  keyName,
+  preferences,
 }: {
   company: ComparisonCompany;
-  minimumRoePercent: number;
+  keyName: "roe" | "pe" | "pb";
+  preferences: ReturnType<typeof useStockCriteriaPreferences>;
 }) {
-  const roe = company.fundamentals.roe;
+  const cell =
+    keyName === "roe"
+      ? company.fundamentals.roe
+      : keyName === "pe"
+        ? company.valuation.pe
+        : company.valuation.pb;
   const classification = classifyCvmSector(company.sector);
-  const isBankSector =
-    company.sector?.trim().toLocaleUpperCase("pt-BR") === "BANCOS";
-  const sectorSupportsRoe =
-    classification === "non_financial" ||
-    (classification === "financial" && isBankSector);
-  const hasComparablePeriod = isBankSector
-    ? roe.periodBasis === "trailing_twelve_months"
-    : roe.periodBasis === "annual" ||
-      roe.periodBasis === "trailing_twelve_months";
-  const isComparable =
+  const normalizedSector = (company.sector ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("pt-BR");
+  const isBankSector = normalizedSector === "BANCOS";
+  const supportedSector =
+    classification === "financial" || classification === "non_financial";
+  const financialRoeNotApplicable =
+    keyName === "roe" && classification === "financial" && !isBankSector;
+  const peNotApplicable = keyName === "pe" && classification === "financial";
+  const isValuation = keyName !== "roe";
+  const hasComparablePeriod =
+    keyName !== "roe"
+      ? true
+      : isBankSector
+        ? cell.periodBasis === "trailing_twelve_months"
+        : cell.periodBasis === "annual" ||
+          cell.periodBasis === "trailing_twelve_months";
+  const hasSource = Boolean(cell.sourceDocument && cell.sourceSummary);
+  const baseComparable =
     company.identityVerified &&
-    sectorSupportsRoe &&
-    roe.value !== null &&
-    Number.isFinite(roe.value) &&
-    isValidIsoDate(roe.referenceDate) &&
-    Boolean(roe.sourceDocument) &&
-    Boolean(roe.sourceSummary) &&
-    roe.unavailableReason === null &&
-    hasComparablePeriod;
-  const status: StockCriteriaStatus = !isComparable
-    ? "unavailable"
-    : roe.value! >= minimumRoePercent
-      ? "meets"
-      : "fails";
+    supportedSector &&
+    cell.value !== null &&
+    Number.isFinite(cell.value) &&
+    isValidIsoDate(cell.referenceDate) &&
+    hasSource &&
+    cell.unavailableReason === null &&
+    hasComparablePeriod &&
+    (!isValuation || hasValidTimestamp(cell.marketDataDate));
+  let criterion: StockCriterionResult;
+  if (financialRoeNotApplicable || peNotApplicable) {
+    criterion = {
+      status: "not_applicable",
+      reason: "financial_sector_methodology_required",
+      value: null,
+      threshold: null,
+    };
+  } else if (!baseComparable || (keyName !== "roe" && cell.value! <= 0)) {
+    criterion = {
+      status: "unavailable",
+      reason: "indicator_unavailable",
+      value: null,
+      threshold: null,
+    };
+  } else if (keyName === "pb" && preferences.maximumPb === null) {
+    criterion = {
+      status: "unavailable",
+      reason: "threshold_not_configured",
+      value: cell.value,
+      threshold: null,
+    };
+  } else {
+    const threshold =
+      keyName === "roe"
+        ? preferences.minimumRoePercent
+        : keyName === "pe"
+          ? preferences.maximumPe
+          : preferences.maximumPb!;
+    const meets =
+      keyName === "roe" ? cell.value! >= threshold : cell.value! <= threshold;
+    criterion = {
+      status: meets ? "meets" : "fails",
+      reason: meets ? "within_threshold" : "outside_threshold",
+      value: cell.value,
+      threshold,
+    };
+  }
+  const status = criterion.status;
+  const keyLabel = keyName === "pe" ? "P/L" : keyName === "pb" ? "P/VP" : "ROE";
   const presentation = {
     meets: {
-      label: `ROE atende · mín. ${percent.format(minimumRoePercent)}%`,
-      className: "text-status-success",
+      label:
+        keyName === "roe"
+          ? `Acima do mínimo · ${percent.format(criterion.threshold!)}%`
+          : `Até ${multiple.format(criterion.threshold!)}x`,
+      className:
+        "border-status-success/30 bg-status-success/10 text-status-success",
       Icon: CheckCircle2,
     },
     fails: {
-      label: `ROE abaixo · mín. ${percent.format(minimumRoePercent)}%`,
-      className: "text-status-warning",
+      label:
+        keyName === "roe"
+          ? `Abaixo do mínimo · ${percent.format(criterion.threshold!)}%`
+          : `Acima de ${multiple.format(criterion.threshold!)}x`,
+      className:
+        "border-status-warning/30 bg-status-warning/10 text-status-warning",
       Icon: CircleX,
     },
     unavailable: {
-      label: "ROE sem base confiável",
-      className: "text-muted-foreground",
+      label:
+        criterion.reason === "threshold_not_configured"
+          ? `P/VP ${multiple.format(criterion.value!)}x · sem limite`
+          : `${keyLabel} sem base confiável`,
+      className: "border-border bg-muted/50 text-muted-foreground",
       Icon: CircleHelp,
     },
     not_applicable: {
-      label: "ROE não aplicável",
-      className: "text-muted-foreground",
-      Icon: CircleHelp,
+      label: `${keyLabel} não se aplica`,
+      className: "border-border bg-muted/50 text-muted-foreground",
+      Icon: MinusCircle,
     },
   }[status];
   const Icon = presentation.Icon;
   return (
     <span
-      className={`mt-2 inline-flex items-center gap-1 text-xs ${presentation.className}`}
-      aria-label={presentation.label}
+      className={`mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${presentation.className}`}
+      aria-label={`${keyLabel}: ${presentation.label}`}
     >
       <Icon className="size-3.5" aria-hidden="true" />
       {presentation.label}
@@ -487,12 +564,13 @@ export function CompanyComparison({
                             {rows.map((company) => (
                               <td key={company.cnpj} className="p-3 align-top">
                                 {renderCell(row.get(company), row.kind)}
-                                {row.key === "roe" && (
-                                  <ComparisonRoeStatus
+                                {(row.key === "roe" ||
+                                  row.key === "pe" ||
+                                  row.key === "pb") && (
+                                  <ComparisonCriterionStatus
                                     company={company}
-                                    minimumRoePercent={
-                                      criteriaPreferences.minimumRoePercent
-                                    }
+                                    keyName={row.key}
+                                    preferences={criteriaPreferences}
                                   />
                                 )}
                               </td>
