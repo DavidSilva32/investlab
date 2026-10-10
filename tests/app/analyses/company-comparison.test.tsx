@@ -518,6 +518,36 @@ describe("CompanyComparison", () => {
     expect(await screen.findAllByText("Até 2,5x")).toHaveLength(2);
   });
 
+  it("evaluates bank P/L when both companies have compatible periods", async () => {
+    const first = company("ITUB4", "33000167000101");
+    const second = company("BBAS3", "00000000000191");
+    first.sector = "Bancos";
+    second.sector = "Bancos";
+    first.valuation.pe = metric(12, null, { periodBasis: "annual" });
+    second.valuation.pe = metric(20, null, {
+      periodBasis: "trailing_twelve_months",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sector: "Bancos",
+          sectorMetadataAsOf: null,
+          companies: [first, second],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="ITUB4" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar BBAS3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    expect(await screen.findAllByText("Até 15x")).toHaveLength(1);
+    expect(screen.getByText("Acima de 15x")).toBeTruthy();
+  });
+
   it("does not apply industrial P/L or bank ROE rules to insurers", async () => {
     window.localStorage.setItem(
       "investlab:analyses:stock-criteria:v1",

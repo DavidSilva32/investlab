@@ -120,7 +120,7 @@ describe("evaluateStockCriteria", () => {
     });
   });
 
-  it("allows comparable positive P/VP for financial issuers while excluding P/L", () => {
+  it("keeps insurer P/L unavailable while allowing compatible P/VP", () => {
     const result = evaluateStockCriteria(
       input({
         sector: "Seguradoras e Corretoras",
@@ -138,7 +138,21 @@ describe("evaluateStockCriteria", () => {
     expect(result.qualityCriteria.roe.status).toBe("not_applicable");
   });
 
-  it("keeps a missing financial-sector P/L unavailable without a fabricated value", () => {
+  it("does not invent P/L for a financial company with no earnings multiple", () => {
+    const result = evaluateStockCriteria(
+      input({
+        sector: "Seguradoras e Corretoras",
+        indicators: [indicator("pb", 1.4), indicator("roe", 18)],
+      }),
+    );
+    expect(result.valuationCriteria.pe).toMatchObject({
+      status: "not_applicable",
+      value: null,
+      reason: "financial_sector_methodology_required",
+    });
+  });
+
+  it("keeps a missing bank P/L unavailable without a fabricated value", () => {
     const result = evaluateStockCriteria(
       input({
         sector: "Bancos",
@@ -146,12 +160,51 @@ describe("evaluateStockCriteria", () => {
       }),
     );
     expect(result.valuationCriteria.pe).toMatchObject({
-      status: "not_applicable",
+      status: "unavailable",
       value: null,
       threshold: null,
-      reason: "financial_sector_methodology_required",
+      reason: "indicator_unavailable",
     });
   });
+
+  it("evaluates bank P/L from a compatible annual or trailing period", () => {
+    const annual = evaluateStockCriteria(
+      input({
+        sector: "Bancos",
+        indicators: [indicator("pe", 12), indicator("roe", 18)],
+      }),
+    );
+    const trailing = evaluateStockCriteria(
+      input({
+        sector: "Bancos",
+        indicators: [
+          indicator("pe", 12, "2026-06-30", "trailing_twelve_months"),
+          indicator("roe", 18, "2026-06-30", "trailing_twelve_months"),
+        ],
+      }),
+    );
+
+    expect(annual.valuationCriteria.pe.status).toBe("meets");
+    expect(trailing.valuationCriteria.pe.status).toBe("meets");
+  });
+
+  it.each(["year_to_date", "quarterly", "unknown", null] as const)(
+    "does not evaluate P/L for an incompatible period basis (%s)",
+    (periodBasis) => {
+      const result = evaluateStockCriteria(
+        input({
+          indicators: [
+            indicator("pe", 12, "2026-06-30", periodBasis),
+            indicator("roe", 18),
+          ],
+        }),
+      );
+      expect(result.valuationCriteria.pe).toMatchObject({
+        status: "unavailable",
+        reason: "indicator_unavailable",
+      });
+    },
+  );
 
   it.each([0, -1])("fails known non-positive P/L value %s", (pe) => {
     const result = evaluateStockCriteria(
@@ -269,8 +322,8 @@ describe("evaluateStockCriteria", () => {
     });
     expect(result.qualityCriteria.roic.status).toBe("not_applicable");
     expect(result.valuationCriteria.pe).toMatchObject({
-      status: "not_applicable",
-      reason: "financial_sector_methodology_required",
+      status: "meets",
+      value: 12,
     });
     expect(result.qualityCriteria.roe.status).toBe("meets");
   });

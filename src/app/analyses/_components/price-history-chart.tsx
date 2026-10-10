@@ -17,6 +17,7 @@ const failureMessages: Record<
   authentication: "A autenticação da fonte de cotações falhou.",
   timeout: "A consulta de histórico demorou mais que o esperado.",
   provider_error: "A fonte de cotações está temporariamente indisponível.",
+  http_error: "A fonte de cotações recusou a consulta.",
   invalid_response: "A fonte retornou dados de histórico inválidos.",
 };
 
@@ -51,7 +52,7 @@ export function PriceHistoryChart({
   onRetry,
 }: {
   points: StockAnalysis["history"];
-  status?: "available" | "empty" | "unavailable";
+  status?: "available" | "partial" | "empty" | "unavailable";
   failure?: StockAnalysis["historyFailure"];
   retrying?: boolean;
   retryError?: boolean;
@@ -61,12 +62,16 @@ export function PriceHistoryChart({
   if (points.length < 2)
     return (
       <div
-        role={status === "unavailable" ? "status" : undefined}
-        className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+        role={
+          status === "unavailable" || status === "partial"
+            ? "status"
+            : undefined
+        }
+        className={`flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between ${status === "unavailable" || status === "partial" ? "border-status-warning/30 bg-status-warning/5" : "bg-muted/20"}`}
       >
         <div className="flex min-w-0 items-start gap-3">
           <span
-            className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full ${status === "unavailable" ? "bg-status-warning/10 text-status-warning" : "bg-muted text-muted-foreground"}`}
+            className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full ${status === "unavailable" || status === "partial" ? "bg-status-warning/10 text-status-warning" : "bg-muted text-muted-foreground"}`}
           >
             <AlertCircle className="size-4" aria-hidden="true" />
           </span>
@@ -74,9 +79,11 @@ export function PriceHistoryChart({
             <p className="text-sm font-medium text-foreground">
               {status === "unavailable"
                 ? "Histórico temporariamente indisponível"
-                : status === "empty"
-                  ? "Sem cotações para este ativo ou período"
-                  : "Histórico insuficiente para montar o gráfico"}
+                : status === "partial"
+                  ? "Histórico parcial"
+                  : status === "empty"
+                    ? "Sem cotações para este ativo ou período"
+                    : "Histórico insuficiente para montar o gráfico"}
             </p>
             <p className="text-xs text-muted-foreground">
               {retryError
@@ -85,11 +92,13 @@ export function PriceHistoryChart({
                   ? failureMessages[failure.reason]
                   : status === "empty"
                     ? "A fonte não retornou preços de fechamento neste intervalo."
-                    : "O gráfico precisa de pelo menos dois fechamentos observados."}
+                    : status === "partial"
+                      ? "Algumas cotações foram ignoradas por estarem incompletas."
+                      : "O gráfico precisa de pelo menos dois fechamentos observados."}
             </p>
           </div>
         </div>
-        {status === "unavailable" && onRetry && (
+        {(status === "unavailable" || status === "partial") && onRetry && (
           <Button
             type="button"
             variant="outline"
@@ -113,58 +122,69 @@ export function PriceHistoryChart({
     );
 
   return (
-    <ChartContainer
-      config={chartConfig}
-      className="h-64 w-full aspect-auto"
-      aria-label="Gráfico do histórico de preço de fechamento"
-    >
-      <AreaChart
-        accessibilityLayer
-        data={points}
-        margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
+    <div className="space-y-2">
+      <ChartContainer
+        config={chartConfig}
+        className="h-64 w-full aspect-auto"
+        aria-label="Gráfico do histórico de preço de fechamento"
       >
-        <defs>
-          <linearGradient id="price-history-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid vertical={false} />
-        <XAxis
-          dataKey="date"
-          tickLine={false}
-          axisLine={false}
-          minTickGap={32}
-          tickFormatter={monthLabel}
-        />
-        <YAxis
-          dataKey="close"
-          tickLine={false}
-          axisLine={false}
-          width={68}
-          tickFormatter={(value: number) => money.format(value)}
-        />
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              labelFormatter={(value) =>
-                typeof value === "string" ? dateLabel(value) : ""
-              }
-              formatter={(value) => money.format(Number(value))}
-            />
-          }
-        />
-        <Area
-          type="monotone"
-          dataKey="close"
-          stroke="var(--color-close)"
-          strokeWidth={2}
-          fill="url(#price-history-area)"
-          dot={false}
-          activeDot={{ r: 4 }}
-        />
-      </AreaChart>
-    </ChartContainer>
+        <AreaChart
+          accessibilityLayer
+          data={points}
+          margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
+        >
+          <defs>
+            <linearGradient id="price-history-area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.3} />
+              <stop
+                offset="95%"
+                stopColor="var(--primary)"
+                stopOpacity={0.02}
+              />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="date"
+            tickLine={false}
+            axisLine={false}
+            minTickGap={32}
+            tickFormatter={monthLabel}
+          />
+          <YAxis
+            dataKey="close"
+            tickLine={false}
+            axisLine={false}
+            width={68}
+            tickFormatter={(value: number) => money.format(value)}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                labelFormatter={(value) =>
+                  typeof value === "string" ? dateLabel(value) : ""
+                }
+                formatter={(value) => money.format(Number(value))}
+              />
+            }
+          />
+          <Area
+            type="monotone"
+            dataKey="close"
+            stroke="var(--color-close)"
+            strokeWidth={2}
+            fill="url(#price-history-area)"
+            dot={false}
+            activeDot={{ r: 4 }}
+          />
+        </AreaChart>
+      </ChartContainer>
+      {status === "partial" && (
+        <p className="text-xs text-status-warning">
+          Algumas cotações incompletas foram ignoradas.
+        </p>
+      )}
+    </div>
   );
 }

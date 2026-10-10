@@ -63,7 +63,7 @@ function PresetButton({
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={`min-h-20 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 ${selected ? "border-primary bg-primary/10" : "bg-card hover:bg-muted/60"}`}
+      className={`min-h-20 cursor-pointer rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 ${selected ? "border-primary bg-primary/10" : "bg-card hover:border-primary/30 hover:bg-muted/60"}`}
     >
       <span className="block text-sm font-semibold">{title}</span>
       <span className="mt-1 block text-xs text-muted-foreground">

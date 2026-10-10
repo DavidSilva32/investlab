@@ -4,14 +4,16 @@ export type MarketHistoryFailure = {
     | "authentication"
     | "timeout"
     | "provider_error"
+    | "http_error"
     | "invalid_response";
   retryAfterSeconds?: number;
+  httpStatus?: number;
 };
 
 export type MarketHistoryResult = {
   ticker: string;
   history: Array<{ date: string; close: number }>;
-  historyStatus: "available" | "empty" | "unavailable";
+  historyStatus: "available" | "partial" | "empty" | "unavailable";
   historyFailure?: MarketHistoryFailure;
 };
 
@@ -24,7 +26,7 @@ export type MarketData = {
   changePercent: number | null;
   priceUpdatedAt: string | null;
   history: Array<{ date: string; close: number }>;
-  historyStatus?: "available" | "empty" | "unavailable";
+  historyStatus?: "available" | "partial" | "empty" | "unavailable";
   historyFailure?: MarketHistoryFailure;
 };
 export type MarketTicker = { ticker: string; name: string };

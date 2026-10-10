@@ -195,6 +195,19 @@ function evaluateMaximum(
   );
 }
 
+function evaluatePriceEarnings(
+  indicator: StockCriteriaIndicator | undefined,
+  maximum: number,
+): StockCriterionResult {
+  if (
+    indicator &&
+    indicator.periodBasis !== "annual" &&
+    indicator.periodBasis !== "trailing_twelve_months"
+  )
+    return unavailable("indicator_unavailable");
+  return evaluateMaximum(indicator, maximum);
+}
+
 function comparePriceWithReference(
   price: number | null | undefined,
   referencePrice: number | null | undefined,
@@ -322,16 +335,14 @@ export function evaluateStockCriteria(
 
   const pe = indicatorValue(input.indicators, "pe");
   const pb = indicatorValue(input.indicators, "pb");
-  if (sectorClassification === "financial") {
-    valuationCriteria.pe = notApplicable(
-      "financial_sector_methodology_required",
-      pe?.value ?? null,
-    );
-    valuationCriteria.pb = evaluateMaximum(pb, pbMaximum);
-  } else {
-    valuationCriteria.pe = evaluateMaximum(pe, peMaximum);
-    valuationCriteria.pb = evaluateMaximum(pb, pbMaximum);
-  }
+  valuationCriteria.pe =
+    sectorClassification === "financial" && !bankSector
+      ? notApplicable(
+          "financial_sector_methodology_required",
+          pe?.value ?? null,
+        )
+      : evaluatePriceEarnings(pe, peMaximum);
+  valuationCriteria.pb = evaluateMaximum(pb, pbMaximum);
 
   const roe = indicatorValue(input.indicators, "roe");
   if (roe) {

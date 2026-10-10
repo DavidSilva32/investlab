@@ -122,12 +122,14 @@ describe("StockCriteriaSummary", () => {
     expect(screen.getByText(/Limites suspensos/i)).toBeTruthy();
   });
 
-  it("shows financial-sector valuation values with method-specific applicability", () => {
+  it("evaluates bank P/L and P/VP while keeping industrial ratios inapplicable", () => {
     render(
       <StockCriteriaSummary analysis={analysis({ issuerSector: "Bancos" })} />,
     );
     expect(
-      screen.getByRole("listitem", { name: /P\/L: 12,0x, Não aplicável/ }),
+      screen.getByRole("listitem", {
+        name: /P\/L: 12,0x, referência 15,0x, Dentro do limite/,
+      }),
     ).toBeTruthy();
     expect(
       screen.getByRole("listitem", {
@@ -139,6 +141,28 @@ describe("StockCriteriaSummary", () => {
         name: /Margem Líquida: 5.0%, Não aplicável/,
       }),
     ).toBeTruthy();
+  });
+
+  it("uses subtle semantic backgrounds only for evaluated criteria", () => {
+    const { rerender } = render(<StockCriteriaSummary analysis={analysis()} />);
+    const peCard = screen.getByRole("listitem", { name: /P\/L:/ });
+    expect(peCard.className).toContain("bg-status-success/5");
+
+    rerender(
+      <StockCriteriaSummary
+        analysis={analysis({
+          indicators: analysis().indicators.map((indicator) =>
+            indicator.key === "pe" ? { ...indicator, value: 30 } : indicator,
+          ),
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole("listitem", { name: /P\/L:.*Fora do limite/ }).className,
+    ).toContain("bg-status-warning/5");
+    expect(
+      screen.getByRole("listitem", { name: /Margem Líquida:/ }).className,
+    ).toContain("bg-card");
   });
 
   it("does not clamp a mathematically possible margin above one hundred percent", () => {
@@ -218,6 +242,10 @@ describe("StockCriteriaSummary", () => {
     const user = userEvent.setup();
     render(<StockCriteriaSummary analysis={analysis()} />);
     await user.click(screen.getByRole("button", { name: "Limites" }));
+    const balancedPreset = screen.getByRole("button", { name: /Equilibrado/ });
+    expect(balancedPreset.className).toContain("cursor-pointer");
+    expect(balancedPreset.className).toContain("focus-visible:ring-2");
+    expect(balancedPreset.className).toContain("border-primary");
     await user.click(screen.getByRole("button", { name: /Personalizado/ }));
     const pb = screen.getByLabelText("P/VP máximo");
     await user.clear(pb);

@@ -70,15 +70,17 @@ export type StockAnalysis = {
   fundamentalsIsStale?: boolean;
   fundamentalsFetchedAt?: string | null;
   history: Array<{ date: string; close: number }>;
-  historyStatus?: "available" | "empty" | "unavailable";
+  historyStatus?: "available" | "partial" | "empty" | "unavailable";
   historyFailure?: {
     reason:
       | "rate_limited"
       | "authentication"
       | "timeout"
       | "provider_error"
+      | "http_error"
       | "invalid_response";
     retryAfterSeconds?: number;
+    httpStatus?: number;
   };
   fundamentals: AnalysisPeriod[];
   indicators: AnalysisIndicator[];
