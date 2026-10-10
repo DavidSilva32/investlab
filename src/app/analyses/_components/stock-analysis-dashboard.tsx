@@ -35,6 +35,7 @@ import { FundamentalsEvolution } from "./fundamentals-evolution";
 import { FundamentalsGrid } from "./fundamentals-grid";
 import { PriceHistoryChart } from "./price-history-chart";
 import { StockAnalysisReading } from "./stock-analysis-reading";
+import { StockCriteriaSummary } from "./stock-criteria-summary";
 import {
   annualAnalysisPeriods,
   type StockAnalysis,
@@ -569,6 +570,7 @@ export function StockAnalysisDashboard({
               />
             ))}
           </div>
+          <StockCriteriaSummary analysis={analysis} />
           <div className="border-t pt-4">
             <h3 className="mb-3 text-sm font-medium">O que os dados mostram</h3>
             <StockAnalysisReading periods={annual} />

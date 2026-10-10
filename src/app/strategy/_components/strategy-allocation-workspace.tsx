@@ -14,6 +14,7 @@ import {
   Coins,
   Globe,
   PiggyBank,
+  Search,
   Settings2,
   TrendingUp,
   WalletCards,
@@ -626,11 +627,19 @@ export function StrategyAllocationWorkspace({
       </Sheet>
 
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle>Próximo aporte</CardTitle>
-          <CardDescription>
-            Simule a divisão. Nada será movimentado.
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Próximo aporte</CardTitle>
+            <CardDescription>
+              Simule a divisão. Nada será movimentado.
+            </CardDescription>
+          </div>
+          <Button asChild type="button" variant="outline" size="sm">
+            <Link href="/analyses">
+              <Search className="mr-2 size-4" aria-hidden="true" />
+              Analisar ações da carteira
+            </Link>
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">

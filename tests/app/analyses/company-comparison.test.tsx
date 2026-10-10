@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompanyComparison } from "@/app/analyses/_components/company-comparison";
 import { QueryClientWrapper } from "../../utils/query-client-wrapper";
 import type { ReactNode } from "react";
+import { stockCriteriaPreferencesStorageKey } from "@/lib/stock-criteria-preferences";
 
 function render(ui: ReactNode) {
   return renderBase(<QueryClientWrapper>{ui}</QueryClientWrapper>);
@@ -131,6 +132,9 @@ describe("CompanyComparison", () => {
     expect(headers[1]?.textContent).toContain("PETR4");
     expect(headers[2]?.textContent).toContain("VALE3");
     expect(screen.getAllByText("Indisponível").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ROE abaixo · mín. 15%").length).toBeGreaterThan(
+      0,
+    );
     expect(
       screen.getAllByText(/DFP 2025 \+ ITR acumulado 2026/).length,
     ).toBeGreaterThan(0);
@@ -222,16 +226,30 @@ describe("CompanyComparison", () => {
       sector: "Bancos",
       sectorMetadataAsOf: null,
       companies: [
-        company("ITUB4", "33000167000101"),
-        company("SANB11", "33000167000102"),
+        {
+          ...company("ITUB4", "33000167000101"),
+          sector: "Bancos",
+          fundamentals: {
+            ...company("ITUB4", "33000167000101").fundamentals,
+            roe: metric(12, null, { periodBasis: "trailing_twelve_months" }),
+          },
+        },
+        {
+          ...company("SANB11", "33000167000102"),
+          sector: "Bancos",
+          fundamentals: {
+            ...company("SANB11", "33000167000102").fundamentals,
+            roe: metric(18, null, { periodBasis: "annual" }),
+          },
+        },
       ],
     };
     const noSectorResult = {
       sector: null,
       sectorMetadataAsOf: null,
       companies: [
-        company("PETR3", "33000167000103"),
-        company("VALE3", "33000167000104"),
+        { ...company("PETR3", "33000167000103"), sector: null },
+        { ...company("VALE3", "33000167000104"), sector: null },
       ],
     };
     const fetchMock = vi
@@ -250,6 +268,8 @@ describe("CompanyComparison", () => {
     expect(
       await screen.findByText("ROE contábil simplificado LTM"),
     ).toBeTruthy();
+    expect(screen.getByText("ROE abaixo · mín. 15%")).toBeTruthy();
+    expect(screen.getByText("ROE sem base confiável")).toBeTruthy();
 
     cleanup();
     render(<CompanyComparison initialTicker="PETR3" />);
@@ -305,6 +325,128 @@ describe("CompanyComparison", () => {
 
     expect(await screen.findByText(/CVM DFP/)).toBeTruthy();
     expect(screen.getByText("1,5x")).toBeTruthy();
+    expect(screen.getByText("ROE sem base confiável")).toBeTruthy();
     expect(screen.queryByText(/até Invalid Date/)).toBeNull();
+  });
+
+  it.each(["2025-02-31", "2025-02-28Tnot-a-time"])(
+    "rejects an invalid ROE reference date: %s",
+    async (referenceDate) => {
+      const petr = company("PETR3", "33000167000101");
+      petr.fundamentals.roe = metric(12, null, {
+        referenceDate,
+        periodBasis: "annual",
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            sector: "Petróleo e Gás",
+            sectorMetadataAsOf: null,
+            companies: [petr, company("VALE3", "33000167000102")],
+          }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<CompanyComparison initialTicker="PETR3" />);
+      await user.click(
+        screen.getByRole("button", { name: "Selecionar VALE3" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Comparar selecionadas" }),
+      );
+
+      expect(await screen.findByText("ROE sem base confiável")).toBeTruthy();
+      expect(screen.queryByText(/até Invalid Date/)).toBeNull();
+    },
+  );
+
+  it.each(["quarterly", "year_to_date", "point_in_time", "unknown", null])(
+    "keeps non-annual and non-LTM ROE %s neutral",
+    async (periodBasis) => {
+      const petr = company("PETR3", "33000167000101");
+      petr.fundamentals.roe = metric(12, null, {
+        referenceDate: "2024-02-29",
+        periodBasis,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            sector: "Petróleo e Gás",
+            sectorMetadataAsOf: null,
+            companies: [petr, company("VALE3", "33000167000102")],
+          }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<CompanyComparison initialTicker="PETR3" />);
+      await user.click(
+        screen.getByRole("button", { name: "Selecionar VALE3" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Comparar selecionadas" }),
+      );
+
+      expect(await screen.findByText("ROE sem base confiável")).toBeTruthy();
+      expect(
+        screen.getAllByText("ROE abaixo · mín. 15%").length,
+      ).toBeGreaterThan(0);
+      expect(screen.queryByText("ROE atende · mín. 15%")).toBeNull();
+    },
+  );
+
+  it("accepts annual ROE for a non-financial issuer on a real leap-day date", async () => {
+    const petr = company("PETR3", "33000167000101");
+    petr.fundamentals.roe = metric(12, null, {
+      referenceDate: "2024-02-29",
+      periodBasis: "annual",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sector: "Petróleo e Gás",
+          sectorMetadataAsOf: null,
+          companies: [petr, company("VALE3", "33000167000102")],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="PETR3" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    expect(await screen.findAllByText("ROE abaixo · mín. 15%")).toHaveLength(2);
+  });
+
+  it("uses the shared ROE preference and leaves unverified comparisons neutral", async () => {
+    window.localStorage.setItem(
+      stockCriteriaPreferencesStorageKey,
+      JSON.stringify({ maximumPe: 15, minimumRoePercent: 10 }),
+    );
+    const unverified = company("VALE3", "33000167000102");
+    unverified.identityVerified = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sector: "Petróleo e Gás",
+          sectorMetadataAsOf: null,
+          companies: [company("PETR3", "33000167000101"), unverified],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="PETR3" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    expect(await screen.findByText("ROE atende · mín. 10%")).toBeTruthy();
+    expect(screen.getByText("ROE sem base confiável")).toBeTruthy();
   });
 });

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createHmac } from "node:crypto";
+import { addSignedInSession } from "./helpers/session";
 
 const e2eSecret = "investlab-e2e-auth-secret-2026!!";
 
@@ -41,14 +42,7 @@ test("rejects anonymous requests to read and mutation APIs", async ({
 test("allows a request with a valid server-signed session", async ({
   page,
 }) => {
-  await page.context().addCookies([
-    {
-      name: "investlab_session",
-      value: sessionToken(Date.now() + 60_000),
-      domain: "127.0.0.1",
-      path: "/",
-    },
-  ]);
+  await addSignedInSession(page);
 
   await page.goto("/");
 

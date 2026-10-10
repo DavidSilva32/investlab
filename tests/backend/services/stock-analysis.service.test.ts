@@ -2582,9 +2582,15 @@ describe("StockAnalysisService cache and failures", () => {
     };
     const screener = {
       getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
-      getComparisonMetadata: vi
-        .fn()
-        .mockResolvedValue([{ ticker: "PETR4", cnpj: "33.000.167/0001-01" }]),
+      getComparisonMetadata: vi.fn().mockResolvedValue([
+        {
+          ticker: "PETR4",
+          cnpj: "33.000.167/0001-01",
+          subType: "stock",
+          sector: "Energia elétrica",
+          issuerMetadataUpdatedAt: new Date("2026-10-01T00:00:00.000Z"),
+        },
+      ]),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -2596,6 +2602,9 @@ describe("StockAnalysisService cache and failures", () => {
     await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
       ticker: "PETR4",
       cnpj: "33000167000101",
+      issuerSector: "Energia elétrica",
+      issuerMetadataUpdatedAt: new Date("2026-10-01T00:00:00.000Z"),
+      instrumentType: "stock",
     });
     await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
       ticker: "PETR4",
@@ -2607,6 +2616,81 @@ describe("StockAnalysisService cache and failures", () => {
     expect(fundamentalsProvider.getByTicker).toHaveBeenNthCalledWith(1, {
       ticker: "PETR4",
       cnpj: "33000167000101",
+    });
+  });
+
+  it("keeps a uniquely matched unit sector but does not classify it as stock", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue({
+          ...market,
+          cnpj: null,
+          priceUpdatedAt: new Date().toISOString(),
+        }),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      {
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+        getComparisonMetadata: vi.fn().mockResolvedValue([
+          {
+            ticker: "PETR4",
+            cnpj: "33000167000101",
+            subType: "unit",
+            sector: "Energia elétrica",
+            issuerMetadataUpdatedAt: new Date("2026-10-02T00:00:00.000Z"),
+          },
+        ]),
+      },
+    );
+
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      issuerSector: "Energia elétrica",
+      issuerMetadataUpdatedAt: new Date("2026-10-02T00:00:00.000Z"),
+      instrumentType: "unknown",
+    });
+  });
+
+  it("leaves type, sector and reference date unknown for ambiguous CVM matches", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue({
+          ...market,
+          cnpj: null,
+          priceUpdatedAt: new Date().toISOString(),
+        }),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      {
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+        getComparisonMetadata: vi.fn().mockResolvedValue([
+          {
+            ticker: "PETR4",
+            cnpj: "33000167000101",
+            subType: "stock",
+            sector: "Energia elétrica",
+            issuerMetadataUpdatedAt: new Date("2026-10-02T00:00:00.000Z"),
+          },
+          {
+            ticker: "PETR4",
+            cnpj: "33000167000101",
+            subType: "unit",
+            sector: "Energia elétrica",
+            issuerMetadataUpdatedAt: new Date("2026-10-03T00:00:00.000Z"),
+          },
+        ]),
+      },
+    );
+
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      issuerSector: null,
+      issuerMetadataUpdatedAt: null,
+      instrumentType: "unknown",
     });
   });
 

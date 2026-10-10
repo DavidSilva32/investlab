@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -12,6 +13,7 @@ import {
   CircleHelp,
   RefreshCw,
   Save,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
@@ -576,15 +578,25 @@ export function PortfolioOpportunities({
                   posição importada em {formatDate(item.positionDate)}
                 </CardDescription>
               </div>
-              <div className="sm:text-right">
-                <p className="text-xs text-muted-foreground">
-                  Preço atual · {formatDate(item.priceAsOf)}
-                </p>
-                <p className="text-xl font-semibold tabular-nums">
-                  {item.price === null
-                    ? "Indisponível"
-                    : currency.format(item.price)}
-                </p>
+              <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                <div className="sm:text-right">
+                  <p className="text-xs text-muted-foreground">
+                    Preço atual · {formatDate(item.priceAsOf)}
+                  </p>
+                  <p className="text-xl font-semibold tabular-nums">
+                    {item.price === null
+                      ? "Indisponível"
+                      : currency.format(item.price)}
+                  </p>
+                </div>
+                <Button asChild type="button" variant="outline" size="sm">
+                  <Link
+                    href={`/analyses?ticker=${encodeURIComponent(item.ticker)}`}
+                  >
+                    <Search className="mr-2 size-4" aria-hidden="true" />
+                    Ver critérios
+                  </Link>
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="min-w-0 space-y-3 p-4 sm:p-5">
@@ -613,7 +625,7 @@ export function PortfolioOpportunities({
                 <MethodCard
                   title="Preço-teto de Bazin"
                   method={item.methods.bazin}
-                  formula="Fórmula usada: dividendos anuais por ação ÷ taxa-alvo anual informada."
+                  formula="Fórmula usada: dividendos anuais por ação ÷ taxa-alvo anual informada. O valor anual é preenchido manualmente e não confirma que os proventos sejam recorrentes; trate o resultado como cenário, não como critério de compra."
                 />
               </div>
               <p className="text-xs text-muted-foreground">

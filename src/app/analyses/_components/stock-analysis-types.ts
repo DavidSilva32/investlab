@@ -58,6 +58,9 @@ export type AnalysisIndicator = {
 
 export type StockAnalysis = {
   ticker: string;
+  issuerSector?: string | null;
+  issuerMetadataUpdatedAt?: string | null;
+  instrumentType?: "stock" | "fii" | "etf" | "bdr" | "unknown";
   cnpj: string | null;
   companyName: string | null;
   price: number | null;

@@ -181,6 +181,11 @@ describe("StrategyAllocationWorkspace", () => {
     ).toBeTruthy();
     expect(screen.getByText("Patrimônio de longo prazo")).toBeTruthy();
     expect(screen.getByText("Distribuição atual")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Analisar ações da carteira" })
+        .getAttribute("href"),
+    ).toBe("/analyses");
     expect(screen.getAllByText("30,00%").length).toBeGreaterThan(0);
     expect(screen.getByText("10%")).toBeTruthy();
     const learningLink = screen.getByRole("link", {
