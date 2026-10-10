@@ -395,6 +395,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       year,
     });
     const response = await this.fetcher(url);
+    const timeToHeadersMs = Date.now() - startedAt;
     if (!response.ok)
       throw new Error(`CVM ${document} request failed: ${response.status}`);
     if (!response.body) throw new Error(`CVM ${document} response has no body`);
@@ -406,6 +407,9 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     let latestPeriodMatches = 0;
     let requiredAccountMatches = 0;
     let completedFiles = 0;
+    let bytesRead = 0;
+    let streamWaitMs = 0;
+    let unzipProcessingMs = 0;
     const unzip = new Unzip();
     unzip.register(UnzipInflate);
     await new Promise<void>(async (resolve, reject) => {
@@ -536,11 +540,18 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       try {
         const reader = response.body!.getReader();
         while (true) {
+          const readStartedAt = Date.now();
           const { done, value } = await reader.read();
+          streamWaitMs += Date.now() - readStartedAt;
           if (done) break;
+          bytesRead += value.byteLength;
+          const unzipStartedAt = Date.now();
           unzip.push(value, false);
+          unzipProcessingMs += Date.now() - unzipStartedAt;
         }
+        const unzipStartedAt = Date.now();
         unzip.push(new Uint8Array(), true);
+        unzipProcessingMs += Date.now() - unzipStartedAt;
         readerDone = true;
         settle();
       } catch (error) {
@@ -561,6 +572,11 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       requiredAccountMatches,
       completedFiles,
       periods: periods.size,
+      httpStatus: response.status,
+      timeToHeadersMs,
+      streamWaitMs,
+      unzipProcessingMs,
+      bytesRead,
       durationMs: Date.now() - startedAt,
     });
     const latestByPeriod = new Map<string, PeriodAccounts>();
@@ -638,38 +654,41 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     const normalizedCnpj = normalizeCnpj(cnpj);
     const issuer = await this.resolveIssuer(normalizedCnpj, ticker);
     const currentYear = new Date().getUTCFullYear();
-    const annualPromise = this.readDocument(
-      "DFP",
-      currentYear - 1,
-      normalizedCnpj,
-      issuer.code,
-      ticker,
-    );
+    // A missing annual balance can make the historical ITR pass request the
+    // same archive again when the LTM ROE check needs prior-year balances.
+    // Keep one promise per document/year for this issuer refresh so a slow CVM
+    // archive is downloaded and parsed only once.
+    const documentPromises = new Map<string, Promise<FundamentalPeriod[]>>();
+    const readDocumentOnce = (document: "DFP" | "ITR", year: number) => {
+      const key = `${document}:${year}`;
+      const existing = documentPromises.get(key);
+      if (existing) return existing;
+      const pending = this.readDocument(
+        document,
+        year,
+        normalizedCnpj,
+        issuer.code,
+        ticker,
+      );
+      documentPromises.set(key, pending);
+      return pending;
+    };
+    const annualPromise = readDocumentOnce("DFP", currentYear - 1);
     const previousAnnualPromise = Promise.all(
       [currentYear - 2, currentYear - 3, currentYear - 4].map((year) =>
-        this.readDocument(
-          "DFP",
-          year,
-          normalizedCnpj,
-          issuer.code,
-          ticker,
-        ).catch(() => []),
+        readDocumentOnce("DFP", year).catch(() => []),
       ),
     );
-    const quarterlyPromise = this.readDocument(
-      "ITR",
-      currentYear,
-      normalizedCnpj,
-      issuer.code,
-      ticker,
-    ).catch((error) => {
-      logger.warn("stock_fundamentals_cvm_itr_unavailable", {
-        ticker,
-        cnpj: normalizedCnpj,
-        error,
-      });
-      return [];
-    });
+    const quarterlyPromise = readDocumentOnce("ITR", currentYear).catch(
+      (error) => {
+        logger.warn("stock_fundamentals_cvm_itr_unavailable", {
+          ticker,
+          cnpj: normalizedCnpj,
+          error,
+        });
+        return [];
+      },
+    );
     const [currentAnnual, previousAnnual, quarterly] = await Promise.all([
       annualPromise,
       previousAnnualPromise,
@@ -680,13 +699,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       [currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4]
         .filter((year) => !hasYearEndEquity(annual, year))
         .map((year) =>
-          this.readDocument(
-            "ITR",
-            year,
-            normalizedCnpj,
-            issuer.code,
-            ticker,
-          ).catch((error) => {
+          readDocumentOnce("ITR", year).catch((error) => {
             logger.warn("stock_fundamentals_cvm_historical_itr_unavailable", {
               ticker,
               cnpj: normalizedCnpj,
@@ -698,13 +711,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         ),
     );
     const previousQuarterly = needsPriorYearLtmRoeBalances(annual, quarterly)
-      ? await this.readDocument(
-          "ITR",
-          currentYear - 1,
-          normalizedCnpj,
-          issuer.code,
-          ticker,
-        ).catch((error) => {
+      ? await readDocumentOnce("ITR", currentYear - 1).catch((error) => {
           logger.warn("stock_fundamentals_cvm_prior_itr_unavailable", {
             ticker,
             cnpj: normalizedCnpj,

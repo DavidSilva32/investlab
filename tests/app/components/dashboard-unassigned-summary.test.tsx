@@ -49,4 +49,16 @@ describe("DashboardUnassignedSummary", () => {
       renderToStaticMarkup(<DashboardUnassignedSummary summary={null} />),
     ).toBe("");
   });
+
+  it("shows a section-shaped skeleton while its independent query is pending", () => {
+    render(<DashboardUnassignedSummary summary={null} loading />);
+    expect(
+      screen
+        .getByRole("region", { name: "Carregando patrimônio sem destino" })
+        .getAttribute("aria-busy"),
+    ).toBe("true");
+    expect(
+      screen.getByText("Carregando patrimônio conhecido sem destino"),
+    ).toBeTruthy();
+  });
 });

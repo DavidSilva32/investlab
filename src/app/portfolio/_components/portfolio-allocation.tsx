@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -131,9 +132,28 @@ export function PortfolioAllocation({
             </Button>
           </div>
         ) : positions === null ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Carregando distribuição…
-          </p>
+          <div
+            role="status"
+            aria-label="Carregando classificação da carteira"
+            aria-busy="true"
+            className="space-y-4"
+          >
+            <span className="sr-only">Carregando distribuição…</span>
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-5 w-44" />
+              <Skeleton className="h-9 w-36" />
+            </div>
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="rounded-lg border p-4">
+                <Skeleton className="h-4 w-48 max-w-full" />
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : positions.length === 0 ? (
           <>
             <p className="text-sm text-muted-foreground">

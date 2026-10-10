@@ -83,6 +83,7 @@ export function DashboardClient() {
       <DashboardSummary
         {...overview}
         unassignedSummary={unassignedSummary}
+        unassignedLoading={objectivesQuery.isPending}
         onRetryUnassigned={() => void objectivesQuery.refetch()}
       />
     </div>

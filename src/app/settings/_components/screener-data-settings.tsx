@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -203,11 +204,20 @@ export function ScreenerDataSettings() {
           </>
         )}
         {loading && !status ? (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p role="status" className="text-sm text-muted-foreground">
-              Consultando a última sincronização…
-            </p>
-            {synchronizeButton}
+          <div
+            role="status"
+            aria-label="Carregando status da base de empresas"
+            aria-busy="true"
+            className="space-y-4"
+          >
+            <span className="sr-only">Consultando a última sincronização…</span>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="grid w-full gap-3 sm:grid-cols-2">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+              {synchronizeButton}
+            </div>
           </div>
         ) : (
           <>

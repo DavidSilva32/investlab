@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
@@ -352,9 +353,26 @@ export function PositionCombinationSuggestions({
             </p>
           )}
           {searchQuery.isFetching && (
-            <p role="status" className="text-sm text-muted-foreground">
-              Comparando combinações de valores…
-            </p>
+            <div
+              role="status"
+              aria-label="Carregando combinações"
+              aria-busy="true"
+              className="grid gap-2 sm:grid-cols-2"
+            >
+              <span className="sr-only">
+                Comparando combinações de valores…
+              </span>
+              {Array.from({ length: 2 }, (_, index) => (
+                <div key={index} className="rounded-lg border p-4">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="mt-3 h-4 w-56 max-w-full" />
+                  <div className="mt-4 space-y-2">
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-4/5" />
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
           {searchQuery.data && (
             <SuggestionResults

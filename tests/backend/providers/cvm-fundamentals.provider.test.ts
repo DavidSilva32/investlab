@@ -530,6 +530,75 @@ describe("CvmFundamentalsProvider", () => {
     );
   });
 
+  it("reuses the historical ITR archive when the LTM balance check needs the same year", async () => {
+    const year = new Date().getUTCFullYear();
+    const currentEnd = `${year}-03-31`;
+    const priorEnd = `${year - 1}-03-31`;
+    const requestedUrls: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv(["33.000.167/0001-01;09512;PETROBRAS;ATIVA"]),
+        );
+      if (url.includes("/DFP/")) {
+        const archiveYear = Number(
+          url.match(/dfp_cia_aberta_(\d{4})\.zip$/)?.[1],
+        );
+        return new Response(
+          csvZip(
+            `dfp_cia_aberta_DRE_con_${archiveYear}.csv`,
+            documentCsv([
+              row("3.09", "100", {
+                DT_REFER: `${archiveYear}-12-31`,
+                DT_INI_EXERC: `${archiveYear}-01-01`,
+                DT_FIM_EXERC: `${archiveYear}-12-31`,
+              }),
+            ]),
+          ),
+        );
+      }
+      if (url.endsWith(`/itr_cia_aberta_${year}.zip`))
+        return new Response(
+          csvZip(
+            `itr_cia_aberta_DRE_con_${year}.csv`,
+            documentCsv([
+              row("3.09", "30", {
+                DT_REFER: currentEnd,
+                DT_INI_EXERC: `${year}-01-01`,
+                DT_FIM_EXERC: currentEnd,
+              }),
+              row("2.07", "1100", {
+                DT_REFER: currentEnd,
+                DT_INI_EXERC: `${year}-01-01`,
+                DT_FIM_EXERC: currentEnd,
+              }),
+              row("3.09", "20", {
+                DT_REFER: currentEnd,
+                DT_INI_EXERC: `${year - 1}-01-01`,
+                DT_FIM_EXERC: priorEnd,
+                ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
+              }),
+            ]),
+          ),
+        );
+      if (url.endsWith(`/itr_cia_aberta_${year - 1}.zip`))
+        return new Response(
+          csvZip(`itr_cia_aberta_DRE_con_${year - 1}.csv`, documentCsv([])),
+        );
+      return new Response(null, { status: 404 });
+    });
+
+    await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "PETR4",
+      cnpj: "33.000.167/0001-01",
+    });
+
+    const priorItrUrl = `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_${year - 1}.zip`;
+    expect(requestedUrls.filter((url) => url === priorItrUrl)).toHaveLength(1);
+  });
+
   it("normalizes issuer data and streamed DFP and ITR accounts, preferring the latest version", async () => {
     const year = new Date().getUTCFullYear();
     const dfpRows = [

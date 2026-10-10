@@ -14,6 +14,7 @@ import { PortfolioObjectivesOverview } from "@/app/portfolio/_components/portfol
 import { EmergencyReserveEditor } from "@/app/portfolio/_components/emergency-reserve-editor";
 import { PortfolioObjectiveOrganizer } from "@/app/portfolio/_components/portfolio-objective-organizer";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
@@ -305,9 +306,31 @@ export function PortfolioObjectives({
   return (
     <div className="space-y-5" data-testid="portfolio-objectives">
       {loading && !data && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Carregando objetivos e posições…
-        </p>
+        <div
+          role="status"
+          aria-label="Carregando objetivos e posições"
+          aria-busy="true"
+          className="space-y-4"
+        >
+          <span className="sr-only">Carregando objetivos e posições…</span>
+          <div className="rounded-xl border p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-5 w-44" />
+              <Skeleton className="h-9 w-28" />
+            </div>
+            <Skeleton className="mt-5 h-36 w-full sm:h-44" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className="rounded-xl border p-4">
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="mt-5 h-8 w-36" />
+                <Skeleton className="mt-4 h-2 w-full" />
+                <Skeleton className="mt-4 h-4 w-3/4" />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
       {objectivesQuery.error && !data && (
         <div role="alert" className="space-y-3 text-sm text-destructive">

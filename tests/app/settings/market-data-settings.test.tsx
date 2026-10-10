@@ -53,6 +53,22 @@ const revealRefreshAction = async (
 };
 
 describe("MarketDataSettings", () => {
+  it("renders a local skeleton while the market status is pending", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
+    render(<MarketDataSettings />);
+    expect(
+      screen
+        .getByRole("status", { name: "Carregando status do mercado" })
+        .getAttribute("aria-busy"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Atualizar mercado" }),
+    ).toBeTruthy();
+  });
+
   it("shows quote age separately from refresh execution and runs a manual refresh", async () => {
     const user = userEvent.setup();
     const fetchMock = vi

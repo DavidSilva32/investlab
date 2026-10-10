@@ -38,6 +38,24 @@ afterEach(() => {
 });
 
 describe("ScreenerDataSettings", () => {
+  it("renders a local skeleton while the sync status is pending", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
+    render(<ScreenerDataSettings />);
+    expect(
+      screen
+        .getByRole("status", {
+          name: "Carregando status da base de empresas",
+        })
+        .getAttribute("aria-busy"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Sincronizar agora" }),
+    ).toBeTruthy();
+  });
+
   it("loads run metadata and triggers a manual sync through the session route", async () => {
     const user = userEvent.setup();
     const fetchMock = vi

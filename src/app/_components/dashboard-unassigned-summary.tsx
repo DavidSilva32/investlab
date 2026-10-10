@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
 
 export type UnassignedPortfolioSummary =
@@ -15,11 +16,28 @@ export type UnassignedPortfolioSummary =
 
 export function DashboardUnassignedSummary({
   summary,
+  loading = false,
   onRetry,
 }: {
   summary: UnassignedPortfolioSummary | null | undefined;
+  loading?: boolean;
   onRetry?: () => void;
 }) {
+  if (loading && !summary)
+    return (
+      <section aria-label="Carregando patrimônio sem destino" aria-busy="true">
+        <Card aria-busy="true">
+          <CardContent className="space-y-3 p-5 sm:p-6" role="status">
+            <span className="sr-only">
+              Carregando patrimônio conhecido sem destino
+            </span>
+            <Skeleton className="h-5 w-52" />
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-4 w-64 max-w-full" />
+          </CardContent>
+        </Card>
+      </section>
+    );
   if (!summary) return null;
 
   return (
