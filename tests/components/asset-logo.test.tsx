@@ -11,6 +11,13 @@ import { AssetLogo } from "@/components/asset-logo";
 
 afterEach(cleanup);
 describe("AssetLogo", () => {
+  it("keeps the prominent header fallback readable without an image", () => {
+    const { container } = render(<AssetLogo ticker="VOO" size="xl" />);
+    expect(screen.getByRole("img").style.width).toBe("64px");
+    expect(screen.getByRole("img").className).toContain("text-lg");
+    expect(screen.getByText("VO")).toBeDefined();
+    expect(container.querySelector("img")).toBeNull();
+  });
   it("shows an immediate accessible fallback and lazy isolated image", async () => {
     const { container } = render(<AssetLogo ticker="PETR4" name="Petrobras" />);
     expect(

@@ -30,10 +30,10 @@ describe("SettingsPage", () => {
       screen.getByRole("heading", { name: "Fontes das análises" }),
     ).toBeTruthy();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Consulte o estado e atualize as fontes que alimentam as análises.",
       ),
-    ).toBeTruthy();
+    ).toBeNull();
     const panels = container.querySelectorAll("main section");
     expect(panels).toHaveLength(2);
     expect(panels[0]?.parentElement?.className).toContain("space-y-5");

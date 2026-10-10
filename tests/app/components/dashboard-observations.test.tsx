@@ -63,6 +63,8 @@ describe("DashboardObservations", () => {
     expect(html).toContain("O que merece atenção");
     expect(html).toContain("Não há pontos de atenção identificados");
     expect(html).toContain("Fatos da carteira");
+    expect(html).not.toContain("Leitura da carteira");
+    expect(html).not.toContain("Dados registrados");
     expect(html).toContain("Maior posição na carteira conhecida");
     expect(html).toContain("Próximo vencimento informado");
     expect(html).toContain("Tesouro Selic · 01/10/2026");

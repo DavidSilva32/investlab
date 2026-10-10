@@ -44,9 +44,6 @@ export function DashboardWealthSummary({
                 ? formatCurrency(insights.totalValue)
                 : "Ainda sem valores conhecidos"}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Patrimônio da carteira que o InvestLab conhece
-            </p>
           </div>
 
           <div className="border-t pt-4 lg:border-l lg:border-t-0 lg:py-2 lg:pl-5">
@@ -73,9 +70,6 @@ export function DashboardWealthSummary({
                 : dataDateIsMixed
                   ? "Datas-base variadas ou incompletas"
                   : "Não informada"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Dos valores registrados
             </p>
           </div>
         </CardContent>

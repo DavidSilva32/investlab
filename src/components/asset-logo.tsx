@@ -5,7 +5,13 @@ import { useState } from "react";
 import { resolveAssetLogoUrl } from "@/lib/asset-logo";
 import { cn } from "@/lib/utils";
 
-const sizes = { sm: 24, md: 32, lg: 40 };
+const sizes = { sm: 24, md: 32, lg: 40, xl: 64 };
+const textSizes = {
+  sm: "text-[9px]",
+  md: "text-[10px]",
+  lg: "text-xs",
+  xl: "text-lg",
+};
 
 type AssetLogoProps = {
   ticker?: string | null;
@@ -32,7 +38,8 @@ export function AssetLogo({
       role="img"
       aria-label={`Identidade de ${label}`}
       className={cn(
-        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted text-[9px] font-semibold text-muted-foreground",
+        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted font-semibold text-muted-foreground",
+        textSizes[size],
         className,
       )}
       style={{ width: dimension, height: dimension }}

@@ -179,10 +179,14 @@ describe("StockAnalysisDashboard", () => {
         .querySelector("img")
         ?.getAttribute("src"),
     ).toBe(analysis.logoUrl);
-    expect(learningLink.textContent).toContain("Aprender sobre Ações e BDRs");
-    expect(learningLink.closest("div")?.textContent).toContain(
-      "Ativo consultado",
-    );
+    expect(learningLink.querySelector("svg")).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Identidade de Petrobras" }).style.width,
+    ).toBe("64px");
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Data da cotação" }));
+    await screen.findByRole("dialog", { name: "Data da cotação" });
     expect(learningLink.getAttribute("href")).toBe(
       "/learn?class=brazilian_equities#class-content",
     );
@@ -193,10 +197,9 @@ describe("StockAnalysisDashboard", () => {
       ),
     ).toBeTruthy();
     expect(
-      screen.getByText(
-        /Última cotação observada; não representa cotação atual/,
-      ),
-    ).toBeTruthy();
+      screen.getByRole("dialog", { name: "Data da cotação" }).textContent,
+    ).toContain("Última cotação observada; não representa cotação atual");
+    expect(screen.getByText("Cotação desatualizada")).toBeTruthy();
   });
 
   it("toasts a selected ticker API failure without duplicating it inline", async () => {
@@ -243,7 +246,9 @@ describe("StockAnalysisDashboard", () => {
     );
     expect(screen.queryByRole("alert")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(await screen.findByText("Ativo consultado")).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Data da cotação" }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Aprender sobre Ações e BDRs" }),
     ).toBeTruthy();
@@ -288,9 +293,7 @@ describe("StockAnalysisDashboard", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(
-      await screen.findByRole("heading", { name: "VALE3 · Vale" }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "VALE3" })).toBeTruthy();
     expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
       "VALE3",
     );
@@ -301,9 +304,7 @@ describe("StockAnalysisDashboard", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: "PETR4 · Petrobras" }),
-      ).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "PETR4" })).toBeTruthy();
       expect(screen.getAllByRole("combobox")).toHaveLength(1);
       expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
         "PETR4",
@@ -343,18 +344,19 @@ describe("StockAnalysisDashboard", () => {
     expect(chart.dataset.points).toBe("2025-09-20,2026-08-25,2026-09-19");
     expect(screen.getByRole("button", { name: "1 ano" })).toBeTruthy();
     expect(
-      screen.getByText("Variação do preço no período · 1 ano"),
+      screen.getByRole("button", {
+        name: "Variação do preço no período · 1 ano",
+      }),
     ).toBeTruthy();
-    expect(screen.getByText("Não inclui dividendos")).toBeTruthy();
-    const assetSummary = screen.getByText("Ativo consultado").closest(".grid");
-    expect(assetSummary?.children[0].textContent).toContain("PETR4");
-    expect(assetSummary?.children[0].textContent).toMatch(/R\$\s*30,00/);
-    expect(assetSummary?.children[1].textContent).toContain(
+    const assetSummary = screen.getByRole("img", {
+      name: "Identidade de Petrobras",
+    }).parentElement;
+    expect(assetSummary?.textContent).toContain("PETR4");
+    expect(assetSummary?.textContent).toMatch(/R\$\s*30,00/);
+    expect(assetSummary?.textContent).not.toContain(
       "Variação do preço no período",
     );
-    expect(assetSummary?.children[1].textContent).toContain(
-      "Não inclui dividendos",
-    );
+    expect(screen.queryByText("Ativo consultado")).toBeNull();
     expect(screen.getByText(/\+24(?:,00)?%/).className).toContain(
       "text-status-success",
     );
@@ -386,7 +388,9 @@ describe("StockAnalysisDashboard", () => {
     await user.click(screen.getByRole("button", { name: "1 mês" }));
     expect(chart.dataset.points).toBe("2026-08-25,2026-09-19");
     expect(
-      screen.getByText("Variação do preço no período · 1 mês"),
+      screen.getByRole("button", {
+        name: "Variação do preço no período · 1 mês",
+      }),
     ).toBeTruthy();
     expect(screen.getByText(/\+3,33%/)).toBeTruthy();
     expect(
@@ -399,8 +403,14 @@ describe("StockAnalysisDashboard", () => {
         .getByRole("button", { name: "1 ano" })
         .getAttribute("aria-pressed"),
     ).toBe("false");
-    expect(screen.getByText("Variação do dia: -1.25%")).toBeTruthy();
-    expect(screen.getByText(/Cotação observada em/)).toBeTruthy();
+    expect(screen.getByLabelText("Variação do dia: -1.25%")).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Data da cotação" }));
+    expect(
+      (await screen.findByRole("dialog", { name: "Data da cotação" }))
+        .textContent,
+    ).toContain("Cotação observada em");
     expect(
       screen.getByRole("group", { name: "Intervalo do histórico" }),
     ).toBeTruthy();
@@ -481,11 +491,13 @@ describe("StockAnalysisDashboard", () => {
     );
     render(<StockAnalysisDashboard initialTicker="ITUB4" />);
     expect(
-      await screen.findByText("Variação do preço no período · 1 ano"),
+      await screen.findByRole("button", {
+        name: "Variação do preço no período · 1 ano",
+      }),
     ).toBeTruthy();
-    const priceChange = screen.getByText(
-      "Variação do preço no período · 1 ano",
-    ).parentElement;
+    const priceChange = screen.getByRole("button", {
+      name: "Variação do preço no período · 1 ano",
+    }).parentElement;
     expect(within(priceChange!).getByText("Indisponível")).toBeTruthy();
   });
 
@@ -517,10 +529,10 @@ describe("StockAnalysisDashboard", () => {
     );
     render(<StockAnalysisDashboard initialTicker="PETR4" />);
 
-    expect(await screen.findByText("Ativo consultado")).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "PETR4 · Petrobras" }),
+      await screen.findByRole("button", { name: "Data da cotação" }),
     ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "PETR4" })).toBeTruthy();
   });
 
   it("shows a loading state before the request resolves", () => {
@@ -578,6 +590,7 @@ describe("StockAnalysisDashboard", () => {
   });
 
   it("automatically retries one transient history failure once", async () => {
+    vi.useFakeTimers();
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(
@@ -600,16 +613,46 @@ describe("StockAnalysisDashboard", () => {
       );
     vi.stubGlobal("fetch", fetcher);
     render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(
-      await screen.findByText("Histórico temporariamente indisponível"),
+      screen.getByText("Histórico temporariamente indisponível"),
     ).toBeTruthy();
-    const chart = await screen.findByTestId("price-chart");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const chart = screen.getByTestId("price-chart");
     expect(chart.dataset.points).toBe("2025-09-19,2026-09-19");
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fetcher.mock.calls[1]?.[0]).toBe(
       "/api/analyses/stocks/PETR4/history",
     );
-  }, 10_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
 
   it("waits for a short Retry-After before one automatic history retry", async () => {
     vi.useFakeTimers();
@@ -918,12 +961,12 @@ it("handles missing company and price data with no available history interval", 
   });
 
   expect(screen.getByText(/Empresa/)).toBeTruthy();
-  expect(screen.getByText(/Varia.*informada/)).toBeTruthy();
+  expect(screen.getByLabelText("Variação do dia não informada")).toBeTruthy();
   expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   expect(screen.queryByRole("button", { name: "1 ano" })).toBeNull();
-  const periodChange = screen.getByText(
-    /Variação do preço no período/,
-  ).parentElement;
+  const periodChange = screen.getByRole("button", {
+    name: /Variação do preço no período/,
+  }).parentElement;
   expect(within(periodChange!).getByText("Indisponível")).toBeTruthy();
   fireEvent.click(
     screen.getByRole("button", {
@@ -995,7 +1038,7 @@ it("offers recent tickers stored locally and lets the user resume one", async ()
     .setup()
     .click(screen.getByRole("button", { name: "Retomar análise de PETR4" }));
 
-  expect(await screen.findByText(/PETR4.*Petrobras/)).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "PETR4" })).toBeTruthy();
   expect(fetcher).toHaveBeenCalledWith("/api/analyses/stocks/PETR4");
 });
 
@@ -1049,7 +1092,7 @@ it("stores recent ticker metadata when the analysis has no logo", async () => {
     vi.fn().mockResolvedValue(jsonResponse({ ...analysis, logoUrl: null })),
   );
   render(<StockAnalysisDashboard initialTicker="PETR4" />);
-  await screen.findByRole("heading", { name: "PETR4 · Petrobras" });
+  await screen.findByRole("heading", { name: "PETR4" });
   expect(
     JSON.parse(
       window.localStorage.getItem("investlab:analyses:recent-tickers") ?? "[]",
@@ -1071,7 +1114,9 @@ it("moves a newly consulted ticker to the front and keeps only five unique entri
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(analysis)));
 
   render(<StockAnalysisDashboard initialTicker="PETR4" />);
-  expect(await screen.findByText("Ativo consultado")).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "Data da cotação" }),
+  ).toBeTruthy();
 
   const recent = JSON.parse(
     window.localStorage.getItem("investlab:analyses:recent-tickers") ?? "[]",
@@ -1184,7 +1229,14 @@ it("separates accumulated and isolated ITR periods and handles missing quote tim
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(response)));
   render(<StockAnalysisDashboard initialTicker="PETR4" />);
 
-  expect(await screen.findByText("Data da cotação não informada")).toBeTruthy();
+  await screen.findByRole("button", { name: "Data da cotação" });
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Data da cotação" }));
+  expect(
+    (await screen.findByRole("dialog", { name: "Data da cotação" }))
+      .textContent,
+  ).toContain("Data da cotação não informada");
   await userEvent.setup().click(
     screen.getByRole("button", {
       name: /ver dados detalhados/i,
@@ -1231,3 +1283,25 @@ it("ignores a stale request rejection after a newer ticker has loaded", async ()
   expect(await screen.findByText("Indicadores financeiros")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
 });
+
+it.each([
+  [2, "+2%", "text-status-success", "lucide-arrow-up-right"],
+  [-2, "-2%", "text-status-danger", "lucide-arrow-down-right"],
+  [0, "0%", "text-muted-foreground", "lucide-minus"],
+])(
+  "highlights daily change %s without expanding the asset header",
+  async (changePercent, value, tone, icon) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ ...analysis, changePercent })),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    const change = await screen.findByLabelText(
+      `Variação do dia: ${changePercent.toFixed(2)}%`,
+    );
+    expect(change.textContent).toContain(value);
+    expect(change.className).toContain(tone);
+    expect(change.querySelector(`.${icon}`)).toBeTruthy();
+    expect(screen.queryByText("Ativo consultado")).toBeNull();
+  },
+);

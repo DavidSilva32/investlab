@@ -81,14 +81,8 @@ describe("AnalysisStockSearch", () => {
       screen.getByRole("combobox", { name: "Pesquisar ação" }),
     ).toBeTruthy();
   });
-  it("can use the compact search presentation without helper copy", () => {
-    render(
-      <AnalysisStockSearch
-        ticker="PETR4"
-        onSelect={vi.fn()}
-        showDescription={false}
-      />,
-    );
+  it("keeps search compact without redundant provider instructions", () => {
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
     expect(
       screen.getByRole("combobox", { name: "Pesquisar ação" }),
     ).toBeTruthy();

@@ -7,16 +7,18 @@ export function AnalysisSkeleton({ ticker }: { ticker?: string }) {
     <div aria-busy="true" aria-live="polite" className="space-y-4">
       <span className="sr-only">Carregando análise...</span>
       <Card>
-        <CardHeader>
-          <Skeleton className="h-4 w-28" />
-          <div className="flex items-center gap-3">
-            <AssetLogo ticker={ticker} size="lg" />
-            <Skeleton className="h-8 w-56 max-w-full" />
+        <CardContent className="flex flex-wrap items-center gap-4 py-4 sm:flex-nowrap sm:gap-5">
+          <AssetLogo ticker={ticker} size="xl" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-7 w-24" />
+            <Skeleton className="h-4 w-44 max-w-full" />
           </div>
-        </CardHeader>
-        <CardContent className="flex gap-6">
-          <Skeleton className="h-10 w-36" />
-          <Skeleton className="h-6 w-28" />
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-36" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+          <Skeleton className="size-9" />
+          <Skeleton className="size-9" />
         </CardContent>
       </Card>
       <Card>

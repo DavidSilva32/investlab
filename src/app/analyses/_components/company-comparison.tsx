@@ -423,11 +423,7 @@ export function CompanyComparison({
 
       <Card>
         <CardContent className="grid gap-4 p-4 md:grid-cols-[minmax(14rem,1.15fr)_minmax(12rem,1fr)_auto] md:items-center md:p-5">
-          <AnalysisStockSearch
-            ticker={searchTicker}
-            onSelect={addTicker}
-            showDescription={false}
-          />
+          <AnalysisStockSearch ticker={searchTicker} onSelect={addTicker} />
           <div
             aria-label="Empresas selecionadas"
             className="flex min-h-11 flex-wrap content-center gap-2"

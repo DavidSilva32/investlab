@@ -64,9 +64,6 @@ export function DashboardClient() {
     return <AppContentSkeleton title="Dashboard" variant="dashboard" />;
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Visão geral do patrimônio e próximos passos
-      </p>
       {overviewQuery.isError && error && (
         <div role="alert" className="space-y-2 text-sm text-destructive">
           <p>{error}</p>

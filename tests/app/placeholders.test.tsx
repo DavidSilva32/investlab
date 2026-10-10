@@ -26,9 +26,9 @@ function renderWithQueryClient(element: React.ReactNode) {
 
 describe("secondary pages", () => {
   it("renders each planned area with its context", async () => {
-    expect(renderWithQueryClient(<ImportsPage />)).toContain(
-      "Importe posições ou movimentações da B3",
-    );
+    const imports = renderWithQueryClient(<ImportsPage />);
+    expect(imports).toContain("importador");
+    expect(imports).not.toContain("Importe posições ou movimentações da B3");
     expect(
       renderWithQueryClient(
         await AnalysesPage({ searchParams: Promise.resolve({}) }),

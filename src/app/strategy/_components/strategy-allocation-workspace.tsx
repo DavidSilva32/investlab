@@ -470,7 +470,6 @@ export function StrategyAllocationWorkspace({
           <Card className="min-w-0">
             <CardHeader className="pb-3">
               <CardTitle>Distribuição por classe</CardTitle>
-              <CardDescription>Atual, planejada e após aporte.</CardDescription>
             </CardHeader>
             <CardContent>
               <StrategyAllocationChart data={chartData} />

@@ -202,7 +202,7 @@ export function PortfolioClient({
               >
                 <SheetHeader className="mb-6 shrink-0 pr-8">
                   <SheetTitle>Objetivos e destinos</SheetTitle>
-                  <SheetDescription>
+                  <SheetDescription className="sr-only">
                     Acompanhe como as posições inteiras se distribuem entre a
                     reserva, objetivos pessoais e valores ainda sem destino.
                   </SheetDescription>
@@ -246,7 +246,7 @@ export function PortfolioClient({
               >
                 <SheetHeader className="mb-5 shrink-0 pr-8">
                   <SheetTitle>Metas pessoais e dados detalhados</SheetTitle>
-                  <SheetDescription>
+                  <SheetDescription className="sr-only">
                     Metas registradas por você, classificações e análises
                     detalhadas da carteira.
                   </SheetDescription>

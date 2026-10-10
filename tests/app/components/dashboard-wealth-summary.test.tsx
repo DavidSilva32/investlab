@@ -29,6 +29,10 @@ describe("DashboardWealthSummary", () => {
     expect(html).toContain("R$");
     expect(html).toContain("1 de 1");
     expect(html).toContain("Dados de 01/09/2026");
+    expect(html).not.toContain(
+      "Patrimônio da carteira que o InvestLab conhece",
+    );
+    expect(html).not.toContain("Dos valores registrados");
   });
 
   it("shows mixed or incomplete dates and values missing from the known total", () => {
