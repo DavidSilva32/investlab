@@ -815,6 +815,7 @@ export class StockAnalysisService {
         const quoteDate = quote!.quoteObservedAt!.toISOString();
         // Screener stores isolated validated observations, not a daily time series.
         market = {
+          ...market,
           ticker: parsed.data,
           companyName: market?.companyName ?? quote!.companyName,
           cnpj: quote!.issuerCnpj,

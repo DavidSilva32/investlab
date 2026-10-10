@@ -13,6 +13,7 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react";
+import { AssetLogo } from "@/components/asset-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +44,7 @@ type OpportunityPriceReference = {
 
 type PortfolioOpportunity = {
   ticker: string;
+  logoUrl?: string | null;
   name: string;
   quantity: number;
   price: number | null;
@@ -397,6 +399,12 @@ export function NextContributionStockOpportunities() {
                   <li key={opportunity.ticker} className="space-y-2 p-3 sm:p-4">
                     <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                       <div className="flex min-w-0 items-center gap-2">
+                        <AssetLogo
+                          ticker={opportunity.ticker}
+                          name={opportunity.name}
+                          logoUrl={opportunity.logoUrl}
+                          size="sm"
+                        />
                         <span className="font-semibold tabular-nums">
                           {opportunity.ticker}
                         </span>

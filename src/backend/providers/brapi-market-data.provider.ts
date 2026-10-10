@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveAssetLogoUrl } from "@/lib/asset-logo";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { logger } from "@/infrastructure/logging/logger";
 import type {
@@ -9,6 +10,28 @@ import type {
   MarketQuote,
   MarketTicker,
 } from "./market-data.provider";
+
+function optionalLogo(
+  ticker: string,
+  item: {
+    logoUrl?: unknown;
+    logourl?: unknown;
+    data?: { logoUrl?: unknown; logourl?: unknown };
+  },
+): { logoUrl?: string } {
+  const logoUrl = [
+    item.data?.logoUrl,
+    item.data?.logourl,
+    item.logoUrl,
+    item.logourl,
+  ]
+    .filter(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    )
+    .map((value) => resolveAssetLogoUrl(ticker, value))
+    .find((value) => value !== null);
+  return logoUrl ? { logoUrl } : {};
+}
 
 function parseRetryAfterSeconds(retryAfter: string | null) {
   if (!retryAfter) return undefined;
@@ -26,7 +49,11 @@ const quoteSchema = z.object({
     .array(
       z.object({
         symbol: z.string(),
+        logoUrl: z.unknown().optional(),
+        logourl: z.unknown().optional(),
         data: z.object({
+          logoUrl: z.unknown().optional(),
+          logourl: z.unknown().optional(),
           longName: z.string().nullable().optional(),
           shortName: z.string().nullable().optional(),
           regularMarketPrice: z.number().nullable().optional(),
@@ -43,6 +70,15 @@ const tickerSearchSchema = z.object({
     z.object({
       symbol: z.string(),
       name: z.string(),
+      logoUrl: z.unknown().optional(),
+      logourl: z.unknown().optional(),
+      data: z
+        .object({
+          logoUrl: z.unknown().optional(),
+          logourl: z.unknown().optional(),
+        })
+        .optional()
+        .catch(undefined),
       isActive: z.boolean().optional(),
     }),
   ),
@@ -373,7 +409,11 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     return tickerSearchSchema
       .parse(payload)
       .results.filter((item) => item.isActive !== false)
-      .map(({ symbol, name }) => ({ ticker: symbol, name }));
+      .map((item) => ({
+        ticker: item.symbol,
+        name: item.name,
+        ...optionalLogo(item.symbol, item),
+      }));
   }
 
   async getQuoteByTicker(ticker: string): Promise<MarketQuote> {
@@ -389,6 +429,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
 
     return {
       ticker: quote.symbol,
+      ...optionalLogo(quote.symbol, quote),
       companyName: quote.data.longName ?? quote.data.shortName ?? null,
       price: quote.data.regularMarketPrice ?? null,
       marketCap: quote.data.marketCap ?? null,
@@ -441,6 +482,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
 
     return {
       ticker: quote.symbol,
+      ...optionalLogo(quote.symbol, quote),
       companyName: quote.data.longName ?? quote.data.shortName ?? null,
       cnpj,
       price: quote.data.regularMarketPrice ?? null,

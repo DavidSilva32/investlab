@@ -1,14 +1,18 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AssetLogo } from "@/components/asset-logo";
 
-export function AnalysisSkeleton() {
+export function AnalysisSkeleton({ ticker }: { ticker?: string }) {
   return (
     <div aria-busy="true" aria-live="polite" className="space-y-4">
       <span className="sr-only">Carregando análise...</span>
       <Card>
         <CardHeader>
           <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-8 w-56" />
+          <div className="flex items-center gap-3">
+            <AssetLogo ticker={ticker} size="lg" />
+            <Skeleton className="h-8 w-56 max-w-full" />
+          </div>
         </CardHeader>
         <CardContent className="flex gap-6">
           <Skeleton className="h-10 w-36" />

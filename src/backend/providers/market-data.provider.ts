@@ -20,6 +20,7 @@ export type MarketHistoryResult = {
 export type MarketData = {
   ticker: string;
   companyName: string | null;
+  logoUrl?: string;
   cnpj: string | null;
   price: number | null;
   marketCap: number | null;
@@ -29,10 +30,11 @@ export type MarketData = {
   historyStatus?: "available" | "partial" | "empty" | "unavailable";
   historyFailure?: MarketHistoryFailure;
 };
-export type MarketTicker = { ticker: string; name: string };
+export type MarketTicker = { ticker: string; name: string; logoUrl?: string };
 export type MarketQuote = {
   ticker: string;
   companyName: string | null;
+  logoUrl?: string;
   price: number | null;
   marketCap: number | null;
   observedAt: Date | null;

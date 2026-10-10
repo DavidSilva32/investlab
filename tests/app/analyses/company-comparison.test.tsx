@@ -97,7 +97,10 @@ describe("CompanyComparison", () => {
         sector: "Petróleo e Gás",
         sectorMetadataAsOf: "2026-10-01T00:00:00.000Z",
         companies: [
-          company("PETR4", "33000167000101"),
+          {
+            ...company("PETR4", "33000167000101"),
+            logoUrl: "https://icons.brapi.dev/icons/PETR4.svg",
+          },
           company("VALE3", "33000167000102"),
         ],
       }),
@@ -131,6 +134,10 @@ describe("CompanyComparison", () => {
         .getAllByRole("link", { name: "Abrir análise individual" })[0]
         ?.getAttribute("href"),
     ).toBe("/analyses?ticker=PETR4");
+    expect(
+      screen.getAllByRole("img", { name: "Identidade de Companhia PETR4" })
+        .length,
+    ).toBeGreaterThan(0);
     const headers = screen.getAllByRole("columnheader");
     expect(headers[1]?.textContent).toContain("PETR4");
     expect(headers[2]?.textContent).toContain("VALE3");

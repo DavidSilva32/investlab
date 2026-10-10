@@ -58,6 +58,7 @@ export type AnalysisIndicator = {
 
 export type StockAnalysis = {
   ticker: string;
+  logoUrl?: string | null;
   issuerSector?: string | null;
   issuerMetadataUpdatedAt?: string | null;
   instrumentType?: "stock" | "fii" | "etf" | "bdr" | "unknown";

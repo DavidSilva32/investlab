@@ -61,6 +61,33 @@ const position = {
 };
 
 describe("portfolio detail components", () => {
+  it("uses the exact asset code for position identity without inferring tickers from product names", () => {
+    const html = renderToStaticMarkup(
+      <PositionDetails
+        positions={[
+          {
+            ...position,
+            id: "stock",
+            product: "Petrobras",
+            assetCode: "PETR4",
+          },
+          {
+            ...position,
+            id: "manual",
+            source: "MANUAL",
+            product: "ETF internacional",
+            assetCode: "VOO",
+          },
+          { ...position, id: "unknown", product: "Petrobras", assetCode: null },
+        ]}
+      />,
+    );
+    expect(html).toContain('aria-label="Identidade de Petrobras"');
+    expect(html).toContain('aria-label="Identidade de ETF internacional"');
+    expect(html).toContain('src="https://icons.brapi.dev/icons/PETR4.svg"');
+    expect(html).not.toContain("icons/VOO.svg");
+    expect(html).not.toContain("icons/PETR3.svg");
+  });
   it("renders estimated and official values with their management action", () => {
     const html = renderToStaticMarkup(
       <PositionDetails

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -15,10 +15,11 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
+import { AssetLogo } from "@/components/asset-logo";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 
-type TickerOption = { ticker: string; name: string };
+type TickerOption = { ticker: string; name: string; logoUrl?: string | null };
 
 export function AnalysisStockSearch({
   ticker,
@@ -171,8 +172,16 @@ export function AnalysisStockSearch({
                     onSelect={() => select(option)}
                     className="justify-between gap-3"
                   >
-                    <span className="font-semibold tabular-nums">
-                      {option.ticker}
+                    <span className="flex shrink-0 items-center gap-2">
+                      <AssetLogo
+                        ticker={option.ticker}
+                        name={option.name}
+                        logoUrl={option.logoUrl}
+                        size="sm"
+                      />
+                      <span className="font-semibold tabular-nums">
+                        {option.ticker}
+                      </span>
                     </span>
                     <span className="truncate text-muted-foreground">
                       {option.name}

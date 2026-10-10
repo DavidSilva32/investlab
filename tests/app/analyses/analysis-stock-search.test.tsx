@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import {
   act,
   cleanup,
@@ -38,7 +38,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 const response = (
-  results: Array<{ ticker: string; name: string }>,
+  results: Array<{ ticker: string; name: string; logoUrl?: string }>,
   status = 200,
 ) => new Response(JSON.stringify({ results }), { status });
 async function advanceSearch(waitForRequest = true) {
@@ -53,6 +53,28 @@ async function advanceSearch(waitForRequest = true) {
 }
 
 describe("AnalysisStockSearch", () => {
+  it("shows catalog logos without additional API requests and preserves them on selection", async () => {
+    const logoUrl = "https://icons.brapi.dev/icons/VALE3.svg";
+    const result = { ticker: "VALE3", name: "Vale S.A.", logoUrl };
+    const fetcher = vi.fn().mockResolvedValue(response([result]));
+    vi.stubGlobal("fetch", fetcher);
+    const onSelect = vi.fn();
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={onSelect} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+    await advanceSearch();
+    const option = await screen.findByRole("option", {
+      name: /VALE3.*Vale S\.A\./,
+    });
+    expect(option.querySelector("img")?.getAttribute("src")).toBe(logoUrl);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    fireEvent.error(option.querySelector("img")!);
+    expect(option.querySelector("img")).toBeNull();
+    fireEvent.click(option);
+    expect(onSelect).toHaveBeenCalledWith(result);
+  });
+
   it("exposes a meaningful accessible name for the combobox", () => {
     render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
     expect(

@@ -1,5 +1,6 @@
 "use client";
 
+import { AssetLogo } from "@/components/asset-logo";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -48,18 +49,21 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
     width: "22%",
     value: (row) => row.product,
     render: (row) => (
-      <div>
-        <span className="font-medium">{row.product}</span>
-        {row.source === "MANUAL" && (
-          <Badge variant="outline" className="ml-2">
-            Manual
-          </Badge>
-        )}
-        {row.indexer && (
-          <span className="block text-xs text-muted-foreground">
-            {row.indexer}
-          </span>
-        )}
+      <div className="flex items-center gap-2">
+        <AssetLogo ticker={row.assetCode} name={row.product} size="sm" />
+        <div className="min-w-0">
+          <span className="font-medium">{row.product}</span>
+          {row.source === "MANUAL" && (
+            <Badge variant="outline" className="ml-2">
+              Manual
+            </Badge>
+          )}
+          {row.indexer && (
+            <span className="block text-xs text-muted-foreground">
+              {row.indexer}
+            </span>
+          )}
+        </div>
       </div>
     ),
   },
