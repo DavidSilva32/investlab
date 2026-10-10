@@ -5,7 +5,11 @@ vi.mock("@/backend/controllers/stock-valuation.controller", () => ({
   stockValuationController: { calculate: mocks.calculate },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
-  logger: { error: mocks.error },
+  logger: {
+    error: mocks.error,
+    info: vi.fn(),
+    withContext: (_context: unknown, operation: () => unknown) => operation(),
+  },
 }));
 
 import { POST } from "@/app/api/analyses/stocks/[ticker]/valuation/route";

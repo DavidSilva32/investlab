@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import {
+  getApiRequestId,
+  withApiRequestLogging,
+} from "@/infrastructure/logging/api-request";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { portfolioAllocationController } from "@/backend/controllers/portfolio-allocation.controller";
 import { logger } from "@/infrastructure/logging/logger";
@@ -22,47 +25,59 @@ function errorResponse(
   );
 }
 
-export async function GET(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await portfolioAllocationController.get(requestId);
-  } catch (error) {
-    return errorResponse(
-      error,
-      requestId,
-      "portfolio_allocation_load_failed",
-      "Não foi possível carregar a alocação.",
-    );
-  }
-}
+export const GET = withApiRequestLogging(
+  "GET",
+  "/api/portfolio/allocation",
+  async function GET(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await portfolioAllocationController.get(requestId);
+    } catch (error) {
+      return errorResponse(
+        error,
+        requestId,
+        "portfolio_allocation_load_failed",
+        "Não foi possível carregar a alocação.",
+      );
+    }
+  },
+);
 
-export async function PATCH(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await portfolioAllocationController.update(request, requestId);
-  } catch (error) {
-    return errorResponse(
-      error,
-      requestId,
-      "portfolio_classification_update_failed",
-      "Não foi possível salvar a classificação.",
-    );
-  }
-}
+export const PATCH = withApiRequestLogging(
+  "PATCH",
+  "/api/portfolio/allocation",
+  async function PATCH(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await portfolioAllocationController.update(request, requestId);
+    } catch (error) {
+      return errorResponse(
+        error,
+        requestId,
+        "portfolio_classification_update_failed",
+        "Não foi possível salvar a classificação.",
+      );
+    }
+  },
+);
 
-export async function PUT(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await portfolioAllocationController.updateTargets(
-      request,
-      requestId,
-    );
-  } catch (error) {
-    return errorResponse(
-      error,
-      requestId,
-      "portfolio_allocation_targets_update_failed",
-      "Não foi possível salvar as metas de alocação.",
-    );
-  }
-}
+export const PUT = withApiRequestLogging(
+  "PUT",
+  "/api/portfolio/allocation",
+  async function PUT(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await portfolioAllocationController.updateTargets(
+        request,
+        requestId,
+      );
+    } catch (error) {
+      return errorResponse(
+        error,
+        requestId,
+        "portfolio_allocation_targets_update_failed",
+        "Não foi possível salvar as metas de alocação.",
+      );
+    }
+  },
+);

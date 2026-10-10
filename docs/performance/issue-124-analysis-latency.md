@@ -75,6 +75,31 @@ anterior. A medição real ainda está pendente devido à indisponibilidade DNS
 deste ambiente e à política de não executar o caminho de cache frio contra o
 Neon compartilhado.
 
+## Logs de runtime na Vercel
+
+Todos os 45 métodos HTTP das rotas em `src/app/api` registram
+`api_request_started` e `api_request_completed` (ou `api_request_failed`) com
+rota, método, módulo, status e duração. O mesmo `requestId` é propagado pelo
+contexto assíncrono para os eventos já emitidos por controllers, serviços,
+repositórios e provedores. Corpo, query string, cookies e valores financeiros
+não são incluídos nesses eventos de fronteira.
+
+Para uma análise individual, filtre os Runtime Logs pelo `requestId` e pela
+rota `/api/analyses/stocks/[ticker]`. `stock_analysis_requested` e
+`stock_analysis_responded` delimitam o controller; `stock_analysis_service_started`
+e `stock_analysis_stage_timing` delimitam o serviço; os eventos
+`stock_fundamentals_repository_*` e `stock_fundamentals_cvm_document_*` separam
+o acesso ao cache e o processamento de cada arquivo da CVM. A conclusão da rota
+mostra o tempo total visto pelo servidor.
+
+Uma captura do navegador reportou aproximadamente 1,9 minuto aguardando a
+resposta de `BBDC4`. Isso comprova uma espera longa do servidor, mas não
+identifica sozinha qual dependência a causou. A BRAPI usa timeout de 15 segundos
+por chamada; os downloads do cadastro e dos arquivos DFP/ITR da CVM ainda não
+têm timeout. Um refresh frio ou vencido dos fundamentos é uma hipótese a
+confirmar pelos tempos por etapa. A branch precisa estar implantada antes de
+esses eventos novos aparecerem no Runtime Logs da Vercel.
+
 ## Reprodução local
 
 ```sh

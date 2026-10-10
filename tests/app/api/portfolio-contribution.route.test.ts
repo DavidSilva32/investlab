@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApplicationError } from "@/backend/errors/application-error";
 
 const controller = vi.hoisted(() => ({ calculateContribution: vi.fn() }));
-const logger = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
+const logger = vi.hoisted(() => ({
+  warn: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  withContext: (_context: unknown, operation: () => unknown) => operation(),
+}));
 vi.mock("@/backend/controllers/portfolio.controller", () => ({
   portfolioController: controller,
 }));

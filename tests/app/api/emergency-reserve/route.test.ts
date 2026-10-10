@@ -5,7 +5,12 @@ const controller = vi.hoisted(() => ({
   preview: vi.fn(),
   update: vi.fn(),
 }));
-const logger = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }));
+const logger = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  withContext: (_context: unknown, operation: () => unknown) => operation(),
+}));
 vi.mock("@/backend/controllers/emergency-reserve.controller", () => ({
   emergencyReserveController: controller,
 }));

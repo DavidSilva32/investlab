@@ -704,6 +704,10 @@ export class StockAnalysisService {
       throw new ApplicationError(parsed.error.issues[0]!.message, 400);
 
     const startedAt = Date.now();
+    logger.info("stock_analysis_service_started", {
+      requestId,
+      ticker: parsed.data,
+    });
     const issuerMetadataStartedAt = Date.now();
     const issuerMetadataPromise = this.screener.getComparisonMetadata
       ? this.screener.getComparisonMetadata([parsed.data]).catch((error) => {

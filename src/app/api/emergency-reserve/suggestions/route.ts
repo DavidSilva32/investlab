@@ -1,4 +1,7 @@
-﻿import { randomUUID } from "node:crypto";
+import {
+  getApiRequestId,
+  withApiRequestLogging,
+} from "@/infrastructure/logging/api-request";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveController } from "@/backend/controllers/emergency-reserve.controller";
 import { logger } from "@/infrastructure/logging/logger";
@@ -24,14 +27,18 @@ function failure(error: unknown, requestId: string) {
   );
 }
 
-export async function POST(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await emergencyReserveController.suggest(
-      await request.json(),
-      requestId,
-    );
-  } catch (error) {
-    return failure(error, requestId);
-  }
-}
+export const POST = withApiRequestLogging(
+  "POST",
+  "/api/emergency-reserve/suggestions",
+  async function POST(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await emergencyReserveController.suggest(
+        await request.json(),
+        requestId,
+      );
+    } catch (error) {
+      return failure(error, requestId);
+    }
+  },
+);

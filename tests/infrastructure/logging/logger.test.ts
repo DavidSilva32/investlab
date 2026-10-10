@@ -39,4 +39,17 @@ describe("logger", () => {
     logger.error("import_failed", { error: "internal value" });
     expect(JSON.parse(error.mock.calls[0][0])).not.toHaveProperty("error");
   });
+
+  it("adds the asynchronous request context to nested log entries", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    await logger.withContext({ requestId: "request-2" }, async () => {
+      await Promise.resolve();
+      logger.info("service_completed");
+    });
+
+    expect(JSON.parse(info.mock.calls[0][0])).toMatchObject({
+      event: "service_completed",
+      requestId: "request-2",
+    });
+  });
 });

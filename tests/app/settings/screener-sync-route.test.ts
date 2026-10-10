@@ -5,7 +5,11 @@ vi.mock("@/backend/controllers/screener-sync.controller", () => ({
   screenerSyncController: { sync: mocks.sync },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
-  logger: { error: mocks.error },
+  logger: {
+    error: mocks.error,
+    info: vi.fn(),
+    withContext: (_context: unknown, operation: () => unknown) => operation(),
+  },
 }));
 import {
   POST,

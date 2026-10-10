@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import {
+  getApiRequestId,
+  withApiRequestLogging,
+} from "@/infrastructure/logging/api-request";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { portfolioObjectivesController } from "@/backend/controllers/portfolio-objectives.controller";
 import { logger } from "@/infrastructure/logging/logger";
@@ -24,60 +27,80 @@ function failure(error: unknown, requestId: string, operation: string) {
   );
 }
 
-export async function GET(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await portfolioObjectivesController.get(requestId);
-  } catch (error) {
-    return failure(error, requestId, "read");
-  }
-}
+export const GET = withApiRequestLogging(
+  "GET",
+  "/api/portfolio/objectives",
+  async function GET(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await portfolioObjectivesController.get(requestId);
+    } catch (error) {
+      return failure(error, requestId, "read");
+    }
+  },
+);
 
-export async function POST(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await portfolioObjectivesController.create(
-      await request.json(),
-      requestId,
-    );
-  } catch (error) {
-    return failure(error, requestId, "create");
-  }
-}
+export const POST = withApiRequestLogging(
+  "POST",
+  "/api/portfolio/objectives",
+  async function POST(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await portfolioObjectivesController.create(
+        await request.json(),
+        requestId,
+      );
+    } catch (error) {
+      return failure(error, requestId, "create");
+    }
+  },
+);
 
-export async function PATCH(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await portfolioObjectivesController.updateAssignments(
-      await request.json(),
-      requestId,
-    );
-  } catch (error) {
-    return failure(error, requestId, "update");
-  }
-}
+export const PATCH = withApiRequestLogging(
+  "PATCH",
+  "/api/portfolio/objectives",
+  async function PATCH(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await portfolioObjectivesController.updateAssignments(
+        await request.json(),
+        requestId,
+      );
+    } catch (error) {
+      return failure(error, requestId, "update");
+    }
+  },
+);
 
-export async function PUT(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    return await portfolioObjectivesController.update(
-      await request.json(),
-      requestId,
-    );
-  } catch (error) {
-    return failure(error, requestId, "update");
-  }
-}
+export const PUT = withApiRequestLogging(
+  "PUT",
+  "/api/portfolio/objectives",
+  async function PUT(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await portfolioObjectivesController.update(
+        await request.json(),
+        requestId,
+      );
+    } catch (error) {
+      return failure(error, requestId, "update");
+    }
+  },
+);
 
-export async function DELETE(request: Request) {
-  const requestId = request.headers.get("x-request-id") ?? randomUUID();
-  try {
-    const objectiveId = new URL(request.url).searchParams.get("objectiveId");
-    return await portfolioObjectivesController.delete(
-      objectiveId ?? "",
-      requestId,
-    );
-  } catch (error) {
-    return failure(error, requestId, "delete");
-  }
-}
+export const DELETE = withApiRequestLogging(
+  "DELETE",
+  "/api/portfolio/objectives",
+  async function DELETE(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      const objectiveId = new URL(request.url).searchParams.get("objectiveId");
+      return await portfolioObjectivesController.delete(
+        objectiveId ?? "",
+        requestId,
+      );
+    } catch (error) {
+      return failure(error, requestId, "delete");
+    }
+  },
+);

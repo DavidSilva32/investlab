@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
-  logger: { warn: vi.fn(), error: vi.fn() },
+  logger: {
+    warn: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    withContext: (_context: unknown, operation: () => unknown) => operation(),
+  },
 }));
 vi.mock("@/backend/controllers/import.controller", () => ({
   importController: { delete: mocks.delete },

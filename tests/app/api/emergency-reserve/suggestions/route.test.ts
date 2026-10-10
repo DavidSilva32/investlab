@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const controller = vi.hoisted(() => ({ suggest: vi.fn() }));
-const logger = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }));
+const logger = vi.hoisted(() => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  withContext: (_context: unknown, operation: () => unknown) => operation(),
+}));
 vi.mock("@/backend/controllers/emergency-reserve.controller", () => ({
   emergencyReserveController: controller,
 }));

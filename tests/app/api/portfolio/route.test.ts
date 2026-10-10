@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 const controller = vi.hoisted(() => ({ overview: vi.fn() }));
-const logger = vi.hoisted(() => ({ error: vi.fn() }));
+const logger = vi.hoisted(() => ({
+  error: vi.fn(),
+  info: vi.fn(),
+  withContext: (_context: unknown, operation: () => unknown) => operation(),
+}));
 vi.mock("@/backend/controllers/portfolio.controller", () => ({
   portfolioController: controller,
 }));
