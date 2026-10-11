@@ -128,28 +128,37 @@ describe("import repository position snapshot history", () => {
         source: "B3",
         positions: [
           {
+            reconciliationAssetKey: expect.stringMatching(/^v1:[a-f0-9]{64}$/),
             identity: '["CDB123","CDB","BANCO A","EMISSOR A"]',
             totalValue: "12.34",
             valuationSource: "CURVA",
           },
           {
+            reconciliationAssetKey: expect.stringMatching(/^v1:[a-f0-9]{64}$/),
             identity: '["DEB123","DEBÊNTURE",null,null]',
             totalValue: "15.00",
             valuationSource: "FECHAMENTO",
           },
           {
+            reconciliationAssetKey: expect.stringMatching(/^v1:[a-f0-9]{64}$/),
             identity:
               '["LCI","BANCO B","EMISSOR B",null,null,"2025-02-01","2027-02-01"]',
             totalValue: "22.00",
             valuationSource: "CURVA",
           },
           {
+            reconciliationAssetKey: expect.stringMatching(/^v1:[a-f0-9]{64}$/),
             identity:
               '["LCI CDI","BANCO C","EMISSOR C","CDI","POS","2025-03-01","2027-03-01"]',
             totalValue: "30.00",
             valuationSource: "CURVA",
           },
-          { identity: null, totalValue: null, valuationSource: null },
+          {
+            reconciliationAssetKey: expect.stringMatching(/^v1:[a-f0-9]{64}$/),
+            identity: null,
+            totalValue: null,
+            valuationSource: null,
+          },
         ],
       },
       {

@@ -1073,19 +1073,18 @@ export class PortfolioObjectivesService {
       }
     >();
     for (const position of rawPositions) {
-      const assetKey =
-        position.source === "MANUAL" && position.assetKey
-          ? position.assetKey
-          : getEmergencyReserveAssetKey({
-              product: position.product,
-              assetCode: position.assetCode,
-              institution: position.institution,
-              issuer: position.issuer ?? null,
-              indexer: position.indexer ?? null,
-              regimeType: position.regimeType ?? null,
-              issuedAt: position.issuedAt ?? null,
-              maturityAt: position.maturityAt ?? null,
-            });
+      const assetKey = position.assetKey
+        ? position.assetKey
+        : getEmergencyReserveAssetKey({
+            product: position.product,
+            assetCode: position.assetCode,
+            institution: position.institution,
+            issuer: position.issuer ?? null,
+            indexer: position.indexer ?? null,
+            regimeType: position.regimeType ?? null,
+            issuedAt: position.issuedAt ?? null,
+            maturityAt: position.maturityAt ?? null,
+          });
       const { cents, source } = valueFor(position);
       const existing = grouped.get(assetKey);
       if (existing) {

@@ -9,6 +9,10 @@ const repository = vi.hoisted(() => ({
   create: vi.fn(),
   deleteByDocumentType: vi.fn(),
 }));
+const manual = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock("@/backend/repositories/manual-portfolio-position.repository", () => ({
+  manualPortfolioPositionRepository: manual,
+}));
 const objectives = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("@/backend/services/b3-xlsx-parser", () => ({ parseB3Xlsx: parser }));
 vi.mock("@/backend/repositories/import.repository", () => ({
@@ -24,6 +28,7 @@ import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  manual.list.mockResolvedValue([]);
   repository.listLatestPositions.mockResolvedValue([]);
   objectives.list.mockResolvedValue({ objectives: [], assignments: [] });
 });
@@ -100,88 +105,13 @@ const persistenceFile = {
 };
 
 describe("ImportService persistence", () => {
-  it("backfills one confirmed B3 date into both snapshot dates for an exact duplicate", async () => {
-    vi.clearAllMocks();
-    parser.mockReturnValue({
-      documentType: "B3_POSITION_XLSX",
-      positions: [],
-    });
+  it("rejects identical files even with a new date without rewriting historical references", async () => {
+    parser.mockReturnValue({ documentType: "B3_POSITION_XLSX", positions: [] });
     repository.existsByHash.mockResolvedValue(true);
-    repository.updatePositionReferenceDate.mockResolvedValue({
-      importId: "import-existing",
-      snapshotId: "snapshot-existing",
-    });
-
-    const result = await importService.confirm(
-      persistenceFile,
-      "request-legacy",
-      "2026-09-18",
-    );
-
-    expect(result).toMatchObject({
-      duplicate: true,
-      referenceDateUpdated: true,
-      result: { importId: "import-existing" },
-    });
-    expect(repository.updatePositionReferenceDate).toHaveBeenCalledWith(
-      expect.any(String),
-      "2026-09-18",
-      "request-legacy",
-    );
-    expect(repository.create).not.toHaveBeenCalled();
-  });
-
-  it("backfills duplicate metadata without checking identities from a newer snapshot", async () => {
-    parser.mockReturnValue({
-      documentType: "B3_POSITION_XLSX",
-      positions: [],
-    });
-    repository.existsByHash.mockResolvedValue(true);
-    repository.updatePositionReferenceDate.mockResolvedValue({
-      importId: "import-old",
-      snapshotId: "snapshot-old",
-    });
-    repository.listLatestPositions.mockResolvedValue([
-      { product: "CDB atual", assetCode: "CDB-ATUAL", institution: "Banco" },
-    ]);
-    objectives.list.mockResolvedValue({
-      objectives: [{ id: "trip", name: "Viagem" }],
-      assignments: [
-        {
-          assetKey: getEmergencyReserveAssetKey({
-            product: "CDB atual",
-            assetCode: "CDB-ATUAL",
-            institution: "Banco",
-            issuer: null,
-            indexer: null,
-            regimeType: null,
-            issuedAt: null,
-            maturityAt: null,
-          }),
-          objectiveId: "trip",
-        },
-      ],
-    });
-
     await expect(
-      importService.confirm(persistenceFile, "request-old-file", "2026-09-28"),
-    ).resolves.toMatchObject({ referenceDateUpdated: true });
-    expect(repository.listLatestPositions).not.toHaveBeenCalled();
-    expect(objectives.list).not.toHaveBeenCalled();
-  });
-
-  it("keeps duplicate protection when no matching position snapshot can be updated", async () => {
-    vi.clearAllMocks();
-    parser.mockReturnValue({
-      documentType: "B3_POSITION_XLSX",
-      positions: [],
-    });
-    repository.existsByHash.mockResolvedValue(true);
-    repository.updatePositionReferenceDate.mockResolvedValue(null);
-
-    await expect(
-      importService.confirm(persistenceFile, "request-legacy", "2026-09-18"),
-    ).rejects.toThrow(ApplicationError);
+      importService.confirm(persistenceFile, "same-file", "2026-10-31"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(repository.updatePositionReferenceDate).not.toHaveBeenCalled();
     expect(repository.create).not.toHaveBeenCalled();
   });
 
@@ -533,5 +463,54 @@ describe("ImportService persistence", () => {
     await expect(importService.delete(null, "request-1")).rejects.toThrow(
       ApplicationError,
     );
+  });
+});
+
+describe("reconciliation import decisions", () => {
+  it("rejects malformed decisions and reconciliation on movement files", async () => {
+    await expect(
+      importService.confirm(persistenceFile, "request", "2026-10-31", [{}]),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    parser.mockReturnValue({ documentType: "B3_MOVEMENT_XLSX", movements: [] });
+    await expect(
+      importService.confirm(persistenceFile, "request", null, [
+        {
+          manualAssetKey: "manual:00000000-0000-0000-0000-000000000001",
+          importedAssetKey: "v1:" + "a".repeat(64),
+          action: "link",
+          manualUpdatedAt: "2026-10-01T00:00:00.000Z",
+        },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe("existing snapshot reconciliation", () => {
+  it("allows explicit reconciliation replay without requesting date overwrite", async () => {
+    parser.mockReturnValue({ documentType: "B3_POSITION_XLSX", positions: [] });
+    repository.existsByHash.mockResolvedValue(true);
+    repository.create.mockResolvedValue({
+      importId: "existing",
+      snapshotId: "original",
+    });
+    const decisions = [
+      {
+        manualAssetKey: "manual:00000000-0000-0000-0000-000000000001",
+        importedAssetKey: "v1:" + "a".repeat(64),
+        action: "link",
+        manualUpdatedAt: "2026-10-01T00:00:00.000Z",
+      },
+    ];
+    await expect(
+      importService.confirm(persistenceFile, "r", "2026-09-30", decisions),
+    ).resolves.toMatchObject({ duplicate: true, referenceDateUpdated: false });
+    expect(repository.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reconcileExistingImport: true,
+        reconciliationDecisions: decisions,
+      }),
+      "r",
+    );
+    expect(repository.updatePositionReferenceDate).not.toHaveBeenCalled();
   });
 });

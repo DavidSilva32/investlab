@@ -1,3 +1,5 @@
+import { positionReconciliationRepository } from "@/backend/repositories/position-reconciliation.repository";
+import type { ReconciliationEvent } from "@/backend/services/position-reconciliation";
 import { logger } from "@/infrastructure/logging/logger";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { manualPortfolioPositionRepository } from "@/backend/repositories/manual-portfolio-position.repository";
@@ -29,12 +31,17 @@ const unavailableGuidance: ContributionGuidance = {
 
 export class PortfolioService {
   async getMonthlyReview(period?: string | null, requestId?: string) {
-    const [snapshots, manualObservations, currentManualPositions] =
-      await Promise.all([
-        importRepository.listPositionSnapshots(requestId),
-        manualPortfolioPositionRepository.listSnapshots(requestId),
-        manualPortfolioPositionRepository.list(requestId),
-      ]);
+    const [
+      snapshots,
+      manualObservations,
+      currentManualPositions,
+      reconciliationEvents,
+    ] = await Promise.all([
+      importRepository.listPositionSnapshots(requestId),
+      manualPortfolioPositionRepository.listSnapshots(requestId),
+      manualPortfolioPositionRepository.list(requestId),
+      positionReconciliationRepository.listEvents(requestId),
+    ]);
     return calculateMonthlyPortfolioReview(
       snapshots,
       period,
@@ -56,6 +63,7 @@ export class PortfolioService {
         conversionDate: position.conversionDate,
         updatedAt: position.updatedAt,
       })),
+      reconciliationEvents as ReconciliationEvent[],
     );
   }
 

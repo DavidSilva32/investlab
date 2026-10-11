@@ -1,10 +1,13 @@
 import { desc, eq, sql } from "drizzle-orm";
+import { ApplicationError } from "@/backend/errors/application-error";
+import { activeReconciliationLinks } from "@/backend/services/position-reconciliation";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
   manualPortfolioPositionSnapshots,
   manualPortfolioPositions,
   portfolioAssetClassifications,
+  positionReconciliationEvents,
 } from "@/infrastructure/database/schema";
 
 type DatabaseTransaction = Parameters<
@@ -122,6 +125,9 @@ export class ManualPortfolioPositionRepository {
   ) {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        await transaction.execute(
+          sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
+        );
         const [position] = await transaction
           .insert(manualPortfolioPositions)
           .values(input)
@@ -168,6 +174,9 @@ export class ManualPortfolioPositionRepository {
   ) {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        await transaction.execute(
+          sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
+        );
         const [previous] = await transaction
           .select()
           .from(manualPortfolioPositions)
@@ -175,6 +184,31 @@ export class ManualPortfolioPositionRepository {
           .for("update")
           .limit(1);
         if (!previous) return null;
+        const reconciliationEvents = await transaction
+          .select()
+          .from(positionReconciliationEvents)
+          .where(
+            eq(positionReconciliationEvents.manualAssetKey, previous.assetKey),
+          )
+          .orderBy(
+            desc(positionReconciliationEvents.recordedAt),
+            desc(positionReconciliationEvents.id),
+          );
+        if (
+          activeReconciliationLinks(
+            reconciliationEvents,
+            saoPauloCalendarDate(new Date()),
+          ).length &&
+          (input.assetCode !== previous.assetCode ||
+            input.institution !== previous.institution ||
+            input.currency !== previous.currency ||
+            input.product !== previous.product)
+        ) {
+          throw new ApplicationError(
+            "Desfaça a conciliação antes de alterar a identidade desta posição.",
+            409,
+          );
+        }
         await this.recordSnapshot(
           transaction,
           previous,
@@ -227,6 +261,9 @@ export class ManualPortfolioPositionRepository {
   async delete(id: string, requestId?: string) {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        await transaction.execute(
+          sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
+        );
         const [position] = await transaction
           .select()
           .from(manualPortfolioPositions)

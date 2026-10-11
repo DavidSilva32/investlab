@@ -171,6 +171,32 @@ export const manualPortfolioPositionSnapshots = pgTable(
     ),
   ],
 );
+export const positionReconciliationEvents = pgTable(
+  "position_reconciliation_events",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    manualAssetKey: varchar({ length: 64 }).notNull(),
+    importedAssetKey: varchar({ length: 67 }).notNull(),
+    status: varchar({ length: 16 })
+      .$type<"LINK" | "UNLINK" | "SEPARATE">()
+      .notNull(),
+    effectiveFrom: date().notNull(),
+    recordedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    requestId: text().notNull(),
+    importId: uuid(),
+  },
+  (table) => [
+    index("position_reconciliation_manual_recorded_idx").on(
+      table.manualAssetKey,
+      table.recordedAt,
+    ),
+    check(
+      "position_reconciliation_status_check",
+      sql`${table.status} IN ('LINK', 'UNLINK', 'SEPARATE')`,
+    ),
+  ],
+);
+
 export const cdbRateConfigurations = pgTable("cdb_rate_configurations", {
   id: uuid().defaultRandom().primaryKey(),
   assetCode: text().notNull().unique(),

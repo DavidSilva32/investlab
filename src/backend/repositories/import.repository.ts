@@ -12,12 +12,20 @@ import {
   portfolioObjectives,
   treasuryPositionLiquidityFacts,
   treasuryLiquidityRules,
+  manualPortfolioPositions,
+  positionReconciliationEvents,
+  portfolioAssetClassifications,
 } from "@/infrastructure/database/schema";
 import type { TreasurySelicLiquidityFact } from "@/backend/types/treasury-selic-liquidity";
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
 import type { MonthlyPortfolioSnapshot } from "@/backend/services/monthly-portfolio-review";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import {
+  activeReconciliationLinks,
+  getReconciliationCandidates,
+  type ReconciliationDecision,
+} from "@/backend/services/position-reconciliation";
 const sourceSnapshotIdKey = Symbol.for("investlab.positionSnapshotId");
 
 export type B3DocumentType = ParsedB3Import["documentType"];
@@ -28,6 +36,8 @@ type ImportCreateInput =
       referenceDate: string;
       estimationBaseDate?: string | null;
       liquidityFacts?: Array<TreasurySelicLiquidityFact | null>;
+      reconciliationDecisions?: ReconciliationDecision[];
+      reconcileExistingImport?: boolean;
     } & Extract<ParsedB3Import, { documentType: "B3_POSITION_XLSX" }>)
   | {
       fileName: string;
@@ -36,6 +46,40 @@ type ImportCreateInput =
       movements: PersistedB3Movement[];
     };
 export class ImportRepository {
+  private async appendReconciliationDecisions(
+    transaction: Parameters<
+      Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
+    >[0],
+    input: Extract<ImportCreateInput, { documentType: "B3_POSITION_XLSX" }>,
+    importId: string,
+    requestId?: string,
+  ) {
+    if (input.reconciliationDecisions?.length) {
+      const events = await transaction
+        .select({ recordedAt: positionReconciliationEvents.recordedAt })
+        .from(positionReconciliationEvents);
+      const recordedAt = new Date(
+        events.reduce(
+          (latest, event) => Math.max(latest, event.recordedAt.getTime()),
+          Date.now(),
+        ) + 1,
+      );
+      await transaction.insert(positionReconciliationEvents).values(
+        input.reconciliationDecisions.map((decision) => ({
+          manualAssetKey: decision.manualAssetKey,
+          importedAssetKey: decision.importedAssetKey,
+          status:
+            decision.action === "link"
+              ? ("LINK" as const)
+              : ("SEPARATE" as const),
+          effectiveFrom: input.referenceDate,
+          recordedAt,
+          requestId: requestId ?? "import",
+          importId,
+        })),
+      );
+    }
+  }
   async existsByHash(fileHash: string, requestId?: string) {
     try {
       return Boolean(
@@ -113,7 +157,11 @@ export class ImportRepository {
     const [latestSnapshot] = await transaction
       .select({ id: positionSnapshots.id })
       .from(positionSnapshots)
-      .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
+      .orderBy(
+        sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
+        desc(positionSnapshots.createdAt),
+        desc(positionSnapshots.id),
+      )
       .limit(1);
     if (!latestSnapshot) return;
 
@@ -167,10 +215,205 @@ export class ImportRepository {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         if (input.documentType === "B3_POSITION_XLSX") {
+          await transaction.execute(
+            sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents}, ${portfolioAssetClassifications} IN SHARE ROW EXCLUSIVE MODE`,
+          );
           await this.lockAndValidateAssignedPositionIdentities(
             transaction,
             input.positions,
           );
+          const manual = await transaction
+            .select()
+            .from(manualPortfolioPositions);
+          const candidates = getReconciliationCandidates(
+            input.positions,
+            manual,
+          );
+          const decisions = input.reconciliationDecisions ?? [];
+          const decisionKeys = new Set(
+            decisions.map((decision) =>
+              JSON.stringify([
+                decision.manualAssetKey,
+                decision.importedAssetKey,
+              ]),
+            ),
+          );
+          if (
+            decisionKeys.size !== decisions.length ||
+            decisions.length !== candidates.length ||
+            candidates.some(
+              (candidate) =>
+                !decisions.some(
+                  (decision) =>
+                    decision.manualAssetKey === candidate.manualAssetKey &&
+                    decision.importedAssetKey === candidate.importedAssetKey &&
+                    decision.manualUpdatedAt === candidate.manualUpdatedAt,
+                ),
+            )
+          ) {
+            throw new ApplicationError(
+              "As posições mudaram. Atualize a prévia e confirme as correspondências novamente.",
+              409,
+            );
+          }
+          const linkedManual = decisions
+            .filter((decision) => decision.action === "link")
+            .map((decision) => decision.manualAssetKey);
+          const linkedImported = decisions
+            .filter((decision) => decision.action === "link")
+            .map((decision) => decision.importedAssetKey);
+          if (
+            new Set(linkedManual).size !== linkedManual.length ||
+            new Set(linkedImported).size !== linkedImported.length
+          ) {
+            throw new ApplicationError(
+              "Selecione apenas uma correspondência para cada posição.",
+              409,
+            );
+          }
+          if (linkedImported.length) {
+            const existingEvents = await transaction
+              .select()
+              .from(positionReconciliationEvents);
+            const existingLinks = activeReconciliationLinks(existingEvents);
+            if (
+              decisions.some(
+                (decision) =>
+                  decision.action === "link" &&
+                  existingLinks.some(
+                    (link) =>
+                      link.importedAssetKey === decision.importedAssetKey &&
+                      link.manualAssetKey !== decision.manualAssetKey,
+                  ),
+              )
+            ) {
+              throw new ApplicationError(
+                "Esta posição importada já está conciliada. Desfaça a conciliação anterior primeiro.",
+                409,
+              );
+            }
+            const assignments = await transaction
+              .select()
+              .from(portfolioObjectivePositions)
+              .where(
+                inArray(portfolioObjectivePositions.assetKey, [
+                  ...linkedManual,
+                  ...linkedImported,
+                ]),
+              );
+            const objectiveByKey = new Map(
+              assignments.map((assignment) => [
+                assignment.assetKey,
+                assignment.objectiveId,
+              ]),
+            );
+            if (
+              decisions.some(
+                (decision) =>
+                  decision.action === "link" &&
+                  objectiveByKey.has(decision.importedAssetKey) &&
+                  objectiveByKey.get(decision.manualAssetKey) !==
+                    objectiveByKey.get(decision.importedAssetKey),
+              )
+            ) {
+              throw new ApplicationError(
+                "Revise os objetivos das posições antes de conciliar.",
+                409,
+              );
+            }
+            const classifications = await transaction
+              .select()
+              .from(portfolioAssetClassifications)
+              .where(
+                inArray(portfolioAssetClassifications.assetKey, [
+                  ...linkedManual,
+                  ...linkedImported,
+                ]),
+              );
+            const classificationByKey = new Map(
+              classifications.map((classification) => [
+                classification.assetKey,
+                classification,
+              ]),
+            );
+            if (
+              decisions.some((decision) => {
+                if (decision.action !== "link") return false;
+                const manualClassification = classificationByKey.get(
+                  decision.manualAssetKey,
+                );
+                const importedClassification = classificationByKey.get(
+                  decision.importedAssetKey,
+                );
+                return (
+                  manualClassification &&
+                  importedClassification &&
+                  (["assetClass", "subClass", "geography"] as const).some(
+                    (field) =>
+                      manualClassification[field] !==
+                      importedClassification[field],
+                  )
+                );
+              })
+            ) {
+              throw new ApplicationError(
+                "Revise a classificação das posições antes de conciliar.",
+                409,
+              );
+            }
+          }
+        }
+        if (
+          input.documentType === "B3_POSITION_XLSX" &&
+          input.reconcileExistingImport
+        ) {
+          const [existingImport] = await transaction
+            .select({ id: imports.id, referenceDate: imports.referenceDate })
+            .from(imports)
+            .where(
+              and(
+                eq(imports.fileHash, input.fileHash),
+                eq(imports.documentType, "B3_POSITION_XLSX"),
+              ),
+            )
+            .limit(1);
+          if (
+            !existingImport ||
+            existingImport.referenceDate !== input.referenceDate
+          ) {
+            throw new ApplicationError(
+              "A data deve ser a mesma do arquivo já importado. O histórico existente não será alterado.",
+              409,
+            );
+          }
+          const [existingSnapshot] = await transaction
+            .select({
+              id: positionSnapshots.id,
+              referenceDate: positionSnapshots.referenceDate,
+            })
+            .from(positionSnapshots)
+            .where(eq(positionSnapshots.importId, existingImport.id))
+            .limit(1);
+          if (
+            !existingSnapshot ||
+            existingSnapshot.referenceDate !== input.referenceDate ||
+            !input.reconciliationDecisions?.length
+          ) {
+            throw new ApplicationError(
+              "Atualize a prévia para conciliar o arquivo existente.",
+              409,
+            );
+          }
+          await this.appendReconciliationDecisions(
+            transaction,
+            input,
+            existingImport.id,
+            requestId,
+          );
+          return {
+            importId: existingImport.id,
+            snapshotId: existingSnapshot.id,
+          };
         }
         const [importRecord] = await transaction
           .insert(imports)
@@ -254,6 +497,12 @@ export class ImportRepository {
           await transaction
             .insert(treasuryPositionLiquidityFacts)
             .values(facts);
+        await this.appendReconciliationDecisions(
+          transaction,
+          input,
+          importRecord.id,
+          requestId,
+        );
         return { importId: importRecord.id, snapshotId: snapshot.id };
       });
     } catch (error) {
@@ -311,7 +560,11 @@ export class ImportRepository {
       const [snapshot] = await getDatabaseClient()
         .select()
         .from(positionSnapshots)
-        .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
+        .orderBy(
+          sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
+          desc(positionSnapshots.createdAt),
+          desc(positionSnapshots.id),
+        )
         .limit(1);
       if (!snapshot) return [];
       const referenceDate = snapshot.referenceDate;
@@ -423,6 +676,7 @@ export class ImportRepository {
       for (const position of positions) {
         const existing = positionsBySnapshot.get(position.snapshotId) ?? [];
         existing.push({
+          reconciliationAssetKey: getEmergencyReserveAssetKey(position),
           identity: position.assetCode?.trim()
             ? JSON.stringify([
                 position.assetCode.trim().toUpperCase(),

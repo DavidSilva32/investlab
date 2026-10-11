@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRef, useState } from "react";
 import {
@@ -6,10 +6,13 @@ import {
   CircleDollarSign,
   FileSpreadsheet,
   Layers3,
+  Link2,
+  Split,
   Upload,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
+import { PositionReconciliation } from "@/components/position-reconciliation";
 import { getApiMessage } from "@/lib/api-message";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -68,12 +71,28 @@ type Movement = {
   quantity: string;
   operationValue: string | null;
 };
+export type ReconciliationCandidate = {
+  manualAssetKey: string;
+  importedAssetKey: string;
+  status: "probable" | "unequivocal" | "conflict";
+  manualUpdatedAt: string;
+  manualProduct: string;
+  importedProduct: string;
+  manualValue: string | null;
+  importedValue: string | null;
+  institution: string | null;
+};
+type ReconciliationDecision = Pick<
+  ReconciliationCandidate,
+  "manualAssetKey" | "importedAssetKey" | "manualUpdatedAt"
+> & { action: "link" | "separate" };
 type Preview =
   | {
       documentType: "B3_POSITION_XLSX";
       positions: Position[];
       count: number;
       identityConflicts?: IdentityConflict[];
+      reconciliationCandidates?: ReconciliationCandidate[];
     }
   | { documentType: "B3_MOVEMENT_XLSX"; movements: Movement[]; count: number };
 type Item = {
@@ -81,6 +100,7 @@ type Item = {
   preview?: Preview;
   error?: string;
   referenceDate?: string;
+  reconciliationDecisions?: ReconciliationDecision[];
 };
 type MutationResponse = { message?: string };
 type ConfirmationItem = Item & { preview: Preview };
@@ -108,10 +128,20 @@ export function PortfolioImport() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function send(file: File, endpoint: string, referenceDate?: string) {
+  async function send(
+    file: File,
+    endpoint: string,
+    referenceDate?: string,
+    reconciliationDecisions?: ReconciliationDecision[],
+  ) {
     const form = new FormData();
     form.append("file", file);
     if (referenceDate) form.append("referenceDate", referenceDate);
+    if (reconciliationDecisions?.length)
+      form.append(
+        "reconciliationDecisions",
+        JSON.stringify(reconciliationDecisions),
+      );
     const response = await fetch(endpoint, { method: "POST", body: form });
     const body = (await response.json()) as MutationResponse & Preview;
     if (!response.ok)
@@ -173,6 +203,7 @@ export function PortfolioImport() {
             item.preview.documentType === "B3_POSITION_XLSX"
               ? item.referenceDate
               : undefined,
+            item.reconciliationDecisions,
           );
           return {
             status: "success" as const,
@@ -223,6 +254,48 @@ export function PortfolioImport() {
       Boolean(item.preview.identityConflicts?.length),
   );
 
+  const hasUnresolvedReconciliation = items.some(
+    (item) =>
+      item.preview?.documentType === "B3_POSITION_XLSX" &&
+      item.preview.reconciliationCandidates?.some(
+        (candidate) =>
+          !item.reconciliationDecisions?.some(
+            (decision) =>
+              decision.manualAssetKey === candidate.manualAssetKey &&
+              decision.importedAssetKey === candidate.importedAssetKey,
+          ),
+      ),
+  );
+
+  function updateReconciliation(
+    file: File,
+    candidate: ReconciliationCandidate,
+    action: "link" | "separate",
+  ) {
+    setItems((current) =>
+      current.map((item) =>
+        item.file !== file
+          ? item
+          : {
+              ...item,
+              reconciliationDecisions: [
+                ...(item.reconciliationDecisions ?? []).filter(
+                  (decision) =>
+                    decision.manualAssetKey !== candidate.manualAssetKey ||
+                    decision.importedAssetKey !== candidate.importedAssetKey,
+                ),
+                {
+                  manualAssetKey: candidate.manualAssetKey,
+                  importedAssetKey: candidate.importedAssetKey,
+                  manualUpdatedAt: candidate.manualUpdatedAt,
+                  action,
+                },
+              ],
+            },
+      ),
+    );
+  }
+
   function updateReferenceDate(file: File, referenceDate: string) {
     setItems((current) =>
       current.map((item) =>
@@ -246,6 +319,7 @@ export function PortfolioImport() {
         }}
       />
       <div className="space-y-5">
+        <PositionReconciliation />
         <div className="flex flex-col gap-4 rounded-xl border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
@@ -297,6 +371,7 @@ export function PortfolioImport() {
                 key={`${item.file.name}-${item.file.lastModified}`}
                 item={item}
                 onReferenceDateChange={updateReferenceDate}
+                onReconciliationChange={updateReconciliation}
               />
             ))}
           </div>
@@ -316,7 +391,8 @@ export function PortfolioImport() {
               disabled={
                 loading ||
                 hasMissingPositionReferenceDate ||
-                hasIdentityConflicts
+                hasIdentityConflicts ||
+                hasUnresolvedReconciliation
               }
               onClick={confirm}
             >
@@ -334,9 +410,15 @@ export function PortfolioImport() {
 function PreviewItem({
   item,
   onReferenceDateChange,
+  onReconciliationChange,
 }: {
   item: Item;
   onReferenceDateChange: (file: File, referenceDate: string) => void;
+  onReconciliationChange: (
+    file: File,
+    candidate: ReconciliationCandidate,
+    action: "link" | "separate",
+  ) => void;
 }) {
   if (item.error)
     return (
@@ -347,14 +429,104 @@ function PreviewItem({
   if (!item.preview) return <p className="text-sm">{item.file.name}</p>;
   if (item.preview.documentType === "B3_POSITION_XLSX")
     return (
-      <PositionPreview
-        fileName={item.file.name}
-        preview={item.preview}
-        referenceDate={item.referenceDate ?? ""}
-        onReferenceDateChange={(referenceDate) =>
-          onReferenceDateChange(item.file, referenceDate)
-        }
-      />
+      <div className="space-y-3">
+        <PositionPreview
+          fileName={item.file.name}
+          preview={item.preview}
+          referenceDate={item.referenceDate ?? ""}
+          onReferenceDateChange={(referenceDate) =>
+            onReferenceDateChange(item.file, referenceDate)
+          }
+        />
+        {item.preview.reconciliationCandidates?.map((candidate) => {
+          const decision = item.reconciliationDecisions?.find(
+            (entry) =>
+              entry.manualAssetKey === candidate.manualAssetKey &&
+              entry.importedAssetKey === candidate.importedAssetKey,
+          );
+          return (
+            <Card
+              key={`${candidate.manualAssetKey}:${candidate.importedAssetKey}`}
+              className="border-status-warning/30"
+            >
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Link2
+                    aria-hidden="true"
+                    className="size-4 text-status-warning"
+                  />
+                  Revisar possível duplicidade
+                  <Badge variant="secondary">
+                    {candidate.status === "conflict"
+                      ? "Dados divergentes"
+                      : candidate.status === "unequivocal"
+                        ? "Identidade compatível"
+                        : "Confirmar identidade"}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 p-4 pt-0">
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  <div>
+                    <span className="text-xs text-muted-foreground">
+                      Manual
+                    </span>
+                    <p className="font-medium">{candidate.manualProduct}</p>
+                    <p className="tabular-nums">
+                      {formatMoney(candidate.manualValue)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">B3</span>
+                    <p className="font-medium">{candidate.importedProduct}</p>
+                    <p className="tabular-nums">
+                      {formatMoney(candidate.importedValue)}
+                    </p>
+                    {candidate.institution && (
+                      <p className="text-xs text-muted-foreground">
+                        {candidate.institution}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Confirme o mesmo investimento e a mesma conta. Mesma posição:
+                  o valor da B3 prevalece; o histórico manual é preservado.
+                  Posições distintas continuam somadas.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant={
+                      decision?.action === "link" ? "default" : "outline"
+                    }
+                    aria-pressed={decision?.action === "link"}
+                    onClick={() =>
+                      onReconciliationChange(item.file, candidate, "link")
+                    }
+                  >
+                    <Link2 aria-hidden="true" className="size-4" />
+                    Mesma posição
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={
+                      decision?.action === "separate" ? "default" : "outline"
+                    }
+                    aria-pressed={decision?.action === "separate"}
+                    onClick={() =>
+                      onReconciliationChange(item.file, candidate, "separate")
+                    }
+                  >
+                    <Split aria-hidden="true" className="size-4" />
+                    Posições distintas
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
     );
 
   return (

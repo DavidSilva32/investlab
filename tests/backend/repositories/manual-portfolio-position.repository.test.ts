@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const database = vi.hoisted(() => ({
   getDatabaseClient: vi.fn(),
   query: {
+    execute: vi.fn(),
     select: vi.fn(),
     from: vi.fn(),
     orderBy: vi.fn(),
@@ -57,7 +58,9 @@ describe("ManualPortfolioPositionRepository", () => {
     database.getDatabaseClient.mockReturnValue(database.query);
     database.query.select.mockReturnValue(database.query);
     database.query.from.mockReturnValue(database.query);
-    database.query.orderBy.mockResolvedValue([row]);
+    database.query.orderBy.mockReturnValue(
+      Object.assign(Promise.resolve([row]), { limit: database.query.limit }),
+    );
     database.query.limit.mockResolvedValue([row]);
     database.query.insert.mockReturnValue(database.query);
     database.query.values.mockReturnValue(database.query);
@@ -144,6 +147,56 @@ describe("ManualPortfolioPositionRepository", () => {
     );
   });
 
+  it.each(["assetCode", "institution", "currency", "product"] as const)(
+    "requires reversal before editing linked %s",
+    async (field) => {
+      database.query.orderBy.mockResolvedValueOnce([
+        {
+          id: "event",
+          manualAssetKey: row.assetKey,
+          importedAssetKey: "b3",
+          effectiveFrom: "2026-09-01",
+          recordedAt: new Date("2026-09-01"),
+          status: "LINK",
+        },
+      ]);
+      await expect(
+        new ManualPortfolioPositionRepository().update(
+          id,
+          { ...row, [field]: "changed" },
+          "req",
+        ),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(database.query.update).not.toHaveBeenCalled();
+      expect(database.query.execute).toHaveBeenCalledOnce();
+    },
+  );
+  it("permits value edits without reviving a reconciled manual position", async () => {
+    database.query.orderBy.mockResolvedValueOnce([
+      {
+        id: "event",
+        manualAssetKey: row.assetKey,
+        importedAssetKey: "b3",
+        effectiveFrom: "2026-09-01",
+        recordedAt: new Date("2026-09-01"),
+        status: "LINK",
+      },
+    ]);
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row, totalValue: "30" },
+        "req",
+      ),
+    ).resolves.toEqual(row);
+    expect(database.query.update).toHaveBeenCalledOnce();
+  });
+  it("permits editing a manual position without any reconciliation history", async () => {
+    database.query.orderBy.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().update(id, { ...row }, "req"),
+    ).resolves.toEqual(row);
+  });
   it("updates the position and its selected asset class in one transaction", async () => {
     const repository = new ManualPortfolioPositionRepository();
     await expect(

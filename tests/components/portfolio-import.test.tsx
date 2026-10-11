@@ -611,3 +611,68 @@ describe("PortfolioImport", () => {
     expect(screen.getByText("0 de 0")).toBeTruthy();
   });
 });
+
+it("requires a decision for each candidate and submits explicit link/separate choices", async () => {
+  const candidates = ["probable", "unequivocal", "conflict"].map(
+    (status, index) => ({
+      manualAssetKey: `manual:${index}`,
+      importedAssetKey: `b3:${index}`,
+      status,
+      manualUpdatedAt: "2026-10-01T12:00:00Z",
+      manualProduct: `Manual ${index}`,
+      importedProduct: `B3 ${index}`,
+      manualValue: index ? null : "10",
+      importedValue: "11",
+      institution: index ? null : "Banco",
+    }),
+  );
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ...positionPreview,
+        reconciliationCandidates: candidates,
+      }),
+    })
+    .mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ message: "Outro arquivo inválido" }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ message: "Concluído" }),
+    });
+  vi.stubGlobal("fetch", fetch);
+  const { container } = render(<PortfolioImport />);
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [spreadsheet("posicoes.xlsx"), spreadsheet("erro.xlsx")] },
+  });
+  fireEvent.change(
+    await screen.findByRole("textbox", { name: /^Data exibida na B3/ }),
+    { target: { value: "18/09/2026" } },
+  );
+  const confirm = screen.getByRole("button", { name: /Confirmar 1 arquivo/ });
+  expect(confirm.hasAttribute("disabled")).toBe(true);
+  const linkButtons = screen.getAllByRole("button", { name: "Mesma posição" });
+  fireEvent.click(linkButtons[0]);
+  fireEvent.click(linkButtons[1]);
+  fireEvent.click(linkButtons[2]);
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Posições distintas" })[2],
+  );
+  expect(confirm.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(confirm);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+  const form = fetch.mock.calls[2][1].body as FormData;
+  expect(JSON.parse(form.get("reconciliationDecisions") as string)).toEqual(
+    candidates.map((candidate, index) => ({
+      manualAssetKey: candidate.manualAssetKey,
+      importedAssetKey: candidate.importedAssetKey,
+      manualUpdatedAt: candidate.manualUpdatedAt,
+      action: index === 2 ? "separate" : "link",
+    })),
+  );
+  cleanup();
+  vi.restoreAllMocks();
+});

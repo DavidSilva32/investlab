@@ -379,3 +379,58 @@ it("uses the manual asset key while updating selected classifications", async ()
     undefined,
   );
 });
+
+it("preserves imported persisted classification when a reconciled manual alias has none", async () => {
+  const reconciled = {
+    ...position,
+    assetKey: "manual:linked",
+    reconciliationOriginalAssetKey: "b3:original",
+  };
+  const importedClassification = {
+    assetKey: "b3:original",
+    assetClass: "Renda variável",
+    subClass: "Ações",
+    geography: "Brasil",
+  };
+  classifications.listByAssetKeys.mockResolvedValue([importedClassification]);
+  const [result] = await new PortfolioAllocationService().classifyPositions(
+    [reconciled],
+    "req-linked",
+  );
+  expect(classifications.listByAssetKeys).toHaveBeenCalledWith(
+    ["manual:linked", "b3:original"],
+    "req-linked",
+  );
+  expect(result.classification).toEqual({
+    assetClass: "Renda variável",
+    subClass: "Ações",
+    geography: "Brasil",
+  });
+  expect(result.classificationSource).toBe("manual");
+});
+it("prefers an explicitly persisted alias classification and leaves unknown fallback neutral", async () => {
+  const reconciled = {
+    ...position,
+    product: "Produto desconhecido",
+    assetCode: null,
+    indexer: null,
+    assetKey: "manual:linked",
+    reconciliationOriginalAssetKey: "b3:original",
+  };
+  const alias = {
+    assetKey: "manual:linked",
+    assetClass: "Fundos",
+    subClass: "ETF",
+    geography: "Exterior",
+  };
+  classifications.listByAssetKeys.mockResolvedValue([alias]);
+  expect(
+    (await new PortfolioAllocationService().classifyPositions([reconciled]))[0]
+      .classification,
+  ).toEqual({ assetClass: "Fundos", subClass: "ETF", geography: "Exterior" });
+  classifications.listByAssetKeys.mockResolvedValue([]);
+  expect(
+    (await new PortfolioAllocationService().classifyPositions([reconciled]))[0]
+      .classificationSource,
+  ).toBe("unclassified");
+});
