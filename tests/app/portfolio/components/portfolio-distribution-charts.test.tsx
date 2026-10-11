@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 
 vi.mock("@/components/ui/chart", () => ({
@@ -20,8 +20,18 @@ vi.mock("@/components/ui/chart", () => ({
 }));
 
 vi.mock("recharts", () => ({
-  Bar: ({ background }: { background: { fill: string } }) => (
-    <span data-testid="bar-track" data-fill={background.fill} />
+  Bar: ({
+    background,
+    isAnimationActive,
+  }: {
+    background: { fill: string };
+    isAnimationActive: boolean;
+  }) => (
+    <span
+      data-testid="bar-track"
+      data-fill={background.fill}
+      data-animation={String(isAnimationActive)}
+    />
   ),
   BarChart: ({ children }: React.PropsWithChildren) => (
     <div data-testid="bar-chart">{children}</div>
@@ -40,6 +50,47 @@ const institutions = Array.from({ length: 5 }, (_, index) => ({
 })).concat([{ label: "Demais instituições", value: 300, percentage: 10.7 }]);
 
 describe("PortfolioDistributionCharts", () => {
+  afterEach(cleanup);
+  it("animates distributions only with multiple known categories", () => {
+    const media = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => media),
+    );
+    const props = {
+      institutionItems: institutions,
+      classItems: [],
+      unclassifiedValue: 0,
+      unclassifiedPercentage: 0,
+      loading: false,
+    };
+    const { rerender } = render(<PortfolioDistributionCharts {...props} />);
+    expect(
+      screen
+        .getAllByTestId("bar-track")
+        .every((bar) => bar.dataset.animation === "true"),
+    ).toBe(true);
+    rerender(
+      <PortfolioDistributionCharts
+        {...props}
+        institutionItems={institutions.slice(0, 1)}
+      />,
+    );
+    expect(screen.getByTestId("bar-track").dataset.animation).toBe("false");
+    media.matches = true;
+    rerender(<PortfolioDistributionCharts {...props} />);
+    expect(
+      screen
+        .getAllByTestId("bar-track")
+        .every((bar) => bar.dataset.animation === "false"),
+    ).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it("uses generic category colors and accessible shares with visible amounts", () => {
     const classItems = [
       ...portfolioAssetClassOptions.map((label) => ({

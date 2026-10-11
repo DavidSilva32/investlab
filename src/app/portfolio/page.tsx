@@ -20,7 +20,7 @@ export default async function PortfolioPage({
 } = {}) {
   const { view, panel, objective, screen } = await searchParams;
   const activeView: PortfolioView =
-    panel === "objectives"
+    panel === "objectives" || panel === "classification"
       ? "overview"
       : view === "positions" || view === "movements"
         ? view
@@ -43,6 +43,7 @@ export default async function PortfolioPage({
         key={`${activeView}:${panel ?? ""}:${objective ?? ""}:${screen ?? ""}`}
         activeView={activeView}
         initialObjectivesOpen={panel === "objectives"}
+        initialClassificationOpen={panel === "classification"}
         initialObjectiveId={objective ?? null}
         initialObjectiveScreen={screen ?? null}
       />

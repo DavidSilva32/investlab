@@ -671,7 +671,7 @@ export function StrategyAllocationWorkspace({
           <NextContributionStockOpportunities />
           {simulation && (
             <div
-              className="space-y-4 rounded-lg border bg-muted/20 p-4 sm:p-5"
+              className="motion-content-reveal space-y-4 rounded-lg border bg-muted/20 p-4 sm:p-5"
               aria-live="polite"
             >
               <ol

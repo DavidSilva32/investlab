@@ -1,5 +1,6 @@
 "use client";
 
+import { useReducedMotion } from "@/lib/use-reduced-motion";
 import { useId, useState } from "react";
 import {
   Area,
@@ -365,7 +366,10 @@ function PortfolioEvolutionChart({
   id: string;
   history: MonthlyPortfolioHistoryPoint[];
 }) {
+  const reducedMotion = useReducedMotion();
   const points = chartPoints(history);
+  const animate =
+    !reducedMotion && points.filter((point) => point.value !== null).length > 1;
   const minimumChartWidth = Math.max(320, points.length * 40);
   const tooltip = (
     <ChartTooltipContent
@@ -473,7 +477,8 @@ function PortfolioEvolutionChart({
                     : false
                 }
                 activeDot={{ r: 5 }}
-                isAnimationActive={points.length > 1}
+                isAnimationActive={animate}
+                animationDuration={280}
                 connectNulls={false}
               />
             </AreaChart>
@@ -504,7 +509,8 @@ function PortfolioEvolutionChart({
                 dataKey="value"
                 fill="var(--color-value)"
                 radius={4}
-                isAnimationActive
+                isAnimationActive={animate}
+                animationDuration={280}
               />
             </BarChart>
           )}

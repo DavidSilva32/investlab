@@ -23,9 +23,10 @@ export function AssetClassLearningDetail({
 
   return (
     <section
+      key={selectedClass}
       id="class-content"
       aria-labelledby="class-content-title"
-      className="scroll-mt-24 rounded-2xl border border-border/70 bg-card p-5 shadow-sm sm:p-7"
+      className="motion-content-reveal scroll-mt-24 rounded-2xl border border-border/70 bg-card p-5 shadow-sm sm:p-7"
       style={{
         borderTopColor: `color-mix(in srgb, var(${assetClass.colorToken}) 70%, var(--border))`,
         borderTopWidth: "3px",

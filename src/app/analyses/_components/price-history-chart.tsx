@@ -1,3 +1,4 @@
+import { useReducedMotion } from "@/lib/use-reduced-motion";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ export function PriceHistoryChart({
   retryAfterSeconds?: number;
   onRetry?: () => void;
 }) {
+  const reducedMotion = useReducedMotion();
   if (points.length < 2)
     return (
       <div
@@ -177,6 +179,8 @@ export function PriceHistoryChart({
             fill="url(#price-history-area)"
             dot={false}
             activeDot={{ r: 4 }}
+            isAnimationActive={!reducedMotion}
+            animationDuration={280}
           />
         </AreaChart>
       </ChartContainer>

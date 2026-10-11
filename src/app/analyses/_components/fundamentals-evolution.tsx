@@ -1,5 +1,6 @@
 "use client";
 
+import { useReducedMotion } from "@/lib/use-reduced-motion";
 import {
   Bar,
   BarChart,
@@ -57,6 +58,7 @@ export function FundamentalsEvolution({
 }: {
   periods: AnalysisPeriod[];
 }) {
+  const reducedMotion = useReducedMotion();
   const currentYear = new Date().getUTCFullYear();
   const years = Array.from(
     { length: 5 },
@@ -137,6 +139,12 @@ export function FundamentalsEvolution({
                       dataKey={metric.key}
                       fill={`var(--color-${metric.key})`}
                       radius={4}
+                      isAnimationActive={
+                        !reducedMotion &&
+                        chartData.filter((point) => point[metric.key] !== null)
+                          .length > 1
+                      }
+                      animationDuration={280}
                     >
                       {chartData.map((point) => (
                         <Cell

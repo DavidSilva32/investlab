@@ -33,6 +33,12 @@ describe("LearningLibrary", () => {
         })
         .getAttribute("href"),
     ).toBe("/learn?class=fiis#class-content");
+    const selectedCard = screen.getByRole("link", {
+      name: "Abrir conteúdo sobre Fundos imobiliários (FIIs)",
+    });
+    expect(selectedCard.className).toContain(
+      "motion-safe:hover:-translate-y-0.5",
+    );
     expect(
       screen
         .getByRole("link", {

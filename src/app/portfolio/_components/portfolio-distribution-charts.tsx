@@ -1,5 +1,6 @@
 "use client";
 
+import { useReducedMotion } from "@/lib/use-reduced-motion";
 import { Bar, BarChart, Cell, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
@@ -66,6 +67,7 @@ function DistributionChart({
   loading?: boolean;
   colorSource: "institution" | "asset-class";
 }) {
+  const reducedMotion = useReducedMotion();
   const displayItems = items ?? [];
   const chartData = displayItems.map((item) => ({
     ...item,
@@ -140,6 +142,10 @@ function DistributionChart({
                       background={{ fill: "var(--muted)" }}
                       radius={[0, 4, 4, 0]}
                       maxBarSize={10}
+                      isAnimationActive={
+                        !reducedMotion && displayItems.length > 1
+                      }
+                      animationDuration={280}
                     >
                       <Cell fill={item.color} />
                     </Bar>

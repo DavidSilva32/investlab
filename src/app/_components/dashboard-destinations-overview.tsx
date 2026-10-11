@@ -68,7 +68,10 @@ export function DashboardDestinationsOverview({
     summary.missingPositionCount + summary.unvaluedPositionCount > 0;
 
   return (
-    <Card className="h-full" aria-labelledby="dashboard-destinations-title">
+    <Card
+      className="motion-content-reveal h-full"
+      aria-labelledby="dashboard-destinations-title"
+    >
       <CardContent className="space-y-3 p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <h2

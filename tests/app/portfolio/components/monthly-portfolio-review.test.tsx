@@ -33,16 +33,28 @@ vi.mock("recharts", () => {
     </div>
   );
   return {
-    Area: ({ dot }: { dot: boolean | object }) => (
+    Area: ({
+      dot,
+      isAnimationActive,
+    }: {
+      dot: boolean | object;
+      isAnimationActive: boolean;
+    }) => (
       <span
         data-testid="area-series"
+        data-animation={String(isAnimationActive)}
         data-dot={dot === false ? "hidden" : "visible"}
       />
     ),
     AreaChart: (props: Omit<Parameters<typeof Chart>[0], "type">) => (
       <Chart {...props} type="area" />
     ),
-    Bar: () => <span data-testid="bar-series" />,
+    Bar: ({ isAnimationActive }: { isAnimationActive: boolean }) => (
+      <span
+        data-testid="bar-series"
+        data-animation={String(isAnimationActive)}
+      />
+    ),
     BarChart: (props: Omit<Parameters<typeof Chart>[0], "type">) => (
       <Chart {...props} type="bar" />
     ),
@@ -241,6 +253,35 @@ describe("MonthlyPortfolioReview", () => {
     HTMLElement.prototype.scrollIntoView = () => undefined;
   });
   afterEach(cleanup);
+
+  it("keeps singleton bars static and honors reduced motion in both modes", async () => {
+    const media = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => media),
+    );
+    const user = userEvent.setup();
+    renderReview(review());
+    expect(screen.getByTestId("area-series").dataset.animation).toBe("true");
+    await user.click(screen.getByRole("button", { name: /barra/i }));
+    expect(screen.getByTestId("bar-series").dataset.animation).toBe("true");
+    cleanup();
+    renderReview(review({ previous: null }));
+    expect(screen.getByTestId("area-series").dataset.animation).toBe("false");
+    await user.click(screen.getByRole("button", { name: /barra/i }));
+    expect(screen.getByTestId("bar-series").dataset.animation).toBe("false");
+    cleanup();
+    media.matches = true;
+    renderReview(review());
+    expect(screen.getByTestId("area-series").dataset.animation).toBe("false");
+    await user.click(screen.getByRole("button", { name: /barra/i }));
+    expect(screen.getByTestId("bar-series").dataset.animation).toBe("false");
+    vi.unstubAllGlobals();
+  });
 
   it("shows loading, reports no history and lets the user retry errors", async () => {
     const { rerender } = renderReview(undefined, { loading: true });

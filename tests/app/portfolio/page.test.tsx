@@ -37,6 +37,20 @@ describe("PortfolioPage navigation", () => {
     );
   });
 
+  it("opens the classification correction in overview even from a position deep link", async () => {
+    const html = renderToStaticMarkup(
+      await PortfolioPage({
+        searchParams: Promise.resolve({
+          view: "positions",
+          panel: "classification",
+        }),
+      }),
+    );
+    expect(html).toContain("navigation:overview");
+    expect(html).toContain("&quot;initialClassificationOpen&quot;:true");
+    expect(html).toContain("&quot;initialObjectivesOpen&quot;:false");
+  });
+
   it("keeps positions and movements deep views when no objectives panel is requested", async () => {
     const positions = renderToStaticMarkup(
       await PortfolioPage({

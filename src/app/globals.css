@@ -138,3 +138,127 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Motion explains content arrival and navigation; values remain immediate. */
+@keyframes motion-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes motion-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes motion-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes motion-panel-in {
+  from {
+    transform: translate(var(--motion-panel-x), var(--motion-panel-y));
+  }
+  to {
+    transform: translate(0, 0);
+  }
+}
+@keyframes motion-panel-out {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--motion-panel-x), var(--motion-panel-y));
+  }
+}
+@keyframes motion-disclosure-in {
+  from {
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    overflow: hidden;
+    opacity: 1;
+  }
+}
+@keyframes motion-disclosure-out {
+  from {
+    height: var(--radix-collapsible-content-height);
+    overflow: hidden;
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .motion-content-reveal {
+    animation: motion-reveal 180ms ease-out;
+  }
+  .motion-overlay[data-state="open"],
+  .motion-dialog[data-state="open"],
+  .motion-popover[data-state="open"],
+  .motion-popover[data-state="delayed-open"],
+  .motion-popover[data-state="instant-open"] {
+    animation: motion-fade-in 160ms ease-out;
+  }
+  .motion-overlay[data-state="closed"],
+  .motion-dialog[data-state="closed"],
+  .motion-popover[data-state="closed"] {
+    animation: motion-fade-out 120ms ease-in;
+  }
+  .motion-panel {
+    --motion-panel-x: 0px;
+    --motion-panel-y: 0px;
+  }
+  .motion-panel[data-motion-side="right"] {
+    --motion-panel-x: 100%;
+  }
+  .motion-panel[data-motion-side="left"] {
+    --motion-panel-x: -100%;
+  }
+  .motion-panel[data-motion-side="top"] {
+    --motion-panel-y: -100%;
+  }
+  .motion-panel[data-motion-side="bottom"] {
+    --motion-panel-y: 100%;
+  }
+  .motion-panel[data-state="open"] {
+    animation: motion-panel-in 200ms ease-out;
+  }
+  .motion-panel[data-state="closed"] {
+    animation: motion-panel-out 160ms ease-in;
+  }
+  .motion-disclosure[data-state="open"] {
+    animation: motion-disclosure-in 180ms ease-out;
+  }
+  .motion-disclosure[data-state="closed"] {
+    animation: motion-disclosure-out 160ms ease-in;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

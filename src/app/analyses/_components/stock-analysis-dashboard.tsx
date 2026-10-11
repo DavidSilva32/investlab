@@ -575,7 +575,7 @@ export function StockAnalysisDashboard({
   return (
     <div className="space-y-4">
       {search}
-      <Card>
+      <Card className="motion-content-reveal">
         <CardContent className="flex flex-wrap items-center gap-4 py-4 sm:flex-nowrap sm:gap-5">
           <AssetLogo
             ticker={analysis.ticker}
