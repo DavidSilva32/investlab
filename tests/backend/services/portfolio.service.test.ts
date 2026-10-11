@@ -1,3 +1,9 @@
+const reconciliationRepository = vi.hoisted(() => ({
+  listEvents: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("@/backend/repositories/position-reconciliation.repository", () => ({
+  positionReconciliationRepository: reconciliationRepository,
+}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const repository = vi.hoisted(() => ({
   listLatestPositions: vi.fn(),
@@ -477,4 +483,59 @@ describe("PortfolioService", () => {
       "fixed_income",
     );
   });
+});
+
+it("passes persisted reconciliation events through canonical monthly calculations", async () => {
+  const position = {
+    identity: "bbas3-broker",
+    reconciliationAssetKey: "b3:bbas3",
+    totalValue: "1500",
+    valuationSource: "FECHAMENTO",
+  };
+  repository.listPositionSnapshots.mockResolvedValue([
+    {
+      id: "feb",
+      referenceDate: "2026-02-28",
+      createdAt: "2026-03-01",
+      importedAt: "2026-03-01",
+      source: "B3",
+      positions: [position],
+    },
+  ]);
+  manualPositionRepository.list.mockResolvedValue([]);
+  manualPositionRepository.listSnapshots.mockResolvedValue([
+    {
+      assetKey: "manual:bbas",
+      product: "Banco do Brasil",
+      assetCode: "BBAS3",
+      currency: "BRL",
+      totalValue: "1000",
+      convertedValueBrl: null,
+      positionDate: "2026-01-31",
+      conversionDate: null,
+      status: "ACTIVE",
+      recordedAt: "2026-01-31T12:00:00Z",
+    },
+  ]);
+  reconciliationRepository.listEvents.mockResolvedValue([
+    {
+      id: "1",
+      manualAssetKey: "manual:bbas",
+      importedAssetKey: "b3:bbas3",
+      status: "LINK",
+      effectiveFrom: "2026-02-01",
+      recordedAt: "2026-03-01T12:00:00Z",
+    },
+  ]);
+  const review = await new PortfolioService().getMonthlyReview(
+    "2026-02",
+    "request",
+  );
+  expect(review.current).toMatchObject({
+    knownValueCents: "150000",
+    positionCount: 1,
+    sources: ["B3"],
+  });
+  expect(reconciliationRepository.listEvents).toHaveBeenCalledWith("request");
+  reconciliationRepository.listEvents.mockResolvedValue([]);
 });

@@ -239,6 +239,13 @@
       "when": 1791597277996,
       "tag": "0033_soft_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791685110742,
+      "tag": "0034_sloppy_newton_destine",
+      "breakpoints": true
     }
   ]
 }

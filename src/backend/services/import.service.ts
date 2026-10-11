@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
+import { manualPortfolioPositionRepository } from "@/backend/repositories/manual-portfolio-position.repository";
+import { getReconciliationCandidates } from "@/backend/services/position-reconciliation";
 import {
   importFileSchema,
   positionReferenceDateSchema,
@@ -57,6 +60,10 @@ export class ImportService {
     if (preview.documentType !== "B3_POSITION_XLSX") return preview;
     return {
       ...preview,
+      reconciliationCandidates: getReconciliationCandidates(
+        preview.positions,
+        await manualPortfolioPositionRepository.list(requestId),
+      ),
       identityConflicts: await this.findAssignedPositionsMissingFromImport(
         preview.positions,
         requestId,
@@ -74,32 +81,42 @@ export class ImportService {
     file: { name: string; size: number; type: string; buffer: Buffer },
     requestId: string,
     referenceDate?: string | null,
+    decisions?: unknown,
   ) {
+    const decisionSchema = z
+      .array(
+        z
+          .object({
+            manualAssetKey: z.string().regex(/^manual:[0-9a-f-]{36}$/),
+            importedAssetKey: z.string().regex(/^v1:[a-f0-9]{64}$/),
+            action: z.enum(["link", "separate"]),
+            manualUpdatedAt: z.string().datetime(),
+          })
+          .strict(),
+      )
+      .max(1000);
+    const parsedDecisions = decisionSchema.safeParse(decisions ?? []);
+    if (!parsedDecisions.success)
+      throw new ApplicationError("Revise as decisões de conciliação.", 400);
     const preview = this.preview(file);
+    if (
+      preview.documentType === "B3_MOVEMENT_XLSX" &&
+      parsedDecisions.data.length
+    ) {
+      throw new ApplicationError(
+        "Conciliação disponível apenas para posições.",
+        400,
+      );
+    }
     const duplicate = await importRepository.existsByHash(
       preview.hash,
       requestId,
     );
-    if (
+    const reconcileExistingImport =
       duplicate &&
       preview.documentType === "B3_POSITION_XLSX" &&
-      referenceDate
-    ) {
-      const importData = this.buildPositionImportData(preview, referenceDate);
-      const result = await importRepository.updatePositionReferenceDate(
-        preview.hash,
-        importData.referenceDate,
-        requestId,
-      );
-      if (result)
-        return {
-          preview,
-          result,
-          duplicate: true,
-          referenceDateUpdated: true,
-        };
-    }
-    this.assertCanBeConfirmed(duplicate);
+      parsedDecisions.data.length > 0;
+    this.assertCanBeConfirmed(duplicate && !reconcileExistingImport);
     if (preview.documentType === "B3_POSITION_XLSX") {
       const conflicts = await this.findAssignedPositionsMissingFromImport(
         preview.positions,
@@ -124,7 +141,11 @@ export class ImportService {
             ...preview,
             movements: preview.movements.map(prepareB3MovementForPersistence),
           }
-        : this.buildPositionImportData(preview, referenceDate);
+        : {
+            ...this.buildPositionImportData(preview, referenceDate),
+            reconciliationDecisions: parsedDecisions.data,
+            reconcileExistingImport,
+          };
     const result = await importRepository.create(
       { fileName: file.name, fileHash: preview.hash, ...importData },
       requestId,

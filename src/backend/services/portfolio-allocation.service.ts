@@ -54,6 +54,7 @@ export class PortfolioAllocationService {
       indexer: string | null;
       regimeType: string | null;
       assetKey?: string;
+      reconciliationOriginalAssetKey?: string;
     },
   >(positions: T[], requestId?: string) {
     const assetKeyFor = (position: T) =>
@@ -61,13 +62,25 @@ export class PortfolioAllocationService {
       getPortfolioAssetKey(position);
 
     const saved = await portfolioClassificationRepository.listByAssetKeys(
-      positions.map(assetKeyFor),
+      [
+        ...new Set(
+          positions.flatMap((position) =>
+            position.reconciliationOriginalAssetKey
+              ? [assetKeyFor(position), position.reconciliationOriginalAssetKey]
+              : [assetKeyFor(position)],
+          ),
+        ),
+      ],
       requestId,
     );
     const savedByKey = new Map(saved.map((item) => [item.assetKey, item]));
     return positions.map((position) => {
       const assetKey = assetKeyFor(position);
-      const manual = savedByKey.get(assetKey);
+      const manual =
+        savedByKey.get(assetKey) ??
+        (position.reconciliationOriginalAssetKey
+          ? savedByKey.get(position.reconciliationOriginalAssetKey)
+          : undefined);
       const classification: PortfolioAssetClassification = manual
         ? {
             assetClass: manual.assetClass,

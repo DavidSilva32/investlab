@@ -167,6 +167,44 @@ describe("ImportController reference date handling", () => {
       expect.objectContaining({ name: "b3.xlsx" }),
       "request-1",
       "2026-09-18",
+      undefined,
+    );
+  });
+});
+
+describe("ImportController reconciliation transport", () => {
+  it("rejects invalid JSON or a file masquerading as decisions", async () => {
+    for (const value of ["{", new File(["x"], "decisions.json")]) {
+      const form = new FormData();
+      form.append("file", new File(["x"], "b3.xlsx"));
+      form.append("reconciliationDecisions", value);
+      await expect(
+        importController.confirm(
+          new Request("http://test", { method: "POST", body: form }),
+          "r",
+        ),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+  });
+  it("passes explicit decisions with the file to the service", async () => {
+    const decisions = [{ manualAssetKey: "manual:1", action: "link" }];
+    const form = new FormData();
+    form.append("file", new File(["x"], "b3.xlsx"));
+    form.append("reconciliationDecisions", JSON.stringify(decisions));
+    service.confirm.mockResolvedValue({
+      preview: { hash: "a", documentType: "B3_POSITION_XLSX", positions: [] },
+      result: { importId: "i" },
+      duplicate: false,
+    });
+    await importController.confirm(
+      new Request("http://test", { method: "POST", body: form }),
+      "r",
+    );
+    expect(service.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: "b3.xlsx" }),
+      "r",
+      null,
+      decisions,
     );
   });
 });

@@ -1,0 +1,102 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({
+  client: { select: vi.fn(), transaction: vi.fn() },
+  logger: { error: vi.fn() },
+}));
+vi.mock("@/infrastructure/database/client", () => ({
+  getDatabaseClient: () => mocks.client,
+}));
+vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
+import { PositionReconciliationRepository } from "@/backend/repositories/position-reconciliation.repository";
+import { positionReconciliationEvents } from "@/infrastructure/database/schema";
+
+describe("position reconciliation audit repository", () => {
+  const repository = new PositionReconciliationRepository();
+  beforeEach(() => vi.clearAllMocks());
+  it("lists immutable audit events in deterministic order", async () => {
+    const rows = [{ id: "event" }];
+    const from = vi.fn().mockReturnValue({ orderBy: async () => rows });
+    mocks.client.select.mockReturnValue({ from });
+    await expect(repository.listEvents()).resolves.toBe(rows);
+    expect(from).toHaveBeenCalledWith(positionReconciliationEvents);
+  });
+  it("logs failed audit reads without hiding failure", async () => {
+    const error = new Error("unavailable");
+    mocks.client.select.mockImplementation(() => {
+      throw error;
+    });
+    await expect(repository.listEvents("request")).rejects.toBe(error);
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "position_reconciliation_query_failed",
+      { requestId: "request", error },
+    );
+  });
+  it("appends a reversal without modifying the linked source or original audit event", async () => {
+    const previous = {
+      manualAssetKey: "manual:1",
+      importedAssetKey: "b3",
+      id: "link",
+      effectiveFrom: "2026-09-01",
+      status: "LINK",
+      recordedAt: new Date(Date.now() + 5000),
+      importId: "import",
+    };
+    let appended: unknown;
+    const tx = {
+      execute: vi.fn(),
+      select: () => ({
+        from: () => ({ where: () => ({ orderBy: async () => [previous] }) }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: (value: unknown) => {
+          appended = value;
+          return { returning: async () => [value] };
+        },
+      }),
+    };
+    mocks.client.transaction.mockImplementation((callback) => callback(tx));
+    await expect(
+      repository.reverse("manual:1", "2026-10-11", "request"),
+    ).resolves.toEqual(expect.objectContaining({ status: "UNLINK" }));
+    expect(appended).toEqual({
+      manualAssetKey: "manual:1",
+      importedAssetKey: "b3",
+      status: "UNLINK",
+      recordedAt: new Date(previous.recordedAt.getTime() + 1),
+      effectiveFrom: "2026-10-11",
+      requestId: "request",
+    });
+    expect(tx.execute).toHaveBeenCalledOnce();
+    expect(tx.insert).toHaveBeenCalledWith(positionReconciliationEvents);
+    expect(previous.status).toBe("LINK");
+  });
+  it.each(
+    [[], [{ status: "UNLINK" }], [{ status: "SEPARATE" }]].map((rows) => ({
+      rows,
+    })),
+  )("rejects reversals without an active link (%j)", async ({ rows }) => {
+    const tx = {
+      execute: vi.fn(),
+      select: () => ({
+        from: () => ({ where: () => ({ orderBy: async () => rows }) }),
+      }),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation((callback) => callback(tx));
+    await expect(
+      repository.reverse("manual:1", "2026-10-11", "request"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+  it("logs failed reversals", async () => {
+    const error = new Error("failed");
+    mocks.client.transaction.mockRejectedValueOnce(error);
+    await expect(
+      repository.reverse("manual:1", "2026-10-11", "request"),
+    ).rejects.toBe(error);
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "position_reconciliation_reverse_failed",
+      { requestId: "request", error },
+    );
+  });
+});

@@ -746,3 +746,140 @@ describe("monthly portfolio review calculation", () => {
     });
   });
 });
+
+it("reconciles from the effective reference date while preserving earlier manual closes", () => {
+  const january = snapshot("jan", "2026-01-31", []);
+  const february = snapshot("feb", "2026-02-28", ["1500"]);
+  february.positions[0].reconciliationAssetKey = "b3-key";
+  const observation = manualObservation({
+    assetKey: "manual:bbas",
+    currency: "BRL",
+    totalValue: "1000",
+    positionDate: "2026-01-31",
+    recordedAt: "2026-01-31T12:00:00Z",
+  });
+  const event = {
+    id: "1",
+    manualAssetKey: "manual:bbas",
+    importedAssetKey: "b3-key",
+    status: "LINK" as const,
+    effectiveFrom: "2026-02-01",
+    recordedAt: "2026-03-02T12:00:00Z",
+  };
+  const review = calculateMonthlyPortfolioReview(
+    [january, february],
+    "2026-02",
+    [observation],
+    [],
+    [event],
+  );
+  expect(review.previous?.knownValueCents).toBe("100000");
+  expect(review.current?.knownValueCents).toBe("150000");
+  expect(review.current?.positionCount).toBe(1);
+  expect(review.current?.sources).toEqual(["B3"]);
+  expect(review.compositionCoverage).toBe("changed");
+  expect(review.history.map((point) => point.summary.knownValueCents)).toEqual([
+    "100000",
+    "150000",
+  ]);
+  const reversed = calculateMonthlyPortfolioReview(
+    [january, february],
+    "2026-02",
+    [observation],
+    [],
+    [
+      event,
+      {
+        ...event,
+        id: "2",
+        status: "UNLINK",
+        recordedAt: "2026-03-03T12:00:00Z",
+      },
+    ],
+  );
+  expect(reversed.current?.knownValueCents).toBe("250000");
+});
+it("marks a missing reconciled imported position as partial instead of reviving stale manual value", () => {
+  const first = snapshot("jan", "2026-01-31", ["100"]);
+  const second = snapshot("feb", "2026-02-28", ["200"]);
+  const observation = manualObservation({
+    assetKey: "manual:missing",
+    recordedAt: "2026-01-01T12:00:00Z",
+  });
+  const event = {
+    id: "1",
+    manualAssetKey: "manual:missing",
+    importedAssetKey: "absent",
+    status: "LINK" as const,
+    effectiveFrom: "2026-01-01",
+    recordedAt: "2026-01-01T12:00:00Z",
+  };
+  const review = calculateMonthlyPortfolioReview(
+    [first, second],
+    "2026-02",
+    [observation],
+    [],
+    [event],
+  );
+  expect(review).toMatchObject({
+    status: "partial",
+    compositionCoverage: "unknown",
+    current: { knownValueCents: "20000", positionCount: 1 },
+  });
+  expect(
+    review.history.every((point) => point.completeness === "partial"),
+  ).toBe(true);
+});
+it("uses the same reconciled economic identity across imported and manual history", () => {
+  const first = snapshot("jan", "2026-01-31", ["1000"]);
+  const second = snapshot("feb", "2026-02-28", ["1200"]);
+  first.positions[0].reconciliationAssetKey = "b3-key";
+  second.positions[0].reconciliationAssetKey = "b3-key";
+  const event = {
+    id: "1",
+    manualAssetKey: "manual:bbas",
+    importedAssetKey: "b3-key",
+    status: "LINK" as const,
+    effectiveFrom: "2026-01-01",
+    recordedAt: "2026-03-01T12:00:00Z",
+  };
+  expect(
+    calculateMonthlyPortfolioReview(
+      [first, second],
+      "2026-02",
+      [],
+      [],
+      [event],
+    ),
+  ).toMatchObject({
+    status: "ready",
+    compositionCoverage: "equivalent",
+    observedChangeCents: "20000",
+  });
+});
+it("deterministically selects the last snapshot id when reference and recording dates tie", () => {
+  const first = snapshot("a", "2026-02-28", ["100"]);
+  const second = snapshot("b", "2026-02-28", ["200"]);
+  expect(
+    calculateMonthlyPortfolioReview([second, first]).current?.knownValueCents,
+  ).toBe("20000");
+});
+
+it("does not manufacture a zero close when the only reconciled source is absent", () => {
+  const event = {
+    id: "1",
+    manualAssetKey: "manual:missing",
+    importedAssetKey: "absent",
+    status: "LINK" as const,
+    effectiveFrom: "2026-01-01",
+    recordedAt: "2026-01-01",
+  };
+  const observation = manualObservation({
+    assetKey: "manual:missing",
+    recordedAt: "2026-01-10",
+  });
+  expect(
+    calculateMonthlyPortfolioReview([], "2026-01", [observation], [], [event])
+      .current?.knownValueCents,
+  ).toBeNull();
+});

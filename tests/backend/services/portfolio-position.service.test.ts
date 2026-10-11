@@ -1,3 +1,9 @@
+const reconciliationRepository = vi.hoisted(() => ({
+  listEvents: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("@/backend/repositories/position-reconciliation.repository", () => ({
+  positionReconciliationRepository: reconciliationRepository,
+}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const imports = vi.hoisted(() => ({ listLatestPositions: vi.fn() }));
@@ -107,4 +113,55 @@ it("forwards a fixed execution valuation date to the CDI estimator", async () =>
   );
 
   expect(estimates.enrich).toHaveBeenCalledWith([imported], "2026-09-30");
+});
+
+it("keeps the imported value authoritative and applies current reversals without a new snapshot", async () => {
+  const { importedReconciliationKey } =
+    await import("@/backend/services/position-reconciliation");
+  const position = {
+    product: "Banco do Brasil",
+    assetCode: "BBAS3",
+    institution: "Corretora",
+    indexer: null,
+    totalValue: "1200",
+    referenceDate: "2026-01-31",
+  };
+  const manualRow = {
+    ...position,
+    source: "MANUAL",
+    assetKey: "manual:bbas",
+    totalValue: "1000",
+  };
+  imports.listLatestPositions.mockResolvedValue([position]);
+  manualPositions.list.mockResolvedValue([manualRow]);
+  const event = {
+    id: "1",
+    manualAssetKey: manualRow.assetKey,
+    importedAssetKey: importedReconciliationKey(position),
+    status: "LINK",
+    effectiveFrom: "2026-01-01",
+    recordedAt: "2026-01-01T12:00:00Z",
+  };
+  reconciliationRepository.listEvents.mockResolvedValue([event]);
+  expect(await new PortfolioPositionService().listCurrent()).toEqual([
+    expect.objectContaining({
+      assetKey: manualRow.assetKey,
+      totalValue: "1200",
+    }),
+  ]);
+  reconciliationRepository.listEvents.mockResolvedValue([
+    event,
+    {
+      ...event,
+      id: "2",
+      status: "UNLINK",
+      effectiveFrom: "2026-02-01",
+      recordedAt: "2026-02-01T12:00:00Z",
+    },
+  ]);
+  expect(await new PortfolioPositionService().listCurrent()).toEqual([
+    position,
+    manualRow,
+  ]);
+  reconciliationRepository.listEvents.mockResolvedValue([]);
 });

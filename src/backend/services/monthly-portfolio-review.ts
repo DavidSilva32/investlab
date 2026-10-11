@@ -1,3 +1,7 @@
+import {
+  activeReconciliationLinks,
+  type ReconciliationEvent,
+} from "@/backend/services/position-reconciliation";
 import { decimalToCents } from "@/lib/portfolio-money";
 
 export type MonthlyPortfolioSnapshot = {
@@ -8,6 +12,7 @@ export type MonthlyPortfolioSnapshot = {
   source: string;
   positions: Array<{
     identity: string | null;
+    reconciliationAssetKey?: string;
     totalValue: string | null;
     valuationSource: string | null;
   }>;
@@ -186,7 +191,9 @@ function latestFirst(
     (Number.isFinite(timestamp(right.createdAt))
       ? timestamp(right.createdAt)
       : 0) -
-    (Number.isFinite(timestamp(left.createdAt)) ? timestamp(left.createdAt) : 0)
+      (Number.isFinite(timestamp(left.createdAt))
+        ? timestamp(left.createdAt)
+        : 0) || right.id.localeCompare(left.id)
   );
 }
 
@@ -210,12 +217,29 @@ function summarize(
   snapshot: MonthlyPortfolioSnapshot | null,
   period: string,
   manualPositions: ManualPortfolioObservation[],
+  reconciliationEvents: ReconciliationEvent[],
 ): SummarizedClose {
+  const links = activeReconciliationLinks(
+    reconciliationEvents,
+    snapshot?.referenceDate ?? `${period}-31`,
+  );
+  const linkedManual = new Set(links.map((event) => event.manualAssetKey));
+  const aliasByImported = new Map(
+    links.map((event) => [event.importedAssetKey, event.manualAssetKey]),
+  );
+  const contributingManual = manualPositions.filter(
+    (position) => !linkedManual.has(position.assetKey),
+  );
   const b3Positions = snapshot?.positions ?? [];
+  const reconciledCoverageKnown = links.every((event) =>
+    b3Positions.some(
+      (position) => position.reconciliationAssetKey === event.importedAssetKey,
+    ),
+  );
   const b3Values = b3Positions.map((position) =>
     decimalToCents(position.totalValue),
   );
-  const activeManual = manualPositions.filter(
+  const activeManual = contributingManual.filter(
     (position) => position.status === "ACTIVE",
   );
   const manualValues = activeManual.map((position) =>
@@ -231,7 +255,7 @@ function summarize(
     (total, value) => total + value,
     0n,
   );
-  const latestManualObservation = [...manualPositions].sort(
+  const latestManualObservation = [...contributingManual].sort(
     (left, right) => timestamp(right.recordedAt) - timestamp(left.recordedAt),
   )[0];
   const sourceReferences = [
@@ -257,13 +281,18 @@ function summarize(
         ]
       : []),
   ];
-  const latestReferenceDate = sourceReferences
-    .map(({ referenceDate }) => referenceDate)
-    .sort()
-    .at(-1);
+  const latestReferenceDate =
+    sourceReferences
+      .map(({ referenceDate }) => referenceDate)
+      .sort()
+      .at(-1) ??
+    manualPositions
+      .map((position) => position.positionDate)
+      .sort()
+      .at(-1);
   const importedAt = [
     ...(snapshot ? [timestamp(snapshot.importedAt)] : []),
-    ...manualPositions.map((position) => timestamp(position.recordedAt)),
+    ...contributingManual.map((position) => timestamp(position.recordedAt)),
   ]
     .filter(Number.isFinite)
     .reduce((latest, value) => Math.max(latest, value), 0);
@@ -280,7 +309,9 @@ function summarize(
     knownValueCents:
       knownValues.length > 0
         ? knownValueCents.toString()
-        : values.length === 0 && (snapshot || manualPositions.length > 0)
+        : values.length === 0 &&
+            reconciledCoverageKnown &&
+            (snapshot || manualPositions.length > 0)
           ? "0"
           : null,
     valuationMethods: [
@@ -326,11 +357,17 @@ function summarize(
     ].sort(),
     compositionKeys: [
       ...b3Positions.flatMap((position) =>
-        position.identity ? [`b3:${position.identity}`] : [],
+        position.reconciliationAssetKey &&
+        aliasByImported.has(position.reconciliationAssetKey)
+          ? [`manual:${aliasByImported.get(position.reconciliationAssetKey)}`]
+          : position.identity
+            ? [`b3:${position.identity}`]
+            : [],
       ),
       ...activeManual.map((position) => `manual:${position.assetKey}`),
     ].sort(),
     compositionKnown:
+      reconciledCoverageKnown &&
       b3Positions.every((position) => position.identity !== null) &&
       activeManual.every((position) => Boolean(position.assetKey)),
   };
@@ -365,6 +402,7 @@ function monthlyHistory(
   snapshots: MonthlyPortfolioSnapshot[],
   manualObservations: ManualPortfolioObservation[],
   untrackedManualPositionCount: number,
+  reconciliationEvents: ReconciliationEvent[],
 ): MonthlyPortfolioHistoryPoint[] {
   return [...periods].sort().map((period) => {
     const snapshot = snapshots
@@ -374,7 +412,12 @@ function monthlyHistory(
       manualObservations,
       monthEndTimestamp(period),
     );
-    const close = summarize(snapshot ?? null, period, manualPositions);
+    const close = summarize(
+      snapshot ?? null,
+      period,
+      manualPositions,
+      reconciliationEvents,
+    );
     return {
       period,
       summary: publicSummary(close),
@@ -447,6 +490,7 @@ export function calculateMonthlyPortfolioReview(
   selectedPeriod?: string | null,
   manualObservations: ManualPortfolioObservation[] = [],
   currentManualPositions: CurrentManualPortfolioPosition[] = [],
+  reconciliationEvents: ReconciliationEvent[] = [],
 ): MonthlyPortfolioReview {
   const datedSnapshots = snapshots.filter((snapshot) =>
     validReferenceDate(snapshot.referenceDate),
@@ -505,6 +549,7 @@ export function calculateMonthlyPortfolioReview(
     datedSnapshots,
     allManualObservations,
     untrackedManualPositionCount,
+    reconciliationEvents,
   );
   const period = selectedPeriod ?? availablePeriods[0] ?? null;
   if (period === null)
@@ -533,6 +578,7 @@ export function calculateMonthlyPortfolioReview(
     currentSnapshot ?? null,
     period,
     currentManual,
+    reconciliationEvents,
   );
   const current = publicSummary(currentClose);
   const previousPeriod = availablePeriods.find(
@@ -565,6 +611,7 @@ export function calculateMonthlyPortfolioReview(
     previousSnapshot ?? null,
     previousPeriod,
     previousManual,
+    reconciliationEvents,
   );
   const previous = publicSummary(previousClose);
   const gapMonths = Math.max(

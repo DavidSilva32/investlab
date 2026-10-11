@@ -1,8 +1,9 @@
-﻿import { getTableName } from "drizzle-orm";
+import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import {
+  positionReconciliationEvents,
   imports,
   movementItems,
   portfolioObjectivePositions,
@@ -14,6 +15,13 @@ import {
 } from "@/infrastructure/database/schema";
 
 describe("database schema", () => {
+  it("retains reconciliation audit events without cascading source deletion", () => {
+    const config = getTableConfig(positionReconciliationEvents);
+    expect(config.name).toBe("position_reconciliation_events");
+    expect(config.foreignKeys).toHaveLength(0);
+    expect(config.indexes).toHaveLength(1);
+    expect(config.checks).toHaveLength(1);
+  });
   it("defines the import, position and movement tables", () => {
     expect(getTableName(imports)).toBe("imports");
     expect(getTableName(positionSnapshots)).toBe("position_snapshots");

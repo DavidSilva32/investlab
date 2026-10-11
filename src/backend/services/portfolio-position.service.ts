@@ -1,3 +1,9 @@
+import { todayInSaoPaulo } from "@/lib/valuation-date";
+import { positionReconciliationRepository } from "@/backend/repositories/position-reconciliation.repository";
+import {
+  applyPositionReconciliation,
+  type ReconciliationEvent,
+} from "@/backend/services/position-reconciliation";
 import { importRepository } from "@/backend/repositories/import.repository";
 import { manualPortfolioPositionService } from "@/backend/services/manual-portfolio-position.service";
 import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
@@ -24,11 +30,17 @@ export function withCanonicalPortfolioValue<
 
 export class PortfolioPositionService {
   async listCurrent(requestId?: string) {
-    const [imported, manual] = await Promise.all([
+    const [imported, manual, events] = await Promise.all([
       importRepository.listLatestPositions(requestId),
       manualPortfolioPositionService.list(requestId),
+      positionReconciliationRepository.listEvents(requestId),
     ]);
-    return [...imported, ...manual];
+    return applyPositionReconciliation(
+      imported,
+      manual,
+      events as ReconciliationEvent[],
+      todayInSaoPaulo(),
+    );
   }
 
   async enrichImportedPositions<

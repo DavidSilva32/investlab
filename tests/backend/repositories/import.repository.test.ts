@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   client: { select: vi.fn(), transaction: vi.fn() },
@@ -11,7 +11,20 @@ vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
 import { importRepository } from "@/backend/repositories/import.repository";
 import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
+import {
+  portfolioAssetClassifications,
+  portfolioObjectivePositions,
+  positionReconciliationEvents,
+  imports,
+  positionSnapshots,
+  positionItems,
+  manualPortfolioPositions,
+} from "@/infrastructure/database/schema";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import {
+  activeReconciliationLinks,
+  type ReconciliationEvent,
+} from "@/backend/services/position-reconciliation";
 
 const positions = [
   {
@@ -36,6 +49,22 @@ const emptyImportGuard = () => ({
     from: () => ({ orderBy: () => ({ limit: async () => [] }) }),
   }),
 });
+const withManualRead = <
+  T extends {
+    select: (...args: unknown[]) => { from: (table: unknown) => unknown };
+  },
+>(
+  transaction: T,
+) => ({
+  ...transaction,
+  select: (...args: unknown[]) => ({
+    from: (table: unknown) =>
+      table === manualPortfolioPositions ||
+      table === positionReconciliationEvents
+        ? Promise.resolve([])
+        : transaction.select(...args).from(table),
+  }),
+});
 const sqlChunksText = (chunks: unknown[]) =>
   chunks
     .map((chunk) => {
@@ -50,6 +79,416 @@ const sqlChunksText = (chunks: unknown[]) =>
 
 describe("import repository", () => {
   beforeEach(() => vi.clearAllMocks());
+  const reconciliationManual = {
+    assetKey: "manual:1",
+    product: "BBAS3",
+    assetCode: "BBAS3",
+    institution: "Banco A",
+    currency: "BRL",
+    totalValue: "1000",
+    updatedAt: new Date("2026-09-01T00:00:00Z"),
+  };
+  const reconciliationPosition = {
+    product: "BBAS3",
+    assetCode: "BBAS3",
+    institution: "Banco A",
+    issuer: null,
+    indexer: null,
+    regimeType: null,
+    issuedAt: null,
+    maturityAt: null,
+    quantity: "10",
+    totalValue: "1000",
+  };
+  const reconciliationKey = getEmergencyReserveAssetKey(reconciliationPosition);
+  const validDecision = {
+    manualAssetKey: "manual:1",
+    importedAssetKey: reconciliationKey,
+    action: "link" as const,
+    manualUpdatedAt: reconciliationManual.updatedAt.toISOString(),
+  };
+  function reconciliationTransaction(
+    manual = [reconciliationManual],
+    assignments: unknown[] = [],
+    events: unknown[] = [],
+    classifications: unknown[] = [],
+    replay?: { imports: unknown[]; snapshots: unknown[] },
+  ) {
+    const audit: unknown[] = [];
+    const transaction = {
+      execute: vi.fn(),
+      select: vi.fn().mockImplementation(() => ({
+        from: (table: unknown) => {
+          if (table === imports && replay)
+            return { where: () => ({ limit: async () => replay.imports }) };
+          if (table === positionSnapshots && replay)
+            return {
+              orderBy: () => ({ limit: async () => [] }),
+              where: () => ({ limit: async () => replay.snapshots }),
+            };
+          if (table === manualPortfolioPositions)
+            return Promise.resolve(manual);
+          if (table === positionReconciliationEvents)
+            return Promise.resolve(events);
+          if (table === portfolioAssetClassifications)
+            return { where: async () => classifications };
+          if (table === portfolioObjectivePositions)
+            return { where: async () => assignments };
+          return { orderBy: () => ({ limit: async () => [] }) };
+        },
+      })),
+      insert: vi.fn().mockImplementation((table: unknown) => ({
+        values: (rows: unknown) => {
+          if (table === positionReconciliationEvents) {
+            audit.push(rows);
+            return Promise.resolve();
+          }
+          return {
+            returning: async () =>
+              table === imports
+                ? [{ id: "import" }]
+                : table === positionSnapshots
+                  ? [{ id: "snapshot" }]
+                  : [],
+          };
+        },
+      })),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction),
+    );
+    return { transaction, audit };
+  }
+  const reconciliationInput = {
+    fileName: "b3.xlsx",
+    fileHash: "hash",
+    documentType: "B3_POSITION_XLSX" as const,
+    referenceDate: "2026-09-30",
+    positions: [reconciliationPosition] as never,
+  };
+  const replayRows = {
+    imports: [{ id: "original-import", referenceDate: "2026-09-30" }],
+    snapshots: [{ id: "original-snapshot", referenceDate: "2026-09-30" }],
+  };
+  it("conciles an existing import by appending only audit events without rewriting historical values", async () => {
+    const { transaction, audit } = reconciliationTransaction(
+      undefined,
+      [],
+      [],
+      [],
+      replayRows,
+    );
+    await expect(
+      importRepository.create(
+        {
+          ...reconciliationInput,
+          reconcileExistingImport: true,
+          reconciliationDecisions: [validDecision],
+        },
+        "req",
+      ),
+    ).resolves.toEqual({
+      importId: "original-import",
+      snapshotId: "original-snapshot",
+    });
+    expect(transaction.insert).toHaveBeenCalledOnce();
+    expect(transaction.insert).toHaveBeenCalledWith(
+      positionReconciliationEvents,
+    );
+    expect(audit).toEqual([
+      [
+        expect.objectContaining({
+          importId: "original-import",
+          effectiveFrom: "2026-09-30",
+        }),
+      ],
+    ]);
+  });
+  it.each([
+    { imports: [], snapshots: [] },
+    {
+      imports: [{ id: "original-import", referenceDate: null }],
+      snapshots: [],
+    },
+    {
+      imports: [{ id: "original-import", referenceDate: "2026-08-31" }],
+      snapshots: [],
+    },
+    { imports: replayRows.imports, snapshots: [] },
+    {
+      imports: replayRows.imports,
+      snapshots: [{ id: "original-snapshot", referenceDate: "2026-08-31" }],
+    },
+  ])(
+    "rejects existing-file reconciliation when reference metadata differs or is missing (%j)",
+    async (replay) => {
+      const { transaction } = reconciliationTransaction(
+        undefined,
+        [],
+        [],
+        [],
+        replay,
+      );
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          reconcileExistingImport: true,
+          reconciliationDecisions: [validDecision],
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+  it.each(
+    [undefined, []].map((reconciliationDecisions) => ({
+      reconciliationDecisions,
+    })),
+  )(
+    "rejects replay without explicit decisions (%j)",
+    async ({ reconciliationDecisions }) => {
+      const { transaction } = reconciliationTransaction(
+        [],
+        [],
+        [],
+        [],
+        replayRows,
+      );
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          reconcileExistingImport: true,
+          reconciliationDecisions,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+  it.each(
+    [
+      [],
+      [{ ...validDecision, manualUpdatedAt: "stale" }],
+      [{ ...validDecision, manualAssetKey: "missing" }],
+      [{ ...validDecision, importedAssetKey: "missing" }],
+      [validDecision, validDecision],
+    ].map((decisions) => ({ decisions })),
+  )(
+    "rejects absent, stale, changed or duplicate reconciliation decisions (%j)",
+    async ({ decisions }) => {
+      const { transaction } = reconciliationTransaction();
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          reconciliationDecisions: decisions,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["link", "separate"] as const)(
+    "atomically appends %s audit events with the B3 snapshot",
+    async (action) => {
+      const { audit } = reconciliationTransaction();
+      await importRepository.create(
+        {
+          ...reconciliationInput,
+          reconciliationDecisions: [{ ...validDecision, action }],
+        },
+        "req",
+      );
+      expect(audit).toEqual([
+        [
+          {
+            manualAssetKey: "manual:1",
+            importedAssetKey: reconciliationKey,
+            status: action === "link" ? "LINK" : "SEPARATE",
+            effectiveFrom: "2026-09-30",
+            recordedAt: expect.any(Date),
+            requestId: "req",
+            importId: "import",
+          },
+        ],
+      ]);
+    },
+  );
+  it("records serialized decisions after the prior audit timestamp even if the local clock is behind", async () => {
+    const previous: ReconciliationEvent = {
+      id: "previous",
+      manualAssetKey: "manual:1",
+      importedAssetKey: reconciliationKey,
+      status: "UNLINK",
+      effectiveFrom: "2026-09-30",
+      recordedAt: new Date("2099-01-01T00:00:00Z"),
+    };
+    const { audit } = reconciliationTransaction(undefined, [], [previous]);
+    await importRepository.create({
+      ...reconciliationInput,
+      reconciliationDecisions: [validDecision],
+    });
+    const [next] = audit[0] as ReconciliationEvent[];
+    expect(next.recordedAt).toEqual(
+      new Date(new Date(previous.recordedAt).getTime() + 1),
+    );
+    expect(
+      activeReconciliationLinks([previous, { ...next, id: "next" }]),
+    ).toHaveLength(1);
+  });
+  it("rejects competing active links from another manual position across imports", async () => {
+    reconciliationTransaction(
+      undefined,
+      [],
+      [
+        {
+          id: "link",
+          manualAssetKey: "manual:deleted",
+          importedAssetKey: reconciliationKey,
+          status: "LINK",
+          effectiveFrom: "2026-09-01",
+          recordedAt: new Date("2026-09-02"),
+        },
+      ],
+    );
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+  const sameClassification = {
+    assetClass: "Renda variável",
+    subClass: "Ações",
+    geography: "Brasil",
+  };
+  it.each(["assetClass", "subClass", "geography"] as const)(
+    "rejects conflicting persisted %s classification before creating the snapshot",
+    async (field) => {
+      const { transaction } = reconciliationTransaction(
+        undefined,
+        [],
+        [],
+        [
+          { assetKey: "manual:1", ...sameClassification },
+          {
+            assetKey: reconciliationKey,
+            ...sameClassification,
+            [field]: "different",
+          },
+        ],
+      );
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          reconciliationDecisions: [validDecision],
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+  it("allows identical explicit classifications on both identities", async () => {
+    reconciliationTransaction(
+      undefined,
+      [],
+      [],
+      [
+        { assetKey: "manual:1", ...sameClassification },
+        { assetKey: reconciliationKey, ...sameClassification },
+      ],
+    );
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+  });
+  it("allows a link when only the manual classification is stored", async () => {
+    reconciliationTransaction(
+      undefined,
+      [],
+      [],
+      [{ assetKey: "manual:1", ...sameClassification }],
+    );
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+  });
+  it("keeps separate broker decisions alongside one matching link", async () => {
+    const second = { ...reconciliationPosition, institution: "Banco B" };
+    reconciliationTransaction();
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [reconciliationPosition, second] as never,
+        reconciliationDecisions: [
+          validDecision,
+          {
+            ...validDecision,
+            action: "separate",
+            importedAssetKey: getEmergencyReserveAssetKey(second),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+  });
+  it("preserves matching objective ownership when linking", async () => {
+    reconciliationTransaction(undefined, [
+      { assetKey: "manual:1", objectiveId: "long" },
+      { assetKey: reconciliationKey, objectiveId: "long" },
+    ]);
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+  });
+  it("rejects links that would orphan an imported objective assignment", async () => {
+    const { transaction } = reconciliationTransaction(undefined, [
+      { assetKey: reconciliationKey, objectiveId: "long" },
+    ]);
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+  it("rejects multiple links from the same manual position", async () => {
+    reconciliationTransaction();
+    const second = { ...reconciliationPosition, institution: "Banco B" };
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [reconciliationPosition, second] as never,
+        reconciliationDecisions: [
+          validDecision,
+          {
+            ...validDecision,
+            importedAssetKey: getEmergencyReserveAssetKey(second),
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+  it("rejects multiple manual positions linked to one imported position", async () => {
+    reconciliationTransaction([
+      reconciliationManual,
+      { ...reconciliationManual, assetKey: "manual:2" },
+    ]);
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [
+          validDecision,
+          { ...validDecision, manualAssetKey: "manual:2" },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
   it("checks import hash presence", async () => {
     mocks.client.select
       .mockReturnValueOnce(chain([{ id: "import-1" }]))
@@ -202,7 +641,7 @@ describe("import repository", () => {
 
     await expect(importRepository.listLatestPositions()).resolves.toEqual([]);
     expect(snapshotOrdering).toHaveBeenCalledTimes(1);
-    expect(snapshotOrdering.mock.calls[0]).toHaveLength(2);
+    expect(snapshotOrdering.mock.calls[0]).toHaveLength(3);
     expect(positionOrdering).toHaveBeenCalledTimes(1);
     expect(positionOrdering.mock.calls[0]).toHaveLength(2);
   });
@@ -234,7 +673,8 @@ describe("import repository", () => {
         }),
       });
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
     await expect(
       importRepository.create({
@@ -305,7 +745,8 @@ describe("import repository", () => {
       insert: vi.fn(),
     };
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
 
     await expect(
@@ -320,7 +761,7 @@ describe("import repository", () => {
       statusCode: 409,
       message: expect.stringContaining("Viagem"),
     });
-    expect(transaction.execute).toHaveBeenCalledTimes(1);
+    expect(transaction.execute).toHaveBeenCalledTimes(2);
     const importLock = transaction.execute.mock.calls[0][0] as unknown as {
       queryChunks: unknown[];
     };
@@ -357,7 +798,8 @@ describe("import repository", () => {
         values: () => ({ returning: async () => [] }),
       });
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
 
     await expect(
@@ -409,7 +851,8 @@ describe("import repository", () => {
         values: () => ({ returning: async () => [] }),
       });
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
 
     await expect(
@@ -461,7 +904,8 @@ describe("import repository", () => {
       insert: vi.fn(),
     };
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
 
     await expect(
@@ -508,7 +952,8 @@ describe("import repository", () => {
       }),
     };
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
 
     await importRepository.create({
@@ -562,7 +1007,8 @@ describe("import repository", () => {
         values: async (facts: unknown[]) => persistedFacts.push(facts),
       });
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
     const selicPosition = {
       product: "Tesouro Selic 2029",
@@ -625,7 +1071,8 @@ describe("import repository", () => {
           persistedFacts.push(...facts),
       });
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
     const inputs = [
       {
@@ -796,7 +1243,8 @@ describe("import repository", () => {
       })
       .mockReturnValueOnce({ values: persistMovements });
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
     await expect(
       importRepository.create({
@@ -858,7 +1306,8 @@ describe("import repository", () => {
       delete: vi.fn().mockReturnValue({ where }),
     };
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
     await expect(
       importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
@@ -881,7 +1330,8 @@ describe("import repository", () => {
       delete: vi.fn().mockReturnValue({ where }),
     };
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
     await expect(
       importRepository.deleteByDocumentType("B3_POSITION_XLSX"),
@@ -903,7 +1353,8 @@ describe("import repository", () => {
         .mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
     };
     mocks.client.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
     );
     await expect(
       importRepository.deleteByDocumentType("B3_POSITION_XLSX"),
@@ -966,7 +1417,7 @@ describe("import repository", () => {
               },
             }),
           });
-        return callback(transaction);
+        return callback(withManualRead(transaction));
       },
     );
     const firstSnapshot = Array.from({ length: 24 }, (_, index) => ({
