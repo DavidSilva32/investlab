@@ -83,7 +83,7 @@ export function DashboardContributionOverview({
 
   return (
     <section aria-labelledby="dashboard-contribution-title" className="h-full">
-      <Card className="h-full">
+      <Card className="motion-content-reveal h-full">
         <CardContent className="space-y-4 p-5 sm:p-6">
           <div className="flex items-center gap-3">
             <span

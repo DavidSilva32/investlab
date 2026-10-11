@@ -25,7 +25,7 @@ export function AssetClassLearningCard({
       href={getLearningClassHref(id)}
       aria-current={selected ? "location" : undefined}
       aria-label={`Abrir conteúdo sobre ${assetClass.label}`}
-      className={`group block overflow-hidden rounded-2xl border bg-card shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "border-primary/60 ring-1 ring-primary/20" : "border-border/70 hover:-translate-y-0.5 hover:shadow-md"}`}
+      className={`group block overflow-hidden rounded-2xl border bg-card shadow-sm transition-all motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "border-primary/60 ring-1 ring-primary/20" : "border-border/70 hover:shadow-md"}`}
       style={{
         borderTopColor: `color-mix(in srgb, var(${assetClass.colorToken}) 70%, var(--border))`,
         borderTopWidth: "3px",
@@ -70,7 +70,7 @@ export function AssetClassLearningCard({
           )}
           <ArrowUpRight
             aria-hidden="true"
-            className="size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+            className="size-4 transition-transform motion-safe:group-hover:translate-x-0.5 motion-safe:group-hover:-translate-y-0.5"
           />
         </span>
       </div>

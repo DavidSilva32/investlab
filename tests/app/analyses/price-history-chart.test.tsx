@@ -5,8 +5,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PriceHistoryChart } from "@/app/analyses/_components/price-history-chart";
 
 vi.mock("recharts", () => ({
-  Area: ({ stroke, fill }: { stroke: string; fill: string }) => (
-    <div data-fill={fill} data-stroke={stroke} data-testid="price-area" />
+  Area: ({
+    stroke,
+    fill,
+    isAnimationActive,
+    animationDuration,
+  }: {
+    stroke: string;
+    fill: string;
+    isAnimationActive: boolean;
+    animationDuration: number;
+  }) => (
+    <div
+      data-fill={fill}
+      data-stroke={stroke}
+      data-testid="price-area"
+      data-animation={String(isAnimationActive)}
+      data-duration={animationDuration}
+    />
   ),
   AreaChart: ({
     children,
@@ -72,6 +88,29 @@ describe("PriceHistoryChart", () => {
     expect(screen.getByTestId("tooltip-label").textContent).toMatch(
       /01 de jan\. de 2026.*10,00/,
     );
+  });
+
+  it("animates real series briefly and responds to reduced motion", () => {
+    const media = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => media),
+    );
+    const points = [
+      { date: "2026-01-01", close: 10 },
+      { date: "2026-01-02", close: 11 },
+    ];
+    const { rerender } = render(<PriceHistoryChart points={points} />);
+    expect(screen.getByTestId("price-area").dataset.animation).toBe("true");
+    expect(screen.getByTestId("price-area").dataset.duration).toBe("280");
+    media.matches = true;
+    rerender(<PriceHistoryChart points={points} />);
+    expect(screen.getByTestId("price-area").dataset.animation).toBe("false");
+    vi.unstubAllGlobals();
   });
 
   it("explains when the selected interval has insufficient history", () => {

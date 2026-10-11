@@ -149,7 +149,7 @@ describe("PortfolioOverview", () => {
     expect(html).toContain("CDB um");
     expect(html).not.toContain("32,3% da carteira conhecida");
     expect(html).toContain("lg:grid-cols-2");
-    expect(html).toContain("1 posição está sem valor atual informado");
+    expect(html).toContain("Valores ausentes");
   });
 
   it("shows class coverage and keeps unknown classifications visible", () => {
@@ -192,10 +192,9 @@ describe("PortfolioOverview", () => {
       />,
     );
 
-    expect(html).toContain("1 estimativa está provisória");
-    expect(html).toContain("Não foi possível atualizar uma estimativa de CDB");
-    expect(html).toContain("Próximo vencimento informado: Tesouro");
-    expect(html).toContain("01/01/2099");
+    expect(html).toContain("Estimativas de CDB com ressalvas");
+    expect(html).toContain("Próximo vencimento informado");
+    expect(html).toContain("Informação");
   });
 
   it("uses singular wording for one position with a caveat", () => {
@@ -227,7 +226,7 @@ describe("PortfolioOverview", () => {
     expect(html).toContain("Ainda não há posições com valor conhecido.");
     expect(html).toContain("Classes: indisponível");
     expect(html).toContain("Sem classe: indisponível");
-    expect(html).toContain("Não há valores ausentes ou estimativas pendentes");
+    expect(html).toContain("Adicione suas posições para começar.");
   });
 
   it("uses neutral wording for zero-value positions and plural attention counts", () => {
@@ -259,8 +258,8 @@ describe("PortfolioOverview", () => {
 
     expect(html).toContain("Instituição não informada");
     expect(html).not.toContain("0,0% da carteira conhecida");
-    expect(html).toContain("4 posições estão sem valor atual informado");
-    expect(html).toContain("2 estimativas estão provisórias");
-    expect(html).toContain("Não foi possível atualizar 2 estimativas de CDB");
+    expect(html).toContain("Valores ausentes");
+    expect(html).toContain("Estimativas de CDB com ressalvas");
+    expect(html).not.toContain("Não foi possível atualizar 2 estimativas");
   });
 });

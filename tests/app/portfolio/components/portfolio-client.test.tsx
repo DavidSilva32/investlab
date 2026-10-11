@@ -85,6 +85,7 @@ function renderPortfolio(
   activeView: "overview" | "positions" | "movements",
   initial?: {
     initialObjectivesOpen?: boolean;
+    initialClassificationOpen?: boolean;
     initialObjectiveId?: string | null;
     initialObjectiveScreen?: string | null;
   },
@@ -271,6 +272,90 @@ describe("PortfolioClient", () => {
         name: "Metas pessoais e dados detalhados",
       }),
     ).toBeTruthy();
+  });
+
+  it("opens classification deep links and synchronizes browser history without mutating positions", async () => {
+    vi.stubGlobal("fetch", successfulPortfolioFetch());
+    window.history.replaceState(null, "", "/portfolio?panel=classification");
+    renderPortfolio("overview", { initialClassificationOpen: true });
+    expect(
+      await screen.findByRole("heading", {
+        name: "Metas pessoais e dados detalhados",
+      }),
+    ).toBeTruthy();
+    const user = userEvent.setup();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(new URLSearchParams(window.location.search).has("panel")).toBe(
+      false,
+    );
+    window.history.pushState(null, "", "/portfolio?panel=classification");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(
+      await screen.findByRole("heading", {
+        name: "Metas pessoais e dados detalhados",
+      }),
+    ).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.every((call) => call.length === 1)).toBe(
+      true,
+    );
+  });
+
+  it("opens the existing classification sheet directly from a diagnostic action", async () => {
+    const positions = [
+      {
+        id: "one",
+        product: "Ativo",
+        totalValue: "100",
+        institution: "Banco",
+        maturityAt: null,
+        classification: { assetClass: null, subClass: null, geography: null },
+      },
+    ];
+    const base = successfulPortfolioFetch();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        url === "/api/portfolio/allocation"
+          ? Promise.resolve({
+              ok: true,
+              json: async () => ({
+                classDistribution: getPortfolioConcentration(
+                  positions,
+                  "assetClass",
+                ),
+              }),
+            })
+          : url === "/api/portfolio"
+            ? Promise.resolve({
+                ok: true,
+                json: async () => ({
+                  ...overview,
+                  positions,
+                  insights: getPortfolioInsights(positions),
+                }),
+              })
+            : base(url),
+      ),
+    );
+    renderPortfolio("overview");
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Revisar classes" }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: "Metas pessoais e dados detalhados",
+      }),
+    ).toBeTruthy();
+    expect(new URLSearchParams(window.location.search).get("panel")).toBe(
+      "classification",
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Revisar classes" }),
+    );
   });
 
   it("contains objective management in the viewport-sized Sheet", async () => {

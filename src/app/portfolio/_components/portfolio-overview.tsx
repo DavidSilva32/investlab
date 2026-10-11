@@ -1,12 +1,14 @@
 import Link from "next/link";
-import { ArrowRight, CalendarDays, CircleAlert } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowRight } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { PortfolioInsights } from "@/lib/portfolio-insights";
 import type { PortfolioConcentration } from "@/lib/portfolio-concentration";
 import { formatCurrency } from "@/lib/utils";
 import { PortfolioDistributionCharts } from "./portfolio-distribution-charts";
 
-const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+import { PortfolioDiagnostics } from "./portfolio-diagnostics";
+import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
+import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 export type PortfolioPosition = {
   id: string;
   source?: string;
@@ -67,6 +69,9 @@ export function PortfolioOverview({
   classificationStatus,
   summaryContent,
   monthlyReviewContent,
+  nextContributionGuidance,
+  emergencyReserve,
+  onReviewClassification,
 }: {
   positions: PortfolioPosition[];
   insights: PortfolioInsights;
@@ -74,13 +79,10 @@ export function PortfolioOverview({
   classificationStatus: "loading" | "loaded" | "unavailable";
   summaryContent?: React.ReactNode;
   monthlyReviewContent?: React.ReactNode;
+  nextContributionGuidance?: ContributionGuidance;
+  emergencyReserve?: EmergencyReserveCalculation;
+  onReviewClassification?: (trigger: HTMLElement) => void;
 }) {
-  const nextMaturity = insights.upcomingMaturities[0];
-  const hasAttention =
-    insights.unvaluedPositions > 0 ||
-    insights.provisionalEstimates > 0 ||
-    insights.unavailableEstimates > 0 ||
-    nextMaturity !== undefined;
   const positionsWithCaveat =
     insights.provisionalEstimates + insights.unavailableEstimates;
 
@@ -97,7 +99,7 @@ export function PortfolioOverview({
 
   return (
     <div className="space-y-5">
-      <Card>
+      <Card className="motion-content-reveal">
         <CardContent className="grid gap-4 p-4 sm:gap-5 sm:p-6 lg:grid-cols-3 lg:divide-x lg:gap-0">
           <div className="min-w-0 lg:px-6 lg:first:pl-0 lg:last:pr-0">
             <p className="text-sm font-medium text-muted-foreground">
@@ -208,80 +210,16 @@ export function PortfolioOverview({
           </Card>
         </section>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">O que merece atenção</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {hasAttention ? (
-              <ul className="space-y-3">
-                {insights.unvaluedPositions > 0 && (
-                  <AttentionItem>
-                    {insights.unvaluedPositions}{" "}
-                    {insights.unvaluedPositions === 1
-                      ? "posição está"
-                      : "posições estão"}{" "}
-                    sem valor atual informado.
-                  </AttentionItem>
-                )}
-                {insights.provisionalEstimates > 0 && (
-                  <AttentionItem>
-                    {insights.provisionalEstimates}{" "}
-                    {insights.provisionalEstimates === 1
-                      ? "estimativa está"
-                      : "estimativas estão"}{" "}
-                    provisória{insights.provisionalEstimates === 1 ? "" : "s"}.
-                  </AttentionItem>
-                )}
-                {insights.unavailableEstimates > 0 && (
-                  <AttentionItem>
-                    Não foi possível atualizar{" "}
-                    {insights.unavailableEstimates === 1
-                      ? "uma estimativa"
-                      : `${insights.unavailableEstimates} estimativas`}{" "}
-                    de CDB; a tabela mostra o último valor informado.
-                  </AttentionItem>
-                )}
-                {nextMaturity && (
-                  <AttentionItem icon={<CalendarDays className="size-4" />}>
-                    Próximo vencimento informado: {nextMaturity.product}, em{" "}
-                    {date.format(
-                      new Date(`${nextMaturity.maturityAt}T00:00:00Z`),
-                    )}
-                    .
-                  </AttentionItem>
-                )}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Não há valores ausentes ou estimativas pendentes informados na
-                carteira.
-              </p>
-            )}
-            <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">
-              Estes são fatos dos dados registrados; não indicam, por si só,
-              risco ou recomendação.
-            </p>
-          </CardContent>
-        </Card>
+        <PortfolioDiagnostics
+          positionCount={positions.length}
+          insights={insights}
+          classDistribution={classDistribution}
+          classificationStatus={classificationStatus}
+          nextContributionGuidance={nextContributionGuidance}
+          emergencyReserve={emergencyReserve}
+          onReviewClassification={onReviewClassification}
+        />
       </div>
     </div>
-  );
-}
-
-function AttentionItem({
-  children,
-  icon,
-}: {
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <li className="flex items-start gap-2.5 text-sm">
-      <span className="mt-0.5 text-muted-foreground">
-        {icon ?? <CircleAlert className="size-4" />}
-      </span>
-      <span>{children}</span>
-    </li>
   );
 }

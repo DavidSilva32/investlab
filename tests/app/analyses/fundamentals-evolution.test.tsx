@@ -76,7 +76,20 @@ vi.mock("@/components/ui/chart", () => ({
 }));
 
 vi.mock("recharts", () => ({
-  Bar: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Bar: ({
+    children,
+    isAnimationActive,
+  }: {
+    children: React.ReactNode;
+    isAnimationActive: boolean;
+  }) => (
+    <div
+      data-testid="fundamental-bar"
+      data-animation={String(isAnimationActive)}
+    >
+      {children}
+    </div>
+  ),
   Cell: ({ fillOpacity }: { fillOpacity?: number }) => (
     <span data-testid="bar-cell-opacity" data-opacity={fillOpacity} />
   ),
@@ -183,6 +196,40 @@ describe("FundamentalsEvolution", () => {
       equity: "26000",
     },
   ];
+
+  it("animates only multiple real values and honors reduced motion", () => {
+    const media = {
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => media),
+    );
+    const { rerender } = render(
+      <FundamentalsEvolution periods={annualPeriods()} />,
+    );
+    expect(
+      screen
+        .getAllByTestId("fundamental-bar")
+        .every((bar) => bar.dataset.animation === "true"),
+    ).toBe(true);
+    rerender(<FundamentalsEvolution periods={annualPeriods().slice(0, 1)} />);
+    expect(
+      screen
+        .getAllByTestId("fundamental-bar")
+        .every((bar) => bar.dataset.animation === "false"),
+    ).toBe(true);
+    media.matches = true;
+    rerender(<FundamentalsEvolution periods={annualPeriods()} />);
+    expect(
+      screen
+        .getAllByTestId("fundamental-bar")
+        .every((bar) => bar.dataset.animation === "false"),
+    ).toBe(true);
+    vi.unstubAllGlobals();
+  });
 
   it("shows five complete aligned years, uses one balance per year, and labels the partial year simply", () => {
     const { container } = render(<FundamentalsEvolution periods={periods()} />);

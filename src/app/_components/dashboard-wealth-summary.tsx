@@ -33,7 +33,7 @@ export function DashboardWealthSummary({
 
   return (
     <section aria-labelledby="dashboard-where-am-i">
-      <Card className="overflow-hidden shadow-sm">
+      <Card className="motion-content-reveal overflow-hidden shadow-sm">
         <CardContent className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(10rem,0.7fr)_minmax(12rem,0.8fr)] lg:items-center">
           <div className="min-w-0">
             <h2 id="dashboard-where-am-i" className="text-lg font-semibold">

@@ -358,7 +358,7 @@ function PreviewItem({
     );
 
   return (
-    <Card className="overflow-hidden shadow-sm">
+    <Card className="motion-content-reveal overflow-hidden shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between gap-3 border-b bg-muted/20 p-4 sm:p-5">
         <div className="min-w-0">
           <CardTitle className="truncate text-base">{item.file.name}</CardTitle>
@@ -445,7 +445,7 @@ function PositionPreview({
   );
 
   return (
-    <Card className="overflow-hidden shadow-sm">
+    <Card className="motion-content-reveal overflow-hidden shadow-sm">
       <CardHeader className="gap-4 border-b bg-muted/20 p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">

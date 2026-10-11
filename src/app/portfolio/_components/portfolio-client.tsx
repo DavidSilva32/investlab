@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, List, Target } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/sheet";
 import { PortfolioAllocation } from "@/app/portfolio/_components/portfolio-allocation";
 import { MonthlyPortfolioReview } from "@/app/portfolio/_components/monthly-portfolio-review";
+import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 import type { PortfolioInsights } from "@/lib/portfolio-insights";
 import type { PortfolioConcentration } from "@/lib/portfolio-concentration";
@@ -39,6 +40,7 @@ type Overview = {
   movements: Parameters<typeof MovementDetails>[0]["movements"];
   referenceRates: Parameters<typeof ReferenceRates>[0]["rates"];
   nextContributionGuidance: ContributionGuidance;
+  emergencyReserve?: EmergencyReserveCalculation;
 };
 
 const loadErrorMessage = "Não foi possível carregar a carteira.";
@@ -46,11 +48,13 @@ const loadErrorMessage = "Não foi possível carregar a carteira.";
 export function PortfolioClient({
   activeView,
   initialObjectivesOpen = false,
+  initialClassificationOpen = false,
   initialObjectiveId = null,
   initialObjectiveScreen = null,
 }: {
   activeView: PortfolioView;
   initialObjectivesOpen?: boolean;
+  initialClassificationOpen?: boolean;
   initialObjectiveId?: string | null;
   initialObjectiveScreen?: string | null;
 }) {
@@ -76,6 +80,10 @@ export function PortfolioClient({
     }
     return { status: "loading" as const };
   }, [allocationQuery.data, allocationQuery.isError]);
+  const [classificationOpen, setClassificationOpen] = useState(
+    initialClassificationOpen,
+  );
+  const classificationFocusReturnRef = useRef<HTMLElement | null>(null);
   const [objectivesRoute, setObjectivesRoute] = useState({
     open: initialObjectivesOpen,
     objectiveId: initialObjectiveId,
@@ -91,6 +99,7 @@ export function PortfolioClient({
   useEffect(() => {
     const syncFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
+      setClassificationOpen(params.get("panel") === "classification");
       setObjectivesRoute({
         open: params.get("panel") === "objectives",
         objectiveId: params.get("objective"),
@@ -125,6 +134,19 @@ export function PortfolioClient({
     [],
   );
 
+  const writeClassificationRoute = useCallback((open: boolean) => {
+    const params = new URLSearchParams(window.location.search);
+    if (open) params.set("panel", "classification");
+    else params.delete("panel");
+    const query = params.toString();
+    window.history[open ? "pushState" : "replaceState"](
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+    );
+    setClassificationOpen(open);
+  }, []);
+
   if (overviewQuery.isError && !overview)
     return (
       <div role="alert" className="space-y-3 text-sm text-destructive">
@@ -145,6 +167,12 @@ export function PortfolioClient({
       {activeView === "overview" ? (
         <div className="space-y-5">
           <PortfolioOverview
+            nextContributionGuidance={overview.nextContributionGuidance}
+            emergencyReserve={overview.emergencyReserve}
+            onReviewClassification={(trigger) => {
+              classificationFocusReturnRef.current = trigger;
+              writeClassificationRoute(true);
+            }}
             positions={overview.positions}
             insights={overview.insights}
             classDistribution={
@@ -221,7 +249,10 @@ export function PortfolioClient({
                 </div>
               </SheetContent>
             </Sheet>
-            <Sheet>
+            <Sheet
+              open={classificationOpen}
+              onOpenChange={writeClassificationRoute}
+            >
               <SheetTrigger asChild>
                 <Button
                   type="button"
@@ -242,6 +273,13 @@ export function PortfolioClient({
               </SheetTrigger>
               <SheetContent
                 side="right"
+                onCloseAutoFocus={(event) => {
+                  if (classificationFocusReturnRef.current) {
+                    event.preventDefault();
+                    classificationFocusReturnRef.current.focus();
+                    classificationFocusReturnRef.current = null;
+                  }
+                }}
                 className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden p-4 sm:max-w-5xl sm:p-6"
               >
                 <SheetHeader className="mb-5 shrink-0 pr-8">
