@@ -246,6 +246,27 @@
       "when": 1791685110742,
       "tag": "0034_sloppy_newton_destine",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791770280636,
+      "tag": "0035_old_harpoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791775586211,
+      "tag": "0036_lame_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791778363844,
+      "tag": "0037_complex_matthew_murdock",
+      "breakpoints": true
     }
   ]
 }

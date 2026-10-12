@@ -4,6 +4,7 @@ import { activeReconciliationLinks } from "@/backend/services/position-reconcili
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
 import {
+  manualPortfolioAdjustmentEvents,
   manualPortfolioPositionSnapshots,
   manualPortfolioPositions,
   portfolioAssetClassifications,
@@ -209,6 +210,12 @@ export class ManualPortfolioPositionRepository {
             409,
           );
         }
+        const hasEconomicChange =
+          input.quantity !== previous.quantity ||
+          input.unitPrice !== previous.unitPrice ||
+          input.totalValue !== previous.totalValue ||
+          input.currency !== previous.currency ||
+          input.convertedValueBrl !== previous.convertedValueBrl;
         await this.recordSnapshot(
           transaction,
           previous,
@@ -230,6 +237,30 @@ export class ManualPortfolioPositionRepository {
           "ACTIVE",
           position.updatedAt,
         );
+        if (hasEconomicChange) {
+          await transaction.insert(manualPortfolioAdjustmentEvents).values({
+            assetKey: position.assetKey,
+            eventType: "NEUTRAL_ADJUSTMENT",
+            previousQuantity: previous.quantity,
+            quantity: position.quantity,
+            previousUnitPrice: previous.unitPrice,
+            unitPrice: position.unitPrice,
+            previousTotalValue: previous.totalValue,
+            totalValue: position.totalValue,
+            previousCurrency: previous.currency,
+            currency: position.currency,
+            previousValueBasis: previous.valueBasis,
+            valueBasis: position.valueBasis,
+            previousPositionDate: previous.positionDate,
+            positionDate: position.positionDate,
+            previousConvertedValueBrl: previous.convertedValueBrl,
+            convertedValueBrl: position.convertedValueBrl,
+            previousConversionDate: previous.conversionDate,
+            conversionDate: position.conversionDate,
+            recordedAt: position.updatedAt,
+            requestId: requestId ?? null,
+          });
+        }
         if (classification) {
           await transaction
             .insert(portfolioAssetClassifications)
