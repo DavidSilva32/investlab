@@ -65,6 +65,89 @@ describe("ObjectiveProjectionService", () => {
     expect(result.contributionTiming).toBe("end_of_month");
   });
 
+  it("stops at the first completion month and caps the final contribution", () => {
+    const result = service.simulate(
+      input({
+        startingAmount: 1_000,
+        targetAmount: 1_250,
+        horizonYears: 10,
+        monthlyContribution: 200,
+      }),
+    );
+
+    expect(result.targetReachedMonth).toBe(2);
+    expect(result.projectedNominalAmount).toBe(1_250);
+    expect(result.totalInvestedAmount).toBe(1_250);
+    expect(result.points).toHaveLength(2);
+    expect(result.points[1]).toMatchObject({
+      year: 2 / 12,
+      investedAmount: 1_250,
+      nominalAmount: 1_250,
+    });
+  });
+
+  it("stops with no contribution when growth alone reaches the goal", () => {
+    const result = service.simulate(
+      input({
+        startingAmount: 990,
+        targetAmount: 1_000,
+        monthlyContribution: 0,
+        annualReturnPercent: 12,
+      }),
+    );
+
+    expect(result.targetReachedMonth).toBe(2);
+    expect(result.projectedNominalAmount).toBeGreaterThan(1_000);
+    expect(result.projectedNominalAmount).toBeCloseTo(1_008.88, 2);
+    expect(result.totalInvestedAmount).toBe(990);
+  });
+
+  it("marks a goal already covered by the initial balance at month zero", () => {
+    const result = service.simulate(
+      input({ startingAmount: 1_200, targetAmount: 1_000 }),
+    );
+
+    expect(result.targetReachedMonth).toBe(0);
+    expect(result.points).toHaveLength(1);
+    expect(result.totalInvestedAmount).toBe(1_200);
+  });
+
+  it("inflates a present purchasing-power goal month by month", () => {
+    const result = service.simulate(
+      input({
+        targetBasis: "today_purchasing_power",
+        startingAmount: 900,
+        targetAmount: 1_000,
+        horizonYears: 1,
+        monthlyContribution: 20,
+        annualInflationPercent: 12,
+      }),
+    );
+
+    expect(result.targetReachedMonth).toBe(10);
+    expect(result.points.at(-1)).toMatchObject({
+      year: 10 / 12,
+      nominalAmount: 1_099.04,
+      nominalTargetAmount: 1_099.04,
+      realTargetAmount: 1_000,
+    });
+    expect(result.projectedPurchasingPowerAmount).toBe(1_000);
+  });
+
+  it("keeps an unreached project_balance scenario through the full horizon", () => {
+    const result = service.simulate(
+      input({
+        startingAmount: 0,
+        targetAmount: 5_000,
+        monthlyContribution: 100,
+      }),
+    );
+
+    expect(result.targetReachedMonth).toBeNull();
+    expect(result.points).toHaveLength(2);
+    expect(result.points.at(-1)?.year).toBe(1);
+  });
+
   it("finds the monthly contribution needed for a future nominal target", () => {
     const result = service.simulate(
       input({
@@ -75,6 +158,7 @@ describe("ObjectiveProjectionService", () => {
     );
 
     expect(result.requiredMonthlyContribution).toBe(25);
+    expect(result.targetReachedMonth).toBeNull();
     expect(result.projectedNominalAmount).toBe(1_300);
     expect(result.projectedPurchasingPowerAmount).toBe(1_300);
     expect(result.totalInvestedAmount).toBe(1_300);

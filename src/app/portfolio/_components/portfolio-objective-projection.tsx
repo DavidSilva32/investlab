@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -40,6 +41,10 @@ type Props = {
   objective: PortfolioObjective | null;
   startingBalance:
     import("@/lib/portfolio-projection-balance").DatedProjectionBalance | null;
+  startingBalanceLoading?: boolean;
+  startingBalanceError?: string | null;
+  onRetryStartingBalance?: () => void;
+  scenarioLabel?: string;
 };
 
 const maximumProjectionAmount = 1_000_000_000_000;
@@ -63,7 +68,7 @@ const chartConfig = {
     color: "var(--chart-category-1)",
   },
   purchasingPowerAmount: {
-    label: "Poder de compra de hoje",
+    label: "Patrimônio real",
     color: "var(--chart-category-4)",
   },
   nominalTargetAmount: {
@@ -128,7 +133,68 @@ function rateSliderRange(value: string) {
 }
 
 export function formatProjectionYearLabel(year: unknown) {
-  return `Ano ${year}`;
+  const numericYear = Number(year);
+  if (!Number.isFinite(numericYear) || numericYear <= 0) return "Início";
+  const months = Math.round(numericYear * 12);
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  if (years === 0) return `${months} ${months === 1 ? "mês" : "meses"}`;
+  if (remainingMonths === 0) return `${years} ${years === 1 ? "ano" : "anos"}`;
+  return `${years} ${years === 1 ? "ano" : "anos"} e ${remainingMonths} ${remainingMonths === 1 ? "mês" : "meses"}`;
+}
+
+export function formatProjectionTooltipLabel(year: unknown) {
+  const numericYear = Number(year);
+  if (!Number.isFinite(numericYear) || numericYear <= 0) return "Saldo inicial";
+  return `Após ${formatProjectionYearLabel(numericYear)}`;
+}
+
+export function formatProjectionAxisTimeLabel(year: unknown) {
+  const numericYear = Number(year);
+  if (!Number.isFinite(numericYear) || numericYear <= 0) return "0";
+  const months = Math.round(numericYear * 12);
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  if (years === 0) return `${months}m`;
+  if (remainingMonths === 0) return `${years}a`;
+  return `${years}a ${remainingMonths}m`;
+}
+
+export function getProjectionAxisTicks(
+  points: ObjectiveProjectionResult["points"],
+) {
+  const maximumTicks = 6;
+  const lastPoint = points.at(-1);
+  if (!lastPoint) return [];
+
+  const durationMonths = Math.round(lastPoint.year * 12);
+  if (durationMonths <= 12) {
+    return Array.from({ length: durationMonths + 1 }, (_, month) => month / 12);
+  }
+
+  const annualStride = Math.max(
+    1,
+    Math.ceil(durationMonths / 12 / (maximumTicks - 1)),
+  );
+  const ticks = points
+    .filter((point) => {
+      const month = Math.round(point.year * 12);
+      return (
+        month === 0 ||
+        month === durationMonths ||
+        (durationMonths - month > 2 &&
+          month % 12 === 0 &&
+          (month / 12) % annualStride === 0)
+      );
+    })
+    .map((point) => point.year);
+  return ticks;
+}
+
+export function formatProjectionCompletion(month: number | null) {
+  if (month === null) return "Meta não alcançada no prazo escolhido.";
+  if (month === 0) return "Meta já alcançada.";
+  return `Meta alcançada em ${formatProjectionYearLabel(month / 12)}.`;
 }
 
 export function formatProjectionCurrency(value: unknown) {
@@ -143,6 +209,10 @@ export function getProjectionCalculationFailureMessage(error: unknown) {
 export function PortfolioObjectiveProjection({
   objective,
   startingBalance,
+  startingBalanceLoading = false,
+  startingBalanceError = null,
+  onRetryStartingBalance,
+  scenarioLabel,
 }: Props) {
   const reducedMotion = useReducedMotion();
   const [mode, setMode] = useState("project_balance");
@@ -280,9 +350,9 @@ export function PortfolioObjectiveProjection({
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <Calculator aria-hidden="true" className="size-4 text-primary" />
-              {objective ? `Planejar ${objective.name}` : "Planejar patrimônio"}
+              {`Planejar ${objective?.name ?? scenarioLabel ?? "patrimônio"}`}
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               Ajuste os valores e veja a projeção mudar.
@@ -292,7 +362,16 @@ export function PortfolioObjectiveProjection({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        {startingBalance ? (
+        {startingBalanceLoading ? (
+          <div
+            className="space-y-2"
+            role="status"
+            aria-label="Carregando saldo inicial"
+          >
+            <Skeleton className="h-4 w-64 max-w-full" />
+            <Skeleton className="h-3 w-80 max-w-full" />
+          </div>
+        ) : startingBalance ? (
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
               {startingBalance.source === "objective"
@@ -318,6 +397,23 @@ export function PortfolioObjectiveProjection({
                   ou sem data-base única.
                 </p>
               )}
+          </div>
+        ) : startingBalanceError ? (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 p-3"
+          >
+            <p className="text-sm text-destructive">{startingBalanceError}</p>
+            {onRetryStartingBalance && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onRetryStartingBalance}
+              >
+                Tentar novamente
+              </Button>
+            )}
           </div>
         ) : (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
@@ -407,30 +503,38 @@ export function PortfolioObjectiveProjection({
             }}
             onSlide={(value) => updateInput(setAnnualReturnPercent, value)}
           />
-          <RangeField
-            label="Saldo inicial"
-            id="projection-starting-amount"
-            value={startingAmount}
-            min={0}
-            max={maximumProjectionAmount}
-            sliderMin={0}
-            sliderMax={startingSliderMax}
-            sliderStep={getCurrencySliderStep(startingSliderMax)}
-            currency
-            placeholder="Saldo atual"
-            sliderDisabled={!startingAmount}
-            error={displayableProjectionErrors.startingAmount}
-            onChange={(value) => {
-              updateInput(setStartingAmount, value);
-              setStartingSliderMax(
-                Math.min(
-                  maximumProjectionAmount,
-                  Math.max(1, (parseProjectionNumber(value) ?? 0) * 2),
-                ),
-              );
-            }}
-            onSlide={(value) => updateInput(setStartingAmount, value)}
-          />
+          {startingBalanceLoading ? (
+            <div className="space-y-2" aria-hidden="true">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-2 w-full rounded-full" />
+            </div>
+          ) : (
+            <RangeField
+              label="Saldo inicial"
+              id="projection-starting-amount"
+              value={startingAmount}
+              min={0}
+              max={maximumProjectionAmount}
+              sliderMin={0}
+              sliderMax={startingSliderMax}
+              sliderStep={getCurrencySliderStep(startingSliderMax)}
+              currency
+              placeholder="Saldo atual"
+              sliderDisabled={!startingAmount}
+              error={displayableProjectionErrors.startingAmount}
+              onChange={(value) => {
+                updateInput(setStartingAmount, value);
+                setStartingSliderMax(
+                  Math.min(
+                    maximumProjectionAmount,
+                    Math.max(1, (parseProjectionNumber(value) ?? 0) * 2),
+                  ),
+                );
+              }}
+              onSlide={(value) => updateInput(setStartingAmount, value)}
+            />
+          )}
           <RangeField
             label="Inflação anual (%)"
             id="projection-inflation"
@@ -547,7 +651,17 @@ export function PortfolioObjectiveProjection({
           </p>
         )}
 
-        {result ? (
+        {startingBalanceLoading ? (
+          <div
+            className="grid gap-3 sm:grid-cols-2"
+            role="status"
+            aria-label="Carregando projeção"
+          >
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-56 w-full sm:col-span-2" />
+          </div>
+        ) : result ? (
           <ProjectionResult result={result} reducedMotion={reducedMotion} />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -737,21 +851,29 @@ function ProjectionResult({
         )}
       </div>
       <div>
+        {result.mode === "project_balance" && (
+          <p
+            className="mb-3 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm font-medium text-foreground"
+            role="status"
+          >
+            {formatProjectionCompletion(result.targetReachedMonth)}
+          </p>
+        )}
         <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-[var(--chart-category-1)]" />
+            <span className="size-2 rounded-full bg-chart-category-1" />
             Patrimônio nominal
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-[var(--chart-category-4)]" />
+            <span className="size-2 rounded-full bg-chart-category-4" />
             Patrimônio real
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-0 w-3 border-t border-dashed border-[var(--chart-category-2)]" />
+            <span className="h-0 w-3 border-t border-dashed border-chart-category-2" />
             Meta nominal
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-0 w-3 border-t border-dashed border-[var(--chart-category-3)]" />
+            <span className="h-0 w-3 border-t border-dashed border-chart-category-3" />
             Meta real
           </span>
         </div>
@@ -806,10 +928,15 @@ function ProjectionResult({
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="year"
+              type="number"
+              domain={[0, "dataMax"]}
+              ticks={getProjectionAxisTicks(result.points)}
+              interval="preserveStartEnd"
+              minTickGap={0}
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              tickFormatter={(year: number) => `${year}a`}
+              tickFormatter={formatProjectionAxisTimeLabel}
             />
             <YAxis
               tickLine={false}
@@ -820,8 +947,8 @@ function ProjectionResult({
             <ChartTooltip
               content={
                 <ChartTooltipContent
-                  labelFormatter={formatProjectionYearLabel}
-                  formatter={formatProjectionCurrency}
+                  labelFormatter={formatProjectionTooltipLabel}
+                  valueFormatter={formatProjectionCurrency}
                 />
               }
             />

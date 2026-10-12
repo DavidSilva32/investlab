@@ -111,6 +111,7 @@ const ChartTooltipContent = React.forwardRef<
       indicator?: "line" | "dot" | "dashed";
       nameKey?: string;
       labelKey?: string;
+      valueFormatter?: (value: unknown) => React.ReactNode;
     }
 >(
   (
@@ -128,6 +129,7 @@ const ChartTooltipContent = React.forwardRef<
       color,
       nameKey,
       labelKey,
+      valueFormatter,
     },
     ref,
   ) => {
@@ -144,7 +146,7 @@ const ChartTooltipContent = React.forwardRef<
       const value =
         !labelKey && typeof label === "string"
           ? config[label as keyof typeof config]?.label || label
-          : itemConfig?.label;
+          : (label ?? itemConfig?.label);
 
       if (labelFormatter) {
         return (
@@ -190,11 +192,13 @@ const ChartTooltipContent = React.forwardRef<
             .map((item, index) => {
               const key = `${nameKey || item.name || item.dataKey || "value"}`;
               const itemConfig = getPayloadConfigFromPayload(config, item, key);
-              const indicatorColor = color || item.payload.fill || item.color;
+              const indicatorColor =
+                color || itemConfig?.color || item.color || item.payload.fill;
 
               return (
                 <div
                   key={item.dataKey}
+                  data-chart-tooltip-row={item.dataKey}
                   className={cn(
                     "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                     indicator === "dot" && "items-center",
@@ -209,20 +213,21 @@ const ChartTooltipContent = React.forwardRef<
                       ) : (
                         !hideIndicator && (
                           <div
-                            className={cn(
-                              "shrink-0 rounded-xs border-[--color-border] bg-[--color-bg]",
-                              {
-                                "h-2.5 w-2.5": indicator === "dot",
-                                "w-1": indicator === "line",
-                                "w-0 border-[1.5px] border-dashed bg-transparent":
-                                  indicator === "dashed",
-                                "my-0.5": nestLabel && indicator === "dashed",
-                              },
-                            )}
+                            data-chart-tooltip-indicator
+                            className={cn("shrink-0 border", {
+                              "h-2.5 w-2.5 rounded-full": indicator === "dot",
+                              "w-1 rounded-xs": indicator === "line",
+                              "w-0 border-[1.5px] border-dashed bg-transparent":
+                                indicator === "dashed",
+                              "my-0.5": nestLabel && indicator === "dashed",
+                            })}
                             style={
                               {
-                                "--color-bg": indicatorColor,
-                                "--color-border": indicatorColor,
+                                backgroundColor:
+                                  indicator === "dashed"
+                                    ? "transparent"
+                                    : indicatorColor,
+                                borderColor: indicatorColor,
                               } as React.CSSProperties
                             }
                           />
@@ -240,9 +245,11 @@ const ChartTooltipContent = React.forwardRef<
                             {itemConfig?.label || item.name}
                           </span>
                         </div>
-                        {item.value && (
+                        {item.value !== undefined && item.value !== null && (
                           <span className="font-mono font-medium tabular-nums text-foreground">
-                            {item.value.toLocaleString()}
+                            {valueFormatter
+                              ? valueFormatter(item.value)
+                              : item.value.toLocaleString()}
                           </span>
                         )}
                       </div>

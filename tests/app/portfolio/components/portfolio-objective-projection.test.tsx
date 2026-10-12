@@ -7,12 +7,16 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatProjectionCurrency,
   formatProjectionAmountInput,
+  formatProjectionTooltipLabel,
   getProjectionCalculationFailureMessage,
+  getProjectionAxisTicks,
   parseProjectionNumber,
+  formatProjectionAxisTimeLabel,
+  formatProjectionCompletion,
   formatProjectionYearLabel,
   PortfolioObjectiveProjection,
 } from "@/app/portfolio/_components/portfolio-objective-projection";
@@ -34,6 +38,17 @@ const objective: PortfolioObjective = {
   assignedAssetKeys: ["asset-1", "asset-2"],
   canEditAssignments: true,
 };
+
+function createMonthlyProjectionPoints(monthCount: number) {
+  return Array.from({ length: monthCount + 1 }, (_, month) => ({
+    year: month / 12,
+    investedAmount: 0,
+    nominalAmount: 0,
+    purchasingPowerAmount: 0,
+    nominalTargetAmount: 0,
+    realTargetAmount: 0,
+  }));
+}
 
 Object.defineProperty(globalThis, "ResizeObserver", {
   configurable: true,
@@ -77,7 +92,61 @@ describe("PortfolioObjectiveProjection", () => {
   afterEach(cleanup);
 
   it("formats chart labels and values for the projection tooltip", () => {
-    expect(formatProjectionYearLabel(10)).toBe("Ano 10");
+    expect(formatProjectionYearLabel(10)).toBe("10 anos");
+    expect(formatProjectionYearLabel(1)).toBe("1 ano");
+    expect(formatProjectionYearLabel(0)).toBe("Início");
+    expect(formatProjectionYearLabel("indefinido")).toBe("Início");
+    expect(formatProjectionYearLabel(1 / 12)).toBe("1 mês");
+    expect(formatProjectionYearLabel(2 / 12)).toBe("2 meses");
+    expect(formatProjectionYearLabel(13 / 12)).toBe("1 ano e 1 mês");
+    expect(formatProjectionYearLabel(14 / 12)).toBe("1 ano e 2 meses");
+    expect(formatProjectionTooltipLabel(0)).toBe("Saldo inicial");
+    expect(formatProjectionTooltipLabel(2 / 12)).toBe("Após 2 meses");
+    expect(formatProjectionAxisTimeLabel(2 / 12)).toBe("2m");
+    expect(formatProjectionAxisTimeLabel(0)).toBe("0");
+    expect(formatProjectionAxisTimeLabel("indefinido")).toBe("0");
+    expect(formatProjectionAxisTimeLabel(14 / 12)).toBe("1a 2m");
+    expect(getProjectionAxisTicks(createMonthlyProjectionPoints(3))).toEqual([
+      0,
+      1 / 12,
+      2 / 12,
+      3 / 12,
+    ]);
+    expect(getProjectionAxisTicks(createMonthlyProjectionPoints(12))).toEqual(
+      Array.from({ length: 13 }, (_, month) => month / 12),
+    );
+    expect(getProjectionAxisTicks(createMonthlyProjectionPoints(13))).toEqual([
+      0,
+      13 / 12,
+    ]);
+    expect(getProjectionAxisTicks([])).toEqual([]);
+    expect(getProjectionAxisTicks(createMonthlyProjectionPoints(14))).toEqual([
+      0,
+      14 / 12,
+    ]);
+    const fiveYearTicks = getProjectionAxisTicks(
+      createMonthlyProjectionPoints(60),
+    );
+    expect(fiveYearTicks).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(fiveYearTicks.map(formatProjectionAxisTimeLabel)).toEqual([
+      "0",
+      "1a",
+      "2a",
+      "3a",
+      "4a",
+      "5a",
+    ]);
+    const longHorizonTicks = getProjectionAxisTicks(
+      createMonthlyProjectionPoints(1200),
+    );
+    expect(longHorizonTicks).toEqual([0, 20, 40, 60, 80, 100]);
+    expect(longHorizonTicks).toHaveLength(6);
+    expect(longHorizonTicks.at(-1)).toBe(100);
+    expect(formatProjectionCompletion(2)).toBe("Meta alcançada em 2 meses.");
+    expect(formatProjectionCompletion(0)).toBe("Meta já alcançada.");
+    expect(formatProjectionCompletion(null)).toBe(
+      "Meta não alcançada no prazo escolhido.",
+    );
     expect(formatProjectionCurrency(1250)).toBe("R$ 1.250,00");
     expect(parseProjectionNumber("Infinity")).toBeNull();
     expect(parseProjectionNumber("R$ 1.234,56")).toBe(1234.56);
@@ -242,6 +311,82 @@ describe("PortfolioObjectiveProjection", () => {
     });
   }, 15_000);
 
+  it("keeps the planning form visible while the starting balance and results load", () => {
+    render(
+      <PortfolioObjectiveProjection
+        objective={objective}
+        startingBalance={null}
+        startingBalanceLoading
+      />,
+    );
+
+    expect(
+      screen.getByRole("status", { name: "Carregando saldo inicial" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("status", { name: "Carregando projeção" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Meta")).toBeTruthy();
+    expect(screen.getByLabelText("Prazo em anos")).toBeTruthy();
+    expect(screen.getByLabelText("Rendimento anual (%)")).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "Resultado da simulação" }),
+    ).toBeNull();
+  });
+
+  it("shows a localized balance error and retries the source on request", async () => {
+    const user = userEvent.setup();
+    const onRetryStartingBalance = vi.fn();
+    render(
+      <PortfolioObjectiveProjection
+        objective={objective}
+        startingBalance={null}
+        startingBalanceError="Falha ao carregar o saldo."
+        onRetryStartingBalance={onRetryStartingBalance}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Falha ao carregar o saldo.",
+    );
+    expect(screen.getByLabelText("Meta")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(onRetryStartingBalance).toHaveBeenCalledOnce();
+  });
+
+  it("shows the early completion month and ends the projection at the goal", async () => {
+    const { container } = render(
+      <PortfolioObjectiveProjection
+        objective={{ ...objective, targetAmount: 16_000 }}
+        startingBalance={{
+          amount: 12_335.83,
+          referenceDate: "2026-10-01",
+          source: "portfolio",
+          completeness: "complete",
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Aporte mensal"), {
+      target: { value: "2000" },
+    });
+
+    expect(screen.getByRole("status").textContent).toBe(
+      "Meta alcançada em 2 meses.",
+    );
+    expect(
+      [
+        ...container.querySelectorAll(
+          ".recharts-xAxis .recharts-cartesian-axis-tick-value",
+        ),
+      ].map((tick) => tick.textContent),
+    ).toEqual(["0", "1m", "2m"]);
+    expect(
+      screen.getByRole("region", { name: "Resultado da simulação" })
+        .textContent,
+    ).toContain("Patrimônio nominal projetado");
+  });
+
   it("asks for a starting balance instead of treating missing data as zero", () => {
     render(
       <PortfolioObjectiveProjection
@@ -285,6 +430,9 @@ describe("PortfolioObjectiveProjection", () => {
     const user = userEvent.setup();
     render(
       <PortfolioObjectiveProjection objective={null} startingBalance={null} />,
+    );
+    expect(screen.getByText("Planejar patrimônio").className).toContain(
+      "text-lg",
     );
     expect((screen.getByLabelText("Meta") as HTMLInputElement).value).toBe(
       "1.000.000,00",

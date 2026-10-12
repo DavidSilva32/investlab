@@ -22,6 +22,9 @@ vi.mock("@/app/portfolio/_components/portfolio-objective-projection", () => ({
   PortfolioObjectiveProjection: ({
     objective,
     startingBalance,
+    startingBalanceLoading,
+    startingBalanceError,
+    onRetryStartingBalance,
   }: {
     objective: { name: string } | null;
     startingBalance: {
@@ -29,14 +32,45 @@ vi.mock("@/app/portfolio/_components/portfolio-objective-projection", () => ({
       source: string;
       completeness: string;
     } | null;
+    startingBalanceLoading?: boolean;
+    startingBalanceError?: string | null;
+    onRetryStartingBalance?: () => void;
   }) => (
-    <div>
+    <div aria-label="Formulário de planejamento">
       {objective?.name ?? "Patrimônio total"} ·{" "}
       {startingBalance?.source ?? "sem saldo"} · {startingBalance?.amount ?? 0}{" "}
       · {startingBalance?.completeness ?? ""}
+      {startingBalanceLoading && (
+        <div role="status" aria-label="Carregando saldo e projeção" />
+      )}
+      {startingBalanceError && (
+        <div role="alert">
+          {startingBalanceError}
+          <button type="button" onClick={onRetryStartingBalance}>
+            Tentar novamente
+          </button>
+        </div>
+      )}
     </div>
   ),
 }));
+
+Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+  configurable: true,
+  value: () => false,
+});
+Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+  configurable: true,
+  value: () => undefined,
+});
+Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+  configurable: true,
+  value: () => undefined,
+});
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: () => undefined,
+});
 
 import { PlanningSimulator } from "@/app/planning/_components/planning-simulator";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
@@ -185,7 +219,7 @@ describe("PlanningSimulator", () => {
     );
   });
 
-  it("shows a retry action when the objective and portfolio data cannot load", () => {
+  it("keeps portfolio planning visible when objective options fail to load", async () => {
     setQuery({
       isError: true,
       error: new Error("Falha segura"),
@@ -193,18 +227,128 @@ describe("PlanningSimulator", () => {
     });
     render(<PlanningSimulator initialObjectiveId={null} />);
     expect(screen.getByRole("alert").textContent).toContain("Falha segura");
+    expect(screen.getByRole("combobox")).toBeTruthy();
+    expect(screen.getByLabelText("Formulário de planejamento")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Tentar novamente" }),
+      screen.getByText("Patrimônio total · portfolio · 1200 · complete"),
     ).toBeTruthy();
+    const user = userEvent.setup();
+    expect(
+      screen.getByRole("button", { name: "Recarregar objetivos" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Recarregar objetivos" }),
+    );
+    expect(state.queries.objectives.refetch).toHaveBeenCalledOnce();
   });
 
-  it("shows a loading state while the data request is pending", () => {
+  it("keeps the form visible while portfolio balance and results are loading", () => {
     setQuery({ isPending: true, data: undefined });
+    state.queries.overview = {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    };
     render(<PlanningSimulator initialObjectiveId={null} />);
 
     expect(
-      screen.getByRole("status", { name: "Carregando dados do planejamento" }),
+      screen.getByRole("status", { name: "Carregando saldo e projeção" }),
     ).toBeTruthy();
+    expect(screen.getByRole("combobox")).toBeTruthy();
+    expect(screen.getByLabelText("Formulário de planejamento")).toBeTruthy();
+    expect(
+      screen.getByRole("status", { name: "Carregando objetivos" }),
+    ).toBeTruthy();
+  });
+
+  it("shows the ready portfolio projection while objective choices are loading", () => {
+    setQuery({ isPending: true, data: undefined });
+    render(<PlanningSimulator initialObjectiveId={null} />);
+
+    expect(screen.getByRole("combobox")).toBeTruthy();
+    expect(
+      screen.getByRole("status", { name: "Carregando objetivos" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Formulário de planejamento")).toBeTruthy();
+    expect(
+      screen.getByText("Patrimônio total · portfolio · 1200 · complete"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("status", { name: "Carregando saldo e projeção" }),
+    ).toBeNull();
+  });
+
+  it("keeps objective options and form visible while portfolio balance loads", () => {
+    setQuery();
+    state.queries.overview = {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    render(<PlanningSimulator initialObjectiveId={null} />);
+
+    expect(screen.getByRole("combobox")).toBeTruthy();
+    expect(screen.getByLabelText("Formulário de planejamento")).toBeTruthy();
+    expect(
+      screen.getByRole("status", { name: "Carregando saldo e projeção" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("status", { name: "Carregando objetivos" }),
+    ).toBeNull();
+  });
+
+  it("shows a loading option for a selected objective while options are pending", async () => {
+    setQuery({ data: undefined, isPending: true });
+    const user = userEvent.setup();
+    render(<PlanningSimulator initialObjectiveId="goal-a" />);
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Base da simulação" }),
+    );
+    expect(screen.getAllByText("Carregando objetivos…")).toHaveLength(2);
+  });
+
+  it("shows a localized portfolio error and retries only that data source", async () => {
+    setQuery();
+    const refetch = vi.fn();
+    state.queries.overview = {
+      data: undefined,
+      isPending: false,
+      isError: true,
+      error: new Error("Falha do saldo"),
+      refetch,
+    };
+    const user = userEvent.setup();
+    render(<PlanningSimulator initialObjectiveId={null} />);
+
+    expect(screen.getByRole("alert").textContent).toContain("Falha do saldo");
+    expect(screen.getByRole("combobox")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(refetch).toHaveBeenCalledOnce();
+    expect(state.queries.objectives.refetch).not.toHaveBeenCalled();
+  });
+
+  it("retries failed objective data from an objective planning selection", async () => {
+    setQuery({
+      data: undefined,
+      isPending: false,
+      isError: true,
+      error: new Error("Falha do objetivo"),
+    });
+    const user = userEvent.setup();
+    render(<PlanningSimulator initialObjectiveId="goal-a" />);
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Falha do objetivo",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Recarregar objetivos" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(state.queries.objectives.refetch).toHaveBeenCalledOnce();
+    expect(state.queries.overview.refetch).not.toHaveBeenCalled();
   });
 
   it("loads objective data from the portfolio endpoint", async () => {
@@ -252,7 +396,9 @@ describe("PlanningSimulator", () => {
     const user = userEvent.setup();
     render(<PlanningSimulator initialObjectiveId={null} />);
 
-    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await user.click(
+      screen.getByRole("button", { name: "Recarregar objetivos" }),
+    );
 
     expect(refetch).toHaveBeenCalledOnce();
   });
@@ -269,7 +415,9 @@ describe("PlanningSimulator", () => {
     const user = userEvent.setup();
     render(<PlanningSimulator initialObjectiveId="goal-a" />);
 
-    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await user.click(
+      screen.getByRole("button", { name: "Recarregar objetivos" }),
+    );
 
     expect(objectivesRefetch).toHaveBeenCalledOnce();
     expect(overviewRefetch).not.toHaveBeenCalled();
