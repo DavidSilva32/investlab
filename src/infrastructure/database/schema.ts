@@ -1,6 +1,7 @@
 import { and, eq, lt, sql } from "drizzle-orm";
 import {
   boolean,
+  bigserial,
   check,
   date,
   index,
@@ -171,6 +172,45 @@ export const manualPortfolioPositionSnapshots = pgTable(
     ),
   ],
 );
+export const manualPortfolioAdjustmentEvents = pgTable(
+  "manual_portfolio_adjustment_events",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    assetKey: varchar({ length: 64 }).notNull(),
+    eventType: varchar({ length: 32 })
+      .$type<"NEUTRAL_ADJUSTMENT">()
+      .notNull()
+      .default("NEUTRAL_ADJUSTMENT"),
+    previousQuantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    previousUnitPrice: numeric({ precision: 24, scale: 8 }),
+    unitPrice: numeric({ precision: 24, scale: 8 }),
+    previousTotalValue: numeric({ precision: 24, scale: 8 }).notNull(),
+    totalValue: numeric({ precision: 24, scale: 8 }).notNull(),
+    previousCurrency: varchar({ length: 3 }).notNull(),
+    currency: varchar({ length: 3 }).notNull(),
+    previousValueBasis: varchar({ length: 16 }).notNull(),
+    valueBasis: varchar({ length: 16 }).notNull(),
+    previousPositionDate: date().notNull(),
+    positionDate: date().notNull(),
+    previousConvertedValueBrl: numeric({ precision: 24, scale: 8 }),
+    convertedValueBrl: numeric({ precision: 24, scale: 8 }),
+    previousConversionDate: date(),
+    conversionDate: date(),
+    recordedAt: timestamp({ withTimezone: true }).notNull(),
+    requestId: text(),
+  },
+  (table) => [
+    index("manual_portfolio_adjustment_events_asset_recorded_idx").on(
+      table.assetKey,
+      table.recordedAt,
+    ),
+    check(
+      "manual_portfolio_adjustment_events_type_check",
+      sql`${table.eventType} = 'NEUTRAL_ADJUSTMENT'`,
+    ),
+  ],
+);
 export const positionReconciliationEvents = pgTable(
   "position_reconciliation_events",
   {
@@ -329,6 +369,80 @@ export const movementItems = pgTable("movement_items", {
   operationValue: numeric({ precision: 24, scale: 8 }),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+export const manualPortfolioOperations = pgTable(
+  "manual_portfolio_operations",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    idempotencyKey: uuid().notNull().defaultRandom(),
+    side: varchar({ length: 8 }).$type<"BUY" | "SELL">().notNull(),
+    effectiveDate: date().notNull(),
+    product: text().notNull(),
+    assetCode: text(),
+    quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    unitPrice: numeric({ precision: 24, scale: 8 }).notNull(),
+    currency: varchar({ length: 3 }).notNull(),
+    fees: numeric({ precision: 24, scale: 8 }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("manual_portfolio_operations_idempotency_key_unique").on(
+      table.idempotencyKey,
+    ),
+    check(
+      "manual_portfolio_operations_side_check",
+      sql`${table.side} IN ('BUY', 'SELL')`,
+    ),
+    check(
+      "manual_portfolio_operations_quantity_check",
+      sql`${table.quantity} > 0`,
+    ),
+    check(
+      "manual_portfolio_operations_unit_price_check",
+      sql`${table.unitPrice} >= 0`,
+    ),
+    check(
+      "manual_portfolio_operations_fees_check",
+      sql`${table.fees} IS NULL OR ${table.fees} >= 0`,
+    ),
+    index("manual_portfolio_operations_effective_date_idx").on(
+      table.effectiveDate,
+      table.createdAt,
+    ),
+  ],
+);
+export const portfolioOperationReconciliationEvents = pgTable(
+  "portfolio_operation_reconciliation_events",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    eventOrder: bigserial({ mode: "number" }).notNull(),
+    operationId: uuid()
+      .notNull()
+      .references(() => manualPortfolioOperations.id, { onDelete: "restrict" }),
+    movementId: uuid()
+      .notNull()
+      .references(() => movementItems.id, { onDelete: "restrict" }),
+    status: varchar({ length: 8 }).$type<"LINK" | "UNLINK">().notNull(),
+    recordedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    requestId: text().notNull(),
+  },
+  (table) => [
+    uniqueIndex("portfolio_operation_reconciliation_event_order_unique").on(
+      table.eventOrder,
+    ),
+    index("portfolio_operation_reconciliation_operation_recorded_idx").on(
+      table.operationId,
+      table.recordedAt,
+    ),
+    index("portfolio_operation_reconciliation_movement_recorded_idx").on(
+      table.movementId,
+      table.recordedAt,
+    ),
+    check(
+      "portfolio_operation_reconciliation_status_check",
+      sql`${table.status} IN ('LINK', 'UNLINK')`,
+    ),
+  ],
+);
 
 export const stockFundamentals = pgTable("stock_fundamentals", {
   id: uuid().defaultRandom().primaryKey(),

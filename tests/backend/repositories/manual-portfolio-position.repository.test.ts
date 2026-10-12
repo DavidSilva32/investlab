@@ -29,6 +29,7 @@ vi.mock("@/infrastructure/logging/logger", () => ({ logger: database.logger }));
 
 import { ManualPortfolioPositionRepository } from "@/backend/repositories/manual-portfolio-position.repository";
 import {
+  manualPortfolioAdjustmentEvents,
   manualPortfolioPositionSnapshots,
   manualPortfolioPositions,
 } from "@/infrastructure/database/schema";
@@ -116,6 +117,196 @@ describe("ManualPortfolioPositionRepository", () => {
         status: "ACTIVE",
         recordedAt: row.createdAt,
       }),
+    );
+  });
+
+  it.each([
+    ["with a request id", "req"],
+    ["without a request id", undefined],
+  ])(
+    "records a neutral adjustment with previous and new quantity and price $0",
+    async (_description, requestId) => {
+      const updatedAt = new Date("2026-09-21T12:00:00.000Z");
+      const updated = {
+        ...row,
+        quantity: "3",
+        unitPrice: "12",
+        totalValue: "36",
+        updatedAt,
+      };
+      database.query.orderBy.mockResolvedValueOnce([]);
+      database.query.returning.mockResolvedValueOnce([updated]);
+
+      await new ManualPortfolioPositionRepository().update(
+        id,
+        {
+          quantity: "3",
+          unitPrice: "12",
+          totalValue: "36",
+          currency: row.currency,
+          valueBasis: row.valueBasis,
+          positionDate: row.positionDate,
+          convertedValueBrl: row.convertedValueBrl,
+          conversionDate: row.conversionDate,
+          product: row.product,
+          assetCode: row.assetCode,
+          institution: row.institution,
+        },
+        requestId,
+      );
+
+      expect(database.query.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "NEUTRAL_ADJUSTMENT",
+          assetKey: row.assetKey,
+          previousQuantity: row.quantity,
+          quantity: "3",
+          previousUnitPrice: row.unitPrice,
+          unitPrice: "12",
+          previousTotalValue: row.totalValue,
+          totalValue: "36",
+          requestId: requestId ?? null,
+        }),
+      );
+      expect(database.query.insert).toHaveBeenCalledWith(
+        manualPortfolioPositionSnapshots,
+      );
+      expect(database.query.transaction).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not label registration, date, or classification edits as adjustments", async () => {
+    const updated = {
+      ...row,
+      product: "ETF ajustado",
+      positionDate: "2026-09-21",
+    };
+    database.query.orderBy.mockResolvedValueOnce([]);
+    database.query.returning.mockResolvedValueOnce([updated]);
+
+    await new ManualPortfolioPositionRepository().update(
+      id,
+      {
+        quantity: row.quantity,
+        unitPrice: row.unitPrice,
+        totalValue: row.totalValue,
+        currency: row.currency,
+        valueBasis: row.valueBasis,
+        positionDate: "2026-09-21",
+        convertedValueBrl: row.convertedValueBrl,
+        conversionDate: row.conversionDate,
+        product: "ETF ajustado",
+        assetCode: row.assetCode,
+        institution: row.institution,
+      },
+      "req",
+      {
+        assetClass: "Fundos",
+        subClass: "Exterior ETF",
+        geography: "Exterior",
+      },
+    );
+
+    expect(database.query.insert).toHaveBeenCalledTimes(3);
+    expect(database.query.values).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        assetClass: "Fundos",
+        subClass: "Exterior ETF",
+      }),
+    );
+  });
+
+  it("does not create a second adjustment when the same patch is retried", async () => {
+    let currentPosition = { ...row };
+    database.query.limit.mockImplementation(async () => [currentPosition]);
+    database.query.orderBy.mockResolvedValue([]);
+    database.query.set.mockImplementation((values) => {
+      currentPosition = { ...currentPosition, ...values };
+      return database.query;
+    });
+    database.query.returning.mockImplementation((selection) =>
+      Promise.resolve(selection ? [{ id }] : [currentPosition]),
+    );
+
+    const input = {
+      quantity: "3",
+      unitPrice: "12",
+      totalValue: "36",
+      currency: row.currency,
+      valueBasis: row.valueBasis,
+      positionDate: row.positionDate,
+      convertedValueBrl: row.convertedValueBrl,
+      conversionDate: row.conversionDate,
+      product: row.product,
+      assetCode: row.assetCode,
+      institution: row.institution,
+    };
+    const repository = new ManualPortfolioPositionRepository();
+
+    await repository.update(id, input, "req");
+    await repository.update(id, input, "req");
+
+    const adjustmentWrites = database.query.values.mock.calls.filter(
+      ([value]) => value.eventType === "NEUTRAL_ADJUSTMENT",
+    );
+    expect(adjustmentWrites).toHaveLength(1);
+  });
+
+  it("rejects the update when its adjustment event cannot be saved", async () => {
+    const failure = new Error("adjustment event insert failed");
+    database.query.orderBy.mockResolvedValueOnce([]);
+    database.query.insert.mockImplementation((table) => {
+      if (table === manualPortfolioAdjustmentEvents) {
+        return {
+          values: vi.fn().mockRejectedValue(failure),
+        };
+      }
+      return database.query;
+    });
+
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        {
+          quantity: "3",
+          unitPrice: "12",
+          totalValue: "36",
+          currency: row.currency,
+          valueBasis: row.valueBasis,
+          positionDate: row.positionDate,
+          convertedValueBrl: row.convertedValueBrl,
+          conversionDate: row.conversionDate,
+          product: row.product,
+          assetCode: row.assetCode,
+          institution: row.institution,
+        },
+        "req",
+      ),
+    ).rejects.toBe(failure);
+    expect(database.query.transaction).toHaveBeenCalledOnce();
+    expect(database.query.update).toHaveBeenCalledOnce();
+    expect(database.query.insert).toHaveBeenCalledWith(
+      manualPortfolioAdjustmentEvents,
+    );
+  });
+
+  it.each([
+    ["unit price", { unitPrice: "12" }],
+    ["currency", { currency: "EUR" }],
+    ["converted value", { convertedValueBrl: "30" }],
+  ])("records an adjustment when the %s changes", async (_label, change) => {
+    const updated = { ...row, ...change, updatedAt: new Date() };
+    database.query.orderBy.mockResolvedValueOnce([]);
+    database.query.returning.mockResolvedValueOnce([updated]);
+
+    await new ManualPortfolioPositionRepository().update(
+      id,
+      { ...row, ...change },
+      "req",
+    );
+
+    expect(database.query.insert).toHaveBeenCalledWith(
+      manualPortfolioAdjustmentEvents,
     );
   });
 

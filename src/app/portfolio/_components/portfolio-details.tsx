@@ -20,6 +20,7 @@ import { formatCurrencyCents } from "@/lib/portfolio-money";
 import type { PortfolioPosition } from "./portfolio-overview";
 import { CdbRateConfiguration } from "./cdb-rate-configuration";
 import { ManualPositionManager } from "./manual-position-manager";
+import { ManualPortfolioOperations } from "./manual-portfolio-operations";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
@@ -383,38 +384,41 @@ export function MovementDetails({
   movements: PortfolioMovement[];
 }) {
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b bg-muted/10 px-5 py-5 sm:px-6 sm:py-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="min-w-0 space-y-1">
-            <CardTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Movimentações
-            </CardTitle>
-            <CardDescription className="text-base">
-              Histórico registrado da carteira
-            </CardDescription>
-            <p className="pt-1 text-sm text-muted-foreground">
-              {movements.length
-                ? `${movements.length} ${movements.length === 1 ? "movimentação registrada" : "movimentações registradas"}`
-                : "Nenhuma movimentação importada"}
-            </p>
+    <div className="space-y-4">
+      <ManualPortfolioOperations />
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-muted/10 px-5 py-5 sm:px-6 sm:py-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                Movimentações
+              </CardTitle>
+              <CardDescription className="text-base">
+                Histórico registrado da carteira
+              </CardDescription>
+              <p className="pt-1 text-sm text-muted-foreground">
+                {movements.length
+                  ? `${movements.length} ${movements.length === 1 ? "movimentação registrada" : "movimentações registradas"}`
+                  : "Nenhuma movimentação importada"}
+              </p>
+            </div>
+            <div className="shrink-0 [&_button]:border-status-danger/50 [&_button]:bg-status-danger/5 [&_button]:text-status-danger [&_button:hover]:border-status-danger [&_button:hover]:bg-status-danger/10 [&_button:hover]:text-status-danger">
+              <DeleteImportedDataButton
+                documentType="B3_MOVEMENT_XLSX"
+                label="movimentações"
+              />
+            </div>
           </div>
-          <div className="shrink-0 [&_button]:border-status-danger/50 [&_button]:bg-status-danger/5 [&_button]:text-status-danger [&_button:hover]:border-status-danger [&_button:hover]:bg-status-danger/10 [&_button:hover]:text-status-danger">
-            <DeleteImportedDataButton
-              documentType="B3_MOVEMENT_XLSX"
-              label="movimentações"
-            />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        <PortfolioTable
-          columns={movementColumns}
-          rows={movements}
-          initialSort={{ id: "occurredAt", direction: "desc" }}
-          emptyMessage="Importe um arquivo de movimentações da B3 para visualizá-las."
-        />
-      </CardContent>
-    </Card>
+        </CardHeader>
+        <CardContent className="p-0">
+          <PortfolioTable
+            columns={movementColumns}
+            rows={movements}
+            initialSort={{ id: "occurredAt", direction: "desc" }}
+            emptyMessage="Importe um arquivo de movimentações da B3 para visualizá-las."
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 }

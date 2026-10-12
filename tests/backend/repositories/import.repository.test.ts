@@ -10,6 +10,7 @@ vi.mock("@/infrastructure/database/client", () => ({
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
 import { importRepository } from "@/backend/repositories/import.repository";
+import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
 import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
 import {
   portfolioAssetClassifications,
@@ -19,6 +20,7 @@ import {
   positionSnapshots,
   positionItems,
   manualPortfolioPositions,
+  movementItems,
 } from "@/infrastructure/database/schema";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import {
@@ -713,7 +715,7 @@ describe("import repository", () => {
       institution: "Banco A",
       issuer: "Banco A",
       indexer: "CDI",
-      regimeType: "PÃ“S",
+      regimeType: "PÓS",
       issuedAt: "2025-01-01",
       maturityAt: "2027-01-01",
     };
@@ -821,7 +823,7 @@ describe("import repository", () => {
       institution: "Banco A",
       issuer: "Banco A",
       indexer: "CDI",
-      regimeType: "PÃ“S",
+      regimeType: "PÓS",
       issuedAt: "2025-01-01",
       maturityAt: "2027-01-01",
     };
@@ -874,7 +876,7 @@ describe("import repository", () => {
       institution: "Banco A",
       issuer: "Banco A",
       indexer: "CDI",
-      regimeType: "PÃ“S",
+      regimeType: "PÓS",
       issuedAt: "2025-01-01",
       maturityAt: "2027-01-01",
     };
@@ -1279,6 +1281,83 @@ describe("import repository", () => {
     });
   });
 
+  it("preserves the original B3 row and inserts a divergent reimport row as a distinct source", async () => {
+    const insertedMovementRows: unknown[][] = [];
+    let importNumber = 0;
+    const transaction = {
+      insert: vi.fn((table: unknown) =>
+        table === imports
+          ? {
+              values: () => ({
+                returning: async () => [
+                  { id: `movement-import-${++importNumber}` },
+                ],
+              }),
+            }
+          : {
+              values: (rows: unknown[]) => {
+                insertedMovementRows.push(rows);
+                return { onConflictDoNothing: async () => undefined };
+              },
+            },
+      ),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    const base = {
+      direction: "CREDITO" as const,
+      occurredAt: "2026-10-01",
+      movementType: "Compra",
+      product: "Empresa Exemplo - EXMP3",
+      assetCode: "EXMP3",
+      institution: "Corretora",
+      quantity: "2",
+      unitPrice: "10.25",
+      operationValue: "20.50",
+    };
+    const originalMovement = prepareB3MovementForPersistence(base);
+    const changedMovement = prepareB3MovementForPersistence({
+      ...base,
+      unitPrice: "12.00",
+      operationValue: "24.00",
+    });
+    await importRepository.create({
+      fileName: "original.xlsx",
+      fileHash: "a".repeat(64),
+      documentType: "B3_MOVEMENT_XLSX",
+      movements: [originalMovement],
+    });
+    await importRepository.create({
+      fileName: "reimport.xlsx",
+      fileHash: "b".repeat(64),
+      documentType: "B3_MOVEMENT_XLSX",
+      movements: [changedMovement],
+    });
+
+    expect(insertedMovementRows).toEqual([
+      [
+        expect.objectContaining({
+          importId: "movement-import-1",
+          unitPrice: "10.25",
+          eventFingerprint: originalMovement.eventFingerprint,
+        }),
+      ],
+      [
+        expect.objectContaining({
+          importId: "movement-import-2",
+          unitPrice: "12.00",
+          operationValue: "24.00",
+          eventFingerprint: changedMovement.eventFingerprint,
+        }),
+      ],
+    ]);
+    expect(originalMovement.eventFingerprint).not.toBe(
+      changedMovement.eventFingerprint,
+    );
+    expect(transaction.insert).toHaveBeenCalledWith(movementItems);
+  });
+
   it("lists movements and logs movement-query failures", async () => {
     mocks.client.select.mockReturnValue({
       from: () => ({ orderBy: async () => [{ id: "movement-1" }] }),
@@ -1300,9 +1379,17 @@ describe("import repository", () => {
   it("deletes movement imports and their items", async () => {
     const where = vi.fn().mockResolvedValue(undefined);
     const transaction = {
-      select: vi.fn().mockReturnValue({
-        from: () => ({ where: async () => [{ id: "movement-import" }] }),
-      }),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "movement-import" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "movement-row" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => [] }) }),
+        }),
       delete: vi.fn().mockReturnValue({ where }),
     };
     mocks.client.transaction.mockImplementation(
@@ -1313,6 +1400,58 @@ describe("import repository", () => {
       importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
     ).resolves.toBe(1);
     expect(transaction.delete).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves a B3 movement import when any of its rows has reconciliation history", async () => {
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "movement-import" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "movement-row" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({ limit: async () => [{ id: "link-event" }] }),
+          }),
+        }),
+      delete: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+    await expect(
+      importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Preserve o arquivo importado"),
+    });
+    expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes a movement import with no movement rows", async () => {
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: async () => [{ id: "empty-movement-import" }],
+          }),
+        })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+      delete: vi.fn().mockReturnValue({ where: async () => undefined }),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+    await expect(
+      importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
+    ).resolves.toBe(1);
+    expect(transaction.select).toHaveBeenCalledTimes(2);
   });
 
   it("deletes position items, snapshots and imports", async () => {

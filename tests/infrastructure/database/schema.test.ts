@@ -8,6 +8,9 @@ import {
   movementItems,
   portfolioObjectivePositions,
   portfolioObjectives,
+  manualPortfolioAdjustmentEvents,
+  manualPortfolioOperations,
+  portfolioOperationReconciliationEvents,
   positionItems,
   positionSnapshots,
   manualPortfolioPositionSnapshots,
@@ -89,5 +92,67 @@ describe("database schema", () => {
       "conversionDate",
     );
     expect(config.foreignKeys).toHaveLength(0);
+  });
+  it("stores economic changes as explicit neutral manual adjustment events", () => {
+    const config = getTableConfig(manualPortfolioAdjustmentEvents);
+    expect(config.name).toBe("manual_portfolio_adjustment_events");
+    expect(config.foreignKeys).toHaveLength(0);
+    expect(config.indexes.map((index) => index.config.name)).toContain(
+      "manual_portfolio_adjustment_events_asset_recorded_idx",
+    );
+    expect(config.checks.map((constraint) => constraint.name)).toContain(
+      "manual_portfolio_adjustment_events_type_check",
+    );
+    expect(config.columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "eventType",
+        "previousQuantity",
+        "quantity",
+        "previousUnitPrice",
+        "unitPrice",
+        "previousTotalValue",
+        "totalValue",
+      ]),
+    );
+  });
+  it("stores manual buy and sell records with append-only source reconciliation history", () => {
+    const operations = getTableConfig(manualPortfolioOperations);
+    const reconciliations = getTableConfig(
+      portfolioOperationReconciliationEvents,
+    );
+    expect(operations.name).toBe("manual_portfolio_operations");
+    expect(operations.checks.map((constraint) => constraint.name)).toEqual(
+      expect.arrayContaining([
+        "manual_portfolio_operations_side_check",
+        "manual_portfolio_operations_quantity_check",
+        "manual_portfolio_operations_unit_price_check",
+        "manual_portfolio_operations_fees_check",
+      ]),
+    );
+    expect(operations.columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "side",
+        "effectiveDate",
+        "currency",
+        "fees",
+        "idempotencyKey",
+      ]),
+    );
+    expect(reconciliations.name).toBe(
+      "portfolio_operation_reconciliation_events",
+    );
+    expect(reconciliations.foreignKeys).toHaveLength(2);
+    expect(reconciliations.columns.map((column) => column.name)).toContain(
+      "eventOrder",
+    );
+    expect(
+      reconciliations.foreignKeys.map((key) => key.reference().foreignColumns),
+    ).toEqual(
+      expect.arrayContaining([
+        [manualPortfolioOperations.id],
+        [movementItems.id],
+      ]),
+    );
+    expect(reconciliations.checks).toHaveLength(1);
   });
 });

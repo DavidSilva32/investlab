@@ -6,6 +6,7 @@ import { logger } from "@/infrastructure/logging/logger";
 import {
   imports,
   movementItems,
+  portfolioOperationReconciliationEvents,
   positionItems,
   positionSnapshots,
   portfolioObjectivePositions,
@@ -521,6 +522,27 @@ export class ImportRepository {
         const importIds = records.map((record) => record.id);
         if (!importIds.length) return 0;
         if (documentType === "B3_MOVEMENT_XLSX") {
+          const sourceMovements = await transaction
+            .select({ id: movementItems.id })
+            .from(movementItems)
+            .where(inArray(movementItems.importId, importIds));
+          if (sourceMovements.length) {
+            const reconciliations = await transaction
+              .select({ id: portfolioOperationReconciliationEvents.id })
+              .from(portfolioOperationReconciliationEvents)
+              .where(
+                inArray(
+                  portfolioOperationReconciliationEvents.movementId,
+                  sourceMovements.map(({ id }) => id),
+                ),
+              )
+              .limit(1);
+            if (reconciliations.length)
+              throw new ApplicationError(
+                "Este arquivo contém movimentações ligadas ou já conciliadas. Preserve o arquivo importado para manter a origem e o histórico da conciliação.",
+                409,
+              );
+          }
           await transaction
             .delete(movementItems)
             .where(inArray(movementItems.importId, importIds));
