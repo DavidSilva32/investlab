@@ -21,6 +21,8 @@ describe("PlanningPage", () => {
     });
 
     expect(renderToStaticMarkup(element)).toContain("goal-a");
+    expect(renderToStaticMarkup(element)).toContain("w-full space-y-5");
+    expect(renderToStaticMarkup(element)).not.toContain("max-w-5xl");
   });
 
   it("starts without a selected objective when the query string is empty", async () => {

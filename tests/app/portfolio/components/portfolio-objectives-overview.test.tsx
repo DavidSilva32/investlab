@@ -136,6 +136,9 @@ describe("PortfolioObjectivesOverview", () => {
 
     expect(screen.getByText("Conhecido · parcial")).toBeTruthy();
     expect(container.querySelector("[class*='xl:grid-cols-3']")).toBeNull();
+    expect(container.innerHTML).toMatch(
+      /<span class="text-sm font-semibold text-primary tabular-nums">R\$/,
+    );
     expect(screen.getAllByText(/R\$\s*1\.000,00/)).toHaveLength(2);
     const chart = screen.getByRole("img", {
       name: "Gráfico de rosca dos valores conhecidos por destino",

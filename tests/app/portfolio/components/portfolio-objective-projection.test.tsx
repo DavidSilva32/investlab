@@ -102,6 +102,7 @@ describe("PortfolioObjectiveProjection", () => {
           amount: 65_000,
           referenceDate: "2026-10-01",
           source: "portfolio",
+          completeness: "complete",
         }}
       />,
     );
@@ -114,17 +115,17 @@ describe("PortfolioObjectiveProjection", () => {
     expect(screen.queryByText(/O cenário inicial usa 0%/)).toBeNull();
     expect(
       (screen.getByLabelText("Rendimento anual (%)") as HTMLInputElement).value,
-    ).toBe("0");
+    ).toBe("12");
     expect(
       (screen.getByLabelText("Inflação anual (%)") as HTMLInputElement).value,
-    ).toBe("0");
+    ).toBe("5.14");
     expect(
       (screen.getByLabelText("Prazo em anos") as HTMLInputElement).value,
     ).toBe("10");
     expect(
       screen.getByRole("region", { name: "Resultado da simulação" }),
     ).toBeTruthy();
-    expect(screen.getByText(/carteira completa/)).toBeTruthy();
+    expect(screen.getByText(/Patrimônio conhecido/)).toBeTruthy();
     expect(
       screen.getByRole("slider", {
         name: "Saldo inicial, controle deslizante",
@@ -258,7 +259,30 @@ describe("PortfolioObjectiveProjection", () => {
     ).toBeNull();
   });
 
-  it("opens with ten-year neutral assumptions and accepts an explicit zero", () => {
+  it("uses the known wealth as initial balance and explains when it is partial", () => {
+    render(
+      <PortfolioObjectiveProjection
+        objective={null}
+        startingBalance={{
+          amount: 63_171.81,
+          referenceDate: null,
+          source: "portfolio",
+          completeness: "partial",
+        }}
+      />,
+    );
+
+    expect(
+      (screen.getByLabelText("Saldo inicial") as HTMLInputElement).value,
+    ).toBe("63.171,81");
+    expect(screen.getByText(/Patrimônio conhecido \(parcial\)/)).toBeTruthy();
+    expect(
+      screen.getByText(/saldo parcial.*posições sem valor.*data-base única/i),
+    ).toBeTruthy();
+  });
+
+  it("opens with editable scenario assumptions and accepts an explicit zero", async () => {
+    const user = userEvent.setup();
     render(
       <PortfolioObjectiveProjection objective={null} startingBalance={null} />,
     );
@@ -270,16 +294,20 @@ describe("PortfolioObjectiveProjection", () => {
     ).toBe("10");
     expect(
       (screen.getByLabelText("Rendimento anual (%)") as HTMLInputElement).value,
-    ).toBe("0");
+    ).toBe("12");
     expect(
       (screen.getByLabelText("Inflação anual (%)") as HTMLInputElement).value,
-    ).toBe("0");
+    ).toBe("5.14");
     expect(
       (screen.getByLabelText("Aporte mensal") as HTMLInputElement).value,
     ).toBe("0,00");
     expect(
       screen.queryByRole("region", { name: "Resultado da simulação" }),
     ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Sobre o cálculo" }));
+    expect(screen.getByText(/12% é uma hipótese editável/)).toBeTruthy();
+    expect(screen.getByText(/média do IPCA de 2016–2025/)).toBeTruthy();
+    expect(screen.getByText(/não uma previsão/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Saldo inicial"), {
       target: { value: "0" },
     });
@@ -297,6 +325,7 @@ describe("PortfolioObjectiveProjection", () => {
           amount: 65_000,
           referenceDate: "2026-10-01",
           source: "objective",
+          completeness: "complete",
         }}
       />,
     );
@@ -357,6 +386,7 @@ describe("PortfolioObjectiveProjection", () => {
           amount: 65_000,
           referenceDate: "2026-10-01",
           source: "portfolio",
+          completeness: "complete",
         }}
       />,
     );

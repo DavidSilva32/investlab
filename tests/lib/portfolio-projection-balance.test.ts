@@ -65,10 +65,11 @@ describe("portfolio projection balance sources", () => {
       amount: 6200,
       referenceDate: "2026-10-01",
       source: "portfolio",
+      completeness: "complete",
     });
   });
 
-  it("requires all non-reserve positions and assignments to be valued at one date", () => {
+  it("keeps the known total available while marking mixed dates or missing assignments as partial", () => {
     expect(
       resolvePortfolioProjectionBalance(
         [
@@ -77,28 +78,101 @@ describe("portfolio projection balance sources", () => {
         ],
         [],
       ),
-    ).toBeNull();
+    ).toEqual({
+      amount: 2400,
+      referenceDate: null,
+      source: "portfolio",
+      completeness: "partial",
+    });
     expect(
       resolvePortfolioProjectionBalance(
         [position()],
         [objective({ missingPositionCount: 1 })],
       ),
-    ).toBeNull();
+    ).toMatchObject({ amount: 1200, completeness: "partial" });
   });
 
-  it("rejects invalid effective dates", () => {
+  it("marks invalid effective dates as partial", () => {
     expect(
       resolvePortfolioProjectionBalance(
         [position({ referenceDate: "2026-02-30" })],
         [],
       ),
+    ).toMatchObject({
+      amount: 1200,
+      referenceDate: null,
+      completeness: "partial",
+    });
+  });
+
+  it("rejects an invalid date for an objective balance", () => {
+    expect(
+      resolveObjectiveProjectionBalance(objective(), [
+        position({ referenceDate: "2026-02-30" }),
+      ]),
+    ).toBeNull();
+  });
+
+  it("rejects objective balances whose positions use different dates", () => {
+    expect(
+      resolveObjectiveProjectionBalance(objective(), [
+        position(),
+        position({ referenceDate: "2026-10-02" }),
+      ]),
     ).toBeNull();
   });
 
   it("treats missing position values as incomplete instead of adding zero", () => {
     expect(
       resolvePortfolioProjectionBalance([position({ value: null })], []),
-    ).toBeNull();
+    ).toMatchObject({ amount: 0, completeness: "partial" });
+    expect(
+      resolvePortfolioProjectionBalance(
+        [position({ value: undefined }) as unknown as ObjectivePosition],
+        [],
+      ),
+    ).toMatchObject({ amount: 0, completeness: "partial" });
+  });
+
+  it("uses the known portfolio total supplied by the dashboard data", () => {
+    expect(
+      resolvePortfolioProjectionBalance(
+        [position()],
+        [],
+        {
+          knownTotal: 1200,
+          missingPositionCount: 0,
+          unvaluedPositionCount: 1,
+          valuedPositionCount: 1,
+        },
+        63_171.81,
+      ),
+    ).toMatchObject({
+      amount: 63_171.81,
+      source: "portfolio",
+      completeness: "partial",
+    });
+  });
+
+  it("uses position values and optional counters when no summary is supplied", () => {
+    expect(
+      resolvePortfolioProjectionBalance(
+        [position({ unvaluedPositions: undefined })],
+        [],
+      ),
+    ).toEqual({
+      amount: 1200,
+      referenceDate: "2026-10-01",
+      source: "portfolio",
+      completeness: "complete",
+    });
+  });
+
+  it("rejects invalid or negative portfolio totals", () => {
+    expect(
+      resolvePortfolioProjectionBalance([], [], undefined, Number.NaN),
+    ).toBe(null);
+    expect(resolvePortfolioProjectionBalance([], [], undefined, -1)).toBeNull();
   });
 
   it("uses only the selected objective and never falls back to the portfolio", () => {
@@ -115,6 +189,7 @@ describe("portfolio projection balance sources", () => {
       amount: 1200,
       referenceDate: "2026-10-01",
       source: "objective",
+      completeness: "complete",
     });
   });
 

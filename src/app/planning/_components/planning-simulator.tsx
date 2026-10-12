@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/select";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
+import type {
+  PortfolioInsightPosition,
+  PortfolioInsights,
+} from "@/lib/portfolio-insights";
 import {
   resolveObjectiveProjectionBalance,
   resolvePortfolioProjectionBalance,
@@ -31,6 +35,11 @@ type PlanningData = {
   };
 };
 
+type PortfolioOverviewData = {
+  insights: PortfolioInsights;
+  positions: PortfolioInsightPosition[];
+};
+
 const portfolioOption = "portfolio";
 const loadErrorMessage = "Não foi possível carregar os dados do planejamento.";
 
@@ -39,6 +48,10 @@ export function PlanningSimulator({
 }: {
   initialObjectiveId: string | null;
 }) {
+  const [selection, setSelection] = useState(
+    initialObjectiveId ?? portfolioOption,
+  );
+  const needsPortfolioOverview = selection === portfolioOption;
   const objectivesQuery = useQuery({
     queryKey: queryKeys.portfolio.objectives(),
     queryFn: () =>
@@ -48,12 +61,22 @@ export function PlanningSimulator({
         loadErrorMessage,
       ),
   });
-  const [selection, setSelection] = useState(
-    initialObjectiveId ?? portfolioOption,
-  );
+  const portfolioQuery = useQuery({
+    queryKey: queryKeys.portfolio.overview(),
+    enabled: needsPortfolioOverview,
+    queryFn: () =>
+      apiRequest<PortfolioOverviewData>(
+        "/api/portfolio",
+        undefined,
+        loadErrorMessage,
+      ),
+  });
   const data = objectivesQuery.data;
 
-  if (objectivesQuery.isPending) {
+  if (
+    objectivesQuery.isPending ||
+    (needsPortfolioOverview && portfolioQuery.isPending)
+  ) {
     return (
       <div
         className="h-56 animate-pulse rounded-xl border bg-card"
@@ -62,16 +85,26 @@ export function PlanningSimulator({
       />
     );
   }
-  if (objectivesQuery.isError || !data) {
+  if (
+    objectivesQuery.isError ||
+    !data ||
+    (needsPortfolioOverview && (portfolioQuery.isError || !portfolioQuery.data))
+  ) {
+    const error = objectivesQuery.isError
+      ? objectivesQuery.error
+      : portfolioQuery.error;
     return (
       <div role="alert" className="space-y-3 rounded-xl border p-4">
         <p className="text-sm text-destructive">
-          {objectivesQuery.error?.message ?? loadErrorMessage}
+          {error instanceof Error ? error.message : loadErrorMessage}
         </p>
         <Button
           type="button"
           variant="outline"
-          onClick={() => void objectivesQuery.refetch()}
+          onClick={() => {
+            void objectivesQuery.refetch();
+            if (needsPortfolioOverview) void portfolioQuery.refetch();
+          }}
         >
           Tentar novamente
         </Button>
@@ -93,9 +126,18 @@ export function PlanningSimulator({
   const startingBalance =
     selection === portfolioOption
       ? resolvePortfolioProjectionBalance(
-          data.positions,
+          portfolioQuery.data?.positions ?? [],
           data.objectives,
-          data.destinationSummary,
+          {
+            ...data.destinationSummary,
+            // Objective assignment gaps must not hide the known portfolio total.
+            missingPositionCount: 0,
+            unvaluedPositionCount:
+              portfolioQuery.data?.insights.unvaluedPositions ??
+              data.destinationSummary.unvaluedPositionCount,
+            valuedPositionCount: portfolioQuery.data?.insights.valuedPositions,
+          },
+          portfolioQuery.data?.insights.totalValue,
         )
       : resolveObjectiveProjectionBalance(selectedObjective, data.positions);
 

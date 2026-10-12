@@ -27,6 +27,9 @@ describe("DashboardWealthSummary", () => {
 
     expect(html).toContain("Patrimônio conhecido");
     expect(html).toContain("R$");
+    expect(html).toMatch(
+      /<p class="mt-2 text-3xl font-semibold tracking-tight text-primary tabular-nums sm:text-4xl">R\$/,
+    );
     expect(html).toContain("1 de 1");
     expect(html).toContain("Dados de 01/09/2026");
     expect(html).not.toContain(

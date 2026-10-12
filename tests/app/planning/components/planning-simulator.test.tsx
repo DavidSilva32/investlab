@@ -5,13 +5,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
-  queryOptions: {} as Record<string, unknown>,
+  queries: {} as Record<string, Record<string, unknown>>,
+  queryOptions: {} as Record<string, Record<string, unknown>>,
   apiRequest: vi.fn(),
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: Record<string, unknown>) => {
-    state.queryOptions = options;
-    return state.query;
+    const queryKey = options.queryKey as string[];
+    const queryType = queryKey[1] ?? "default";
+    state.queryOptions[queryType] = options;
+    return state.queries[queryType] ?? state.query;
   },
 }));
 vi.mock("@/lib/api-client", () => ({ apiRequest: state.apiRequest }));
@@ -21,11 +24,16 @@ vi.mock("@/app/portfolio/_components/portfolio-objective-projection", () => ({
     startingBalance,
   }: {
     objective: { name: string } | null;
-    startingBalance: { amount: number; source: string } | null;
+    startingBalance: {
+      amount: number;
+      source: string;
+      completeness: string;
+    } | null;
   }) => (
     <div>
       {objective?.name ?? "Patrimônio total"} ·{" "}
-      {startingBalance?.source ?? "sem saldo"} · {startingBalance?.amount ?? 0}
+      {startingBalance?.source ?? "sem saldo"} · {startingBalance?.amount ?? 0}{" "}
+      · {startingBalance?.completeness ?? ""}
     </div>
   ),
 }));
@@ -68,31 +76,47 @@ const position: ObjectivePosition = {
 };
 
 function setQuery(overrides: Record<string, unknown> = {}) {
-  state.query = {
-    data: {
-      objectives: [
-        goal,
-        {
-          ...goal,
-          id: reserveObjectiveId,
-          kind: "RESERVE",
-          purpose: "RESERVE",
-          name: "Reserva",
-          assignedAssetKeys: [],
+  state.queries = {
+    objectives: {
+      data: {
+        objectives: [
+          goal,
+          {
+            ...goal,
+            id: reserveObjectiveId,
+            kind: "RESERVE",
+            purpose: "RESERVE",
+            name: "Reserva",
+            assignedAssetKeys: [],
+          },
+        ],
+        positions: [position],
+        destinationSummary: {
+          knownTotal: 1_200,
+          missingPositionCount: 1,
+          unvaluedPositionCount: 0,
         },
-      ],
-      positions: [position],
-      destinationSummary: {
-        knownTotal: 1_200,
-        missingPositionCount: 0,
-        unvaluedPositionCount: 0,
       },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+      ...overrides,
     },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-    ...overrides,
+    overview: {
+      data: {
+        insights: {
+          totalValue: 1_200,
+          valuedPositions: 1,
+          unvaluedPositions: 0,
+        },
+        positions: [position],
+      },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    },
   };
+  state.queryOptions = {};
 }
 
 describe("PlanningSimulator", () => {
@@ -101,14 +125,31 @@ describe("PlanningSimulator", () => {
     state.query = {};
   });
 
-  it("uses the complete total portfolio as the initial balance", () => {
+  it("uses the dashboard's known total portfolio as the initial balance", () => {
     setQuery();
     render(<PlanningSimulator initialObjectiveId={null} />);
     expect(
       screen.getByRole("combobox", { name: "Base da simulação" }),
     ).toBeTruthy();
     expect(
-      screen.getByText("Patrimônio total · portfolio · 1200"),
+      screen.getByText("Patrimônio total · portfolio · 1200 · complete"),
+    ).toBeTruthy();
+  });
+
+  it("uses the exact dashboard total and marks it partial when positions are unvalued", () => {
+    setQuery();
+    state.queries.overview.data = {
+      insights: {
+        totalValue: 63_171.81,
+        valuedPositions: 1,
+        unvaluedPositions: 1,
+      },
+      positions: [position, { ...position, assetKey: "unknown" }],
+    };
+    render(<PlanningSimulator initialObjectiveId={null} />);
+
+    expect(
+      screen.getByText("Patrimônio total · portfolio · 63171.81 · partial"),
     ).toBeTruthy();
   });
 
@@ -126,12 +167,12 @@ describe("PlanningSimulator", () => {
     });
     const user = userEvent.setup();
     render(<PlanningSimulator initialObjectiveId="goal-a" />);
-    expect(screen.getByText("Viagem · sem saldo · 0")).toBeTruthy();
+    expect(screen.getByText("Viagem · sem saldo · 0 ·")).toBeTruthy();
     await user.click(
       screen.getByRole("button", { name: "Usar patrimônio total" }),
     );
     expect(
-      screen.getByText("Patrimônio total · portfolio · 1200"),
+      screen.getByText("Patrimônio total · portfolio · 1200 · complete"),
     ).toBeTruthy();
   });
 
@@ -170,11 +211,27 @@ describe("PlanningSimulator", () => {
     setQuery();
     render(<PlanningSimulator initialObjectiveId={null} />);
 
-    const queryFn = state.queryOptions.queryFn as () => Promise<unknown>;
+    const queryFn = state.queryOptions.objectives
+      .queryFn as () => Promise<unknown>;
     await queryFn();
 
     expect(state.apiRequest).toHaveBeenCalledWith(
       "/api/portfolio/objectives",
+      undefined,
+      expect.any(String),
+    );
+  });
+
+  it("loads the same portfolio overview endpoint used by the dashboard", async () => {
+    setQuery();
+    render(<PlanningSimulator initialObjectiveId={null} />);
+
+    const queryFn = state.queryOptions.overview
+      .queryFn as () => Promise<unknown>;
+    await queryFn();
+
+    expect(state.apiRequest).toHaveBeenCalledWith(
+      "/api/portfolio",
       undefined,
       expect.any(String),
     );
@@ -198,5 +255,40 @@ describe("PlanningSimulator", () => {
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
 
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("retries only objective data when an objective is selected", async () => {
+    const objectivesRefetch = vi.fn();
+    const overviewRefetch = vi.fn();
+    setQuery({
+      isError: true,
+      error: new Error("Falha segura"),
+      refetch: objectivesRefetch,
+    });
+    state.queries.overview.refetch = overviewRefetch;
+    const user = userEvent.setup();
+    render(<PlanningSimulator initialObjectiveId="goal-a" />);
+
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+
+    expect(objectivesRefetch).toHaveBeenCalledOnce();
+    expect(overviewRefetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dashboard total usable when optional overview position details are absent", () => {
+    setQuery();
+    state.queries.overview.data = {
+      insights: {
+        totalValue: 63_171.81,
+        valuedPositions: 2,
+        unvaluedPositions: undefined,
+      },
+      positions: undefined,
+    };
+    render(<PlanningSimulator initialObjectiveId={null} />);
+
+    expect(
+      screen.getByText("Patrimônio total · portfolio · 63171.81 · partial"),
+    ).toBeTruthy();
   });
 });

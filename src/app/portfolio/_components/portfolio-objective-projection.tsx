@@ -43,6 +43,8 @@ type Props = {
 };
 
 const maximumProjectionAmount = 1_000_000_000_000;
+const defaultAnnualReturnPercent = "12";
+const defaultAnnualInflationPercent = "5.14";
 const projectionFieldMessages: Record<string, string> = {
   mode: "Escolha o tipo de simulação.",
   targetBasis: "Escolha como deseja entender o valor da meta.",
@@ -155,16 +157,20 @@ export function PortfolioObjectiveProjection({
     ),
   );
   const [horizonYears, setHorizonYears] = useState("10");
-  const [annualReturnPercent, setAnnualReturnPercent] = useState("0");
-  const [annualInflationPercent, setAnnualInflationPercent] = useState("0");
+  const [annualReturnPercent, setAnnualReturnPercent] = useState(
+    defaultAnnualReturnPercent,
+  );
+  const [annualInflationPercent, setAnnualInflationPercent] = useState(
+    defaultAnnualInflationPercent,
+  );
   const [returnSliderRange, setReturnSliderRange] = useState<{
     min: number;
     max: number;
-  } | null>(() => rateSliderRange("0"));
+  } | null>(() => rateSliderRange(defaultAnnualReturnPercent));
   const [inflationSliderRange, setInflationSliderRange] = useState<{
     min: number;
     max: number;
-  } | null>(() => rateSliderRange("0"));
+  } | null>(() => rateSliderRange(defaultAnnualInflationPercent));
   const [startingAmount, setStartingAmount] = useState(
     startingBalance?.amount.toString() ?? "",
   );
@@ -289,19 +295,29 @@ export function PortfolioObjectiveProjection({
         {startingBalance ? (
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              Valor inicial sugerido pela{" "}
               {startingBalance.source === "objective"
-                ? "carteira deste objetivo"
-                : "carteira completa"}
-              : {formatCurrency(startingBalance.amount)} · dados de{" "}
-              {dateLabel(startingBalance.referenceDate)}
+                ? "Valor deste objetivo"
+                : startingBalance.completeness === "complete"
+                  ? "Patrimônio conhecido"
+                  : "Patrimônio conhecido (parcial)"}
+              : {formatCurrency(startingBalance.amount)}
+              {startingBalance.referenceDate &&
+                ` · dados de ${dateLabel(startingBalance.referenceDate)}`}
             </p>
-            {startingBalance.source === "portfolio" && (
-              <p className="text-xs text-muted-foreground">
-                O cenário considera todo o patrimônio disponível para este
-                objetivo, sem alterar sua distribuição na plataforma.
-              </p>
-            )}
+            {startingBalance.source === "portfolio" &&
+              startingBalance.completeness === "complete" && (
+                <p className="text-xs text-muted-foreground">
+                  O cenário considera o patrimônio conhecido da carteira, sem
+                  alterar sua distribuição na plataforma.
+                </p>
+              )}
+            {startingBalance.source === "portfolio" &&
+              startingBalance.completeness === "partial" && (
+                <p className="text-xs text-status-warning">
+                  Saldo parcial: soma valores conhecidos; há posições sem valor
+                  ou sem data-base única.
+                </p>
+              )}
           </div>
         ) : (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
@@ -517,9 +533,10 @@ export function PortfolioObjectiveProjection({
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-2 rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
             <p>
-              O cenário inicial usa 0% de rendimento e 0% de inflação. Edite as
-              taxas para testar hipóteses; o IPCA passado não prevê a inflação
-              futura. O cálculo não considera impostos nem taxas.
+              O retorno inicial de 12% é uma hipótese editável, não uma média ou
+              recomendação. A inflação inicia em 5,14%, média do IPCA de
+              2016–2025; é uma referência histórica, não uma previsão. O cálculo
+              não considera impostos nem taxas.
             </p>
           </CollapsibleContent>
         </Collapsible>

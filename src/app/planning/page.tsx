@@ -16,7 +16,7 @@ export default async function PlanningPage({
   const { objective } = await searchParams;
   return (
     <AppShell title="Planejamento">
-      <div className="mx-auto max-w-5xl space-y-5">
+      <div className="w-full space-y-5">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold tracking-tight">
             Planeje seu próximo objetivo

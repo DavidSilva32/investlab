@@ -4,8 +4,9 @@ import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 export type DatedProjectionBalance = {
   amount: number;
-  referenceDate: string;
+  referenceDate: string | null;
   source: "objective" | "portfolio";
+  completeness: "complete" | "partial";
 };
 
 function completeDatedBalance(
@@ -43,17 +44,22 @@ function completeDatedBalance(
   ) {
     return null;
   }
-  return { amount, referenceDate, source };
+  return { amount, referenceDate, source, completeness: "complete" };
 }
 
 export function resolvePortfolioProjectionBalance(
-  positions: ObjectivePosition[],
+  positions: Array<
+    Pick<ObjectivePosition, "referenceDate" | "estimatedThrough"> &
+      Partial<Pick<ObjectivePosition, "value" | "unvaluedPositions">>
+  >,
   objectives: PortfolioObjective[],
   summary?: {
     knownTotal: number;
     missingPositionCount: number;
     unvaluedPositionCount: number;
+    valuedPositionCount?: number;
   },
+  knownTotal?: number,
 ): DatedProjectionBalance | null {
   const missingPositionCount =
     summary?.missingPositionCount ??
@@ -64,19 +70,47 @@ export function resolvePortfolioProjectionBalance(
   const unvaluedPositionCount =
     summary?.unvaluedPositionCount ??
     positions.reduce(
-      (total, position) => total + position.unvaluedPositions,
+      (total, position) => total + (position.unvaluedPositions ?? 0),
       0,
     );
   const total =
+    knownTotal ??
     summary?.knownTotal ??
     positions.reduce((sum, position) => sum + (position.value ?? 0), 0);
-  return completeDatedBalance(
-    positions,
-    total,
-    missingPositionCount,
-    unvaluedPositionCount,
-    "portfolio",
+  if (!Number.isFinite(total) || total < 0) return null;
+
+  const referenceDates = new Set(
+    positions
+      .map((position) => position.estimatedThrough ?? position.referenceDate)
+      .filter((date): date is string => Boolean(date)),
   );
+  const referenceDate =
+    referenceDates.size === 1 &&
+    positions.length > 0 &&
+    positions.every(
+      (position) =>
+        (position.estimatedThrough ?? position.referenceDate) ===
+        [...referenceDates][0],
+    )
+      ? [...referenceDates][0]!
+      : null;
+  const valuedPositionCount =
+    summary?.valuedPositionCount ??
+    positions.filter((position) => position.value != null).length;
+  const allPositionsValued = valuedPositionCount === positions.length;
+  const completeBalance =
+    allPositionsValued &&
+    missingPositionCount === 0 &&
+    unvaluedPositionCount === 0 &&
+    referenceDate !== null &&
+    isValidDate(referenceDate);
+
+  return {
+    amount: total,
+    referenceDate: completeBalance ? referenceDate : null,
+    source: "portfolio",
+    completeness: completeBalance ? "complete" : "partial",
+  };
 }
 
 export function resolveObjectiveProjectionBalance(
@@ -99,5 +133,14 @@ export function resolveObjectiveProjectionBalance(
     objective.missingPositionCount,
     objective.unvaluedPositionCount,
     "objective",
+  );
+}
+
+function isValidDate(referenceDate: string) {
+  const parsedDate = new Date(`${referenceDate}T00:00:00Z`);
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(referenceDate) &&
+    !Number.isNaN(parsedDate.getTime()) &&
+    parsedDate.toISOString().slice(0, 10) === referenceDate
   );
 }

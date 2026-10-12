@@ -40,7 +40,7 @@ export function DashboardWealthSummary({
             <h2 id="dashboard-where-am-i" className="text-lg font-semibold">
               Patrimônio conhecido
             </h2>
-            <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-primary tabular-nums sm:text-4xl">
               {insights.valuedPositions
                 ? formatCurrency(insights.totalValue)
                 : "Ainda sem valores conhecidos"}
