@@ -49,9 +49,7 @@
         "cdb_rate_configurations_assetCode_unique": {
           "name": "cdb_rate_configurations_assetCode_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "assetCode"
-          ]
+          "columns": ["assetCode"]
         }
       },
       "policies": {},
@@ -288,12 +286,8 @@
           "name": "cvm_share_capital_facts_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "cvm_share_capital_facts",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -301,12 +295,8 @@
           "name": "cvm_share_capital_facts_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "cvm_share_capital_facts",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -468,12 +458,8 @@
           "name": "cvm_share_class_reconciliations_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "cvm_share_class_reconciliations",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -481,12 +467,8 @@
           "name": "cvm_share_class_reconciliations_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "cvm_share_class_reconciliations",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -607,9 +589,7 @@
         "imports_fileHash_unique": {
           "name": "imports_fileHash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "fileHash"
-          ]
+          "columns": ["fileHash"]
         }
       },
       "policies": {},
@@ -1111,9 +1091,7 @@
         "manual_portfolio_positions_assetKey_unique": {
           "name": "manual_portfolio_positions_assetKey_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "assetKey"
-          ]
+          "columns": ["assetKey"]
         }
       },
       "policies": {},
@@ -1211,12 +1189,8 @@
           "name": "movement_items_importId_imports_id_fk",
           "tableFrom": "movement_items",
           "tableTo": "imports",
-          "columnsFrom": [
-            "importId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["importId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1226,9 +1200,7 @@
         "movement_items_eventFingerprint_unique": {
           "name": "movement_items_eventFingerprint_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "eventFingerprint"
-          ]
+          "columns": ["eventFingerprint"]
         }
       },
       "policies": {},
@@ -1457,12 +1429,8 @@
           "name": "portfolio_objective_balance_references_batchId_portfolio_objective_reference_batches_id_fk",
           "tableFrom": "portfolio_objective_balance_references",
           "tableTo": "portfolio_objective_reference_batches",
-          "columnsFrom": [
-            "batchId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["batchId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1470,12 +1438,8 @@
           "name": "portfolio_objective_balance_references_objectiveId_portfolio_objectives_id_fk",
           "tableFrom": "portfolio_objective_balance_references",
           "tableTo": "portfolio_objectives",
-          "columnsFrom": [
-            "objectiveId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["objectiveId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1544,12 +1508,8 @@
           "name": "portfolio_objective_positions_objectiveId_portfolio_objectives_id_fk",
           "tableFrom": "portfolio_objective_positions",
           "tableTo": "portfolio_objectives",
-          "columnsFrom": [
-            "objectiveId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["objectiveId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1559,9 +1519,7 @@
         "portfolio_objective_positions_assetKey_unique": {
           "name": "portfolio_objective_positions_assetKey_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "assetKey"
-          ]
+          "columns": ["assetKey"]
         }
       },
       "policies": {},
@@ -1780,12 +1738,8 @@
           "name": "portfolio_operation_reconciliation_events_operationId_manual_portfolio_operations_id_fk",
           "tableFrom": "portfolio_operation_reconciliation_events",
           "tableTo": "manual_portfolio_operations",
-          "columnsFrom": [
-            "operationId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operationId"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1793,12 +1747,8 @@
           "name": "portfolio_operation_reconciliation_events_movementId_movement_items_id_fk",
           "tableFrom": "portfolio_operation_reconciliation_events",
           "tableTo": "movement_items",
-          "columnsFrom": [
-            "movementId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["movementId"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1972,12 +1922,8 @@
           "name": "position_items_snapshotId_position_snapshots_id_fk",
           "tableFrom": "position_items",
           "tableTo": "position_snapshots",
-          "columnsFrom": [
-            "snapshotId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshotId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2121,12 +2067,8 @@
           "name": "position_snapshots_importId_imports_id_fk",
           "tableFrom": "position_snapshots",
           "tableTo": "imports",
-          "columnsFrom": [
-            "importId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["importId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2136,9 +2078,7 @@
         "position_snapshots_importId_unique": {
           "name": "position_snapshots_importId_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "importId"
-          ]
+          "columns": ["importId"]
         }
       },
       "policies": {},
@@ -2296,12 +2236,8 @@
           "name": "screener_financial_facts_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "screener_financial_facts",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2309,12 +2245,8 @@
           "name": "screener_financial_facts_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "screener_financial_facts",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2405,9 +2337,7 @@
         "screener_ingestion_runs_runKey_unique": {
           "name": "screener_ingestion_runs_runKey_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "runKey"
-          ]
+          "columns": ["runKey"]
         }
       },
       "policies": {},
@@ -2457,9 +2387,7 @@
         "screener_issuers_cvmCode_unique": {
           "name": "screener_issuers_cvmCode_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "cvmCode"
-          ]
+          "columns": ["cvmCode"]
         }
       },
       "policies": {},
@@ -2626,12 +2554,8 @@
           "name": "screener_market_snapshot_quotes_snapshotId_screener_market_snapshots_id_fk",
           "tableFrom": "screener_market_snapshot_quotes",
           "tableTo": "screener_market_snapshots",
-          "columnsFrom": [
-            "snapshotId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshotId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2737,12 +2661,8 @@
           "name": "screener_market_snapshots_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "screener_market_snapshots",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2750,12 +2670,8 @@
           "name": "screener_market_snapshots_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "screener_market_snapshots",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2763,12 +2679,8 @@
           "name": "screener_market_snapshots_marketRefreshRunId_screener_market_refresh_runs_id_fk",
           "tableFrom": "screener_market_snapshots",
           "tableTo": "screener_market_refresh_runs",
-          "columnsFrom": [
-            "marketRefreshRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["marketRefreshRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2855,12 +2767,8 @@
           "name": "screener_securities_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "screener_securities",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3251,9 +3159,7 @@
         "treasury_liquidity_rules_version_unique": {
           "name": "treasury_liquidity_rules_version_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "version"
-          ]
+          "columns": ["version"]
         }
       },
       "policies": {},
@@ -3406,12 +3312,8 @@
           "name": "treasury_position_liquidity_facts_positionItemId_position_items_id_fk",
           "tableFrom": "treasury_position_liquidity_facts",
           "tableTo": "position_items",
-          "columnsFrom": [
-            "positionItemId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["positionItemId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3419,12 +3321,8 @@
           "name": "treasury_position_liquidity_facts_snapshotId_position_snapshots_id_fk",
           "tableFrom": "treasury_position_liquidity_facts",
           "tableTo": "position_snapshots",
-          "columnsFrom": [
-            "snapshotId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshotId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3432,12 +3330,8 @@
           "name": "treasury_position_liquidity_facts_ruleVersion_treasury_liquidity_rules_version_fk",
           "tableFrom": "treasury_position_liquidity_facts",
           "tableTo": "treasury_liquidity_rules",
-          "columnsFrom": [
-            "ruleVersion"
-          ],
-          "columnsTo": [
-            "version"
-          ],
+          "columnsFrom": ["ruleVersion"],
+          "columnsTo": ["version"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3683,12 +3577,8 @@
           "name": "valuation_accounting_facts_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "valuation_accounting_facts",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3696,12 +3586,8 @@
           "name": "valuation_accounting_facts_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "valuation_accounting_facts",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3711,9 +3597,7 @@
         "valuation_accounting_facts_factKey_unique": {
           "name": "valuation_accounting_facts_factKey_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "factKey"
-          ]
+          "columns": ["factKey"]
         }
       },
       "policies": {},
