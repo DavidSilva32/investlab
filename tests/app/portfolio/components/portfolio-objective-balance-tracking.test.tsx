@@ -43,6 +43,7 @@ describe("PortfolioObjectiveBalanceTracking", () => {
         ?.textContent,
     ).toMatch(/R\$\s*100,10/u);
     expect(screen.getByText("Em 02/10/2026")).toBeTruthy();
+    expect(screen.queryByText(/Use apenas se o saldo renderiza/)).toBeNull();
     expect(
       screen.getByText(/Avaliada em 06\/10\/2026; CDI até 05\/10\/2026/u),
     ).toBeTruthy();

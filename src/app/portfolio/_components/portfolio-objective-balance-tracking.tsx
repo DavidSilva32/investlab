@@ -308,11 +308,6 @@ function BalanceTrackingEditor({
                 {cdiError}
               </p>
             )}
-            <p className="text-xs text-muted-foreground">
-              Use apenas se o saldo renderiza a esse percentual. Sem essa
-              condição, o sistema mantém somente o valor observado. Use até
-              1.000% do CDI.
-            </p>
           </div>
           <div className="sm:col-span-2 lg:col-span-1">
             <Button className="w-full" type="submit" disabled={saving}>

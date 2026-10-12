@@ -101,7 +101,7 @@ const overview = {
   positions: [],
   insights: getPortfolioInsights([]),
   movements: [],
-  referenceRates: { selic: null, cdi: null },
+  referenceRates: { selic: null, cdi: null, ipca: null },
   nextContributionGuidance: {
     status: "target_gap" as const,
     title: "Considere Renda fixa para o próximo aporte",

@@ -104,6 +104,23 @@ describe("AppShell", () => {
     ).toBe(true);
   });
 
+  it("keeps planning active on its route", () => {
+    navigation.pathname = "/planning";
+    render(
+      <AppShell title="Planejamento">
+        <p>Conteúdo</p>
+      </AppShell>,
+    );
+    const links = screen.getAllByRole("link", { name: "Planejamento" });
+    expect(links.length).toBeGreaterThan(0);
+    expect(
+      links.every((link) => link.getAttribute("href") === "/planning"),
+    ).toBe(true);
+    expect(
+      links.every((link) => link.getAttribute("aria-current") === "page"),
+    ).toBe(true);
+  });
+
   it("handles a null pathname while rendering the navigation", () => {
     navigation.pathname = null;
     render(

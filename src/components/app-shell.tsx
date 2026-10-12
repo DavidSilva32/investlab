@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   BookOpen,
+  Calculator,
   Compass,
   Download,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 const navigation = [
   { href: "/", label: "Dashboard", Icon: LayoutDashboard },
   { href: "/portfolio", label: "Carteira", Icon: WalletCards },
+  { href: "/planning", label: "Planejamento", Icon: Calculator },
   { href: "/strategy", label: "Estratégia", Icon: Compass },
   { href: "/learn", label: "Aprender", Icon: BookOpen },
   { href: "/imports", label: "Importações", Icon: Download },
@@ -45,6 +47,7 @@ function Navigation({ pathname }: { pathname: string }) {
         const active =
           pathname === href ||
           (href === "/learn" && pathname?.startsWith("/learn")) ||
+          (href === "/planning" && pathname?.startsWith("/planning")) ||
           (href === "/analyses" && pathname?.startsWith("/analyses"));
         return (
           <Link

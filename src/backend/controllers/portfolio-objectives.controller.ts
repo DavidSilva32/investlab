@@ -1,8 +1,20 @@
 import { logger } from "@/infrastructure/logging/logger";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { objectiveBalanceService } from "@/backend/services/objective-balance.service";
+import { objectiveProjectionService } from "@/backend/services/objective-projection.service";
 
 export class PortfolioObjectivesController {
+  simulateProjection(body: unknown, requestId: string) {
+    const data = objectiveProjectionService.simulate(body);
+    logger.info("portfolio_objective_projection_calculated", {
+      requestId,
+      mode: data.mode,
+      horizonYears: data.horizonYears,
+      targetBasis: data.targetBasis,
+    });
+    return Response.json(data);
+  }
+
   async get(requestId: string) {
     const data = await portfolioObjectivesService.getOverview(requestId);
     logger.info("portfolio_objectives_loaded", {
