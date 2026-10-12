@@ -77,6 +77,8 @@ const baseProps = {
   classes,
   knownValueCents: "100000",
   valuationDate: "2026-10-02",
+  valuationDates: ["2026-10-02"],
+  valuationDatesComplete: true,
   positionCount: 4,
   unclassifiedKnownValueCents: "0",
   unvaluedPositionCount: 0,
@@ -177,6 +179,43 @@ afterEach(() => {
 });
 
 describe("StrategyAllocationWorkspace", () => {
+  it("shows effective valuation context only when it differs from the query date", () => {
+    const { rerender } = render(<StrategyAllocationWorkspace {...baseProps} />);
+
+    expect(screen.queryByText(/Valores efetivos em/)).toBeNull();
+    expect(screen.queryByText("Valores em datas variadas")).toBeNull();
+
+    rerender(
+      <StrategyAllocationWorkspace
+        {...baseProps}
+        valuationDates={["2026-09-30"]}
+      />,
+    );
+    expect(screen.getByText(/Valores efetivos em 30\/09\/2026/)).toBeTruthy();
+
+    rerender(
+      <StrategyAllocationWorkspace
+        {...baseProps}
+        valuationDates={["2026-09-30", "2026-10-02"]}
+      />,
+    );
+    expect(screen.queryByText(/Valores efetivos em/)).toBeNull();
+    expect(screen.queryByText(/Valores em datas variadas/)).toBeNull();
+  });
+
+  it("shows incomplete date coverage beside the total instead of an exact date", () => {
+    render(
+      <StrategyAllocationWorkspace
+        {...baseProps}
+        valuationDates={["2026-09-30"]}
+        valuationDatesComplete={false}
+      />,
+    );
+
+    expect(screen.getByText(/Data efetiva incompleta/)).toBeTruthy();
+    expect(screen.queryByText(/Valores efetivos em/)).toBeNull();
+  });
+
   it("shows current composition first and opens percentage editing in a sheet", () => {
     render(<StrategyAllocationWorkspace {...baseProps} />);
     expect(

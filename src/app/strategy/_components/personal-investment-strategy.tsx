@@ -18,6 +18,7 @@ import type { StrategyAllocationPercentages } from "@/lib/strategy-allocation";
 type StrategyData = {
   valuationDate: string;
   valuationDates: string[];
+  valuationDatesComplete: boolean;
   longTermWealth: {
     knownValueCents: string;
     unvaluedPositionCount: number;
@@ -222,6 +223,8 @@ export function PersonalInvestmentStrategy() {
           classes={data.longTermWealth.classes}
           knownValueCents={data.longTermWealth.knownValueCents}
           valuationDate={data.valuationDate}
+          valuationDates={data.valuationDates}
+          valuationDatesComplete={data.valuationDatesComplete}
           positionCount={data.longTermWealth.positionCount}
           unclassifiedKnownValueCents={
             data.longTermWealth.unclassifiedKnownValueCents

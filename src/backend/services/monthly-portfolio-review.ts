@@ -83,6 +83,7 @@ export type MonthlyPortfolioReview = {
     | "partial";
   dateAlignment: "aligned" | "different_dates" | "outdated" | "unavailable";
   compositionCoverage: "equivalent" | "changed" | "unknown";
+  valuationMethodCoverage: "equivalent" | "changed" | "unknown";
   current: MonthlyPortfolioSnapshotSummary | null;
   previous: MonthlyPortfolioSnapshotSummary | null;
   observedChangeCents: string | null;
@@ -96,6 +97,9 @@ export type MonthlyPortfolioReview = {
 type SummarizedClose = MonthlyPortfolioSnapshotSummary & {
   compositionKeys: string[];
   compositionKnown: boolean;
+  valuationMethodKeys: string[];
+  valuationMethodsKnown: boolean;
+  conversionDatesComplete: boolean;
 };
 
 const flowExplanation =
@@ -242,6 +246,21 @@ function summarize(
   const activeManual = contributingManual.filter(
     (position) => position.status === "ACTIVE",
   );
+  const b3CompositionKeys = b3Positions.map((position) =>
+    position.reconciliationAssetKey &&
+    aliasByImported.has(position.reconciliationAssetKey)
+      ? `manual:${aliasByImported.get(position.reconciliationAssetKey)}`
+      : position.identity
+        ? `b3:${position.identity}`
+        : null,
+  );
+  const manualValuationMethods = activeManual.map((position) =>
+    position.currency === "BRL"
+      ? "MANUAL_REPORTED"
+      : position.convertedValueBrl === null
+        ? "MANUAL_UNCONVERTED"
+        : "MANUAL_CONVERTED",
+  );
   const manualValues = activeManual.map((position) =>
     decimalToCents(
       position.currency === "BRL"
@@ -319,13 +338,7 @@ function summarize(
         ...b3Positions.flatMap((position) =>
           position.valuationSource ? [position.valuationSource] : [],
         ),
-        ...activeManual.map((position) =>
-          position.currency === "BRL"
-            ? "MANUAL_REPORTED"
-            : position.convertedValueBrl === null
-              ? "MANUAL_UNCONVERTED"
-              : "MANUAL_CONVERTED",
-        ),
+        ...manualValuationMethods,
       ]),
     ].sort(),
     manualPositionDates: [
@@ -356,16 +369,30 @@ function summarize(
       ]),
     ].sort(),
     compositionKeys: [
-      ...b3Positions.flatMap((position) =>
-        position.reconciliationAssetKey &&
-        aliasByImported.has(position.reconciliationAssetKey)
-          ? [`manual:${aliasByImported.get(position.reconciliationAssetKey)}`]
-          : position.identity
-            ? [`b3:${position.identity}`]
-            : [],
-      ),
+      ...b3CompositionKeys.flatMap((key) => (key ? [key] : [])),
       ...activeManual.map((position) => `manual:${position.assetKey}`),
     ].sort(),
+    valuationMethodKeys: [
+      ...b3Positions.flatMap((position, index) => {
+        const key = b3CompositionKeys[index];
+        return key ? [JSON.stringify([key, position.valuationSource])] : [];
+      }),
+      ...activeManual.map((position, index) =>
+        JSON.stringify([
+          `manual:${position.assetKey}`,
+          manualValuationMethods[index],
+        ]),
+      ),
+    ].sort(),
+    valuationMethodsKnown: b3Positions.every(
+      (position) => position.valuationSource !== null,
+    ),
+    conversionDatesComplete: activeManual.every(
+      (position) =>
+        position.currency === "BRL" ||
+        position.convertedValueBrl === null ||
+        Boolean(position.conversionDate),
+    ),
     compositionKnown:
       reconciledCoverageKnown &&
       b3Positions.every((position) => position.identity !== null) &&
@@ -392,6 +419,9 @@ function compositionCoverage(
 function publicSummary({
   compositionKeys: _compositionKeys,
   compositionKnown: _compositionKnown,
+  valuationMethodKeys: _valuationMethodKeys,
+  valuationMethodsKnown: _valuationMethodsKnown,
+  conversionDatesComplete: _conversionDatesComplete,
   ...summary
 }: SummarizedClose): MonthlyPortfolioSnapshotSummary {
   return summary;
@@ -425,7 +455,8 @@ function monthlyHistory(
         untrackedManualPositionCount === 0 &&
         close.positionCount > 0 &&
         close.unvaluedPositionCount === 0 &&
-        close.compositionKnown
+        close.compositionKnown &&
+        close.conversionDatesComplete
           ? "complete"
           : "partial",
     };
@@ -477,6 +508,7 @@ function emptyResult(
     status,
     dateAlignment: "unavailable",
     compositionCoverage: "unknown",
+    valuationMethodCoverage: "unknown",
     current: null,
     previous: null,
     observedChangeCents: null,
@@ -594,6 +626,7 @@ export function calculateMonthlyPortfolioReview(
       status: "no_previous_close",
       dateAlignment: "unavailable",
       compositionCoverage: "unknown",
+      valuationMethodCoverage: "unknown",
       current,
       previous: null,
       observedChangeCents: null,
@@ -630,6 +663,7 @@ export function calculateMonthlyPortfolioReview(
       status: "insufficient_values",
       dateAlignment: "unavailable",
       compositionCoverage: "unknown",
+      valuationMethodCoverage: "unknown",
       current,
       previous,
       observedChangeCents: null,
@@ -644,13 +678,33 @@ export function calculateMonthlyPortfolioReview(
     current.unvaluedPositionCount === 0 &&
     previous.positionCount > 0 &&
     previous.unvaluedPositionCount === 0;
-  const alignment = dateAlignment(current, period, previous, previousPeriod);
+  const conversionDatesComplete =
+    currentClose.conversionDatesComplete &&
+    previousClose.conversionDatesComplete;
+  const alignment = conversionDatesComplete
+    ? dateAlignment(current, period, previous, previousPeriod)
+    : "unavailable";
   const composition = compositionCoverage(currentClose, previousClose);
   const sourceSetsMatch =
     current.sources.length === previous.sources.length &&
     current.sources.every(
       (source, index) => source === previous.sources[index],
     );
+  const valuationMethodKeysMatch =
+    currentClose.valuationMethodKeys.length ===
+      previousClose.valuationMethodKeys.length &&
+    currentClose.valuationMethodKeys.every(
+      (key, index) => key === previousClose.valuationMethodKeys[index],
+    );
+  const valuationMethodCoverage =
+    currentClose.compositionKnown &&
+    previousClose.compositionKnown &&
+    currentClose.valuationMethodsKnown &&
+    previousClose.valuationMethodsKnown
+      ? valuationMethodKeysMatch
+        ? "equivalent"
+        : "changed"
+      : "unknown";
   const observedChangeCents = (
     BigInt(current.knownValueCents!) - BigInt(previous.knownValueCents!)
   ).toString();
@@ -665,11 +719,13 @@ export function calculateMonthlyPortfolioReview(
       alignment === "aligned" &&
       composition === "equivalent" &&
       sourceSetsMatch &&
+      valuationMethodCoverage === "equivalent" &&
       gapMonths === 0
         ? "ready"
         : "partial",
     dateAlignment: alignment,
     compositionCoverage: sourceSetsMatch ? composition : "changed",
+    valuationMethodCoverage,
     current,
     previous,
     observedChangeCents,

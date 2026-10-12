@@ -538,6 +538,9 @@ function partialExplanation(review: MonthlyPortfolioReviewData) {
   ) {
     return "Algumas posições estão sem valor.";
   }
+  if (review.dateAlignment === "unavailable") {
+    return "Data da conversão não informada.";
+  }
   if (
     review.dateAlignment === "outdated" ||
     review.dateAlignment === "different_dates"
@@ -549,5 +552,9 @@ function partialExplanation(review: MonthlyPortfolioReviewData) {
   if (review.compositionCoverage === "unknown")
     return "Cobertura da carteira não confirmada.";
   if (review.gapMonths > 0) return "Há meses sem fechamento.";
+  if (review.valuationMethodCoverage === "changed")
+    return "O método de avaliação mudou.";
+  if (review.valuationMethodCoverage === "unknown")
+    return "Não foi possível confirmar o método de avaliação.";
   return "Comparação parcial.";
 }

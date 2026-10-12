@@ -18,6 +18,7 @@ const render = (ui: Parameters<typeof rtlRender>[0]) =>
 const baseData = {
   valuationDate: "2026-10-02",
   valuationDates: ["2026-10-02"],
+  valuationDatesComplete: true,
   longTermWealth: {
     knownValueCents: "100000",
     unvaluedPositionCount: 0,
@@ -196,6 +197,41 @@ describe("PersonalInvestmentStrategy", () => {
     expect(
       screen.getByText(/R\$\s*5,00 em posições sem classe identificada/),
     ).toBeTruthy();
+  });
+
+  it("keeps a single older effective date beside the total without a separate alert", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          valuationDates: ["2026-09-30"],
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
+    expect(
+      await screen.findByText(/Valores efetivos em 30\/09\/2026/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Cobertura dos valores")).toBeNull();
+  });
+
+  it("marks a single known date as incomplete when other positions lack dates", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          valuationDates: ["2026-09-30"],
+          valuationDatesComplete: false,
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
+    expect(await screen.findByText(/Data efetiva incompleta/)).toBeTruthy();
+    expect(screen.queryByText(/Valores efetivos em 30\/09\/2026/)).toBeNull();
   });
 
   it("reports ambiguous positions that have no known classified value", async () => {

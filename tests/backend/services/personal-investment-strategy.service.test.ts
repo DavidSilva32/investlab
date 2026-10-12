@@ -174,6 +174,7 @@ describe("PersonalInvestmentStrategyService", () => {
     });
     expect(result.longTermWealth.knownValueCents).toBe("1500");
     expect(result.valuationDates).toEqual(["2026-09-30", "2026-10-01"]);
+    expect(result.valuationDatesComplete).toBe(true);
     expect(result.longTermWealth.positionCount).toBe(6);
     expect(result.longTermWealth.assignedPositionCount).toBe(6);
     expect(result.longTermWealth.unvaluedPositionCount).toBe(1);
@@ -215,6 +216,26 @@ describe("PersonalInvestmentStrategyService", () => {
     ]);
     expect(result.longTermPositionsWithoutMaturityDate).toBe(3);
     expect(result.destinationsNeedingPurposeConfirmation).toBe(1);
+  });
+
+  it("marks effective valuation dates incomplete using position counts", async () => {
+    const positions = [
+      position("Grupo com data", "300", "LONG_TERM_INVESTMENT", {
+        positionCount: 3,
+        estimatedThrough: "2026-09-30",
+      }),
+      position("Grupo sem data", "200", "LONG_TERM_INVESTMENT", {
+        positionCount: 2,
+        referenceDate: null,
+      }),
+    ];
+    const { service } = makeService(positions);
+
+    const result = await service.getOverview();
+
+    expect(result.longTermWealth.positionCount).toBe(5);
+    expect(result.valuationDates).toEqual(["2026-09-30"]);
+    expect(result.valuationDatesComplete).toBe(false);
   });
 
   it("returns empty zero-known totals without treating any position as long-term", async () => {
