@@ -90,7 +90,9 @@ describe("monthly portfolio review calculation", () => {
     const snapshots = [
       snapshot("jan", "2026-01-29", ["100.00"]),
       snapshot("feb-old", "2026-02-26", ["105.00"]),
-      snapshot("feb-latest", "2026-02-27", ["110.00"]),
+      snapshot("feb-latest", "2026-02-27", ["110.00"], {
+        valuationSources: ["MTM"],
+      }),
       snapshot("mar-old-import", "2026-03-29", ["118.00"], {
         createdAt: "2026-03-30T12:00:00Z",
       }),
@@ -109,6 +111,7 @@ describe("monthly portfolio review calculation", () => {
       availablePeriods: ["2026-03", "2026-02", "2026-01"],
       selectedPeriod: "2026-03",
       status: "ready",
+      valuationMethodCoverage: "equivalent",
       observedChangeCents: "1000",
       gapMonths: 0,
       current: {
@@ -325,6 +328,104 @@ describe("monthly portfolio review calculation", () => {
     expect(review.current?.valuationMethods).toEqual(["FECHAMENTO", "MTM"]);
     expect(review.previous?.valuationMethods).toEqual(["CURVA"]);
     expect(review.observedChangeCents).toBe("200");
+  });
+
+  it("marks an otherwise aligned close partial when its valuation method changes", () => {
+    const review = calculateMonthlyPortfolioReview([
+      snapshot("january", "2026-01-31", ["10.00"], {
+        valuationSources: ["CURVA"],
+      }),
+      snapshot("february", "2026-02-28", ["12.00"], {
+        valuationSources: ["MTM"],
+      }),
+    ]);
+
+    expect(review).toMatchObject({
+      status: "partial",
+      dateAlignment: "aligned",
+      compositionCoverage: "equivalent",
+      valuationMethodCoverage: "changed",
+      observedChangeCents: "200",
+      current: { sources: ["B3"], valuationMethods: ["MTM"] },
+      previous: { sources: ["B3"], valuationMethods: ["CURVA"] },
+    });
+  });
+
+  it("marks two stable assets partial when their valuation methods are swapped", () => {
+    const review = calculateMonthlyPortfolioReview([
+      snapshot("january", "2026-01-31", ["10.00", "20.00"], {
+        valuationSources: ["CURVA", "MTM"],
+        identities: ["asset-a", "asset-b"],
+      }),
+      snapshot("february", "2026-02-28", ["12.00", "22.00"], {
+        valuationSources: ["MTM", "CURVA"],
+        identities: ["asset-a", "asset-b"],
+      }),
+    ]);
+
+    expect(review).toMatchObject({
+      status: "partial",
+      dateAlignment: "aligned",
+      compositionCoverage: "equivalent",
+      valuationMethodCoverage: "changed",
+      observedChangeCents: "400",
+      current: { valuationMethods: ["CURVA", "MTM"] },
+      previous: { valuationMethods: ["CURVA", "MTM"] },
+    });
+  });
+
+  it("does not treat omitted valuation methods as comparable", () => {
+    const review = calculateMonthlyPortfolioReview([
+      snapshot("january", "2026-01-31", ["10.00"], {
+        valuationSources: [null],
+      }),
+      snapshot("february", "2026-02-28", ["12.00"], {
+        valuationSources: [null],
+      }),
+    ]);
+
+    expect(review).toMatchObject({
+      status: "partial",
+      valuationMethodCoverage: "unknown",
+      observedChangeCents: "200",
+      current: { valuationMethods: [] },
+      previous: { valuationMethods: [] },
+    });
+  });
+
+  it("keeps foreign converted positions partial when a conversion date is missing", () => {
+    const review = calculateMonthlyPortfolioReview(
+      [],
+      "2026-02",
+      [
+        manualObservation({
+          convertedValueBrl: "5000.00",
+          positionDate: "2026-01-31",
+          conversionDate: null,
+          recordedAt: "2026-01-31T12:00:00.000Z",
+        }),
+        manualObservation({
+          convertedValueBrl: "6000.00",
+          positionDate: "2026-02-28",
+          conversionDate: null,
+          recordedAt: "2026-02-28T12:00:00.000Z",
+        }),
+      ],
+      [{ assetKey: "manual:voo" }],
+    );
+
+    expect(review).toMatchObject({
+      status: "partial",
+      dateAlignment: "unavailable",
+      valuationMethodCoverage: "equivalent",
+      observedChangeCents: "100000",
+    });
+    expect(
+      review.history.map(({ period, completeness }) => [period, completeness]),
+    ).toEqual([
+      ["2026-01", "partial"],
+      ["2026-02", "partial"],
+    ]);
   });
 
   it("compares manual foreign assets using the explicitly entered BRL value", () => {

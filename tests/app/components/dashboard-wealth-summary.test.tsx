@@ -64,6 +64,61 @@ describe("DashboardWealthSummary", () => {
     expect(html).toContain("Datas-base variadas ou incompletas");
   });
 
+  it("uses the CDB estimate date instead of its older snapshot date", () => {
+    const positions = [
+      {
+        product: "CDB",
+        institution: "Banco",
+        maturityAt: null,
+        totalValue: "2500",
+        estimatedValue: 2550,
+        referenceDate: "2026-09-01",
+        estimatedThrough: "2026-09-08",
+        cdbEstimateStatus: "complete" as const,
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <DashboardWealthSummary
+        positions={positions}
+        insights={getPortfolioInsights(positions)}
+      />,
+    );
+
+    expect(html).toContain("Dados de 08/09/2026");
+    expect(html).not.toContain("Dados de 01/09/2026");
+  });
+
+  it("shows varied dates when positions have different effective valuation dates", () => {
+    const positions = [
+      {
+        product: "CDB",
+        institution: "Banco",
+        maturityAt: null,
+        totalValue: "2500",
+        estimatedValue: 2550,
+        referenceDate: "2026-09-01",
+        estimatedThrough: "2026-09-08",
+      },
+      {
+        product: "Tesouro Selic",
+        institution: "Tesouro",
+        maturityAt: null,
+        totalValue: "1000",
+        referenceDate: "2026-09-07",
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <DashboardWealthSummary
+        positions={positions}
+        insights={getPortfolioInsights(positions)}
+      />,
+    );
+
+    expect(html).toContain("Datas-base variadas ou incompletas");
+    expect(html).not.toContain("Dados de 08/09/2026");
+    expect(html).not.toContain("Dados de 07/09/2026");
+  });
+
   it("explains when there are no known values or reference dates", () => {
     const html = renderToStaticMarkup(
       <DashboardWealthSummary

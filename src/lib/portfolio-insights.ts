@@ -13,6 +13,7 @@ export type PortfolioInsightPosition = {
   estimatedValueCents?: string | null;
   canonicalValueCents?: string | null;
   referenceDate?: string | null;
+  estimatedThrough?: string | null;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
 };
 

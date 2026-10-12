@@ -107,6 +107,8 @@ type Props = {
   classes: StrategyClassValue[];
   knownValueCents: string;
   valuationDate: string;
+  valuationDates: string[];
+  valuationDatesComplete: boolean;
   positionCount: number;
   unclassifiedKnownValueCents: string;
   unvaluedPositionCount: number;
@@ -149,6 +151,8 @@ export function StrategyAllocationWorkspace({
   classes,
   knownValueCents,
   valuationDate,
+  valuationDates,
+  valuationDatesComplete,
   positionCount,
   unclassifiedKnownValueCents,
   unvaluedPositionCount,
@@ -161,6 +165,11 @@ export function StrategyAllocationWorkspace({
     BigInt(knownValueCents) > 0n &&
     BigInt(unclassifiedKnownValueCents) === 0n &&
     unvaluedPositionCount === 0;
+  const valuationContext = !valuationDatesComplete
+    ? "Data efetiva incompleta"
+    : valuationDates.length === 1 && valuationDates[0] !== valuationDate
+      ? `Valores efetivos em ${formatDate(valuationDates[0])}`
+      : null;
   const [draft, setDraft] = useState<StrategyPercentageDraft>(() =>
     initialDraft(savedAllocationPercentages, classes, baselineComplete),
   );
@@ -402,6 +411,7 @@ export function StrategyAllocationWorkspace({
                   <p className="mt-1 text-xs text-muted-foreground">
                     Total investido em ativos de longo prazo ·{" "}
                     {formatDate(valuationDate)}
+                    {valuationContext ? ` · ${valuationContext}` : ""}
                     {positionCount === 0 ? " · sem posições" : ""}
                   </p>
                 </div>

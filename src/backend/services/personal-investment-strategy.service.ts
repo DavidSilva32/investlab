@@ -108,12 +108,21 @@ export class PersonalInvestmentStrategyService {
     );
     const allocation = summarizeStrategyAllocation(longTerm);
     const longTermCents = BigInt(allocation.knownValueCents);
+    const effectiveDateGroups = longTerm.map((position) => ({
+      positionCount: position.positionCount,
+      date: position.estimatedThrough ?? position.referenceDate,
+    }));
+    const datedPositionCount = effectiveDateGroups
+      .filter((group) => group.date !== null)
+      .reduce((sum, group) => sum + group.positionCount, 0);
+    const longTermPositionCount = effectiveDateGroups.reduce(
+      (sum, group) => sum + group.positionCount,
+      0,
+    );
     const dates = [
       ...new Set(
-        longTerm
-          .map(
-            (position) => position.estimatedThrough ?? position.referenceDate,
-          )
+        effectiveDateGroups
+          .map((group) => group.date)
           .filter((date): date is string => date !== null),
       ),
     ].sort();
@@ -171,6 +180,7 @@ export class PersonalInvestmentStrategyService {
             objective.kind !== "RESERVE" && objective.purpose === null,
         ).length,
       valuationDates: dates,
+      valuationDatesComplete: datedPositionCount === longTermPositionCount,
       savedStrategy:
         saved?.answers && saved.selectedDirection
           ? {

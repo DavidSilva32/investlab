@@ -165,6 +165,126 @@ describe("EmergencyReserveService", () => {
     ).rejects.toBeInstanceOf(ApplicationError);
   });
 
+  it("previews the effective date for the selection requested in the body", async () => {
+    const saved = position({ assetCode: "SAVED", referenceDate: "2026-09-01" });
+    const requested = position({
+      assetCode: "REQUESTED",
+      referenceDate: "2026-09-02",
+      estimatedThrough: "2026-09-30",
+    });
+    mocks.listLatestPositions.mockResolvedValue([saved, requested]);
+    mocks.enrich.mockResolvedValue([saved, requested]);
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "100",
+      targetMonths: 3,
+      selectedAssetKeys: [getEmergencyReserveAssetKey(saved)],
+    });
+
+    await expect(
+      new EmergencyReserveService().preview({
+        monthlyExpenses: 100,
+        targetMonths: 3,
+        selectedAssetKeys: [getEmergencyReserveAssetKey(requested)],
+      }),
+    ).resolves.toMatchObject({
+      referenceDate: "2026-09-30",
+      selectedValue: 100,
+    });
+  });
+
+  it("uses a single effective date from selected positions only", async () => {
+    const unselected = position({
+      assetCode: "UNSELECTED",
+      referenceDate: "2026-08-01",
+    });
+    const selected = position({
+      assetCode: "SELECTED",
+      referenceDate: "2026-09-01",
+      estimatedThrough: "2026-09-30",
+    });
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "100",
+      targetMonths: 3,
+      selectedAssetKeys: [getEmergencyReserveAssetKey(selected)],
+    });
+
+    const summary = await new EmergencyReserveService().getSummary([
+      { ...unselected, classification: { assetClass: "Renda fixa" } },
+      { ...selected, classification: { assetClass: "Renda fixa" } },
+    ]);
+
+    expect(summary.referenceDate).toBe("2026-09-30");
+  });
+
+  it("keeps the effective date when duplicate positions agree on their date", async () => {
+    const first = position({
+      id: "snapshot-row-1",
+      assetCode: "DUPLICATE",
+      referenceDate: "2026-09-01",
+    });
+    const second = position({
+      id: "snapshot-row-2",
+      snapshotId: "snapshot-2",
+      assetCode: "DUPLICATE",
+      referenceDate: "2026-09-01",
+    });
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "100",
+      targetMonths: 3,
+      selectedAssetKeys: [getEmergencyReserveAssetKey(first)],
+    });
+
+    const summary = await new EmergencyReserveService().getSummary([
+      { ...first, classification: { assetClass: "Renda fixa" } },
+      { ...second, classification: { assetClass: "Renda fixa" } },
+    ]);
+
+    expect(summary.referenceDate).toBe("2026-09-01");
+  });
+
+  it.each([
+    {
+      label: "different effective dates",
+      positions: [
+        position({ assetCode: "FIRST", referenceDate: "2026-09-01" }),
+        position({ assetCode: "SECOND", referenceDate: "2026-09-02" }),
+      ],
+    },
+    {
+      label: "an unknown effective date",
+      positions: [
+        position({ assetCode: "KNOWN", referenceDate: "2026-09-01" }),
+        position({ assetCode: "UNKNOWN", referenceDate: null }),
+      ],
+    },
+    {
+      label: "a duplicate asset with inconsistent effective dates",
+      positions: [
+        position({ assetCode: "DUPLICATE", referenceDate: "2026-09-01" }),
+        position({
+          id: "snapshot-row-2",
+          assetCode: "DUPLICATE",
+          referenceDate: "2026-09-02",
+        }),
+      ],
+    },
+  ])("returns no reference date for $label", async ({ positions }) => {
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "100",
+      targetMonths: 3,
+      selectedAssetKeys: positions.map(getEmergencyReserveAssetKey),
+    });
+
+    const summary = await new EmergencyReserveService().getSummary(
+      positions.map((item) => ({
+        ...item,
+        classification: { assetClass: "Renda fixa" },
+      })),
+    );
+
+    expect(summary.referenceDate).toBeNull();
+  });
+
   it("returns an empty contribution context when reserve settings do not exist", async () => {
     mocks.getSettings.mockResolvedValue(null);
     const result = await new EmergencyReserveService().getContributionContext(

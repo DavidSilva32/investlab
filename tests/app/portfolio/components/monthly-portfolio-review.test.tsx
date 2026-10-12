@@ -218,6 +218,7 @@ const review = (
     status: "ready",
     dateAlignment: "aligned",
     compositionCoverage: "equivalent",
+    valuationMethodCoverage: "equivalent",
     current,
     previous,
     observedChangeCents: "5000",
@@ -683,6 +684,56 @@ describe("MonthlyPortfolioReview", () => {
     expect(screen.getByText("Há meses sem fechamento.")).toBeTruthy();
   });
 
+  it("explains a valuation method change when the closes are otherwise comparable", () => {
+    renderReview(
+      review({
+        status: "partial",
+        valuationMethodCoverage: "changed",
+        current: summary({ valuationMethods: ["MTM"] }),
+        previous: summary({
+          referenceDate: "2026-07-31",
+          knownValueCents: "120050",
+          valuationMethods: ["CURVA"],
+        }),
+      }),
+    );
+
+    expect(screen.getByText("O método de avaliação mudou.")).toBeTruthy();
+  });
+
+  it("does not attribute the partial comparison only to method when sources also change", () => {
+    renderReview(
+      review({
+        status: "partial",
+        compositionCoverage: "changed",
+        valuationMethodCoverage: "changed",
+        current: summary({
+          sources: ["Valor informado"],
+          valuationMethods: ["MANUAL_REPORTED"],
+        }),
+        previous: summary({ valuationMethods: ["FECHAMENTO"] }),
+      }),
+    );
+
+    expect(screen.queryByText("O método de avaliação mudou.")).toBeNull();
+    expect(
+      screen.getByText("A carteira mudou entre os períodos."),
+    ).toBeTruthy();
+  });
+
+  it("explains when the valuation method cannot be confirmed", () => {
+    renderReview(
+      review({
+        status: "partial",
+        valuationMethodCoverage: "unknown",
+      }),
+    );
+
+    expect(
+      screen.getByText("Não foi possível confirmar o método de avaliação."),
+    ).toBeTruthy();
+  });
+
   it("keeps unknown historical values blank and the partial warning concise", () => {
     renderReview(
       review({
@@ -721,6 +772,18 @@ describe("MonthlyPortfolioReview", () => {
     );
 
     expect(screen.getByText("Datas de avaliação diferentes.")).toBeTruthy();
+  });
+
+  it("explains when a foreign position has no conversion date", () => {
+    renderReview(
+      review({
+        status: "partial",
+        dateAlignment: "unavailable",
+        valuationMethodCoverage: "equivalent",
+      }),
+    );
+
+    expect(screen.getByText("Data da conversão não informada.")).toBeTruthy();
   });
 
   it("explains mixed valuation dates", () => {

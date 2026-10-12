@@ -145,7 +145,10 @@ export class EmergencyReserveService {
         400,
       );
     }
-    const data = await this.getEditorData(requestId);
+    const data = await this.getEditorData(
+      requestId,
+      parsed.data.selectedAssetKeys,
+    );
     const selected = new Set(parsed.data.selectedAssetKeys);
     const holdings = data.holdings.filter((holding) =>
       selected.has(holding.assetKey),
@@ -167,7 +170,7 @@ export class EmergencyReserveService {
     });
   }
 
-  async getEditorData(requestId?: string) {
+  async getEditorData(requestId?: string, selectedAssetKeys?: string[]) {
     logger.info("emergency_reserve_editor_loading", { requestId });
     const [rawPositions, settings, objectives] = await Promise.all([
       importRepository.listLatestPositions(requestId),
@@ -204,7 +207,8 @@ export class EmergencyReserveService {
       {
         monthlyExpenses: settings?.monthlyExpenses ?? null,
         targetMonths: settings?.targetMonths ?? null,
-        selectedAssetKeys: settings?.selectedAssetKeys ?? [],
+        selectedAssetKeys:
+          selectedAssetKeys ?? settings?.selectedAssetKeys ?? [],
       },
       ownerByAssetKey,
     );
@@ -651,8 +655,24 @@ export class EmergencyReserveService {
     >();
 
     const fixedIncomePositions = positions.filter(isReserveFixedIncomePosition);
+    const effectiveDateByAssetKey = new Map<
+      string,
+      { date: string | null; complete: boolean }
+    >();
     for (const position of fixedIncomePositions) {
       const assetKey = getEmergencyReserveAssetKey(position);
+      const effectiveDate =
+        position.estimatedThrough ?? position.referenceDate ?? null;
+      const existingDate = effectiveDateByAssetKey.get(assetKey);
+      if (existingDate) {
+        if (effectiveDate === null || effectiveDate !== existingDate.date)
+          existingDate.complete = false;
+      } else {
+        effectiveDateByAssetKey.set(assetKey, {
+          date: effectiveDate,
+          complete: effectiveDate !== null,
+        });
+      }
       const valueCents = getPositionValue(position);
       const existing = groups.get(assetKey);
       if (existing) {
@@ -742,7 +762,23 @@ export class EmergencyReserveService {
     const unvaluedGroups = selectedHoldings.filter(
       (holding) => holding.unvaluedPositions > 0,
     ).length;
-    const referenceDate = fixedIncomePositions[0]?.referenceDate ?? null;
+    const selectedKeys = settings.selectedAssetKeys;
+    const selectedDates = selectedKeys.map((assetKey) =>
+      effectiveDateByAssetKey.get(assetKey),
+    );
+    const knownSelectedDates = selectedDates.filter(
+      (entry): entry is { date: string; complete: boolean } =>
+        entry !== undefined && entry.date !== null,
+    );
+    const referenceDate =
+      selectedKeys.length > 0 &&
+      selectedDates.length === knownSelectedDates.length &&
+      knownSelectedDates.every((entry) => entry.complete) &&
+      knownSelectedDates.every(
+        (entry) => entry.date === knownSelectedDates[0]?.date,
+      )
+        ? knownSelectedDates[0]!.date
+        : null;
     const monthlyExpenses =
       settings.monthlyExpenses === null
         ? null

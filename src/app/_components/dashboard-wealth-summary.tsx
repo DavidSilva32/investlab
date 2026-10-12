@@ -15,17 +15,18 @@ export function DashboardWealthSummary({
   positions: PortfolioInsightPosition[];
   insights: PortfolioInsights;
 }) {
+  const effectiveDates = positions.map(
+    (position) => position.estimatedThrough ?? position.referenceDate,
+  );
   const referenceDates = [
     ...new Set(
-      positions
-        .map((position) => position.referenceDate)
-        .filter((value): value is string => Boolean(value)),
+      effectiveDates.filter((value): value is string => Boolean(value)),
     ),
   ];
   const referenceDate =
     referenceDates.length === 1 &&
     positions.length > 0 &&
-    positions.every((position) => position.referenceDate === referenceDates[0])
+    effectiveDates.every((value) => value === referenceDates[0])
       ? referenceDates[0]
       : null;
   const dataDateIsMixed = referenceDates.length > 0 && referenceDate === null;
