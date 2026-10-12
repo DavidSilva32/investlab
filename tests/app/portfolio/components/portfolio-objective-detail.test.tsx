@@ -6,6 +6,28 @@ import { PortfolioObjectiveDetail } from "@/app/portfolio/_components/portfolio-
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  value: class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
+
+Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+  configurable: true,
+  value: () => false,
+});
+Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+  configurable: true,
+  value: () => undefined,
+});
+Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+  configurable: true,
+  value: () => undefined,
+});
+
 const objective: PortfolioObjective = {
   id: "trip",
   kind: "CUSTOM",
@@ -156,5 +178,21 @@ describe("PortfolioObjectiveDetail", () => {
 
     expect(screen.getByLabelText("Saldo observado de Viagem")).toBeTruthy();
     expect(screen.queryByText(/Informe um valor entre/)).toBeNull();
+  });
+
+  it("links a personal objective to its planning scenario", () => {
+    render(
+      <PortfolioObjectiveDetail
+        objective={objective}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Planejar este objetivo" })
+        .getAttribute("href"),
+    ).toBe("/planning?objective=trip");
   });
 });

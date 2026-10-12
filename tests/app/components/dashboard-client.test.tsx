@@ -57,7 +57,7 @@ function renderDashboard() {
 
 const overview = {
   positions: [],
-  referenceRates: { selic: null, cdi: null },
+  referenceRates: { selic: null, cdi: null, ipca: null },
 };
 const objectivesOverview = {
   unassignedKnownValue: 1250,

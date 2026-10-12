@@ -39,7 +39,7 @@ async function mockPortfolio(page: Page) {
           positions,
           movements: [],
           insights: getPortfolioInsights(positions),
-          referenceRates: { selic: null, cdi: null },
+          referenceRates: { selic: null, cdi: null, ipca: null },
         },
       });
     }

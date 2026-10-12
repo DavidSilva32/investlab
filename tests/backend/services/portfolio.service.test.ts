@@ -213,7 +213,11 @@ describe("PortfolioService", () => {
     estimates.enrich.mockResolvedValue(estimated);
     allocation.classifyPositions.mockResolvedValue(classified);
     allocation.getAllocationTargets.mockResolvedValue(targets);
-    rates.getReferenceRates.mockResolvedValue({ selic: null, cdi: null });
+    rates.getReferenceRates.mockResolvedValue({
+      selic: null,
+      cdi: null,
+      ipca: null,
+    });
     reserve.getSummary.mockResolvedValue({
       selectedValue: 0,
       unvaluedGroups: 0,
@@ -250,7 +254,11 @@ describe("PortfolioService", () => {
       repository.listLatestPositions.mockResolvedValue([{ id: "p1" }]);
       repository.listMovements.mockResolvedValue([]);
       estimates.enrich.mockResolvedValue(estimated);
-      rates.getReferenceRates.mockResolvedValue({ selic: null, cdi: null });
+      rates.getReferenceRates.mockResolvedValue({
+        selic: null,
+        cdi: null,
+        ipca: null,
+      });
       reserve.getSummary.mockResolvedValue({
         unvaluedGroups: 0,
         missingSelectionCount: 0,
@@ -298,7 +306,11 @@ describe("PortfolioService", () => {
     repository.listLatestPositions.mockResolvedValue([{ id: "p1" }]);
     repository.listMovements.mockResolvedValue([]);
     estimates.enrich.mockResolvedValue(estimated);
-    rates.getReferenceRates.mockResolvedValue({ selic: null, cdi: null });
+    rates.getReferenceRates.mockResolvedValue({
+      selic: null,
+      cdi: null,
+      ipca: null,
+    });
     allocation.classifyPositions.mockResolvedValue(classified);
     allocation.getAllocationTargets.mockRejectedValue(
       new Error("legacy target lookup should not be needed"),
@@ -368,7 +380,11 @@ describe("PortfolioService", () => {
       estimates.enrich.mockResolvedValue([]);
       allocation.classifyPositions.mockResolvedValue([]);
       allocation.getAllocationTargets.mockResolvedValue({});
-      rates.getReferenceRates.mockResolvedValue({ selic: null, cdi: null });
+      rates.getReferenceRates.mockResolvedValue({
+        selic: null,
+        cdi: null,
+        ipca: null,
+      });
       reserve.getSummary.mockResolvedValue({
         unvaluedGroups: 0,
         missingSelectionCount: 0,

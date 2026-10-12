@@ -11,17 +11,41 @@ const service = vi.hoisted(() => ({
   confirmGlobalAllocation: vi.fn(),
 }));
 const balanceService = vi.hoisted(() => ({ save: vi.fn() }));
+const projectionService = vi.hoisted(() => ({ simulate: vi.fn() }));
 vi.mock("@/backend/services/portfolio-objectives.service", () => ({
   portfolioObjectivesService: service,
 }));
 vi.mock("@/backend/services/objective-balance.service", () => ({
   objectiveBalanceService: balanceService,
 }));
+vi.mock("@/backend/services/objective-projection.service", () => ({
+  objectiveProjectionService: projectionService,
+}));
 
 import { PortfolioObjectivesController } from "@/backend/controllers/portfolio-objectives.controller";
 
 describe("PortfolioObjectivesController", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("returns an objective projection and logs its assumptions", async () => {
+    const result = {
+      mode: "project_balance",
+      horizonYears: 10,
+      targetBasis: "future_nominal",
+    };
+    projectionService.simulate.mockReturnValue(result);
+
+    const response = new PortfolioObjectivesController().simulateProjection(
+      { mode: "project_balance" },
+      "projection-request",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(result);
+    expect(projectionService.simulate).toHaveBeenCalledWith({
+      mode: "project_balance",
+    });
+  });
 
   it("returns the objectives overview", async () => {
     const data = { objectives: [], positions: [] };

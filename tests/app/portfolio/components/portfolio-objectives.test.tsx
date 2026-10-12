@@ -49,6 +49,26 @@ vi.mock("recharts", () => ({
   PieChart: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
 }));
 
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  value: class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback(
+        [
+          {
+            target,
+            contentRect: { width: 500, height: 220 },
+          } as ResizeObserverEntry,
+        ],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  },
+});
+
 function objective(
   overrides: Partial<PortfolioObjective> &
     Pick<PortfolioObjective, "id" | "kind" | "name">,
@@ -499,6 +519,44 @@ describe("PortfolioObjectives", () => {
     expect(screen.getByText("Patrimônio por destino")).toBeTruthy();
   });
 
+  it("offers a contextual planning link from a personal objective", async () => {
+    const user = userEvent.setup();
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
+    );
+
+    expect(
+      screen
+        .getByRole("link", { name: "Planejar este objetivo" })
+        .getAttribute("href"),
+    ).toBe("/planning?objective=objective-trip");
+  });
+
+  it("keeps planning available when objective valuation dates differ", async () => {
+    const user = userEvent.setup();
+    currentData = {
+      ...structuredClone(baseData),
+      positions: baseData.positions.map((position, index) => ({
+        ...position,
+        referenceDate: index === 0 ? "2026-02-01" : "2026-04-01",
+        estimatedThrough: index === 0 ? "2026-03-01" : null,
+      })),
+    };
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
+    );
+
+    expect(
+      screen
+        .getByRole("link", { name: "Planejar este objetivo" })
+        .getAttribute("href"),
+    ).toBe("/planning?objective=objective-trip");
+  });
+
   it("returns a canceled create to the overview and can edit from objective actions", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
@@ -565,6 +623,28 @@ describe("PortfolioObjectives", () => {
     expect(
       screen.getByRole("progressbar", { name: "Progresso de Reserva: 20%" }),
     ).toBeTruthy();
+  });
+
+  it("keeps planning available for an invalid valuation date", async () => {
+    const user = userEvent.setup();
+    currentData = {
+      ...structuredClone(baseData),
+      positions: baseData.positions.map((position, index) => ({
+        ...position,
+        referenceDate: index === 0 ? "2026-02-30" : "2026-02-30",
+      })),
+    };
+    render(<PortfolioObjectives />);
+    await screen.findByText("Patrimônio por destino");
+    await user.click(
+      screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
+    );
+
+    expect(
+      screen
+        .getByRole("link", { name: "Planejar este objetivo" })
+        .getAttribute("href"),
+    ).toBe("/planning?objective=objective-trip");
   });
 
   it("searches unassigned position combinations, previews selection, then saves from assignment view", async () => {

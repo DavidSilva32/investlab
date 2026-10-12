@@ -124,7 +124,6 @@ export function PortfolioObjectives({
         : null;
   const activeObjective =
     data?.objectives.find((item) => item.id === activeObjectiveId) ?? null;
-
   async function saveObjective(values: {
     name: string;
     purpose: "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT" | null;

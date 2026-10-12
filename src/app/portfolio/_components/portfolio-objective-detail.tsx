@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, Info, PiggyBank, Target } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -195,6 +196,16 @@ export function PortfolioObjectiveDetail({
         saving={balanceSaving}
         onSave={onSaveBalance}
       />
+      {!isReserve && (
+        <Button asChild variant="outline" className="w-full justify-between">
+          <Link
+            href={`/planning?objective=${encodeURIComponent(objective.id)}`}
+          >
+            <span>Planejar este objetivo</span>
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
+        </Button>
+      )}
     </div>
   );
 }
