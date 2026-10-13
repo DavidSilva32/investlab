@@ -487,15 +487,8 @@ function findObjectiveId(
     ...new Map(matches.map((match) => [match.id, match])).values(),
   ];
 
-  const mostSpecific = uniqueMatches.filter(
-    ({ name }) =>
-      !uniqueMatches.some(
-        ({ name: otherName }) =>
-          otherName.length > name.length && containsPhrase(otherName, name),
-      ),
-  );
-  if (mostSpecific.length !== 1) return { id: null, ambiguous: true };
-  return { id: mostSpecific[0].id, ambiguous: false };
+  if (uniqueMatches.length !== 1) return { id: null, ambiguous: true };
+  return { id: uniqueMatches[0].id, ambiguous: false };
 }
 
 export function recognizePortfolioChatMessage(

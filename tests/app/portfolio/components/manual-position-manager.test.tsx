@@ -174,6 +174,51 @@ describe("ManualPositionManager", () => {
     window.history.replaceState({}, "", "/");
   });
 
+  it("responds to table edit and remove events for the matching position", () => {
+    render(<ManualPositionManager positions={[row]} />);
+
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:edit", {
+        detail: { id: row.id },
+      }),
+    );
+    expect(screen.getByLabelText("Ativo ou produto")).toHaveProperty(
+      "value",
+      row.product,
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:remove", {
+        detail: { id: row.id },
+      }),
+    );
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText(/A posi/)).toBeTruthy();
+  });
+
+  it("ignores table edit and remove events for unknown positions", () => {
+    render(<ManualPositionManager positions={[row]} />);
+
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:edit", {
+        detail: { id: "unknown-position" },
+      }),
+    );
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:remove", {
+        detail: { id: "unknown-position" },
+      }),
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
   it("opens the accessible form and explains explicit foreign conversion", () => {
     render(<ManualPositionManager positions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: /adicionar posição/i }));
@@ -549,6 +594,15 @@ describe("ManualPositionManager", () => {
     expect(screen.getByText(/valor não informado/)).toBeTruthy();
     expect(screen.queryByText("Nenhuma posição manual cadastrada.")).toBeNull();
   });
+
+  it("uses the singular unit label for a position with one unit", () => {
+    render(<ManualPositionManager positions={[{ ...row, quantity: "1" }]} />);
+    expandManualPositions();
+
+    expect(screen.getByText(/1 unidade/)).toBeTruthy();
+    expect(screen.queryByText(/1 unidades/)).toBeNull();
+  });
+
   it("shows the saved portfolio class beside a manual position", () => {
     const classifiedPosition = {
       ...row,

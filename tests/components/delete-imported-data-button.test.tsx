@@ -94,6 +94,57 @@ describe("DeleteImportedDataButton", () => {
     );
     expect(screen.queryByText(/Não foi possível excluir os dados/)).toBeNull();
   });
+
+  it("opens and dismisses its own confirmation dialog when uncontrolled", async () => {
+    const user = userEvent.setup();
+    render(
+      <DeleteImportedDataButton
+        documentType="B3_POSITION_XLSX"
+        label="registros"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Excluir registros" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("shows loading state while the deletion request is pending", async () => {
+    const user = userEvent.setup();
+    let resolveResponse: (response: {
+      ok: boolean;
+      json: () => Promise<Record<string, never>>;
+    }) => void = () => {};
+    const pendingResponse = new Promise<{
+      ok: boolean;
+      json: () => Promise<Record<string, never>>;
+    }>((resolve) => {
+      resolveResponse = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(pendingResponse));
+    render(
+      <DeleteImportedDataButton
+        documentType="B3_POSITION_XLSX"
+        label="registros"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Excluir registros" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Excluindo...", hidden: true }),
+    ).toHaveProperty("disabled", true);
+
+    resolveResponse({ ok: true, json: async () => ({}) });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Dados importados excluídos."),
+    );
+  });
+
   it("does nothing when cancellation is declined and reports failures by toast", async () => {
     const user = userEvent.setup();
     const fetch = vi

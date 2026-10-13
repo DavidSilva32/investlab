@@ -29,6 +29,18 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("@/components/portfolio-chat-microphone", () => ({
+  PortfolioChatMicrophone: ({
+    onTranscript,
+  }: {
+    onTranscript: (transcript: string) => void;
+  }) => (
+    <button type="button" onClick={() => onTranscript("texto reconhecido")}>
+      Simular audio
+    </button>
+  ),
+}));
+
 import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
@@ -118,6 +130,17 @@ describe("PortfolioChatAssistant", () => {
               missingPositionCount: 0,
               unvaluedPositionCount: 0,
             },
+            {
+              id: "unsupported-purpose-id",
+              name: "Objetivo sem categoria conhecida",
+              kind: "CUSTOM",
+              purpose: "FUTURE_PURPOSE",
+              targetAmount: null,
+              knownValue: 30,
+              remainingAmount: null,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
           ],
         }),
       ),
@@ -150,6 +173,9 @@ describe("PortfolioChatAssistant", () => {
       choices.querySelector('[aria-label="Objetivos legados sem categoria"]')
         ?.textContent,
     ).toContain("Objetivo antigo");
+    expect(choices.textContent).not.toContain(
+      "Objetivo sem categoria conhecida",
+    );
     expect(choices.textContent).not.toContain("Viagem");
 
     await user.clear(input);
@@ -331,6 +357,31 @@ describe("PortfolioChatAssistant", () => {
       }),
     ).toBeTruthy();
     expect(screen.queryByText("Fundo para apagar")).toBeNull();
+  });
+
+  it("uses a voice transcript as a new draft and appends it to an existing draft", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Simular audio" }));
+    expect((input as HTMLInputElement).value).toBe("texto reconhecido");
+
+    await user.clear(input);
+    await user.type(input, "  Minha pergunta  ");
+    await user.click(screen.getByRole("button", { name: "Simular audio" }));
+    expect((input as HTMLInputElement).value).toBe(
+      "Minha pergunta texto reconhecido",
+    );
   });
 
   it("recognizes a direct portfolio question without showing suggestions", async () => {
@@ -587,6 +638,45 @@ describe("PortfolioChatAssistant", () => {
 
     expect(
       await screen.findByText(/aporte mensal planejado de R\$ 1\.250,00/),
+    ).toBeTruthy();
+  });
+
+  it("answers a category specific monthly contribution question directly", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [
+            {
+              id: "travel",
+              name: "Viagem",
+              purpose: "PERSONAL_GOAL",
+              monthlyPlannedAmount: 1_250,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Quanto planejei aportar por mes nos objetivos pessoais?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(
+        /aporte mensal planejado de R\$ 1\.250,00 para Viagem/,
+      ),
     ).toBeTruthy();
   });
 
@@ -849,6 +939,12 @@ describe("PortfolioChatAssistant", () => {
     ).toBeNull();
     expect(screen.queryByText(/O valor conhecido em Viagem é/)).toBeNull();
     expect(screen.queryByText(/faltam R\$/)).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Quanto falta para minha meta?" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Viagem" }));
+    expect(await screen.findByText(/faltam R\$ 4\.000,00/)).toBeTruthy();
   });
 
   it("renders long messages in the message scroller with wrapping enabled", async () => {

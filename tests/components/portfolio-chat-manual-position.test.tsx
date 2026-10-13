@@ -161,51 +161,159 @@ describe("PortfolioChatManualPosition", () => {
       />,
     );
 
-    const input = screen.getByRole("textbox", {
-      name: "Resposta para o cadastro da posição",
-    });
-    await user.type(input, "não");
-    await user.click(screen.getByRole("button", { name: "Enviar resposta" }));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
 
     expect(onCancel).toHaveBeenCalledOnce();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not save when the user says no alongside a positive cancellation cue", async () => {
+  it("returns to correction from the summary without saving", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn(() => jsonResponse({ position: { id: "new" } }));
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     renderFlow();
-    const answer = await reachSummary(user);
+    await reachSummary(user);
 
-    await answer("não, pode cancelar");
+    await user.click(screen.getByRole("button", { name: "Corrigir dados" }));
 
-    expect(
-      await screen.findByText(
-        "Não consegui identificar se você quer confirmar ou cancelar. Escolha uma dessas ações para continuar.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByRole("textbox")).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("asks for clarification when confirmation and cancellation conflict", async () => {
+  it("updates only the value when a correction includes a clear amount", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn(() => jsonResponse({ position: { id: "new" } }));
-    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <PortfolioChatManualPosition
+        onBack={vi.fn()}
+        initialRequest={{
+          product: "CDB",
+          institution: null,
+          assetClass: "Renda fixa",
+          amount: 1000,
+          currency: "BRL",
+          valueBasis: "total_value",
+          informationalCdiPercentage: 100,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Corrigir dados" }));
+    await user.type(screen.getByRole("textbox"), "R$ 2.000,00");
+    await user.click(screen.getByRole("button", { name: "Enviar resposta" }));
+
+    expect(screen.getByText("2.000 BRL")).toBeTruthy();
+  });
+
+  it("keeps the original product when a correction repeats its class label", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioChatManualPosition
+        onBack={vi.fn()}
+        initialRequest={{
+          product: "CDB",
+          institution: null,
+          assetClass: "Renda fixa",
+          amount: 1000,
+          currency: "BRL",
+          valueBasis: "total_value",
+          informationalCdiPercentage: 100,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Corrigir dados" }));
+    await user.type(screen.getByRole("textbox"), "na verdade CDB");
+    await user.click(screen.getByRole("button", { name: "Enviar resposta" }));
+
+    expect(screen.getByText("Premissa informativa")).toBeTruthy();
+    expect(
+      screen.getByText("100% do CDI, sem cálculo de rendimento"),
+    ).toBeTruthy();
+  });
+
+  it("asks for missing product and class in an inferred request", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioChatManualPosition
+        onBack={vi.fn()}
+        initialRequest={{
+          product: null,
+          institution: null,
+          assetClass: null,
+          amount: null,
+          currency: null,
+          valueBasis: null,
+          informationalCdiPercentage: null,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Sim, continuar" }));
+    expect(screen.getByText("Qual é o nome do ativo ou produto?")).toBeTruthy();
+    await user.type(screen.getByRole("textbox"), "na verdade CDB");
+    await user.click(screen.getByRole("button", { name: "Enviar resposta" }));
+
+    expect(
+      screen.getByText("Selecione a classe informada para essa posição."),
+    ).toBeTruthy();
+  });
+
+  it("asks for a missing class when the inferred request already has a product", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioChatManualPosition
+        onBack={vi.fn()}
+        initialRequest={{
+          product: "CDB",
+          institution: null,
+          assetClass: null,
+          amount: null,
+          currency: null,
+          valueBasis: null,
+          informationalCdiPercentage: null,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Sim, continuar" }));
+
+    expect(
+      screen.getByText("Selecione a classe informada para essa posição."),
+    ).toBeTruthy();
+  });
+
+  it("keeps a broad product correction without assigning a specific subclass", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioChatManualPosition
+        onBack={vi.fn()}
+        initialRequest={{
+          product: "CDB",
+          institution: null,
+          assetClass: "Renda fixa",
+          amount: 1000,
+          currency: "BRL",
+          valueBasis: "total_value",
+          informationalCdiPercentage: 100,
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Corrigir dados" }));
+    await user.type(screen.getByRole("textbox"), "Tesouro R$ 2.000");
+    await user.click(screen.getByRole("button", { name: "Enviar resposta" }));
+
+    expect(screen.getAllByText(/Tesouro/)).toHaveLength(2);
+    expect(screen.queryByText("Premissa informativa")).toBeNull();
+  });
+
+  it("ignores an empty answer", () => {
     renderFlow();
-    const answer = await reachSummary(user);
+    const form = screen.getByRole("textbox").closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form!);
 
-    await answer("não, pode continuar");
-
-    expect(
-      await screen.findByText(
-        "Não consegui identificar se você quer confirmar ou cancelar. Escolha uma dessas ações para continuar.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Confirmar cadastro" }),
-    ).toBeTruthy();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("log").children).toHaveLength(1);
   });
 
   it("clears the CDI premise when a CDB correction changes the product to LCI", async () => {
@@ -339,6 +447,54 @@ describe("PortfolioChatManualPosition", () => {
     const request = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
     expect(request.currency).toBe("USD");
     expect(request.convertedValueBrl).toBeNull();
+  });
+
+  it("keeps blank answers disabled and submits a unit price as unitPrice", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({ position: { id: "new" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderFlow();
+
+    const input = screen.getByRole("textbox", {
+      name: /Resposta para o cadastro da posi/,
+    });
+    const submit = screen.getByRole("button", { name: "Enviar resposta" });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(input, { target: { value: "   " } });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(input, { target: { value: "" } });
+
+    const answer = async (text: string) => {
+      const currentInput = screen.getByRole("textbox", {
+        name: /Resposta para o cadastro da posi/,
+      });
+      fireEvent.change(currentInput, { target: { value: text } });
+      fireEvent.click(screen.getByRole("button", { name: "Enviar resposta" }));
+    };
+    await answer("ETF exemplo");
+    await user.click(screen.getByRole("button", { name: "Renda fixa" }));
+    await answer("2");
+    await answer("BRL");
+    await user.click(
+      screen
+        .getByRole("group", { name: "Base do valor" })
+        .querySelectorAll("button")[1]!,
+    );
+    await answer("42,75");
+    await answer("13/10/2026");
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar cadastro" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+
+    const request = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(request).toMatchObject({
+      valueBasis: "unit_price",
+      unitPrice: 42.75,
+      totalValue: null,
+    });
   });
 
   it("does not send invalid quantities and lets the user retry with a valid value", async () => {

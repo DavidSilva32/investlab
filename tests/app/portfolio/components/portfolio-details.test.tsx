@@ -46,13 +46,23 @@ vi.mock("@/components/delete-imported-data-button", () => ({
   DeleteImportedDataButton: ({
     label,
     hideTrigger,
+    open,
   }: {
     label: string;
     hideTrigger?: boolean;
-  }) => (hideTrigger ? null : <button>{label}</button>),
+    open?: boolean;
+  }) =>
+    hideTrigger ? (
+      open ? (
+        <div role="alertdialog">Excluir {label}</div>
+      ) : null
+    ) : (
+      <button>{label}</button>
+    ),
 }));
 vi.mock("@/app/portfolio/_components/cdb-rate-configuration", () => ({
-  CdbRateConfiguration: () => <span>Configurar taxa</span>,
+  CdbRateConfiguration: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog">Configurar taxa</div> : null,
 }));
 
 import {
@@ -100,10 +110,17 @@ describe("portfolio detail components", () => {
     expect(screen.getByTestId("table-toolbar").textContent).toContain(
       "1 posição disponível",
     );
-    expect(screen.getAllByText("Configurar taxa")).toHaveLength(1);
+    expect(screen.queryByText("Configurar taxa")).toBeNull();
     await user.click(screen.getByRole("button", { name: /Mais a/ }));
-    expect(screen.getByText("Ajustar taxas")).toBeTruthy();
-    expect(screen.getByText(/Excluir posi/)).toBeTruthy();
+    await user.click(screen.getByText("Ajustar taxas"));
+    expect(screen.getByRole("dialog").textContent).toContain("Configurar taxa");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await user.click(screen.getByRole("button", { name: /Mais a/ }));
+    await user.click(screen.getByText(/Excluir posi/));
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "Excluir posições importadas",
+    );
     fireEvent.click(button);
 
     expect(dispatchSpy).toHaveBeenCalledWith(
@@ -127,6 +144,39 @@ describe("portfolio detail components", () => {
 
     expect(html).toContain(
       "Premissa informativa: 112.5% do CDI. Não usada para calcular rendimento.",
+    );
+  });
+
+  it("exposes rate, edit, and remove actions for a manual CDB row", async () => {
+    const user = userEvent.setup();
+    const eventSpy = vi
+      .spyOn(window, "dispatchEvent")
+      .mockImplementation(() => true);
+    render(
+      <PositionDetails
+        positions={[{ ...position, id: "manual-cdb", source: "MANUAL" }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /para CDB/ }));
+    await user.click(screen.getByText("Ajustar taxa"));
+    expect(screen.getByRole("dialog").textContent).toContain("Configurar taxa");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await user.click(screen.getByRole("button", { name: /para CDB/ }));
+    await user.click(screen.getByText(/Editar posi/));
+    expect(eventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "portfolio:manual-position:edit",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /para CDB/ }));
+    await user.click(screen.getByText(/Excluir posi/));
+    expect(eventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "portfolio:manual-position:remove",
+      }),
     );
   });
 
@@ -234,7 +284,7 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(screen.getAllByText("Configurar taxa")).toHaveLength(1);
+    expect(screen.queryByText("Configurar taxa")).toBeNull();
     fireEvent.click(
       screen.getAllByRole("button", {
         name: "Consultar origem e estimativa de CDB",
@@ -347,6 +397,18 @@ describe("portfolio detail components", () => {
     fireEvent.click(button);
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({ type: "portfolio:manual-operation:create" }),
+    );
+  });
+
+  it("opens the movement deletion confirmation from the table actions menu", async () => {
+    const user = userEvent.setup();
+    render(<MovementDetails movements={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /Mais a/ }));
+    await user.click(screen.getByText(/Excluir moviment/));
+
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "Excluir movimentações",
     );
   });
 

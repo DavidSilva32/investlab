@@ -77,6 +77,34 @@ describe("PortfolioTable", () => {
     await userEvent.click(value);
     expect(bodyCellTexts()).toEqual(["Alfa", "1", "Zeta", "2"]);
   });
+
+  it("renders non-sortable columns as labels instead of sort buttons", () => {
+    const columnsWithActions: PortfolioTableColumn<Row>[] = [
+      ...columns,
+      {
+        id: "actions",
+        label: "Ações",
+        className: "text-right",
+        width: "10%",
+        sortable: false,
+        value: () => null,
+        render: () => "Editar",
+      },
+    ];
+
+    render(
+      <PortfolioTable
+        columns={columnsWithActions}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Ações" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Ações/ })).toBeNull();
+    expect(screen.getByText("Editar")).toBeTruthy();
+  });
   it("handles equal values and a null left comparison", () => {
     render(
       <PortfolioTable
@@ -192,6 +220,21 @@ describe("PortfolioTable", () => {
     );
 
     expect(screen.getByText("1 registro")).toBeTruthy();
+
+    rerender(
+      <PortfolioTable
+        columns={columns}
+        rows={[
+          { id: "1", name: "Alfa", value: 1 },
+          { id: "2", name: "Beta", value: 2 },
+        ]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={toolbar}
+      />,
+    );
+
+    expect(screen.getByText("2 registros")).toBeTruthy();
 
     rerender(
       <PortfolioTable

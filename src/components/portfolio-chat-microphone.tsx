@@ -159,8 +159,7 @@ export function PortfolioChatMicrophone({
 
   function startRecording() {
     if (state === "recording") {
-      const recognition = recognitionRef.current;
-      if (!recognition) return;
+      const recognition = recognitionRef.current!;
 
       setState("stopping");
       clearStopTimeout();
@@ -190,7 +189,12 @@ export function PortfolioChatMicrophone({
     const speechWindow = window as SpeechWindow;
     const Recognition =
       speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
-    if (!Recognition || state !== "ready") return;
+    const canStartRecording =
+      state === "ready" ||
+      state === "transcribed" ||
+      state === "no-speech" ||
+      state === "error";
+    if (!Recognition || !canStartRecording) return;
 
     transcriptRef.current = "";
     try {

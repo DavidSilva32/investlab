@@ -146,6 +146,17 @@ describe("DashboardSummary", () => {
     expect(screen.queryByText("Gerenciar objetivos")).toBeNull();
   });
 
+  it("keeps the import action safe when no panel controller is provided", () => {
+    render(<DashboardSummary positions={positions} />);
+
+    const importButton = screen.getByRole("button", {
+      name: "Importar e conciliar",
+    });
+    fireEvent.click(importButton);
+
+    expect(importButton.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("shows a concise review action only when positions have no current value", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary

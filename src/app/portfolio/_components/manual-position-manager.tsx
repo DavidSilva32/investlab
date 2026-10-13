@@ -362,34 +362,28 @@ export function ManualPositionManager({
       setSaving(false);
     }
   };
-  const remove = useCallback(
-    async (position: ManualPosition) => {
-      if (removingId !== null) return;
-      setRemovingId(position.id);
-      try {
-        const response = await fetch("/api/positions/manual", {
-          method: "DELETE",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: position.id }),
-        });
-        const body: unknown = await response.json();
-        if (!response.ok) {
-          toast.error(
-            getApiMessage(body, "Não foi possível remover a posição."),
-          );
-          return;
-        }
-        toast.success(getApiMessage(body, "Posição removida."));
-        setPositionToRemove(null);
-        window.dispatchEvent(new Event("portfolio:updated"));
-      } catch {
-        toast.error("Não foi possível remover a posição.");
-      } finally {
-        setRemovingId(null);
+  const remove = useCallback(async (position: ManualPosition) => {
+    setRemovingId(position.id);
+    try {
+      const response = await fetch("/api/positions/manual", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: position.id }),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(getApiMessage(body, "Não foi possível remover a posição."));
+        return;
       }
-    },
-    [removingId],
-  );
+      toast.success(getApiMessage(body, "Posição removida."));
+      setPositionToRemove(null);
+      window.dispatchEvent(new Event("portfolio:updated"));
+    } catch {
+      toast.error("Não foi possível remover a posição.");
+    } finally {
+      setRemovingId(null);
+    }
+  }, []);
 
   useEffect(() => {
     const findManualPosition = (event: Event) => {
@@ -784,9 +778,7 @@ export function ManualPositionManager({
       </Dialog>
       <ConfirmActionDialog
         open={positionToRemove !== null}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) setPositionToRemove(null);
-        }}
+        onOpenChange={() => setPositionToRemove(null)}
         hideTrigger
         title={
           positionToRemove
@@ -796,9 +788,7 @@ export function ManualPositionManager({
         description="A posição manual será removida da carteira. Essa ação não altera outras posições."
         confirmLabel="Remover posição"
         loading={removingId !== null}
-        onConfirm={() => {
-          if (positionToRemove) void remove(positionToRemove);
-        }}
+        onConfirm={() => void remove(positionToRemove!)}
       />
     </>
   );

@@ -404,6 +404,32 @@ describe("ManualPortfolioPositionService", () => {
     expect(result.informationalCdiPercentage).toBe("100.0000");
   });
 
+  it("allows clearing or changing the CDI premise when editing a CDB", async () => {
+    repository.update.mockImplementation(async (_id, value) => ({
+      ...saved({ product: "CDB", informationalCdiPercentage: null }),
+      ...value,
+    }));
+    const service = new ManualPortfolioPositionService();
+
+    await service.update("position-id", {
+      ...input,
+      product: "CDB",
+      informationalCdiPercentage: null,
+    });
+    expect(repository.update.mock.calls.at(-1)?.[1]).toMatchObject({
+      informationalCdiPercentage: null,
+    });
+
+    await service.update("position-id", {
+      ...input,
+      product: "CDB",
+      informationalCdiPercentage: 115.5,
+    });
+    expect(repository.update.mock.calls.at(-1)?.[1]).toMatchObject({
+      informationalCdiPercentage: "115.5000",
+    });
+  });
+
   it("deletes positions and reports missing identifiers", async () => {
     repository.delete.mockResolvedValue({ id: "position-id" });
     const service = new ManualPortfolioPositionService();

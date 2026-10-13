@@ -68,6 +68,34 @@ describe("DashboardNextAction", () => {
     );
   });
 
+  it("offers reserve review only when a below-target result has a known difference", () => {
+    expect(
+      getDashboardNextAction({
+        positionCount: 2,
+        missingValueCount: 0,
+        reserveIncomplete: false,
+        reserve: {
+          ...configuredReserve,
+          status: "below_target",
+          difference: null,
+        },
+      }),
+    ).toBeNull();
+
+    expect(
+      getDashboardNextAction({
+        positionCount: 2,
+        missingValueCount: 0,
+        reserveIncomplete: false,
+        reserve: {
+          ...configuredReserve,
+          status: "below_target",
+          difference: 100,
+        },
+      })?.href,
+    ).toBe("/portfolio?panel=objectives&objective=reserve");
+  });
+
   it("has no redundant action when the portfolio and reserve are complete", () => {
     const action = getDashboardNextAction({
       positionCount: 2,

@@ -79,6 +79,46 @@ describe("isPortfolioChatManualPositionRequest", () => {
     ).toBeNull();
   });
 
+  it.each([
+    ["Comprei CDB por R$ 1.250,75", 1250.75],
+    ["Comprei CDB por R$ 1.250", 1250],
+    ["Comprei CDB por 2 mil reais", 2000],
+    ["Comprei CDB por 1,5 milhão de reais", 1_500_000],
+  ])("parses Portuguese currency amounts in %s", (message, amount) => {
+    expect(parsePortfolioChatManualPositionRequest(message)).toMatchObject({
+      amount,
+      currency: "BRL",
+      valueBasis: "total_value",
+    });
+  });
+
+  it("rejects zero and amounts that overflow after applying a multiplier", () => {
+    expect(
+      parsePortfolioChatManualPositionRequest("Comprei CDB por R$ 0"),
+    ).toMatchObject({ amount: null });
+    expect(
+      parsePortfolioChatManualPositionRequest(
+        `Comprei CDB por ${"9".repeat(308)} mil reais`,
+      ),
+    ).toMatchObject({ amount: null });
+  });
+
+  it("captures a generic institution without inventing a bank name", () => {
+    expect(
+      parsePortfolioChatManualPositionRequest(
+        "Quero cadastrar ETF na Vanguard",
+      ),
+    ).toEqual({
+      product: "ETF",
+      institution: "Vanguard",
+      assetClass: null,
+      amount: null,
+      currency: null,
+      valueBasis: null,
+      informationalCdiPercentage: null,
+    });
+  });
+
   it("marks a purchase combined with a supported consultation as ambiguous", () => {
     expect(
       isPortfolioChatManualPositionRequestAmbiguous(

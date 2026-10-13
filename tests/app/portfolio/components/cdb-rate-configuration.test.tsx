@@ -34,6 +34,38 @@ describe("CdbRateConfiguration", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("falls back to the standard rate when the saved percentage is invalid", () => {
+    render(
+      <CdbRateConfiguration
+        open
+        onOpenChange={vi.fn()}
+        assetCode="CDB-INVALID"
+        currentPercentage="not-a-number"
+      />,
+    );
+
+    expect(
+      (screen.getByLabelText("% do CDI para CDB-INVALID") as HTMLInputElement)
+        .value,
+    ).toBe("100");
+  });
+
+  it("preserves a valid saved percentage", () => {
+    render(
+      <CdbRateConfiguration
+        open
+        onOpenChange={vi.fn()}
+        assetCode="CDB-SAVED"
+        currentPercentage="112.5"
+      />,
+    );
+
+    expect(
+      (screen.getByLabelText("% do CDI para CDB-SAVED") as HTMLInputElement)
+        .value,
+    ).toBe("112.5");
+  });
+
   it("keeps an individual rate available for correction", async () => {
     const fetchMock = vi
       .fn()

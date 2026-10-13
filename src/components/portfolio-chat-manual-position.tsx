@@ -110,8 +110,7 @@ function parseDate(value: string): string | null {
     : null;
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "";
+function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(
     new Date(`${value}T00:00:00Z`),
   );
@@ -153,7 +152,6 @@ export function PortfolioChatManualPosition({
   ]);
   const [saving, setSaving] = useState(false);
   const sequence = useRef(1);
-  const submitLock = useRef(false);
 
   function addLine(role: Line["role"], content: string) {
     const id = sequence.current + 1;
@@ -171,14 +169,14 @@ export function PortfolioChatManualPosition({
     addLine("assistant", prompt);
   }
 
-  function chooseClass(assetClass: PositionDraft["assetClass"]) {
-    if (!assetClass || step !== "assetClass") return;
+  function chooseClass(assetClass: NonNullable<PositionDraft["assetClass"]>) {
     addLine("user", assetClass);
     ask("quantity", { ...draft, assetClass });
   }
 
-  function chooseValueBasis(valueBasis: PositionDraft["valueBasis"]) {
-    if (!valueBasis || step !== "valueBasis") return;
+  function chooseValueBasis(
+    valueBasis: NonNullable<PositionDraft["valueBasis"]>,
+  ) {
     const label =
       valueBasis === "total_value" ? "Valor total" : "Preço por unidade";
     addLine("user", label);
@@ -186,7 +184,6 @@ export function PortfolioChatManualPosition({
   }
 
   function chooseConversion(hasConversion: boolean) {
-    if (step !== "conversionChoice") return;
     addLine(
       "user",
       hasConversion ? "Tenho a conversão" : "Sem conversão informada",
@@ -246,7 +243,7 @@ export function PortfolioChatManualPosition({
         )
         .replace(/\s+/g, " ")
         .trim();
-      if (productAnswer) updatedDraft.product = productAnswer.slice(0, 160);
+      updatedDraft.product = productAnswer.slice(0, 160);
       if (/\b(cdb|rdb|lci|lca|deb[eê]nture)\b/i.test(answer))
         updatedDraft.assetClass = "Renda fixa";
       if (!/^CDB\b/i.test(updatedDraft.product)) {
@@ -265,53 +262,10 @@ export function PortfolioChatManualPosition({
   function submitAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const answer = input.trim();
-    if (!answer || saving || step === "submitted") return;
+    if (!answer) return;
     setInput("");
     addLine("user", answer);
 
-    if (step === "requestConfirmation" || step === "confirm") {
-      const normalized = answer
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLocaleLowerCase("pt-BR");
-      const confirms =
-        /\b(sim|confirmo|confirmar|isso|correto|pode|ok|certo)\b/.test(
-          normalized,
-        );
-      const cancels = /\b(nao|cancela|cancelar|desistir|desisto)\b/.test(
-        normalized,
-      );
-      if (confirms && cancels) {
-        addLine(
-          "assistant",
-          "Não consegui identificar se você quer confirmar ou cancelar. Escolha uma dessas ações para continuar.",
-        );
-        return;
-      }
-      if (cancels) {
-        cancelRegistration();
-        return;
-      }
-      if (confirms) {
-        if (step === "requestConfirmation") continueWithDraft();
-        else void confirmCreation();
-        return;
-      }
-      if (/\b(corrigir|corrige|alterar|editar|ajustar)\b/.test(normalized)) {
-        setStep("correction");
-        addLine("assistant", prompts.correction);
-        return;
-      }
-      if (step === "requestConfirmation") {
-        applyCorrection(answer);
-        return;
-      }
-      addLine(
-        "assistant",
-        "Responda confirmar, corrigir ou cancelar o cadastro.",
-      );
-      return;
-    }
     if (step === "correction") {
       applyCorrection(answer);
       return;
@@ -388,22 +342,18 @@ export function PortfolioChatManualPosition({
       continueWithDraft({ ...draft, convertedValueBrl });
       return;
     }
-    if (step === "conversionDate") {
-      const conversionDate = parseDate(answer);
-      if (!conversionDate) {
-        addLine(
-          "assistant",
-          "Não consegui validar a data. Use DD/MM/AAAA ou AAAA-MM-DD.",
-        );
-        return;
-      }
-      continueWithDraft({ ...draft, conversionDate });
+    const conversionDate = parseDate(answer);
+    if (!conversionDate) {
+      addLine(
+        "assistant",
+        "Não consegui validar a data. Use DD/MM/AAAA ou AAAA-MM-DD.",
+      );
+      return;
     }
+    continueWithDraft({ ...draft, conversionDate });
   }
 
   async function confirmCreation() {
-    if (step !== "confirm" || saving || submitLock.current) return;
-    submitLock.current = true;
     setSaving(true);
     const payload = {
       product: draft.product,
@@ -443,7 +393,6 @@ export function PortfolioChatManualPosition({
     } catch {
       toast.error("Não foi possível salvar a posição.");
     } finally {
-      submitLock.current = false;
       setSaving(false);
     }
   }
@@ -624,7 +573,7 @@ export function PortfolioChatManualPosition({
                   <dt className="text-muted-foreground">Valor convertido</dt>
                   <dd>{formatCurrency(draft.convertedValueBrl)}</dd>
                   <dt className="text-muted-foreground">Data da conversão</dt>
-                  <dd>{formatDate(draft.conversionDate)}</dd>
+                  <dd>{formatDate(draft.conversionDate!)}</dd>
                 </>
               )}
               {draft.currency !== "BRL" && draft.convertedValueBrl === null && (
