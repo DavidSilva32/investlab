@@ -101,6 +101,65 @@ describe("PortfolioChatAssistant", () => {
     ).toBeNull();
   });
 
+  it("answers a quick portfolio-total choice when objective data has already loaded", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [],
+          destinationSummary: { knownTotal: 63_171.81 },
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await revealSuggestions(user);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Quanto tenho de patrimônio conhecido?",
+      }),
+    );
+
+    expect(
+      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
+    ).toBeTruthy();
+  });
+
+  it("retries a quick portfolio-total choice when objective data has not loaded", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementationOnce(() => jsonResponse({ message: "Falha" }, false))
+        .mockImplementationOnce(() =>
+          jsonResponse({
+            objectives: [],
+            destinationSummary: { knownTotal: 63_171.81 },
+          }),
+        ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await revealSuggestions(user);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Quanto tenho de patrimônio conhecido?",
+      }),
+    );
+
+    expect(
+      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
+    ).toBeTruthy();
+  });
+
   it("shows a short relevant suggestion list after a partially recognized question", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
@@ -157,6 +216,109 @@ describe("PortfolioChatAssistant", () => {
       await screen.findByText(
         "Não encontrei um valor de patrimônio conhecido para consultar agora.",
       ),
+    ).toBeTruthy();
+  });
+
+  it("describes a single portfolio position without a confirmed value", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [],
+          destinationSummary: {
+            knownTotal: 63_171.81,
+            missingPositionCount: 1,
+            unvaluedPositionCount: 0,
+          },
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Qual é o patrimônio total da carteira?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(/1 posição sem valor confirmado/),
+    ).toBeTruthy();
+  });
+
+  it("ignores invalid counts when describing the known portfolio total", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [],
+          destinationSummary: {
+            knownTotal: 63_171.81,
+            missingPositionCount: Number.POSITIVE_INFINITY,
+            unvaluedPositionCount: Number.POSITIVE_INFINITY,
+          },
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Qual é o patrimônio total da carteira?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/posições sem valor confirmado/)).toBeNull();
+  });
+
+  it("answers a named objective contribution question directly", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [
+            {
+              id: "travel",
+              name: "Viagem",
+              monthlyPlannedAmount: 1_250,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Quanto planejei aportar por mês na Viagem?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(/aporte mensal planejado de R\$ 1\.250,00/),
     ).toBeTruthy();
   });
 

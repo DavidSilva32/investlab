@@ -253,6 +253,19 @@ describe("recognizePortfolioChatMessage", () => {
     });
   });
 
+  it("keeps a portfolio-wide value question global when it also names an objective", () => {
+    expect(
+      recognizePortfolioChatMessage(
+        "Qual o valor da carteira e qual o valor da Viagem?",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "portfolio-total",
+      objectiveId: "travel",
+      objectiveAmbiguous: false,
+    });
+  });
+
   it("ranks only supported intents that match useful clues, deterministically", () => {
     expect(rankPortfolioChatIntentSuggestions("meu saldo")).toEqual([
       "objective-value",
@@ -263,5 +276,7 @@ describe("recognizePortfolioChatMessage", () => {
     expect(rankPortfolioChatIntentSuggestions("melhor investimento?")).toEqual(
       [],
     );
+    expect(rankPortfolioChatIntentSuggestions("", 3)).toEqual([]);
+    expect(rankPortfolioChatIntentSuggestions("saldo", 0)).toEqual([]);
   });
 });
