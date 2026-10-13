@@ -16,6 +16,8 @@ export type PortfolioChatMatch = {
 };
 
 const reserveAliases = [
+  "reserva",
+  "minha reserva",
   "reserva de emergencia",
   "reserva emergencia",
   "reserva emergencial",
@@ -23,87 +25,64 @@ const reserveAliases = [
   "fundo emergencia",
 ];
 
-const intentPhrases: Record<PortfolioChatIntent, string[]> = {
-  "portfolio-total": [
-    "patrimonio conhecido",
-    "patrimonio total",
-    "patrimonio da carteira",
-    "valor total da carteira",
-    "qual valor total",
-    "total da carteira",
-    "quanto tenho ao todo",
-    "quanto tenho no total",
-    "quanto tenho somando tudo",
-    "quanto vale minha carteira",
-    "qual o valor da carteira",
-    "qual o valor total",
-    "patrimonio hoje",
-    "qual meu patrimonio",
-    "qual e meu patrimonio",
-    "qual e o meu patrimonio",
-    "meu patrimonio hoje",
-    "quanto tenho de patrimonio",
-  ],
-  "objective-value": [
-    "qual o valor",
-    "quanto vale",
-    "quanto tenho",
-    "quanto tem",
-    "qual saldo",
-    "saldo conhecido",
-    "valor conhecido",
-    "patrimonio conhecido",
-    "qual patrimonio",
-    "quanto esta guardado",
-    "quanto esta acumulado",
-    "valor acumulado",
-    "quanto acumulei",
-  ],
-  "objective-gap": [
-    "quanto falta",
-    "falta quanto",
-    "o que falta",
-    "quanto falta para completar",
-    "quanto falta para chegar",
-    "quanto falta para atingir",
-    "o que falta para chegar",
-    "o que falta para completar",
-    "diferenca para meta",
-    "distancia da meta",
-    "quanto falta atingir",
-  ],
-  "monthly-planned-contribution": [
-    "aporte mensal planejado",
-    "aporte mensal previsto",
-    "quanto planejo aportar",
-    "quanto pretendo aportar",
-    "quanto planejei aportar",
-    "quanto pretendo investir por mes",
-    "quanto planejo investir por mes",
-    "aporte mensal da",
-    "aporte mensal para",
-  ],
-  planning: [
-    "planejar",
-    "planejamento",
-    "simular",
-    "simulacao",
-    "projecao",
-    "projetar",
-    "quanto preciso aportar",
-    "quanto investir por mes",
-    "quanto guardar por mes",
-    "quanto preciso guardar",
-    "aporte mensal necessario",
-    "quero chegar a",
-    "quando atinjo",
-    "quando chego a",
-    "quando completo",
-    "em quanto tempo atinjo",
-    "em quanto tempo chego",
-    "tempo para completar",
-  ],
-};
+const valueKeywords = [
+  "quanto",
+  "valor",
+  "saldo",
+  "tenho",
+  "tem",
+  "guardado",
+  "acumulado",
+  "acumulei",
+  "vale",
+  "patrimonio",
+  "conhecido",
+];
+const valueDetails = [
+  "valor",
+  "tenho",
+  "tem",
+  "guardado",
+  "acumulado",
+  "acumulei",
+  "vale",
+  "patrimonio",
+];
+const gapKeywords = [
+  "falta",
+  "restante",
+  "atingir",
+  "completar",
+  "diferenca",
+  "distancia",
+];
+const contributionKeywords = ["aporte", "aportar", "investir", "guardar"];
+const planningKeywords = [
+  "simular",
+  "simulacao",
+  "planejar",
+  "planejamento",
+  "projecao",
+  "projetar",
+  "preciso",
+  "necessario",
+];
+const portfolioKeywords = [
+  "patrimonio",
+  "carteira",
+  "investimento",
+  "investimentos",
+];
+const totalKeywords = ["total", "todo", "somando", "inteiro"];
+const explicitPortfolioPhrases = [
+  "patrimonio total da carteira",
+  "patrimonio conhecido da carteira",
+  "patrimonio da carteira",
+  "valor total da carteira",
+  "total da carteira",
+  "valor da carteira",
+  "carteira inteira",
+];
 
 const intentClues: Record<PortfolioChatIntent, string[]> = {
   "portfolio-total": ["patrimonio", "carteira", "investimentos", "total"],
@@ -112,6 +91,7 @@ const intentClues: Record<PortfolioChatIntent, string[]> = {
     "saldo",
     "valor",
     "tenho",
+    "reserva",
     "guardado",
     "acumulado",
   ],
@@ -172,6 +152,30 @@ function containsPhrase(text: string, phrase: string): boolean {
   return ` ${text} `.includes(` ${phrase} `);
 }
 
+function hasKeyword(words: Set<string>, keywords: string[]): boolean {
+  return keywords.some((keyword) => words.has(keyword));
+}
+
+function removeObjectiveNames(
+  text: string,
+  objectives: PortfolioChatObjectiveName[],
+): string {
+  const reserveExists = objectives.some(({ id }) => id === reserveObjectiveId);
+  const names = [
+    ...objectives.map(({ name }) => normalizePortfolioChatText(name)),
+    ...(reserveExists
+      ? reserveAliases.map((alias) => normalizePortfolioChatText(alias))
+      : []),
+  ]
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+
+  return names.reduce(
+    (remaining, name) => remaining.replaceAll(` ${name} `, " ").trim(),
+    ` ${text} `,
+  );
+}
+
 function findObjectiveId(
   text: string,
   objectives: PortfolioChatObjectiveName[],
@@ -217,65 +221,103 @@ export function recognizePortfolioChatMessage(
 
   const objective = findObjectiveId(normalizedMessage, objectives);
   const hasNamedObjective = objective.id !== null || objective.ambiguous;
-  const portfolioTotalContext = [
-    "patrimonio",
-    "valor da carteira",
-    "ao todo",
-    "no total",
-    "somando tudo",
-  ].some((phrase) => containsPhrase(normalizedMessage, phrase));
-  const explicitlyPortfolioWide = [
-    "patrimonio total da carteira",
-    "patrimonio conhecido da carteira",
-    "patrimonio da carteira",
-    "valor total da carteira",
-    "total da carteira",
-    "valor da carteira",
-    "carteira inteira",
-  ].some((phrase) => containsPhrase(normalizedMessage, phrase));
-  const hasPlanningAction = [
-    "simular",
-    "simulacao",
-    "planejar",
-    "planejamento",
-  ].some((phrase) => containsPhrase(normalizedMessage, phrase));
+  const questionText = removeObjectiveNames(normalizedMessage, objectives);
+  const words = new Set(questionText.split(" ").filter(Boolean));
+  const hasValueDetail =
+    hasKeyword(words, valueDetails) ||
+    (words.has("saldo") &&
+      (words.has("quanto") ||
+        words.has("qual") ||
+        words.has("conhecido") ||
+        hasNamedObjective));
+  const hasGapSignal = hasKeyword(words, gapKeywords);
+  const hasContribution = hasKeyword(words, contributionKeywords);
+  const hasPlannedContributionContext = hasKeyword(words, [
+    "planejei",
+    "planejado",
+    "planejada",
+    "previsto",
+    "prevista",
+    "pretendo",
+    "planejo",
+  ]);
+  const hasMonthlyContext =
+    hasPlannedContributionContext || hasKeyword(words, ["mensal", "mes"]);
+  const hasPlanningAction = hasKeyword(words, planningKeywords);
+  const hasPlanningTimeline =
+    (words.has("tempo") || words.has("quando")) &&
+    hasKeyword(words, [
+      "atinjo",
+      "atingir",
+      "chego",
+      "chegar",
+      "completo",
+      "completar",
+    ]);
+  const hasPlanningNeed =
+    hasKeyword(words, ["preciso", "necessario"]) && hasContribution;
+  const hasScenarioContribution =
+    hasKeyword(words, ["aportar", "investir", "guardar"]) &&
+    words.has("mes") &&
+    !hasPlannedContributionContext;
+  const hasDesiredMilestone = words.has("quero") && words.has("chegar");
+  const isPlanning =
+    hasPlanningAction ||
+    hasPlanningTimeline ||
+    hasDesiredMilestone ||
+    hasPlanningNeed ||
+    hasScenarioContribution;
+  const isMonthlyContribution =
+    hasContribution && hasMonthlyContext && !isPlanning;
+  const hasUnqualifiedContribution =
+    hasContribution && !isMonthlyContribution && !isPlanning;
+  const isGap = hasGapSignal && !hasPlanningTimeline;
+  const isValue =
+    hasValueDetail ||
+    (words.has("quanto") &&
+      !isGap &&
+      !isMonthlyContribution &&
+      !isPlanning &&
+      !hasUnqualifiedContribution);
+  const hasPortfolioContext = hasKeyword(
+    new Set(normalizedMessage.split(" ")),
+    portfolioKeywords,
+  );
+  const hasTotalContext = hasKeyword(
+    new Set(normalizedMessage.split(" ")),
+    totalKeywords,
+  );
+  const explicitlyPortfolioWide = explicitPortfolioPhrases.some((phrase) =>
+    containsPhrase(normalizedMessage, phrase),
+  );
+  const isPortfolioTotal =
+    explicitlyPortfolioWide ||
+    (!hasNamedObjective &&
+      hasKeyword(new Set(normalizedMessage.split(" ")), valueKeywords) &&
+      (hasPortfolioContext || hasTotalContext));
 
-  const matchedIntents = (
-    Object.entries(intentPhrases) as [PortfolioChatIntent, string[]][]
-  )
-    .filter(([, phrases]) =>
-      phrases.some((phrase) =>
-        containsPhrase(normalizedMessage, normalizePortfolioChatText(phrase)),
-      ),
-    )
-    .filter(([intent]) => {
-      if (
-        hasNamedObjective &&
-        !explicitlyPortfolioWide &&
-        intent === "portfolio-total"
-      ) {
-        return false;
-      }
-      if (explicitlyPortfolioWide && intent === "objective-value") {
-        return false;
-      }
-      if (hasPlanningAction && intent === "portfolio-total") {
-        return false;
-      }
-      if (
-        portfolioTotalContext &&
-        !hasNamedObjective &&
-        intent === "objective-value"
-      ) {
-        return false;
-      }
-      return true;
-    });
+  const matchedIntents: PortfolioChatIntent[] = [];
+  if (isPortfolioTotal && !isPlanning && !isGap && !isMonthlyContribution) {
+    matchedIntents.push("portfolio-total");
+  }
+  if (
+    isValue &&
+    !explicitlyPortfolioWide &&
+    !isPlanning &&
+    !isMonthlyContribution &&
+    !(isPortfolioTotal && !hasNamedObjective)
+  ) {
+    matchedIntents.push("objective-value");
+  }
+  if (isGap) matchedIntents.push("objective-gap");
+  if (isMonthlyContribution)
+    matchedIntents.push("monthly-planned-contribution");
+  if (isPlanning) matchedIntents.push("planning");
 
   if (matchedIntents.length !== 1) return null;
 
   return {
-    intent: matchedIntents[0][0],
+    intent: matchedIntents[0],
     objectiveId: objective.id,
     objectiveAmbiguous: objective.ambiguous,
   };

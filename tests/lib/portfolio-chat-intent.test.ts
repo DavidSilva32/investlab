@@ -24,6 +24,7 @@ describe("normalizePortfolioChatText", () => {
 describe("recognizePortfolioChatMessage", () => {
   it.each([
     ["Quanto tenho de patrimônio conhecido?", "portfolio-total"],
+    ["Quanto tenho ao todo?", "portfolio-total"],
     ["Qual é o meu patrimônio hoje?", "portfolio-total"],
     ["Qual é o patrimônio total da carteira?", "portfolio-total"],
     ["Qual valor total da minha carteira?", "portfolio-total"],
@@ -33,24 +34,33 @@ describe("recognizePortfolioChatMessage", () => {
       "monthly-planned-contribution",
     ],
     ["Qual o aporte mensal da viagem?", "monthly-planned-contribution"],
+    ["Aporte mensal viagem", "monthly-planned-contribution"],
     [
       "Quanto pretendo investir por mês para a Viagem?",
       "monthly-planned-contribution",
     ],
     ["Quanto tenho na viagem?", "objective-value"],
+    ["Quanto eu tenho de viagem?", "objective-value"],
+    ["Quanto de viagem?", "objective-value"],
+    ["Quanto de reserva?", "objective-value"],
     ["qual SALDO conhecido da CASA NOVA!", "objective-value"],
     ["Qual o valor da reserva de emergência?", "objective-value"],
     ["Quanto tem no fundo de emergência?", "objective-value"],
     ["Quanto está guardado na reserva emergencial?", "objective-value"],
     ["Quanto falta pra viagem?", "objective-gap"],
+    ["Quanto falta viagem?", "objective-gap"],
     ["Qual a diferença para meta da casa nova?", "objective-gap"],
     ["O que falta para atingir a meta da Viagem?", "objective-gap"],
     ["Quanto falta para completar a Casa nova?", "objective-gap"],
     ["O que falta para chegar à meta da Viagem?", "objective-gap"],
     ["Qual é a distância da meta da Casa nova?", "objective-gap"],
     ["Quero SIMULAR um plano para viagem", "planning"],
+    ["Simular viagem", "planning"],
     ["Quanto preciso aportar?", "planning"],
     ["Quero planejar para chegar a R$ 100 mil", "planning"],
+    ["Quero chegar a R$ 100 mil", "planning"],
+    ["Tempo para completar a meta", "planning"],
+    ["Quando atinjo a meta?", "planning"],
     ["Qual aporte mensal necessário para a Viagem?", "planning"],
     ["Quanto guardar por mês para a Viagem?", "planning"],
     ["Em quanto tempo atinjo a meta da Casa nova?", "planning"],
@@ -61,6 +71,17 @@ describe("recognizePortfolioChatMessage", () => {
   });
 
   it("resolves common emergency reserve names to the canonical reserve objective", () => {
+    for (const message of [
+      "Quanto eu tenho de reserva?",
+      "Quanto tenho na minha reserva?",
+    ]) {
+      expect(recognizePortfolioChatMessage(message, objectives)).toMatchObject({
+        intent: "objective-value",
+        objectiveId: reserveObjectiveId,
+        objectiveAmbiguous: false,
+      });
+    }
+
     for (const message of [
       "Qual o valor da reserva de emergência?",
       "Quanto tenho na reserva emergencial?",
@@ -90,6 +111,25 @@ describe("recognizePortfolioChatMessage", () => {
     ).toEqual({
       intent: "objective-value",
       objectiveId: "international-trip",
+      objectiveAmbiguous: false,
+    });
+  });
+
+  it("recognizes a short value question for a compound objective name", () => {
+    expect(
+      recognizePortfolioChatMessage("Quanto de longo prazo?"),
+    ).toMatchObject({
+      intent: "objective-value",
+      objectiveId: null,
+      objectiveAmbiguous: false,
+    });
+    expect(
+      recognizePortfolioChatMessage("Quanto de longo prazo?", [
+        { id: "long-term", name: "Longo prazo" },
+      ]),
+    ).toEqual({
+      intent: "objective-value",
+      objectiveId: "long-term",
       objectiveAmbiguous: false,
     });
   });
@@ -162,6 +202,12 @@ describe("recognizePortfolioChatMessage", () => {
         "qual é o melhor investimento?",
         objectives,
       ),
+    ).toBeNull();
+    expect(
+      recognizePortfolioChatMessage("Quero ver o total?", objectives),
+    ).toBeNull();
+    expect(
+      recognizePortfolioChatMessage("Quando foi o último aporte?", objectives),
     ).toBeNull();
     expect(
       recognizePortfolioChatMessage(
