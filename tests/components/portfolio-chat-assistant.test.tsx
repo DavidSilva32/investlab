@@ -1020,6 +1020,78 @@ describe("PortfolioChatAssistant", () => {
     ).toBe("/planning");
   });
 
+  it("recognizes conversational balance questions for travel and reserve objectives", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [
+            {
+              id: "00000000-0000-4000-8000-000000000010",
+              kind: "RESERVE",
+              name: "Reserva de emergência",
+              targetAmount: 30_000,
+              knownValue: 12_000,
+              remainingAmount: 18_000,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+            {
+              id: "travel",
+              kind: "PERSONAL_GOAL",
+              name: "Viagem",
+              targetAmount: 16_000,
+              knownValue: 9_000,
+              remainingAmount: 7_000,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+            {
+              id: "long-term",
+              kind: "PERSONAL_GOAL",
+              name: "Longo prazo",
+              targetAmount: 50_000,
+              knownValue: 8_000,
+              remainingAmount: 42_000,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+
+    await user.type(input, "Quanto de viagem?");
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByText(/O valor conhecido em Viagem é R\$ 9\.000,00/),
+    ).toBeTruthy();
+
+    await user.type(input, "Quanto de reserva?");
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByText(
+        /O valor conhecido em Reserva de emergência é R\$ 12\.000,00/,
+      ),
+    ).toBeTruthy();
+    await user.type(input, "Quanto de longo prazo?");
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByText(
+        /O valor conhecido em Longo prazo é R\$ 8\.000,00/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("keeps the reserve available for balance and gap questions but never links it as a planning objective", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
