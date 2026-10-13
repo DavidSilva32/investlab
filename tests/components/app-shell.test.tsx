@@ -47,6 +47,7 @@ describe("AppShell", () => {
       </AppShell>,
     );
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Importações" })).toBeNull();
     expect(
       screen
         .getAllByRole("link", { name: "Aprender" })

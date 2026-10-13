@@ -86,7 +86,8 @@ describe("DashboardObservations", () => {
     ]);
     expect(html).toContain("Fatos da carteira");
     expect(html).toContain("Maior posição");
-    expect(html).toContain("75.0%");
+    expect(html).toContain("75% do patrimônio conhecido");
+    expect(html).toMatch(/R\$\s300,00/);
     expect(html).toContain("Próximo vencimento");
     expect(html).toContain("01/10/2026");
     expect(html).toContain("Distribuição não mede risco");

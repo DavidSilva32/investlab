@@ -51,6 +51,7 @@ export type ManualPortfolioPositionInput = Pick<
   | "positionDate"
   | "convertedValueBrl"
   | "conversionDate"
+  | "informationalCdiPercentage"
 >;
 
 export class ManualPortfolioPositionRepository {

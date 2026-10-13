@@ -62,6 +62,13 @@ const positionInputSchema = z
       .optional()
       .nullable(),
     conversionDate: dateSchema.optional().nullable(),
+    informationalCdiPercentage: z
+      .number()
+      .finite()
+      .positive()
+      .max(9999.9999)
+      .optional()
+      .nullable(),
   })
   .superRefine((value, context) => {
     if (value.valueBasis === "unit_price" && value.unitPrice == null) {
@@ -90,6 +97,17 @@ const positionInputSchema = z
         code: "custom",
         path: ["conversionDate"],
         message: "Informe a data junto com o valor convertido em reais.",
+      });
+    }
+    if (
+      value.informationalCdiPercentage != null &&
+      !/^CDB\b/i.test(value.product)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["informationalCdiPercentage"],
+        message:
+          "A premissa do CDI só pode ser informada para uma posição CDB.",
       });
     }
   });
@@ -143,6 +161,7 @@ export function toPortfolioPosition(
     positionDate: record.positionDate,
     convertedValueBrl: record.convertedValueBrl,
     conversionDate: record.conversionDate,
+    informationalCdiPercentage: record.informationalCdiPercentage,
     referenceDate: record.positionDate,
     availableQuantity: null,
     unavailableQuantity: null,
@@ -222,6 +241,10 @@ export class ManualPortfolioPositionService {
           ? null
           : decimalValue(value.convertedValueBrl),
       conversionDate: value.conversionDate ?? null,
+      informationalCdiPercentage:
+        value.informationalCdiPercentage == null
+          ? null
+          : value.informationalCdiPercentage.toFixed(4),
     };
     const saved = await manualPortfolioPositionRepository.create(
       input,
@@ -276,6 +299,14 @@ export class ManualPortfolioPositionService {
           ? null
           : decimalValue(value.convertedValueBrl),
       conversionDate: value.conversionDate ?? null,
+      ...(value.informationalCdiPercentage !== undefined
+        ? {
+            informationalCdiPercentage:
+              value.informationalCdiPercentage == null
+                ? null
+                : value.informationalCdiPercentage.toFixed(4),
+          }
+        : {}),
     };
     const saved = await manualPortfolioPositionRepository.update(
       id,

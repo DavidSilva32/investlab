@@ -12,14 +12,25 @@ type DocumentType = "B3_POSITION_XLSX" | "B3_MOVEMENT_XLSX";
 type DeleteImportedDataButtonProps = {
   documentType: DocumentType;
   label: string;
+  hideTrigger?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function DeleteImportedDataButton({
   documentType,
   label,
+  hideTrigger = false,
+  open,
+  onOpenChange,
 }: DeleteImportedDataButtonProps) {
   const [loading, setLoading] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [internalDialogOpen, setInternalDialogOpen] = useState(false);
+  const dialogOpen = open ?? internalDialogOpen;
+  const setDialogOpen = (value: boolean) => {
+    setInternalDialogOpen(value);
+    onOpenChange?.(value);
+  };
 
   const remove = async () => {
     setLoading(true);
@@ -46,17 +57,21 @@ export function DeleteImportedDataButton({
   };
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={loading}
-        onClick={() => setDialogOpen(true)}
-      >
-        <Trash2 aria-hidden="true" />
-        {loading ? "Excluindo..." : `Excluir ${label}`}
-      </Button>
+    <>
+      {!hideTrigger && (
+        <div className="flex flex-col items-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => setDialogOpen(true)}
+          >
+            <Trash2 aria-hidden="true" />
+            {loading ? "Excluindo..." : `Excluir ${label}`}
+          </Button>
+        </div>
+      )}
       <ConfirmActionDialog
         hideTrigger
         open={dialogOpen}
@@ -67,6 +82,6 @@ export function DeleteImportedDataButton({
         loading={loading}
         onConfirm={remove}
       />
-    </div>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Image from "next/image";
 import {
   Building2,
   CircleDollarSign,
@@ -322,8 +323,21 @@ export function PortfolioImport() {
         <PositionReconciliation />
         <div className="flex flex-col gap-4 rounded-xl border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-              <FileSpreadsheet aria-hidden="true" className="size-5" />
+            <span className="grid size-14 shrink-0 place-items-center rounded-xl bg-background p-1 sm:size-16">
+              <Image
+                src="/brands/b3/logo-vibrante.png"
+                alt="Logo da B3"
+                width={64}
+                height={64}
+                className="size-full object-contain dark:hidden"
+              />
+              <Image
+                src="/brands/b3/logo-negativo.png"
+                alt="Logo da B3"
+                width={64}
+                height={64}
+                className="hidden size-full object-contain dark:block"
+              />
             </span>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">

@@ -3,10 +3,15 @@ export const dynamic = "force-dynamic";
 import { DashboardClient } from "@/app/_components/dashboard-client";
 import { AppShell } from "@/components/app-shell";
 
-export default function HomePage() {
+export default async function HomePage({
+  searchParams = Promise.resolve({}),
+}: {
+  searchParams?: Promise<{ openImport?: string }>;
+} = {}) {
+  const { openImport } = await searchParams;
   return (
     <AppShell title="Dashboard">
-      <DashboardClient />
+      <DashboardClient openImportOnLoad={openImport === "1"} />
     </AppShell>
   );
 }

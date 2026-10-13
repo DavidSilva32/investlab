@@ -56,6 +56,7 @@ const row = {
   reportedTotalValue: "100",
   currency: "USD",
   valueBasis: "unit_price" as const,
+  informationalCdiPercentage: "100.0000",
   positionDate: "2026-09-20",
   convertedValueBrl: "120",
   conversionDate: "2026-09-19",
@@ -116,6 +117,108 @@ const jsonResponse = (ok = true, body: unknown = {}) => ({
 });
 
 describe("ManualPositionManager", () => {
+  it("shows the saved CDI percentage as informational context for a manual CDB", () => {
+    render(<ManualPositionManager positions={[{ ...row, product: "CDB" }]} />);
+    expandManualPositions();
+    expect(
+      screen.getByText(
+        "Premissa informativa: 100% do CDI. Não usada para calcular rendimento.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not show a CDI premise when a manual position has none saved", () => {
+    render(
+      <ManualPositionManager
+        positions={[
+          { ...row, product: "CDB", informationalCdiPercentage: null },
+        ]}
+      />,
+    );
+    expandManualPositions();
+    expect(screen.queryByText(/Premissa informativa/)).toBeNull();
+  });
+
+  it("opens the existing form when a page-level position shortcut is activated", () => {
+    render(<ManualPositionManager positions={[]} />);
+    fireEvent(window, new Event("portfolio:manual-position:create"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
+  });
+
+  it("exposes only the manual-entry dialog when embedded in the Dashboard", () => {
+    const { container } = render(
+      <ManualPositionManager positions={[]} entryOnly />,
+    );
+    expect(container.querySelector("#manual-positions")).toBeNull();
+    fireEvent(window, new Event("portfolio:manual-position:create"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
+  });
+
+  it("can keep position management while hiding its duplicate create action", () => {
+    render(<ManualPositionManager positions={[]} showCreateButton={false} />);
+
+    expect(
+      screen.queryByRole("button", { name: "Adicionar posição" }),
+    ).toBeNull();
+    fireEvent(window, new Event("portfolio:manual-position:create"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("opens the form from the manual-position Dashboard deep link", () => {
+    window.history.replaceState({}, "", "/portfolio#manual-positions");
+    render(<ManualPositionManager positions={[]} />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("responds to table edit and remove events for the matching position", () => {
+    render(<ManualPositionManager positions={[row]} />);
+
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:edit", {
+        detail: { id: row.id },
+      }),
+    );
+    expect(screen.getByLabelText("Ativo ou produto")).toHaveProperty(
+      "value",
+      row.product,
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:remove", {
+        detail: { id: row.id },
+      }),
+    );
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText(/A posi/)).toBeTruthy();
+  });
+
+  it("ignores table edit and remove events for unknown positions", () => {
+    render(<ManualPositionManager positions={[row]} />);
+
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:edit", {
+        detail: { id: "unknown-position" },
+      }),
+    );
+    fireEvent(
+      window,
+      new CustomEvent("portfolio:manual-position:remove", {
+        detail: { id: "unknown-position" },
+      }),
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
   it("opens the accessible form and explains explicit foreign conversion", () => {
     render(<ManualPositionManager positions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: /adicionar posição/i }));
@@ -384,13 +487,6 @@ describe("ManualPositionManager", () => {
   });
 
   it("removes a position only after confirmation and handles API failures", async () => {
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse())
@@ -406,35 +502,46 @@ describe("ManualPositionManager", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Remover ETF internacional" }),
       );
+    const confirmRemoval = () =>
+      fireEvent.click(screen.getByRole("button", { name: "Remover posição" }));
+    const cancelRemoval = () =>
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     remove();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    cancelRemoval();
     expect(fetchMock).not.toHaveBeenCalled();
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Posição removida."),
     );
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Exclusão recusada."),
     );
+    cancelRemoval();
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível remover a posição.",
       ),
     );
+    cancelRemoval();
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível remover a posição.",
       ),
     );
-    expect(confirm).toHaveBeenCalledTimes(5);
+    cancelRemoval();
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("prevents duplicate removal requests while deletion is pending", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     let resolveResponse!: (value: ReturnType<typeof jsonResponse>) => void;
     const pendingResponse = new Promise<ReturnType<typeof jsonResponse>>(
       (resolve) => {
@@ -449,10 +556,11 @@ describe("ManualPositionManager", () => {
     });
 
     fireEvent.click(removeButton);
+    fireEvent.click(screen.getByRole("button", { name: "Remover posição" }));
 
     expect(removeButton).toHaveProperty("disabled", true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
     resolveResponse(jsonResponse());
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(removeButton).toHaveProperty("disabled", false);
@@ -486,6 +594,15 @@ describe("ManualPositionManager", () => {
     expect(screen.getByText(/valor não informado/)).toBeTruthy();
     expect(screen.queryByText("Nenhuma posição manual cadastrada.")).toBeNull();
   });
+
+  it("uses the singular unit label for a position with one unit", () => {
+    render(<ManualPositionManager positions={[{ ...row, quantity: "1" }]} />);
+    expandManualPositions();
+
+    expect(screen.getByText(/1 unidade/)).toBeTruthy();
+    expect(screen.queryByText(/1 unidades/)).toBeNull();
+  });
+
   it("shows the saved portfolio class beside a manual position", () => {
     const classifiedPosition = {
       ...row,

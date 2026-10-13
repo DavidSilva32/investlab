@@ -1,9 +1,17 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { ChevronDown, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,6 +69,7 @@ type ManualPosition = PortfolioPosition & {
   positionDate?: string;
   convertedValueBrl?: string | null;
   conversionDate?: string | null;
+  informationalCdiPercentage?: string | null;
   valueBasis?: "unit_price" | "total_value";
   reportedTotalValue?: string | null;
   duplicateAssetCode?: boolean;
@@ -244,8 +253,14 @@ function AmountField({
 
 export function ManualPositionManager({
   positions,
+  entryOnly = false,
+  showCreateButton = true,
+  managementOnly = false,
 }: {
   positions: PortfolioPosition[];
+  entryOnly?: boolean;
+  showCreateButton?: boolean;
+  managementOnly?: boolean;
 }) {
   const manualPositions = positions.filter(
     (position) => (position as ManualPosition).source === "MANUAL",
@@ -255,7 +270,24 @@ export function ManualPositionManager({
   const [values, setValues] = useState<FormValues>(emptyValues);
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [positionToRemove, setPositionToRemove] =
+    useState<ManualPosition | null>(null);
   const [assetClassError, setAssetClassError] = useState(false);
+
+  useEffect(() => {
+    const openCreateForm = () => {
+      setEditing(null);
+      setValues(emptyValues());
+      setOpen(true);
+    };
+    if (window.location.hash === "#manual-positions") openCreateForm();
+    window.addEventListener("portfolio:manual-position:create", openCreateForm);
+    return () =>
+      window.removeEventListener(
+        "portfolio:manual-position:create",
+        openCreateForm,
+      );
+  }, []);
 
   const set = (field: keyof FormValues, value: string) =>
     setValues((current) => ({ ...current, [field]: value }));
@@ -265,11 +297,11 @@ export function ManualPositionManager({
     setValues(emptyValues());
     setOpen(true);
   };
-  const startEdit = (position: ManualPosition) => {
+  const startEdit = useCallback((position: ManualPosition) => {
     setEditing(position);
     setValues(fromPosition(position));
     setOpen(true);
-  };
+  }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!values.assetClass) {
@@ -330,8 +362,7 @@ export function ManualPositionManager({
       setSaving(false);
     }
   };
-  const remove = async (position: ManualPosition) => {
-    if (!window.confirm(`Remover a posição ${position.product}?`)) return;
+  const remove = useCallback(async (position: ManualPosition) => {
     setRemovingId(position.id);
     try {
       const response = await fetch("/api/positions/manual", {
@@ -345,139 +376,189 @@ export function ManualPositionManager({
         return;
       }
       toast.success(getApiMessage(body, "Posição removida."));
+      setPositionToRemove(null);
       window.dispatchEvent(new Event("portfolio:updated"));
     } catch {
       toast.error("Não foi possível remover a posição.");
     } finally {
       setRemovingId(null);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const findManualPosition = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      return manualPositions.find((position) => position.id === id);
+    };
+    const editPosition = (event: Event) => {
+      const position = findManualPosition(event);
+      if (position) startEdit(position);
+    };
+    const removePosition = (event: Event) => {
+      const position = findManualPosition(event);
+      if (position) setPositionToRemove(position);
+    };
+    window.addEventListener("portfolio:manual-position:edit", editPosition);
+    window.addEventListener("portfolio:manual-position:remove", removePosition);
+    return () => {
+      window.removeEventListener(
+        "portfolio:manual-position:edit",
+        editPosition,
+      );
+      window.removeEventListener(
+        "portfolio:manual-position:remove",
+        removePosition,
+      );
+    };
+  }, [manualPositions, startEdit]);
 
   return (
-    <section className="space-y-4 rounded-xl border bg-muted/10 p-4 sm:p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="text-base font-semibold">Posições manuais</h3>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Registre ativos que não vieram da importação. Valores em moeda
-            estrangeira entram no patrimônio após informar a conversão para
-            reais.
-          </p>
-        </div>
-        <Button
-          type="button"
-          onClick={startCreate}
-          className="w-full shrink-0 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
+    <>
+      {!managementOnly ? (
+        <section
+          id={entryOnly ? undefined : "manual-positions"}
+          hidden={entryOnly}
+          className="scroll-mt-20 space-y-4 rounded-xl border bg-muted/10 p-4 sm:p-5"
         >
-          <Plus className="mr-2 h-4 w-4" /> Adicionar posição
-        </Button>
-      </div>
-      {manualPositions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Nenhuma posição manual cadastrada.
-        </p>
-      ) : (
-        <Collapsible defaultOpen>
-          <CollapsibleTrigger className="group flex min-h-12 w-full items-center justify-between rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-            <span>{manualPositions.length} posições manuais cadastradas</span>
-            <ChevronDown
-              aria-hidden="true"
-              className="size-4 transition-transform group-data-[state=open]:rotate-180"
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <ul className="mt-2 max-h-96 divide-y overflow-y-auto rounded-lg border bg-card px-3 sm:px-4">
-              {manualPositions.map((position) => (
-                <li
-                  key={position.id}
-                  className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="wrap-break-word font-medium">
-                      {position.product}{" "}
-                      {position.assetCode && (
-                        <span className="text-muted-foreground">
-                          · {position.assetCode}
-                        </span>
-                      )}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {formatQuantity(Number(position.quantity))}{" "}
-                      {Number(position.quantity) === 1 ? "unidade" : "unidades"}{" "}
-                      ·{" "}
-                      {position.reportedTotalValue
-                        ? `${Number(position.reportedTotalValue).toLocaleString("pt-BR")} ${position.currency ?? "BRL"}`
-                        : "valor não informado"}
-                      {position.totalValue && position.currency !== "BRL"
-                        ? ` · ${formatCurrency(Number(position.totalValue))} em reais (conversão em ${position.conversionDate ?? "data não informada"})`
-                        : ""}
-                      {position.positionDate
-                        ? ` · valor de ${new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${position.positionDate}T00:00:00Z`))}`
-                        : ""}
-                    </p>
-                    {position.duplicateAssetCode && (
-                      <p className="text-xs text-status-warning">
-                        Código repetido em outra posição manual; confira se os
-                        ativos são distintos.
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                    {position.classification?.assetClass && (
-                      <Badge
-                        variant="outline"
-                        className="gap-1.5 bg-muted/20"
-                        style={manualAssetClassBadgeStyle(
-                          position.classification.assetClass,
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold">Posições manuais</h3>
+              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                Registre ativos que não vieram da importação. Valores em moeda
+                estrangeira entram no patrimônio após informar a conversão para
+                reais.
+              </p>
+            </div>
+            {showCreateButton ? (
+              <Button
+                type="button"
+                onClick={startCreate}
+                className="w-full shrink-0 bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
+              >
+                <Plus className="mr-2 h-4 w-4" /> Adicionar posição
+              </Button>
+            ) : null}
+          </div>
+          {manualPositions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma posição manual cadastrada.
+            </p>
+          ) : (
+            <Collapsible defaultOpen>
+              <CollapsibleTrigger className="group flex min-h-12 w-full items-center justify-between rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                <span>
+                  {manualPositions.length} posições manuais cadastradas
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                />
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <ul className="mt-2 max-h-96 divide-y overflow-y-auto rounded-lg border bg-card px-3 sm:px-4">
+                  {manualPositions.map((position) => (
+                    <li
+                      key={position.id}
+                      className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="wrap-break-word font-medium">
+                          {position.product}{" "}
+                          {position.assetCode && (
+                            <span className="text-muted-foreground">
+                              · {position.assetCode}
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {formatQuantity(Number(position.quantity))}{" "}
+                          {Number(position.quantity) === 1
+                            ? "unidade"
+                            : "unidades"}{" "}
+                          ·{" "}
+                          {position.reportedTotalValue
+                            ? `${Number(position.reportedTotalValue).toLocaleString("pt-BR")} ${position.currency ?? "BRL"}`
+                            : "valor não informado"}
+                          {position.totalValue && position.currency !== "BRL"
+                            ? ` · ${formatCurrency(Number(position.totalValue))} em reais (conversão em ${position.conversionDate ?? "data não informada"})`
+                            : ""}
+                          {position.positionDate
+                            ? ` · valor de ${new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${position.positionDate}T00:00:00Z`))}`
+                            : ""}
+                        </p>
+                        {position.informationalCdiPercentage !== null &&
+                          position.informationalCdiPercentage !== undefined && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Premissa informativa:{" "}
+                              {Number(position.informationalCdiPercentage)}% do
+                              CDI. Não usada para calcular rendimento.
+                            </p>
+                          )}
+                        {position.duplicateAssetCode && (
+                          <p className="text-xs text-status-warning">
+                            Código repetido em outra posição manual; confira se
+                            os ativos são distintos.
+                          </p>
                         )}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="size-2 rounded-full"
-                          style={{
-                            backgroundColor: manualAssetClassColor(
+                      </div>
+                      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                        {position.classification?.assetClass && (
+                          <Badge
+                            variant="outline"
+                            className="gap-1.5 bg-muted/20"
+                            style={manualAssetClassBadgeStyle(
                               position.classification.assetClass,
-                            ),
-                          }}
-                        />
-                        {position.classification.assetClass}
-                      </Badge>
-                    )}
-                    <Badge variant="secondary">Manual</Badge>
-                    <span className="flex-1 sm:hidden" />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      aria-label={`Editar ${position.product}`}
-                      onClick={() => startEdit(position)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      aria-label={`Remover ${position.product}`}
-                      onClick={() => remove(position)}
-                      disabled={removingId !== null}
-                    >
-                      {removingId === position.id ? (
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="size-4 animate-spin"
-                        />
-                      ) : (
-                        <Trash2 aria-hidden="true" className="size-4" />
-                      )}
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+                            )}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="size-2 rounded-full"
+                              style={{
+                                backgroundColor: manualAssetClassColor(
+                                  position.classification.assetClass,
+                                ),
+                              }}
+                            />
+                            {position.classification.assetClass}
+                          </Badge>
+                        )}
+                        <Badge variant="secondary">Manual</Badge>
+                        <span className="flex-1 sm:hidden" />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          aria-label={`Editar ${position.product}`}
+                          onClick={() => startEdit(position)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          aria-label={`Remover ${position.product}`}
+                          onClick={() => setPositionToRemove(position)}
+                          disabled={removingId !== null}
+                        >
+                          {removingId === position.id ? (
+                            <LoaderCircle
+                              aria-hidden="true"
+                              className="size-4 animate-spin"
+                            />
+                          ) : (
+                            <Trash2 aria-hidden="true" className="size-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </section>
+      ) : null}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-0 sm:max-w-5xl">
           <DialogHeader className="border-b px-6 pb-5 pt-6 sm:px-8">
@@ -695,6 +776,20 @@ export function ManualPositionManager({
           </form>
         </DialogContent>
       </Dialog>
-    </section>
+      <ConfirmActionDialog
+        open={positionToRemove !== null}
+        onOpenChange={() => setPositionToRemove(null)}
+        hideTrigger
+        title={
+          positionToRemove
+            ? `Remover ${positionToRemove.product}?`
+            : "Remover posição?"
+        }
+        description="A posição manual será removida da carteira. Essa ação não altera outras posições."
+        confirmLabel="Remover posição"
+        loading={removingId !== null}
+        onConfirm={() => void remove(positionToRemove!)}
+      />
+    </>
   );
 }

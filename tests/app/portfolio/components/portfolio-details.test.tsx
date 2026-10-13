@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/portfolio-table", () => ({
   PortfolioTable: ({
     columns,
     rows,
+    toolbar,
+    toolbarSummary,
+    emptyMessage,
   }: {
     columns: Array<{
       id: string;
@@ -13,8 +19,17 @@ vi.mock("@/components/portfolio-table", () => ({
       value: (row: never) => unknown;
     }>;
     rows: never[];
+    toolbar?: ReactNode;
+    toolbarSummary?: string;
+    emptyMessage: string;
   }) => (
     <div>
+      {toolbar ? (
+        <div data-testid="table-toolbar">
+          <span>{toolbarSummary}</span>
+          {toolbar}
+        </div>
+      ) : null}
       {rows.flatMap((row) =>
         columns.map((column) => (
           <span key={column.id}>
@@ -23,16 +38,31 @@ vi.mock("@/components/portfolio-table", () => ({
           </span>
         )),
       )}
+      {rows.length === 0 ? <p>{emptyMessage}</p> : null}
     </div>
   ),
 }));
 vi.mock("@/components/delete-imported-data-button", () => ({
-  DeleteImportedDataButton: ({ label }: { label: string }) => (
-    <button>{label}</button>
-  ),
+  DeleteImportedDataButton: ({
+    label,
+    hideTrigger,
+    open,
+  }: {
+    label: string;
+    hideTrigger?: boolean;
+    open?: boolean;
+  }) =>
+    hideTrigger ? (
+      open ? (
+        <div role="alertdialog">Excluir {label}</div>
+      ) : null
+    ) : (
+      <button>{label}</button>
+    ),
 }));
 vi.mock("@/app/portfolio/_components/cdb-rate-configuration", () => ({
-  CdbRateConfiguration: () => <span>Configurar taxa</span>,
+  CdbRateConfiguration: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog">Configurar taxa</div> : null,
 }));
 
 import {
@@ -61,6 +91,95 @@ const position = {
 };
 
 describe("portfolio detail components", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("puts manual entry and bulk actions in the positions table toolbar", async () => {
+    const user = userEvent.setup();
+    const dispatchSpy = vi
+      .spyOn(window, "dispatchEvent")
+      .mockImplementation(() => true);
+    render(<PositionDetails positions={[position]} />);
+
+    const button = screen.getByRole("button", {
+      name: "Adicionar posição",
+    });
+    expect(screen.getByTestId("table-toolbar").contains(button)).toBe(true);
+    expect(screen.getByTestId("table-toolbar").textContent).toContain(
+      "1 posição disponível",
+    );
+    expect(screen.queryByText("Configurar taxa")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /Mais a/ }));
+    await user.click(screen.getByText("Ajustar taxas"));
+    expect(screen.getByRole("dialog").textContent).toContain("Configurar taxa");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await user.click(screen.getByRole("button", { name: /Mais a/ }));
+    await user.click(screen.getByText(/Excluir posi/));
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "Excluir posições importadas",
+    );
+    fireEvent.click(button);
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "portfolio:manual-position:create" }),
+    );
+  });
+
+  it("shows the saved CDI percentage as an informational manual-position fact", () => {
+    const html = renderToStaticMarkup(
+      <PositionDetails
+        positions={[
+          {
+            ...position,
+            id: "manual-cdb",
+            source: "MANUAL",
+            informationalCdiPercentage: "112.5000",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain(
+      "Premissa informativa: 112.5% do CDI. Não usada para calcular rendimento.",
+    );
+  });
+
+  it("exposes rate, edit, and remove actions for a manual CDB row", async () => {
+    const user = userEvent.setup();
+    const eventSpy = vi
+      .spyOn(window, "dispatchEvent")
+      .mockImplementation(() => true);
+    render(
+      <PositionDetails
+        positions={[{ ...position, id: "manual-cdb", source: "MANUAL" }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /para CDB/ }));
+    await user.click(screen.getByText("Ajustar taxa"));
+    expect(screen.getByRole("dialog").textContent).toContain("Configurar taxa");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await user.click(screen.getByRole("button", { name: /para CDB/ }));
+    await user.click(screen.getByText(/Editar posi/));
+    expect(eventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "portfolio:manual-position:edit",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /para CDB/ }));
+    await user.click(screen.getByText(/Excluir posi/));
+    expect(eventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "portfolio:manual-position:remove",
+      }),
+    );
+  });
+
   it("uses the exact asset code for position identity without inferring tickers from product names", () => {
     const html = renderToStaticMarkup(
       <PositionDetails
@@ -88,8 +207,8 @@ describe("portfolio detail components", () => {
     expect(html).not.toContain("icons/VOO.svg");
     expect(html).not.toContain("icons/PETR3.svg");
   });
-  it("renders estimated and official values with their management action", () => {
-    const html = renderToStaticMarkup(
+  it("shows estimated and official value details on demand", () => {
+    render(
       <PositionDetails
         positions={[
           position,
@@ -104,22 +223,27 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(html).toContain("Posições atuais");
-    expect(html.indexOf("Posições na carteira")).toBeLessThan(
-      html.indexOf("Posições manuais"),
-    );
-    expect(html).toContain("Estimativa parcial até");
-    expect(html).toContain("Estimativa até");
-    expect(html).toContain("100% do CDI");
-    expect(html).toContain("data-base CURVA de");
-    expect(html).toContain("Trecho projetado: de 19/09/2026 a 21/09/2026");
-    expect(html).toContain("18/09/2026");
-    expect(html).toContain("Estimativa parcial: ainda não há taxa CDI oficial");
-    expect(html).toContain("posições");
+    const detailsButtons = screen.getAllByRole("button", {
+      name: "Consultar origem e estimativa de CDB",
+    });
+    fireEvent.click(detailsButtons[0]);
+    expect(
+      screen.getByText(/Estimativa parcial at.{1,2} 18\/09\/2026/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Trecho projetado: de 19\/09\/2026 a 21\/09\/2026/),
+    ).toBeTruthy();
+    expect(screen.getByText(/18\/09\/2026/)).toBeTruthy();
+    expect(screen.getByText(/Estimativa parcial: ainda/)).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(detailsButtons[1]);
+    expect(screen.getByText(/Estimativa at/)).toBeTruthy();
+    expect(screen.getByText(/100% do CDI/)).toBeTruthy();
+    expect(screen.getByText(/data-base CURVA de/)).toBeTruthy();
   });
 
-  it("renders the frontend limitation fallback and ordinary official values", () => {
-    const html = renderToStaticMarkup(
+  it("shows the frontend limitation fallback and ordinary official values on demand", () => {
+    render(
       <PositionDetails
         positions={[
           {
@@ -160,14 +284,29 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(html).toContain("Configurar taxa");
-    expect(html).toContain(
-      "A estimativa com taxas CDI oficiais não está disponível.",
+    expect(screen.queryByText("Configurar taxa")).toBeNull();
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Consultar origem e estimativa de CDB",
+      })[0],
     );
-    expect(html).toContain("110% do CDI");
-    expect(html).toContain("Último valor informado pela B3");
-    expect(html).toContain("estimativa com taxas CDI oficiais");
-    expect(html).not.toContain("Nenhuma posição importada");
+    expect(
+      screen.getByText(/A estimativa com taxas CDI oficiais/),
+    ).toBeTruthy();
+    expect(screen.getByText(/110% do CDI/)).toBeTruthy();
+    expect(
+      screen.getAllByText(/valor informado pela B3/i).length,
+    ).toBeGreaterThan(0);
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Consultar origem e estimativa de Tesouro",
+      }),
+    );
+    expect(
+      screen.getAllByText(/valor informado pela B3/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Nenhuma posi/)).toBeNull();
   });
 
   it("renders empty positions and movement value variants", () => {
@@ -202,16 +341,16 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(positions).toContain("Nenhuma posição importada");
-    expect(positions).toContain("0 posições");
+    expect(positions).toContain("0 posições disponíveis");
+    expect(positions).toContain("Importe um arquivo da B3");
     expect(movements).toContain("Crédito");
     expect(movements).toContain("Débito");
-    expect(movements).toContain(
-      "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
-    );
+    expect(movements).toContain("2 movimentações registradas");
+    expect(movements).toContain("Registrar operação");
+    expect(movements).toContain("Registros manuais e conciliação");
   });
   it("formats missing CDI percentages and ignores CDBs without an indexer", () => {
-    const html = renderToStaticMarkup(
+    render(
       <PositionDetails
         positions={[
           { ...position, estimatedValue: 1001, cdiPercentage: null },
@@ -225,12 +364,51 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(html).toContain("Estimativa parcial até");
-    expect(html).not.toContain("% do CDI");
+    const detailsButtons = screen.getAllByRole("button", {
+      name: "Consultar origem e estimativa de CDB",
+    });
+    fireEvent.click(detailsButtons[0]);
+    expect(
+      screen.getByText(/Estimativa parcial at.{1,2} 18\/09\/2026/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/% do CDI/)).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(detailsButtons[2]);
+    expect(screen.queryByText(/% do CDI/)).toBeNull();
   });
+
   it("renders the empty movement state", () => {
     expect(renderToStaticMarkup(<MovementDetails movements={[]} />)).toContain(
-      "Nenhuma movimentação importada",
+      "Importe um arquivo de movimentações da B3 para visualizá-las.",
+    );
+  });
+
+  it("keeps registering movements inside the movements table toolbar", () => {
+    const dispatchSpy = vi
+      .spyOn(window, "dispatchEvent")
+      .mockImplementation(() => true);
+    render(<MovementDetails movements={[]} />);
+
+    const button = screen.getByRole("button", { name: "Registrar operação" });
+    expect(screen.getByTestId("table-toolbar").contains(button)).toBe(true);
+    expect(screen.getByTestId("table-toolbar").textContent).toContain(
+      "0 movimentações registradas",
+    );
+    fireEvent.click(button);
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "portfolio:manual-operation:create" }),
+    );
+  });
+
+  it("opens the movement deletion confirmation from the table actions menu", async () => {
+    const user = userEvent.setup();
+    render(<MovementDetails movements={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /Mais a/ }));
+    await user.click(screen.getByText(/Excluir moviment/));
+
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "Excluir movimentações",
     );
   });
 
@@ -260,7 +438,7 @@ describe("portfolio detail components", () => {
 });
 
 it("does not claim a current valuation when no covered-through date is returned", () => {
-  const html = renderToStaticMarkup(
+  render(
     <PositionDetails
       positions={[
         {
@@ -272,12 +450,17 @@ it("does not claim a current valuation when no covered-through date is returned"
       ]}
     />,
   );
-  expect(html).toContain("Valor estimado");
-  expect(html).not.toContain("Valor estimado hoje");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Consultar origem e estimativa de CDB",
+    }),
+  );
+  expect(screen.getByText("Valor estimado.")).toBeTruthy();
+  expect(screen.queryByText("Valor estimado hoje")).toBeNull();
 });
 
 it("shows the manual valuation source, dates, and missing BRL conversion", () => {
-  const html = renderToStaticMarkup(
+  render(
     <PositionDetails
       positions={[
         {
@@ -328,10 +511,17 @@ it("shows the manual valuation source, dates, and missing BRL conversion", () =>
       ]}
     />,
   );
-  expect(html).toContain("Manual");
-  expect(html).toContain("Informado manualmente");
-  expect(html).toContain("Valor observado em");
-  expect(html).toContain("Conversão informada em");
-  expect(html).toContain("100 USD");
-  expect(html).toContain("Sem conversão para reais");
+  const detailsButtons = screen.getAllByRole("button", {
+    name: "Consultar origem e estimativa de CDB",
+  });
+  fireEvent.click(detailsButtons[0]);
+  expect(screen.getByText(/Valor informado manualmente/)).toBeTruthy();
+  expect(screen.getByText(/Valor observado em/)).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(detailsButtons[1]);
+  expect(screen.getByText(/100 USD informado manualmente/)).toBeTruthy();
+  expect(screen.getByText(/Convers/)).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(detailsButtons[3]);
+  expect(screen.getByText(/Sem convers/)).toBeTruthy();
 });

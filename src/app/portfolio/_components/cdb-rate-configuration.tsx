@@ -1,14 +1,24 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
-import { Settings2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const initialPercentage = (value: string | null | undefined) => {
+  if (value === null || value === undefined || value.trim() === "") {
+    return "100";
+  }
   const percentage = Number(value);
   return Number.isFinite(percentage) ? String(percentage) : "100";
 };
@@ -18,6 +28,8 @@ type Props = {
   currentPercentage?: string | null;
   assetCodes?: string[];
   missingAssetCodes?: string[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 };
 
 export function CdbRateConfiguration({
@@ -25,13 +37,14 @@ export function CdbRateConfiguration({
   currentPercentage,
   assetCodes,
   missingAssetCodes = [],
+  open,
+  onOpenChange,
 }: Props) {
   const router = useRouter();
   const [percentage, setPercentage] = useState(() =>
     initialPercentage(currentPercentage),
   );
   const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
   const isMassAction = !assetCode;
   const targetAssetCodes = assetCodes ?? missingAssetCodes;
 
@@ -56,7 +69,7 @@ export function CdbRateConfiguration({
       }
 
       toast.success(getApiMessage(data, "Configuração salva com sucesso."));
-      setEditing(false);
+      onOpenChange(false);
       window.dispatchEvent(new Event("portfolio:updated"));
       router.refresh();
     } catch {
@@ -69,45 +82,43 @@ export function CdbRateConfiguration({
   if (isMassAction && !targetAssetCodes.length) return null;
   const actionLabel = isMassAction ? "Ajustar taxas" : "Ajustar taxa";
   return (
-    <div
-      className="flex flex-wrap items-center gap-2"
-      aria-label={
-        isMassAction ? "Configurar taxas dos CDBs" : `Configurar ${assetCode}`
-      }
-    >
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="gap-1.5 px-2 text-muted-foreground"
-        aria-label={actionLabel}
-        aria-expanded={editing}
-        onClick={() => setEditing((value) => !value)}
-      >
-        <Settings2 />
-        <span className="hidden sm:inline">{actionLabel}</span>
-      </Button>
-      {editing && (
-        <div className="flex w-full flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-2 sm:w-auto">
-          <label className="grid min-w-28 gap-1 text-xs font-medium text-muted-foreground">
-            {isMassAction ? "% do CDI para os CDBs" : "% do CDI"}
-            <Input
-              aria-label={
-                isMassAction
-                  ? "% do CDI para os CDBs"
-                  : `% do CDI para ${assetCode}`
-              }
-              className="h-8 w-full"
-              inputMode="decimal"
-              value={percentage}
-              onChange={(event) => setPercentage(event.target.value)}
-            />
-          </label>
-          <Button type="button" size="sm" disabled={saving} onClick={save}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{actionLabel}</DialogTitle>
+          <DialogDescription>
+            {isMassAction
+              ? `Informe a taxa do CDI para ${targetAssetCodes.length} CDBs DI/CDI.`
+              : `Informe a taxa do CDI para o CDB ${assetCode}.`}
+          </DialogDescription>
+        </DialogHeader>
+        <label className="grid gap-2 text-sm font-medium">
+          {isMassAction ? "% do CDI para os CDBs" : "% do CDI"}
+          <Input
+            aria-label={
+              isMassAction
+                ? "% do CDI para os CDBs"
+                : `% do CDI para ${assetCode}`
+            }
+            inputMode="decimal"
+            value={percentage}
+            onChange={(event) => setPercentage(event.target.value)}
+          />
+        </label>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={() => onOpenChange(false)}
+          >
+            Cancelar
+          </Button>
+          <Button type="button" disabled={saving} onClick={save}>
             {saving ? "Salvando..." : "Salvar"}
           </Button>
-        </div>
-      )}
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

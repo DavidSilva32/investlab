@@ -30,6 +30,7 @@ export type PortfolioPosition = {
   conversionDate?: string | null;
   estimationBaseDate?: string | null;
   cdiPercentage?: string | null;
+  informationalCdiPercentage?: string | null;
   estimatedValue?: number | null;
   estimatedValueCents?: string | null;
   canonicalValueCents?: string | null;

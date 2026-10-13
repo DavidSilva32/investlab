@@ -7,7 +7,6 @@ import {
   BookOpen,
   Calculator,
   Compass,
-  Download,
   LayoutDashboard,
   Menu,
   Settings,
@@ -26,7 +25,6 @@ const navigation = [
   { href: "/planning", label: "Planejamento", Icon: Calculator },
   { href: "/strategy", label: "Estratégia", Icon: Compass },
   { href: "/learn", label: "Aprender", Icon: BookOpen },
-  { href: "/imports", label: "Importações", Icon: Download },
   { href: "/analyses", label: "Análises", Icon: BarChart3 },
   { href: "/settings", label: "Configurações", Icon: Settings },
 ];

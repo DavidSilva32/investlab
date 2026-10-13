@@ -46,6 +46,7 @@ const row = {
   unitPrice: "10",
   totalValue: "20",
   valueBasis: "unit_price",
+  informationalCdiPercentage: null,
   positionDate: "2026-09-20",
   convertedValueBrl: null,
   conversionDate: null,
@@ -118,6 +119,21 @@ describe("ManualPortfolioPositionRepository", () => {
         recordedAt: row.createdAt,
       }),
     );
+  });
+
+  it("persists and lists the informational CDB CDI percentage with the position", async () => {
+    const position = { ...row, informationalCdiPercentage: "100.0000" };
+    database.query.orderBy.mockReturnValueOnce(
+      Object.assign(Promise.resolve([position]), {
+        limit: database.query.limit,
+      }),
+    );
+    await new ManualPortfolioPositionRepository().create(position, "req");
+    expect(database.query.values).toHaveBeenNthCalledWith(1, position);
+
+    await expect(
+      new ManualPortfolioPositionRepository().list("req"),
+    ).resolves.toEqual([position]);
   });
 
   it.each([

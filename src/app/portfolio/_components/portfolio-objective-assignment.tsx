@@ -162,7 +162,7 @@ export function PortfolioObjectiveAssignment({
           </p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/imports">Importar posições</Link>
+          <Link href="/?openImport=1">Importar posições</Link>
         </Button>
       </section>
     );

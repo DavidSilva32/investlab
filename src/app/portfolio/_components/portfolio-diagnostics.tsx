@@ -85,7 +85,7 @@ export function PortfolioDiagnostics({
               Adicione suas posições para começar.
             </p>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/imports">
+              <Link href="/?openImport=1">
                 Importar posições{" "}
                 <ArrowRight className="size-3.5" aria-hidden="true" />
               </Link>

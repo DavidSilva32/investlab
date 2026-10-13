@@ -1,0 +1,1 @@
+ALTER TABLE "manual_portfolio_positions" ADD COLUMN "informationalCdiPercentage" numeric(8, 4);

@@ -83,7 +83,7 @@ describe("PortfolioDiagnostics", () => {
       screen
         .getByRole("link", { name: /Importar posições/ })
         .getAttribute("href"),
-    ).toBe("/imports");
+    ).toBe("/?openImport=1");
     expect(screen.queryByRole("list")).toBeNull();
   });
 
