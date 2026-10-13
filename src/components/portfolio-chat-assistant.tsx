@@ -1,0 +1,663 @@
+"use client";
+
+import Image from "next/image";
+import Link from "next/link";
+import { useCallback, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  ChartNoAxesCombined,
+  LoaderCircle,
+  Send,
+  Target,
+  Wallet,
+  X,
+} from "lucide-react";
+import { usePortfolioObjectives } from "@/lib/queries/portfolio";
+import {
+  recognizePortfolioChatMessage,
+  type PortfolioChatIntent,
+} from "@/lib/portfolio-chat-intent";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { formatCurrency } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Input } from "@/components/ui/input";
+import {
+  Message,
+  MessageAvatar,
+  MessageContent,
+} from "@/components/ui/message";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+
+type ObjectiveSummary = {
+  id: string;
+  name: string;
+  kind?: string;
+  targetAmount: number | null;
+  knownValue: number | null;
+  remainingAmount: number | null;
+  missingPositionCount: number;
+  unvaluedPositionCount: number;
+};
+type ObjectivesResponse = { objectives?: ObjectiveSummary[] };
+type ChatMessage = { id: number; role: "user" | "assistant"; content: string };
+const emptyObjectives: ObjectiveSummary[] = [];
+
+function isPlanningObjective(objective: ObjectiveSummary) {
+  return objective.kind !== "RESERVE" && objective.id !== reserveObjectiveId;
+}
+
+const prompts = [
+  {
+    id: "objective-value",
+    label: "Quanto tenho em um objetivo?",
+    Icon: Wallet,
+  },
+  {
+    id: "objective-gap",
+    label: "Quanto falta para minha meta?",
+    Icon: Target,
+  },
+] as const;
+
+function getObjectiveValueMessage(objective: ObjectiveSummary) {
+  const knownValue =
+    typeof objective.knownValue === "number" &&
+    Number.isFinite(objective.knownValue)
+      ? objective.knownValue
+      : null;
+  if (knownValue === null) {
+    return `Não encontrei um saldo conhecido para ${objective.name}. Confira os dados desse objetivo na Carteira.`;
+  }
+
+  const incompleteCount =
+    objective.missingPositionCount + objective.unvaluedPositionCount;
+  const extra =
+    incompleteCount > 0
+      ? ` Há ${incompleteCount} posição(ões) sem valor confirmado, então o total pode mudar.`
+      : " Esse valor considera as posições acompanhadas na plataforma.";
+  return `O valor conhecido em ${objective.name} é ${formatCurrency(knownValue)}.${extra}`;
+}
+
+function getObjectiveGapMessage(objective: ObjectiveSummary) {
+  if (
+    typeof objective.targetAmount !== "number" ||
+    !Number.isFinite(objective.targetAmount)
+  ) {
+    return `${objective.name} ainda não tem uma meta definida na plataforma.`;
+  }
+
+  if (
+    typeof objective.remainingAmount !== "number" ||
+    !Number.isFinite(objective.remainingAmount)
+  ) {
+    const knownValue =
+      typeof objective.knownValue === "number" &&
+      Number.isFinite(objective.knownValue)
+        ? ` O valor conhecido hoje é ${formatCurrency(objective.knownValue)}.`
+        : "";
+    return `Ainda não consigo calcular quanto falta para ${objective.name}, porque há posições sem valor confirmado.${knownValue}`;
+  }
+
+  if (objective.remainingAmount === 0) {
+    return `Pelos valores acompanhados, ${objective.name} já atingiu a meta de ${formatCurrency(objective.targetAmount)}.`;
+  }
+
+  const incompleteCount =
+    objective.missingPositionCount + objective.unvaluedPositionCount;
+  const extra =
+    incompleteCount > 0
+      ? ` Há ${incompleteCount} posição(ões) sem valor confirmado; essa diferença pode mudar.`
+      : "";
+  return `Pelos valores acompanhados, faltam ${formatCurrency(objective.remainingAmount)} para a meta de ${formatCurrency(objective.targetAmount)} em ${objective.name}.${extra}`;
+}
+
+export function PortfolioChatAssistant() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          aria-hidden={open}
+          tabIndex={open ? -1 : 0}
+          aria-label={
+            open
+              ? "Fechar assistente da carteira"
+              : "Abrir assistente da carteira"
+          }
+          className={`fixed bottom-5 right-5 z-40 size-14 rounded-full shadow-lg transition-opacity ${open ? "pointer-events-none opacity-0" : "opacity-100"}`}
+        >
+          <Image
+            src="/images/investlab-assistant-mascot.png"
+            alt=""
+            aria-hidden="true"
+            width={44}
+            height={44}
+            className="size-11 rounded-full object-cover"
+          />
+        </Button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          side="top"
+          align="end"
+          sideOffset={-56}
+          collisionPadding={12}
+          aria-label="Assistente da carteira"
+          className="w-[min(25rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-2xl"
+        >
+          <AssistantConversation onClose={() => setOpen(false)} />
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function AssistantConversation({ onClose }: { onClose: () => void }) {
+  const objectivesQuery = usePortfolioObjectives<ObjectivesResponse>();
+  const [intent, setIntent] = useState<PortfolioChatIntent | null>(null);
+  const [selectedObjective, setSelectedObjective] =
+    useState<ObjectiveSummary | null>(null);
+  const [planningHref, setPlanningHref] = useState<string | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messageSequence = useRef(0);
+
+  const addMessage = useCallback(
+    (role: ChatMessage["role"], content: string) => {
+      const id = messageSequence.current + 1;
+      messageSequence.current = id;
+      setMessages((current) => [...current, { id, role, content }]);
+    },
+    [],
+  );
+
+  const objectives = Array.isArray(objectivesQuery.data?.objectives)
+    ? objectivesQuery.data.objectives
+    : emptyObjectives;
+
+  function chooseIntent(nextIntent: PortfolioChatIntent, label: string) {
+    addMessage("user", label);
+    setIntent(nextIntent);
+    setSelectedObjective(null);
+    setPlanningHref(null);
+  }
+
+  function chooseObjective(objective: ObjectiveSummary) {
+    addMessage("user", objective.name);
+    setIntent(null);
+    setPlanningHref(null);
+    if (intent === "planning") {
+      setSelectedObjective(null);
+      setPlanningHref(
+        `/planning?objective=${encodeURIComponent(objective.id)}`,
+      );
+      addMessage(
+        "assistant",
+        `Posso abrir o planejamento com ${objective.name} selecionado.`,
+      );
+      return;
+    }
+
+    setSelectedObjective(objective);
+    addMessage(
+      "assistant",
+      intent === "objective-gap"
+        ? getObjectiveGapMessage(objective)
+        : getObjectiveValueMessage(objective),
+    );
+  }
+
+  const resolveTextMessage = useCallback(
+    (message: string, availableObjectives: ObjectiveSummary[] = objectives) => {
+      const match = recognizePortfolioChatMessage(message, availableObjectives);
+      if (!match) {
+        setIntent(null);
+        addMessage(
+          "assistant",
+          messages.length === 0
+            ? "Posso consultar o saldo de um objetivo, dizer quanto falta para uma meta ou abrir um planejamento. Escolha uma opção abaixo ou tente perguntar de outro jeito."
+            : "Não consegui relacionar essa pergunta às opções que conheço. Posso consultar o saldo de um objetivo, quanto falta para uma meta ou abrir um planejamento. Tente uma opção abaixo ou reformule a pergunta.",
+        );
+        return;
+      }
+
+      const objective = availableObjectives.find(
+        ({ id }) => id === match.objectiveId,
+      );
+      if (match.intent === "planning") {
+        setSelectedObjective(null);
+        if (objective && !isPlanningObjective(objective)) {
+          setIntent(null);
+          setPlanningHref("/planning");
+          addMessage(
+            "assistant",
+            "A reserva não pode ser simulada como objetivo individual. Posso abrir o planejamento do patrimônio total.",
+          );
+          return;
+        }
+        if (objective) {
+          setIntent(null);
+          setPlanningHref(
+            `/planning?objective=${encodeURIComponent(objective.id)}`,
+          );
+          addMessage(
+            "assistant",
+            `Posso abrir o planejamento com ${objective.name} selecionado.`,
+          );
+          return;
+        }
+        if (match.objectiveAmbiguous) {
+          setIntent("planning");
+          addMessage("assistant", "Qual objetivo você quer planejar?");
+          return;
+        }
+
+        setIntent(null);
+        setPlanningHref("/planning");
+        addMessage(
+          "assistant",
+          "Posso abrir o planejamento para você explorar um cenário.",
+        );
+        return;
+      }
+
+      setPlanningHref(null);
+      if (objective) {
+        setIntent(null);
+        setSelectedObjective(objective);
+        addMessage(
+          "assistant",
+          match.intent === "objective-gap"
+            ? getObjectiveGapMessage(objective)
+            : getObjectiveValueMessage(objective),
+        );
+        return;
+      }
+
+      setIntent(match.intent);
+      setSelectedObjective(null);
+      addMessage("assistant", "Qual objetivo você quer consultar?");
+    },
+    [addMessage, messages.length, objectives],
+  );
+
+  async function resolvePendingMessage(message: string) {
+    const result = await objectivesQuery.refetch();
+    if (!result.isSuccess) return;
+    setPendingMessage(null);
+    resolveTextMessage(
+      message,
+      Array.isArray(result.data.objectives)
+        ? result.data.objectives
+        : emptyObjectives,
+    );
+  }
+
+  function submitMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = draft.trim();
+    if (!message || pendingMessage) return;
+
+    addMessage("user", message);
+    setDraft("");
+    setSelectedObjective(null);
+    setPlanningHref(null);
+
+    const initialMatch = recognizePortfolioChatMessage(message);
+    if (!initialMatch) {
+      resolveTextMessage(message);
+      return;
+    }
+
+    if (!objectivesQuery.isSuccess) {
+      setPendingMessage(message);
+      setIntent(initialMatch.intent);
+      void resolvePendingMessage(message);
+      return;
+    }
+
+    resolveTextMessage(message);
+  }
+
+  function restart() {
+    setMessages([]);
+    setIntent(null);
+    setSelectedObjective(null);
+    setPlanningHref(null);
+    setPendingMessage(null);
+    setDraft("");
+  }
+
+  const selectableObjectives =
+    intent === "planning" ? objectives.filter(isPlanningObjective) : objectives;
+
+  return (
+    <section className="flex h-[min(34rem,calc(100dvh-7rem))] min-h-0 flex-col">
+      <header className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <Image
+          src="/images/investlab-assistant-mascot.png"
+          alt="Mascote do assistente"
+          width={44}
+          height={44}
+          className="size-11 rounded-full border border-border bg-background object-cover"
+        />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold">Assistente da carteira</h2>
+          <p className="text-xs text-muted-foreground">
+            Respostas guiadas com seus dados
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Fechar assistente"
+          onClick={onClose}
+          className="size-8 shrink-0"
+        >
+          <X aria-hidden="true" className="size-4" />
+        </Button>
+      </header>
+
+      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+        <MessageScroller className="min-h-0 flex-1">
+          <MessageScrollerViewport aria-label="Conversa com o assistente">
+            <MessageScrollerContent
+              aria-label="Conversa com o assistente"
+              className="gap-3 px-4 py-4"
+            >
+              <MessageScrollerItem messageId="welcome">
+                <AssistantMessage>
+                  Oi! Posso consultar seus objetivos ou abrir uma simulação de
+                  planejamento.
+                </AssistantMessage>
+              </MessageScrollerItem>
+              {messages.map((message) => (
+                <MessageScrollerItem
+                  key={message.id}
+                  messageId={String(message.id)}
+                  scrollAnchor={message.role === "user"}
+                >
+                  {message.role === "assistant" ? (
+                    <AssistantMessage>{message.content}</AssistantMessage>
+                  ) : (
+                    <Message align="end">
+                      <MessageContent className="w-fit max-w-[85%]">
+                        <Bubble className="max-w-full">
+                          <BubbleContent className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                            {message.content}
+                          </BubbleContent>
+                        </Bubble>
+                      </MessageContent>
+                    </Message>
+                  )}
+                </MessageScrollerItem>
+              ))}
+              {(!messages.length || messages.at(-1)?.role === "assistant") &&
+                !intent &&
+                !selectedObjective &&
+                !planningHref && (
+                  <MessageScrollerItem messageId="quick-prompts">
+                    <QuickPrompts onChoose={chooseIntent} />
+                  </MessageScrollerItem>
+                )}
+              {intent && objectivesQuery.isPending && (
+                <MessageScrollerItem messageId="loading-objectives">
+                  <p
+                    role="status"
+                    className="flex items-center gap-2 text-sm text-muted-foreground"
+                  >
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="size-4 animate-spin"
+                    />
+                    Carregando seus objetivos...
+                  </p>
+                </MessageScrollerItem>
+              )}
+              {intent && objectivesQuery.isError && (
+                <MessageScrollerItem messageId="objectives-error">
+                  <div
+                    role="alert"
+                    className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm"
+                  >
+                    <p>Não foi possível carregar seus objetivos.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (pendingMessage) {
+                          void resolvePendingMessage(pendingMessage);
+                        } else {
+                          void objectivesQuery.refetch();
+                        }
+                      }}
+                    >
+                      Tentar novamente
+                    </Button>
+                  </div>
+                </MessageScrollerItem>
+              )}
+              {intent &&
+                objectivesQuery.isSuccess &&
+                objectives.length === 0 && (
+                  <MessageScrollerItem messageId="no-objectives">
+                    <AssistantMessage>
+                      Você ainda não tem objetivos cadastrados.
+                      <Link
+                        href="/portfolio?panel=objectives"
+                        className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Ver objetivos{" "}
+                        <ArrowUpRight aria-hidden="true" className="size-3.5" />
+                      </Link>
+                    </AssistantMessage>
+                  </MessageScrollerItem>
+                )}
+              {intent &&
+                objectivesQuery.isSuccess &&
+                selectableObjectives.length === 0 &&
+                objectives.length > 0 && (
+                  <MessageScrollerItem messageId="planning-total-action">
+                    <AssistantMessage>
+                      Não há objetivos disponíveis para esse planejamento. Você
+                      ainda pode simular o patrimônio total.
+                      <Link
+                        href="/planning"
+                        className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Planejar patrimônio total{" "}
+                        <ArrowUpRight aria-hidden="true" className="size-3.5" />
+                      </Link>
+                    </AssistantMessage>
+                  </MessageScrollerItem>
+                )}
+              {intent &&
+                objectivesQuery.isSuccess &&
+                selectableObjectives.length > 0 && (
+                  <MessageScrollerItem messageId="objective-choices">
+                    <ObjectiveChoices
+                      objectives={selectableObjectives}
+                      onChoose={chooseObjective}
+                    />
+                  </MessageScrollerItem>
+                )}
+              {planningHref && (
+                <MessageScrollerItem messageId="planning-action">
+                  <Button asChild size="sm" className="ml-9">
+                    <Link href={planningHref}>
+                      <ChartNoAxesCombined
+                        aria-hidden="true"
+                        className="mr-1.5 size-4"
+                      />
+                      Abrir planejamento
+                    </Link>
+                  </Button>
+                </MessageScrollerItem>
+              )}
+              {selectedObjective && (
+                <MessageScrollerItem messageId="follow-up-actions">
+                  <div className="ml-9 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={restart}
+                    >
+                      <ArrowLeft aria-hidden="true" className="mr-1.5 size-4" />
+                      Fazer outra pergunta
+                    </Button>
+                    {isPlanningObjective(selectedObjective) && (
+                      <Button asChild size="sm">
+                        <Link
+                          href={`/planning?objective=${encodeURIComponent(selectedObjective.id)}`}
+                        >
+                          <ChartNoAxesCombined
+                            aria-hidden="true"
+                            className="mr-1.5 size-4"
+                          />
+                          Planejar esta meta
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
+                </MessageScrollerItem>
+              )}
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+          <MessageScrollerButton />
+        </MessageScroller>
+      </MessageScrollerProvider>
+
+      <div className="border-t border-border px-4 py-3">
+        <form onSubmit={submitMessage} className="flex gap-2">
+          <Input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            aria-label="Escreva uma pergunta para o assistente"
+            placeholder="Pergunte sobre seus objetivos"
+            autoComplete="off"
+            disabled={Boolean(pendingMessage)}
+            className="min-w-0"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            aria-label="Enviar mensagem"
+            disabled={!draft.trim() || Boolean(pendingMessage)}
+          >
+            <Send aria-hidden="true" className="size-4" />
+          </Button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function QuickPrompts({
+  onChoose,
+}: {
+  onChoose: (intent: PortfolioChatIntent, label: string) => void;
+}) {
+  return (
+    <div className="ml-9 space-y-2" role="group" aria-label="Perguntas rápidas">
+      {prompts.map(({ id, label, Icon }) => (
+        <Button
+          key={id}
+          type="button"
+          variant="outline"
+          className="h-auto min-h-10 w-full justify-start gap-2 whitespace-normal py-2 text-left"
+          onClick={() => onChoose(id, label)}
+        >
+          <Icon aria-hidden="true" className="size-4 shrink-0 text-primary" />
+          {label}
+        </Button>
+      ))}
+      <Button
+        asChild
+        variant="outline"
+        className="h-auto min-h-10 w-full justify-start gap-2 whitespace-normal py-2 text-left"
+      >
+        <Link href="/planning">
+          <ChartNoAxesCombined
+            aria-hidden="true"
+            className="size-4 shrink-0 text-primary"
+          />
+          Quero simular um plano
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
+function ObjectiveChoices({
+  objectives,
+  onChoose,
+}: {
+  objectives: ObjectiveSummary[];
+  onChoose: (objective: ObjectiveSummary) => void;
+}) {
+  return (
+    <div
+      className="ml-9 space-y-2"
+      role="group"
+      aria-label="Escolha um objetivo"
+    >
+      <p className="text-xs text-muted-foreground">Escolha um objetivo</p>
+      {objectives.map((objective) => (
+        <Button
+          key={objective.id}
+          type="button"
+          variant="outline"
+          className="h-auto min-h-10 w-full justify-start whitespace-normal py-2 text-left"
+          onClick={() => onChoose(objective)}
+        >
+          {objective.name}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function AssistantMessage({ children }: { children: React.ReactNode }) {
+  return (
+    <Message>
+      <MessageAvatar className="size-6 min-w-6 bg-background">
+        <Image
+          src="/images/investlab-assistant-mascot.png"
+          alt=""
+          aria-hidden="true"
+          width={24}
+          height={24}
+          className="size-6 rounded-full border border-border object-cover"
+        />
+      </MessageAvatar>
+      <MessageContent className="max-w-[90%]">
+        <Bubble variant="muted" className="max-w-full">
+          <BubbleContent className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+            {children}
+          </BubbleContent>
+        </Bubble>
+      </MessageContent>
+    </Message>
+  );
+}

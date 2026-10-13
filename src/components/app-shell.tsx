@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { LogoutButton } from "@/components/logout-button";
+import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -129,6 +130,7 @@ export function AppShell({
         </header>
         <main className="w-full p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
+      <PortfolioChatAssistant />
     </div>
   );
 }
