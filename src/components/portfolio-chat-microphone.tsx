@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff } from "lucide-react";
+import { Download, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type RecognitionResultEvent = {
-  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+  results: ArrayLike<ArrayLike<{ transcript: string; isFinal: boolean }>>;
   resultIndex: number;
 };
 type RecognitionErrorEvent = { error: string };
@@ -26,7 +26,11 @@ type LocalRecognitionConstructor = {
   available?: (options: {
     langs: string[];
     processLocally: true;
-  }) => Promise<string>;
+  }) => Promise<"available" | "downloadable" | "downloading" | "unavailable">;
+  install?: (options: {
+    langs: string[];
+    processLocally: true;
+  }) => Promise<boolean>;
 };
 type SpeechWindow = Window & {
   SpeechRecognition?: LocalRecognitionConstructor;
@@ -36,16 +40,30 @@ type SpeechWindow = Window & {
 type RecordingState =
   | "checking"
   | "ready"
+  | "downloadable"
+  | "installing"
+  | "installation-error"
   | "recording"
+  | "stopping"
   | "unavailable"
   | "error"
   | "no-speech"
   | "transcribed";
 
 const stateMessages: Record<
-  Exclude<RecordingState, "checking" | "ready" | "recording">,
+  Exclude<
+    RecordingState,
+    | "checking"
+    | "ready"
+    | "downloadable"
+    | "installing"
+    | "recording"
+    | "stopping"
+  >,
   string
 > = {
+  "installation-error":
+    "Não foi possível instalar o idioma para transcrição local. Tente novamente ou digite sua mensagem.",
   unavailable:
     "Este navegador não oferece transcrição local em português. Você pode digitar sua mensagem.",
   error:
@@ -53,6 +71,12 @@ const stateMessages: Record<
   "no-speech": "Não detectei fala. Tente novamente ou digite sua mensagem.",
   transcribed: "Transcrição pronta. Revise o texto antes de enviar.",
 };
+
+const localSpeechOptions: { langs: string[]; processLocally: true } = {
+  langs: ["pt-BR"],
+  processLocally: true,
+};
+const stopFallbackDelayMs = 2000;
 
 export function PortfolioChatMicrophone({
   onTranscript,
@@ -62,6 +86,14 @@ export function PortfolioChatMicrophone({
   const [state, setState] = useState<RecordingState>("checking");
   const recognitionRef = useRef<LocalRecognition | null>(null);
   const transcriptRef = useRef("");
+  const sessionActiveRef = useRef(false);
+  const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearStopTimeout() {
+    if (stopTimeoutRef.current === null) return;
+    clearTimeout(stopTimeoutRef.current);
+    stopTimeoutRef.current = null;
+  }
 
   useEffect(() => {
     let active = true;
@@ -81,10 +113,16 @@ export function PortfolioChatMicrophone({
       };
     }
 
-    void Recognition.available({ langs: ["pt-BR"], processLocally: true })
+    void Recognition.available(localSpeechOptions)
       .then((availability) => {
-        if (active)
-          setState(availability === "available" ? "ready" : "unavailable");
+        if (!active) return;
+        if (availability === "available") setState("ready");
+        else if (
+          availability === "downloadable" ||
+          availability === "downloading"
+        )
+          setState("downloadable");
+        else setState("unavailable");
       })
       .catch(() => {
         if (active) setState("unavailable");
@@ -92,20 +130,67 @@ export function PortfolioChatMicrophone({
 
     return () => {
       active = false;
-      recognitionRef.current?.stop();
+      const recognition = recognitionRef.current;
       recognitionRef.current = null;
+      sessionActiveRef.current = false;
+      clearStopTimeout();
+      recognition?.stop();
     };
   }, []);
 
-  function startRecording() {
-    if (state === "recording") {
-      recognitionRef.current?.stop();
-      return;
-    }
+  function installLocalLanguage() {
     const speechWindow = window as SpeechWindow;
     const Recognition =
       speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
-    if (!Recognition || state === "checking" || state === "unavailable") return;
+    if (!Recognition || typeof Recognition.install !== "function") {
+      setState("unavailable");
+      return;
+    }
+
+    setState("installing");
+    void Recognition.install(localSpeechOptions)
+      .then((installed) => {
+        setState(installed ? "ready" : "installation-error");
+      })
+      .catch(() => {
+        setState("installation-error");
+      });
+  }
+
+  function startRecording() {
+    if (state === "recording") {
+      const recognition = recognitionRef.current;
+      if (!recognition) return;
+
+      setState("stopping");
+      clearStopTimeout();
+      stopTimeoutRef.current = setTimeout(() => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
+        sessionActiveRef.current = false;
+        stopTimeoutRef.current = null;
+        setState(transcriptRef.current ? "transcribed" : "no-speech");
+      }, stopFallbackDelayMs);
+
+      try {
+        recognition.stop();
+      } catch {
+        clearStopTimeout();
+        recognitionRef.current = null;
+        sessionActiveRef.current = false;
+        setState("error");
+      }
+      return;
+    }
+    if (state === "downloadable" || state === "installation-error") {
+      installLocalLanguage();
+      return;
+    }
+
+    const speechWindow = window as SpeechWindow;
+    const Recognition =
+      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition || state !== "ready") return;
 
     transcriptRef.current = "";
     try {
@@ -115,39 +200,68 @@ export function PortfolioChatMicrophone({
       recognition.interimResults = false;
       recognition.processLocally = true;
       recognition.onresult = (event) => {
-        const result =
-          event.results[event.resultIndex]?.[0]?.transcript?.trim();
+        if (recognitionRef.current !== recognition || !sessionActiveRef.current)
+          return;
+        const resultItem = event.results[event.resultIndex]?.[0];
+        if (!resultItem?.isFinal) return;
+        const result = resultItem.transcript.trim();
         if (!result) return;
         transcriptRef.current = result;
         onTranscript(result);
-        setState("transcribed");
       };
       recognition.onerror = (event) => {
-        setState(event.error === "no-speech" ? "no-speech" : "error");
+        if (recognitionRef.current !== recognition) return;
+        clearStopTimeout();
+        sessionActiveRef.current = false;
         recognitionRef.current = null;
+        setState(event.error === "no-speech" ? "no-speech" : "error");
       };
       recognition.onend = () => {
-        if (!transcriptRef.current) setState("no-speech");
+        if (recognitionRef.current !== recognition) return;
+        clearStopTimeout();
+        sessionActiveRef.current = false;
         recognitionRef.current = null;
+        setState(transcriptRef.current ? "transcribed" : "no-speech");
       };
       recognitionRef.current = recognition;
+      sessionActiveRef.current = true;
       setState("recording");
       recognition.start();
     } catch {
+      clearStopTimeout();
       recognitionRef.current = null;
+      sessionActiveRef.current = false;
       setState("error");
     }
   }
 
-  const disabled = state === "checking" || state === "unavailable";
+  const disabled =
+    state === "checking" ||
+    state === "unavailable" ||
+    state === "installing" ||
+    state === "stopping";
+  const buttonLabel =
+    state === "recording"
+      ? "Parar gravação"
+      : state === "stopping"
+        ? "Finalizando transcrição"
+        : state === "downloadable" || state === "installation-error"
+          ? "Instalar idioma para áudio local"
+          : "Gravar mensagem de voz";
   const message =
     state === "checking"
       ? "Verificando suporte à transcrição local…"
       : state === "ready"
         ? "A transcrição fica neste dispositivo. O áudio não é enviado nem armazenado."
-        : state === "recording"
-          ? "Ouvindo… O áudio não é enviado nem armazenado."
-          : stateMessages[state];
+        : state === "downloadable"
+          ? "O idioma português pode ser instalado neste dispositivo para habilitar a transcrição local."
+          : state === "installing"
+            ? "Instalando o idioma para transcrição local…"
+            : state === "stopping"
+              ? "Finalizando a transcrição…"
+              : state === "recording"
+                ? "Ouvindo… O áudio não é enviado nem armazenado."
+                : stateMessages[state];
 
   return (
     <div className="flex min-w-0 flex-col items-center">
@@ -155,9 +269,7 @@ export function PortfolioChatMicrophone({
         type="button"
         size="icon"
         variant="outline"
-        aria-label={
-          state === "recording" ? "Parar gravação" : "Gravar mensagem de voz"
-        }
+        aria-label={buttonLabel}
         aria-pressed={state === "recording"}
         disabled={disabled}
         onClick={startRecording}
@@ -167,10 +279,32 @@ export function PortfolioChatMicrophone({
       >
         {state === "recording" ? (
           <MicOff aria-hidden="true" className="size-4" />
+        ) : state === "downloadable" || state === "installation-error" ? (
+          <Download aria-hidden="true" className="size-4" />
         ) : (
           <Mic aria-hidden="true" className="size-4" />
         )}
       </Button>
+      {state === "recording" && (
+        <div
+          role="img"
+          aria-label="Indicador de gravação"
+          className="mt-1 flex h-4 items-end gap-0.5"
+        >
+          <span
+            aria-hidden="true"
+            className="h-2 w-1 rounded-full bg-destructive motion-safe:animate-bounce motion-reduce:animate-none"
+          />
+          <span
+            aria-hidden="true"
+            className="h-4 w-1 rounded-full bg-destructive [animation-delay:120ms] motion-safe:animate-bounce motion-reduce:animate-none"
+          />
+          <span
+            aria-hidden="true"
+            className="h-2.5 w-1 rounded-full bg-destructive [animation-delay:240ms] motion-safe:animate-bounce motion-reduce:animate-none"
+          />
+        </div>
+      )}
       <span className="sr-only" role="status" aria-live="polite">
         {message}
       </span>
@@ -179,13 +313,21 @@ export function PortfolioChatMicrophone({
           ? "Verificando áudio"
           : state === "ready"
             ? "Áudio local"
-            : state === "recording"
-              ? "Ouvindo…"
-              : state === "transcribed"
-                ? "Revise o texto"
-                : state === "no-speech"
-                  ? "Sem fala detectada"
-                  : "Áudio indisponível"}
+            : state === "downloadable"
+              ? "Instalar áudio local"
+              : state === "installing"
+                ? "Instalando idioma…"
+                : state === "stopping"
+                  ? "Finalizando…"
+                  : state === "recording"
+                    ? "Ouvindo…"
+                    : state === "transcribed"
+                      ? "Revise o texto"
+                      : state === "no-speech"
+                        ? "Sem fala detectada"
+                        : state === "installation-error"
+                          ? "Falha ao instalar idioma"
+                          : "Áudio indisponível"}
       </span>
     </div>
   );

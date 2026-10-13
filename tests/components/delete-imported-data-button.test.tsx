@@ -1,11 +1,36 @@
 // @vitest-environment jsdom
-// @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { DeleteImportedDataButton } from "@/components/delete-imported-data-button";
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+function renderControlledDelete(
+  documentType: "B3_POSITION_XLSX" | "B3_MOVEMENT_XLSX",
+  label: string,
+) {
+  function ControlledDelete() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Excluir {label}
+        </button>
+        <DeleteImportedDataButton
+          documentType={documentType}
+          label={label}
+          hideTrigger
+          open={open}
+          onOpenChange={setOpen}
+        />
+      </>
+    );
+  }
+
+  return render(<ControlledDelete />);
+}
 
 describe("DeleteImportedDataButton", () => {
   afterEach(() => {
@@ -29,12 +54,7 @@ describe("DeleteImportedDataButton", () => {
         }),
       }),
     );
-    render(
-      <DeleteImportedDataButton
-        documentType="B3_POSITION_XLSX"
-        label="posições"
-      />,
-    );
+    renderControlledDelete("B3_POSITION_XLSX", "posições");
     await user.click(screen.getByRole("button", { name: "Excluir posições" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     await user.click(
@@ -61,12 +81,7 @@ describe("DeleteImportedDataButton", () => {
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
     );
-    render(
-      <DeleteImportedDataButton
-        documentType="B3_POSITION_XLSX"
-        label="posições"
-      />,
-    );
+    renderControlledDelete("B3_POSITION_XLSX", "posições");
     await user.click(screen.getByRole("button", { name: "Excluir posições" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     await user.click(
@@ -89,12 +104,7 @@ describe("DeleteImportedDataButton", () => {
       })
       .mockRejectedValueOnce(new Error("network"));
     vi.stubGlobal("fetch", fetch);
-    render(
-      <DeleteImportedDataButton
-        documentType="B3_MOVEMENT_XLSX"
-        label="movimentações"
-      />,
-    );
+    renderControlledDelete("B3_MOVEMENT_XLSX", "movimentações");
     const button = screen.getByRole("button", {
       name: "Excluir movimentações",
     });

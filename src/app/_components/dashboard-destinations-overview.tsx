@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { ArrowRight, CircleAlert, Target } from "lucide-react";
 import { Cell, Pie, PieChart } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -34,11 +33,13 @@ export function DashboardDestinationsOverview({
   loading = false,
   unavailable = false,
   onRetry,
+  onOpenObjectives,
 }: {
   summary?: DashboardDestinationSummary | null;
   loading?: boolean;
   unavailable?: boolean;
   onRetry?: () => void;
+  onOpenObjectives?: () => void;
 }) {
   if (loading && !summary)
     return (
@@ -72,21 +73,23 @@ export function DashboardDestinationsOverview({
       className="motion-content-reveal h-full"
       aria-labelledby="dashboard-destinations-title"
     >
-      <CardContent className="space-y-3 p-5 sm:p-6">
+      <CardContent className="@container space-y-4 p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <h2
             id="dashboard-destinations-title"
-            className="flex items-center gap-2 text-base font-semibold"
+            className="flex items-center gap-2 text-lg font-semibold"
           >
             <Target aria-hidden="true" className="size-4 text-primary" />
             Destinos da carteira
           </h2>
-          <Link
-            href="/portfolio?panel=objectives"
-            className="inline-flex min-h-9 items-center gap-1 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Button
+            type="button"
+            variant="link"
+            onClick={onOpenObjectives}
+            className="h-auto min-h-9 w-auto gap-1 px-0 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Objetivos <ArrowRight aria-hidden="true" className="size-3.5" />
-          </Link>
+          </Button>
         </div>
         {unavailable ? (
           <div
@@ -106,10 +109,10 @@ export function DashboardDestinationsOverview({
             Ainda sem valores conhecidos.
           </div>
         ) : (
-          <div className="grid items-center gap-3 min-[400px]:grid-cols-[120px_minmax(0,1fr)]">
+          <div className="grid items-center gap-5 @lg:grid-cols-[minmax(12rem,0.85fr)_minmax(0,1.15fr)]">
             <ChartContainer
               config={destinationChartConfig}
-              className="mx-auto size-30"
+              className="mx-auto aspect-square w-full max-w-56 @lg:max-w-none"
               role="img"
               aria-label="Distribuição dos valores conhecidos por destino"
             >
@@ -125,8 +128,8 @@ export function DashboardDestinationsOverview({
                   data={chartData}
                   dataKey="value"
                   nameKey="label"
-                  innerRadius={34}
-                  outerRadius={52}
+                  innerRadius="48%"
+                  outerRadius="82%"
                   strokeWidth={2}
                   isAnimationActive={false}
                 >
@@ -143,7 +146,7 @@ export function DashboardDestinationsOverview({
               {chartData.map((category) => (
                 <li
                   key={category.key}
-                  className="flex items-center justify-between gap-2 text-xs"
+                  className="flex items-center justify-between gap-3 text-sm"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <span
@@ -160,7 +163,7 @@ export function DashboardDestinationsOverview({
                     <span className="font-medium">
                       {percent.format(category.percentage)}%
                     </span>
-                    <span className="block text-[11px] text-muted-foreground">
+                    <span className="block text-xs text-muted-foreground sm:text-sm">
                       {formatCurrency(category.value)}
                     </span>
                   </span>

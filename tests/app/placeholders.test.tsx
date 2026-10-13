@@ -8,12 +8,8 @@ vi.mock("@/components/app-shell", () => ({
     <main>{children}</main>
   ),
 }));
-vi.mock("@/components/portfolio-import", () => ({
-  PortfolioImport: () => <div>importador</div>,
-}));
 
 import AnalysesPage from "@/app/analyses/page";
-import ImportsPage from "@/app/imports/page";
 import SettingsPage from "@/app/settings/page";
 
 function renderWithQueryClient(element: React.ReactNode) {
@@ -26,9 +22,6 @@ function renderWithQueryClient(element: React.ReactNode) {
 
 describe("secondary pages", () => {
   it("renders each planned area with its context", async () => {
-    const imports = renderWithQueryClient(<ImportsPage />);
-    expect(imports).toContain("importador");
-    expect(imports).not.toContain("Importe posições ou movimentações da B3");
     expect(
       renderWithQueryClient(
         await AnalysesPage({ searchParams: Promise.resolve({}) }),

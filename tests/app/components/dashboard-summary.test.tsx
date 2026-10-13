@@ -1,11 +1,31 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardSummary as DashboardSummaryComponent } from "@/app/_components/dashboard-summary";
 import { getPortfolioInsights } from "@/lib/portfolio-insights";
 import type { DashboardDestinationSummary } from "@/app/_components/dashboard-destinations-overview";
+
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  value: class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback(
+        [
+          {
+            target,
+            contentRect: { width: 500, height: 220 },
+          } as ResizeObserverEntry,
+        ],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  },
+});
 
 type SummaryProps = Omit<
   Parameters<typeof DashboardSummaryComponent>[0],
@@ -79,12 +99,11 @@ describe("DashboardSummary", () => {
     expect(html).toContain("2 de 2");
     expect(html).toContain("Dados de 01/09/2026");
     expect(html).toContain("Ações rápidas");
-    expect(html).toContain("Adicionar posição manual");
-    expect(html).toContain('href="/portfolio#manual-positions"');
+    expect(html).toContain("Adicionar posição");
+    expect(html).not.toContain('href="/portfolio#manual-positions"');
     expect(html).toContain("Importar e conciliar");
-    expect(html).toContain('href="/imports"');
     expect(html).toContain("Ver objetivos");
-    expect(html).toContain('href="/portfolio?panel=objectives"');
+    expect(html).not.toContain('href="/portfolio?panel=objectives"');
   });
 
   it("keeps the destinations donut and reserve summary together", () => {
@@ -104,6 +123,27 @@ describe("DashboardSummary", () => {
     expect(html).toContain("2 meses de despesas");
     expect(html).toMatch(/Faltam R\$\s100,00 para a meta que você escolheu\./);
     expect(html).toContain("xl:grid-cols-2");
+  });
+
+  it("opens the dashboard objectives panel from both objective controls", () => {
+    const onObjectivesOpenChange = vi.fn();
+    render(
+      <DashboardSummary
+        positions={positions}
+        destinationSummary={destinations}
+        onObjectivesOpenChange={onObjectivesOpenChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Objetivos" }));
+    expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("keeps the quick objective action safe when no panel controller is provided", () => {
+    render(<DashboardSummary positions={positions} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver objetivos" }));
+    expect(screen.queryByText("Gerenciar objetivos")).toBeNull();
   });
 
   it("shows a concise review action only when positions have no current value", () => {

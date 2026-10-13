@@ -146,6 +146,26 @@ describe("ManualPositionManager", () => {
     expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
   });
 
+  it("exposes only the manual-entry dialog when embedded in the Dashboard", () => {
+    const { container } = render(
+      <ManualPositionManager positions={[]} entryOnly />,
+    );
+    expect(container.querySelector("#manual-positions")).toBeNull();
+    fireEvent(window, new Event("portfolio:manual-position:create"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
+  });
+
+  it("can keep position management while hiding its duplicate create action", () => {
+    render(<ManualPositionManager positions={[]} showCreateButton={false} />);
+
+    expect(
+      screen.queryByRole("button", { name: "Adicionar posição" }),
+    ).toBeNull();
+    fireEvent(window, new Event("portfolio:manual-position:create"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
   it("opens the form from the manual-position Dashboard deep link", () => {
     window.history.replaceState({}, "", "/portfolio#manual-positions");
     render(<ManualPositionManager positions={[]} />);
@@ -422,13 +442,6 @@ describe("ManualPositionManager", () => {
   });
 
   it("removes a position only after confirmation and handles API failures", async () => {
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true);
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse())
@@ -444,35 +457,46 @@ describe("ManualPositionManager", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Remover ETF internacional" }),
       );
+    const confirmRemoval = () =>
+      fireEvent.click(screen.getByRole("button", { name: "Remover posição" }));
+    const cancelRemoval = () =>
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     remove();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    cancelRemoval();
     expect(fetchMock).not.toHaveBeenCalled();
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Posição removida."),
     );
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Exclusão recusada."),
     );
+    cancelRemoval();
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível remover a posição.",
       ),
     );
+    cancelRemoval();
     remove();
+    confirmRemoval();
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Não foi possível remover a posição.",
       ),
     );
-    expect(confirm).toHaveBeenCalledTimes(5);
+    cancelRemoval();
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("prevents duplicate removal requests while deletion is pending", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     let resolveResponse!: (value: ReturnType<typeof jsonResponse>) => void;
     const pendingResponse = new Promise<ReturnType<typeof jsonResponse>>(
       (resolve) => {
@@ -487,10 +511,11 @@ describe("ManualPositionManager", () => {
     });
 
     fireEvent.click(removeButton);
+    fireEvent.click(screen.getByRole("button", { name: "Remover posição" }));
 
     expect(removeButton).toHaveProperty("disabled", true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
     resolveResponse(jsonResponse());
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(removeButton).toHaveProperty("disabled", false);

@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const router = vi.hoisted(() => ({ refresh: vi.fn() }));
@@ -23,7 +24,13 @@ afterEach(() => {
 
 describe("CdbRateConfiguration", () => {
   it("does not render an empty bulk configuration", () => {
-    const { container } = render(<CdbRateConfiguration />);
+    const { container } = render(
+      <CdbRateConfiguration
+        open={false}
+        onOpenChange={vi.fn()}
+        assetCodes={[]}
+      />,
+    );
     expect(container.innerHTML).toBe("");
   });
 
@@ -32,10 +39,40 @@ describe("CdbRateConfiguration", () => {
       .fn()
       .mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
-    render(
-      <CdbRateConfiguration assetCode="CDB1" currentPercentage="100.0000" />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxa" }));
+    function ControlledRate() {
+      const [open, setOpen] = useState(false);
+      const [instanceKey, setInstanceKey] = useState(0);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setInstanceKey((key) => key + 1);
+              setOpen(true);
+            }}
+          >
+            Abrir ajuste
+          </button>
+          <CdbRateConfiguration
+            key={instanceKey}
+            open={open}
+            onOpenChange={setOpen}
+            assetCode="CDB1"
+            currentPercentage={null}
+          />
+        </>
+      );
+    }
+    render(<ControlledRate />);
+    fireEvent.click(screen.getByRole("button", { name: "Abrir ajuste" }));
+    expect(
+      (screen.getByLabelText("% do CDI para CDB1") as HTMLInputElement).value,
+    ).toBe("100");
+    fireEvent.change(screen.getByLabelText("% do CDI para CDB1"), {
+      target: { value: "110" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Abrir ajuste" }));
     expect(
       (screen.getByLabelText("% do CDI para CDB1") as HTMLInputElement).value,
     ).toBe("100");
@@ -60,8 +97,13 @@ describe("CdbRateConfiguration", () => {
       json: async () => ({ configured: 2 }),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<CdbRateConfiguration assetCodes={["CDB1", "CDB2"]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+    render(
+      <CdbRateConfiguration
+        open
+        onOpenChange={vi.fn()}
+        assetCodes={["CDB1", "CDB2"]}
+      />,
+    );
     fireEvent.change(screen.getByLabelText("% do CDI para os CDBs"), {
       target: { value: "105" },
     });
@@ -84,8 +126,13 @@ describe("CdbRateConfiguration", () => {
       json: async () => ({ message: "Taxa inválida." }),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<CdbRateConfiguration missingAssetCodes={["CDB3"]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+    render(
+      <CdbRateConfiguration
+        open
+        onOpenChange={vi.fn()}
+        missingAssetCodes={["CDB3"]}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Taxa inválida."),
@@ -103,8 +150,13 @@ describe("CdbRateConfiguration", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
       .mockResolvedValueOnce({ ok: false, json: async () => ({}) });
     vi.stubGlobal("fetch", fetchMock);
-    const first = render(<CdbRateConfiguration assetCodes={["CDB4"]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+    const first = render(
+      <CdbRateConfiguration
+        open
+        onOpenChange={vi.fn()}
+        assetCodes={["CDB4"]}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
@@ -112,8 +164,13 @@ describe("CdbRateConfiguration", () => {
       ),
     );
     first.unmount();
-    render(<CdbRateConfiguration assetCodes={["CDB5"]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+    render(
+      <CdbRateConfiguration
+        open
+        onOpenChange={vi.fn()}
+        assetCodes={["CDB5"]}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
@@ -126,8 +183,9 @@ describe("CdbRateConfiguration", () => {
 it("shows a communication error when saving rejects", async () => {
   const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
   vi.stubGlobal("fetch", fetchMock);
-  render(<CdbRateConfiguration assetCodes={["CDB8"]} />);
-  fireEvent.click(screen.getByRole("button", { name: "Ajustar taxas" }));
+  render(
+    <CdbRateConfiguration open onOpenChange={vi.fn()} assetCodes={["CDB8"]} />,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith(

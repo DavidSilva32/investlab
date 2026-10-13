@@ -13,15 +13,18 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
     destinationSummary,
     destinationsUnavailable,
     destinationsLoading,
+    importOpen,
     onRetryDestinations,
   }: {
     destinationSummary?: { knownTotal: number };
     destinationsUnavailable?: boolean;
     destinationsLoading?: boolean;
+    importOpen?: boolean;
     onRetryDestinations?: () => void;
   }) => (
     <>
       <p>Resumo do dashboard</p>
+      {importOpen && <p>Importação lateral aberta</p>}
       {destinationSummary && (
         <p>Total por destinos: {destinationSummary.knownTotal}</p>
       )}
@@ -93,6 +96,23 @@ describe("DashboardClient", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens the import sheet from the dashboard deep link and clears the query", async () => {
+    const fetchMock = vi.fn((url: string) =>
+      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryProvider>
+        <DashboardClient openImportOnLoad />
+      </QueryProvider>,
+    );
+
+    expect(await screen.findByText("Importação lateral aberta")).toBeTruthy();
+    await waitFor(() =>
+      expect(routerReplace).toHaveBeenCalledWith("/", { scroll: false }),
+    );
   });
 
   it("keeps the portfolio available and retries only unavailable destinations", async () => {

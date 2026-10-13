@@ -205,6 +205,26 @@ describe("ManualPortfolioOperations", () => {
     );
   });
 
+  it("opens the registration dialog from the movements table action", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          operations: [],
+          movements: [],
+          pendingMovements: [],
+          candidates: [],
+          links: [],
+        }),
+      ),
+    );
+    render(<ManualPortfolioOperations showTrigger={false} />);
+
+    fireEvent(window, new Event("portfolio:manual-operation:create"));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
   it("retries an ambiguous create with the same idempotency key and payload", async () => {
     const fetch = vi
       .fn()

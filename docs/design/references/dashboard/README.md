@@ -11,7 +11,7 @@
 A composição atual reorganiza o Dashboard conforme os dados e ações existentes:
 
 - Patrimônio conhecido, quantidade de posições com valor e contexto de data-base.
-- Ações para adicionar posição manual, importar e conciliar dados, e abrir objetivos.
+- Ações para adicionar posição, importar e conciliar dados, e abrir objetivos.
 - Gráfico de rosca dos destinos da carteira, usando os dados reais de objetivos e o componente de gráfico existente. Destinos não representam classes de ativos.
 - Resumo da Reserva de emergência, com limitações e estados de dados incompletos preservados.
 - Revisão condicional de posições sem valor atual.

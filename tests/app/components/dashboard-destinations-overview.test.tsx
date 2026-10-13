@@ -43,7 +43,13 @@ const summary: DashboardDestinationSummary = {
 afterEach(cleanup);
 describe("DashboardDestinationsOverview", () => {
   it("reuses canonical amounts, proportions, destination colors and exact tooltip", () => {
-    render(<DashboardDestinationsOverview summary={summary} />);
+    const onOpenObjectives = vi.fn();
+    render(
+      <DashboardDestinationsOverview
+        summary={summary}
+        onOpenObjectives={onOpenObjectives}
+      />,
+    );
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
       "valores conhecidos",
     );
@@ -59,9 +65,10 @@ describe("DashboardDestinationsOverview", () => {
         .getAllByTestId("cell")
         .map((item) => item.getAttribute("data-fill")),
     ).toEqual(["var(--color-reserve)", "var(--color-long_term)"]);
-    expect(
-      screen.getByRole("link", { name: "Objetivos" }).getAttribute("href"),
-    ).toBe("/portfolio?panel=objectives");
+    fireEvent.click(screen.getByRole("button", { name: "Objetivos" }));
+    expect(onOpenObjectives).toHaveBeenCalledOnce();
+    expect(screen.getByRole("img").className).toContain("aspect-square");
+    expect(screen.getByRole("img").className).toContain("@lg:max-w-none");
     expect(screen.queryByRole("status")).toBeNull();
   });
   it.each([{ missingPositionCount: 1 }, { unvaluedPositionCount: 1 }])(

@@ -1,22 +1,34 @@
-import Link from "next/link";
+"use client";
+
 import { Plus, Target, Upload } from "lucide-react";
+import type { PortfolioPosition } from "@/app/portfolio/_components/portfolio-overview";
+import { PortfolioObjectives } from "@/app/portfolio/_components/portfolio-objectives";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { PortfolioImport } from "@/components/portfolio-import";
+import { ManualPositionManager } from "@/app/portfolio/_components/manual-position-manager";
 
-const actions = [
-  {
-    label: "Importar e conciliar",
-    href: "/imports",
-    Icon: Upload,
-  },
-  {
-    label: "Ver objetivos",
-    href: "/portfolio?panel=objectives",
-    Icon: Target,
-  },
-] as const;
-
-export function DashboardQuickActions() {
+export function DashboardQuickActions({
+  positions,
+  objectivesOpen,
+  onObjectivesOpenChange,
+  importOpen,
+  onImportOpenChange,
+}: {
+  positions: PortfolioPosition[];
+  objectivesOpen: boolean;
+  onObjectivesOpenChange: (open: boolean) => void;
+  importOpen: boolean;
+  onImportOpenChange: (open: boolean) => void;
+}) {
   return (
     <section aria-labelledby="dashboard-quick-actions-title">
       <Card className="motion-content-reveal">
@@ -26,27 +38,78 @@ export function DashboardQuickActions() {
           </h2>
           <div className="grid gap-2 sm:grid-cols-3">
             <Button
-              asChild
+              type="button"
               className="min-h-12 justify-start gap-2 sm:justify-center"
+              onClick={() =>
+                window.dispatchEvent(
+                  new Event("portfolio:manual-position:create"),
+                )
+              }
             >
-              <Link href="/portfolio#manual-positions">
-                <Plus aria-hidden="true" className="size-4" />
-                Adicionar posição manual
-              </Link>
+              <Plus aria-hidden="true" className="size-4" />
+              Adicionar posição
             </Button>
-            {actions.map(({ label, href, Icon }) => (
-              <Button
-                key={href}
-                asChild
-                variant="outline"
-                className="min-h-12 justify-start gap-2 sm:justify-center"
+            <Sheet open={importOpen} onOpenChange={onImportOpenChange}>
+              <SheetTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-12 justify-start gap-2 sm:justify-center"
+                >
+                  <Upload aria-hidden="true" className="size-4" />
+                  Importar e conciliar
+                </Button>
+              </SheetTrigger>
+              <SheetContent
+                side="right"
+                className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden p-4 sm:max-w-6xl sm:p-6"
               >
-                <Link href={href}>
-                  <Icon aria-hidden="true" className="size-4" />
-                  {label}
-                </Link>
-              </Button>
-            ))}
+                <SheetHeader className="mb-5 shrink-0 pr-8">
+                  <SheetTitle>Importar e conciliar</SheetTitle>
+                  <SheetDescription>
+                    Revise os dados do arquivo e escolha como tratar cada
+                    correspondência antes de confirmar.
+                  </SheetDescription>
+                </SheetHeader>
+                <div
+                  aria-label="Importação e conciliação"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+                  role="region"
+                >
+                  <PortfolioImport />
+                </div>
+              </SheetContent>
+            </Sheet>
+            <Sheet open={objectivesOpen} onOpenChange={onObjectivesOpenChange}>
+              <SheetTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-12 justify-start gap-2 sm:justify-center"
+                >
+                  <Target aria-hidden="true" className="size-4" />
+                  Ver objetivos
+                </Button>
+              </SheetTrigger>
+              <SheetContent
+                side="right"
+                className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden sm:max-w-3xl"
+              >
+                <SheetHeader className="mb-5 shrink-0 pr-8">
+                  <SheetTitle>Objetivos e destinos</SheetTitle>
+                  <SheetDescription>
+                    Consulte e organize os objetivos da sua carteira.
+                  </SheetDescription>
+                </SheetHeader>
+                <div
+                  aria-label="Objetivos e destinos da carteira"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+                  role="region"
+                >
+                  <PortfolioObjectives />
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
           <p className="text-xs text-muted-foreground">
             A conciliação com posições existentes aparece durante a revisão da
@@ -54,6 +117,7 @@ export function DashboardQuickActions() {
           </p>
         </CardContent>
       </Card>
+      <ManualPositionManager positions={positions} entryOnly />
     </section>
   );
 }

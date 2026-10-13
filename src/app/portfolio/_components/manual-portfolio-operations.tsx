@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Plus, Unlink } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, Plus, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,11 @@ import {
 } from "@/components/ui/select";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { getApiMessage } from "@/lib/api-message";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 type Operation = {
   id: string;
@@ -94,7 +99,13 @@ const emptyData: Data = {
   links: [],
 };
 
-export function ManualPortfolioOperations() {
+export function ManualPortfolioOperations({
+  showTrigger = true,
+  initiallyCollapsed = false,
+}: {
+  showTrigger?: boolean;
+  initiallyCollapsed?: boolean;
+}) {
   const [data, setData] = useState<Data>(emptyData);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -163,11 +174,20 @@ export function ManualPortfolioOperations() {
   useEffect(() => {
     let active = true;
     const refreshCurrent = () => void refresh(() => active);
+    const openCreateDialog = () => setOpen(true);
     refreshCurrent();
     window.addEventListener("portfolio:updated", refreshCurrent);
+    window.addEventListener(
+      "portfolio:manual-operation:create",
+      openCreateDialog,
+    );
     return () => {
       active = false;
       window.removeEventListener("portfolio:updated", refreshCurrent);
+      window.removeEventListener(
+        "portfolio:manual-operation:create",
+        openCreateDialog,
+      );
     };
   }, [refresh]);
 
@@ -261,188 +281,216 @@ export function ManualPortfolioOperations() {
 
   return (
     <>
-      <Card className="overflow-hidden">
-        <CardHeader className="flex flex-col gap-3 border-b bg-muted/10 px-5 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
-          <div>
-            <CardTitle>Operações manuais</CardTitle>
-            <CardDescription>
-              Registre compras e vendas sem alterar posições ou cálculos de
-              rentabilidade.
-            </CardDescription>
-          </div>
-          <Button type="button" onClick={() => setOpen(true)}>
-            <Plus aria-hidden="true" />
-            Registrar operação
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-5 p-4 sm:p-6">
-          {loading ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              Carregando operações...
-            </p>
-          ) : null}
-          {loadError ? (
-            <Alert role="alert" variant="destructive">
-              <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <span>{loadError}</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refresh()}
-                >
-                  Tentar novamente
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {!loading && !loadError && data.operations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nenhuma compra ou venda manual registrada.
-            </p>
-          ) : null}
-          {data.operations.map((operation) => {
-            const linkedMovementId = linkedByOperation.get(operation.id);
-            const linkedMovement = linkedMovementId
-              ? data.movements.find(
-                  (movement) => movement.id === linkedMovementId,
-                )
-              : null;
-            return (
-              <div
-                key={operation.id}
-                className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+      <Collapsible defaultOpen={!initiallyCollapsed}>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b bg-muted/10 px-5 py-4 sm:px-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CollapsibleTrigger
+                aria-label="Registros manuais e conciliação"
+                className="group flex min-h-10 min-w-0 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">{sideLabel(operation.side)}</Badge>
-                    <span className="font-medium">{operation.product}</span>
-                    {operation.assetCode ? (
-                      <span className="text-sm text-muted-foreground">
-                        {operation.assetCode}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {dateFormatter.format(
-                      new Date(`${operation.effectiveDate}T00:00:00Z`),
-                    )}{" "}
-                    · {operation.quantity} un. ·{" "}
-                    {money(operation.unitPrice, operation.currency)}
-                    {operation.fees !== null
-                      ? ` · taxas ${money(operation.fees, operation.currency)}`
-                      : ""}
-                  </p>
+                <div>
+                  <CardTitle className="text-base">
+                    Registros manuais e conciliação
+                  </CardTitle>
+                  <CardDescription>
+                    Operações manuais não alteram posições ou cálculos de
+                    rentabilidade.
+                  </CardDescription>
                 </div>
-                {linkedMovementId ? (
-                  <div className="flex items-center gap-2">
-                    <Badge>Conciliada</Badge>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+                />
+              </CollapsibleTrigger>
+              {showTrigger ? (
+                <Button type="button" onClick={() => setOpen(true)}>
+                  <Plus aria-hidden="true" />
+                  Registrar operação
+                </Button>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="space-y-5 p-4 sm:p-6">
+              {loading ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Carregando operações...
+                </p>
+              ) : null}
+              {loadError ? (
+                <Alert role="alert" variant="destructive">
+                  <AlertDescription className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span>{loadError}</span>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() =>
-                        setUnlinking({
-                          operationId: operation.id,
-                          movementId: linkedMovementId,
-                        })
-                      }
+                      onClick={() => void refresh()}
                     >
-                      <Unlink aria-hidden="true" />
-                      Desfazer vínculo
+                      Tentar novamente
                     </Button>
-                    {linkedMovement ? (
-                      <span className="sr-only">{linkedMovement.product}</span>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              {!loading && !loadError && data.operations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma compra ou venda manual registrada.
+                </p>
+              ) : null}
+              {data.operations.map((operation) => {
+                const linkedMovementId = linkedByOperation.get(operation.id);
+                const linkedMovement = linkedMovementId
+                  ? data.movements.find(
+                      (movement) => movement.id === linkedMovementId,
+                    )
+                  : null;
+                return (
+                  <div
+                    key={operation.id}
+                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">
+                          {sideLabel(operation.side)}
+                        </Badge>
+                        <span className="font-medium">{operation.product}</span>
+                        {operation.assetCode ? (
+                          <span className="text-sm text-muted-foreground">
+                            {operation.assetCode}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {dateFormatter.format(
+                          new Date(`${operation.effectiveDate}T00:00:00Z`),
+                        )}{" "}
+                        · {operation.quantity} un. ·{" "}
+                        {money(operation.unitPrice, operation.currency)}
+                        {operation.fees !== null
+                          ? ` · taxas ${money(operation.fees, operation.currency)}`
+                          : ""}
+                      </p>
+                    </div>
+                    {linkedMovementId ? (
+                      <div className="flex items-center gap-2">
+                        <Badge>Conciliada</Badge>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setUnlinking({
+                              operationId: operation.id,
+                              movementId: linkedMovementId,
+                            })
+                          }
+                        >
+                          <Unlink aria-hidden="true" />
+                          Desfazer vínculo
+                        </Button>
+                        {linkedMovement ? (
+                          <span className="sr-only">
+                            {linkedMovement.product}
+                          </span>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
-            );
-          })}
-          {data.candidates.length ? (
-            <section
-              aria-labelledby="operation-candidates-title"
-              className="space-y-3 border-t pt-5"
-            >
-              <div>
-                <h3 id="operation-candidates-title" className="font-semibold">
-                  Possíveis correspondências
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Data, identidade do ativo e quantidade coincidem. Cada vínculo
-                  exige sua confirmação.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Tipo e direção da B3 são dados brutos; cada correspondência é
-                  apenas uma sugestão para revisão humana, não identifica compra
-                  ou venda.
-                </p>
-              </div>
-              {data.candidates.map((candidate) => (
-                <div
-                  key={`${candidate.operationId}:${candidate.movementId}`}
-                  className="grid gap-3 rounded-lg border p-3 lg:grid-cols-[1fr_auto_1fr_auto] lg:items-center"
+                );
+              })}
+              {data.candidates.length ? (
+                <section
+                  aria-labelledby="operation-candidates-title"
+                  className="space-y-3 border-t pt-5"
                 >
                   <div>
-                    <p className="text-xs font-medium uppercase text-muted-foreground">
-                      Registro manual
-                    </p>
-                    <p className="font-medium">
-                      {sideLabel(candidate.operationSide)} ·{" "}
-                      {candidate.operationProduct}
+                    <h3
+                      id="operation-candidates-title"
+                      className="font-semibold"
+                    >
+                      Possíveis correspondências
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Data, identidade do ativo e quantidade coincidem. Cada
+                      vínculo exige sua confirmação.
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {candidate.operationQuantity} un. ·{" "}
-                      {money(
-                        candidate.operationUnitPrice,
-                        candidate.operationCurrency,
-                      )}
+                      Tipo e direção da B3 são dados brutos; cada
+                      correspondência é apenas uma sugestão para revisão humana,
+                      não identifica compra ou venda.
                     </p>
                   </div>
-                  <ArrowLeftRight
-                    aria-hidden="true"
-                    className="hidden size-4 text-muted-foreground lg:block"
-                  />
-                  <div>
-                    <p className="text-xs font-medium uppercase text-muted-foreground">
-                      Movimentação B3 original
-                    </p>
-                    <p className="font-medium">{candidate.movement.product}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {candidate.movement.direction} ·{" "}
-                      {candidate.movement.movementType} ·{" "}
-                      {candidate.movement.quantity} un.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setDecision(candidate)}
-                  >
-                    Revisar e confirmar
-                  </Button>
-                  <p className="text-sm text-status-warning lg:col-span-4">
-                    {candidate.limitation} Preço unitário B3:{" "}
-                    {rawAmount(candidate.movement.unitPrice)}; valor informado
-                    pela B3: {rawAmount(candidate.movement.operationValue)}.
-                    Esses valores não foram usados para decidir a
-                    correspondência.
-                  </p>
-                </div>
-              ))}
-            </section>
-          ) : null}
-          {!loading && data.pendingMovements.length ? (
-            <p className="border-t pt-4 text-sm text-muted-foreground">
-              {data.pendingMovements.length === 1
-                ? "1 movimentação B3 continua sem vínculo manual."
-                : `${data.pendingMovements.length} movimentações B3 continuam sem vínculo manual.`}{" "}
-              Os registros originais permanecem na tabela abaixo; nenhuma
-              direção da B3 foi interpretada como compra ou venda.
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
+                  {data.candidates.map((candidate) => (
+                    <div
+                      key={`${candidate.operationId}:${candidate.movementId}`}
+                      className="grid gap-3 rounded-lg border p-3 lg:grid-cols-[1fr_auto_1fr_auto] lg:items-center"
+                    >
+                      <div>
+                        <p className="text-xs font-medium uppercase text-muted-foreground">
+                          Registro manual
+                        </p>
+                        <p className="font-medium">
+                          {sideLabel(candidate.operationSide)} ·{" "}
+                          {candidate.operationProduct}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {candidate.operationQuantity} un. ·{" "}
+                          {money(
+                            candidate.operationUnitPrice,
+                            candidate.operationCurrency,
+                          )}
+                        </p>
+                      </div>
+                      <ArrowLeftRight
+                        aria-hidden="true"
+                        className="hidden size-4 text-muted-foreground lg:block"
+                      />
+                      <div>
+                        <p className="text-xs font-medium uppercase text-muted-foreground">
+                          Movimentação B3 original
+                        </p>
+                        <p className="font-medium">
+                          {candidate.movement.product}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {candidate.movement.direction} ·{" "}
+                          {candidate.movement.movementType} ·{" "}
+                          {candidate.movement.quantity} un.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setDecision(candidate)}
+                      >
+                        Revisar e confirmar
+                      </Button>
+                      <p className="text-sm text-status-warning lg:col-span-4">
+                        {candidate.limitation} Preço unitário B3:{" "}
+                        {rawAmount(candidate.movement.unitPrice)}; valor
+                        informado pela B3:{" "}
+                        {rawAmount(candidate.movement.operationValue)}. Esses
+                        valores não foram usados para decidir a correspondência.
+                      </p>
+                    </div>
+                  ))}
+                </section>
+              ) : null}
+              {!loading && data.pendingMovements.length ? (
+                <p className="border-t pt-4 text-sm text-muted-foreground">
+                  {data.pendingMovements.length === 1
+                    ? "1 movimentação B3 continua sem vínculo manual."
+                    : `${data.pendingMovements.length} movimentações B3 continuam sem vínculo manual.`}{" "}
+                  Os registros originais permanecem na tabela abaixo; nenhuma
+                  direção da B3 foi interpretada como compra ou venda.
+                </p>
+              ) : null}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">

@@ -32,7 +32,7 @@ export default async function PortfolioPage({
           Uma leitura objetiva da sua carteira, atualizada pela API.
         </p>
         <Link
-          href="/imports"
+          href="/?openImport=1"
           className="text-sm font-medium text-primary hover:underline"
         >
           Importar dados

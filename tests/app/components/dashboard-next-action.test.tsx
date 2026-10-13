@@ -42,7 +42,7 @@ describe("DashboardNextAction", () => {
         missingValueCount: 0,
         reserveIncomplete: false,
       })?.href,
-    ).toBe("/imports");
+    ).toBe("/?openImport=1");
   });
 
   it("offers position review when values are missing", () => {
@@ -91,7 +91,7 @@ describe("DashboardNextAction", () => {
 
     expect(html).toContain("Próxima ação");
     expect(html).toContain("Adicione os dados da sua carteira");
-    expect(html).toContain('href="/imports"');
+    expect(html).toContain('href="/?openImport=1"');
     expect(html).toContain("Importar carteira");
   });
 });

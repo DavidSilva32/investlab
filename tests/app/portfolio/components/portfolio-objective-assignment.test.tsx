@@ -661,7 +661,7 @@ describe("PortfolioObjectiveAssignment", () => {
       screen
         .getByRole("link", { name: "Importar posições" })
         .getAttribute("href"),
-    ).toBe("/imports");
+    ).toBe("/?openImport=1");
   });
 
   it("keeps the import path available when objectives and positions are empty", () => {

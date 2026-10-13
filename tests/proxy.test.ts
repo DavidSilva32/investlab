@@ -14,6 +14,7 @@ describe("proxy authentication", () => {
     expect(
       matcherPathPattern.test("images/investlab-assistant-mascot.png"),
     ).toBe(false);
+    expect(matcherPathPattern.test("brands/b3/logo-negativo.png")).toBe(false);
     expect(matcherPathPattern.test("portfolio")).toBe(true);
     expect(matcherPathPattern.test("api/portfolio/objectives")).toBe(true);
   });

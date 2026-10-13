@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/portfolio-table", () => ({
   PortfolioTable: ({
     columns,
     rows,
+    toolbar,
+    toolbarSummary,
+    emptyMessage,
   }: {
     columns: Array<{
       id: string;
@@ -13,8 +18,17 @@ vi.mock("@/components/portfolio-table", () => ({
       value: (row: never) => unknown;
     }>;
     rows: never[];
+    toolbar?: ReactNode;
+    toolbarSummary?: string;
+    emptyMessage: string;
   }) => (
     <div>
+      {toolbar ? (
+        <div data-testid="table-toolbar">
+          <span>{toolbarSummary}</span>
+          {toolbar}
+        </div>
+      ) : null}
       {rows.flatMap((row) =>
         columns.map((column) => (
           <span key={column.id}>
@@ -23,6 +37,7 @@ vi.mock("@/components/portfolio-table", () => ({
           </span>
         )),
       )}
+      {rows.length === 0 ? <p>{emptyMessage}</p> : null}
     </div>
   ),
 }));
@@ -61,6 +76,35 @@ const position = {
 };
 
 describe("portfolio detail components", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("puts manual entry, rate adjustment and imported deletion in the positions table toolbar", () => {
+    const dispatchSpy = vi
+      .spyOn(window, "dispatchEvent")
+      .mockImplementation(() => true);
+    render(<PositionDetails positions={[position]} />);
+
+    const button = screen.getByRole("button", {
+      name: "Adicionar posição",
+    });
+    expect(screen.getByTestId("table-toolbar").contains(button)).toBe(true);
+    expect(screen.getByTestId("table-toolbar").textContent).toContain(
+      "1 posição disponível",
+    );
+    expect(screen.getAllByText("Configurar taxa")).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: "posições importadas" }),
+    ).toBeTruthy();
+    fireEvent.click(button);
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "portfolio:manual-position:create" }),
+    );
+  });
+
   it("shows the saved CDI percentage as an informational manual-position fact", () => {
     const html = renderToStaticMarkup(
       <PositionDetails
@@ -123,11 +167,9 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(html).toContain("Posições atuais");
-    expect(html).toContain("Adicionar posição manual");
-    expect(html.indexOf("Posições na carteira")).toBeLessThan(
-      html.indexOf("Posições manuais"),
-    );
+    expect(html).not.toContain("Posições atuais");
+    expect(html).toContain("Adicionar posição");
+    expect(html).not.toContain("Posições manuais");
     expect(html).toContain("Estimativa parcial até");
     expect(html).toContain("Estimativa até");
     expect(html).toContain("100% do CDI");
@@ -222,13 +264,13 @@ describe("portfolio detail components", () => {
         ]}
       />,
     );
-    expect(positions).toContain("Nenhuma posição importada");
-    expect(positions).toContain("0 posições");
+    expect(positions).toContain("0 posições disponíveis");
+    expect(positions).toContain("Importe um arquivo da B3");
     expect(movements).toContain("Crédito");
     expect(movements).toContain("Débito");
-    expect(movements).toContain(
-      "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
-    );
+    expect(movements).toContain("2 movimentações registradas");
+    expect(movements).toContain("Registrar operação");
+    expect(movements).toContain("Registros manuais e conciliação");
   });
   it("formats missing CDI percentages and ignores CDBs without an indexer", () => {
     const html = renderToStaticMarkup(
@@ -250,7 +292,24 @@ describe("portfolio detail components", () => {
   });
   it("renders the empty movement state", () => {
     expect(renderToStaticMarkup(<MovementDetails movements={[]} />)).toContain(
-      "Nenhuma movimentação importada",
+      "Importe um arquivo de movimentações da B3 para visualizá-las.",
+    );
+  });
+
+  it("keeps registering movements inside the movements table toolbar", () => {
+    const dispatchSpy = vi
+      .spyOn(window, "dispatchEvent")
+      .mockImplementation(() => true);
+    render(<MovementDetails movements={[]} />);
+
+    const button = screen.getByRole("button", { name: "Registrar operação" });
+    expect(screen.getByTestId("table-toolbar").contains(button)).toBe(true);
+    expect(screen.getByTestId("table-toolbar").textContent).toContain(
+      "0 movimentações registradas",
+    );
+    fireEvent.click(button);
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "portfolio:manual-operation:create" }),
     );
   });
 

@@ -481,6 +481,7 @@ describe("PortfolioImport", () => {
       screen.getByRole("button", { name: "Importar arquivos XLSX" }),
     );
 
+    expect(screen.getAllByRole("img", { name: "Logo da B3" })).toHaveLength(2);
     expect(click).toHaveBeenCalledOnce();
   });
   it("uses fallback messages and renders a position without a total value", async () => {

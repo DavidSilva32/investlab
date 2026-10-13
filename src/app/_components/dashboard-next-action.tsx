@@ -35,7 +35,7 @@ export function getDashboardNextAction({
       title: "Adicione os dados da sua carteira",
       detail: "Sem posições, ainda não há base para interpretar sua situação.",
       label: "Importar carteira",
-      href: "/imports",
+      href: "/?openImport=1",
     };
   }
   if (missingValueCount > 0) {

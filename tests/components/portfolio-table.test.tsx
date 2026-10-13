@@ -145,6 +145,67 @@ describe("PortfolioTable", () => {
     expect(screen.getByText("Vazio")).toBeTruthy();
   });
 
+  it("renders toolbar summary and action with rows and in the empty state", () => {
+    const toolbar = <button type="button">Ação da tabela</button>;
+    const { rerender } = render(
+      <PortfolioTable
+        columns={columns}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={toolbar}
+        toolbarSummary="1 posição disponível"
+      />,
+    );
+
+    expect(screen.getByText("1 posição disponível")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ação da tabela" })).toBeTruthy();
+    expect(document.querySelector("table")).toBeTruthy();
+
+    rerender(
+      <PortfolioTable
+        columns={columns}
+        rows={[]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={toolbar}
+        toolbarSummary="0 posições disponíveis"
+      />,
+    );
+
+    expect(screen.getByText("0 posições disponíveis")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ação da tabela" })).toBeTruthy();
+    expect(screen.getByText("Vazio")).toBeTruthy();
+    expect(document.querySelector("table")).toBeNull();
+  });
+
+  it("uses default toolbar summaries for rows and an empty table", () => {
+    const toolbar = <button type="button">Ação</button>;
+    const { rerender } = render(
+      <PortfolioTable
+        columns={columns}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={toolbar}
+      />,
+    );
+
+    expect(screen.getByText("1 registro")).toBeTruthy();
+
+    rerender(
+      <PortfolioTable
+        columns={columns}
+        rows={[]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={toolbar}
+      />,
+    );
+
+    expect(screen.getByText("Nenhum registro")).toBeTruthy();
+  });
+
   it("paginates long lists accessibly, resets after sorting, and adjusts after rows change", async () => {
     const user = userEvent.setup();
     const rows = Array.from({ length: 23 }, (_, index) => ({

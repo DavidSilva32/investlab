@@ -2,6 +2,7 @@ import type {
   PortfolioInsightPosition,
   PortfolioInsights,
 } from "@/lib/portfolio-insights";
+import type { PortfolioPosition } from "@/app/portfolio/_components/portfolio-overview";
 import { DashboardDestinationsOverview } from "@/app/_components/dashboard-destinations-overview";
 import type { DashboardDestinationSummary } from "@/app/_components/dashboard-destinations-overview";
 import { DashboardObservations } from "@/app/_components/dashboard-observations";
@@ -13,25 +14,41 @@ import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 
 export function DashboardSummary({
   positions,
+  manualPositions = [],
   insights,
   emergencyReserve,
   destinationSummary,
   destinationsLoading,
   destinationsUnavailable,
   onRetryDestinations,
+  objectivesOpen = false,
+  onObjectivesOpenChange = () => {},
+  importOpen = false,
+  onImportOpenChange = () => {},
 }: {
   positions: PortfolioInsightPosition[];
+  manualPositions?: PortfolioPosition[];
   insights: PortfolioInsights;
   emergencyReserve?: EmergencyReserveCalculation;
   destinationSummary?: DashboardDestinationSummary | null;
   destinationsLoading?: boolean;
   destinationsUnavailable?: boolean;
   onRetryDestinations?: () => void;
+  objectivesOpen?: boolean;
+  onObjectivesOpenChange?: (open: boolean) => void;
+  importOpen?: boolean;
+  onImportOpenChange?: (open: boolean) => void;
 }) {
   return (
     <div className="space-y-4">
       <DashboardWealthSummary positions={positions} insights={insights} />
-      <DashboardQuickActions />
+      <DashboardQuickActions
+        positions={manualPositions}
+        objectivesOpen={objectivesOpen}
+        onObjectivesOpenChange={onObjectivesOpenChange}
+        importOpen={importOpen}
+        onImportOpenChange={onImportOpenChange}
+      />
 
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
         <DashboardDestinationsOverview
@@ -39,6 +56,7 @@ export function DashboardSummary({
           loading={destinationsLoading}
           unavailable={destinationsUnavailable}
           onRetry={onRetryDestinations}
+          onOpenObjectives={() => onObjectivesOpenChange(true)}
         />
         <section aria-labelledby="dashboard-reserve-title">
           <EmergencyReserveSummary calculation={emergencyReserve} />

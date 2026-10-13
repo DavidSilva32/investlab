@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { getPortfolioInsights } from "../../src/lib/portfolio-insights";
 import { addSignedInSession } from "./helpers/session";
 
 const candidate = {
@@ -21,6 +22,36 @@ test("import requires an explicit duplicate decision and submits its exact ident
   await page.route("**/api/**", (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+    if (path === "/api/portfolio" && request.method() === "GET") {
+      return route.fulfill({
+        json: {
+          positions: [],
+          movements: [],
+          insights: getPortfolioInsights([]),
+          referenceRates: { selic: null, cdi: null, ipca: null },
+        },
+      });
+    }
+    if (path === "/api/portfolio/objectives" && request.method() === "GET") {
+      return route.fulfill({
+        json: {
+          objectives: [],
+          positions: [],
+          destinationSummary: {
+            categories: [],
+            knownTotal: 0,
+            missingPositionCount: 0,
+            unvaluedPositionCount: 0,
+          },
+        },
+      });
+    }
+    if (
+      path === "/api/positions/reconciliation" &&
+      request.method() === "GET"
+    ) {
+      return route.fulfill({ json: { links: [] } });
+    }
     if (path === "/api/imports/preview" && request.method() === "POST") {
       return route.fulfill({
         json: {
@@ -55,7 +86,12 @@ test("import requires an explicit duplicate decision and submits its exact ident
     return route.abort("blockedbyclient");
   });
   await addSignedInSession(page);
-  await page.goto("/imports");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importar e conciliar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Importar e conciliar" }),
+  ).toBeVisible();
+  await expect(page.getByRole("img", { name: "Logo da B3" })).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles({
     name: "posicoes.xlsx",
     mimeType:
@@ -101,6 +137,30 @@ test("reversing a link requires a keyboard accessible confirmation and preserves
   await page.route("**/api/**", (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+    if (path === "/api/portfolio" && request.method() === "GET") {
+      return route.fulfill({
+        json: {
+          positions: [],
+          movements: [],
+          insights: getPortfolioInsights([]),
+          referenceRates: { selic: null, cdi: null, ipca: null },
+        },
+      });
+    }
+    if (path === "/api/portfolio/objectives" && request.method() === "GET") {
+      return route.fulfill({
+        json: {
+          objectives: [],
+          positions: [],
+          destinationSummary: {
+            categories: [],
+            knownTotal: 0,
+            missingPositionCount: 0,
+            unvaluedPositionCount: 0,
+          },
+        },
+      });
+    }
     if (
       path === "/api/positions/reconciliation" &&
       request.method() === "GET"
@@ -129,7 +189,11 @@ test("reversing a link requires a keyboard accessible confirmation and preserves
     return route.abort("blockedbyclient");
   });
   await addSignedInSession(page);
-  await page.goto("/imports");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importar e conciliar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Importar e conciliar" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: /Revisar vínculos/ }).click();
   const reverse = page.getByRole("button", { name: "Desfazer vínculo" });
   await reverse.click();
