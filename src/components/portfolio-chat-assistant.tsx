@@ -16,6 +16,7 @@ import {
 import { usePortfolioObjectives } from "@/lib/queries/portfolio";
 import {
   recognizePortfolioChatMessage,
+  rankPortfolioChatIntentSuggestions,
   type PortfolioChatIntent,
 } from "@/lib/portfolio-chat-intent";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -49,10 +50,18 @@ type ObjectiveSummary = {
   targetAmount: number | null;
   knownValue: number | null;
   remainingAmount: number | null;
+  monthlyPlannedAmount?: number | null;
   missingPositionCount: number;
   unvaluedPositionCount: number;
 };
-type ObjectivesResponse = { objectives?: ObjectiveSummary[] };
+type ObjectivesResponse = {
+  objectives?: ObjectiveSummary[];
+  destinationSummary?: {
+    knownTotal?: number | null;
+    missingPositionCount?: number | null;
+    unvaluedPositionCount?: number | null;
+  } | null;
+};
 type ChatMessage = { id: number; role: "user" | "assistant"; content: string };
 const emptyObjectives: ObjectiveSummary[] = [];
 
@@ -71,7 +80,52 @@ const prompts = [
     label: "Quanto falta para minha meta?",
     Icon: Target,
   },
+  {
+    id: "monthly-planned-contribution",
+    label: "Quanto planejei aportar por mês?",
+    Icon: Wallet,
+  },
+  {
+    id: "portfolio-total",
+    label: "Quanto tenho de patrimônio conhecido?",
+    Icon: Wallet,
+  },
 ] as const;
+const allPromptSuggestions: PortfolioChatIntent[] = [
+  ...prompts.map(({ id }) => id),
+  "planning",
+];
+
+function getPortfolioTotalMessage(data: ObjectivesResponse) {
+  const summary = data.destinationSummary;
+  const knownTotal = summary?.knownTotal;
+  if (typeof knownTotal !== "number" || !Number.isFinite(knownTotal)) {
+    return "Não encontrei um valor de patrimônio conhecido para consultar agora.";
+  }
+
+  const missingPositionCount = summary?.missingPositionCount ?? 0;
+  const unvaluedPositionCount = summary?.unvaluedPositionCount ?? 0;
+  const incompleteCount =
+    (Number.isFinite(missingPositionCount) ? missingPositionCount : 0) +
+    (Number.isFinite(unvaluedPositionCount) ? unvaluedPositionCount : 0);
+  const incompletePositions =
+    incompleteCount === 1
+      ? "1 posição sem valor confirmado"
+      : `${incompleteCount} posições sem valor confirmado`;
+  const extra =
+    incompleteCount > 0
+      ? ` Há ${incompletePositions}; o patrimônio conhecido pode mudar quando esses dados forem atualizados.`
+      : " Esse total considera os valores conhecidos e acompanhados na plataforma.";
+  return `Seu patrimônio conhecido é ${formatCurrency(knownTotal)}.${extra}`;
+}
+
+function getMonthlyPlannedContributionMessage(objective: ObjectiveSummary) {
+  const amount = objective.monthlyPlannedAmount;
+  if (typeof amount !== "number" || !Number.isFinite(amount)) {
+    return `Não há aporte mensal planejado registrado para ${objective.name}. Esse valor é opcional e representa uma intenção pessoal, não um aporte realizado nem uma obrigação.`;
+  }
+  return `Você informou um aporte mensal planejado de ${formatCurrency(amount)} para ${objective.name}. É uma intenção pessoal, não um aporte realizado nem uma obrigação.`;
+}
 
 function getObjectiveValueMessage(objective: ObjectiveSummary) {
   const knownValue =
@@ -176,6 +230,9 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
     useState<ObjectiveSummary | null>(null);
   const [planningHref, setPlanningHref] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [promptSuggestions, setPromptSuggestions] = useState<
+    PortfolioChatIntent[]
+  >([]);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messageSequence = useRef(0);
@@ -194,10 +251,20 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
     : emptyObjectives;
 
   function chooseIntent(nextIntent: PortfolioChatIntent, label: string) {
+    setPromptSuggestions([]);
     addMessage("user", label);
     setIntent(nextIntent);
     setSelectedObjective(null);
     setPlanningHref(null);
+    if (nextIntent === "portfolio-total") {
+      if (objectivesQuery.isSuccess) {
+        setIntent(null);
+        addMessage("assistant", getPortfolioTotalMessage(objectivesQuery.data));
+      } else {
+        setPendingMessage(label);
+        void resolvePendingMessage(label);
+      }
+    }
   }
 
   function chooseObjective(objective: ObjectiveSummary) {
@@ -221,27 +288,44 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
       "assistant",
       intent === "objective-gap"
         ? getObjectiveGapMessage(objective)
-        : getObjectiveValueMessage(objective),
+        : intent === "monthly-planned-contribution"
+          ? getMonthlyPlannedContributionMessage(objective)
+          : getObjectiveValueMessage(objective),
     );
   }
 
   const resolveTextMessage = useCallback(
-    (message: string, availableObjectives: ObjectiveSummary[] = objectives) => {
+    (
+      message: string,
+      availableObjectives: ObjectiveSummary[] = objectives,
+      response: ObjectivesResponse = objectivesQuery.data ?? {},
+    ) => {
       const match = recognizePortfolioChatMessage(message, availableObjectives);
       if (!match) {
         setIntent(null);
+        const suggestions = rankPortfolioChatIntentSuggestions(message);
+        setPromptSuggestions(
+          suggestions.length > 0 ? suggestions : allPromptSuggestions,
+        );
         addMessage(
           "assistant",
-          messages.length === 0
-            ? "Posso consultar o saldo de um objetivo, dizer quanto falta para uma meta ou abrir um planejamento. Escolha uma opção abaixo ou tente perguntar de outro jeito."
-            : "Não consegui relacionar essa pergunta às opções que conheço. Posso consultar o saldo de um objetivo, quanto falta para uma meta ou abrir um planejamento. Tente uma opção abaixo ou reformule a pergunta.",
+          suggestions.length > 0
+            ? "Posso ter entendido uma destas possibilidades. Escolha a mais próxima ou reformule sua pergunta."
+            : "Ainda não consegui identificar o que você quer consultar. Escolha uma opção ou tente perguntar de outro jeito.",
         );
         return;
       }
 
+      setPromptSuggestions([]);
       const objective = availableObjectives.find(
         ({ id }) => id === match.objectiveId,
       );
+      if (match.intent === "portfolio-total") {
+        setIntent(null);
+        setSelectedObjective(null);
+        addMessage("assistant", getPortfolioTotalMessage(response));
+        return;
+      }
       if (match.intent === "planning") {
         setSelectedObjective(null);
         if (objective && !isPlanningObjective(objective)) {
@@ -287,7 +371,9 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
           "assistant",
           match.intent === "objective-gap"
             ? getObjectiveGapMessage(objective)
-            : getObjectiveValueMessage(objective),
+            : match.intent === "monthly-planned-contribution"
+              ? getMonthlyPlannedContributionMessage(objective)
+              : getObjectiveValueMessage(objective),
         );
         return;
       }
@@ -296,7 +382,7 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
       setSelectedObjective(null);
       addMessage("assistant", "Qual objetivo você quer consultar?");
     },
-    [addMessage, messages.length, objectives],
+    [addMessage, objectives, objectivesQuery.data],
   );
 
   async function resolvePendingMessage(message: string) {
@@ -308,6 +394,7 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
       Array.isArray(result.data.objectives)
         ? result.data.objectives
         : emptyObjectives,
+      result.data,
     );
   }
 
@@ -318,6 +405,7 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
 
     addMessage("user", message);
     setDraft("");
+    setPromptSuggestions([]);
     setSelectedObjective(null);
     setPlanningHref(null);
 
@@ -343,6 +431,7 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
     setSelectedObjective(null);
     setPlanningHref(null);
     setPendingMessage(null);
+    setPromptSuggestions([]);
     setDraft("");
   }
 
@@ -411,12 +500,15 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
                   )}
                 </MessageScrollerItem>
               ))}
-              {(!messages.length || messages.at(-1)?.role === "assistant") &&
+              {promptSuggestions.length > 0 &&
                 !intent &&
                 !selectedObjective &&
                 !planningHref && (
                   <MessageScrollerItem messageId="quick-prompts">
-                    <QuickPrompts onChoose={chooseIntent} />
+                    <QuickPrompts
+                      suggestions={promptSuggestions}
+                      onChoose={chooseIntent}
+                    />
                   </MessageScrollerItem>
                 )}
               {intent && objectivesQuery.isPending && (
@@ -458,6 +550,7 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
                 </MessageScrollerItem>
               )}
               {intent &&
+                intent !== "portfolio-total" &&
                 objectivesQuery.isSuccess &&
                 objectives.length === 0 && (
                   <MessageScrollerItem messageId="no-objectives">
@@ -474,6 +567,7 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
                   </MessageScrollerItem>
                 )}
               {intent &&
+                intent !== "portfolio-total" &&
                 objectivesQuery.isSuccess &&
                 selectableObjectives.length === 0 &&
                 objectives.length > 0 && (
@@ -492,6 +586,7 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
                   </MessageScrollerItem>
                 )}
               {intent &&
+                intent !== "portfolio-total" &&
                 objectivesQuery.isSuccess &&
                 selectableObjectives.length > 0 && (
                   <MessageScrollerItem messageId="objective-choices">
@@ -574,37 +669,43 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
 }
 
 function QuickPrompts({
+  suggestions,
   onChoose,
 }: {
+  suggestions: PortfolioChatIntent[];
   onChoose: (intent: PortfolioChatIntent, label: string) => void;
 }) {
   return (
     <div className="ml-9 space-y-2" role="group" aria-label="Perguntas rápidas">
-      {prompts.map(({ id, label, Icon }) => (
+      {prompts
+        .filter(({ id }) => suggestions.includes(id))
+        .map(({ id, label, Icon }) => (
+          <Button
+            key={id}
+            type="button"
+            variant="outline"
+            className="h-auto min-h-10 w-full justify-start gap-2 whitespace-normal py-2 text-left"
+            onClick={() => onChoose(id, label)}
+          >
+            <Icon aria-hidden="true" className="size-4 shrink-0 text-primary" />
+            {label}
+          </Button>
+        ))}
+      {suggestions.includes("planning") && (
         <Button
-          key={id}
-          type="button"
+          asChild
           variant="outline"
           className="h-auto min-h-10 w-full justify-start gap-2 whitespace-normal py-2 text-left"
-          onClick={() => onChoose(id, label)}
         >
-          <Icon aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          {label}
+          <Link href="/planning">
+            <ChartNoAxesCombined
+              aria-hidden="true"
+              className="size-4 shrink-0 text-primary"
+            />
+            Quero simular um plano
+          </Link>
         </Button>
-      ))}
-      <Button
-        asChild
-        variant="outline"
-        className="h-auto min-h-10 w-full justify-start gap-2 whitespace-normal py-2 text-left"
-      >
-        <Link href="/planning">
-          <ChartNoAxesCombined
-            aria-hidden="true"
-            className="size-4 shrink-0 text-primary"
-          />
-          Quero simular um plano
-        </Link>
-      </Button>
+      )}
     </div>
   );
 }

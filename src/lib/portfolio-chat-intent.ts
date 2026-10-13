@@ -1,7 +1,11 @@
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 export type PortfolioChatIntent =
-  "objective-value" | "objective-gap" | "planning";
+  | "objective-value"
+  | "objective-gap"
+  | "monthly-planned-contribution"
+  | "portfolio-total"
+  | "planning";
 
 export type PortfolioChatObjectiveName = { id: string; name: string };
 
@@ -20,6 +24,26 @@ const reserveAliases = [
 ];
 
 const intentPhrases: Record<PortfolioChatIntent, string[]> = {
+  "portfolio-total": [
+    "patrimonio conhecido",
+    "patrimonio total",
+    "patrimonio da carteira",
+    "valor total da carteira",
+    "qual valor total",
+    "total da carteira",
+    "quanto tenho ao todo",
+    "quanto tenho no total",
+    "quanto tenho somando tudo",
+    "quanto vale minha carteira",
+    "qual o valor da carteira",
+    "qual o valor total",
+    "patrimonio hoje",
+    "qual meu patrimonio",
+    "qual e meu patrimonio",
+    "qual e o meu patrimonio",
+    "meu patrimonio hoje",
+    "quanto tenho de patrimonio",
+  ],
   "objective-value": [
     "qual o valor",
     "quanto vale",
@@ -28,6 +52,8 @@ const intentPhrases: Record<PortfolioChatIntent, string[]> = {
     "qual saldo",
     "saldo conhecido",
     "valor conhecido",
+    "patrimonio conhecido",
+    "qual patrimonio",
     "quanto esta guardado",
     "quanto esta acumulado",
     "valor acumulado",
@@ -45,6 +71,17 @@ const intentPhrases: Record<PortfolioChatIntent, string[]> = {
     "diferenca para meta",
     "distancia da meta",
     "quanto falta atingir",
+  ],
+  "monthly-planned-contribution": [
+    "aporte mensal planejado",
+    "aporte mensal previsto",
+    "quanto planejo aportar",
+    "quanto pretendo aportar",
+    "quanto planejei aportar",
+    "quanto pretendo investir por mes",
+    "quanto planejo investir por mes",
+    "aporte mensal da",
+    "aporte mensal para",
   ],
   planning: [
     "planejar",
@@ -67,6 +104,59 @@ const intentPhrases: Record<PortfolioChatIntent, string[]> = {
     "tempo para completar",
   ],
 };
+
+const intentClues: Record<PortfolioChatIntent, string[]> = {
+  "portfolio-total": ["patrimonio", "carteira", "investimentos", "total"],
+  "objective-value": [
+    "objetivo",
+    "saldo",
+    "valor",
+    "tenho",
+    "guardado",
+    "acumulado",
+  ],
+  "objective-gap": ["falta", "meta", "atingir", "completar", "restante"],
+  "monthly-planned-contribution": [
+    "aporte",
+    "aportar",
+    "investir",
+    "mensal",
+    "planejei",
+    "pretendo",
+  ],
+  planning: ["simular", "planejar", "projetar", "cenario", "prazo"],
+};
+
+const intentOrder: PortfolioChatIntent[] = [
+  "portfolio-total",
+  "objective-value",
+  "objective-gap",
+  "monthly-planned-contribution",
+  "planning",
+];
+
+/** Returns deterministic, clue-based suggestions for questions not recognized directly. */
+export function rankPortfolioChatIntentSuggestions(
+  message: string,
+  limit = 3,
+): PortfolioChatIntent[] {
+  const words = new Set(normalizePortfolioChatText(message).split(" "));
+  if (words.size === 0 || limit <= 0) return [];
+
+  return intentOrder
+    .map((intent, order) => ({
+      intent,
+      order,
+      score: intentClues[intent].reduce(
+        (total, clue) => total + Number(words.has(clue)),
+        0,
+      ),
+    }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.order - right.order)
+    .slice(0, limit)
+    .map(({ intent }) => intent);
+}
 
 export function normalizePortfolioChatText(text: string): string {
   return text
@@ -125,17 +215,65 @@ export function recognizePortfolioChatMessage(
   const normalizedMessage = normalizePortfolioChatText(message);
   if (!normalizedMessage) return null;
 
+  const objective = findObjectiveId(normalizedMessage, objectives);
+  const hasNamedObjective = objective.id !== null || objective.ambiguous;
+  const portfolioTotalContext = [
+    "patrimonio",
+    "valor da carteira",
+    "ao todo",
+    "no total",
+    "somando tudo",
+  ].some((phrase) => containsPhrase(normalizedMessage, phrase));
+  const explicitlyPortfolioWide = [
+    "patrimonio total da carteira",
+    "patrimonio conhecido da carteira",
+    "patrimonio da carteira",
+    "valor total da carteira",
+    "total da carteira",
+    "valor da carteira",
+    "carteira inteira",
+  ].some((phrase) => containsPhrase(normalizedMessage, phrase));
+  const hasPlanningAction = [
+    "simular",
+    "simulacao",
+    "planejar",
+    "planejamento",
+  ].some((phrase) => containsPhrase(normalizedMessage, phrase));
+
   const matchedIntents = (
     Object.entries(intentPhrases) as [PortfolioChatIntent, string[]][]
-  ).filter(([, phrases]) =>
-    phrases.some((phrase) =>
-      containsPhrase(normalizedMessage, normalizePortfolioChatText(phrase)),
-    ),
-  );
+  )
+    .filter(([, phrases]) =>
+      phrases.some((phrase) =>
+        containsPhrase(normalizedMessage, normalizePortfolioChatText(phrase)),
+      ),
+    )
+    .filter(([intent]) => {
+      if (
+        hasNamedObjective &&
+        !explicitlyPortfolioWide &&
+        intent === "portfolio-total"
+      ) {
+        return false;
+      }
+      if (explicitlyPortfolioWide && intent === "objective-value") {
+        return false;
+      }
+      if (hasPlanningAction && intent === "portfolio-total") {
+        return false;
+      }
+      if (
+        portfolioTotalContext &&
+        !hasNamedObjective &&
+        intent === "objective-value"
+      ) {
+        return false;
+      }
+      return true;
+    });
 
   if (matchedIntents.length !== 1) return null;
 
-  const objective = findObjectiveId(normalizedMessage, objectives);
   return {
     intent: matchedIntents[0][0],
     objectiveId: objective.id,

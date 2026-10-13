@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { UserEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/image", () => ({
@@ -49,6 +50,15 @@ function jsonResponse(body: unknown, ok = true) {
   });
 }
 
+async function revealSuggestions(user: UserEvent) {
+  const input = screen.getByRole("textbox", {
+    name: "Escreva uma pergunta para o assistente",
+  });
+  await user.type(input, "Qual é o melhor investimento?");
+  await user.keyboard("{Enter}");
+  await screen.findByRole("group", { name: "Perguntas rápidas" });
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -56,6 +66,176 @@ afterEach(() => {
 });
 
 describe("PortfolioChatAssistant", () => {
+  it("recognizes a direct portfolio question without showing suggestions", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [],
+          destinationSummary: {
+            knownTotal: 63_171.81,
+            missingPositionCount: 1,
+            unvaluedPositionCount: 2,
+          },
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Qual é o meu patrimônio hoje?");
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
+    ).toBeTruthy();
+    expect(screen.getByText(/3 posições sem valor confirmado/)).toBeTruthy();
+    expect(
+      screen.queryByRole("group", { name: "Perguntas rápidas" }),
+    ).toBeNull();
+  });
+
+  it("shows a short relevant suggestion list after a partially recognized question", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "meu saldo");
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(
+        "Posso ter entendido uma destas possibilidades. Escolha a mais próxima ou reformule sua pergunta.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Quanto falta para minha meta?" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Quero simular um plano" }),
+    ).toBeNull();
+  });
+
+  it("explains when the portfolio total is missing from an incomplete response", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [], destinationSummary: null })),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Qual é o patrimônio total da carteira?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(
+        "Não encontrei um valor de patrimônio conhecido para consultar agora.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("answers monthly planned contribution questions and marks missing values as optional intentions", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [
+            {
+              id: "travel",
+              name: "Viagem",
+              targetAmount: 16_000,
+              knownValue: 12_000,
+              remainingAmount: 4_000,
+              monthlyPlannedAmount: 1_250,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+            {
+              id: "house",
+              name: "Casa nova",
+              targetAmount: 500_000,
+              knownValue: 80_000,
+              remainingAmount: 420_000,
+              monthlyPlannedAmount: null,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await revealSuggestions(user);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Quanto planejei aportar por mês?",
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Viagem" }));
+
+    expect(
+      await screen.findByText(
+        /aporte mensal planejado de R\$ 1\.250,00 para Viagem/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/não um aporte realizado nem uma obrigação/),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole("button", { name: "Fazer outra pergunta" }),
+    );
+    await revealSuggestions(user);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Quanto planejei aportar por mês?",
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Casa nova" }));
+
+    expect(
+      await screen.findByText(
+        /Não há aporte mensal planejado registrado para Casa nova/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /intenção pessoal, não um aporte realizado nem uma obrigação/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("opens an accessible guided chat and answers from a selected objective", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
@@ -95,12 +275,16 @@ describe("PortfolioChatAssistant", () => {
     const conversation = screen.getByRole("log", {
       name: "Conversa com o assistente",
     });
-    expect(conversation.querySelector("button")).toBeTruthy();
+    expect(conversation.querySelector("button")).toBeNull();
+    expect(
+      screen.queryByRole("group", { name: "Perguntas rápidas" }),
+    ).toBeNull();
     expect(
       screen.getByRole("textbox", {
         name: "Escreva uma pergunta para o assistente",
       }).parentElement?.parentElement?.textContent,
     ).not.toContain("Quanto tenho em um objetivo?");
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     );
@@ -171,13 +355,67 @@ describe("PortfolioChatAssistant", () => {
 
     expect(
       await screen.findByText(
-        "Posso consultar o saldo de um objetivo, dizer quanto falta para uma meta ou abrir um planejamento. Escolha uma opção abaixo ou tente perguntar de outro jeito.",
+        "Ainda não consegui identificar o que você quer consultar. Escolha uma opção ou tente perguntar de outro jeito.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/Não consegui relacionar/)).toBeNull();
     expect(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     ).toBeTruthy();
+  });
+
+  it("shows only relevant suggestions for a mixed objective question", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [
+            {
+              id: "travel",
+              name: "Viagem",
+              targetAmount: 16_000,
+              knownValue: 12_000,
+              remainingAmount: 4_000,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "quanto tenho e quanto falta para a viagem");
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(
+        "Posso ter entendido uma destas possibilidades. Escolha a mais próxima ou reformule sua pergunta.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Quanto falta para minha meta?" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", {
+        name: "Quanto tenho de patrimônio conhecido?",
+      }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Quero simular um plano" }),
+    ).toBeNull();
+    expect(screen.queryByText(/O valor conhecido em Viagem é/)).toBeNull();
+    expect(screen.queryByText(/faltam R\$/)).toBeNull();
   });
 
   it("renders long messages in the message scroller with wrapping enabled", async () => {
@@ -533,7 +771,9 @@ describe("PortfolioChatAssistant", () => {
     await user.keyboard("{Enter}");
 
     expect(
-      await screen.findByText(/Não consegui relacionar essa pergunta/),
+      await screen.findByText(
+        "Ainda não consegui identificar o que você quer consultar. Escolha uma opção ou tente perguntar de outro jeito.",
+      ),
     ).toBeTruthy();
     const quickPrompt = screen.getByRole("button", {
       name: "Quanto tenho em um objetivo?",
@@ -790,6 +1030,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Abrir assistente da carteira" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     );
@@ -842,6 +1083,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Abrir assistente da carteira" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto falta para minha meta?" }),
     );
@@ -882,6 +1124,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Abrir assistente da carteira" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto falta para minha meta?" }),
     );
@@ -908,6 +1151,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Abrir assistente da carteira" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     );
@@ -963,6 +1207,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Abrir assistente da carteira" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     );
@@ -976,6 +1221,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Fazer outra pergunta" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     );
@@ -990,6 +1236,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Fazer outra pergunta" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto falta para minha meta?" }),
     );
@@ -1001,6 +1248,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Fazer outra pergunta" }),
     );
+    await revealSuggestions(user);
     await user.click(
       screen.getByRole("button", { name: "Quanto falta para minha meta?" }),
     );

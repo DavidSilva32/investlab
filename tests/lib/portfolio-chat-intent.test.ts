@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizePortfolioChatText,
+  rankPortfolioChatIntentSuggestions,
   recognizePortfolioChatMessage,
 } from "@/lib/portfolio-chat-intent";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -22,6 +23,20 @@ describe("normalizePortfolioChatText", () => {
 
 describe("recognizePortfolioChatMessage", () => {
   it.each([
+    ["Quanto tenho de patrimônio conhecido?", "portfolio-total"],
+    ["Qual é o meu patrimônio hoje?", "portfolio-total"],
+    ["Qual é o patrimônio total da carteira?", "portfolio-total"],
+    ["Qual valor total da minha carteira?", "portfolio-total"],
+    ["Quero simular o patrimônio total da carteira", "planning"],
+    [
+      "Quanto planejei aportar por mês na Casa nova?",
+      "monthly-planned-contribution",
+    ],
+    ["Qual o aporte mensal da viagem?", "monthly-planned-contribution"],
+    [
+      "Quanto pretendo investir por mês para a Viagem?",
+      "monthly-planned-contribution",
+    ],
     ["Quanto tenho na viagem?", "objective-value"],
     ["qual SALDO conhecido da CASA NOVA!", "objective-value"],
     ["Qual o valor da reserva de emergência?", "objective-value"],
@@ -154,6 +169,99 @@ describe("recognizePortfolioChatMessage", () => {
         objectives,
       ),
     ).toBeNull();
+    expect(
+      recognizePortfolioChatMessage(
+        "Quanto vou aportar na Viagem?",
+        objectives,
+      ),
+    ).toBeNull();
+    expect(
+      recognizePortfolioChatMessage(
+        "Quero simular o patrimônio total da carteira e quanto falta para Viagem",
+        objectives,
+      ),
+    ).toBeNull();
     expect(recognizePortfolioChatMessage("   ", objectives)).toBeNull();
+  });
+
+  it("recognizes normalized new questions and links their named objective", () => {
+    expect(
+      recognizePortfolioChatMessage(
+        "  QUANTO PRETENDO APORTAR POR MÊS NA CASA NOVA?!  ",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "monthly-planned-contribution",
+      objectiveId: "house",
+      objectiveAmbiguous: false,
+    });
+    expect(
+      recognizePortfolioChatMessage(
+        "Qual o patrimônio TOTAL da carteira?",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "portfolio-total",
+      objectiveId: null,
+      objectiveAmbiguous: false,
+    });
+  });
+
+  it("keeps total-sounding questions about a named objective scoped to that objective", () => {
+    expect(
+      recognizePortfolioChatMessage(
+        "Quanto tenho no total no objetivo Viagem?",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "objective-value",
+      objectiveId: "travel",
+      objectiveAmbiguous: false,
+    });
+    expect(
+      recognizePortfolioChatMessage(
+        "Quanto vale o patrimônio da Viagem?",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "objective-value",
+      objectiveId: "travel",
+      objectiveAmbiguous: false,
+    });
+    expect(
+      recognizePortfolioChatMessage(
+        "Qual patrimônio total da Viagem?",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "objective-value",
+      objectiveId: "travel",
+      objectiveAmbiguous: false,
+    });
+  });
+
+  it("keeps explicitly portfolio-wide wording global even when an objective is named", () => {
+    expect(
+      recognizePortfolioChatMessage(
+        "Qual é o patrimônio total da carteira, incluindo Viagem?",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "portfolio-total",
+      objectiveId: "travel",
+      objectiveAmbiguous: false,
+    });
+  });
+
+  it("ranks only supported intents that match useful clues, deterministically", () => {
+    expect(rankPortfolioChatIntentSuggestions("meu saldo")).toEqual([
+      "objective-value",
+    ]);
+    expect(
+      rankPortfolioChatIntentSuggestions("patrimônio e objetivo", 3),
+    ).toEqual(["portfolio-total", "objective-value"]);
+    expect(rankPortfolioChatIntentSuggestions("melhor investimento?")).toEqual(
+      [],
+    );
   });
 });
