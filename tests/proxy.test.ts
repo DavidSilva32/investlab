@@ -5,8 +5,19 @@ vi.mock("@/infrastructure/auth/session", () => ({
   sessionCookieName: "session",
   verifySession: verify,
 }));
-import { proxy } from "../src/proxy";
+import { config, proxy } from "../src/proxy";
 describe("proxy authentication", () => {
+  it("skips authentication for public image assets without excluding pages or APIs", () => {
+    const matcher = config.matcher[0];
+    const matcherPathPattern = new RegExp(`^${matcher.slice(1)}`);
+
+    expect(
+      matcherPathPattern.test("images/investlab-assistant-mascot.png"),
+    ).toBe(false);
+    expect(matcherPathPattern.test("portfolio")).toBe(true);
+    expect(matcherPathPattern.test("api/portfolio/objectives")).toBe(true);
+  });
+
   it("redirects unauthenticated pages and rejects APIs", async () => {
     verify.mockResolvedValue(false);
     expect(
