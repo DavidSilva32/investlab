@@ -78,6 +78,63 @@ describe("ManualPortfolioPositionService", () => {
     expect(result.assetKey).toMatch(/^manual:/);
   });
 
+  it("round trips an informative CDB CDI percentage without estimating returns", async () => {
+    repository.create.mockImplementation(async (value) => ({
+      ...saved(),
+      ...value,
+    }));
+
+    const result = await new ManualPortfolioPositionService().create({
+      ...input,
+      product: "CDB",
+      currency: "BRL",
+      valueBasis: "total_value",
+      totalValue: 5000,
+      informationalCdiPercentage: 112.5,
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ informationalCdiPercentage: "112.5000" }),
+      undefined,
+      undefined,
+    );
+    expect(result.informationalCdiPercentage).toBe("112.5000");
+    expect(result.estimatedValue).toBeNull();
+  });
+
+  it("rejects an informative CDI percentage on a non-CDB position", async () => {
+    await expect(
+      new ManualPortfolioPositionService().create({
+        ...input,
+        informationalCdiPercentage: 100,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts the maximum value supported by CDI premise storage precision", async () => {
+    repository.create.mockImplementation(async (value) => ({
+      ...saved(),
+      ...value,
+    }));
+    const service = new ManualPortfolioPositionService();
+
+    const result = await service.create({
+      ...input,
+      product: "CDB",
+      informationalCdiPercentage: 9999.9999,
+    });
+
+    expect(result.informationalCdiPercentage).toBe("9999.9999");
+    await expect(
+      service.create({
+        ...input,
+        product: "CDB",
+        informationalCdiPercentage: 10000,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it("persists the selected asset class while keeping its name and ticker free-form", async () => {
     repository.create.mockImplementation(async (value) => ({
       ...saved(),
@@ -327,6 +384,24 @@ describe("ManualPortfolioPositionService", () => {
     await expect(service.update("missing", { ...input })).rejects.toMatchObject(
       { statusCode: 404 },
     );
+  });
+
+  it("preserves an existing informational CDI percentage when an edit omits it", async () => {
+    repository.update.mockImplementation(async (_id, value) => ({
+      ...saved({ product: "CDB", informationalCdiPercentage: "100.0000" }),
+      ...value,
+      informationalCdiPercentage: "100.0000",
+    }));
+
+    const result = await new ManualPortfolioPositionService().update(
+      "position-id",
+      { ...input, product: "CDB" },
+    );
+
+    expect(repository.update.mock.calls[0]?.[1]).not.toHaveProperty(
+      "informationalCdiPercentage",
+    );
+    expect(result.informationalCdiPercentage).toBe("100.0000");
   });
 
   it("deletes positions and reports missing identifiers", async () => {

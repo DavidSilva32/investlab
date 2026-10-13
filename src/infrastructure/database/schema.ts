@@ -143,6 +143,7 @@ export const manualPortfolioPositions = pgTable("manual_portfolio_positions", {
   unitPrice: numeric({ precision: 24, scale: 8 }),
   totalValue: numeric({ precision: 24, scale: 8 }).notNull(),
   valueBasis: varchar({ length: 16 }).notNull(),
+  informationalCdiPercentage: numeric({ precision: 8, scale: 4 }),
   positionDate: date().notNull(),
   convertedValueBrl: numeric({ precision: 24, scale: 8 }),
   conversionDate: date(),

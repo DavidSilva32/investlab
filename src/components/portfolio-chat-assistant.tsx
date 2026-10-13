@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   ChartNoAxesCombined,
   LoaderCircle,
+  Plus,
   Send,
   Target,
   Wallet,
@@ -16,9 +17,15 @@ import {
 import { usePortfolioObjectives } from "@/lib/queries/portfolio";
 import {
   recognizePortfolioChatMessage,
+  isPortfolioChatManualPositionRequest,
+  isPortfolioChatManualPositionRequestAmbiguous,
+  parsePortfolioChatManualPositionRequest,
   rankPortfolioChatIntentSuggestions,
+  type PortfolioChatManualPositionRequest,
   type PortfolioChatIntent,
 } from "@/lib/portfolio-chat-intent";
+import { PortfolioChatManualPosition } from "@/components/portfolio-chat-manual-position";
+import { PortfolioChatMicrophone } from "@/components/portfolio-chat-microphone";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -47,6 +54,7 @@ type ObjectiveSummary = {
   id: string;
   name: string;
   kind?: string;
+  purpose?: string | null;
   targetAmount: number | null;
   knownValue: number | null;
   remainingAmount: number | null;
@@ -65,8 +73,37 @@ type ObjectivesResponse = {
 type ChatMessage = { id: number; role: "user" | "assistant"; content: string };
 const emptyObjectives: ObjectiveSummary[] = [];
 
+type ObjectiveCategory =
+  "RESERVE" | "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT" | "LEGACY_UNCATEGORIZED";
+
+const objectiveCategoryLabels: Record<ObjectiveCategory, string> = {
+  RESERVE: "Reserva",
+  PERSONAL_GOAL: "Objetivos pessoais",
+  LONG_TERM_INVESTMENT: "Investimentos de longo prazo",
+  LEGACY_UNCATEGORIZED: "Objetivos legados sem categoria",
+};
+
+function getObjectiveCategory(
+  objective: ObjectiveSummary,
+): ObjectiveCategory | null {
+  if (objective.kind === "RESERVE" || objective.id === reserveObjectiveId)
+    return "RESERVE";
+  if (objective.purpose === "PERSONAL_GOAL") return "PERSONAL_GOAL";
+  if (objective.purpose === "LONG_TERM_INVESTMENT")
+    return "LONG_TERM_INVESTMENT";
+  if (objective.purpose == null) return "LEGACY_UNCATEGORIZED";
+  return null;
+}
+
+const objectiveCategoryOrder: ObjectiveCategory[] = [
+  "RESERVE",
+  "PERSONAL_GOAL",
+  "LONG_TERM_INVESTMENT",
+  "LEGACY_UNCATEGORIZED",
+];
+
 function isPlanningObjective(objective: ObjectiveSummary) {
-  return objective.kind !== "RESERVE" && objective.id !== reserveObjectiveId;
+  return getObjectiveCategory(objective) !== "RESERVE";
 }
 
 const prompts = [
@@ -181,6 +218,9 @@ function getObjectiveGapMessage(objective: ObjectiveSummary) {
 
 export function PortfolioChatAssistant() {
   const [open, setOpen] = useState(false);
+  const [manualPositionFlow, setManualPositionFlow] = useState(false);
+  const [manualPositionRequest, setManualPositionRequest] =
+    useState<PortfolioChatManualPositionRequest | null>(null);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -216,14 +256,44 @@ export function PortfolioChatAssistant() {
           aria-label="Assistente da carteira"
           className="w-[min(25rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border-border bg-card p-0 shadow-2xl"
         >
-          <AssistantConversation onClose={() => setOpen(false)} />
+          <AssistantConversation
+            onClose={() => {
+              setOpen(false);
+              setManualPositionFlow(false);
+              setManualPositionRequest(null);
+            }}
+            manualPositionFlow={manualPositionFlow}
+            manualPositionRequest={manualPositionRequest}
+            onStartManualPosition={(request) => {
+              setManualPositionRequest(request ?? null);
+              setManualPositionFlow(true);
+            }}
+            onExitManualPosition={() => {
+              setManualPositionFlow(false);
+              setManualPositionRequest(null);
+            }}
+          />
         </PopoverContent>
       )}
     </Popover>
   );
 }
 
-function AssistantConversation({ onClose }: { onClose: () => void }) {
+function AssistantConversation({
+  onClose,
+  manualPositionFlow,
+  manualPositionRequest,
+  onStartManualPosition,
+  onExitManualPosition,
+}: {
+  onClose: () => void;
+  manualPositionFlow: boolean;
+  manualPositionRequest: PortfolioChatManualPositionRequest | null;
+  onStartManualPosition: (
+    request?: PortfolioChatManualPositionRequest | null,
+  ) => void;
+  onExitManualPosition: () => void;
+}) {
   const objectivesQuery = usePortfolioObjectives<ObjectivesResponse>();
   const [intent, setIntent] = useState<PortfolioChatIntent | null>(null);
   const [selectedObjective, setSelectedObjective] =
@@ -409,6 +479,21 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
     setSelectedObjective(null);
     setPlanningHref(null);
 
+    if (isPortfolioChatManualPositionRequestAmbiguous(message)) {
+      addMessage(
+        "assistant",
+        "Entendi um possível cadastro de posição e também uma consulta. Qual dessas ações você quer fazer primeiro? Reformule a pergunta para eu continuar.",
+      );
+      return;
+    }
+
+    if (isPortfolioChatManualPositionRequest(message)) {
+      setIntent(null);
+      setPromptSuggestions([]);
+      onStartManualPosition(parsePortfolioChatManualPositionRequest(message));
+      return;
+    }
+
     const initialMatch = recognizePortfolioChatMessage(message);
     if (!initialMatch) {
       resolveTextMessage(message);
@@ -466,204 +551,251 @@ function AssistantConversation({ onClose }: { onClose: () => void }) {
         </Button>
       </header>
 
-      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-        <MessageScroller className="min-h-0 flex-1">
-          <MessageScrollerViewport aria-label="Conversa com o assistente">
-            <MessageScrollerContent
-              aria-label="Conversa com o assistente"
-              className="gap-3 px-4 py-4"
-            >
-              <MessageScrollerItem messageId="welcome">
-                <AssistantMessage>
-                  Oi! Posso consultar seus objetivos ou abrir uma simulação de
-                  planejamento.
-                </AssistantMessage>
-              </MessageScrollerItem>
-              {messages.map((message) => (
-                <MessageScrollerItem
-                  key={message.id}
-                  messageId={String(message.id)}
-                  scrollAnchor={message.role === "user"}
+      {manualPositionFlow ? (
+        <PortfolioChatManualPosition
+          initialRequest={manualPositionRequest}
+          onBack={onExitManualPosition}
+          onCancel={() => {
+            onExitManualPosition();
+            addMessage(
+              "assistant",
+              "Tudo bem. Não criei nem alterei nenhuma posição.",
+            );
+          }}
+        />
+      ) : (
+        <>
+          <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+            <MessageScroller className="min-h-0 flex-1">
+              <MessageScrollerViewport aria-label="Conversa com o assistente">
+                <MessageScrollerContent
+                  aria-label="Conversa com o assistente"
+                  className="gap-3 px-4 py-4"
                 >
-                  {message.role === "assistant" ? (
-                    <AssistantMessage>{message.content}</AssistantMessage>
-                  ) : (
-                    <Message align="end">
-                      <MessageContent className="w-fit max-w-[85%]">
-                        <Bubble className="max-w-full">
-                          <BubbleContent className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                            {message.content}
-                          </BubbleContent>
-                        </Bubble>
-                      </MessageContent>
-                    </Message>
-                  )}
-                </MessageScrollerItem>
-              ))}
-              {promptSuggestions.length > 0 &&
-                !intent &&
-                !selectedObjective &&
-                !planningHref && (
-                  <MessageScrollerItem messageId="quick-prompts">
-                    <QuickPrompts
-                      suggestions={promptSuggestions}
-                      onChoose={chooseIntent}
-                    />
-                  </MessageScrollerItem>
-                )}
-              {intent && objectivesQuery.isPending && (
-                <MessageScrollerItem messageId="loading-objectives">
-                  <p
-                    role="status"
-                    className="flex items-center gap-2 text-sm text-muted-foreground"
-                  >
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="size-4 animate-spin"
-                    />
-                    Carregando seus objetivos...
-                  </p>
-                </MessageScrollerItem>
-              )}
-              {intent && objectivesQuery.isError && (
-                <MessageScrollerItem messageId="objectives-error">
-                  <div
-                    role="alert"
-                    className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm"
-                  >
-                    <p>Não foi possível carregar seus objetivos.</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (pendingMessage) {
-                          void resolvePendingMessage(pendingMessage);
-                        } else {
-                          void objectivesQuery.refetch();
-                        }
-                      }}
-                    >
-                      Tentar novamente
-                    </Button>
-                  </div>
-                </MessageScrollerItem>
-              )}
-              {intent &&
-                intent !== "portfolio-total" &&
-                objectivesQuery.isSuccess &&
-                objectives.length === 0 && (
-                  <MessageScrollerItem messageId="no-objectives">
+                  <MessageScrollerItem messageId="welcome">
                     <AssistantMessage>
-                      Você ainda não tem objetivos cadastrados.
-                      <Link
-                        href="/portfolio?panel=objectives"
-                        className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        Ver objetivos{" "}
-                        <ArrowUpRight aria-hidden="true" className="size-3.5" />
-                      </Link>
-                    </AssistantMessage>
-                  </MessageScrollerItem>
-                )}
-              {intent &&
-                intent !== "portfolio-total" &&
-                objectivesQuery.isSuccess &&
-                selectableObjectives.length === 0 &&
-                objectives.length > 0 && (
-                  <MessageScrollerItem messageId="planning-total-action">
-                    <AssistantMessage>
-                      Não há objetivos disponíveis para esse planejamento. Você
-                      ainda pode simular o patrimônio total.
-                      <Link
-                        href="/planning"
-                        className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        Planejar patrimônio total{" "}
-                        <ArrowUpRight aria-hidden="true" className="size-3.5" />
-                      </Link>
-                    </AssistantMessage>
-                  </MessageScrollerItem>
-                )}
-              {intent &&
-                intent !== "portfolio-total" &&
-                objectivesQuery.isSuccess &&
-                selectableObjectives.length > 0 && (
-                  <MessageScrollerItem messageId="objective-choices">
-                    <ObjectiveChoices
-                      objectives={selectableObjectives}
-                      onChoose={chooseObjective}
-                    />
-                  </MessageScrollerItem>
-                )}
-              {planningHref && (
-                <MessageScrollerItem messageId="planning-action">
-                  <Button asChild size="sm" className="ml-9">
-                    <Link href={planningHref}>
-                      <ChartNoAxesCombined
-                        aria-hidden="true"
-                        className="mr-1.5 size-4"
-                      />
-                      Abrir planejamento
-                    </Link>
-                  </Button>
-                </MessageScrollerItem>
-              )}
-              {selectedObjective && (
-                <MessageScrollerItem messageId="follow-up-actions">
-                  <div className="ml-9 flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={restart}
-                    >
-                      <ArrowLeft aria-hidden="true" className="mr-1.5 size-4" />
-                      Fazer outra pergunta
-                    </Button>
-                    {isPlanningObjective(selectedObjective) && (
-                      <Button asChild size="sm">
-                        <Link
-                          href={`/planning?objective=${encodeURIComponent(selectedObjective.id)}`}
+                      <div className="space-y-2">
+                        <p>
+                          Oi! Posso consultar seus objetivos, abrir uma
+                          simulação ou ajudar a cadastrar uma posição manual.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onStartManualPosition()}
                         >
+                          <Plus aria-hidden="true" className="mr-1.5 size-4" />
+                          Cadastrar posição manual
+                        </Button>
+                      </div>
+                    </AssistantMessage>
+                  </MessageScrollerItem>
+                  {messages.map((message) => (
+                    <MessageScrollerItem
+                      key={message.id}
+                      messageId={String(message.id)}
+                      scrollAnchor={message.role === "user"}
+                    >
+                      {message.role === "assistant" ? (
+                        <AssistantMessage>{message.content}</AssistantMessage>
+                      ) : (
+                        <Message align="end">
+                          <MessageContent className="w-fit max-w-[85%]">
+                            <Bubble className="max-w-full">
+                              <BubbleContent className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                                {message.content}
+                              </BubbleContent>
+                            </Bubble>
+                          </MessageContent>
+                        </Message>
+                      )}
+                    </MessageScrollerItem>
+                  ))}
+                  {promptSuggestions.length > 0 &&
+                    !intent &&
+                    !selectedObjective &&
+                    !planningHref && (
+                      <MessageScrollerItem messageId="quick-prompts">
+                        <QuickPrompts
+                          suggestions={promptSuggestions}
+                          onChoose={chooseIntent}
+                        />
+                      </MessageScrollerItem>
+                    )}
+                  {intent && objectivesQuery.isPending && (
+                    <MessageScrollerItem messageId="loading-objectives">
+                      <p
+                        role="status"
+                        className="flex items-center gap-2 text-sm text-muted-foreground"
+                      >
+                        <LoaderCircle
+                          aria-hidden="true"
+                          className="size-4 animate-spin"
+                        />
+                        Carregando seus objetivos...
+                      </p>
+                    </MessageScrollerItem>
+                  )}
+                  {intent && objectivesQuery.isError && (
+                    <MessageScrollerItem messageId="objectives-error">
+                      <div
+                        role="alert"
+                        className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm"
+                      >
+                        <p>Não foi possível carregar seus objetivos.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (pendingMessage) {
+                              void resolvePendingMessage(pendingMessage);
+                            } else {
+                              void objectivesQuery.refetch();
+                            }
+                          }}
+                        >
+                          Tentar novamente
+                        </Button>
+                      </div>
+                    </MessageScrollerItem>
+                  )}
+                  {intent &&
+                    intent !== "portfolio-total" &&
+                    objectivesQuery.isSuccess &&
+                    objectives.length === 0 && (
+                      <MessageScrollerItem messageId="no-objectives">
+                        <AssistantMessage>
+                          Você ainda não tem objetivos cadastrados.
+                          <Link
+                            href="/portfolio?panel=objectives"
+                            className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            Ver objetivos{" "}
+                            <ArrowUpRight
+                              aria-hidden="true"
+                              className="size-3.5"
+                            />
+                          </Link>
+                        </AssistantMessage>
+                      </MessageScrollerItem>
+                    )}
+                  {intent &&
+                    intent !== "portfolio-total" &&
+                    objectivesQuery.isSuccess &&
+                    selectableObjectives.length === 0 &&
+                    objectives.length > 0 && (
+                      <MessageScrollerItem messageId="planning-total-action">
+                        <AssistantMessage>
+                          Não há objetivos disponíveis para esse planejamento.
+                          Você ainda pode simular o patrimônio total.
+                          <Link
+                            href="/planning"
+                            className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            Planejar patrimônio total{" "}
+                            <ArrowUpRight
+                              aria-hidden="true"
+                              className="size-3.5"
+                            />
+                          </Link>
+                        </AssistantMessage>
+                      </MessageScrollerItem>
+                    )}
+                  {intent &&
+                    intent !== "portfolio-total" &&
+                    objectivesQuery.isSuccess &&
+                    selectableObjectives.length > 0 && (
+                      <MessageScrollerItem messageId="objective-choices">
+                        <ObjectiveChoices
+                          objectives={selectableObjectives}
+                          onChoose={chooseObjective}
+                        />
+                      </MessageScrollerItem>
+                    )}
+                  {planningHref && (
+                    <MessageScrollerItem messageId="planning-action">
+                      <Button asChild size="sm" className="ml-9">
+                        <Link href={planningHref}>
                           <ChartNoAxesCombined
                             aria-hidden="true"
                             className="mr-1.5 size-4"
                           />
-                          Planejar esta meta
+                          Abrir planejamento
                         </Link>
                       </Button>
-                    )}
-                  </div>
-                </MessageScrollerItem>
-              )}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <MessageScrollerButton />
-        </MessageScroller>
-      </MessageScrollerProvider>
+                    </MessageScrollerItem>
+                  )}
+                  {selectedObjective && (
+                    <MessageScrollerItem messageId="follow-up-actions">
+                      <div className="ml-9 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={restart}
+                        >
+                          <ArrowLeft
+                            aria-hidden="true"
+                            className="mr-1.5 size-4"
+                          />
+                          Fazer outra pergunta
+                        </Button>
+                        {isPlanningObjective(selectedObjective) && (
+                          <Button asChild size="sm">
+                            <Link
+                              href={`/planning?objective=${encodeURIComponent(selectedObjective.id)}`}
+                            >
+                              <ChartNoAxesCombined
+                                aria-hidden="true"
+                                className="mr-1.5 size-4"
+                              />
+                              Planejar esta meta
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
+                    </MessageScrollerItem>
+                  )}
+                </MessageScrollerContent>
+              </MessageScrollerViewport>
+              <MessageScrollerButton />
+            </MessageScroller>
+          </MessageScrollerProvider>
 
-      <div className="border-t border-border px-4 py-3">
-        <form onSubmit={submitMessage} className="flex gap-2">
-          <Input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            aria-label="Escreva uma pergunta para o assistente"
-            placeholder="Pergunte sobre seus objetivos"
-            autoComplete="off"
-            disabled={Boolean(pendingMessage)}
-            className="min-w-0"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            aria-label="Enviar mensagem"
-            disabled={!draft.trim() || Boolean(pendingMessage)}
-          >
-            <Send aria-hidden="true" className="size-4" />
-          </Button>
-        </form>
-      </div>
+          <div className="border-t border-border px-4 py-3">
+            <form onSubmit={submitMessage} className="flex gap-2">
+              <Input
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                aria-label="Escreva uma pergunta para o assistente"
+                placeholder="Pergunte sobre a carteira ou peça um cadastro"
+                autoComplete="off"
+                disabled={Boolean(pendingMessage)}
+                className="min-w-0"
+              />
+              <PortfolioChatMicrophone
+                onTranscript={(transcript) =>
+                  setDraft((current) =>
+                    current.trim()
+                      ? `${current.trim()} ${transcript}`
+                      : transcript,
+                  )
+                }
+              />
+              <Button
+                type="submit"
+                size="icon"
+                aria-label="Enviar mensagem"
+                disabled={!draft.trim() || Boolean(pendingMessage)}
+              >
+                <Send aria-hidden="true" className="size-4" />
+              </Button>
+            </form>
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -717,23 +849,41 @@ function ObjectiveChoices({
   objectives: ObjectiveSummary[];
   onChoose: (objective: ObjectiveSummary) => void;
 }) {
+  const availableCategories = objectiveCategoryOrder.filter((category) =>
+    objectives.some(
+      (objective) => getObjectiveCategory(objective) === category,
+    ),
+  );
+
   return (
     <div
-      className="ml-9 space-y-2"
+      className="ml-9 space-y-3"
       role="group"
-      aria-label="Escolha um objetivo"
+      aria-label="Escolha uma categoria e um objetivo"
     >
-      <p className="text-xs text-muted-foreground">Escolha um objetivo</p>
-      {objectives.map((objective) => (
-        <Button
-          key={objective.id}
-          type="button"
-          variant="outline"
-          className="h-auto min-h-10 w-full justify-start whitespace-normal py-2 text-left"
-          onClick={() => onChoose(objective)}
+      {availableCategories.map((category) => (
+        <section
+          key={category}
+          aria-label={objectiveCategoryLabels[category]}
+          className="space-y-1.5"
         >
-          {objective.name}
-        </Button>
+          <p className="text-xs text-muted-foreground">
+            {objectiveCategoryLabels[category]}
+          </p>
+          {objectives
+            .filter((objective) => getObjectiveCategory(objective) === category)
+            .map((objective) => (
+              <Button
+                key={objective.id}
+                type="button"
+                variant="outline"
+                className="h-auto min-h-10 w-full justify-start whitespace-normal py-2 text-left"
+                onClick={() => onChoose(objective)}
+              >
+                {objective.name}
+              </Button>
+            ))}
+        </section>
       ))}
     </div>
   );

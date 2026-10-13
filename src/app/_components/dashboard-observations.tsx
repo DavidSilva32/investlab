@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, Info, WalletCards } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -35,7 +36,8 @@ export function DashboardObservations({
             icon: WalletCards,
             title: "Maior posição",
             product: largestPosition.product,
-            value: `${largestPosition.percentage.toFixed(1)}%`,
+            value: formatCurrency(largestPosition.value),
+            detail: `${largestPosition.percentage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do patrimônio conhecido`,
             explanation:
               "Participação no valor conhecido. Distribuição não mede risco.",
           },
@@ -50,6 +52,10 @@ export function DashboardObservations({
             value: date.format(
               new Date(`${nextMaturity.maturityAt}T00:00:00Z`),
             ),
+            detail:
+              nextMaturity.value === null
+                ? "Valor atual não confirmado"
+                : formatCurrency(nextMaturity.value),
             explanation:
               "Vencimento informado não confirma disponibilidade do dinheiro.",
           },
@@ -102,6 +108,9 @@ export function DashboardObservations({
                           {fact.value}
                         </span>
                       </div>
+                      <p className="text-xs text-muted-foreground">
+                        {fact.detail}
+                      </p>
                     </div>
                   </div>
                 );

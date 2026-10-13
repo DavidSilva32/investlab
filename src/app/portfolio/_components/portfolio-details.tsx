@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { CdiRateIndicator } from "./cdi-rate-indicator";
 import { DeleteImportedDataButton } from "@/components/delete-imported-data-button";
 import {
@@ -17,6 +18,7 @@ import {
 } from "@/components/portfolio-table";
 import { formatCurrency, formatQuantity } from "@/lib/utils";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
+import { Plus } from "lucide-react";
 import type { PortfolioPosition } from "./portfolio-overview";
 import { CdbRateConfiguration } from "./cdb-rate-configuration";
 import { ManualPositionManager } from "./manual-position-manager";
@@ -64,6 +66,13 @@ const positionColumns: PortfolioTableColumn<PortfolioPosition>[] = [
               {row.indexer}
             </span>
           )}
+          {row.source === "MANUAL" &&
+            row.informationalCdiPercentage != null && (
+              <span className="block text-xs text-muted-foreground">
+                Premissa informativa: {Number(row.informationalCdiPercentage)}%
+                do CDI. Não usada para calcular rendimento.
+              </span>
+            )}
         </div>
       </div>
     ),
@@ -353,14 +362,30 @@ export function PositionDetails({
         </CardHeader>
       </Card>
       <Card className="min-w-0 overflow-hidden">
-        <CardHeader className="flex-row items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3 sm:px-5">
-          <div>
+        <CardHeader className="flex-col items-stretch gap-3 border-b bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="min-w-0">
             <CardTitle className="text-base">Posições na carteira</CardTitle>
             <CardDescription className="mt-0.5">
               Valores, instituições e vencimentos registrados
             </CardDescription>
           </div>
-          <Badge variant="outline" className="shrink-0 tabular-nums">
+          <Button
+            type="button"
+            size="sm"
+            className="w-full sm:w-auto"
+            onClick={() =>
+              window.dispatchEvent(
+                new Event("portfolio:manual-position:create"),
+              )
+            }
+          >
+            <Plus aria-hidden="true" className="mr-1.5 size-4" />
+            Adicionar posição manual
+          </Button>
+          <Badge
+            variant="outline"
+            className="shrink-0 self-start tabular-nums sm:self-auto"
+          >
             {positions.length} {positions.length === 1 ? "posição" : "posições"}
           </Badge>
         </CardHeader>

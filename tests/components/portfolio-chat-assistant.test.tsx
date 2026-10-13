@@ -30,6 +30,7 @@ vi.mock("next/link", () => ({
 }));
 
 import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 function renderAssistant() {
   const queryClient = new QueryClient({
@@ -66,6 +67,272 @@ afterEach(() => {
 });
 
 describe("PortfolioChatAssistant", () => {
+  it("groups dynamic objective choices by stable purpose and keeps legacy objectives explicit", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [
+            {
+              id: reserveObjectiveId,
+              name: "Reserva definida pelo usuário",
+              kind: "RESERVE",
+              purpose: null,
+              targetAmount: null,
+              knownValue: 500,
+              remainingAmount: null,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+            {
+              id: "personal-id",
+              name: "Carro",
+              kind: "CUSTOM",
+              purpose: "PERSONAL_GOAL",
+              targetAmount: 1000,
+              knownValue: 100,
+              remainingAmount: 900,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+            {
+              id: "long-term-id",
+              name: "Horizonte criado pelo usuário",
+              kind: "CUSTOM",
+              purpose: "LONG_TERM_INVESTMENT",
+              targetAmount: null,
+              knownValue: 100,
+              remainingAmount: null,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+            {
+              id: "legacy-id",
+              name: "Objetivo antigo",
+              kind: "CUSTOM",
+              purpose: null,
+              targetAmount: null,
+              knownValue: 20,
+              remainingAmount: null,
+              missingPositionCount: 0,
+              unvaluedPositionCount: 0,
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Quanto tenho?");
+    await user.keyboard("{Enter}");
+
+    const choices = await screen.findByRole("group", {
+      name: "Escolha uma categoria e um objetivo",
+    });
+    expect(
+      choices.querySelector('[aria-label="Reserva"]')?.textContent,
+    ).toContain("Reserva definida pelo usuário");
+    expect(
+      choices.querySelector('[aria-label="Objetivos pessoais"]')?.textContent,
+    ).toContain("Carro");
+    expect(
+      choices.querySelector('[aria-label="Investimentos de longo prazo"]')
+        ?.textContent,
+    ).toContain("Horizonte criado pelo usuário");
+    expect(
+      choices.querySelector('[aria-label="Objetivos legados sem categoria"]')
+        ?.textContent,
+    ).toContain("Objetivo antigo");
+    expect(choices.textContent).not.toContain("Viagem");
+
+    await user.clear(input);
+    await user.type(input, "Carro");
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByText(
+        "Ainda não consegui identificar o que você quer consultar. Escolha uma opção ou tente perguntar de outro jeito.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("group", {
+        name: "Escolha uma categoria e um objetivo",
+      }),
+    ).toBeNull();
+  });
+
+  it("starts the guided position flow from a direct creation request", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Quero cadastrar uma posição manual");
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Resposta para o cadastro da posição",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("Qual é o nome do ativo ou produto?")).toBeTruthy();
+  });
+
+  it("recognizes an investment purchase in everyday wording and asks before creating a manual position", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() => jsonResponse({ objectives: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Acabei de comprar mil reais de CDB no Banco Inter",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Confirme os dados que entendi",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("CDB")).toBeTruthy();
+    expect(screen.getByText("Banco Inter")).toBeTruthy();
+    expect(screen.getByText("Premissa informativa")).toBeTruthy();
+    expect(
+      screen.getByText("100% do CDI, sem cálculo de rendimento"),
+    ).toBeTruthy();
+    expect(screen.getByText("Renda fixa")).toBeTruthy();
+    expect(screen.getByText("1.000 BRL")).toBeTruthy();
+    expect(
+      screen.getByText(/não lança uma compra nem uma movimentação/),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sim, continuar" })).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/positions/manual",
+      expect.anything(),
+    );
+  });
+
+  it("does not start registration when the user says they did not buy an investment", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() => jsonResponse({ objectives: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Não comprei CDB");
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(/Ainda não consegui identificar/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Confirme os dados que entendi" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("textbox", {
+        name: "Resposta para o cadastro da posição",
+      }),
+    ).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/positions/manual",
+      expect.anything(),
+    );
+  });
+
+  it("asks which action to take when a purchase and consultation are mixed", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() => jsonResponse({ objectives: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Comprei CDB e quero ver meu patrimônio",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(
+        "Entendi um possível cadastro de posição e também uma consulta. Qual dessas ações você quer fazer primeiro? Reformule a pergunta para eu continuar.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Confirme os dados que entendi" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("textbox", {
+        name: "Resposta para o cadastro da posição",
+      }),
+    ).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/positions/manual",
+      expect.anything(),
+    );
+  });
+
+  it("discards a partial position draft when the user cancels the guided flow", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Cadastrar posição manual" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Resposta para o cadastro da posição",
+      }),
+      "Fundo para apagar",
+    );
+    await user.click(screen.getByRole("button", { name: "Cancelar cadastro" }));
+    expect(
+      screen.getByRole("button", { name: "Cadastrar posição manual" }),
+    ).toBeTruthy();
+
+    await user.click(
+      screen.getByRole("button", { name: "Cadastrar posição manual" }),
+    );
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Resposta para o cadastro da posição",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Fundo para apagar")).toBeNull();
+  });
+
   it("recognizes a direct portfolio question without showing suggestions", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
@@ -174,7 +441,7 @@ describe("PortfolioChatAssistant", () => {
     const input = screen.getByRole("textbox", {
       name: "Escreva uma pergunta para o assistente",
     });
-    await user.type(input, "meu saldo");
+    await user.type(input, "quanto tenho e quanto falta?");
     await user.keyboard("{Enter}");
 
     expect(
@@ -186,8 +453,8 @@ describe("PortfolioChatAssistant", () => {
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Quanto falta para minha meta?" }),
-    ).toBeNull();
+      screen.getByRole("button", { name: "Quanto falta para minha meta?" }),
+    ).toBeTruthy();
     expect(
       screen.queryByRole("link", { name: "Quero simular um plano" }),
     ).toBeNull();
@@ -316,6 +583,7 @@ describe("PortfolioChatAssistant", () => {
       "Quanto planejei aportar por mês na Viagem?",
     );
     await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Viagem" }));
 
     expect(
       await screen.findByText(/aporte mensal planejado de R\$ 1\.250,00/),
@@ -437,7 +705,10 @@ describe("PortfolioChatAssistant", () => {
     const conversation = screen.getByRole("log", {
       name: "Conversa com o assistente",
     });
-    expect(conversation.querySelector("button")).toBeNull();
+    expect(conversation.querySelector("button")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cadastrar posição manual" }),
+    ).toBeTruthy();
     expect(
       screen.queryByRole("group", { name: "Perguntas rápidas" }),
     ).toBeNull();
@@ -651,13 +922,16 @@ describe("PortfolioChatAssistant", () => {
     await user.type(input, "QUAL SALDO conhecido da viagem?");
     expect(sendButton.hasAttribute("disabled")).toBe(false);
     await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Viagem" }));
 
     expect(
       await screen.findByText(/O valor conhecido em Viagem é R\$ 12\.000,00/),
     ).toBeTruthy();
-    expect(screen.queryByRole("group", { name: "Escolha um objetivo" })).toBe(
-      null,
-    );
+    expect(
+      screen.queryByRole("group", {
+        name: "Escolha uma categoria e um objetivo",
+      }),
+    ).toBe(null);
   });
 
   it("resolves an explicit planning objective after the objectives query finishes", async () => {
@@ -682,12 +956,14 @@ describe("PortfolioChatAssistant", () => {
     const input = screen.getByRole("textbox", {
       name: "Escreva uma pergunta para o assistente",
     });
-    await user.type(input, "Quero simular um plano para Viagem");
+    await user.type(input, "Quero simular um plano para objetivos pessoais");
     await user.keyboard("{Enter}");
 
-    expect(await screen.findByRole("status")).toBeTruthy();
+    expect(
+      await screen.findByText("Carregando seus objetivos..."),
+    ).toBeTruthy();
     expect(screen.getByRole("log").textContent).toContain(
-      "Quero simular um plano para Viagem",
+      "Quero simular um plano para objetivos pessoais",
     );
     expect(
       screen.queryByRole("link", { name: "Abrir planejamento" }),
@@ -700,6 +976,7 @@ describe("PortfolioChatAssistant", () => {
             {
               id: "travel",
               kind: "PERSONAL_GOAL",
+              purpose: "PERSONAL_GOAL",
               name: "Viagem",
               targetAmount: 16_000,
               knownValue: 12_000,
@@ -778,6 +1055,7 @@ describe("PortfolioChatAssistant", () => {
             {
               id: "travel",
               kind: "PERSONAL_GOAL",
+              purpose: "PERSONAL_GOAL",
               name: "Viagem",
               targetAmount: 16_000,
               knownValue: 12_000,
@@ -852,8 +1130,9 @@ describe("PortfolioChatAssistant", () => {
     const input = screen.getByRole("textbox", {
       name: "Escreva uma pergunta para o assistente",
     });
-    await user.type(input, "Falta quanto para viagem?");
+    await user.type(input, "Falta quanto?");
     await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Viagem" }));
     expect(
       await screen.findByText(/faltam R\$ 4\.000,00 para a meta/),
     ).toBeTruthy();
@@ -861,8 +1140,9 @@ describe("PortfolioChatAssistant", () => {
       screen.getByText(/1 posição\(ões\) sem valor confirmado/),
     ).toBeTruthy();
 
-    await user.type(input, "Quanto falta para casa nova?");
+    await user.type(input, "Quanto falta?");
     await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Casa nova" }));
     expect(
       await screen.findByText(
         /Ainda não consigo calcular quanto falta para Casa nova/,
@@ -914,7 +1194,7 @@ describe("PortfolioChatAssistant", () => {
     await user.keyboard("{Enter}");
 
     const objectiveChoices = await screen.findByRole("group", {
-      name: "Escolha um objetivo",
+      name: "Escolha uma categoria e um objetivo",
     });
     expect(objectiveChoices.closest('[role="log"]')).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Viagem" })).toBeTruthy();
@@ -925,7 +1205,9 @@ describe("PortfolioChatAssistant", () => {
       await screen.findAllByText("Qual objetivo você quer consultar?"),
     ).toHaveLength(2);
     expect(
-      screen.getByRole("group", { name: "Escolha um objetivo" }),
+      screen.getByRole("group", {
+        name: "Escolha uma categoria e um objetivo",
+      }),
     ).toBeTruthy();
 
     await user.clear(input);
@@ -955,6 +1237,7 @@ describe("PortfolioChatAssistant", () => {
           objectives: [
             {
               id: "travel trip",
+              purpose: "PERSONAL_GOAL",
               name: "Viagem",
               targetAmount: 16_000,
               knownValue: 12_000,
@@ -975,7 +1258,7 @@ describe("PortfolioChatAssistant", () => {
       screen.getByRole("textbox", {
         name: "Escreva uma pergunta para o assistente",
       }),
-      "Quero simular um plano para Viagem",
+      "Quero simular um plano para objetivos pessoais",
     );
     await user.keyboard("{Enter}");
 
@@ -1040,6 +1323,7 @@ describe("PortfolioChatAssistant", () => {
             {
               id: "travel",
               kind: "PERSONAL_GOAL",
+              purpose: "PERSONAL_GOAL",
               name: "Viagem",
               targetAmount: 16_000,
               knownValue: 9_000,
@@ -1049,7 +1333,8 @@ describe("PortfolioChatAssistant", () => {
             },
             {
               id: "long-term",
-              kind: "PERSONAL_GOAL",
+              kind: "CUSTOM",
+              purpose: "LONG_TERM_INVESTMENT",
               name: "Longo prazo",
               targetAmount: 50_000,
               knownValue: 8_000,
@@ -1072,6 +1357,10 @@ describe("PortfolioChatAssistant", () => {
 
     await user.type(input, "Quanto de viagem?");
     await user.keyboard("{Enter}");
+    expect(
+      await screen.findByText("Qual objetivo você quer consultar?"),
+    ).toBeTruthy();
+    await user.click(await screen.findByRole("button", { name: "Viagem" }));
     expect(
       await screen.findByText(/O valor conhecido em Viagem é R\$ 9\.000,00/),
     ).toBeTruthy();
@@ -1268,7 +1557,9 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     );
-    expect(await screen.findByRole("status")).toBeTruthy();
+    expect(
+      await screen.findByText("Carregando seus objetivos..."),
+    ).toBeTruthy();
 
     await act(async () => {
       resolveRequest(

@@ -56,6 +56,7 @@ const row = {
   reportedTotalValue: "100",
   currency: "USD",
   valueBasis: "unit_price" as const,
+  informationalCdiPercentage: "100.0000",
   positionDate: "2026-09-20",
   convertedValueBrl: "120",
   conversionDate: "2026-09-19",
@@ -116,6 +117,43 @@ const jsonResponse = (ok = true, body: unknown = {}) => ({
 });
 
 describe("ManualPositionManager", () => {
+  it("shows the saved CDI percentage as informational context for a manual CDB", () => {
+    render(<ManualPositionManager positions={[{ ...row, product: "CDB" }]} />);
+    expandManualPositions();
+    expect(
+      screen.getByText(
+        "Premissa informativa: 100% do CDI. Não usada para calcular rendimento.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not show a CDI premise when a manual position has none saved", () => {
+    render(
+      <ManualPositionManager
+        positions={[
+          { ...row, product: "CDB", informationalCdiPercentage: null },
+        ]}
+      />,
+    );
+    expandManualPositions();
+    expect(screen.queryByText(/Premissa informativa/)).toBeNull();
+  });
+
+  it("opens the existing form when a page-level position shortcut is activated", () => {
+    render(<ManualPositionManager positions={[]} />);
+    fireEvent(window, new Event("portfolio:manual-position:create"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
+  });
+
+  it("opens the form from the manual-position Dashboard deep link", () => {
+    window.history.replaceState({}, "", "/portfolio#manual-positions");
+    render(<ManualPositionManager positions={[]} />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Ativo ou produto")).toBeTruthy();
+    window.history.replaceState({}, "", "/");
+  });
+
   it("opens the accessible form and explains explicit foreign conversion", () => {
     render(<ManualPositionManager positions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: /adicionar posição/i }));

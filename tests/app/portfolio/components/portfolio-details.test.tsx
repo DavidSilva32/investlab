@@ -61,6 +61,25 @@ const position = {
 };
 
 describe("portfolio detail components", () => {
+  it("shows the saved CDI percentage as an informational manual-position fact", () => {
+    const html = renderToStaticMarkup(
+      <PositionDetails
+        positions={[
+          {
+            ...position,
+            id: "manual-cdb",
+            source: "MANUAL",
+            informationalCdiPercentage: "112.5000",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain(
+      "Premissa informativa: 112.5% do CDI. Não usada para calcular rendimento.",
+    );
+  });
+
   it("uses the exact asset code for position identity without inferring tickers from product names", () => {
     const html = renderToStaticMarkup(
       <PositionDetails
@@ -105,6 +124,7 @@ describe("portfolio detail components", () => {
       />,
     );
     expect(html).toContain("Posições atuais");
+    expect(html).toContain("Adicionar posição manual");
     expect(html.indexOf("Posições na carteira")).toBeLessThan(
       html.indexOf("Posições manuais"),
     );

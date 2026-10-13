@@ -1,37 +1,35 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 const routerReplace = vi.hoisted(() => vi.fn());
+
 vi.mock("@/components/app-page-skeleton", () => ({
   AppContentSkeleton: () => <p>Carregando dashboard...</p>,
 }));
+
 vi.mock("@/app/_components/dashboard-summary", () => ({
   DashboardSummary: ({
-    unassignedSummary,
-    onRetryUnassigned,
     destinationSummary,
-    nextContributionGuidance,
+    destinationsUnavailable,
+    destinationsLoading,
+    onRetryDestinations,
   }: {
     destinationSummary?: { knownTotal: number };
-    nextContributionGuidance?: { assetClass: string };
-    unassignedSummary: { status: string } | null;
-    onRetryUnassigned: () => void;
+    destinationsUnavailable?: boolean;
+    destinationsLoading?: boolean;
+    onRetryDestinations?: () => void;
   }) => (
     <>
       <p>Resumo do dashboard</p>
       {destinationSummary && (
         <p>Total por destinos: {destinationSummary.knownTotal}</p>
       )}
-      {nextContributionGuidance && (
-        <p>Classe para revisar: {nextContributionGuidance.assetClass}</p>
-      )}
-      {unassignedSummary?.status === "loaded" && (
-        <p>Resumo sem destino disponível</p>
-      )}
-      {unassignedSummary?.status === "unavailable" && (
+      {destinationsLoading && <p>Carregando destinos</p>}
+      {destinationsUnavailable && (
         <>
-          <p>Patrimônio sem destino indisponível</p>
-          <button type="button" onClick={onRetryUnassigned}>
+          <p>Destinos indisponíveis</p>
+          <button type="button" onClick={onRetryDestinations}>
             Tentar novamente
           </button>
         </>
@@ -55,83 +53,75 @@ function renderDashboard() {
   );
 }
 
+function jsonResponse(body: unknown, ok = true) {
+  return Promise.resolve({ ok, json: async () => body });
+}
+
 const overview = {
   positions: [],
   referenceRates: { selic: null, cdi: null, ipca: null },
 };
-const objectivesOverview = {
-  unassignedKnownValue: 1250,
-  unassignedPositionCount: 2,
-  unassignedUnvaluedPositionCount: 1,
+
+const destinationSummary = {
+  categories: [{ key: "reserve", value: 1250, percentage: 100 }],
+  knownTotal: 1250,
+  missingPositionCount: 0,
+  unvaluedPositionCount: 0,
 };
+
+const objectivesOverview = { destinationSummary };
 
 describe("DashboardClient", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     routerReplace.mockReset();
+    window.history.replaceState(null, "", "/");
   });
 
-  it("loads known unassigned wealth from the objectives API", async () => {
+  it("loads the portfolio overview and destination summary independently", async () => {
     const fetchMock = vi.fn((url: string) =>
-      Promise.resolve({
-        ok: true,
-        json: async () =>
-          url === "/api/portfolio" ? overview : objectivesOverview,
-      }),
+      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
 
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
-    expect(
-      screen.queryByText("Visão geral do patrimônio e próximos passos"),
-    ).toBeNull();
-    expect(
-      await screen.findByText("Resumo sem destino disponível"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
-  });
-
-  it("reuses overview guidance and destination data without market requests", async () => {
-    const fetchMock = vi.fn((url: string) =>
-      Promise.resolve({
-        ok: true,
-        json: async () =>
-          url === "/api/portfolio"
-            ? {
-                ...overview,
-                nextContributionGuidance: { assetClass: "ETFs internacionais" },
-              }
-            : {
-                ...objectivesOverview,
-                destinationSummary: { knownTotal: 1250 },
-              },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    renderDashboard();
-    expect(
-      await screen.findByText("Classe para revisar: ETFs internacionais"),
-    ).toBeTruthy();
-    expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("announces an initial API failure and allows a retry", async () => {
+  it("keeps the portfolio available and retries only unavailable destinations", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        json: async () => ({ message: "Dashboard indisponível pela API." }),
-      })
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => objectivesOverview,
-      });
+      .mockImplementationOnce(() => jsonResponse(overview))
+      .mockImplementationOnce(() => jsonResponse({}, false))
+      .mockImplementationOnce(() => jsonResponse(objectivesOverview));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderDashboard();
+
+    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
+    expect(await screen.findByText("Destinos indisponíveis")).toBeTruthy();
+    screen.getByRole("button", { name: "Tentar novamente" }).click();
+
+    expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/portfolio/objectives");
+  });
+
+  it("announces an overview API failure and allows retry", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        jsonResponse({ message: "Dashboard indisponível pela API." }, false),
+      )
+      .mockImplementationOnce(() => jsonResponse(overview))
+      .mockImplementationOnce(() => jsonResponse(objectivesOverview));
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
@@ -139,39 +129,30 @@ describe("DashboardClient", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Dashboard indisponível pela API.",
     );
-    await screen
-      .findByRole("button", { name: "Tentar novamente" })
-      .then((button) => button.click());
-
+    screen.getByRole("button", { name: "Tentar novamente" }).click();
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
   });
 
-  it("uses the fixed inline fallback when an API payload has no message", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: false, json: async () => ({}) })
-      .mockResolvedValueOnce({ ok: true, json: async () => overview })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => objectivesOverview,
-      });
-    vi.stubGlobal("fetch", fetchMock);
+  it("uses the fixed fallback when an API payload has no safe message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementationOnce(() => jsonResponse({}, false))
+        .mockImplementationOnce(() => jsonResponse(overview))
+        .mockImplementationOnce(() => jsonResponse(objectivesOverview)),
+    );
 
     renderDashboard();
+
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível carregar o dashboard.",
     );
-    await screen
-      .findByRole("button", { name: "Tentar novamente" })
-      .then((button) => button.click());
-    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
   });
 
-  it("keeps the loaded dashboard visible when a later refresh fails", async () => {
+  it("keeps cached portfolio data visible after a later refresh fails", async () => {
     const fetchMock = vi.fn((url: string) =>
-      url === "/api/portfolio"
-        ? Promise.resolve({ ok: true, json: async () => overview })
-        : Promise.resolve({ ok: true, json: async () => objectivesOverview }),
+      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -186,90 +167,14 @@ describe("DashboardClient", () => {
     );
     expect(screen.queryByText("private transport detail")).toBeNull();
     expect(screen.getByText("Resumo do dashboard")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Tentar novamente" }),
-    ).toBeTruthy();
     screen.getByRole("button", { name: "Tentar novamente" }).click();
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
-  it("shows a safe API message when a later dashboard refresh fails", async () => {
-    const fetchMock = vi.fn(
-      (url: string): Promise<{ ok: boolean; json: () => Promise<unknown> }> =>
-        url === "/api/portfolio"
-          ? Promise.resolve({ ok: true, json: async () => overview })
-          : Promise.resolve({ ok: true, json: async () => objectivesOverview }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    renderDashboard();
-    await screen.findByText("Resumo do dashboard");
-    fetchMock.mockImplementationOnce(() =>
-      Promise.resolve({
-        ok: false,
-        json: async () => ({ message: "Atualização recusada pela API." }),
-      }),
-    );
-    window.dispatchEvent(new Event("portfolio:updated"));
-
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Atualização recusada pela API.",
-    );
-    expect(screen.getByText("Resumo do dashboard")).toBeTruthy();
-  });
-
-  it("hides unassigned wealth when the objectives endpoint is unavailable", async () => {
-    const fetchMock = vi.fn((url: string) =>
-      Promise.resolve(
-        url === "/api/portfolio"
-          ? { ok: true, json: async () => overview }
-          : { ok: false, json: async () => ({}) },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    renderDashboard();
-
-    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
-    expect(
-      await screen.findByText("Patrimônio sem destino indisponível"),
-    ).toBeTruthy();
-    expect(screen.queryByText("Resumo sem destino disponível")).toBeNull();
-  });
-
-  it("retries only the destination summary on request", async () => {
-    const fetchMock = vi.fn((url: string) =>
-      url === "/api/portfolio"
-        ? Promise.resolve({ ok: true, json: async () => overview })
-        : Promise.resolve({ ok: false, json: async () => ({}) }),
-    );
-    fetchMock.mockImplementationOnce(() =>
-      Promise.resolve({ ok: true, json: async () => overview }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    renderDashboard();
-    expect(
-      await screen.findByText("Patrimônio sem destino indisponível"),
-    ).toBeTruthy();
-    fetchMock.mockImplementationOnce(() =>
-      Promise.resolve({ ok: true, json: async () => objectivesOverview }),
-    );
-    await screen
-      .findByRole("button", { name: "Tentar novamente" })
-      .then((button) => button.click());
-
-    expect(
-      await screen.findByText("Resumo sem destino disponível"),
-    ).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/portfolio/objectives");
-  });
-
-  it("redirects an unauthorized session to login but avoids a login loop", async () => {
+  it("redirects unauthorized sessions without looping on the login page", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => overview }),
+      vi.fn(() => jsonResponse(overview)),
     );
     renderDashboard();
     await screen.findByText("Resumo do dashboard");
@@ -282,30 +187,4 @@ describe("DashboardClient", () => {
     window.dispatchEvent(new Event("auth:unauthorized"));
     expect(routerReplace).not.toHaveBeenCalled();
   });
-
-  it.each([
-    { ...objectivesOverview, unassignedKnownValue: Number.NaN },
-    { ...objectivesOverview, unassignedPositionCount: 2.5 },
-    { ...objectivesOverview, unassignedUnvaluedPositionCount: 1.5 },
-  ])(
-    "does not treat an invalid objectives summary as a zero value",
-    async (summary) => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn((url: string) =>
-          Promise.resolve({
-            ok: true,
-            json: async () => (url === "/api/portfolio" ? overview : summary),
-          }),
-        ),
-      );
-
-      renderDashboard();
-
-      expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
-      expect(
-        await screen.findByText("Patrimônio sem destino indisponível"),
-      ).toBeTruthy();
-    },
-  );
 });

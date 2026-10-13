@@ -1,6 +1,12 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { ChevronDown, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
@@ -61,6 +67,7 @@ type ManualPosition = PortfolioPosition & {
   positionDate?: string;
   convertedValueBrl?: string | null;
   conversionDate?: string | null;
+  informationalCdiPercentage?: string | null;
   valueBasis?: "unit_price" | "total_value";
   reportedTotalValue?: string | null;
   duplicateAssetCode?: boolean;
@@ -257,6 +264,21 @@ export function ManualPositionManager({
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [assetClassError, setAssetClassError] = useState(false);
 
+  useEffect(() => {
+    const openCreateForm = () => {
+      setEditing(null);
+      setValues(emptyValues());
+      setOpen(true);
+    };
+    if (window.location.hash === "#manual-positions") openCreateForm();
+    window.addEventListener("portfolio:manual-position:create", openCreateForm);
+    return () =>
+      window.removeEventListener(
+        "portfolio:manual-position:create",
+        openCreateForm,
+      );
+  }, []);
+
   const set = (field: keyof FormValues, value: string) =>
     setValues((current) => ({ ...current, [field]: value }));
 
@@ -354,7 +376,10 @@ export function ManualPositionManager({
   };
 
   return (
-    <section className="space-y-4 rounded-xl border bg-muted/10 p-4 sm:p-5">
+    <section
+      id="manual-positions"
+      className="scroll-mt-20 space-y-4 rounded-xl border bg-muted/10 p-4 sm:p-5"
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-base font-semibold">Posições manuais</h3>
@@ -415,6 +440,14 @@ export function ManualPositionManager({
                         ? ` · valor de ${new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${position.positionDate}T00:00:00Z`))}`
                         : ""}
                     </p>
+                    {position.informationalCdiPercentage !== null &&
+                      position.informationalCdiPercentage !== undefined && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Premissa informativa:{" "}
+                          {Number(position.informationalCdiPercentage)}% do CDI.
+                          Não usada para calcular rendimento.
+                        </p>
+                      )}
                     {position.duplicateAssetCode && (
                       <p className="text-xs text-status-warning">
                         Código repetido em outra posição manual; confira se os
