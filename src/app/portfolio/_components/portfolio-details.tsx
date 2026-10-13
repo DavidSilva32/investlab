@@ -247,12 +247,12 @@ const positionColumns = (
                         Último valor informado pela B3.
                       </p>
                     )}
-                    {row.cdbEstimateStatus === "unavailable" &&
-                      row.cdbEstimateLimitation && (
-                        <p className="text-status-warning">
-                          {row.cdbEstimateLimitation}
-                        </p>
-                      )}
+                    {row.cdbEstimateStatus === "unavailable" && (
+                      <p className="text-status-warning">
+                        {row.cdbEstimateLimitation ??
+                          "A estimativa com taxas CDI oficiais não está disponível."}
+                      </p>
+                    )}
                     {isDiCdb && (
                       <CdiRateIndicator percentage={row.cdiPercentage} />
                     )}
