@@ -391,6 +391,98 @@ describe("EmergencyReserveEditor", () => {
     expect(screen.queryByLabelText("Custo mensal")).toBeNull();
   });
 
+  it("saves reserve settings through the dedicated configuration endpoint", async () => {
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () =>
+        options?.method === "PATCH"
+          ? editorData.calculation
+          : options?.method === "PUT"
+            ? {
+                ...editorData,
+                targetMonths: 12,
+                message: "Configuração salva.",
+              }
+            : editorData,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    await screen.findByLabelText("Custo mensal");
+    await user.click(screen.getByRole("button", { name: "12 meses" }));
+    await user.click(
+      screen.getByRole("button", { name: "Salvar configuração" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            url === "/api/emergency-reserve" && options?.method === "PUT",
+        ),
+      ).toBe(true),
+    );
+    const saveCall = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(saveCall?.[1]?.body as string)).toEqual({
+      monthlyExpenses: 2000,
+      targetMonths: 12,
+    });
+    expect(toast.success).toHaveBeenCalledWith("Configuração salva.");
+  });
+
+  it("shows the server message when the reserve settings save is rejected", async () => {
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: options?.method !== "PUT",
+      json: async () =>
+        options?.method === "PUT"
+          ? { message: "A configuração precisa ser revisada." }
+          : editorData,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    await screen.findByLabelText("Custo mensal");
+    await user.click(
+      screen.getByRole("button", { name: "Salvar configuração" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A configuração precisa ser revisada.",
+      ),
+    );
+  });
+
+  it("shows a safe fallback when saving reserve settings fails in transport", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => editorData })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => editorData.calculation,
+      })
+      .mockRejectedValueOnce(new Error("private transport detail"));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    await screen.findByLabelText("Custo mensal");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await user.click(
+      screen.getByRole("button", { name: "Salvar configuração" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar a configuração da Reserva. Tente novamente.",
+      ),
+    );
+  });
+
   it("saves manual positions without requesting the configuration preview", async () => {
     const manualAssetKey = "manual:00000000-0000-4000-8000-000000000123";
     const manualData = {
@@ -924,6 +1016,59 @@ describe("EmergencyReserveEditor suggestion application", () => {
     );
     expect(JSON.parse(saveCall?.[1]?.body as string).selectedAssetKeys).toEqual(
       [keyB],
+    );
+  });
+
+  it("searches reserve positions when the configured target value is unavailable", async () => {
+    const incompleteData = {
+      ...editorData,
+      monthlyExpenses: 2000,
+      targetMonths: 12,
+      calculation: {
+        ...editorData.calculation,
+        monthlyExpenses: 2000,
+        targetMonths: 12,
+        targetValue: null,
+      },
+    };
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () =>
+        options?.method === "POST"
+          ? {
+              status: "suggestions",
+              kind: "nearest",
+              candidates: [],
+              searchLimited: false,
+              alternativesLimited: false,
+            }
+          : incompleteData,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="positions" />);
+
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
+    await openReserveSuggestions(user);
+    await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
+    await user.type(
+      screen.getByLabelText("Saldo atual da Reserva no banco"),
+      "100000",
+    );
+    await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
+
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([, options]) => options?.method === "POST"),
+      ).toBe(true),
+    );
+    const request = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "POST",
+    );
+    expect(JSON.parse(request?.[1]?.body as string).reserveTargetAmount).toBe(
+      null,
     );
   });
 

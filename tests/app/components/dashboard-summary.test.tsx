@@ -154,6 +154,16 @@ describe("DashboardSummary", () => {
     expect(onOpenReserve).toHaveBeenCalledOnce();
   });
 
+  it("keeps the reserve action safe when the dashboard does not provide a handler", () => {
+    render(
+      <DashboardSummary positions={positions} emergencyReserve={reserve} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+
+    expect(screen.getByRole("button", { name: "Ver reserva" })).toBeTruthy();
+  });
+
   it("keeps the quick objective action safe when no panel controller is provided", () => {
     render(<DashboardSummary positions={positions} />);
 

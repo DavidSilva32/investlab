@@ -607,6 +607,24 @@ describe("EmergencyReserveService", () => {
     expect(mocks.saveSettings).not.toHaveBeenCalled();
   });
 
+  it("persists valid reserve settings in canonical decimal form", async () => {
+    const service = new EmergencyReserveService();
+    const editorData = { configured: true, holdings: [] };
+    vi.spyOn(service, "getEditorData").mockResolvedValue(editorData as never);
+
+    await expect(
+      service.saveSettings(
+        { monthlyExpenses: 1234.5, targetMonths: 12 },
+        "settings-request",
+      ),
+    ).resolves.toEqual(editorData);
+
+    expect(mocks.saveSettings).toHaveBeenCalledWith({
+      monthlyExpenses: "1234.50",
+      targetMonths: 12,
+    });
+  });
+
   it.each([
     {
       selectedAssetKeys: [`v1:${"a".repeat(64)}`],
@@ -1437,6 +1455,36 @@ describe("EmergencyReserveService", () => {
         "A reserva só pode incluir posições classificadas como renda fixa. Revise a seleção antes de salvar.",
       statusCode: 400,
     });
+    expect(mocks.saveAssignments).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fund classification even when the classifier reports fixed income", async () => {
+    const fiagro = position({ product: "Fiagro XPTO", assetCode: "FIA1" });
+    mocks.listLatestPositions.mockResolvedValue([fiagro]);
+    mocks.classifyPositions.mockResolvedValue([
+      { ...fiagro, classification: { assetClass: "Renda fixa" } },
+    ]);
+
+    await expect(
+      new EmergencyReserveService().savePositions({
+        selectedAssetKeys: [getEmergencyReserveAssetKey(fiagro)],
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.saveAssignments).not.toHaveBeenCalled();
+  });
+
+  it("rejects a position without a resolved asset class", async () => {
+    const cdb = position({ assetCode: "UNKNOWN-CLASS" });
+    mocks.listLatestPositions.mockResolvedValue([cdb]);
+    mocks.classifyPositions.mockResolvedValue([
+      { ...cdb, classification: { assetClass: null } },
+    ]);
+
+    await expect(
+      new EmergencyReserveService().savePositions({
+        selectedAssetKeys: [getEmergencyReserveAssetKey(cdb)],
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
     expect(mocks.saveAssignments).not.toHaveBeenCalled();
   });
 

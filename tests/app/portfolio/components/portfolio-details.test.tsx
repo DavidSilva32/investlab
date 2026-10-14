@@ -18,6 +18,7 @@ vi.mock("@/components/portfolio-table", () => ({
       label: string;
       render: (row: never) => unknown;
       value: (row: never) => unknown;
+      searchValue?: (row: never) => unknown;
       filterOptions?: Array<{ value: string; label: string }>;
     }>;
     rows: never[];
@@ -43,7 +44,10 @@ vi.mock("@/components/portfolio-table", () => ({
       ) : null}
       {rows.flatMap((row) =>
         columns.map((column) => (
-          <span key={column.id}>
+          <span
+            key={column.id}
+            data-search-value={String(column.searchValue?.(row) ?? "")}
+          >
             {String(column.value(row))}
             {column.render(row) as never}
           </span>

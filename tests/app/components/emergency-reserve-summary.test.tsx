@@ -56,6 +56,14 @@ describe("EmergencyReserveSummary", () => {
     expect(onOpenReserve).toHaveBeenCalledOnce();
   });
 
+  it("keeps the reserve link safe when no dashboard panel action is provided", () => {
+    render(<EmergencyReserveSummary calculation={calculation} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+
+    expect(screen.getByRole("button", { name: "Ver reserva" })).toBeTruthy();
+  });
+
   it("calculates and shows months even without a personal target", () => {
     const html = renderToStaticMarkup(
       <EmergencyReserveSummary

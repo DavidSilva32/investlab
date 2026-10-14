@@ -1,13 +1,33 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { createElement, type ComponentProps } from "react";
 import userEvent from "@testing-library/user-event";
 import { Children, isValidElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MonthlyPortfolioReview } from "@/app/portfolio/_components/monthly-portfolio-review";
+import {
+  chartPoints,
+  MonthlyPortfolioReview,
+} from "@/app/portfolio/_components/monthly-portfolio-review";
 import type {
   MonthlyPortfolioReview as MonthlyPortfolioReviewData,
   MonthlyPortfolioSnapshotSummary,
 } from "@/backend/services/monthly-portfolio-review";
+
+const selectedYearCallback = vi.hoisted(() => ({
+  current: null as ((year: string) => void) | null,
+}));
+
+vi.mock("@/components/ui/select", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/ui/select")>();
+  return {
+    ...actual,
+    Select: (props: ComponentProps<typeof actual.Select>) => {
+      selectedYearCallback.current = props.onValueChange ?? null;
+      return createElement(actual.Select, props);
+    },
+  };
+});
 
 vi.mock("recharts", () => {
   const Chart = ({
@@ -417,6 +437,68 @@ describe("MonthlyPortfolioReview", () => {
       screen.getByText(/fevereiro de 2026: sem fechamento registrado/),
     ).toBeTruthy();
     expect(screen.getByText(/rentabilidade/i).className).toContain("sr-only");
+  });
+
+  it("uses the complete chronological history when no year can be selected", () => {
+    const dec = summary({
+      referenceDate: "2024-12-31",
+      knownValueCents: "10000",
+    });
+    const mar = summary({
+      referenceDate: "2025-03-31",
+      knownValueCents: "12500",
+    });
+    const jan = summary({
+      referenceDate: "2025-01-31",
+      knownValueCents: null,
+      positionCount: 1,
+      valuedPositionCount: 0,
+      unvaluedPositionCount: 1,
+    });
+    renderReview(
+      review({
+        availablePeriods: [],
+        selectedPeriod: null,
+        current: mar,
+        previous: dec,
+        history: [
+          { period: "2025-01", summary: jan, completeness: "partial" },
+          { period: "2024-12", summary: dec, completeness: "complete" },
+          { period: "2025-03", summary: mar, completeness: "complete" },
+        ],
+      }),
+    );
+
+    expect(
+      screen.queryByRole("combobox", { name: "Ano de referÃªncia" }),
+    ).toBeNull();
+    expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
+      "2024-12,2025-01,2025-02,2025-03",
+    );
+    expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
+      "100,null,null,125",
+    );
+  });
+
+  it("ignores a stale year that has no available period", () => {
+    const onPeriodChange = vi.fn();
+    render(
+      <MonthlyPortfolioReview
+        review={review({ availablePeriods: ["2026-08", "2025-12"] })}
+        selectedPeriod={null}
+        loading={false}
+        onPeriodChange={onPeriodChange}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    act(() => selectedYearCallback.current?.("1900"));
+
+    expect(onPeriodChange).not.toHaveBeenCalled();
+  });
+
+  it("returns no chart points for an empty full-history input", () => {
+    expect(chartPoints([], undefined)).toEqual([]);
   });
 
   it("keeps partially known history as an exact partial point without treating it as zero", () => {

@@ -42,6 +42,35 @@ type Props = {
   onClear: () => void;
 };
 
+const isValidFilterDraft = (filters: PortfolioTableFilter[]) =>
+  filters.length > 0 &&
+  filters.every(
+    (filter) => filter.columnId !== "" && filter.value.trim() !== "",
+  );
+
+export function applyPortfolioTableFilterDraft(
+  filters: PortfolioTableFilter[],
+  onApply: (filters: PortfolioTableFilter[]) => void,
+  onApplied: () => void,
+) {
+  if (!isValidFilterDraft(filters)) return false;
+  onApply(filters);
+  onApplied();
+  return true;
+}
+
+export function appendAvailablePortfolioTableFilter(
+  filters: PortfolioTableFilter[],
+  columns: PortfolioTableFilterColumn[],
+) {
+  const selectedColumns = filters.map((filter) => filter.columnId);
+  const nextColumn = columns.find(
+    (column) => !selectedColumns.includes(column.id),
+  );
+  if (!nextColumn) return filters;
+  return [...filters, { columnId: nextColumn.id, value: "" }];
+}
+
 export function PortfolioTableFilterBuilder({
   columns,
   activeFilters,
@@ -58,16 +87,10 @@ export function PortfolioTableFilterBuilder({
   };
 
   const apply = () => {
-    if (!canApply) return;
-    onApply(draftFilters);
-    setOpen(false);
+    applyPortfolioTableFilterDraft(draftFilters, onApply, () => setOpen(false));
   };
 
-  const canApply =
-    draftFilters.length > 0 &&
-    draftFilters.every(
-      (filter) => filter.columnId !== "" && filter.value.trim() !== "",
-    );
+  const canApply = isValidFilterDraft(draftFilters);
   const selectedColumns = draftFilters.map((filter) => filter.columnId);
 
   const updateFilter = (
@@ -90,15 +113,9 @@ export function PortfolioTableFilterBuilder({
   };
 
   const addFilter = () => {
-    const nextColumn = columns.find(
-      (column) => !selectedColumns.includes(column.id),
+    setDraftFilters((current) =>
+      appendAvailablePortfolioTableFilter(current, columns),
     );
-    if (nextColumn) {
-      setDraftFilters((current) => [
-        ...current,
-        { columnId: nextColumn.id, value: "" },
-      ]);
-    }
   };
 
   const activeDescriptions = activeFilters.map((filter) => {
@@ -144,7 +161,7 @@ export function PortfolioTableFilterBuilder({
             const target = event.target;
             if (
               target instanceof HTMLElement &&
-              target.closest("[data-radix-select-content]")
+              target.closest("[role='listbox']")
             ) {
               event.preventDefault();
               return;
