@@ -170,7 +170,7 @@ describe("PortfolioClient", () => {
     }
   });
 
-  it("retries a monthly close request and refetches after changing months", async () => {
+  it("retries a monthly close request and refetches for the selected year", async () => {
     let monthlyReviewRequest = 0;
     const fetchMock = vi.fn((url: string) => {
       if (url.startsWith("/api/portfolio/monthly-review")) {
@@ -184,7 +184,7 @@ describe("PortfolioClient", () => {
               ok: true,
               json: async () => ({
                 ...monthlyReview,
-                availablePeriods: ["2026-08", "2026-07"],
+                availablePeriods: ["2026-08", "2025-12", "2025-07"],
                 selectedPeriod: "2026-08",
               }),
             });
@@ -204,15 +204,15 @@ describe("PortfolioClient", () => {
     renderPortfolio("overview");
     expect(await screen.findByText("Fechamentos indisponíveis.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    await screen.findByRole("combobox", { name: "Mês de referência" });
+    await screen.findByRole("combobox", { name: "Ano de referência" });
     await user.click(
-      screen.getByRole("combobox", { name: "Mês de referência" }),
+      screen.getByRole("combobox", { name: "Ano de referência" }),
     );
-    await user.click(screen.getByRole("option", { name: "julho de 2026" }));
+    await user.click(screen.getByRole("option", { name: "2025" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/portfolio/monthly-review?period=2026-07",
+        "/api/portfolio/monthly-review?period=2025-12",
       ),
     );
   });

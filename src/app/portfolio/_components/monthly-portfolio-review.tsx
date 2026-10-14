@@ -48,9 +48,8 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
   year: "numeric",
   timeZone: "UTC",
 });
-const shortMonthFormatter = new Intl.DateTimeFormat("pt-BR", {
+const axisMonthFormatter = new Intl.DateTimeFormat("pt-BR", {
   month: "short",
-  year: "2-digit",
   timeZone: "UTC",
 });
 function formatDate(value: string) {
@@ -61,8 +60,20 @@ function formatMonth(value: string) {
   return monthFormatter.format(new Date(`${value}-01T00:00:00Z`));
 }
 
-function formatShortMonth(value: string) {
-  return shortMonthFormatter.format(new Date(`${value}-01T00:00:00Z`));
+function formatAxisMonth(value: string) {
+  return axisMonthFormatter.format(new Date(`${value}-01T00:00:00Z`));
+}
+
+function availableYears(periods: string[]) {
+  return [...new Set(periods.map((period) => period.slice(0, 4)))].sort(
+    (left, right) => right.localeCompare(left),
+  );
+}
+
+function latestPeriodForYear(periods: string[], year: string) {
+  return periods
+    .filter((period) => period.startsWith(`${year}-`))
+    .sort((left, right) => right.localeCompare(left))[0];
 }
 
 function formatChange(value: string) {
@@ -97,27 +108,33 @@ export function MonthlyPortfolioReview({
     selectedHistoryPoint?.completeness === "partial";
   const showSelectedSummary =
     !loading && !error && hasHistory && Boolean(review?.current);
+  const years = review ? availableYears(review.availablePeriods) : [];
+  const selectedYear =
+    (selectedPeriod ?? review?.selectedPeriod)?.slice(0, 4) ?? years[0];
   const periodSelector =
     review && review.availablePeriods.length > 1 ? (
       <div>
         <label className="sr-only" htmlFor="monthly-review-period">
-          Mês de referência
+          Ano de referência
         </label>
         <Select
-          value={selectedPeriod ?? review.selectedPeriod ?? undefined}
-          onValueChange={onPeriodChange}
+          value={selectedYear}
+          onValueChange={(year) => {
+            const period = latestPeriodForYear(review.availablePeriods, year);
+            if (period) onPeriodChange(period);
+          }}
         >
           <SelectTrigger
             id="monthly-review-period"
             className="h-8 w-auto gap-1 border-0 bg-transparent px-1 text-xs text-muted-foreground shadow-none"
           >
             <CalendarDays aria-hidden="true" className="size-3.5" />
-            <SelectValue placeholder="Escolha um mês" />
+            <SelectValue placeholder="Escolha um ano" />
           </SelectTrigger>
           <SelectContent>
-            {review.availablePeriods.map((period) => (
-              <SelectItem key={period} value={period}>
-                {formatMonth(period)}
+            {years.map((year) => (
+              <SelectItem key={year} value={year}>
+                {year}
               </SelectItem>
             ))}
           </SelectContent>
@@ -144,7 +161,7 @@ export function MonthlyPortfolioReview({
               periodSelector
             ) : (
               <span className="text-xs text-muted-foreground">
-                {formatDate(review.current.referenceDate)}
+                {selectedYear ?? formatDate(review.current.referenceDate)}
               </span>
             )}
             <span className="text-base font-semibold tabular-nums tracking-tight">
@@ -254,6 +271,7 @@ export function MonthlyPortfolioReview({
             type={chartType}
             id={chartId}
             history={review.history}
+            year={selectedYear ?? review.selectedPeriod?.slice(0, 4)}
           />
         )}
         {!loading && !error && showPartialWarning && review && (
@@ -310,17 +328,60 @@ function centsToChartValue(cents: string) {
 
 function chartPoints(
   history: MonthlyPortfolioHistoryPoint[],
+  year: string | undefined,
 ): EvolutionPoint[] {
-  const pointsByMonth = new Map(history.map((point) => [point.period, point]));
-  const [firstYear, firstMonth] = history[0].period.split("-").map(Number);
-  const lastPoint = history[history.length - 1];
+  const sortedHistory = [...history].sort((left, right) =>
+    left.period.localeCompare(right.period),
+  );
+  const pointsByMonth = new Map(
+    sortedHistory
+      .filter((point) => !year || point.period.startsWith(`${year}-`))
+      .map((point) => [point.period, point]),
+  );
+  if (year) {
+    return Array.from({ length: 12 }, (_, index) => {
+      const period = `${year}-${String(index + 1).padStart(2, "0")}`;
+      const historyPoint = pointsByMonth.get(period);
+      if (!historyPoint) {
+        return {
+          month: period,
+          value: null,
+          cents: null,
+          referenceDate: null,
+          isPartial: false,
+          hasRecord: false,
+        };
+      }
+      const { summary } = historyPoint;
+      return {
+        month: period,
+        value:
+          summary.knownValueCents === null
+            ? null
+            : centsToChartValue(summary.knownValueCents),
+        cents: summary.knownValueCents,
+        referenceDate: summary.referenceDate,
+        isPartial: historyPoint.completeness === "partial",
+        hasRecord: true,
+      };
+    });
+  }
+
+  if (sortedHistory.length === 0) return [];
+  const [firstYear, firstMonth] = sortedHistory[0].period
+    .split("-")
+    .map(Number);
+  const lastPoint = sortedHistory[sortedHistory.length - 1];
   const [lastYear, lastMonth] = lastPoint.period.split("-").map(Number);
   const points: EvolutionPoint[] = [];
-  let year = firstYear;
+  let currentYear = firstYear;
   let month = firstMonth;
 
-  while (year < lastYear || (year === lastYear && month <= lastMonth)) {
-    const period = `${year}-${String(month).padStart(2, "0")}`;
+  while (
+    currentYear < lastYear ||
+    (currentYear === lastYear && month <= lastMonth)
+  ) {
+    const period = `${currentYear}-${String(month).padStart(2, "0")}`;
     const historyPoint = pointsByMonth.get(period);
     if (historyPoint) {
       const { summary } = historyPoint;
@@ -347,7 +408,7 @@ function chartPoints(
     }
 
     if (month === 12) {
-      year += 1;
+      currentYear += 1;
       month = 1;
     } else {
       month += 1;
@@ -361,16 +422,20 @@ function PortfolioEvolutionChart({
   type,
   id,
   history,
+  year,
 }: {
   type: "area" | "bar";
   id: string;
   history: MonthlyPortfolioHistoryPoint[];
+  year: string | undefined;
 }) {
   const reducedMotion = useReducedMotion();
-  const points = chartPoints(history);
+  const points = chartPoints(history, year);
+  const singleValue =
+    points.filter((point) => point.value !== null).length === 1;
   const animate =
     !reducedMotion && points.filter((point) => point.value !== null).length > 1;
-  const minimumChartWidth = Math.max(320, points.length * 40);
+  const minimumChartWidth = Math.max(320, points.length * 44);
   const tooltip = (
     <ChartTooltipContent
       labelFormatter={(label) =>
@@ -403,7 +468,7 @@ function PortfolioEvolutionChart({
         className="overflow-x-auto overscroll-x-contain"
         role="region"
         tabIndex={0}
-        aria-label="Deslize horizontalmente para ver todos os meses"
+        aria-label="Evolução mensal no ano selecionado"
       >
         <ChartContainer
           config={evolutionChartConfig}
@@ -416,7 +481,7 @@ function PortfolioEvolutionChart({
               accessibilityLayer
               data={points}
               margin={{
-                top: points.length === 1 ? 28 : 12,
+                top: singleValue ? 28 : 12,
                 right: 12,
                 left: 8,
                 bottom: 0,
@@ -447,14 +512,13 @@ function PortfolioEvolutionChart({
                 dataKey="month"
                 tickLine={false}
                 axisLine={false}
-                minTickGap={32}
-                interval="preserveStartEnd"
-                tickFormatter={formatShortMonth}
+                interval={0}
+                tickFormatter={formatAxisMonth}
               />
               <YAxis
                 width={72}
                 domain={[0, "auto"]}
-                hide={points.length === 1}
+                hide={singleValue}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={compactCurrency}
@@ -467,7 +531,7 @@ function PortfolioEvolutionChart({
                 strokeWidth={2}
                 fill={`url(#portfolio-area-${id})`}
                 dot={
-                  points.length === 1
+                  singleValue
                     ? {
                         r: 6,
                         fill: "var(--color-value)",
@@ -493,9 +557,8 @@ function PortfolioEvolutionChart({
                 dataKey="month"
                 tickLine={false}
                 axisLine={false}
-                minTickGap={32}
-                interval="preserveStartEnd"
-                tickFormatter={formatShortMonth}
+                interval={0}
+                tickFormatter={formatAxisMonth}
               />
               <YAxis
                 width={72}

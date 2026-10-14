@@ -331,7 +331,7 @@ describe("MonthlyPortfolioReview", () => {
     ).toBeTruthy();
     expect(screen.getAllByText(/R\$\s?1\.250,50/).length).toBeGreaterThan(0);
     expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
-      "2026-07,2026-08",
+      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
     );
     expect(
       screen
@@ -340,6 +340,7 @@ describe("MonthlyPortfolioReview", () => {
     ).toBe("true");
     expect(screen.queryByText(/posições com valor conhecido/)).toBeNull();
     expect(screen.getByTestId("x-axis-month").textContent).toMatch(/jul/i);
+    expect(screen.getByTestId("x-axis-month").textContent).not.toMatch(/26/);
     expect(screen.getByTestId("y-axis").textContent).toMatch(/R\$/);
     expect(screen.getByTestId("chart-tooltip").textContent).toMatch(
       /julho de 2026.*R\$\s1\.250,50.*parcial.*31\/07\/2026.*R\$\s1\.250,50/,
@@ -348,7 +349,9 @@ describe("MonthlyPortfolioReview", () => {
     expect(screen.queryByText(/registro em 01\/09\/2026/)).toBeNull();
     expect(screen.queryByText(/importada em 02\/09\/2026/)).toBeNull();
     expect(screen.queryByText(new RegExp(flowExplanation))).toBeNull();
-    expect(screen.getByLabelText("Mês de referência")).toBeTruthy();
+    expect(
+      screen.getByRole("combobox", { name: "Ano de referência" }),
+    ).toBeTruthy();
   });
 
   it("switches the historical comparison between area and bar charts", async () => {
@@ -405,9 +408,11 @@ describe("MonthlyPortfolioReview", () => {
 
     const chart = screen.getByTestId("area-chart");
     expect(chart.getAttribute("data-months")).toBe(
-      "2026-01,2026-02,2026-03,2026-04",
+      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
     );
-    expect(chart.getAttribute("data-values")).toBe("100,null,null,125");
+    expect(chart.getAttribute("data-values")).toBe(
+      "100,null,null,125,null,null,null,null,null,null,null,null",
+    );
     expect(
       screen.getByText(/fevereiro de 2026: sem fechamento registrado/),
     ).toBeTruthy();
@@ -449,13 +454,13 @@ describe("MonthlyPortfolioReview", () => {
     );
 
     expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
-      "100,null,123.45",
+      "100,null,123.45,null,null,null,null,null,null,null,null,null",
     );
     expect(screen.getByText(/valor parcial/)).toBeTruthy();
     expect(screen.getByText("Algumas posições estão sem valor.")).toBeTruthy();
   });
 
-  it("gives long histories a scrollable chart area sized for each month", () => {
+  it("shows only the selected year in chronological monthly order for both charts", async () => {
     const history = Array.from({ length: 24 }, (_, index) => {
       const monthIndex = index + 1;
       const year = 2024 + Math.floor(index / 12);
@@ -477,22 +482,30 @@ describe("MonthlyPortfolioReview", () => {
         selectedPeriod: selected.period,
         current: selected.summary,
         previous: history[history.length - 2].summary,
-        history,
+        history: [...history].reverse(),
       }),
     );
 
     const scrollRegion = screen.getByRole("region", {
-      name: "Deslize horizontalmente para ver todos os meses",
+      name: "Evolução mensal no ano selecionado",
     });
     expect(scrollRegion.className).toContain("overflow-x-auto");
     expect(
       document.querySelector("[data-chart]")?.getAttribute("style"),
-    ).toContain("min-width: 960px");
+    ).toContain("min-width: 528px");
     const renderedMonths = screen
       .getByTestId("area-chart")
       .getAttribute("data-months");
     expect(renderedMonths).not.toBeNull();
-    expect(renderedMonths?.split(",")).toHaveLength(24);
+    expect(renderedMonths?.split(",")).toHaveLength(12);
+    expect(renderedMonths?.split(",")[0]).toBe("2025-01");
+    expect(renderedMonths?.split(",")[11]).toBe("2025-12");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Gráfico de barras" }));
+    expect(screen.getByTestId("bar-chart").getAttribute("data-months")).toBe(
+      renderedMonths,
+    );
   });
 
   it("does not invent a difference if the service has no comparable delta", () => {
@@ -503,14 +516,23 @@ describe("MonthlyPortfolioReview", () => {
     expect(screen.queryByText(/R\$ 0,00/)).toBeNull();
   });
 
-  it("lets the user select an available month", async () => {
+  it("lets the user select a year and uses its last available month for the summary", async () => {
     const user = userEvent.setup();
-    const { onPeriodChange } = renderReview(review());
-    await user.click(
-      screen.getByRole("combobox", { name: "Mês de referência" }),
+    const { onPeriodChange } = renderReview(
+      review({
+        availablePeriods: ["2026-08", "2026-07", "2025-12", "2025-01"],
+        history: ["2025-01", "2025-12", "2026-07", "2026-08"].map((period) => ({
+          period,
+          summary: summary({ referenceDate: `${period}-28` }),
+          completeness: "complete" as const,
+        })),
+      }),
     );
-    await user.click(screen.getByRole("option", { name: "julho de 2026" }));
-    expect(onPeriodChange).toHaveBeenCalledWith("2026-07");
+    await user.click(
+      screen.getByRole("combobox", { name: "Ano de referência" }),
+    );
+    await user.click(screen.getByRole("option", { name: "2025" }));
+    expect(onPeriodChange).toHaveBeenCalledWith("2025-12");
   });
 
   it("shows a single close as an isolated point and can switch to one bar", async () => {
@@ -532,10 +554,10 @@ describe("MonthlyPortfolioReview", () => {
     expect(header?.className).toContain("flex-row");
     expect(header?.className).not.toContain("flex-col");
     expect(header?.className).not.toContain("p-6");
-    expect(screen.getByText("30/09/2026")).toBeTruthy();
+    expect(screen.getByText("2026")).toBeTruthy();
     expect(screen.getByText("R$ 1.250,50")).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
-      "2026-09",
+      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
     );
     expect(screen.getByTestId("area-series").getAttribute("data-dot")).toBe(
       "visible",
@@ -548,7 +570,7 @@ describe("MonthlyPortfolioReview", () => {
     await user.click(screen.getByRole("button", { name: "Gráfico de barras" }));
     expect(screen.queryByTestId("area-chart")).toBeNull();
     expect(screen.getByTestId("bar-chart").getAttribute("data-months")).toBe(
-      "2026-09",
+      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
     );
     expect(
       screen
@@ -748,7 +770,7 @@ describe("MonthlyPortfolioReview", () => {
     );
     expect(screen.getByText("Comparação parcial.")).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
-      "1200.5,null",
+      "null,null,null,null,null,null,1200.5,null,null,null,null,null",
     );
     expect(screen.queryByTestId("bar-chart")).toBeNull();
   });
@@ -813,9 +835,7 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(
-      screen.getByRole("combobox", { name: "Mês de referência" }).textContent,
-    ).toContain("Escolha um mês");
+    expect(screen.getByText("2026").textContent).toBe("2026");
     expect(screen.queryByText("Detalhes dos valores")).toBeNull();
     expect(
       screen.queryByText(/Valor informado: posição avaliada em/),
