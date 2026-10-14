@@ -49,11 +49,23 @@ const suggestionSchema = z.object({
 const settingsSchema = z.object({
   monthlyExpenses: z.number().finite().positive().max(1_000_000_000_000),
   targetMonths: z.number().int().min(1).max(1200),
-  selectedAssetKeys: z.array(z.string().regex(/^v1:[a-f0-9]{64}$/)).max(500),
+});
+const assetKeySchema = z
+  .string()
+  .refine(
+    (key) =>
+      /^v1:[a-f0-9]{64}$/.test(key) ||
+      /^manual:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        key,
+      ),
+    "Informe uma posição válida.",
+  );
+const positionAssignmentsSchema = z.object({
+  selectedAssetKeys: z.array(assetKeySchema).max(500),
   transfers: z
     .array(
       z.object({
-        assetKey: z.string().regex(/^v1:[a-f0-9]{64}$/),
+        assetKey: assetKeySchema,
         fromObjectiveId: z.string().uuid(),
         toObjectiveId: z.string().uuid(),
       }),
@@ -64,7 +76,7 @@ const settingsSchema = z.object({
 const previewSchema = z.object({
   monthlyExpenses: z.number().finite().positive().max(1_000_000_000_000),
   targetMonths: z.number().int().min(1).max(1200),
-  selectedAssetKeys: z.array(z.string().regex(/^v1:[a-f0-9]{64}$/)).max(500),
+  selectedAssetKeys: z.array(assetKeySchema).max(500),
 });
 
 type Position = {
@@ -417,12 +429,41 @@ export class EmergencyReserveService {
     const parsed = settingsSchema.safeParse(body);
     if (!parsed.success)
       throw new ApplicationError(
-        "Informe um custo mensal, uma meta em meses e uma seleção válida de investimentos.",
+        "Informe um custo mensal e uma meta em meses válidos.",
         400,
       );
 
-    const selectedAssetKeys = [...new Set(parsed.data.selectedAssetKeys)];
-    const transfers = parsed.data.transfers;
+    await emergencyReserveRepository.saveSettings({
+      monthlyExpenses: parsed.data.monthlyExpenses.toFixed(2),
+      targetMonths: parsed.data.targetMonths,
+    });
+    logger.info("emergency_reserve_settings_saved", { requestId });
+    return this.getEditorData(requestId);
+  }
+
+  async savePositions(body: unknown, requestId?: string) {
+    const parsed = positionAssignmentsSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApplicationError("Revise as posições selecionadas.", 400);
+    }
+    await this.savePositionAssignments(
+      parsed.data.selectedAssetKeys,
+      parsed.data.transfers,
+      requestId,
+    );
+    logger.info("emergency_reserve_positions_saved", {
+      requestId,
+      selectedGroups: parsed.data.selectedAssetKeys.length,
+    });
+    return this.getEditorData(requestId);
+  }
+
+  private async savePositionAssignments(
+    requestedAssetKeys: string[],
+    transfers: z.infer<typeof positionAssignmentsSchema>["transfers"],
+    requestId?: string,
+  ) {
+    const selectedAssetKeys = [...new Set(requestedAssetKeys)];
     const transfersByKey = new Map(
       transfers.map((transfer) => [transfer.assetKey, transfer]),
     );
@@ -500,17 +541,10 @@ export class EmergencyReserveService {
         400,
       );
     }
-    await emergencyReserveRepository.saveSettings({
-      monthlyExpenses: parsed.data.monthlyExpenses.toFixed(2),
-      targetMonths: parsed.data.targetMonths,
+    await emergencyReserveRepository.saveAssignments({
       selectedAssetKeys,
       ...(transfers.length ? { transfers } : {}),
     });
-    logger.info("emergency_reserve_settings_saved", {
-      requestId,
-      selectedGroups: selectedAssetKeys.length,
-    });
-    return this.getEditorData(requestId);
   }
 
   private addTransferDetails(

@@ -113,6 +113,8 @@ type Props = {
   };
   selectionActionLabel?: (index: number) => string;
   applyButtonLabel?: string;
+  defaultOpen?: boolean;
+  draftSaveLabel?: string;
   comparisonDetails?: string;
   requestBody?: Record<string, string | number | null>;
   targetObjectiveName?: string;
@@ -128,6 +130,8 @@ export function PositionCombinationSuggestions({
   requestFilter,
   selectionActionLabel,
   applyButtonLabel = "Usar esta combinação",
+  defaultOpen = false,
+  draftSaveLabel = "a configuração",
   comparisonDetails,
   requestBody,
   targetObjectiveName = "Reserva",
@@ -210,7 +214,7 @@ export function PositionCombinationSuggestions({
 
   return (
     <section className="rounded-xl border bg-muted/20 p-4 sm:p-5">
-      <Collapsible>
+      <Collapsible defaultOpen={defaultOpen}>
         <CollapsibleTrigger asChild>
           <Button
             type="button"
@@ -396,7 +400,7 @@ export function PositionCombinationSuggestions({
           role="status"
           className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
         >
-          Combinação selecionada como rascunho. Salve a configuração para
+          Combinação selecionada como rascunho. Salve {draftSaveLabel} para
           confirmar.
         </p>
       )}

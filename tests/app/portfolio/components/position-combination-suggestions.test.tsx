@@ -51,9 +51,12 @@ afterEach(() => {
 
 function render(ui: ReactElement) {
   const result = rtlRender(ui, { wrapper: QueryClientWrapper });
-  fireEvent.click(
-    result.getByRole("button", { name: /Buscar uma combinação pelo valor/ }),
-  );
+  const trigger = result.getByRole("button", {
+    name: /Buscar uma combinação pelo valor/,
+  });
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(trigger);
+  }
   return result;
 }
 

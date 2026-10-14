@@ -31,9 +31,26 @@ export class EmergencyReserveRepository {
     };
   }
 
-  async saveSettings(input: {
-    monthlyExpenses: string;
-    targetMonths: number;
+  async saveSettings(input: { monthlyExpenses: string; targetMonths: number }) {
+    return getDatabaseClient()
+      .insert(emergencyReserveSettings)
+      .values({
+        id: singletonId,
+        monthlyExpenses: input.monthlyExpenses,
+        targetMonths: input.targetMonths,
+      })
+      .onConflictDoUpdate({
+        target: emergencyReserveSettings.id,
+        set: {
+          monthlyExpenses: input.monthlyExpenses,
+          targetMonths: input.targetMonths,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+  }
+
+  async saveAssignments(input: {
     selectedAssetKeys: string[];
     transfers?: ObjectiveAssignmentTransfer[];
   }) {
@@ -49,23 +66,6 @@ export class EmergencyReserveRepository {
     }
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
-        const [settings] = await transaction
-          .insert(emergencyReserveSettings)
-          .values({
-            id: singletonId,
-            monthlyExpenses: input.monthlyExpenses,
-            targetMonths: input.targetMonths,
-          })
-          .onConflictDoUpdate({
-            target: emergencyReserveSettings.id,
-            set: {
-              monthlyExpenses: input.monthlyExpenses,
-              targetMonths: input.targetMonths,
-              updatedAt: new Date(),
-            },
-          })
-          .returning();
-
         const selectedKeys = input.selectedAssetKeys;
         if (selectedKeys.length) {
           await transaction
@@ -127,7 +127,7 @@ export class EmergencyReserveRepository {
             );
           }
         }
-        return { ...settings, selectedAssetKeys: input.selectedAssetKeys };
+        return { selectedAssetKeys: input.selectedAssetKeys };
       });
     } catch (error) {
       const postgresError = error as { code?: string; constraint?: string };

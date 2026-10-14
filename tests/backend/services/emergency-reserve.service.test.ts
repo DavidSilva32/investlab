@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   listCurrentEnriched: vi.fn(),
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
+  saveAssignments: vi.fn(),
   enrich: vi.fn(),
   classifyPositions: vi.fn(),
   listObjectives: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
   emergencyReserveRepository: {
     getSettings: mocks.getSettings,
     saveSettings: mocks.saveSettings,
+    saveAssignments: mocks.saveAssignments,
   },
 }));
 vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
@@ -132,6 +134,7 @@ describe("EmergencyReserveService", () => {
     );
     mocks.getSettings.mockResolvedValue(null);
     mocks.saveSettings.mockResolvedValue(undefined);
+    mocks.saveAssignments.mockResolvedValue(undefined);
     mocks.listObjectives.mockResolvedValue({ objectives: [], assignments: [] });
     mocks.replaceReserveAssignments.mockResolvedValue(undefined);
     mocks.getObjectivesOverview.mockResolvedValue({
@@ -168,11 +171,40 @@ describe("EmergencyReserveService", () => {
     });
   });
 
+  it("previews manually tracked reserve positions by their portfolio asset key", async () => {
+    const assetKey = "manual:00000000-0000-4000-8000-000000000123";
+    const service = new EmergencyReserveService();
+    vi.spyOn(service, "getEditorData").mockResolvedValue({
+      holdings: [{ assetKey, valueCents: "250000" }],
+      calculation: { referenceDate: null },
+    } as never);
+
+    await expect(
+      service.preview({
+        monthlyExpenses: 1000,
+        targetMonths: 3,
+        selectedAssetKeys: [assetKey],
+      }),
+    ).resolves.toMatchObject({ selectedValueCents: "250000" });
+  });
+
   it("rejects invalid reserve preview input", async () => {
     await expect(
       new EmergencyReserveService().preview({ monthlyExpenses: -1 }),
     ).rejects.toBeInstanceOf(ApplicationError);
   });
+
+  it.each(["manual:not-a-uuid", "v1:truncated"])(
+    "rejects malformed reserve asset key %s",
+    async (assetKey) => {
+      await expect(
+        new EmergencyReserveService().savePositions({
+          selectedAssetKeys: [assetKey],
+        }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(mocks.saveAssignments).not.toHaveBeenCalled();
+    },
+  );
 
   it("previews the effective date for the selection requested in the body", async () => {
     const saved = position({ assetCode: "SAVED", referenceDate: "2026-09-01" });
@@ -615,14 +647,12 @@ describe("EmergencyReserveService", () => {
     "rejects duplicate, unselected, or wrong-destination transfers",
     async (input) => {
       await expect(
-        new EmergencyReserveService().saveSettings({
-          monthlyExpenses: 100,
-          targetMonths: 6,
+        new EmergencyReserveService().savePositions({
           ...input,
         }),
       ).rejects.toMatchObject({ statusCode: 400 });
       expect(mocks.listLatestPositions).not.toHaveBeenCalled();
-      expect(mocks.saveSettings).not.toHaveBeenCalled();
+      expect(mocks.saveAssignments).not.toHaveBeenCalled();
     },
   );
 
@@ -1396,9 +1426,7 @@ describe("EmergencyReserveService", () => {
     );
 
     await expect(
-      new EmergencyReserveService().saveSettings({
-        monthlyExpenses: 2000,
-        targetMonths: 6,
+      new EmergencyReserveService().savePositions({
         selectedAssetKeys: [
           getEmergencyReserveAssetKey(stock),
           getEmergencyReserveAssetKey(fii),
@@ -1409,7 +1437,7 @@ describe("EmergencyReserveService", () => {
         "A reserva só pode incluir posições classificadas como renda fixa. Revise a seleção antes de salvar.",
       statusCode: 400,
     });
-    expect(mocks.saveSettings).not.toHaveBeenCalled();
+    expect(mocks.saveAssignments).not.toHaveBeenCalled();
   });
 
   it("rejects positions already assigned to another objective", async () => {
@@ -1425,9 +1453,7 @@ describe("EmergencyReserveService", () => {
       ],
     });
 
-    const save = new EmergencyReserveService().saveSettings({
-      monthlyExpenses: 2000,
-      targetMonths: 6,
+    const save = new EmergencyReserveService().savePositions({
       selectedAssetKeys: [assetKey],
     });
     await expect(save).rejects.toMatchObject({
@@ -1437,7 +1463,7 @@ describe("EmergencyReserveService", () => {
       message:
         "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
     });
-    expect(mocks.saveSettings).not.toHaveBeenCalled();
+    expect(mocks.saveAssignments).not.toHaveBeenCalled();
   });
 
   it("accepts an explicitly requested transfer to the reserve", async () => {
@@ -1453,9 +1479,7 @@ describe("EmergencyReserveService", () => {
       ],
     });
 
-    await new EmergencyReserveService().saveSettings({
-      monthlyExpenses: 2000,
-      targetMonths: 6,
+    await new EmergencyReserveService().savePositions({
       selectedAssetKeys: [assetKey],
       transfers: [
         {
@@ -1466,9 +1490,7 @@ describe("EmergencyReserveService", () => {
       ],
     });
 
-    expect(mocks.saveSettings).toHaveBeenCalledWith({
-      monthlyExpenses: "2000.00",
-      targetMonths: 6,
+    expect(mocks.saveAssignments).toHaveBeenCalledWith({
       selectedAssetKeys: [assetKey],
       transfers: [
         {
@@ -1486,9 +1508,7 @@ describe("EmergencyReserveService", () => {
     mocks.listLatestPositions.mockResolvedValue([cdb]);
 
     await expect(
-      new EmergencyReserveService().saveSettings({
-        monthlyExpenses: 2000,
-        targetMonths: 6,
+      new EmergencyReserveService().savePositions({
         selectedAssetKeys: [assetKey],
         transfers: [
           {
@@ -1499,7 +1519,7 @@ describe("EmergencyReserveService", () => {
         ],
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.saveSettings).not.toHaveBeenCalled();
+    expect(mocks.saveAssignments).not.toHaveBeenCalled();
   });
 
   it("uses a safe fallback name for an orphaned objective assignment", async () => {
@@ -1512,9 +1532,7 @@ describe("EmergencyReserveService", () => {
     });
 
     await expect(
-      new EmergencyReserveService().saveSettings({
-        monthlyExpenses: 2000,
-        targetMonths: 6,
+      new EmergencyReserveService().savePositions({
         selectedAssetKeys: [assetKey],
       }),
     ).rejects.toThrow("objetivo informado");
@@ -1540,28 +1558,41 @@ describe("EmergencyReserveService", () => {
     });
 
     await expect(
-      new EmergencyReserveService().saveSettings({
-        monthlyExpenses: 2000,
-        targetMonths: 6,
+      new EmergencyReserveService().savePositions({
         selectedAssetKeys: [assetKey],
       }),
     ).resolves.toBeDefined();
 
-    expect(mocks.saveSettings).toHaveBeenCalledWith({
-      monthlyExpenses: "2000.00",
-      targetMonths: 6,
+    expect(mocks.saveAssignments).toHaveBeenCalledWith({
       selectedAssetKeys: [assetKey],
     });
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("saves a manual reserve position without requiring reserve settings", async () => {
+    const assetKey = "manual:00000000-0000-4000-8000-000000000123";
+    mocks.listLatestPositions.mockResolvedValue([
+      position({ assetKey, source: "MANUAL", assetCode: null }),
+    ]);
+
+    await expect(
+      new EmergencyReserveService().savePositions({
+        selectedAssetKeys: [assetKey],
+      }),
+    ).resolves.toBeDefined();
+
+    expect(mocks.saveAssignments).toHaveBeenCalledWith({
+      selectedAssetKeys: [assetKey],
+    });
+    expect(mocks.saveSettings).not.toHaveBeenCalled();
   });
 
   it("deduplicates selected asset keys when saving and returns refreshed data", async () => {
     const cdb = position();
     mocks.listLatestPositions.mockResolvedValue([cdb]);
     const service = new EmergencyReserveService();
-    await service.saveSettings(
+    await service.savePositions(
       {
-        monthlyExpenses: 2000,
-        targetMonths: 6,
         selectedAssetKeys: [
           getEmergencyReserveAssetKey(cdb),
           getEmergencyReserveAssetKey(cdb),
@@ -1570,9 +1601,7 @@ describe("EmergencyReserveService", () => {
       "request-3",
     );
 
-    expect(mocks.saveSettings).toHaveBeenCalledWith({
-      monthlyExpenses: "2000.00",
-      targetMonths: 6,
+    expect(mocks.saveAssignments).toHaveBeenCalledWith({
       selectedAssetKeys: [getEmergencyReserveAssetKey(cdb)],
     });
     expect(mocks.listLatestPositions).toHaveBeenCalledWith("request-3");

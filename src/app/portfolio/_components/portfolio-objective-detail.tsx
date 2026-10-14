@@ -76,14 +76,24 @@ export function PortfolioObjectiveDetail({
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end">
               {isReserve ? (
-                <Button
-                  className="w-full sm:w-auto"
-                  type="button"
-                  onClick={onConfigureReserve}
-                >
-                  Gerenciar posições
-                  <ArrowRight aria-hidden="true" className="ml-2 size-4" />
-                </Button>
+                <>
+                  <Button
+                    className="w-full sm:w-auto"
+                    type="button"
+                    variant="outline"
+                    onClick={onManagePositions}
+                  >
+                    Gerenciar posições
+                  </Button>
+                  <Button
+                    className="w-full sm:w-auto"
+                    type="button"
+                    onClick={onConfigureReserve}
+                  >
+                    Editar reserva
+                    <ArrowRight aria-hidden="true" className="ml-2 size-4" />
+                  </Button>
+                </>
               ) : (
                 <>
                   <Button

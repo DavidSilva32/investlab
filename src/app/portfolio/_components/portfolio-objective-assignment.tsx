@@ -315,7 +315,7 @@ export function PortfolioObjectiveAssignment({
               {selectedAssetKeys.size} posições
             </p>
           </div>
-          <Collapsible>
+          <Collapsible defaultOpen>
             <CollapsibleTrigger asChild>
               <Button
                 type="button"
@@ -431,7 +431,7 @@ export function PortfolioObjectiveAssignment({
                                 )}
                                 {assignedElsewhere && (
                                   <span className="mt-1 inline-flex rounded-md border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-xs text-status-warning">
-                                    Já vinculada a{" "}
+                                    Vinculada a{" "}
                                     {position.objectiveName ?? "outro objetivo"}
                                   </span>
                                 )}

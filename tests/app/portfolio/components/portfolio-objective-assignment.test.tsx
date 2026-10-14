@@ -146,11 +146,15 @@ function render(ui: ReactElement) {
   const finder = result.queryByRole("button", {
     name: /Buscar uma combinação pelo valor/,
   });
-  if (finder) fireEvent.click(finder);
+  if (finder?.getAttribute("aria-expanded") !== "true") {
+    if (finder) fireEvent.click(finder);
+  }
   const positionList = result.queryByRole("button", {
     name: /Ver \d+ posições/,
   });
-  if (positionList) fireEvent.click(positionList);
+  if (positionList?.getAttribute("aria-expanded") !== "true") {
+    if (positionList) fireEvent.click(positionList);
+  }
   return result;
 }
 
@@ -197,6 +201,11 @@ describe("PortfolioObjectiveAssignment", () => {
     expect(screen.getByText("Posições livres para associar")).toBeTruthy();
     expect(screen.getByText("Vinculadas a outro objetivo")).toBeTruthy();
     expect(
+      screen
+        .getByRole("button", { name: /Ver \d+ posições/ })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(
       screen.getByText("Ainda não há taxa CDI oficial para os dias seguintes."),
     ).toBeTruthy();
     expect(screen.getByText("Origem: UNRECOGNIZED_PROVIDER")).toBeTruthy();
@@ -231,7 +240,12 @@ describe("PortfolioObjectiveAssignment", () => {
       objectiveId: "trip",
       valuationDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     });
-    await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
+    const positionDisclosure = screen.getByRole("button", {
+      name: "Ver 1 posições",
+    });
+    if (positionDisclosure.getAttribute("aria-expanded") !== "true") {
+      await user.click(positionDisclosure);
+    }
     await user.click(screen.getByRole("button", { name: "Pré-selecionar 1" }));
     expect(onSave).not.toHaveBeenCalled();
     expect(
@@ -372,7 +386,12 @@ describe("PortfolioObjectiveAssignment", () => {
       screen.getByRole("button", { name: "Buscar combinações" }),
     );
     await screen.findByText(/Data informada: 30\/09\/2026/);
-    await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
+    const assignmentList = screen.getByRole("button", {
+      name: "Ver 1 posições",
+    });
+    if (assignmentList.getAttribute("aria-expanded") !== "true") {
+      await user.click(assignmentList);
+    }
     await user.click(screen.getByRole("button", { name: "Usar e transferir" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(screen.getByText(/De Casa para Viagem/)).toBeTruthy();
@@ -471,7 +490,12 @@ describe("PortfolioObjectiveAssignment", () => {
       screen.getByRole("button", { name: "Buscar combinações" }),
     );
     await screen.findByText(/Data informada: 30\/09\/2026/);
-    await user.click(screen.getByRole("button", { name: "Ver 1 posições" }));
+    const assignmentList = screen.getByRole("button", {
+      name: "Ver 1 posições",
+    });
+    if (assignmentList.getAttribute("aria-expanded") !== "true") {
+      await user.click(assignmentList);
+    }
     await user.click(screen.getByRole("button", { name: "Usar e transferir" }));
 
     const dialog = await screen.findByRole("alertdialog");
@@ -583,7 +607,12 @@ describe("PortfolioObjectiveAssignment", () => {
       screen.getByRole("combobox", { name: /Objetivo para associar/ }),
     );
     await user.click(await screen.findByRole("option", { name: "Viagem" }));
-    await user.click(screen.getByRole("button", { name: "Ver 6 posições" }));
+    const assignmentList = screen.getByRole("button", {
+      name: "Ver 6 posições",
+    });
+    if (assignmentList.getAttribute("aria-expanded") !== "true") {
+      await user.click(assignmentList);
+    }
     expect(
       screen
         .getByRole("checkbox", { name: /CDB j.*vinculado.*Viagem/ })
@@ -744,6 +773,6 @@ describe("PortfolioObjectiveAssignment", () => {
       />,
     );
 
-    expect(screen.getByText(/Já vinculada a outro objetivo/)).toBeTruthy();
+    expect(screen.getByText("Vinculada a outro objetivo")).toBeTruthy();
   });
 });

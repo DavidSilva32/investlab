@@ -37,11 +37,23 @@ export class EmergencyReserveController {
     const data = await emergencyReserveService.saveSettings(body, requestId);
     logger.info("emergency_reserve_update_responded", {
       requestId,
-      selectedGroups: data.calculation.selectedGroups,
     });
     return Response.json({
       ...data,
       message: "Reserva atualizada com sucesso.",
+    });
+  }
+
+  async updatePositions(body: unknown, requestId: string) {
+    logger.info("emergency_reserve_positions_update_requested", { requestId });
+    const data = await emergencyReserveService.savePositions(body, requestId);
+    logger.info("emergency_reserve_positions_update_responded", {
+      requestId,
+      selectedGroups: data.calculation.selectedGroups,
+    });
+    return Response.json({
+      ...data,
+      message: "Posições da Reserva atualizadas com sucesso.",
     });
   }
 }

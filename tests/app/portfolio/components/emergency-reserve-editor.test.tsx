@@ -22,10 +22,21 @@ const render = (ui: Parameters<typeof rtlRender>[0]) =>
 
 async function openReservePositions(user = userEvent.setup()) {
   const triggers = await screen.findAllByRole("button", {
-    name: /Ver \d+ posições/,
+    name: /Ver \d+ posi/,
   });
   const trigger = triggers[triggers.length - 1];
-  await user.click(trigger);
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    await user.click(trigger);
+  }
+}
+
+async function openReserveSuggestions(user = userEvent.setup()) {
+  const trigger = await screen.findByRole("button", {
+    name: /Encontrar grupos pelo valor/,
+  });
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    await user.click(trigger);
+  }
 }
 
 const keyA = `v1:${"a".repeat(64)}`;
@@ -156,23 +167,20 @@ describe("EmergencyReserveEditor", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the complete reserve configuration in a responsive, expanded layout", async () => {
+  it("shows position management in a responsive, expanded layout", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, json: async () => editorData }),
     );
     render(<EmergencyReserveEditor />);
-    expect(await screen.findByText(/Meta pessoal de 6 meses/)).toBeTruthy();
-    expect(await screen.findByLabelText("Custo mensal")).toBeTruthy();
     expect(
-      screen
-        .getByRole("button", { name: "6 meses" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(await screen.findByText("R$ 12.000,00")).toBeTruthy();
+      await screen.findByRole("group", {
+        name: "Posições consideradas na reserva",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Custo mensal")).toBeNull();
     const layout = screen.getByTestId("reserve-editor-layout");
     expect(layout.className).toContain("space-y-5");
-    expect(layout.className).not.toContain("grid-cols");
     expect(screen.getByText(/1 grupo selecionado/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Encontrar grupos pelo valor/ }),
@@ -193,14 +201,12 @@ describe("EmergencyReserveEditor", () => {
     ).toBeTruthy();
     expect(screen.getByLabelText(/Tesouro Selic/)).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Salvar configuração" }),
+      screen.getByRole("button", { name: "Salvar posições" }),
     ).toBeTruthy();
     expect(
       screen.getByRole("group", { name: "Posições consideradas na reserva" }),
     ).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /Buscar grupos pelo valor/ }),
-    ).toBeNull();
+    expect(screen.queryByText(/Meta pessoal/)).toBeNull();
   });
 
   it("shows cached preview data while a background preview refresh is in flight", async () => {
@@ -222,7 +228,7 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(
       <>
-        <EmergencyReserveEditor />
+        <EmergencyReserveEditor mode="settings" />
         <RefreshReservePreview />
       </>,
     );
@@ -234,7 +240,7 @@ describe("EmergencyReserveEditor", () => {
     expect(await screen.findByText("R$ 18.000,00")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Atualizar prévia" }));
-    expect(await screen.findAllByText("Calculando...")).toHaveLength(2);
+    expect(await screen.findAllByText("Calculando...")).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -251,8 +257,14 @@ describe("EmergencyReserveEditor", () => {
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, json: async () => data }),
     );
-    render(<EmergencyReserveEditor />);
-    await screen.findByText(/Meta pessoal de 6 meses/);
+    render(<EmergencyReserveEditor mode="positions" />);
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
+    const positionsTrigger = screen.getByRole("button", {
+      name: /Ver \d+ posições/,
+    });
+    expect(positionsTrigger.getAttribute("aria-expanded")).toBe("true");
     await openReservePositions();
 
     expect(screen.getByText("Estimativa até 19/09/2026")).toBeTruthy();
@@ -273,12 +285,16 @@ describe("EmergencyReserveEditor", () => {
     );
     render(<EmergencyReserveEditor />);
 
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
     await openReservePositions();
     expect(await screen.findByLabelText(/Tesouro Selic/)).toHaveProperty(
       "disabled",
       true,
     );
-    expect(screen.getByText(/Vinculada a Viagem/)).toBeTruthy();
+    expect(screen.getByText("Vinculada a Viagem")).toBeTruthy();
+    expect(screen.queryByText(/remova de lá para incluir/)).toBeNull();
   });
 
   it("uses a responsive loading scaffold before the reserve data arrives", () => {
@@ -308,7 +324,7 @@ describe("EmergencyReserveEditor", () => {
         }),
       }),
     );
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="settings" />);
 
     expect(
       await screen.findByText(/Configuração pessoal ainda não definida/),
@@ -324,14 +340,16 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
-    await screen.findByLabelText("Custo mensal");
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
     window.dispatchEvent(new Event("portfolio:updated"));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock).toHaveBeenLastCalledWith("/api/emergency-reserve");
   });
 
-  it("loads groups and saves the user's selection and personal target", async () => {
+  it("saves the reserve position selection without configuration fields", async () => {
     const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
       ok: true,
       json: async () =>
@@ -348,30 +366,86 @@ describe("EmergencyReserveEditor", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="positions" />);
 
-    await screen.findByLabelText("Custo mensal");
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
     await openReservePositions(user);
     const first = await screen.findByLabelText(/CDB liquidez/);
     await user.click(first);
     await user.click(first);
     const second = await screen.findByLabelText(/Tesouro Selic/);
     await user.click(second);
-    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+    await user.click(screen.getByRole("button", { name: "Salvar posições" }));
 
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(toast.success).toHaveBeenCalledWith("Reserva salva pela API.");
     const saveCall = fetchMock.mock.calls.find(
       ([, options]) => options?.method === "PUT",
     );
+    expect(saveCall?.[0]).toBe("/api/emergency-reserve/positions");
     expect(JSON.parse(saveCall?.[1]?.body as string)).toEqual({
-      monthlyExpenses: 2000,
-      targetMonths: 6,
-      selectedAssetKeys: [keyA, keyB],
+      selectedAssetKeys: [keyB],
     });
+    expect(screen.queryByLabelText("Custo mensal")).toBeNull();
+  });
+
+  it("saves manual positions without requesting the configuration preview", async () => {
+    const manualAssetKey = "manual:00000000-0000-4000-8000-000000000123";
+    const manualData = {
+      ...editorData,
+      holdings: [
+        ...editorData.holdings,
+        {
+          ...editorData.holdings[2],
+          assetKey: manualAssetKey,
+          product: "CDB manual",
+          selected: false,
+        },
+      ],
+    };
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () =>
+        options?.method === "PATCH"
+          ? editorData.calculation
+          : options?.method === "PUT"
+            ? { ...manualData, selectedAssetKeys: [keyA, manualAssetKey] }
+            : manualData,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="positions" />);
+
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
+    await openReservePositions(user);
+    await user.click(screen.getByRole("checkbox", { name: /CDB manual/ }));
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
     expect(
-      screen.getByText(/Somente grupos classificados como renda fixa/),
-    ).toBeTruthy();
+      fetchMock.mock.calls.some(([, options]) => options?.method === "PATCH"),
+    ).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Salvar posições" }));
+    await vi.waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, options]) =>
+            url === "/api/emergency-reserve/positions" &&
+            options?.method === "PUT",
+        ),
+      ).toBe(true);
+    });
+    const save = fetchMock.mock.calls.find(
+      ([url, options]) =>
+        url === "/api/emergency-reserve/positions" && options?.method === "PUT",
+    );
+    expect(JSON.parse(save?.[1]?.body as string).selectedAssetKeys).toContain(
+      manualAssetKey,
+    );
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("shows a validation message when the cost is invalid", async () => {
@@ -385,7 +459,7 @@ describe("EmergencyReserveEditor", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="settings" />);
 
     await screen.findByLabelText("Custo mensal");
     fireEvent.change(screen.getByLabelText("Custo mensal"), {
@@ -409,7 +483,7 @@ describe("EmergencyReserveEditor", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="settings" />);
 
     await screen.findByLabelText("Custo mensal");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), {
@@ -470,7 +544,7 @@ describe("EmergencyReserveEditor", () => {
         }),
       }),
     );
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="settings" />);
 
     await screen.findByText("R$ 18.000,00");
     await user.click(screen.getByRole("button", { name: "12 meses" }));
@@ -501,7 +575,9 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
-    await screen.findByLabelText("Custo mensal");
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
     await openReservePositions(user);
     await screen.findByRole("button", {
       name: "Remover grupos sem correspondência",
@@ -511,7 +587,7 @@ describe("EmergencyReserveEditor", () => {
         name: "Remover grupos sem correspondência",
       }),
     );
-    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+    await user.click(screen.getByRole("button", { name: "Salvar posições" }));
 
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
     const saveCall = fetchMock.mock.calls.find(
@@ -547,12 +623,14 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
-    await screen.findByLabelText("Custo mensal");
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
     await openReservePositions(user);
     expect(
       await screen.findByText(/Importe uma posição da carteira/),
     ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+    await user.click(screen.getByRole("button", { name: "Salvar posições" }));
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
         "Esta posição já está vinculada ao objetivo Viagem. Remova-a desse objetivo antes de incluí-la na reserva.",
@@ -582,7 +660,7 @@ describe("EmergencyReserveEditor", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="settings" />);
 
     await screen.findByLabelText("Custo mensal");
     await vi.waitFor(
@@ -596,7 +674,7 @@ describe("EmergencyReserveEditor", () => {
     await vi.waitFor(() => expect(toast.error).not.toHaveBeenCalled(), {
       timeout: 1000,
     });
-    expect(screen.getByText(/Valor conhecido selecionado/)).toBeTruthy();
+    expect(screen.getByText("Valor da meta calculado")).toBeTruthy();
   });
 
   it("shows unavailable values for an edited draft after its preview fails", async () => {
@@ -611,7 +689,7 @@ describe("EmergencyReserveEditor", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="settings" />);
 
     const expenses = await screen.findByLabelText("Custo mensal");
     fireEvent.change(expenses, { target: { value: "3000" } });
@@ -623,7 +701,7 @@ describe("EmergencyReserveEditor", () => {
         ),
       { timeout: 1000 },
     );
-    expect(await screen.findAllByText("—")).toHaveLength(2);
+    expect(await screen.findAllByText("—")).toHaveLength(1);
   });
 
   it("accepts a successful preview with a null body without showing an error", async () => {
@@ -636,7 +714,7 @@ describe("EmergencyReserveEditor", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<EmergencyReserveEditor />);
+    render(<EmergencyReserveEditor mode="settings" />);
 
     fireEvent.change(await screen.findByLabelText("Custo mensal"), {
       target: { value: "3000" },
@@ -670,7 +748,7 @@ describe("EmergencyReserveEditor", () => {
           }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const { unmount } = render(<EmergencyReserveEditor />);
+    const { unmount } = render(<EmergencyReserveEditor mode="settings" />);
 
     await screen.findByLabelText("Custo mensal");
     await vi.waitFor(
@@ -699,19 +777,18 @@ describe("EmergencyReserveEditor", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
-    await screen.findByLabelText("Custo mensal");
-    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
+    await user.click(screen.getByRole("button", { name: "Salvar posições" }));
 
     expect(toast.error).toHaveBeenCalledWith(
-      "Não foi possível salvar a configuração. Tente novamente.",
+      "Não foi possível salvar as posições da Reserva. Tente novamente.",
     );
     expect(screen.queryByRole("alert")).toBeNull();
-    await vi.waitFor(
-      () => {
-        expect(fetchMock).toHaveBeenCalledTimes(3);
-        expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("PATCH");
-      },
-      { timeout: 1000 },
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/emergency-reserve/positions",
+      expect.objectContaining({ method: "PUT" }),
     );
   });
 
@@ -757,7 +834,9 @@ describe("EmergencyReserveEditor", () => {
     expect(toast.error).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    await screen.findByLabelText("Custo mensal");
+    await screen.findByRole("group", {
+      name: "Posições consideradas na reserva",
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -802,11 +881,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
-    await user.click(
-      await screen.findByRole("button", {
-        name: /Encontrar grupos pelo valor/,
-      }),
-    );
+    await openReserveSuggestions(user);
     await user.click(
       await screen.findByRole("button", { name: /^Buscar combina/ }),
     );
@@ -823,7 +898,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     );
     expect(
       screen.getByText(/Combinação selecionada como rascunho/).textContent,
-    ).toContain("Salve a configuração");
+    ).toContain("Salve as posições");
     expect(
       screen
         .getByRole("checkbox", { name: /Tesouro Selic/ })
@@ -838,7 +913,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
       fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
     ).toBe(false);
 
-    await user.click(screen.getByRole("button", { name: /^Salvar configura/ }));
+    await user.click(screen.getByRole("button", { name: "Salvar posições" }));
     await vi.waitFor(() =>
       expect(
         fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
@@ -925,11 +1000,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: /Encontrar grupos pelo valor/,
-      }),
-    );
+    await openReserveSuggestions(user);
     await user.type(
       screen.getByLabelText("Saldo atual da Reserva no banco"),
       "100000",
@@ -946,7 +1017,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
       name: "Ver 2 posições",
     });
     await user.click(positionToggles[positionToggles.length - 1]);
-    expect(screen.getAllByText("Tesouro Selic")).toHaveLength(1);
+    expect(screen.getAllByText("Tesouro Selic")).toHaveLength(2);
     await user.click(
       await screen.findByRole("button", { name: "Usar e transferir" }),
     );
@@ -1028,11 +1099,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: /Encontrar grupos pelo valor/,
-      }),
-    );
+    await openReserveSuggestions(user);
     await user.type(
       screen.getByLabelText("Saldo atual da Reserva no banco"),
       "100000",
@@ -1113,11 +1180,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     const user = userEvent.setup();
     render(<EmergencyReserveEditor />);
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: /Encontrar grupos pelo valor/,
-      }),
-    );
+    await openReserveSuggestions(user);
     await user.type(
       screen.getByLabelText("Saldo atual da Reserva no banco"),
       "100000",

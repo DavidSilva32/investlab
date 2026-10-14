@@ -55,6 +55,7 @@ type View =
   | { kind: "edit"; objectiveId: string; returnTo: "overview" | "detail" }
   | { kind: "assign"; objectiveId: string }
   | { kind: "organize" }
+  | { kind: "reserve-positions" }
   | { kind: "reserve-settings" };
 
 const loadErrorMessage = "Não foi possível carregar seus objetivos e posições.";
@@ -119,7 +120,7 @@ export function PortfolioObjectives({
   const activeObjectiveId =
     view.kind === "detail" || view.kind === "edit" || view.kind === "assign"
       ? view.objectiveId
-      : view.kind === "reserve-settings"
+      : view.kind === "reserve-settings" || view.kind === "reserve-positions"
         ? reserveObjectiveId
         : null;
   const activeObjective =
@@ -281,7 +282,10 @@ export function PortfolioObjectives({
     } else if (view.kind === "assign") {
       setView({ kind: "detail", objectiveId: view.objectiveId });
       navigateToObjective(view.objectiveId);
-    } else if (view.kind === "reserve-settings") {
+    } else if (
+      view.kind === "reserve-settings" ||
+      view.kind === "reserve-positions"
+    ) {
       setView({ kind: "detail", objectiveId: reserveObjectiveId });
       navigateToObjective(reserveObjectiveId);
     } else {
@@ -299,8 +303,10 @@ export function PortfolioObjectives({
           : view.kind === "organize"
             ? "Organizar objetivos"
             : view.kind === "reserve-settings"
-              ? "Gerenciar posições"
-              : (activeObjective?.name ?? "Objetivo");
+              ? "Editar reserva"
+              : view.kind === "reserve-positions"
+                ? "Gerenciar posições"
+                : (activeObjective?.name ?? "Objetivo");
 
   return (
     <div className="space-y-5" data-testid="portfolio-objectives">
@@ -376,7 +382,7 @@ export function PortfolioObjectives({
           aria-labelledby="objective-subview-title"
           className="space-y-4"
         >
-          <div className="flex items-start gap-3 border-b pb-3">
+          <div className="sticky top-0 z-20 flex items-start gap-3 border-b bg-background pb-3 pt-2 shadow-sm">
             <Button
               type="button"
               variant="ghost"
@@ -408,8 +414,13 @@ export function PortfolioObjectives({
               )}
               {view.kind === "reserve-settings" && (
                 <p className="text-sm text-muted-foreground">
-                  Revise as posições da Reserva e sua meta pessoal antes de
-                  salvar.
+                  Atualize o custo mensal e a meta em meses da Reserva.
+                </p>
+              )}
+              {view.kind === "reserve-positions" && (
+                <p className="text-sm text-muted-foreground">
+                  Selecione as posições da Reserva e salve os vínculos sem
+                  alterar sua meta pessoal.
                 </p>
               )}
             </div>
@@ -424,9 +435,14 @@ export function PortfolioObjectives({
                   returnTo: "detail",
                 })
               }
-              onManagePositions={() =>
-                setView({ kind: "assign", objectiveId: activeObjective.id })
-              }
+              onManagePositions={() => {
+                if (activeObjective.id === reserveObjectiveId) {
+                  setView({ kind: "reserve-positions" });
+                  navigateToObjective(reserveObjectiveId, "reserve-positions");
+                  return;
+                }
+                setView({ kind: "assign", objectiveId: activeObjective.id });
+              }}
               onConfigureReserve={() => {
                 setView({ kind: "reserve-settings" });
                 navigateToObjective(reserveObjectiveId, "reserve-settings");
@@ -479,7 +495,12 @@ export function PortfolioObjectives({
               }}
             />
           )}
-          {view.kind === "reserve-settings" && <EmergencyReserveEditor />}
+          {view.kind === "reserve-positions" && (
+            <EmergencyReserveEditor mode="positions" />
+          )}
+          {view.kind === "reserve-settings" && (
+            <EmergencyReserveEditor mode="settings" />
+          )}
         </section>
       )}
     </div>
@@ -494,6 +515,9 @@ function getViewFromNavigation(navigation: {
   if (!navigation.open) return { kind: "overview" };
   if (navigation.screen === "reserve-settings") {
     return { kind: "reserve-settings" };
+  }
+  if (navigation.screen === "reserve-positions") {
+    return { kind: "reserve-positions" };
   }
   if (navigation.objectiveId) {
     return {

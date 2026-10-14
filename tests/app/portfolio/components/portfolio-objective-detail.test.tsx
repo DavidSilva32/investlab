@@ -76,8 +76,9 @@ describe("PortfolioObjectiveDetail", () => {
     expect(onEdit).toHaveBeenCalledOnce();
   });
 
-  it("routes Reserve to its existing configuration flow", async () => {
+  it("exposes separate position and reserve settings actions", async () => {
     const user = userEvent.setup();
+    const onManagePositions = vi.fn();
     const onConfigureReserve = vi.fn();
     render(
       <PortfolioObjectiveDetail
@@ -91,7 +92,7 @@ describe("PortfolioObjectiveDetail", () => {
           progressPercent: null,
         }}
         onEdit={vi.fn()}
-        onManagePositions={vi.fn()}
+        onManagePositions={onManagePositions}
         onConfigureReserve={onConfigureReserve}
       />,
     );
@@ -99,13 +100,12 @@ describe("PortfolioObjectiveDetail", () => {
     await user.click(
       screen.getByRole("button", { name: /Gerenciar posições/ }),
     );
+    expect(onManagePositions).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Editar reserva" }));
     expect(onConfigureReserve).toHaveBeenCalledOnce();
     expect(screen.getByText("Não configurada")).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "Editar objetivo" }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Gerenciar posições" }),
     ).toBeNull();
   });
 

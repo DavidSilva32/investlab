@@ -21,9 +21,9 @@ const render = (ui: Parameters<typeof rtlRender>[0]) =>
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("@/app/portfolio/_components/emergency-reserve-editor", () => ({
-  EmergencyReserveEditor: () => (
+  EmergencyReserveEditor: ({ mode }: { mode: string }) => (
     <div>
-      <div>Editor da reserva existente</div>
+      <div>Editor da reserva: {mode}</div>
       <button
         type="button"
         onClick={() => window.dispatchEvent(new Event("portfolio:updated"))}
@@ -348,7 +348,7 @@ describe("PortfolioObjectives", () => {
       />,
     );
 
-    expect(await screen.findByText("Editor da reserva existente")).toBeTruthy();
+    expect(await screen.findByText("Editor da reserva: settings")).toBeTruthy();
   });
 
   it("returns to the objectives overview when the panel route closes", async () => {
@@ -590,11 +590,16 @@ describe("PortfolioObjectives", () => {
     await user.click(
       screen.getByRole("button", { name: /Gerenciar posições/ }),
     );
+    expect(
+      screen
+        .getByRole("heading", { name: "Gerenciar posições" })
+        .closest("div.sticky")?.className,
+    ).toContain("sticky top-0");
     await user.click(screen.getByRole("button", { name: "Voltar" }));
     expect(screen.getByRole("heading", { name: "Viagem" })).toBeTruthy();
   });
 
-  it("routes the Reserve detail to the existing reserve editor", async () => {
+  it("routes Reserve position management and settings to separate editors", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Patrimônio por destino");
@@ -604,7 +609,7 @@ describe("PortfolioObjectives", () => {
     await user.click(
       screen.getByRole("button", { name: "Gerenciar posições" }),
     );
-    expect(screen.getByText("Editor da reserva existente")).toBeTruthy();
+    expect(screen.getByText("Editor da reserva: positions")).toBeTruthy();
     expect(
       screen.getByRole("heading", { name: "Gerenciar posições" }),
     ).toBeTruthy();
@@ -617,6 +622,13 @@ describe("PortfolioObjectives", () => {
     await user.click(
       screen.getByRole("button", { name: "Salvar reserva (mock)" }),
     );
+    await user.click(screen.getByRole("button", { name: "Voltar" }));
+    expect(screen.getByRole("heading", { name: "Reserva" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Editar reserva" }));
+    expect(screen.getByText("Editor da reserva: settings")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Editar reserva" }),
+    ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Voltar" }));
     expect(screen.getByRole("heading", { name: "Reserva" })).toBeTruthy();
     expect(await screen.findByText("R$ 2.000,00")).toBeTruthy();
@@ -789,9 +801,12 @@ describe("PortfolioObjectives", () => {
         screen.getByRole("button", { name: "Buscar combinações" }),
       );
       await screen.findByText(/Data informada: 30\/09\/2026/);
-      await user.click(
-        screen.getByRole("button", { name: `Ver ${count} posições` }),
-      );
+      const assignmentList = screen.getByRole("button", {
+        name: `Ver ${count} posições`,
+      });
+      if (assignmentList.getAttribute("aria-expanded") !== "true") {
+        await user.click(assignmentList);
+      }
       await user.click(
         screen.getByRole("button", { name: "Usar e transferir" }),
       );

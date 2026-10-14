@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const client = vi.hoisted(() => ({ select: vi.fn(), transaction: vi.fn() }));
+const client = vi.hoisted(() => ({
+  select: vi.fn(),
+  transaction: vi.fn(),
+  insert: vi.fn(),
+}));
 const objectiveAssignments = vi.hoisted(() => ({
   listReserveAssignments: vi.fn(),
   transferAssignments: vi.fn(),
@@ -59,31 +63,14 @@ describe("EmergencyReserveRepository", () => {
     const returning = vi.fn().mockResolvedValue([saved]);
     const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
     const settingsValues = vi.fn().mockReturnValue({ onConflictDoUpdate });
-    const assignmentValues = vi.fn().mockResolvedValue(undefined);
-    const deleteWhere = vi.fn().mockResolvedValue(undefined);
-    const transaction = {
-      insert: vi
-        .fn()
-        .mockReturnValueOnce({ values: settingsValues })
-        .mockReturnValueOnce({ values: assignmentValues }),
-      delete: vi.fn().mockReturnValue({ where: deleteWhere }),
-      select: vi.fn(() => ({
-        from: () => ({
-          where: () => ({ for: vi.fn().mockResolvedValue([]) }),
-        }),
-      })),
-    };
-    client.transaction.mockImplementation(async (callback) =>
-      callback(transaction),
-    );
+    client.insert.mockReturnValue({ values: settingsValues });
 
     await expect(
       new EmergencyReserveRepository().saveSettings({
         monthlyExpenses: "1200.00",
         targetMonths: 6,
-        selectedAssetKeys: ["v1:key"],
       }),
-    ).resolves.toEqual({ ...saved, selectedAssetKeys: ["v1:key"] });
+    ).resolves.toEqual([saved]);
     expect(settingsValues).toHaveBeenCalledWith({
       id: "default",
       monthlyExpenses: "1200.00",
@@ -98,26 +85,13 @@ describe("EmergencyReserveRepository", () => {
         }),
       }),
     );
-    expect(transaction.delete).toHaveBeenCalledTimes(1);
-    expect(assignmentValues).toHaveBeenCalledWith([
-      {
-        objectiveId: "00000000-0000-4000-8000-000000000010",
-        assetKey: "v1:key",
-      },
-    ]);
+    expect(client.transaction).not.toHaveBeenCalled();
   });
 
-  it("keeps expense settings unchanged when replacing assignments fails", async () => {
-    const returning = vi.fn().mockResolvedValue([{ id: "default" }]);
-    const settingsValues = vi.fn().mockReturnValue({
-      onConflictDoUpdate: () => ({ returning }),
-    });
+  it("saves assignments without touching emergency reserve settings", async () => {
     const assignmentError = new Error("duplicate assignment");
     const transaction = {
-      insert: vi
-        .fn()
-        .mockReturnValueOnce({ values: settingsValues })
-        .mockReturnValueOnce({ values: () => Promise.reject(assignmentError) }),
+      insert: vi.fn(() => ({ values: () => Promise.reject(assignmentError) })),
       delete: () => ({ where: vi.fn().mockResolvedValue(undefined) }),
       select: () => ({
         from: () => ({
@@ -129,22 +103,18 @@ describe("EmergencyReserveRepository", () => {
       callback(transaction),
     );
 
-    await expect(
-      new EmergencyReserveRepository().saveSettings({
-        monthlyExpenses: "2000.00",
-        targetMonths: 6,
-        selectedAssetKeys: ["asset-assigned-to-another-goal"],
-      }),
-    ).rejects.toBe(assignmentError);
+    await new EmergencyReserveRepository()
+      .saveAssignments({
+        selectedAssetKeys: ["v1:key"],
+      })
+      .catch((error) => expect(error).toBe(assignmentError));
     expect(client.transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.insert).toHaveBeenCalledTimes(1);
   });
 
   it("deletes old reserve assignments when the new selection is empty", async () => {
-    const returning = vi.fn().mockResolvedValue([{ id: "default" }]);
     const transaction = {
-      insert: vi.fn(() => ({
-        values: () => ({ onConflictDoUpdate: () => ({ returning }) }),
-      })),
+      insert: vi.fn(),
       delete: vi
         .fn()
         .mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
@@ -153,14 +123,12 @@ describe("EmergencyReserveRepository", () => {
       callback(transaction),
     );
 
-    await new EmergencyReserveRepository().saveSettings({
-      monthlyExpenses: "2000.00",
-      targetMonths: 6,
+    await new EmergencyReserveRepository().saveAssignments({
       selectedAssetKeys: [],
     });
 
     expect(transaction.delete).toHaveBeenCalledTimes(1);
-    expect(transaction.insert).toHaveBeenCalledTimes(1);
+    expect(transaction.insert).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -184,9 +152,7 @@ describe("EmergencyReserveRepository", () => {
     "rejects an invalid reserve transfer before starting a transaction",
     async ({ transfer, selectedAssetKeys }) => {
       await expect(
-        new EmergencyReserveRepository().saveSettings({
-          monthlyExpenses: "1000.00",
-          targetMonths: 6,
+        new EmergencyReserveRepository().saveAssignments({
           selectedAssetKeys,
           transfers: [transfer],
         }),
@@ -205,11 +171,8 @@ describe("EmergencyReserveRepository", () => {
     async ({ objective, expectedMessage }) => {
       const goalId = "00000000-0000-4000-8000-000000000099";
       const assignment = { assetKey: "v1:position", objectiveId: goalId };
-      const returning = vi.fn().mockResolvedValue([{ id: "default" }]);
       const transaction = {
-        insert: vi.fn(() => ({
-          values: () => ({ onConflictDoUpdate: () => ({ returning }) }),
-        })),
+        insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
         delete: () => ({ where: vi.fn().mockResolvedValue(undefined) }),
         select: vi
           .fn()
@@ -231,9 +194,7 @@ describe("EmergencyReserveRepository", () => {
       );
 
       await expect(
-        new EmergencyReserveRepository().saveSettings({
-          monthlyExpenses: "1000.00",
-          targetMonths: 6,
+        new EmergencyReserveRepository().saveAssignments({
           selectedAssetKeys: [assignment.assetKey],
         }),
       ).rejects.toMatchObject({
@@ -243,18 +204,15 @@ describe("EmergencyReserveRepository", () => {
     },
   );
 
-  it("saves reserve settings and generic transfers in the same transaction", async () => {
+  it("saves reserve assignments and generic transfers in the same transaction", async () => {
     const key = "v1:position";
     const transfer = {
       assetKey: key,
       fromObjectiveId: "00000000-0000-4000-8000-000000000099",
       toObjectiveId: "00000000-0000-4000-8000-000000000010",
     };
-    const returning = vi.fn().mockResolvedValue([{ id: "default" }]);
     const transaction = {
-      insert: vi.fn().mockReturnValueOnce({
-        values: () => ({ onConflictDoUpdate: () => ({ returning }) }),
-      }),
+      insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
       delete: () => ({ where: vi.fn().mockResolvedValue(undefined) }),
       select: () => ({
         from: () => ({
@@ -273,9 +231,7 @@ describe("EmergencyReserveRepository", () => {
       callback(transaction),
     );
 
-    await new EmergencyReserveRepository().saveSettings({
-      monthlyExpenses: "1000.00",
-      targetMonths: 6,
+    await new EmergencyReserveRepository().saveAssignments({
       selectedAssetKeys: [key],
       transfers: [transfer],
     });
@@ -284,10 +240,10 @@ describe("EmergencyReserveRepository", () => {
       transaction,
       [transfer],
     );
-    expect(transaction.insert).toHaveBeenCalledTimes(1);
+    expect(transaction.insert).not.toHaveBeenCalled();
   });
 
-  it("rolls back staged settings and assignments when a transfer source changed", async () => {
+  it("preserves the settings when a transfer source changed", async () => {
     const transfer = {
       assetKey: "v1:position",
       fromObjectiveId: "00000000-0000-4000-8000-000000000099",
@@ -337,14 +293,12 @@ describe("EmergencyReserveRepository", () => {
     );
 
     await expect(
-      new EmergencyReserveRepository().saveSettings({
-        monthlyExpenses: "1000.00",
-        targetMonths: 6,
+      new EmergencyReserveRepository().saveAssignments({
         selectedAssetKeys: [transfer.assetKey],
         transfers: [transfer],
       }),
     ).rejects.toBe(staleOrigin);
-    expect(stagedStates[0].settings.monthlyExpenses).toBe("1000.00");
+    expect(stagedStates[0].settings.monthlyExpenses).toBe("500.00");
     expect(stagedStates[0].assignments.get(transfer.assetKey)).toBe(
       transfer.toObjectiveId,
     );
@@ -384,18 +338,10 @@ describe("EmergencyReserveRepository", () => {
         code: "23505",
         constraint: "portfolio_objective_positions_assetKey_unique",
       });
-      const settingsReturning = vi.fn().mockResolvedValue([{ id: "default" }]);
       const transaction = {
-        insert: vi
-          .fn()
-          .mockReturnValueOnce({
-            values: () => ({
-              onConflictDoUpdate: () => ({ returning: settingsReturning }),
-            }),
-          })
-          .mockReturnValueOnce({
-            values: () => Promise.reject(uniqueConflict),
-          }),
+        insert: vi.fn().mockReturnValueOnce({
+          values: () => Promise.reject(uniqueConflict),
+        }),
         delete: () => ({ where: vi.fn().mockResolvedValue(undefined) }),
         select: () => ({
           from: () => ({
@@ -411,9 +357,7 @@ describe("EmergencyReserveRepository", () => {
       );
 
       const error = await new EmergencyReserveRepository()
-        .saveSettings({
-          monthlyExpenses: "1000.00",
-          targetMonths: 6,
+        .saveAssignments({
           selectedAssetKeys: ["v1:position"],
         })
         .then(
@@ -433,7 +377,7 @@ describe("EmergencyReserveRepository", () => {
         "v1:position",
       );
       expect(client.transaction).toHaveBeenCalledTimes(1);
-      expect(transaction.insert).toHaveBeenCalledTimes(2);
+      expect(transaction.insert).toHaveBeenCalledTimes(1);
     },
   );
 });
