@@ -139,6 +139,21 @@ describe("DashboardSummary", () => {
     expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
   });
 
+  it("opens the dashboard reserve panel from the reserve summary", () => {
+    const onOpenReserve = vi.fn();
+    render(
+      <DashboardSummary
+        positions={positions}
+        emergencyReserve={reserve}
+        onOpenReserve={onOpenReserve}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+
+    expect(onOpenReserve).toHaveBeenCalledOnce();
+  });
+
   it("keeps the quick objective action safe when no panel controller is provided", () => {
     render(<DashboardSummary positions={positions} />);
 

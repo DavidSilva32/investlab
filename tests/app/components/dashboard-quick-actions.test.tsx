@@ -8,7 +8,18 @@ vi.mock("@/components/portfolio-import", () => ({
   PortfolioImport: () => <p>Prévia de importação</p>,
 }));
 vi.mock("@/app/portfolio/_components/portfolio-objectives", () => ({
-  PortfolioObjectives: () => <p>Gerenciar objetivos</p>,
+  PortfolioObjectives: ({
+    navigation,
+  }: {
+    navigation?: { objectiveId: string | null };
+  }) => (
+    <>
+      <p>Gerenciar objetivos</p>
+      {navigation?.objectiveId && (
+        <p>Objetivo no painel: {navigation.objectiveId}</p>
+      )}
+    </>
+  ),
 }));
 
 afterEach(() => {
@@ -60,5 +71,27 @@ describe("DashboardQuickActions", () => {
       screen.getByRole("region", { name: "Objetivos e destinos da carteira" }),
     ).toBeTruthy();
     expect(screen.queryByText(/quando houver correspondência/)).toBeTruthy();
+  });
+
+  it("opens the selected objective inside the existing dashboard sheet", () => {
+    render(
+      <DashboardQuickActions
+        positions={[]}
+        importOpen={false}
+        onImportOpenChange={vi.fn()}
+        objectivesOpen
+        onObjectivesOpenChange={vi.fn()}
+        objectivesNavigation={{
+          open: true,
+          objectiveId: "reserve",
+          screen: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Objetivo no painel: reserve")).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Objetivos e destinos da carteira" }),
+    ).toBeTruthy();
   });
 });

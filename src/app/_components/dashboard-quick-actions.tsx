@@ -20,12 +20,23 @@ export function DashboardQuickActions({
   positions,
   objectivesOpen,
   onObjectivesOpenChange,
+  objectivesNavigation,
+  onObjectivesNavigationChange,
   importOpen,
   onImportOpenChange,
 }: {
   positions: PortfolioPosition[];
   objectivesOpen: boolean;
   onObjectivesOpenChange: (open: boolean) => void;
+  objectivesNavigation?: {
+    open: boolean;
+    objectiveId: string | null;
+    screen: string | null;
+  };
+  onObjectivesNavigationChange?: (
+    objectiveId: string | null,
+    screen?: string | null,
+  ) => void;
   importOpen: boolean;
   onImportOpenChange: (open: boolean) => void;
 }) {
@@ -106,7 +117,16 @@ export function DashboardQuickActions({
                   className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
                   role="region"
                 >
-                  <PortfolioObjectives />
+                  <PortfolioObjectives
+                    navigation={
+                      objectivesNavigation ?? {
+                        open: objectivesOpen,
+                        objectiveId: null,
+                        screen: null,
+                      }
+                    }
+                    onNavigationChange={onObjectivesNavigationChange}
+                  />
                 </div>
               </SheetContent>
             </Sheet>

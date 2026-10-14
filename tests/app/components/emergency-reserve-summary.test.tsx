@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmergencyReserveSummary } from "@/app/_components/emergency-reserve-summary";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 
@@ -38,9 +38,22 @@ describe("EmergencyReserveSummary", () => {
     expect(html).toContain("42% da sua meta pessoal");
     expect(html).toContain('role="progressbar"');
     expect(html).toContain("Cobertura em relação à sua meta pessoal");
-    expect(html).toContain(
-      'href="/portfolio?panel=objectives&amp;objective=reserve"',
+    expect(html).toContain("Ver reserva");
+    expect(html).not.toContain('href="/portfolio?panel=objectives');
+  });
+
+  it("opens the reserve panel through the provided dashboard action", () => {
+    const onOpenReserve = vi.fn();
+    render(
+      <EmergencyReserveSummary
+        calculation={calculation}
+        onOpenReserve={onOpenReserve}
+      />,
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+
+    expect(onOpenReserve).toHaveBeenCalledOnce();
   });
 
   it("calculates and shows months even without a personal target", () => {

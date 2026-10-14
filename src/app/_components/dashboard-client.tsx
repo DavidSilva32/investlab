@@ -24,7 +24,11 @@ export function DashboardClient({
   openImportOnLoad?: boolean;
 }) {
   const router = useRouter();
-  const [objectivesOpen, setObjectivesOpen] = useState(false);
+  const [objectivesNavigation, setObjectivesNavigation] = useState({
+    open: false,
+    objectiveId: null as string | null,
+    screen: null as string | null,
+  });
   const [importOpen, setImportOpen] = useState(openImportOnLoad);
   useEffect(() => {
     if (openImportOnLoad) router.replace("/", { scroll: false });
@@ -73,8 +77,29 @@ export function DashboardClient({
       <DashboardSummary
         {...overview}
         manualPositions={overview.positions}
-        objectivesOpen={objectivesOpen}
-        onObjectivesOpenChange={setObjectivesOpen}
+        objectivesOpen={objectivesNavigation.open}
+        objectivesNavigation={objectivesNavigation}
+        onObjectivesOpenChange={(open) =>
+          setObjectivesNavigation({
+            open,
+            objectiveId: null,
+            screen: null,
+          })
+        }
+        onObjectivesNavigationChange={(objectiveId, screen) =>
+          setObjectivesNavigation((current) => ({
+            ...current,
+            objectiveId,
+            screen: screen ?? null,
+          }))
+        }
+        onOpenReserve={() =>
+          setObjectivesNavigation({
+            open: true,
+            objectiveId: "reserve",
+            screen: null,
+          })
+        }
         importOpen={importOpen}
         onImportOpenChange={setImportOpen}
         destinationSummary={objectivesQuery.data?.destinationSummary}

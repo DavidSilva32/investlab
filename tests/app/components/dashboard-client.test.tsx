@@ -14,16 +14,26 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
     destinationsUnavailable,
     destinationsLoading,
     importOpen,
+    objectivesNavigation,
+    onOpenReserve,
     onRetryDestinations,
   }: {
     destinationSummary?: { knownTotal: number };
     destinationsUnavailable?: boolean;
     destinationsLoading?: boolean;
     importOpen?: boolean;
+    objectivesNavigation?: { objectiveId: string | null };
+    onOpenReserve?: () => void;
     onRetryDestinations?: () => void;
   }) => (
     <>
       <p>Resumo do dashboard</p>
+      <button type="button" onClick={onOpenReserve}>
+        Ver reserva
+      </button>
+      {objectivesNavigation?.objectiveId && (
+        <p>Objetivo aberto no painel: {objectivesNavigation.objectiveId}</p>
+      )}
       {importOpen && <p>Importação lateral aberta</p>}
       {destinationSummary && (
         <p>Total por destinos: {destinationSummary.knownTotal}</p>
@@ -96,6 +106,23 @@ describe("DashboardClient", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens the reserve in the dashboard panel without changing routes", async () => {
+    const fetchMock = vi.fn((url: string) =>
+      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderDashboard();
+    await screen.findByText("Resumo do dashboard");
+    screen.getByRole("button", { name: "Ver reserva" }).click();
+
+    expect(
+      await screen.findByText("Objetivo aberto no painel: reserve"),
+    ).toBeTruthy();
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/");
   });
 
   it("opens the import sheet from the dashboard deep link and clears the query", async () => {

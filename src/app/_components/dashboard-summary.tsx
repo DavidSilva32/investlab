@@ -23,6 +23,9 @@ export function DashboardSummary({
   onRetryDestinations,
   objectivesOpen = false,
   onObjectivesOpenChange = () => {},
+  objectivesNavigation,
+  onObjectivesNavigationChange,
+  onOpenReserve = () => {},
   importOpen = false,
   onImportOpenChange = () => {},
 }: {
@@ -36,6 +39,16 @@ export function DashboardSummary({
   onRetryDestinations?: () => void;
   objectivesOpen?: boolean;
   onObjectivesOpenChange?: (open: boolean) => void;
+  objectivesNavigation?: {
+    open: boolean;
+    objectiveId: string | null;
+    screen: string | null;
+  };
+  onObjectivesNavigationChange?: (
+    objectiveId: string | null,
+    screen?: string | null,
+  ) => void;
+  onOpenReserve?: () => void;
   importOpen?: boolean;
   onImportOpenChange?: (open: boolean) => void;
 }) {
@@ -46,6 +59,8 @@ export function DashboardSummary({
         positions={manualPositions}
         objectivesOpen={objectivesOpen}
         onObjectivesOpenChange={onObjectivesOpenChange}
+        objectivesNavigation={objectivesNavigation}
+        onObjectivesNavigationChange={onObjectivesNavigationChange}
         importOpen={importOpen}
         onImportOpenChange={onImportOpenChange}
       />
@@ -59,7 +74,10 @@ export function DashboardSummary({
           onOpenObjectives={() => onObjectivesOpenChange(true)}
         />
         <section aria-labelledby="dashboard-reserve-title">
-          <EmergencyReserveSummary calculation={emergencyReserve} />
+          <EmergencyReserveSummary
+            calculation={emergencyReserve}
+            onOpenReserve={onOpenReserve}
+          />
         </section>
       </div>
 

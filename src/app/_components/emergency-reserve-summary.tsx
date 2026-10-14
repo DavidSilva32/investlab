@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ArrowRight, ChevronDown, Shield } from "lucide-react";
 import {
   Collapsible,
@@ -6,6 +5,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import { formatCurrency } from "@/lib/utils";
@@ -15,8 +15,10 @@ const months = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 
 export function EmergencyReserveSummary({
   calculation,
+  onOpenReserve = () => {},
 }: {
   calculation?: EmergencyReserveCalculation;
+  onOpenReserve?: () => void;
 }) {
   const canCalculateCoverage =
     calculation?.monthlyExpenses !== null &&
@@ -43,12 +45,14 @@ export function EmergencyReserveSummary({
               Reserva de emergência
             </h2>
           </div>
-          <Link
-            href="/portfolio?panel=objectives&objective=reserve"
-            className="inline-flex min-h-10 items-center gap-2 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Button
+            type="button"
+            variant="link"
+            onClick={onOpenReserve}
+            className="min-h-10 gap-2 p-0 text-sm font-medium text-primary"
           >
             Ver reserva <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
+          </Button>
         </div>
 
         {canCalculateCoverage ? (
