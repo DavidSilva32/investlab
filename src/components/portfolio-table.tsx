@@ -6,17 +6,8 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
-  Search,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -28,6 +19,11 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  PortfolioTableFilterBuilder,
+  type PortfolioTableFilter,
+  type PortfolioTableFilterOption,
+} from "@/components/portfolio-table-filter-builder";
 
 export type PortfolioTableColumn<Row> = {
   id: string;
@@ -37,6 +33,7 @@ export type PortfolioTableColumn<Row> = {
   sortable?: boolean;
   value: (row: Row) => string | number | null;
   searchValue?: (row: Row) => string | number | null;
+  filterOptions?: PortfolioTableFilterOption[];
   render: (row: Row) => ReactNode;
 };
 
@@ -49,10 +46,6 @@ type PortfolioTableProps<Row extends { id: string }> = {
   initialSort: Sort;
   toolbar?: ReactNode;
   toolbarSummary?: string;
-  sourceFilter?: {
-    value: (row: Row) => string | null | undefined;
-    options: Array<{ value: string; label: string }>;
-  };
 };
 
 const collator = new Intl.Collator("pt-BR", {
@@ -68,39 +61,37 @@ export function PortfolioTable<Row extends { id: string }>({
   initialSort,
   toolbar,
   toolbarSummary,
-  sourceFilter,
 }: PortfolioTableProps<Row>) {
   const [sort, setSort] = useState(initialSort);
   const [pagination, setPagination] = useState({ rows, page: 0 });
-  const [search, setSearch] = useState("");
-  const [source, setSource] = useState("all");
+  const [appliedFilters, setAppliedFilters] = useState<PortfolioTableFilter[]>(
+    [],
+  );
   if (pagination.rows !== rows) setPagination({ rows, page: 0 });
   const page = pagination.rows === rows ? pagination.page : 0;
   const activeSortColumn =
     columns.find((item) => item.id === sort.id) ?? columns[0];
+  const filterColumns = columns
+    .filter((column) => column.sortable !== false)
+    .map((column) => ({
+      id: column.id,
+      label: column.label,
+      options: column.filterOptions,
+    }));
   const filteredRows = useMemo(() => {
-    const terms = normalize(search).split(/\s+/).filter(Boolean);
     return rows.filter((row) => {
-      if (source !== "all" && sourceFilter?.value(row) !== source) {
-        return false;
-      }
-      if (terms.length === 0) return true;
-      const searchableValues = columns
-        .map((column) => (column.searchValue ?? column.value)(row))
-        .filter((value) => value !== null)
-        .map(String);
-      if (sourceFilter) {
-        searchableValues.push(sourceFilter.value(row) ?? "");
-        searchableValues.push(
-          sourceFilter.options.find(
-            (option) => option.value === sourceFilter.value(row),
-          )?.label ?? "",
-        );
-      }
-      const searchableText = normalize(searchableValues.join(" "));
-      return terms.every((term) => searchableText.includes(term));
+      return appliedFilters.every((filter) => {
+        const column = columns.find((item) => item.id === filter.columnId);
+        if (!column) return false;
+        const rowValue = (column.searchValue ?? column.value)(row);
+        if (rowValue === null) return false;
+        if (column.filterOptions) return String(rowValue) === filter.value;
+        const valueTerms = normalize(filter.value).split(/\s+/).filter(Boolean);
+        const normalizedRowValue = normalize(String(rowValue));
+        return valueTerms.every((term) => normalizedRowValue.includes(term));
+      });
     });
-  }, [columns, rows, search, source, sourceFilter]);
+  }, [appliedFilters, columns, rows]);
   const sortedRows = useMemo(() => {
     return [...filteredRows].sort((left, right) => {
       const leftValue = activeSortColumn.value(left);
@@ -116,9 +107,8 @@ export function PortfolioTable<Row extends { id: string }>({
     });
   }, [activeSortColumn, filteredRows, sort]);
 
-  const resetFilters = () => {
-    setSearch("");
-    setSource("all");
+  const clearFilters = () => {
+    setAppliedFilters([]);
     setPagination({ rows, page: 0 });
   };
 
@@ -152,55 +142,17 @@ export function PortfolioTable<Row extends { id: string }>({
   }
 
   const pageCount = Math.ceil(sortedRows.length / PAGE_SIZE);
-  const hasActiveFilters = Boolean(search.trim()) || source !== "all";
+  const hasActiveFilters = appliedFilters.length > 0;
   const filterControls = (
-    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-      <div className="relative w-full sm:w-64">
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          aria-label="Pesquisar na tabela"
-          placeholder="Pesquisar em todas as colunas"
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setPagination({ rows, page: 0 });
-          }}
-          className="pl-9"
-        />
-      </div>
-      {sourceFilter ? (
-        <Select
-          value={source}
-          onValueChange={(value) => {
-            setSource(value);
-            setPagination({ rows, page: 0 });
-          }}
-        >
-          <SelectTrigger
-            className="w-full sm:w-36"
-            aria-label="Filtrar por origem"
-          >
-            <SelectValue placeholder="Todas as origens" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as origens</SelectItem>
-            {sourceFilter.options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : null}
-      {hasActiveFilters ? (
-        <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
-          Limpar filtros
-        </Button>
-      ) : null}
-    </div>
+    <PortfolioTableFilterBuilder
+      columns={filterColumns}
+      activeFilters={appliedFilters}
+      onApply={(filters) => {
+        setAppliedFilters(filters);
+        setPagination({ rows, page: 0 });
+      }}
+      onClear={clearFilters}
+    />
   );
 
   if (sortedRows.length === 0 && hasActiveFilters) {

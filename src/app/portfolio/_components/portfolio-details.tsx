@@ -123,6 +123,10 @@ const positionColumns = (
       row.source === "MANUAL" ? "Manual" : row.source === "B3" ? "B3" : "",
     searchValue: (row) =>
       row.source === "MANUAL" ? "Manual" : row.source === "B3" ? "B3" : "",
+    filterOptions: [
+      { value: "Manual", label: "Manual" },
+      { value: "B3", label: "B3" },
+    ],
     render: (row) =>
       row.source === "MANUAL" ? (
         <Badge variant="outline">Manual</Badge>
@@ -496,16 +500,6 @@ export function PositionDetails({
               setRateDialogOpen(true);
             })}
             rows={positions}
-            sourceFilter={{
-              value: (row) =>
-                row.source === "B3" || row.source === "MANUAL"
-                  ? row.source
-                  : null,
-              options: [
-                { value: "MANUAL", label: "Manual" },
-                { value: "B3", label: "B3" },
-              ],
-            }}
             initialSort={{ id: "product", direction: "asc" }}
             emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."
             toolbarSummary={`${positions.length} ${positions.length === 1 ? "posição disponível" : "posições disponíveis"}`}

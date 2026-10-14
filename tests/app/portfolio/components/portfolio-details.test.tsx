@@ -18,6 +18,7 @@ vi.mock("@/components/portfolio-table", () => ({
       label: string;
       render: (row: never) => unknown;
       value: (row: never) => unknown;
+      filterOptions?: Array<{ value: string; label: string }>;
     }>;
     rows: never[];
     toolbar?: ReactNode;
@@ -28,6 +29,12 @@ vi.mock("@/components/portfolio-table", () => ({
       {columns.map((column) => (
         <span key={`header-${column.id}`}>{column.label}</span>
       ))}
+      {columns.flatMap(
+        (column) =>
+          column.filterOptions?.map((option) => (
+            <span key={`${column.id}-${option.value}`}>{option.label}</span>
+          )) ?? [],
+      )}
       {toolbar ? (
         <div data-testid="table-toolbar">
           <span>{toolbarSummary}</span>
@@ -111,6 +118,8 @@ describe("portfolio detail components", () => {
       name: "Adicionar posição",
     });
     expect(screen.getByTestId("table-toolbar").contains(button)).toBe(true);
+    expect(screen.getByText("Manual")).toBeTruthy();
+    expect(screen.getByText("B3")).toBeTruthy();
     expect(screen.getByTestId("table-toolbar").textContent).toContain(
       "1 posição disponível",
     );
