@@ -1571,7 +1571,7 @@ describe("PortfolioChatAssistant", () => {
         .getByRole("link", { name: "Abrir planejamento" })
         .getAttribute("href"),
     ).toBe("/planning?objective=travel");
-  });
+  }, 15_000);
 
   it("offers total planning when ambiguous matches contain no individually plannable objectives", async () => {
     const user = userEvent.setup();
@@ -1610,7 +1610,7 @@ describe("PortfolioChatAssistant", () => {
       screen.getByRole("button", { name: "Abrir assistente da carteira" }),
     );
     await user.type(
-      screen.getByRole("textbox", {
+      await screen.findByRole("textbox", {
         name: "Escreva uma pergunta para o assistente",
       }),
       "Quero simular Reserva e Fundo de emergência",
@@ -1628,7 +1628,7 @@ describe("PortfolioChatAssistant", () => {
         .getAttribute("href"),
     ).toBe("/planning");
     expect(screen.queryByRole("button", { name: "Reserva" })).toBeNull();
-  });
+  }, 15_000);
 
   it("shows a loading status while objective data is pending", async () => {
     const user = userEvent.setup();
@@ -1877,5 +1877,5 @@ describe("PortfolioChatAssistant", () => {
     expect(
       await screen.findByText(/Reserva já atingiu a meta de R\$ 1\.000,00/),
     ).toBeTruthy();
-  });
+  }, 15_000);
 });

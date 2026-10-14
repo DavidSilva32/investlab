@@ -294,4 +294,364 @@ describe("PortfolioTable", () => {
       screen.getByRole("button", { name: "Próxima página" }),
     ).toHaveProperty("disabled", true);
   });
+
+  it("keeps criteria in draft until apply, combines columns with AND, and resets pagination", async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 23 }, (_, index) => ({
+      id: String(index),
+      name:
+        index === 22 ? "Poupança S&P 500 Vanguard ETF" : `Ativo ${index + 1}`,
+      value: index === 22 ? 500 : index,
+    }));
+    render(
+      <PortfolioTable
+        columns={columns}
+        rows={rows}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Nome" }),
+      "poupanca vanguard",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Valor" }),
+      "500",
+    );
+
+    expect(screen.getByText("Mostrando 21–23 de 23")).toBeTruthy();
+    expect(screen.getByText("23 registros")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("Poupança S&P 500 Vanguard ETF")).toBeTruthy();
+    expect(screen.getByText("Mostrando 1–1 de 1")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    expect(screen.getByText("Mostrando 1–10 de 23")).toBeTruthy();
+  });
+
+  it("searches formatted values instead of sort values and reports empty results", async () => {
+    const user = userEvent.setup();
+    type FormattedRow = {
+      id: string;
+      date: number;
+      quantity: number;
+      amount: number;
+    };
+    const formattedColumns: PortfolioTableColumn<FormattedRow>[] = [
+      {
+        id: "date",
+        label: "Data",
+        width: "33%",
+        value: (row) => row.date,
+        searchValue: () => "14/10/2026",
+        render: () => "14/10/2026",
+      },
+      {
+        id: "quantity",
+        label: "Quantidade",
+        width: "33%",
+        value: (row) => row.quantity,
+        searchValue: (row) => row.quantity.toLocaleString("pt-BR"),
+        render: (row) => row.quantity.toLocaleString("pt-BR"),
+      },
+      {
+        id: "amount",
+        label: "Valor",
+        width: "34%",
+        value: (row) => row.amount,
+        searchValue: () => "R$ 3.010,82",
+        render: () => "R$ 3.010,82",
+      },
+    ];
+    render(
+      <PortfolioTable
+        columns={formattedColumns}
+        rows={[
+          { id: "1", date: 1791936000000, quantity: 1.5, amount: 3010.82 },
+        ]}
+        initialSort={{ id: "date", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Data" }),
+      "14/10/2026",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Quantidade" }),
+      "1,5",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Valor" }),
+      "inexistente",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("Nenhum resultado encontrado.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Data" }),
+      "14/10/2026",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Quantidade" }),
+      "1,5",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Valor" }),
+      "3.010,82",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("R$ 3.010,82")).toBeTruthy();
+    expect(screen.getByText("Mostrando 1–1 de 1")).toBeTruthy();
+  });
+
+  it("filters exact origin values and discards draft filters on cancel", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+      configurable: true,
+      value: vi.fn(() => false),
+    });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    type OriginRow = Row & { source: string };
+    const rows: OriginRow[] = [
+      { id: "1", name: "VOO", value: 100, source: "Manual" },
+      { id: "2", name: "CDB", value: 200, source: "B3" },
+      { id: "3", name: "Desconhecido", value: 300, source: "" },
+    ];
+    const originColumns: PortfolioTableColumn<OriginRow>[] = [
+      ...columns,
+      {
+        id: "source",
+        label: "Origem",
+        width: "20%",
+        value: (row) => row.source,
+        searchValue: (row) => row.source,
+        filterOptions: [
+          { value: "Manual", label: "Manual" },
+          { value: "B3", label: "B3" },
+        ],
+        render: (row) => row.source || "—",
+      },
+    ];
+    render(
+      <PortfolioTable
+        columns={originColumns}
+        rows={rows}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Origem" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    await user.click(screen.getByRole("option", { name: "Manual" }));
+    expect(screen.getByText("3 registros")).toBeTruthy();
+    expect(screen.getByText("Desconhecido")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.getByText("CDB")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Origem" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    await user.click(screen.getByRole("option", { name: "Manual" }));
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("VOO")).toBeTruthy();
+    expect(screen.queryByText("CDB")).toBeNull();
+    expect(screen.queryByText("Desconhecido")).toBeNull();
+    expect(screen.getByText("1 de 3 registros")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    expect(screen.getByText("CDB")).toBeTruthy();
+    expect(screen.getByText("Desconhecido")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Origem" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    expect(screen.queryByRole("option", { name: "Desconhecido" })).toBeNull();
+    await user.click(screen.getByRole("option", { name: "B3" }));
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("CDB")).toBeTruthy();
+    expect(screen.queryByText("VOO")).toBeNull();
+    expect(screen.queryByText("Desconhecido")).toBeNull();
+  });
+
+  it("names each criterion control with its index", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioTable
+        columns={columns}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    expect(screen.getByRole("combobox", { name: "Coluna 1" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Coluna 2" })).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", { name: "Valor para Nome" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", { name: "Valor para Valor" }),
+    ).toBeTruthy();
+  });
+
+  it("uses null search values as non-matches and shows the toolbar in empty results", async () => {
+    const user = userEvent.setup();
+    const nullableColumns: PortfolioTableColumn<Row>[] = [
+      ...columns,
+      {
+        id: "optional",
+        label: "Opcional",
+        width: "20%",
+        value: () => null,
+        searchValue: () => null,
+        render: () => "—",
+      },
+    ];
+    render(
+      <PortfolioTable
+        columns={nullableColumns}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={<button type="button">Adicionar</button>}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Nome" }),
+      "Alfa",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.click(screen.getByRole("combobox", { name: "Coluna 2" }));
+    await user.click(screen.getByRole("option", { name: "Opcional" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Opcional" }),
+      "qualquer valor",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    expect(screen.getByText("Nenhum resultado encontrado.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Adicionar" })).toBeTruthy();
+    expect(document.querySelector("table")).toBeNull();
+  });
+
+  it("shows singular and plural filtered summaries alongside a toolbar", async () => {
+    const user = userEvent.setup();
+    const toolbar = <button type="button">Adicionar</button>;
+    const { rerender } = render(
+      <PortfolioTable
+        columns={columns}
+        rows={[
+          { id: "1", name: "Alfa", value: 1 },
+          { id: "2", name: "Beta", value: 2 },
+        ]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={toolbar}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Nome" }),
+      "alfa",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("1 de 2 registros")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Filtros 1" }));
+    await user.clear(screen.getByRole("textbox", { name: "Valor para Nome" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Nome" }),
+      "a",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("2 de 2 registros")).toBeTruthy();
+
+    rerender(
+      <PortfolioTable
+        columns={columns}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        toolbar={toolbar}
+      />,
+    );
+    expect(screen.getByText("1 de 1 registro")).toBeTruthy();
+  });
+
+  it("shows no results when an applied filter refers to a removed column", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <PortfolioTable
+        columns={columns}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Nome" }),
+      "alfa",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("Alfa")).toBeTruthy();
+
+    rerender(
+      <PortfolioTable
+        columns={[columns[1]]}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "value", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+    expect(screen.getByText("Nenhum resultado encontrado.")).toBeTruthy();
+  });
 });

@@ -15,8 +15,11 @@ vi.mock("@/components/portfolio-table", () => ({
   }: {
     columns: Array<{
       id: string;
+      label: string;
       render: (row: never) => unknown;
       value: (row: never) => unknown;
+      searchValue?: (row: never) => unknown;
+      filterOptions?: Array<{ value: string; label: string }>;
     }>;
     rows: never[];
     toolbar?: ReactNode;
@@ -24,6 +27,15 @@ vi.mock("@/components/portfolio-table", () => ({
     emptyMessage: string;
   }) => (
     <div>
+      {columns.map((column) => (
+        <span key={`header-${column.id}`}>{column.label}</span>
+      ))}
+      {columns.flatMap(
+        (column) =>
+          column.filterOptions?.map((option) => (
+            <span key={`${column.id}-${option.value}`}>{option.label}</span>
+          )) ?? [],
+      )}
       {toolbar ? (
         <div data-testid="table-toolbar">
           <span>{toolbarSummary}</span>
@@ -32,7 +44,10 @@ vi.mock("@/components/portfolio-table", () => ({
       ) : null}
       {rows.flatMap((row) =>
         columns.map((column) => (
-          <span key={column.id}>
+          <span
+            key={column.id}
+            data-search-value={String(column.searchValue?.(row) ?? "")}
+          >
             {String(column.value(row))}
             {column.render(row) as never}
           </span>
@@ -107,6 +122,8 @@ describe("portfolio detail components", () => {
       name: "Adicionar posição",
     });
     expect(screen.getByTestId("table-toolbar").contains(button)).toBe(true);
+    expect(screen.getByText("Manual")).toBeTruthy();
+    expect(screen.getByText("B3")).toBeTruthy();
     expect(screen.getByTestId("table-toolbar").textContent).toContain(
       "1 posição disponível",
     );
@@ -206,6 +223,23 @@ describe("portfolio detail components", () => {
     expect(html).toContain('src="https://icons.brapi.dev/icons/PETR4.svg"');
     expect(html).not.toContain("icons/VOO.svg");
     expect(html).not.toContain("icons/PETR3.svg");
+  });
+
+  it("shows explicit Manual and B3 origin badges and leaves unknown origins unclassified", () => {
+    const html = renderToStaticMarkup(
+      <PositionDetails
+        positions={[
+          { ...position, id: "manual", source: "MANUAL" },
+          { ...position, id: "b3", source: "B3" },
+          { ...position, id: "unknown", source: "LEGACY" },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Origem");
+    expect(html).toContain(">Manual</div>");
+    expect(html).toContain(">B3</div>");
+    expect(html).not.toContain(">LEGACY</div>");
   });
   it("shows estimated and official value details on demand", () => {
     render(

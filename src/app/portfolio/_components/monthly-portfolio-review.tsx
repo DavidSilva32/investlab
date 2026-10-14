@@ -326,7 +326,7 @@ function centsToChartValue(cents: string) {
   return Number(whole) + Number(fractional) / 100;
 }
 
-function chartPoints(
+export function chartPoints(
   history: MonthlyPortfolioHistoryPoint[],
   year: string | undefined,
 ): EvolutionPoint[] {

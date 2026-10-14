@@ -666,15 +666,7 @@ export function EmergencyReserveEditor({
                         Valor conhecido selecionado
                       </span>
                       <span className="font-semibold tabular-nums">
-                        {mode === "positions"
-                          ? formatCurrencyCents(selectedKnownValueCents)
-                          : previewLoading
-                            ? "Calculando..."
-                            : visibleCalculation
-                              ? formatCurrencyCents(
-                                  visibleCalculation.selectedValueCents ?? null,
-                                )
-                              : "—"}
+                        {formatCurrencyCents(selectedKnownValueCents)}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">

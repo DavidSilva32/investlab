@@ -19,6 +19,11 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  PortfolioTableFilterBuilder,
+  type PortfolioTableFilter,
+  type PortfolioTableFilterOption,
+} from "@/components/portfolio-table-filter-builder";
 
 export type PortfolioTableColumn<Row> = {
   id: string;
@@ -27,6 +32,8 @@ export type PortfolioTableColumn<Row> = {
   width: string;
   sortable?: boolean;
   value: (row: Row) => string | number | null;
+  searchValue?: (row: Row) => string | number | null;
+  filterOptions?: PortfolioTableFilterOption[];
   render: (row: Row) => ReactNode;
 };
 
@@ -57,12 +64,36 @@ export function PortfolioTable<Row extends { id: string }>({
 }: PortfolioTableProps<Row>) {
   const [sort, setSort] = useState(initialSort);
   const [pagination, setPagination] = useState({ rows, page: 0 });
+  const [appliedFilters, setAppliedFilters] = useState<PortfolioTableFilter[]>(
+    [],
+  );
   if (pagination.rows !== rows) setPagination({ rows, page: 0 });
   const page = pagination.rows === rows ? pagination.page : 0;
   const activeSortColumn =
     columns.find((item) => item.id === sort.id) ?? columns[0];
+  const filterColumns = columns
+    .filter((column) => column.sortable !== false)
+    .map((column) => ({
+      id: column.id,
+      label: column.label,
+      options: column.filterOptions,
+    }));
+  const filteredRows = useMemo(() => {
+    return rows.filter((row) => {
+      return appliedFilters.every((filter) => {
+        const column = columns.find((item) => item.id === filter.columnId);
+        if (!column) return false;
+        const rowValue = (column.searchValue ?? column.value)(row);
+        if (rowValue === null) return false;
+        if (column.filterOptions) return String(rowValue) === filter.value;
+        const valueTerms = normalize(filter.value).split(/\s+/).filter(Boolean);
+        const normalizedRowValue = normalize(String(rowValue));
+        return valueTerms.every((term) => normalizedRowValue.includes(term));
+      });
+    });
+  }, [appliedFilters, columns, rows]);
   const sortedRows = useMemo(() => {
-    return [...rows].sort((left, right) => {
+    return [...filteredRows].sort((left, right) => {
       const leftValue = activeSortColumn.value(left);
       const rightValue = activeSortColumn.value(right);
       if (leftValue === rightValue) return 0;
@@ -74,7 +105,12 @@ export function PortfolioTable<Row extends { id: string }>({
           : collator.compare(String(leftValue), String(rightValue));
       return sort.direction === "asc" ? result : -result;
     });
-  }, [activeSortColumn, rows, sort]);
+  }, [activeSortColumn, filteredRows, sort]);
+
+  const clearFilters = () => {
+    setAppliedFilters([]);
+    setPagination({ rows, page: 0 });
+  };
 
   const toggleSort = (id: string) => {
     setPagination({ rows, page: 0 });
@@ -106,6 +142,36 @@ export function PortfolioTable<Row extends { id: string }>({
   }
 
   const pageCount = Math.ceil(sortedRows.length / PAGE_SIZE);
+  const hasActiveFilters = appliedFilters.length > 0;
+  const filterControls = (
+    <PortfolioTableFilterBuilder
+      columns={filterColumns}
+      activeFilters={appliedFilters}
+      onApply={(filters) => {
+        setAppliedFilters(filters);
+        setPagination({ rows, page: 0 });
+      }}
+      onClear={clearFilters}
+    />
+  );
+
+  if (sortedRows.length === 0 && hasActiveFilters) {
+    return (
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+          {filterControls}
+          {toolbar ? (
+            <div className="flex items-center gap-2">{toolbar}</div>
+          ) : null}
+        </div>
+        <div className="space-y-2 p-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            Nenhum resultado encontrado.
+          </p>
+        </div>
+      </div>
+    );
+  }
   const currentPage = Math.min(page, pageCount - 1);
   const pageRows = sortedRows.slice(
     currentPage * PAGE_SIZE,
@@ -117,14 +183,27 @@ export function PortfolioTable<Row extends { id: string }>({
   return (
     <div className="min-w-0">
       {toolbar ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
           <p className="text-sm text-muted-foreground">
-            {toolbarSummary ??
-              `${rows.length} ${rows.length === 1 ? "registro" : "registros"}`}
+            {hasActiveFilters
+              ? `${sortedRows.length} de ${rows.length} ${rows.length === 1 ? "registro" : "registros"}`
+              : (toolbarSummary ??
+                `${rows.length} ${rows.length === 1 ? "registro" : "registros"}`)}
           </p>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            {filterControls}
             {toolbar}
           </div>
+        </div>
+      ) : null}
+      {!toolbar ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+          <p className="text-sm text-muted-foreground">
+            {hasActiveFilters
+              ? `${sortedRows.length} de ${rows.length} registros`
+              : `${rows.length} registros`}
+          </p>
+          {filterControls}
         </div>
       ) : null}
       <Table className="min-w-262.5 table-fixed">
@@ -249,4 +328,11 @@ export function PortfolioTable<Row extends { id: string }>({
       </Table>
     </div>
   );
+}
+
+function normalize(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
 }

@@ -351,6 +351,24 @@ describe("PortfolioObjectives", () => {
     expect(await screen.findByText("Editor da reserva: settings")).toBeTruthy();
   });
 
+  it("opens reserve positions directly from its deep link", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <PortfolioObjectives
+        navigation={{
+          open: true,
+          objectiveId: "reserve",
+          screen: "reserve-positions",
+        }}
+        onNavigationChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Editor da reserva: positions"),
+    ).toBeTruthy();
+  });
+
   it("returns to the objectives overview when the panel route closes", async () => {
     vi.stubGlobal("fetch", fetchMock);
     const result = render(

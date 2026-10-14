@@ -4,6 +4,7 @@ const service = vi.hoisted(() => ({
   preview: vi.fn(),
   getEditorData: vi.fn(),
   saveSettings: vi.fn(),
+  savePositions: vi.fn(),
   suggestPositions: vi.fn(),
 }));
 vi.mock("@/backend/services/emergency-reserve.service", () => ({
@@ -76,5 +77,23 @@ describe("EmergencyReserveController", () => {
       { targetAmount: 100 },
       "request-4",
     );
+  });
+
+  it("forwards reserve position assignments and adds the success message", async () => {
+    const controller = new EmergencyReserveController();
+    const data = {
+      selectedAssetKeys: ["v1:key"],
+      calculation: { selectedGroups: 1 },
+    };
+    const body = { selectedAssetKeys: ["v1:key"] };
+    service.savePositions.mockResolvedValue(data);
+
+    const response = await controller.updatePositions(body, "positions-1");
+
+    await expect(response.json()).resolves.toEqual({
+      ...data,
+      message: "Posições da Reserva atualizadas com sucesso.",
+    });
+    expect(service.savePositions).toHaveBeenCalledWith(body, "positions-1");
   });
 });

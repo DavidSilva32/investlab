@@ -17,6 +17,8 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
     objectivesNavigation,
     onOpenReserve,
     onRetryDestinations,
+    onObjectivesOpenChange,
+    onObjectivesNavigationChange,
   }: {
     destinationSummary?: { knownTotal: number };
     destinationsUnavailable?: boolean;
@@ -25,11 +27,25 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
     objectivesNavigation?: { objectiveId: string | null };
     onOpenReserve?: () => void;
     onRetryDestinations?: () => void;
+    onObjectivesOpenChange?: (open: boolean) => void;
+    onObjectivesNavigationChange?: (
+      objectiveId: string | null,
+      screen?: string | null,
+    ) => void;
   }) => (
     <>
       <p>Resumo do dashboard</p>
       <button type="button" onClick={onOpenReserve}>
         Ver reserva
+      </button>
+      <button type="button" onClick={() => onObjectivesOpenChange?.(false)}>
+        Fechar objetivos
+      </button>
+      <button
+        type="button"
+        onClick={() => onObjectivesNavigationChange?.("objective-trip")}
+      >
+        Abrir planejamento da viagem
       </button>
       {objectivesNavigation?.objectiveId && (
         <p>Objetivo aberto no painel: {objectivesNavigation.objectiveId}</p>
@@ -123,6 +139,31 @@ describe("DashboardClient", () => {
     ).toBeTruthy();
     expect(routerReplace).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/");
+  });
+
+  it("keeps dashboard panel navigation synchronized when a child changes views", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
+      ),
+    );
+
+    renderDashboard();
+    await screen.findByText("Resumo do dashboard");
+    screen
+      .getByRole("button", { name: "Abrir planejamento da viagem" })
+      .click();
+    expect(
+      await screen.findByText("Objetivo aberto no painel: objective-trip"),
+    ).toBeTruthy();
+
+    screen.getByRole("button", { name: "Fechar objetivos" }).click();
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Objetivo aberto no painel: objective-trip"),
+      ).toBeNull(),
+    );
   });
 
   it("opens the import sheet from the dashboard deep link and clears the query", async () => {
