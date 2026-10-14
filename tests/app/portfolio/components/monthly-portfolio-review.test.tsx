@@ -55,15 +55,18 @@ vi.mock("recharts", () => {
   return {
     Area: ({
       dot,
+      fill,
       isAnimationActive,
     }: {
       dot: boolean | object;
+      fill: string;
       isAnimationActive: boolean;
     }) => (
       <span
         data-testid="area-series"
         data-animation={String(isAnimationActive)}
         data-dot={dot === false ? "hidden" : "visible"}
+        data-fill={fill}
       />
     ),
     AreaChart: (props: Omit<Parameters<typeof Chart>[0], "type">) => (
@@ -351,7 +354,7 @@ describe("MonthlyPortfolioReview", () => {
     ).toBeTruthy();
     expect(screen.getAllByText(/R\$\s?1\.250,50/).length).toBeGreaterThan(0);
     expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
-      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
+      "2026-07,2026-08",
     );
     expect(
       screen
@@ -428,15 +431,86 @@ describe("MonthlyPortfolioReview", () => {
 
     const chart = screen.getByTestId("area-chart");
     expect(chart.getAttribute("data-months")).toBe(
-      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
+      "2026-01,2026-02,2026-03,2026-04",
     );
-    expect(chart.getAttribute("data-values")).toBe(
-      "100,null,null,125,null,null,null,null,null,null,null,null",
-    );
+    expect(chart.getAttribute("data-values")).toBe("100,null,null,125");
     expect(
       screen.getByText(/fevereiro de 2026: sem fechamento registrado/),
     ).toBeTruthy();
     expect(screen.getByText(/rentabilidade/i).className).toContain("sr-only");
+  });
+
+  it("trims months outside the first and last observed value and keeps internal gaps", () => {
+    const history = [
+      {
+        period: "2026-05",
+        summary: summary({
+          referenceDate: "2026-05-31",
+          knownValueCents: "20000",
+        }),
+        completeness: "complete" as const,
+      },
+      {
+        period: "2026-04",
+        summary: summary({
+          referenceDate: "2026-04-30",
+          knownValueCents: null,
+          positionCount: 1,
+          valuedPositionCount: 0,
+          unvaluedPositionCount: 1,
+        }),
+        completeness: "partial" as const,
+      },
+      {
+        period: "2026-03",
+        summary: summary({
+          referenceDate: "2026-03-31",
+          knownValueCents: "15000",
+        }),
+        completeness: "complete" as const,
+      },
+    ];
+
+    expect(
+      chartPoints(history, "2026").map(({ month, value }) => [month, value]),
+    ).toEqual([
+      ["2026-03", 150],
+      ["2026-04", null],
+      ["2026-05", 200],
+    ]);
+  });
+
+  it("keeps the gradient area fill and dots when only two observed values are available", () => {
+    const first = summary({
+      referenceDate: "2026-09-30",
+      knownValueCents: "6200000",
+    });
+    const second = summary({
+      referenceDate: "2026-10-31",
+      knownValueCents: "7000000",
+    });
+    renderReview(
+      review({
+        selectedPeriod: "2026-10",
+        availablePeriods: ["2026-09", "2026-10"],
+        current: second,
+        previous: first,
+        history: [
+          { period: "2026-09", summary: first, completeness: "complete" },
+          { period: "2026-10", summary: second, completeness: "complete" },
+        ],
+      }),
+    );
+
+    expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
+      "2026-09,2026-10",
+    );
+    expect(screen.getByTestId("area-series").getAttribute("data-fill")).toMatch(
+      /^url\(#portfolio-area-.+\)$/,
+    );
+    expect(screen.getByTestId("area-series").getAttribute("data-dot")).toBe(
+      "visible",
+    );
   });
 
   it("uses the complete chronological history when no year can be selected", () => {
@@ -536,7 +610,7 @@ describe("MonthlyPortfolioReview", () => {
     );
 
     expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
-      "100,null,123.45,null,null,null,null,null,null,null,null,null",
+      "100,null,123.45",
     );
     expect(screen.getByText(/valor parcial/)).toBeTruthy();
     expect(screen.getByText("Algumas posições estão sem valor.")).toBeTruthy();
@@ -639,7 +713,7 @@ describe("MonthlyPortfolioReview", () => {
     expect(screen.getByText("2026")).toBeTruthy();
     expect(screen.getByText("R$ 1.250,50")).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-months")).toBe(
-      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
+      "2026-09",
     );
     expect(screen.getByTestId("area-series").getAttribute("data-dot")).toBe(
       "visible",
@@ -652,7 +726,7 @@ describe("MonthlyPortfolioReview", () => {
     await user.click(screen.getByRole("button", { name: "Gráfico de barras" }));
     expect(screen.queryByTestId("area-chart")).toBeNull();
     expect(screen.getByTestId("bar-chart").getAttribute("data-months")).toBe(
-      "2026-01,2026-02,2026-03,2026-04,2026-05,2026-06,2026-07,2026-08,2026-09,2026-10,2026-11,2026-12",
+      "2026-09",
     );
     expect(
       screen
@@ -852,7 +926,7 @@ describe("MonthlyPortfolioReview", () => {
     );
     expect(screen.getByText("Comparação parcial.")).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
-      "null,null,null,null,null,null,1200.5,null,null,null,null,null",
+      "1200.5",
     );
     expect(screen.queryByTestId("bar-chart")).toBeNull();
   });

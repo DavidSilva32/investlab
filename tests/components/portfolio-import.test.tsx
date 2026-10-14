@@ -613,7 +613,7 @@ describe("PortfolioImport", () => {
   });
 });
 
-it("requires a decision for each candidate and submits explicit link/separate choices", async () => {
+it("requires a decision per manual position and submits explicit pair decisions", async () => {
   const candidates = ["probable", "unequivocal", "conflict"].map(
     (status, index) => ({
       manualAssetKey: `manual:${index}`,
@@ -622,9 +622,13 @@ it("requires a decision for each candidate and submits explicit link/separate ch
       manualUpdatedAt: "2026-10-01T12:00:00Z",
       manualProduct: `Manual ${index}`,
       importedProduct: `B3 ${index}`,
+      manualAssetCode: null,
+      importedAssetCode: `CERT-${index}`,
+      manualInstitution: index ? null : "Banco manual",
       manualValue: index ? null : "10",
       importedValue: "11",
       institution: index ? null : "Banco",
+      reasons: ["missing_code", ...(index === 2 ? ["different_values"] : [])],
     }),
   );
   const fetch = vi
@@ -655,13 +659,36 @@ it("requires a decision for each candidate and submits explicit link/separate ch
   );
   const confirm = screen.getByRole("button", { name: /Confirmar 1 arquivo/ });
   expect(confirm.hasAttribute("disabled")).toBe(true);
-  const linkButtons = screen.getAllByRole("button", { name: "Mesma posição" });
-  fireEvent.click(linkButtons[0]);
-  fireEvent.click(linkButtons[1]);
-  fireEvent.click(linkButtons[2]);
+  const candidateHeading = screen.getByRole("heading", {
+    name: "Correspondências possíveis",
+  });
+  const firstPositionColumn = screen.getByRole("columnheader", {
+    name: "Produto",
+  });
+  expect(
+    candidateHeading.compareDocumentPosition(firstPositionColumn) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
   fireEvent.click(
-    screen.getAllByRole("button", { name: "Posições distintas" })[2],
+    screen.getByRole("button", {
+      name: "Usar B3 0, código CERT-0, valor R$ 11,00, como a mesma posição de Manual 0",
+    }),
   );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Usar B3 1, código CERT-1, valor R$ 11,00, como a mesma posição de Manual 1",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Nenhuma posição da B3 corresponde a Manual 2",
+    }),
+  );
+  expect(
+    screen.getAllByText("Código do certificado ausente no cadastro manual"),
+  ).toHaveLength(3);
+  expect(screen.getByText("Código: CERT-0")).toBeTruthy();
+  expect(screen.getByText("Banco manual")).toBeTruthy();
   expect(confirm.hasAttribute("disabled")).toBe(false);
   fireEvent.click(confirm);
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));

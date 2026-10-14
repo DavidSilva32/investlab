@@ -17,6 +17,7 @@ export const DELETE = withApiRequestLogging(
       return await importController.delete(
         new URL(request.url).searchParams.get("documentType"),
         requestId,
+        new URL(request.url).searchParams.get("id"),
       );
     } catch (error) {
       const expected = error instanceof ApplicationError;

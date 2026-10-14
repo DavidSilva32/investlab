@@ -84,7 +84,7 @@ describe("import repository", () => {
   const reconciliationManual = {
     assetKey: "manual:1",
     product: "BBAS3",
-    assetCode: "BBAS3",
+    assetCode: "BBAS3" as string | null,
     institution: "Banco A",
     currency: "BRL",
     totalValue: "1000",
@@ -281,6 +281,90 @@ describe("import repository", () => {
         importRepository.create({
           ...reconciliationInput,
           reconciliationDecisions: decisions,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+  it("recomputes and accepts a normalized product candidate when the manual CDB has no certificate code", async () => {
+    const manual = {
+      ...reconciliationManual,
+      product: "CDB Banco Inter",
+      assetCode: null,
+      institution: "Banco Inter",
+      updatedAt: new Date("2026-10-01T12:00:00Z"),
+    };
+    const importedPosition = {
+      ...reconciliationPosition,
+      product: "CDB - BANCO INTER S/A",
+      assetCode: "CDBA266ZVZV",
+      institution: "Banco Inter",
+      totalValue: "3000",
+    };
+    const importedKey = getEmergencyReserveAssetKey(importedPosition);
+    const { audit } = reconciliationTransaction([manual]);
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [importedPosition] as never,
+        reconciliationDecisions: [
+          {
+            manualAssetKey: manual.assetKey,
+            importedAssetKey: importedKey,
+            action: "link",
+            manualUpdatedAt: manual.updatedAt.toISOString(),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+    expect(audit).toEqual([
+      [
+        expect.objectContaining({
+          manualAssetKey: manual.assetKey,
+          importedAssetKey: importedKey,
+          status: "LINK",
+        }),
+      ],
+    ]);
+  });
+  it.each(["omitted", "stale"] as const)(
+    "rejects a %s decision for a recomputed missing-code candidate",
+    async (decisionState) => {
+      const manual = {
+        ...reconciliationManual,
+        product: "CDB Banco Inter",
+        assetCode: null,
+        institution: "Banco Inter",
+        updatedAt: new Date("2026-10-01T12:00:00Z"),
+      };
+      const importedPosition = {
+        ...reconciliationPosition,
+        product: "CDB - BANCO INTER S/A",
+        assetCode: "CDBA266ZVZV",
+        institution: "Banco Inter",
+      };
+      const { transaction } = reconciliationTransaction([manual]);
+      const candidateDecision = {
+        ...validDecision,
+        importedAssetKey: getEmergencyReserveAssetKey(importedPosition),
+        manualUpdatedAt: manual.updatedAt.toISOString(),
+      };
+      const suppliedDecisions =
+        decisionState === "omitted"
+          ? []
+          : [
+              {
+                ...candidateDecision,
+                manualUpdatedAt: "2026-09-01T00:00:00.000Z",
+              },
+            ];
+
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [importedPosition] as never,
+          reconciliationDecisions: suppliedDecisions,
         }),
       ).rejects.toMatchObject({ statusCode: 409 });
       expect(transaction.insert).not.toHaveBeenCalled();

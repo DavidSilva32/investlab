@@ -96,6 +96,43 @@ describe("explicit source reconciliation", () => {
       )[0].status,
     ).toBe("probable");
   });
+  it("suggests the supplied manual CDB as a probable match using the normalized product without amount inference", () => {
+    const importedCdb = {
+      product: "CDB - BANCO INTER S/A",
+      assetCode: "CDBA266ZVZV",
+      institution: "BANCO INTER S/A",
+      totalValue: "3000",
+    };
+    const manualCdb = {
+      product: "CDB Banco Inter",
+      assetCode: null,
+      institution: "BANCO INTER S/A",
+      totalValue: "3000",
+      assetKey: "manual:cdb",
+      updatedAt: "2026-10-01T12:00:00Z",
+    };
+
+    expect(getReconciliationCandidates([importedCdb], [manualCdb])).toEqual([
+      expect.objectContaining({
+        status: "probable",
+        manualAssetCode: null,
+        importedAssetCode: "CDBA266ZVZV",
+        manualInstitution: "BANCO INTER S/A",
+        institution: "BANCO INTER S/A",
+        manualValue: "3000",
+        importedValue: "3000",
+        reasons: ["missing_code"],
+      }),
+    ]);
+  });
+  it("does not suggest different B3 certificate codes even when product labels match", () => {
+    expect(
+      getReconciliationCandidates(
+        [{ ...imported, product: "CDB Banco Inter", assetCode: "CDB-2" }],
+        [{ ...manual, product: "CDB Banco Inter", assetCode: "CDB-1" }],
+      ),
+    ).toEqual([]);
+  });
   it("preserves instrument fields in the canonical identity", () => {
     const contract = {
       ...imported,

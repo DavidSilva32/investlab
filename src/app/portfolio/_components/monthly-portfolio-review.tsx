@@ -330,6 +330,22 @@ export function chartPoints(
   history: MonthlyPortfolioHistoryPoint[],
   year: string | undefined,
 ): EvolutionPoint[] {
+  const trimUnobservedEdges = (points: EvolutionPoint[]) => {
+    const firstObservedIndex = points.findIndex(
+      (point) => point.value !== null,
+    );
+    if (firstObservedIndex === -1) return points;
+
+    let lastObservedIndex = firstObservedIndex;
+    for (
+      let index = firstObservedIndex + 1;
+      index < points.length;
+      index += 1
+    ) {
+      if (points[index].value !== null) lastObservedIndex = index;
+    }
+    return points.slice(firstObservedIndex, lastObservedIndex + 1);
+  };
   const sortedHistory = [...history].sort((left, right) =>
     left.period.localeCompare(right.period),
   );
@@ -339,7 +355,7 @@ export function chartPoints(
       .map((point) => [point.period, point]),
   );
   if (year) {
-    return Array.from({ length: 12 }, (_, index) => {
+    const points: EvolutionPoint[] = Array.from({ length: 12 }, (_, index) => {
       const period = `${year}-${String(index + 1).padStart(2, "0")}`;
       const historyPoint = pointsByMonth.get(period);
       if (!historyPoint) {
@@ -365,6 +381,7 @@ export function chartPoints(
         hasRecord: true,
       };
     });
+    return trimUnobservedEdges(points);
   }
 
   if (sortedHistory.length === 0) return [];
@@ -415,7 +432,7 @@ export function chartPoints(
     }
   }
 
-  return points;
+  return trimUnobservedEdges(points);
 }
 
 function PortfolioEvolutionChart({
@@ -431,10 +448,12 @@ function PortfolioEvolutionChart({
 }) {
   const reducedMotion = useReducedMotion();
   const points = chartPoints(history, year);
-  const singleValue =
-    points.filter((point) => point.value !== null).length === 1;
-  const animate =
-    !reducedMotion && points.filter((point) => point.value !== null).length > 1;
+  const observedValueCount = points.filter(
+    (point) => point.value !== null,
+  ).length;
+  const sparseHistory = observedValueCount <= 2;
+  const singleValue = observedValueCount === 1;
+  const animate = !reducedMotion && observedValueCount > 1;
   const minimumChartWidth = Math.max(320, points.length * 44);
   const tooltip = (
     <ChartTooltipContent
@@ -531,9 +550,9 @@ function PortfolioEvolutionChart({
                 strokeWidth={2}
                 fill={`url(#portfolio-area-${id})`}
                 dot={
-                  singleValue
+                  sparseHistory
                     ? {
-                        r: 6,
+                        r: singleValue ? 6 : 4,
                         fill: "var(--color-value)",
                         stroke: "var(--background)",
                         strokeWidth: 2,

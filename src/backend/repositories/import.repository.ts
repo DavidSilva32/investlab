@@ -25,6 +25,7 @@ import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import {
   activeReconciliationLinks,
   getReconciliationCandidates,
+  unresolvedReconciliationCandidates,
   type ReconciliationDecision,
 } from "@/backend/services/position-reconciliation";
 const sourceSnapshotIdKey = Symbol.for("investlab.positionSnapshotId");
@@ -226,9 +227,12 @@ export class ImportRepository {
           const manual = await transaction
             .select()
             .from(manualPortfolioPositions);
-          const candidates = getReconciliationCandidates(
-            input.positions,
-            manual,
+          const existingEvents = await transaction
+            .select()
+            .from(positionReconciliationEvents);
+          const candidates = unresolvedReconciliationCandidates(
+            getReconciliationCandidates(input.positions, manual),
+            existingEvents,
           );
           const decisions = input.reconciliationDecisions ?? [];
           const decisionKeys = new Set(
@@ -273,9 +277,6 @@ export class ImportRepository {
             );
           }
           if (linkedImported.length) {
-            const existingEvents = await transaction
-              .select()
-              .from(positionReconciliationEvents);
             const existingLinks = activeReconciliationLinks(existingEvents);
             if (
               decisions.some(
@@ -283,13 +284,15 @@ export class ImportRepository {
                   decision.action === "link" &&
                   existingLinks.some(
                     (link) =>
-                      link.importedAssetKey === decision.importedAssetKey &&
-                      link.manualAssetKey !== decision.manualAssetKey,
+                      (link.importedAssetKey === decision.importedAssetKey &&
+                        link.manualAssetKey !== decision.manualAssetKey) ||
+                      (link.manualAssetKey === decision.manualAssetKey &&
+                        link.importedAssetKey !== decision.importedAssetKey),
                   ),
               )
             ) {
               throw new ApplicationError(
-                "Esta posição importada já está conciliada. Desfaça a conciliação anterior primeiro.",
+                "Uma destas posições já possui outra conciliação ativa. Desfaça o vínculo existente antes de escolher esta correspondência.",
                 409,
               );
             }
@@ -572,6 +575,99 @@ export class ImportRepository {
         requestId,
         error,
         documentType,
+      });
+      throw error;
+    }
+  }
+
+  async deleteLatestPosition(positionId: string, requestId?: string) {
+    try {
+      return await getDatabaseClient().transaction(async (transaction) => {
+        await transaction.execute(
+          sql`LOCK TABLE ${positionSnapshots}, ${positionItems} IN SHARE ROW EXCLUSIVE MODE`,
+        );
+        const [latestSnapshot] = await transaction
+          .select({ id: positionSnapshots.id })
+          .from(positionSnapshots)
+          .orderBy(
+            sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
+            desc(positionSnapshots.createdAt),
+            desc(positionSnapshots.id),
+          )
+          .limit(1);
+        if (!latestSnapshot)
+          throw new ApplicationError(
+            "O fechamento atual não foi encontrado.",
+            404,
+          );
+        const [position] = await transaction
+          .select({ id: positionItems.id, source: positionItems.source })
+          .from(positionItems)
+          .where(
+            and(
+              eq(positionItems.id, positionId),
+              eq(positionItems.snapshotId, latestSnapshot.id),
+            ),
+          )
+          .limit(1);
+        if (!position || position.source !== "B3")
+          throw new ApplicationError(
+            "Esta posição não pertence ao fechamento atual da B3.",
+            404,
+          );
+        await transaction
+          .delete(positionItems)
+          .where(eq(positionItems.id, positionId));
+        return 1;
+      });
+    } catch (error) {
+      if (error instanceof ApplicationError) throw error;
+      logger.error("database_position_item_deletion_failed", {
+        requestId,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  async deleteUnreconciledMovement(movementId: string, requestId?: string) {
+    try {
+      return await getDatabaseClient().transaction(async (transaction) => {
+        await transaction.execute(
+          sql`LOCK TABLE ${portfolioOperationReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
+        );
+        const [movement] = await transaction
+          .select({ id: movementItems.id })
+          .from(movementItems)
+          .where(eq(movementItems.id, movementId))
+          .limit(1);
+        if (!movement)
+          throw new ApplicationError(
+            "Esta movimentação não foi encontrada.",
+            404,
+          );
+        const [reconciliation] = await transaction
+          .select({ id: portfolioOperationReconciliationEvents.id })
+          .from(portfolioOperationReconciliationEvents)
+          .where(
+            eq(portfolioOperationReconciliationEvents.movementId, movementId),
+          )
+          .limit(1);
+        if (reconciliation)
+          throw new ApplicationError(
+            "Esta movimentação já foi conciliada e não pode ser excluída.",
+            409,
+          );
+        await transaction
+          .delete(movementItems)
+          .where(eq(movementItems.id, movementId));
+        return 1;
+      });
+    } catch (error) {
+      if (error instanceof ApplicationError) throw error;
+      logger.error("database_movement_item_deletion_failed", {
+        requestId,
+        error,
       });
       throw error;
     }

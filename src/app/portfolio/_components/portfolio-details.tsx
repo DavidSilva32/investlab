@@ -31,6 +31,9 @@ import type { PortfolioPosition } from "./portfolio-overview";
 import { CdbRateConfiguration } from "./cdb-rate-configuration";
 import { ManualPositionManager } from "./manual-position-manager";
 import { ManualPortfolioOperations } from "./manual-portfolio-operations";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
+import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
 import {
   Dialog,
   DialogContent,
@@ -79,6 +82,7 @@ const currentValueCents = (row: PortfolioPosition) => {
 
 const positionColumns = (
   onAdjustRate: (position: PortfolioPosition) => void,
+  onDelete: (position: PortfolioPosition) => void,
 ): PortfolioTableColumn<PortfolioPosition>[] => [
   {
     id: "product",
@@ -305,7 +309,7 @@ const positionColumns = (
     render: (row) => {
       const isDiCdb =
         /^CDB\b/i.test(row.product) && /^(DI|CDI)$/i.test(row.indexer ?? "");
-      if (row.source !== "MANUAL" && !(isDiCdb && row.assetCode)) return null;
+      if (row.source !== "MANUAL" && row.source !== "B3") return null;
 
       return (
         <div className="flex justify-end">
@@ -330,6 +334,15 @@ const positionColumns = (
               )}
               {row.source === "MANUAL" && isDiCdb && row.assetCode && (
                 <DropdownMenuSeparator />
+              )}
+              {row.source === "B3" && (
+                <DropdownMenuItem
+                  className="text-status-danger focus:text-status-danger"
+                  onSelect={() => onDelete(row)}
+                >
+                  <Trash2 aria-hidden="true" />
+                  Excluir posição
+                </DropdownMenuItem>
               )}
               {row.source === "MANUAL" && (
                 <>
@@ -367,7 +380,9 @@ const positionColumns = (
     },
   },
 ];
-const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
+const movementColumns = (
+  onDelete: (movement: PortfolioMovement) => void,
+): PortfolioTableColumn<PortfolioMovement>[] => [
   {
     id: "occurredAt",
     label: "Data",
@@ -457,6 +472,40 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     render: (row) =>
       row.operationValue ? formatCurrency(Number(row.operationValue)) : "—",
   },
+  {
+    id: "actions",
+    label: "Ações",
+    width: "7%",
+    className: "text-right",
+    sortable: false,
+    value: () => "",
+    render: (row) => (
+      <div className="flex justify-end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label={`Ações para ${row.product}`}
+            >
+              <MoreHorizontal aria-hidden="true" className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-status-danger focus:text-status-danger"
+              onSelect={() => onDelete(row)}
+            >
+              <Trash2 aria-hidden="true" />
+              Excluir movimentação
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    ),
+  },
 ];
 
 export function PositionDetails({
@@ -470,6 +519,33 @@ export function PositionDetails({
   const [rateDialogKey, setRateDialogKey] = useState(0);
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [positionToDelete, setPositionToDelete] =
+    useState<PortfolioPosition | null>(null);
+  const [deletingPosition, setDeletingPosition] = useState(false);
+  const removePosition = async () => {
+    if (!positionToDelete) return;
+    setDeletingPosition(true);
+    try {
+      const response = await fetch(
+        `/api/imports?documentType=B3_POSITION_XLSX&id=${positionToDelete.id}`,
+        { method: "DELETE" },
+      );
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(getApiMessage(body, "Não foi possível excluir a posição."));
+        return;
+      }
+      toast.success(
+        getApiMessage(body, "Posição removida do fechamento atual."),
+      );
+      window.dispatchEvent(new Event("portfolio:updated"));
+      setPositionToDelete(null);
+    } catch {
+      toast.error("Não foi possível comunicar com o servidor.");
+    } finally {
+      setDeletingPosition(false);
+    }
+  };
   const rateAssetCodes = positions
     .filter(
       (position) =>
@@ -498,7 +574,7 @@ export function PositionDetails({
               setRatePosition(position);
               setRateDialogKey((key) => key + 1);
               setRateDialogOpen(true);
-            })}
+            }, setPositionToDelete)}
             rows={positions}
             initialSort={{ id: "product", direction: "asc" }}
             emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."
@@ -575,6 +651,18 @@ export function PositionDetails({
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
       />
+      <ConfirmActionDialog
+        open={positionToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletingPosition) setPositionToDelete(null);
+        }}
+        hideTrigger
+        title="Excluir posição?"
+        description="Tem certeza que deseja excluir esta posição?"
+        confirmLabel="Excluir"
+        loading={deletingPosition}
+        onConfirm={() => void removePosition()}
+      />
       <ManualPositionManager positions={positions} managementOnly />
     </div>
   );
@@ -586,6 +674,34 @@ export function MovementDetails({
   movements: PortfolioMovement[];
 }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [movementToDelete, setMovementToDelete] =
+    useState<PortfolioMovement | null>(null);
+  const [deletingMovement, setDeletingMovement] = useState(false);
+
+  const removeMovement = async () => {
+    if (!movementToDelete) return;
+    setDeletingMovement(true);
+    try {
+      const response = await fetch(
+        `/api/imports?documentType=B3_MOVEMENT_XLSX&id=${movementToDelete.id}`,
+        { method: "DELETE" },
+      );
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        toast.error(
+          getApiMessage(body, "Não foi possível excluir a movimentação."),
+        );
+        return;
+      }
+      toast.success(getApiMessage(body, "Movimentação excluída."));
+      window.dispatchEvent(new Event("portfolio:updated"));
+      setMovementToDelete(null);
+    } catch {
+      toast.error("Não foi possível comunicar com o servidor.");
+    } finally {
+      setDeletingMovement(false);
+    }
+  };
   return (
     <div className="space-y-4">
       <Card className="overflow-hidden">
@@ -597,7 +713,7 @@ export function MovementDetails({
         </CardHeader>
         <CardContent className="p-0">
           <PortfolioTable
-            columns={movementColumns}
+            columns={movementColumns(setMovementToDelete)}
             rows={movements}
             initialSort={{ id: "occurredAt", direction: "desc" }}
             emptyMessage="Importe um arquivo de movimentações da B3 para visualizá-las."
@@ -650,6 +766,18 @@ export function MovementDetails({
         hideTrigger
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
+      />
+      <ConfirmActionDialog
+        open={movementToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletingMovement) setMovementToDelete(null);
+        }}
+        hideTrigger
+        title="Excluir movimentação?"
+        description="Tem certeza que deseja excluir esta movimentação?"
+        confirmLabel="Excluir"
+        loading={deletingMovement}
+        onConfirm={() => void removeMovement()}
       />
       <ManualPortfolioOperations showTrigger={false} initiallyCollapsed />
     </div>

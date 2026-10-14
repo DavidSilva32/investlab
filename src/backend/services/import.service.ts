@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { manualPortfolioPositionRepository } from "@/backend/repositories/manual-portfolio-position.repository";
-import { getReconciliationCandidates } from "@/backend/services/position-reconciliation";
+import {
+  getReconciliationCandidates,
+  unresolvedReconciliationCandidates,
+} from "@/backend/services/position-reconciliation";
+import { positionReconciliationRepository } from "@/backend/repositories/position-reconciliation.repository";
 import {
   importFileSchema,
   positionReferenceDateSchema,
@@ -58,11 +62,15 @@ export class ImportService {
   ) {
     const preview = this.preview(file);
     if (preview.documentType !== "B3_POSITION_XLSX") return preview;
+    const [manualPositions, reconciliationEvents] = await Promise.all([
+      manualPortfolioPositionRepository.list(requestId),
+      positionReconciliationRepository.listEvents(requestId),
+    ]);
     return {
       ...preview,
-      reconciliationCandidates: getReconciliationCandidates(
-        preview.positions,
-        await manualPortfolioPositionRepository.list(requestId),
+      reconciliationCandidates: unresolvedReconciliationCandidates(
+        getReconciliationCandidates(preview.positions, manualPositions),
+        reconciliationEvents,
       ),
       identityConflicts: await this.findAssignedPositionsMissingFromImport(
         preview.positions,
@@ -249,9 +257,23 @@ export class ImportService {
     );
   }
 
-  async delete(documentType: string | null, requestId: string) {
+  async delete(
+    documentType: string | null,
+    requestId: string,
+    itemId: string | null = null,
+  ) {
     if (!documentType || !documentTypes.has(documentType as B3DocumentType)) {
       throw new ApplicationError("Tipo de importação inválido.", 400);
+    }
+    if (itemId !== null) {
+      if (!z.string().uuid().safeParse(itemId).success)
+        throw new ApplicationError("Identificador de registro inválido.", 400);
+      if (documentType === "B3_POSITION_XLSX") {
+        await importRepository.deleteLatestPosition(itemId, requestId);
+        return { message: "Posição removida do fechamento atual." };
+      }
+      await importRepository.deleteUnreconciledMovement(itemId, requestId);
+      return { message: "Movimentação excluída." };
     }
     return importRepository.deleteByDocumentType(
       documentType as B3DocumentType,

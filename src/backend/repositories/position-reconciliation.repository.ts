@@ -6,7 +6,11 @@ import {
   manualPortfolioPositions,
 } from "@/infrastructure/database/schema";
 import { logger } from "@/infrastructure/logging/logger";
-import { activeReconciliationLinks } from "@/backend/services/position-reconciliation";
+import {
+  activeReconciliationLinks,
+  latestReconciliationEventsByPair,
+  type ReconciliationEvent,
+} from "@/backend/services/position-reconciliation";
 
 export class PositionReconciliationRepository {
   async listEvents(requestId?: string) {
@@ -31,6 +35,7 @@ export class PositionReconciliationRepository {
     manualAssetKey: string,
     effectiveFrom: string,
     requestId: string,
+    importedAssetKey?: string,
   ) {
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
@@ -47,10 +52,21 @@ export class PositionReconciliationRepository {
             desc(positionReconciliationEvents.recordedAt),
             desc(positionReconciliationEvents.id),
           );
-        const [latest] = activeReconciliationLinks(events, effectiveFrom);
-        if (!latest) {
+        const [activeLink] = activeReconciliationLinks(events, effectiveFrom);
+        const latestSeparate = importedAssetKey
+          ? latestReconciliationEventsByPair(
+              events as ReconciliationEvent[],
+            ).get(JSON.stringify([manualAssetKey, importedAssetKey]))
+          : null;
+        const latest = importedAssetKey ? latestSeparate : activeLink;
+        const canReopenSeparate = latest?.status === "SEPARATE";
+        if (
+          !latest ||
+          (importedAssetKey && !canReopenSeparate) ||
+          (!importedAssetKey && latest.status !== "LINK")
+        ) {
           throw new ApplicationError(
-            "Esta posição não possui conciliação ativa.",
+            "Esta decisão não pode ser desfeita porque já foi alterada.",
             409,
           );
         }
