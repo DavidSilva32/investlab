@@ -18,6 +18,21 @@ beforeEach(() => {
   imported.listLatestPositions.mockResolvedValue([]);
 });
 describe("position reconciliation management", () => {
+  it("indexes the current imported positions before assembling the view", async () => {
+    events.listEvents.mockResolvedValue([]);
+    manual.list.mockResolvedValue([]);
+    imported.listLatestPositions.mockResolvedValue([
+      { product: "CDB - Banco", assetCode: "CDB-1", totalValue: "100" },
+    ]);
+
+    await expect(service.list("request")).resolves.toEqual({
+      links: [],
+      separateDecisions: [],
+    });
+
+    expect(imported.listLatestPositions).toHaveBeenCalledWith("request");
+  });
+
   it("lists only the last linked state with deterministic audit ordering, without losing archived labels", async () => {
     events.listEvents.mockResolvedValue([
       {
@@ -32,6 +47,7 @@ describe("position reconciliation management", () => {
         id: "b",
         manualAssetKey: key,
         status: "UNLINK",
+        importedAssetKey: "b3",
         effectiveFrom: "2026-09-30",
         recordedAt: "2026-10-01T12:00:00Z",
       },
@@ -79,6 +95,24 @@ describe("position reconciliation management", () => {
         "2026-10-10",
         "r",
         undefined,
+      );
+      await expect(
+        service.reverse(
+          {
+            manualAssetKey: key,
+            importedAssetKey: `v1:${"a".repeat(64)}`,
+          },
+          "r",
+        ),
+      ).resolves.toEqual({
+        message:
+          "Decisão reaberta. O par poderá ser revisado na próxima prévia B3.",
+      });
+      expect(events.reverse).toHaveBeenLastCalledWith(
+        key,
+        "2026-10-10",
+        "r",
+        `v1:${"a".repeat(64)}`,
       );
       await expect(
         service.reverse({ manualAssetKey: "bad" }, "r"),

@@ -45,8 +45,8 @@ function formatValue(value: string | null) {
 }
 
 export function PositionReconciliation() {
-  const [links, setLinks] = useState<Link[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [links, setLinks] = useState<Link[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Link | null>(null);
   const [error, setError] = useState("");
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -61,7 +61,10 @@ export function PositionReconciliation() {
         const body = await response.json();
         if (!response.ok)
           throw new Error(
-            getApiMessage(body, "Não foi possível carregar os vínculos ativos."),
+            getApiMessage(
+              body,
+              "Não foi possível carregar os vínculos ativos.",
+            ),
           );
         if (!cancelled) setLinks(body.links);
       } catch {
@@ -90,9 +93,7 @@ export function PositionReconciliation() {
           getApiMessage(body, "Não foi possível desfazer o vínculo."),
         );
       setLinks((current) =>
-        (current ?? []).filter(
-          (entry) => entry.manualAssetKey !== link.manualAssetKey,
-        ),
+        current.filter((entry) => entry.manualAssetKey !== link.manualAssetKey),
       );
       toast.success("Vínculo desfeito. Revise os valores das posições.");
       window.dispatchEvent(new Event("portfolio:updated"));
@@ -125,17 +126,18 @@ export function PositionReconciliation() {
           </Button>
         </div>
       )}
-      {loading && !links && (
+      {loading && links.length === 0 && (
         <p role="status" className="text-xs text-muted-foreground">
           Carregando vínculos ativos...
         </p>
       )}
-      {links && links.length > 0 && (
+      {links.length > 0 && (
         <Collapsible>
           <div className="rounded-lg border bg-muted/20 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">
-                {links.length} {links.length === 1 ? "vínculo ativo" : "vínculos ativos"} entre
+                {links.length}{" "}
+                {links.length === 1 ? "vínculo ativo" : "vínculos ativos"} entre
                 cadastro manual e B3
               </p>
               <CollapsibleTrigger asChild>
@@ -163,13 +165,19 @@ export function PositionReconciliation() {
                     <div className="min-w-0 text-xs">
                       <p className="font-medium">{link.manualProduct}</p>
                       <p className="text-muted-foreground">
-                        Manual: {link.manualInstitution ?? "Instituição não informada"}
-                        {" · "}{formatValue(link.manualValue)}
+                        Manual:{" "}
+                        {link.manualInstitution ?? "Instituição não informada"}
+                        {" · "}
+                        {formatValue(link.manualValue)}
                       </p>
                       <p className="text-muted-foreground">
-                        B3: {link.importedProduct} · {link.importedInstitution ?? "Instituição não informada"}
-                        {" · Código: "}{link.importedAssetCode ?? "não informado"}
-                        {" · "}{formatValue(link.importedValue)}
+                        B3: {link.importedProduct} ·{" "}
+                        {link.importedInstitution ??
+                          "Instituição não informada"}
+                        {" · Código: "}
+                        {link.importedAssetCode ?? "não informado"}
+                        {" · "}
+                        {formatValue(link.importedValue)}
                       </p>
                     </div>
                     <Button
@@ -189,7 +197,10 @@ export function PositionReconciliation() {
           </div>
         </Collapsible>
       )}
-      <AlertDialog open={selected !== null} onOpenChange={() => setSelected(null)}>
+      <AlertDialog
+        open={selected !== null}
+        onOpenChange={() => setSelected(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Desfazer este vínculo?</AlertDialogTitle>

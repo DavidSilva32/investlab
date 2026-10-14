@@ -1,9 +1,34 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const toastMocks = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
+vi.mock("sonner", () => ({ toast: toastMocks }));
+const confirmCallbacks = vi.hoisted(() => ({
+  callbacks: new Map<string, () => void>(),
+}));
+vi.mock("@/components/confirm-action-dialog", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/confirm-action-dialog")>();
+  return {
+    ...actual,
+    ConfirmActionDialog: (
+      props: Parameters<typeof actual.ConfirmActionDialog>[0],
+    ) => {
+      confirmCallbacks.callbacks.set(props.title, props.onConfirm);
+      return <actual.ConfirmActionDialog {...props} />;
+    },
+  };
+});
 
 vi.mock("@/components/portfolio-table", () => ({
   PortfolioTable: ({
@@ -84,6 +109,7 @@ import {
   MovementDetails,
   PositionDetails,
 } from "@/app/portfolio/_components/portfolio-details";
+import { toast } from "sonner";
 
 const position = {
   id: "1",
@@ -109,6 +135,8 @@ describe("portfolio detail components", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    confirmCallbacks.callbacks.clear();
   });
 
   it("puts manual entry and bulk actions in the positions table toolbar", async () => {
@@ -469,6 +497,267 @@ describe("portfolio detail components", () => {
     expect(html).toContain("1 movimentação registrada");
     expect(html).not.toContain("1 movimentações registradas");
   });
+});
+
+describe("individual B3 record deletion", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    confirmCallbacks.callbacks.clear();
+  });
+
+  const operationsResponse = {
+    ok: true,
+    json: async () => ({
+      operations: [],
+      movements: [],
+      pendingMovements: [],
+      candidates: [],
+      links: [],
+    }),
+  };
+  const movement = {
+    id: "movement-1",
+    occurredAt: "2026-09-10",
+    direction: "CREDITO",
+    movementType: "APLICAÇÃO",
+    product: "CDB",
+    assetCode: null,
+    institution: "Banco",
+    quantity: "1",
+    unitPrice: "10",
+    operationValue: "10",
+  };
+
+  it.each([
+    {
+      label: "posição",
+      render: () => (
+        <PositionDetails positions={[{ ...position, source: "B3" }]} />
+      ),
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir posição",
+      dialogTitle: "Excluir posição?",
+      id: position.id,
+      documentType: "B3_POSITION_XLSX",
+      successMessage: "Posição removida do fechamento atual.",
+    },
+    {
+      label: "movimentação",
+      render: () => <MovementDetails movements={[movement]} />,
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir movimentação",
+      dialogTitle: "Excluir movimentação?",
+      id: movement.id,
+      documentType: "B3_MOVEMENT_XLSX",
+      successMessage: "Movimentação excluída.",
+    },
+  ])("confirms and deletes one B3 $label", async (record) => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn((url: string) =>
+      url.startsWith("/api/imports")
+        ? Promise.resolve({
+            ok: true,
+            json: async () => ({ message: record.successMessage }),
+          })
+        : Promise.resolve(operationsResponse),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const dispatchSpy = vi
+      .spyOn(window, "dispatchEvent")
+      .mockImplementation(() => true);
+    render(record.render());
+
+    const actionButtons = screen.getAllByRole("button", {
+      name: record.actionLabel,
+    });
+    await user.click(actionButtons[actionButtons.length - 1]);
+    await user.click(await screen.findByText(record.menuLabel));
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      record.dialogTitle,
+    );
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/imports?documentType=${record.documentType}&id=${record.id}`,
+      { method: "DELETE" },
+    );
+    expect(toast.success).toHaveBeenCalledWith(record.successMessage);
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "portfolio:updated" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it.each([
+    {
+      label: "posição",
+      render: () => (
+        <PositionDetails positions={[{ ...position, source: "B3" }]} />
+      ),
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir posição",
+      apiMessage: "A posição não pode ser excluída agora.",
+    },
+    {
+      label: "movimentação",
+      render: () => <MovementDetails movements={[movement]} />,
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir movimentação",
+      apiMessage: "A movimentação já foi conciliada.",
+    },
+  ])("shows the API error when deleting a $label fails", async (record) => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        url.startsWith("/api/imports")
+          ? Promise.resolve({
+              ok: false,
+              json: async () => ({ message: record.apiMessage }),
+            })
+          : Promise.resolve(operationsResponse),
+      ),
+    );
+    render(record.render());
+
+    const actionButtons = screen.getAllByRole("button", {
+      name: record.actionLabel,
+    });
+    await user.click(actionButtons[actionButtons.length - 1]);
+    await user.click(await screen.findByText(record.menuLabel));
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+
+    expect(toast.error).toHaveBeenCalledWith(record.apiMessage);
+    expect(toast.success).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+  });
+
+  it.each([
+    {
+      label: "posição",
+      render: () => (
+        <PositionDetails positions={[{ ...position, source: "B3" }]} />
+      ),
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir posição",
+      fallback: "Não foi possível comunicar com o servidor.",
+    },
+    {
+      label: "movimentação",
+      render: () => <MovementDetails movements={[movement]} />,
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir movimentação",
+      fallback: "Não foi possível comunicar com o servidor.",
+    },
+  ])(
+    "shows a safe fallback when deleting a $label has a network error",
+    async (record) => {
+      const user = userEvent.setup();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) =>
+          url.startsWith("/api/imports")
+            ? Promise.reject(new Error("offline"))
+            : Promise.resolve(operationsResponse),
+        ),
+      );
+      render(record.render());
+
+      const actionButtons = screen.getAllByRole("button", {
+        name: record.actionLabel,
+      });
+      await user.click(actionButtons[actionButtons.length - 1]);
+      await user.click(await screen.findByText(record.menuLabel));
+      await user.click(screen.getByRole("button", { name: "Excluir" }));
+
+      expect(toast.error).toHaveBeenCalledWith(record.fallback);
+      expect(toast.success).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    },
+  );
+
+  it.each([
+    {
+      title: "Excluir posição?",
+      render: () => <PositionDetails positions={[]} />,
+    },
+    {
+      title: "Excluir movimentação?",
+      render: () => <MovementDetails movements={[]} />,
+    },
+  ])(
+    "ignores a stale $title confirmation when no row is selected",
+    (record) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      render(record.render());
+
+      confirmCallbacks.callbacks.get(record.title)?.();
+
+      expect(
+        fetchMock.mock.calls.filter(([url]) =>
+          String(url).startsWith("/api/imports"),
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    {
+      label: "posição",
+      render: () => (
+        <PositionDetails positions={[{ ...position, source: "B3" }]} />
+      ),
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir posição",
+      successMessage: "Posição removida do fechamento atual.",
+    },
+    {
+      label: "movimentação",
+      render: () => <MovementDetails movements={[movement]} />,
+      actionLabel: "Ações para CDB",
+      menuLabel: "Excluir movimentação",
+      successMessage: "Movimentação excluída.",
+    },
+  ])(
+    "keeps the $label confirmation while its deletion is pending",
+    async (record) => {
+      const user = userEvent.setup();
+      let finishDeletion!: (response: {
+        ok: boolean;
+        json: () => Promise<{ message: string }>;
+      }) => void;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) =>
+          url.startsWith("/api/imports")
+            ? new Promise((resolve) => {
+                finishDeletion = resolve;
+              })
+            : Promise.resolve(operationsResponse),
+        ),
+      );
+      render(record.render());
+
+      const actionButtons = screen.getAllByRole("button", {
+        name: record.actionLabel,
+      });
+      await user.click(actionButtons[actionButtons.length - 1]);
+      await user.click(await screen.findByText(record.menuLabel));
+      await user.click(screen.getByRole("button", { name: "Excluir" }));
+      await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+      expect(screen.getByRole("alertdialog")).toBeTruthy();
+
+      finishDeletion({
+        ok: true,
+        json: async () => ({ message: record.successMessage }),
+      });
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    },
+  );
 });
 
 it("does not claim a current valuation when no covered-through date is returned", () => {

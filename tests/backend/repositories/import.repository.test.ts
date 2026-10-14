@@ -3,11 +3,43 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   client: { select: vi.fn(), transaction: vi.fn() },
   logger: { error: vi.fn() },
+  forcedCandidates: null as unknown[] | null,
+  forcedLinks: null as unknown[] | null,
 }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => mocks.client,
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
+vi.mock(
+  "@/backend/services/position-reconciliation",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("@/backend/services/position-reconciliation")
+      >();
+    return {
+      ...actual,
+      getReconciliationCandidates: (
+        ...args: Parameters<typeof actual.getReconciliationCandidates>
+      ) =>
+        (mocks.forcedCandidates as ReturnType<
+          typeof actual.getReconciliationCandidates
+        > | null) ?? actual.getReconciliationCandidates(...args),
+      unresolvedReconciliationCandidates: (
+        ...args: Parameters<typeof actual.unresolvedReconciliationCandidates>
+      ) =>
+        (mocks.forcedCandidates as ReturnType<
+          typeof actual.unresolvedReconciliationCandidates
+        > | null) ?? actual.unresolvedReconciliationCandidates(...args),
+      activeReconciliationLinks: (
+        ...args: Parameters<typeof actual.activeReconciliationLinks>
+      ) =>
+        (mocks.forcedLinks as ReturnType<
+          typeof actual.activeReconciliationLinks
+        > | null) ?? actual.activeReconciliationLinks(...args),
+    };
+  },
+);
 
 import { importRepository } from "@/backend/repositories/import.repository";
 import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
@@ -80,7 +112,11 @@ const sqlChunksText = (chunks: unknown[]) =>
     .join("");
 
 describe("import repository", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.forcedCandidates = null;
+    mocks.forcedLinks = null;
+  });
   const reconciliationManual = {
     assetKey: "manual:1",
     product: "BBAS3",
@@ -574,6 +610,98 @@ describe("import repository", () => {
         ],
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+  it.each([
+    {
+      name: "an imported identity already linked to another manual position",
+      event: {
+        manualAssetKey: "manual:existing",
+        importedAssetKey: reconciliationKey,
+      },
+    },
+    {
+      name: "a manual identity already linked to another imported position",
+      event: {
+        manualAssetKey: reconciliationManual.assetKey,
+        importedAssetKey: "v1:" + "b".repeat(64),
+      },
+    },
+  ])("rejects a link that conflicts with $name", async ({ event }) => {
+    const { transaction } = reconciliationTransaction(
+      undefined,
+      [],
+      [
+        {
+          id: "active-link",
+          ...event,
+          status: "LINK",
+          effectiveFrom: "2026-09-01",
+          recordedAt: new Date("2026-09-02T00:00:00Z"),
+        },
+      ],
+    );
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+  it("does not reject the exact pair in the defensive active-link guard", async () => {
+    mocks.forcedCandidates = [
+      {
+        manualAssetKey: validDecision.manualAssetKey,
+        importedAssetKey: validDecision.importedAssetKey,
+        manualUpdatedAt: validDecision.manualUpdatedAt,
+      },
+    ];
+    mocks.forcedLinks = [
+      {
+        manualAssetKey: validDecision.manualAssetKey,
+        importedAssetKey: validDecision.importedAssetKey,
+        status: "LINK",
+        effectiveFrom: "2026-09-01",
+        recordedAt: new Date("2026-09-02T00:00:00Z"),
+      },
+    ];
+    const { transaction } = reconciliationTransaction();
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+    expect(transaction.insert).toHaveBeenCalled();
+  });
+  it("rejects a different imported pair for the same manual identity in the defensive guard", async () => {
+    mocks.forcedCandidates = [
+      {
+        manualAssetKey: validDecision.manualAssetKey,
+        importedAssetKey: validDecision.importedAssetKey,
+        manualUpdatedAt: validDecision.manualUpdatedAt,
+      },
+    ];
+    mocks.forcedLinks = [
+      {
+        manualAssetKey: validDecision.manualAssetKey,
+        importedAssetKey: "v1:" + "b".repeat(64),
+        status: "LINK",
+        effectiveFrom: "2026-09-01",
+        recordedAt: new Date("2026-09-02T00:00:00Z"),
+      },
+    ];
+    const { transaction } = reconciliationTransaction();
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.insert).not.toHaveBeenCalled();
   });
   it("checks import hash presence", async () => {
     mocks.client.select
@@ -1605,6 +1733,179 @@ describe("import repository", () => {
     expect(mocks.logger.error).toHaveBeenCalledWith(
       "database_import_deletion_failed",
       expect.any(Object),
+    );
+  });
+
+  it("deletes only a B3 position from the latest snapshot", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "latest-snapshot" }] }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              limit: async () => [{ id: "position-1", source: "B3" }],
+            }),
+          }),
+        }),
+      delete: vi.fn().mockReturnValue({ where }),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      importRepository.deleteLatestPosition("position-1", "request-1"),
+    ).resolves.toBe(1);
+
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    expect(transaction.delete).toHaveBeenCalledWith(positionItems);
+    expect(where).toHaveBeenCalledOnce();
+  });
+
+  it("rejects position deletion when there is no latest snapshot or the item is not B3 in that snapshot", async () => {
+    const makeTransaction = (
+      snapshots: unknown[],
+      positions: unknown[] = [],
+    ) => ({
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ orderBy: () => ({ limit: async () => snapshots }) }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => positions }) }),
+        }),
+      delete: vi.fn(),
+    });
+
+    const noSnapshot = makeTransaction([]);
+    mocks.client.transaction.mockImplementationOnce((callback) =>
+      callback(noSnapshot),
+    );
+    await expect(
+      importRepository.deleteLatestPosition("position-1"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(noSnapshot.delete).not.toHaveBeenCalled();
+
+    const missingPosition = makeTransaction([{ id: "latest-snapshot" }]);
+    mocks.client.transaction.mockImplementationOnce((callback) =>
+      callback(missingPosition),
+    );
+    await expect(
+      importRepository.deleteLatestPosition("position-1"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const manualPosition = makeTransaction(
+      [{ id: "latest-snapshot" }],
+      [{ id: "position-1", source: "MANUAL" }],
+    );
+    mocks.client.transaction.mockImplementationOnce((callback) =>
+      callback(manualPosition),
+    );
+    await expect(
+      importRepository.deleteLatestPosition("position-1"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(manualPosition.delete).not.toHaveBeenCalled();
+  });
+
+  it("logs unexpected position deletion failures and rethrows them", async () => {
+    mocks.client.transaction.mockRejectedValueOnce(new Error("lock failed"));
+
+    await expect(
+      importRepository.deleteLatestPosition("position-1", "request-1"),
+    ).rejects.toThrow("lock failed");
+
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_position_item_deletion_failed",
+      expect.objectContaining({ requestId: "request-1" }),
+    );
+  });
+
+  it("deletes a movement only when it exists and has no reconciliation history", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({ limit: async () => [{ id: "movement-1" }] }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => [] }) }),
+        }),
+      delete: vi.fn().mockReturnValue({ where }),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      importRepository.deleteUnreconciledMovement("movement-1", "request-1"),
+    ).resolves.toBe(1);
+
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    expect(transaction.delete).toHaveBeenCalledWith(movementItems);
+    expect(where).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a missing or reconciled movement without deleting it", async () => {
+    const makeTransaction = (
+      movementRows: unknown[],
+      events: unknown[] = [],
+    ) => ({
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => movementRows }) }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => events }) }),
+        }),
+      delete: vi.fn(),
+    });
+
+    const missing = makeTransaction([]);
+    mocks.client.transaction.mockImplementationOnce((callback) =>
+      callback(missing),
+    );
+    await expect(
+      importRepository.deleteUnreconciledMovement("movement-1"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const reconciled = makeTransaction(
+      [{ id: "movement-1" }],
+      [{ id: "event-1" }],
+    );
+    mocks.client.transaction.mockImplementationOnce((callback) =>
+      callback(reconciled),
+    );
+    await expect(
+      importRepository.deleteUnreconciledMovement("movement-1"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(reconciled.delete).not.toHaveBeenCalled();
+  });
+
+  it("logs unexpected movement deletion failures and rethrows them", async () => {
+    mocks.client.transaction.mockRejectedValueOnce(new Error("lock failed"));
+
+    await expect(
+      importRepository.deleteUnreconciledMovement("movement-1", "request-1"),
+    ).rejects.toThrow("lock failed");
+
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_movement_item_deletion_failed",
+      expect.objectContaining({ requestId: "request-1" }),
     );
   });
   it("persists successive complete snapshots and returns only the latest items", async () => {

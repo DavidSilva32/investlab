@@ -1,21 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { service } = vi.hoisted(() => ({
+const { service, logger } = vi.hoisted(() => ({
   service: {
     preview: vi.fn(),
     previewWithIdentityConflicts: vi.fn(),
     confirm: vi.fn(),
     delete: vi.fn(),
   },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@/backend/services/import.service", () => ({
   importService: service,
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger,
 }));
 
 import { importController } from "@/backend/controllers/import.controller";
+import { logger as loggerInstance } from "@/infrastructure/logging/logger";
 
 function requestWithFile() {
   const form = new FormData();
@@ -56,7 +58,32 @@ describe("ImportController", () => {
     expect(service.delete).toHaveBeenCalledWith(
       "B3_MOVEMENT_XLSX",
       "request-1",
+      null,
     );
+  });
+
+  it("returns an individual deletion result and logs the deleted item", async () => {
+    service.delete.mockResolvedValue({ message: "Movimentação excluída." });
+
+    const response = await importController.delete(
+      "B3_MOVEMENT_XLSX",
+      "request-2",
+      "movement-1",
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      message: "Movimentação excluída.",
+    });
+    expect(service.delete).toHaveBeenCalledWith(
+      "B3_MOVEMENT_XLSX",
+      "request-2",
+      "movement-1",
+    );
+    expect(loggerInstance.info).toHaveBeenCalledWith("b3_import_item_deleted", {
+      requestId: "request-2",
+      documentType: "B3_MOVEMENT_XLSX",
+      itemId: "movement-1",
+    });
   });
 
   it("propagates service validation", async () => {

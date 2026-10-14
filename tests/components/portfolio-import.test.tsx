@@ -685,10 +685,11 @@ it("requires a decision per manual position and submits explicit pair decisions"
     }),
   );
   expect(
-    screen.getAllByText("Código do certificado ausente no cadastro manual"),
+    screen.getAllByRole("button", {
+      name: /como a mesma posição de Manual/,
+    }),
   ).toHaveLength(3);
-  expect(screen.getByText("Código: CERT-0")).toBeTruthy();
-  expect(screen.getByText("Banco manual")).toBeTruthy();
+  expect(screen.getByText(/CERT-0/)).toBeTruthy();
   expect(confirm.hasAttribute("disabled")).toBe(false);
   fireEvent.click(confirm);
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
@@ -703,4 +704,64 @@ it("requires a decision per manual position and submits explicit pair decisions"
   );
   cleanup();
   vi.restoreAllMocks();
+});
+
+it("groups many possible matches and expands or collapses the extra options", async () => {
+  const candidates = Array.from({ length: 4 }, (_, index) => ({
+    manualAssetKey: "manual:cdb",
+    importedAssetKey: `b3:${index}`,
+    status: "conflict",
+    manualUpdatedAt: "2026-10-01T12:00:00Z",
+    manualProduct: "CDB Banco Inter",
+    importedProduct: `CDB ${index}`,
+    manualAssetCode: null,
+    importedAssetCode: index === 3 ? null : `CERT-${index}`,
+    manualInstitution: "Banco Inter",
+    manualValue: "3000",
+    importedValue: index === 0 ? "3000" : index === 3 ? null : "3100",
+    institution: index === 1 ? null : "Banco Inter",
+    reasons: index === 0 ? ["missing_code"] : ["different_values"],
+    closestValue: index === 0,
+  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...positionPreview,
+        reconciliationCandidates: candidates,
+      }),
+    }),
+  );
+  const { container } = render(<PortfolioImport />);
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [spreadsheet("cdbs.xlsx")] },
+  });
+
+  expect(await screen.findByText("Valor mais próximo")).toBeTruthy();
+  expect(
+    screen.getAllByRole("button", { name: /como a mesma posição/ }),
+  ).toHaveLength(3);
+  expect(
+    screen.getByText(/Instituição não informada.*Código: CERT-1/),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Mostrar outros 1 candidatos" }),
+  ).toBeTruthy();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mostrar outros 1 candidatos" }),
+  );
+  expect(
+    screen.getAllByRole("button", { name: /como a mesma posição/ }),
+  ).toHaveLength(4);
+  expect(
+    screen.getByRole("button", { name: "Ocultar candidatos adicionais" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Ocultar candidatos adicionais" }),
+  );
+  expect(
+    screen.getAllByRole("button", { name: /como a mesma posição/ }),
+  ).toHaveLength(3);
 });

@@ -31,6 +31,7 @@ describe("imports deletion route", () => {
     expect(mocks.delete).toHaveBeenCalledWith(
       "B3_POSITION_XLSX",
       expect.any(String),
+      null,
     );
   });
 

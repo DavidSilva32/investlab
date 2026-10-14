@@ -575,6 +575,37 @@ describe("MonthlyPortfolioReview", () => {
     expect(chartPoints([], undefined)).toEqual([]);
   });
 
+  it("keeps the selected year visible when every monthly value is unknown", () => {
+    const history = [
+      {
+        period: "2026-02",
+        summary: summary({
+          referenceDate: "2026-02-28",
+          knownValueCents: null,
+          valuedPositionCount: 0,
+        }),
+        completeness: "partial" as const,
+      },
+      {
+        period: "2026-03",
+        summary: summary({
+          referenceDate: "2026-03-31",
+          knownValueCents: null,
+          valuedPositionCount: 0,
+        }),
+        completeness: "partial" as const,
+      },
+    ];
+
+    const points = chartPoints(history, "2026");
+    expect(points).toHaveLength(12);
+    expect(points.slice(0, 3)).toEqual([
+      expect.objectContaining({ month: "2026-01", value: null }),
+      expect.objectContaining({ month: "2026-02", value: null }),
+      expect.objectContaining({ month: "2026-03", value: null }),
+    ]);
+  });
+
   it("keeps partially known history as an exact partial point without treating it as zero", () => {
     const partial = summary({
       referenceDate: "2026-03-31",
