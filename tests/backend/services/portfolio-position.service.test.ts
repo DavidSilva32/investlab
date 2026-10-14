@@ -24,6 +24,35 @@ import { PortfolioPositionService } from "@/backend/services/portfolio-position.
 describe("PortfolioPositionService", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("keeps unknown position origins unclassified", async () => {
+    imports.listLatestPositions.mockResolvedValue([
+      {
+        id: "unknown-imported-origin",
+        source: "LEGACY",
+        product: "Ativo importado legado",
+        assetCode: "ABC",
+        indexer: null,
+        totalValue: "100",
+      },
+    ]);
+    manualPositions.list.mockResolvedValue([
+      {
+        id: "unknown-manual-origin",
+        source: "LEGACY",
+        product: "Ativo",
+        assetCode: "ABC",
+        indexer: null,
+        totalValue: "100",
+      },
+    ]);
+
+    const positions = await new PortfolioPositionService().listCurrent();
+
+    expect(positions).toHaveLength(2);
+    expect(positions[0]).not.toHaveProperty("source");
+    expect(positions[1]).not.toHaveProperty("source");
+  });
+
   it("combines imported and manual positions but only estimates imported positions", async () => {
     const imported = {
       id: "b3-position",
@@ -48,11 +77,14 @@ describe("PortfolioPositionService", () => {
     const positions = await service.listCurrent();
     const enriched = await service.enrichImportedPositions(positions);
 
-    expect(positions).toEqual([imported, manualRow]);
-    expect(estimates.enrich).toHaveBeenCalledWith([imported]);
+    expect(positions).toEqual([{ ...imported, source: "B3" }, manualRow]);
+    expect(estimates.enrich).toHaveBeenCalledWith([
+      { ...imported, source: "B3" },
+    ]);
     expect(enriched).toEqual([
       expect.objectContaining({
         ...imported,
+        source: "B3",
         canonicalValueCents: "10000",
         canonicalValueSource: "B3_IMPORTED",
       }),
@@ -78,13 +110,16 @@ it("uses listCurrentEnriched to combine and enrich the current snapshot", async 
   };
   imports.listLatestPositions.mockResolvedValue([imported]);
   manualPositions.list.mockResolvedValue([]);
-  estimates.enrich.mockResolvedValue([{ ...imported, estimatedValue: 101 }]);
+  estimates.enrich.mockResolvedValue([
+    { ...imported, source: "B3", estimatedValue: 101 },
+  ]);
 
   await expect(
     new PortfolioPositionService().listCurrentEnriched("request-1"),
   ).resolves.toEqual([
     {
       ...imported,
+      source: "B3",
       estimatedValue: 101,
       canonicalValueCents: "10100",
       canonicalValueSource: "CDB_ESTIMATE",
@@ -93,12 +128,15 @@ it("uses listCurrentEnriched to combine and enrich the current snapshot", async 
   ]);
   expect(imports.listLatestPositions).toHaveBeenCalledWith("request-1");
   expect(manualPositions.list).toHaveBeenCalledWith("request-1");
-  expect(estimates.enrich).toHaveBeenCalledWith([imported]);
+  expect(estimates.enrich).toHaveBeenCalledWith([
+    { ...imported, source: "B3" },
+  ]);
 });
 
 it("forwards a fixed execution valuation date to the CDI estimator", async () => {
   const imported = {
     product: "CDB",
+    source: "B3",
     assetCode: "CDB1",
     indexer: "CDI",
     totalValue: "100",
@@ -120,6 +158,7 @@ it("keeps the imported value authoritative and applies current reversals without
     await import("@/backend/services/position-reconciliation");
   const position = {
     product: "Banco do Brasil",
+    source: "B3",
     assetCode: "BBAS3",
     institution: "Corretora",
     indexer: null,

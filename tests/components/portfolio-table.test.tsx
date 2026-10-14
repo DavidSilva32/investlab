@@ -294,4 +294,144 @@ describe("PortfolioTable", () => {
       screen.getByRole("button", { name: "Próxima página" }),
     ).toHaveProperty("disabled", true);
   });
+
+  it("searches across columns case and accent insensitively, resets pagination, and clears empty results", async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 23 }, (_, index) => ({
+      id: String(index),
+      name:
+        index === 22 ? "Poupança S&P 500 Vanguard ETF" : `Ativo ${index + 1}`,
+      value: index === 22 ? 500 : index,
+    }));
+    render(
+      <PortfolioTable
+        columns={columns}
+        rows={rows}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    const search = screen.getByRole("textbox", { name: "Pesquisar na tabela" });
+    await user.type(search, "poupanca vanguard 500");
+
+    expect(screen.getByText("Poupança S&P 500 Vanguard ETF")).toBeTruthy();
+    expect(screen.getByText("Mostrando 1–1 de 1")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    expect(screen.getByText("Mostrando 1–10 de 23")).toBeTruthy();
+
+    await user.type(search, "inexistente");
+    expect(screen.getByText("Nenhum resultado encontrado.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    expect(screen.getByText("Mostrando 1–10 de 23")).toBeTruthy();
+  });
+
+  it("searches formatted values instead of sort values", async () => {
+    const user = userEvent.setup();
+    type FormattedRow = {
+      id: string;
+      date: number;
+      quantity: number;
+      amount: number;
+    };
+    const formattedColumns: PortfolioTableColumn<FormattedRow>[] = [
+      {
+        id: "date",
+        label: "Data",
+        width: "33%",
+        value: (row) => row.date,
+        searchValue: () => "14/10/2026",
+        render: () => "14/10/2026",
+      },
+      {
+        id: "quantity",
+        label: "Quantidade",
+        width: "33%",
+        value: (row) => row.quantity,
+        searchValue: (row) => row.quantity.toLocaleString("pt-BR"),
+        render: (row) => row.quantity.toLocaleString("pt-BR"),
+      },
+      {
+        id: "amount",
+        label: "Valor",
+        width: "34%",
+        value: (row) => row.amount,
+        searchValue: () => "R$ 3.010,82",
+        render: () => "R$ 3.010,82",
+      },
+    ];
+    render(
+      <PortfolioTable
+        columns={formattedColumns}
+        rows={[
+          { id: "1", date: 1791936000000, quantity: 1.5, amount: 3010.82 },
+        ]}
+        initialSort={{ id: "date", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Pesquisar na tabela" }),
+      "14/10/2026 1,5 3.010,82",
+    );
+
+    expect(screen.getByText("R$ 3.010,82")).toBeTruthy();
+    expect(screen.getByText("Mostrando 1–1 de 1")).toBeTruthy();
+  });
+
+  it("filters by an optional exact source without changing tables that do not configure it", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+      configurable: true,
+      value: vi.fn(() => false),
+    });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const rows = [
+      { id: "1", name: "VOO", value: 100, source: "MANUAL" },
+      { id: "2", name: "CDB", value: 200, source: "B3" },
+      { id: "3", name: "Desconhecido", value: 300, source: null },
+    ];
+    render(
+      <PortfolioTable
+        columns={columns}
+        rows={rows}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+        sourceFilter={{
+          value: (row) => row.source,
+          options: [
+            { value: "MANUAL", label: "Manual" },
+            { value: "B3", label: "B3" },
+          ],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("combobox", { name: "Filtrar por origem" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "Filtrar por origem" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Manual" }));
+    expect(screen.getByText("VOO")).toBeTruthy();
+    expect(screen.queryByText("CDB")).toBeNull();
+    expect(screen.getByText("1 de 3 registros")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    expect(screen.getByText("CDB")).toBeTruthy();
+  });
 });

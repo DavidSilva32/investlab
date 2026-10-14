@@ -67,6 +67,15 @@ const numberValue = (value: string | null) =>
   value === null ? null : Number(value);
 const dateValue = (value: string | null) =>
   value === null ? null : new Date(`${value}T00:00:00Z`).getTime();
+const formatDate = (value: string | null) =>
+  value ? date.format(new Date(`${value}T00:00:00Z`)) : "";
+const currentValueCents = (row: PortfolioPosition) => {
+  const hasEstimate =
+    row.estimatedValue !== null && row.estimatedValue !== undefined;
+  return row.source === "MANUAL" || hasEstimate
+    ? (row.canonicalValueCents ?? null)
+    : (row.reportedValueCents ?? null);
+};
 
 const positionColumns = (
   onAdjustRate: (position: PortfolioPosition) => void,
@@ -74,18 +83,14 @@ const positionColumns = (
   {
     id: "product",
     label: "Produto",
-    width: "20%",
+    width: "17%",
     value: (row) => row.product,
+    searchValue: (row) => [row.product, row.indexer].filter(Boolean).join(" "),
     render: (row) => (
       <div className="flex items-center gap-2">
         <AssetLogo ticker={row.assetCode} name={row.product} size="sm" />
         <div className="min-w-0">
           <span className="font-medium">{row.product}</span>
-          {row.source === "MANUAL" && (
-            <Badge variant="outline" className="ml-2">
-              Manual
-            </Badge>
-          )}
           {row.indexer && (
             <span className="block text-xs text-muted-foreground">
               {row.indexer}
@@ -105,9 +110,27 @@ const positionColumns = (
   {
     id: "assetCode",
     label: "Código",
-    width: "11%",
+    width: "10%",
     value: (row) => textValue(row.assetCode),
+    searchValue: (row) => row.assetCode,
     render: (row) => row.assetCode ?? "—",
+  },
+  {
+    id: "source",
+    label: "Origem",
+    width: "9%",
+    value: (row) =>
+      row.source === "MANUAL" ? "Manual" : row.source === "B3" ? "B3" : "",
+    searchValue: (row) =>
+      row.source === "MANUAL" ? "Manual" : row.source === "B3" ? "B3" : "",
+    render: (row) =>
+      row.source === "MANUAL" ? (
+        <Badge variant="outline">Manual</Badge>
+      ) : row.source === "B3" ? (
+        <Badge variant="secondary">B3</Badge>
+      ) : (
+        "—"
+      ),
   },
   {
     id: "quantity",
@@ -115,6 +138,7 @@ const positionColumns = (
     width: "12%",
     className: "text-right",
     value: (row) => Number(row.quantity),
+    searchValue: (row) => formatQuantity(Number(row.quantity)),
     render: (row) => formatQuantity(Number(row.quantity)),
   },
   {
@@ -122,6 +146,7 @@ const positionColumns = (
     label: "Instituição",
     width: "15%",
     value: (row) => textValue(row.institution),
+    searchValue: (row) => row.institution,
     render: (row) => row.institution ?? "—",
   },
   {
@@ -129,18 +154,16 @@ const positionColumns = (
     label: "Emissão",
     width: "11%",
     value: (row) => dateValue(row.issuedAt),
-    render: (row) =>
-      row.issuedAt ? date.format(new Date(`${row.issuedAt}T00:00:00Z`)) : "—",
+    searchValue: (row) => formatDate(row.issuedAt),
+    render: (row) => formatDate(row.issuedAt) || "—",
   },
   {
     id: "maturityAt",
     label: "Vencimento",
     width: "11%",
     value: (row) => dateValue(row.maturityAt),
-    render: (row) =>
-      row.maturityAt
-        ? date.format(new Date(`${row.maturityAt}T00:00:00Z`))
-        : "—",
+    searchValue: (row) => formatDate(row.maturityAt),
+    render: (row) => formatDate(row.maturityAt) || "—",
   },
   {
     id: "totalValue",
@@ -148,17 +171,13 @@ const positionColumns = (
     width: "16%",
     className: "text-right",
     value: (row) => row.canonicalValueCents ?? row.reportedValueCents ?? null,
+    searchValue: (row) => formatCurrencyCents(currentValueCents(row)),
     render: (row) => {
       const isDiCdb =
         /^CDB\b/i.test(row.product) && /^(DI|CDI)$/i.test(row.indexer ?? "");
       const hasEstimate =
         row.estimatedValue !== null && row.estimatedValue !== undefined;
-      const currentValue =
-        row.source === "MANUAL"
-          ? row.canonicalValueCents
-          : hasEstimate
-            ? row.canonicalValueCents
-            : row.reportedValueCents;
+      const currentValue = currentValueCents(row);
       const reportedValue = row.reportedTotalValue ?? row.totalValue;
 
       return (
@@ -350,6 +369,7 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     label: "Data",
     width: "12%",
     value: (row) => new Date(`${row.occurredAt}T00:00:00Z`).getTime(),
+    searchValue: (row) => formatDate(row.occurredAt),
     render: (row) => date.format(new Date(`${row.occurredAt}T00:00:00Z`)),
   },
   {
@@ -357,6 +377,8 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     label: "Tipo",
     width: "17%",
     value: (row) => row.movementType,
+    searchValue: (row) =>
+      `${row.direction === "CREDITO" ? "Crédito" : "Débito"} ${row.movementType}`,
     render: (row) => {
       const isCredit = row.direction === "CREDITO";
 
@@ -379,6 +401,8 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     label: "Produto / código",
     width: "22%",
     value: (row) => row.product,
+    searchValue: (row) =>
+      [row.product, row.assetCode].filter(Boolean).join(" "),
     render: (row) => (
       <div>
         <span className="font-medium">{row.product}</span>
@@ -395,6 +419,7 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     label: "Instituição",
     width: "14%",
     value: (row) => textValue(row.institution),
+    searchValue: (row) => row.institution,
     render: (row) => row.institution ?? "—",
   },
   {
@@ -403,6 +428,7 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     width: "12%",
     className: "text-right",
     value: (row) => Number(row.quantity),
+    searchValue: (row) => formatQuantity(Number(row.quantity)),
     render: (row) => formatQuantity(Number(row.quantity)),
   },
   {
@@ -411,6 +437,8 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     width: "12%",
     className: "text-right",
     value: (row) => numberValue(row.unitPrice),
+    searchValue: (row) =>
+      row.unitPrice ? formatCurrency(Number(row.unitPrice)) : "",
     render: (row) =>
       row.unitPrice ? formatCurrency(Number(row.unitPrice)) : "—",
   },
@@ -420,6 +448,8 @@ const movementColumns: PortfolioTableColumn<PortfolioMovement>[] = [
     width: "11%",
     className: "text-right",
     value: (row) => numberValue(row.operationValue),
+    searchValue: (row) =>
+      row.operationValue ? formatCurrency(Number(row.operationValue)) : "",
     render: (row) =>
       row.operationValue ? formatCurrency(Number(row.operationValue)) : "—",
   },
@@ -466,6 +496,16 @@ export function PositionDetails({
               setRateDialogOpen(true);
             })}
             rows={positions}
+            sourceFilter={{
+              value: (row) =>
+                row.source === "B3" || row.source === "MANUAL"
+                  ? row.source
+                  : null,
+              options: [
+                { value: "MANUAL", label: "Manual" },
+                { value: "B3", label: "B3" },
+              ],
+            }}
             initialSort={{ id: "product", direction: "asc" }}
             emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."
             toolbarSummary={`${positions.length} ${positions.length === 1 ? "posição disponível" : "posições disponíveis"}`}

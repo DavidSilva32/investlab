@@ -9,6 +9,8 @@ import { manualPortfolioPositionService } from "@/backend/services/manual-portfo
 import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
 import { decimalToCents, resolvePositionMoney } from "@/lib/portfolio-money";
 
+export type PortfolioPositionSource = "B3" | "MANUAL";
+
 export function withCanonicalPortfolioValue<
   T extends {
     source?: string | null;
@@ -35,12 +37,23 @@ export class PortfolioPositionService {
       manualPortfolioPositionService.list(requestId),
       positionReconciliationRepository.listEvents(requestId),
     ]);
-    return applyPositionReconciliation(
-      imported,
+    const positions = applyPositionReconciliation(
+      imported.map((position) =>
+        position.source == null
+          ? { ...position, source: "B3" as const }
+          : position,
+      ),
       manual,
       events as ReconciliationEvent[],
       todayInSaoPaulo(),
     );
+    return positions.map((position) => {
+      const { source, ...positionData } = position;
+      return {
+        ...positionData,
+        ...(isPortfolioPositionSource(source) ? { source } : {}),
+      };
+    });
   }
 
   async enrichImportedPositions<
@@ -75,6 +88,12 @@ export class PortfolioPositionService {
     const positions = await this.listCurrent(requestId);
     return this.enrichImportedPositions(positions, valuationDate);
   }
+}
+
+function isPortfolioPositionSource(
+  source: string | undefined,
+): source is PortfolioPositionSource {
+  return source === "B3" || source === "MANUAL";
 }
 
 export const portfolioPositionService = new PortfolioPositionService();

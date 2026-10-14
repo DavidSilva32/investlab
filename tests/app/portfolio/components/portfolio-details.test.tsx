@@ -15,6 +15,7 @@ vi.mock("@/components/portfolio-table", () => ({
   }: {
     columns: Array<{
       id: string;
+      label: string;
       render: (row: never) => unknown;
       value: (row: never) => unknown;
     }>;
@@ -24,6 +25,9 @@ vi.mock("@/components/portfolio-table", () => ({
     emptyMessage: string;
   }) => (
     <div>
+      {columns.map((column) => (
+        <span key={`header-${column.id}`}>{column.label}</span>
+      ))}
       {toolbar ? (
         <div data-testid="table-toolbar">
           <span>{toolbarSummary}</span>
@@ -206,6 +210,23 @@ describe("portfolio detail components", () => {
     expect(html).toContain('src="https://icons.brapi.dev/icons/PETR4.svg"');
     expect(html).not.toContain("icons/VOO.svg");
     expect(html).not.toContain("icons/PETR3.svg");
+  });
+
+  it("shows explicit Manual and B3 origin badges and leaves unknown origins unclassified", () => {
+    const html = renderToStaticMarkup(
+      <PositionDetails
+        positions={[
+          { ...position, id: "manual", source: "MANUAL" },
+          { ...position, id: "b3", source: "B3" },
+          { ...position, id: "unknown", source: "LEGACY" },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Origem");
+    expect(html).toContain(">Manual</div>");
+    expect(html).toContain(">B3</div>");
+    expect(html).not.toContain(">LEGACY</div>");
   });
   it("shows estimated and official value details on demand", () => {
     render(
