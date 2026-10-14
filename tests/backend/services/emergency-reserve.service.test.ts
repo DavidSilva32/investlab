@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   listLatestPositions: vi.fn(),
+  listCurrentEnriched: vi.fn(),
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
   enrich: vi.fn(),
@@ -29,6 +30,11 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
 }));
 vi.mock("@/backend/services/cdb-estimate.service", () => ({
   cdbEstimateService: { enrich: mocks.enrich },
+}));
+vi.mock("@/backend/services/portfolio-position.service", () => ({
+  portfolioPositionService: {
+    listCurrentEnriched: mocks.listCurrentEnriched,
+  },
 }));
 vi.mock("@/backend/services/portfolio-allocation.service", () => ({
   portfolioAllocationService: { classifyPositions: mocks.classifyPositions },
@@ -96,6 +102,9 @@ describe("EmergencyReserveService", () => {
     vi.clearAllMocks();
     mocks.listLatestPositions.mockResolvedValue([]);
     mocks.enrich.mockImplementation(async (positions) => positions);
+    mocks.listCurrentEnriched.mockImplementation(async (requestId, date) =>
+      mocks.enrich(await mocks.listLatestPositions(requestId), date),
+    );
     mocks.classifyPositions.mockImplementation(
       async (
         positions: Array<{

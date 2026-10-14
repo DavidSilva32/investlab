@@ -299,7 +299,7 @@ export function PortfolioObjectives({
           : view.kind === "organize"
             ? "Organizar objetivos"
             : view.kind === "reserve-settings"
-              ? "Configurar reserva"
+              ? "Gerenciar posições"
               : (activeObjective?.name ?? "Objetivo");
 
   return (
@@ -408,8 +408,8 @@ export function PortfolioObjectives({
               )}
               {view.kind === "reserve-settings" && (
                 <p className="text-sm text-muted-foreground">
-                  Defina sua meta pessoal e revise as posições consideradas na
-                  Reserva antes de salvar.
+                  Revise as posições da Reserva e sua meta pessoal antes de
+                  salvar.
                 </p>
               )}
             </div>

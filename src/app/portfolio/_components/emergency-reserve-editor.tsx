@@ -305,6 +305,39 @@ export function EmergencyReserveEditor() {
   const selectedHoldings =
     data?.holdings.filter((holding) => selectedKeys.has(holding.assetKey)) ??
     [];
+  const holdingGroups = [
+    {
+      title: "Já vinculadas à reserva",
+      positions:
+        data?.holdings.filter(
+          (holding) =>
+            holding.assignedObjectiveId === reserveObjectiveId ||
+            (selectedKeys.has(holding.assetKey) &&
+              (holding.assignedObjectiveId === undefined ||
+                holding.assignedObjectiveId === null)),
+        ) ?? [],
+    },
+    {
+      title: "Posições livres para associar",
+      positions:
+        data?.holdings.filter(
+          (holding) =>
+            !selectedKeys.has(holding.assetKey) &&
+            (holding.assignedObjectiveId === undefined ||
+              holding.assignedObjectiveId === null),
+        ) ?? [],
+    },
+    {
+      title: "Vinculadas a outro objetivo",
+      positions:
+        data?.holdings.filter(
+          (holding) =>
+            holding.assignedObjectiveId !== undefined &&
+            holding.assignedObjectiveId !== null &&
+            holding.assignedObjectiveId !== reserveObjectiveId,
+        ) ?? [],
+    },
+  ].filter((group) => group.positions.length > 0);
   const hasCurrentDraft = Boolean(
     data &&
     monthlyExpenses === (data.monthlyExpenses?.toString() ?? "") &&
@@ -610,9 +643,10 @@ export function EmergencyReserveEditor() {
                       Investimentos que você quer considerar na reserva
                     </legend>
                     <p className="text-sm text-muted-foreground">
-                      Somente grupos classificados como renda fixa aparecem
-                      aqui. A classe não confirma prazo nem condições de
-                      resgate.
+                      A Reserva considera apenas posições classificadas como
+                      renda fixa. Revise o que já está vinculado, o que está
+                      livre e o que pertence a outros objetivos. A classificação
+                      não confirma prazo nem condições de resgate.
                     </p>
                     {data.missingSelectionCount > 0 && (
                       <div
@@ -653,107 +687,121 @@ export function EmergencyReserveEditor() {
                         investimentos da reserva.
                       </p>
                     ) : (
-                      <ul className="grid max-h-[min(28rem,45dvh)] gap-2 overflow-y-auto rounded-lg border p-3 sm:grid-cols-2">
-                        {data.holdings.map((holding) => (
-                          <li
-                            key={holding.assetKey}
-                            className="min-w-0 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/30"
-                          >
-                            <div className="flex items-start gap-3">
-                              <Checkbox
-                                id={`reserve-holding-${holding.assetKey}`}
-                                className="mt-1"
-                                checked={selectedKeys.has(holding.assetKey)}
-                                disabled={
+                      <div className="max-h-[min(28rem,45dvh)] space-y-4 overflow-y-auto rounded-lg border p-3">
+                        {holdingGroups.map((group) => (
+                          <section key={group.title} className="space-y-2">
+                            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              {group.title}
+                            </h4>
+                            <ul className="grid gap-2 sm:grid-cols-2">
+                              {group.positions.map((holding) => {
+                                const assignedElsewhere =
                                   holding.assignedObjectiveId !== undefined &&
                                   holding.assignedObjectiveId !== null &&
                                   holding.assignedObjectiveId !==
-                                    reserveObjectiveId
-                                }
-                                onCheckedChange={() =>
-                                  toggleHolding(holding.assetKey)
-                                }
-                              />
-                              <label
-                                htmlFor={`reserve-holding-${holding.assetKey}`}
-                                className="min-w-0 flex-1 cursor-pointer"
-                              >
-                                <span className="block font-medium">
-                                  {holding.product}
-                                </span>
-                                <span className="block text-xs text-muted-foreground">
-                                  {[
-                                    holding.assetCode,
-                                    holding.institution,
-                                    holding.issuer,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ") ||
-                                    "Sem código ou instituição informados"}
-                                  {holding.positionCount > 1 &&
-                                    ` · ${holding.positionCount} posições agrupadas`}
-                                </span>
-                                {holding.assignedObjectiveId !== undefined &&
-                                  holding.assignedObjectiveId !== null &&
-                                  holding.assignedObjectiveId !==
-                                    reserveObjectiveId && (
-                                    <span className="mt-1 block text-xs text-muted-foreground">
-                                      Vinculada a{" "}
-                                      {holding.assignedObjectiveName}; remova de
-                                      lá para incluir na reserva.
-                                    </span>
-                                  )}
-                                <span className="block text-xs text-muted-foreground">
-                                  {holding.value === null
-                                    ? "Sem valor informado"
-                                    : holding.valueCents
-                                      ? formatCurrencyCents(holding.valueCents)
-                                      : formatCurrency(holding.value)}
-                                  {holding.unvaluedPositions > 0 &&
-                                    ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
-                                </span>
-                                {holding.valueSource && (
-                                  <span className="block text-xs text-muted-foreground">
-                                    Origem:{" "}
-                                    {portfolioMoneySourceLabels[
-                                      holding.valueSource as keyof typeof portfolioMoneySourceLabels
-                                    ] ?? holding.valueSource}
-                                  </span>
-                                )}
-                                {holding.estimationBaseDate && (
-                                  <span className="block text-xs text-muted-foreground">
-                                    Data-base CURVA:{" "}
-                                    {date.format(
-                                      new Date(
-                                        `${holding.estimationBaseDate}T00:00:00Z`,
-                                      ),
-                                    )}
-                                  </span>
-                                )}
-                                {holding.estimatedThrough && (
-                                  <span className="block text-xs text-muted-foreground">
-                                    {holding.cdbEstimateStatus ===
-                                      "provisional" ||
-                                    holding.cdbEstimateComparisonApproximate
-                                      ? "Estimativa aproximada até "
-                                      : "Estimativa até "}
-                                    {date.format(
-                                      new Date(
-                                        `${holding.estimatedThrough}T00:00:00Z`,
-                                      ),
-                                    )}
-                                  </span>
-                                )}
-                                {holding.cdbEstimateLimitation && (
-                                  <span className="block text-xs text-muted-foreground">
-                                    {holding.cdbEstimateLimitation}
-                                  </span>
-                                )}
-                              </label>
-                            </div>
-                          </li>
+                                    reserveObjectiveId;
+                                return (
+                                  <li key={holding.assetKey}>
+                                    <label
+                                      className={
+                                        "flex h-full min-w-0 items-start gap-3 rounded-md border p-3 " +
+                                        (assignedElsewhere
+                                          ? "cursor-not-allowed border-status-warning/20 bg-status-warning/5 opacity-70"
+                                          : "cursor-pointer bg-card hover:border-primary/40 hover:bg-muted/30")
+                                      }
+                                    >
+                                      <Checkbox
+                                        id={`reserve-holding-${holding.assetKey}`}
+                                        className="mt-1"
+                                        checked={selectedKeys.has(
+                                          holding.assetKey,
+                                        )}
+                                        disabled={assignedElsewhere || saving}
+                                        onCheckedChange={() =>
+                                          toggleHolding(holding.assetKey)
+                                        }
+                                      />
+                                      <span className="min-w-0 flex-1">
+                                        <span className="block font-medium">
+                                          {holding.product}
+                                        </span>
+                                        <span className="block text-xs text-muted-foreground">
+                                          {[
+                                            holding.assetCode,
+                                            holding.institution,
+                                            holding.issuer,
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" · ") ||
+                                            "Sem código ou instituição informados"}
+                                          {holding.positionCount > 1 &&
+                                            ` · ${holding.positionCount} posições agrupadas`}
+                                        </span>
+                                        {assignedElsewhere && (
+                                          <span className="mt-1 inline-flex rounded-md border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-xs text-status-warning">
+                                            Vinculada a{" "}
+                                            {holding.assignedObjectiveName};
+                                            remova de lá para incluir na
+                                            reserva.
+                                          </span>
+                                        )}
+                                        <span className="block text-xs text-muted-foreground">
+                                          {holding.value === null
+                                            ? "Sem valor informado"
+                                            : holding.valueCents
+                                              ? formatCurrencyCents(
+                                                  holding.valueCents,
+                                                )
+                                              : formatCurrency(holding.value)}
+                                          {holding.unvaluedPositions > 0 &&
+                                            ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
+                                        </span>
+                                        {holding.valueSource && (
+                                          <span className="block text-xs text-muted-foreground">
+                                            Origem:{" "}
+                                            {portfolioMoneySourceLabels[
+                                              holding.valueSource as keyof typeof portfolioMoneySourceLabels
+                                            ] ?? holding.valueSource}
+                                          </span>
+                                        )}
+                                        {holding.estimationBaseDate && (
+                                          <span className="block text-xs text-muted-foreground">
+                                            Data-base CURVA:{" "}
+                                            {date.format(
+                                              new Date(
+                                                `${holding.estimationBaseDate}T00:00:00Z`,
+                                              ),
+                                            )}
+                                          </span>
+                                        )}
+                                        {holding.estimatedThrough && (
+                                          <span className="block text-xs text-muted-foreground">
+                                            {holding.cdbEstimateStatus ===
+                                              "provisional" ||
+                                            holding.cdbEstimateComparisonApproximate
+                                              ? "Estimativa aproximada até "
+                                              : "Estimativa até "}
+                                            {date.format(
+                                              new Date(
+                                                `${holding.estimatedThrough}T00:00:00Z`,
+                                              ),
+                                            )}
+                                          </span>
+                                        )}
+                                        {holding.cdbEstimateLimitation && (
+                                          <span className="block text-xs text-muted-foreground">
+                                            {holding.cdbEstimateLimitation}
+                                          </span>
+                                        )}
+                                      </span>
+                                    </label>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </section>
                         ))}
-                      </ul>
+                      </div>
                     )}
                   </fieldset>
                 </CollapsibleContent>

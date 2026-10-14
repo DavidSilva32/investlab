@@ -2,8 +2,7 @@ import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
 import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
-import { importRepository } from "@/backend/repositories/import.repository";
-import { cdbEstimateService } from "@/backend/services/cdb-estimate.service";
+import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
@@ -22,7 +21,6 @@ import {
   sumMoneyCents,
   type PortfolioMoneySource,
 } from "@/lib/portfolio-money";
-import { withCanonicalPortfolioValue } from "@/backend/services/portfolio-position.service";
 import {
   isFutureValuationDate,
   isValidValuationDate,
@@ -70,6 +68,7 @@ const previewSchema = z.object({
 });
 
 type Position = {
+  assetKey?: string;
   product: string;
   assetCode: string | null;
   institution: string | null;
@@ -123,10 +122,16 @@ function isReserveFixedIncomePosition(
   >,
 ) {
   const inferredClass = inferPortfolioAssetClassification(position).assetClass;
+  const normalizeClass = (value: string | null | undefined) =>
+    (value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLocaleLowerCase("pt-BR");
   return (
-    position.classification?.assetClass === "Renda fixa" &&
-    inferredClass !== "Renda variável" &&
-    inferredClass !== "Fundos"
+    normalizeClass(position.classification?.assetClass) === "renda fixa" &&
+    normalizeClass(inferredClass) !== "renda variavel" &&
+    normalizeClass(inferredClass) !== "fundos"
   );
 }
 
@@ -134,6 +139,10 @@ function getPositionValue(position: Position) {
   return position.canonicalValueCents === null
     ? null
     : BigInt(position.canonicalValueCents);
+}
+
+function getPositionAssetKey(position: Position) {
+  return position.assetKey ?? getEmergencyReserveAssetKey(position);
 }
 
 export class EmergencyReserveService {
@@ -172,21 +181,13 @@ export class EmergencyReserveService {
 
   async getEditorData(requestId?: string, selectedAssetKeys?: string[]) {
     logger.info("emergency_reserve_editor_loading", { requestId });
-    const [rawPositions, settings, objectives] = await Promise.all([
-      importRepository.listLatestPositions(requestId),
+    const [enrichedPositions, settings, objectives] = await Promise.all([
+      portfolioPositionService.listCurrentEnriched(requestId),
       emergencyReserveRepository.getSettings(),
       portfolioObjectivesRepository.list(),
     ]);
-    const estimatedPositions = await cdbEstimateService.enrich(rawPositions);
-    const normalizedPositions: Position[] = estimatedPositions.map(
-      (position): Position =>
-        withCanonicalPortfolioValue({
-          ...position,
-          estimatedValue: position.estimatedValue ?? null,
-        }),
-    );
     const positions = await portfolioAllocationService.classifyPositions(
-      normalizedPositions,
+      enrichedPositions,
       requestId,
     );
     const objectiveNameById = new Map(
@@ -264,20 +265,13 @@ export class EmergencyReserveService {
     }
 
     const valuationDate = parsed.data.valuationDate ?? todayInSaoPaulo();
-    const rawPositions = await importRepository.listLatestPositions(requestId);
-    const estimatedPositions = await cdbEstimateService.enrich(
-      rawPositions,
-      valuationDate,
-    );
-    const normalizedPositions: Position[] = estimatedPositions.map(
-      (position): Position =>
-        withCanonicalPortfolioValue({
-          ...position,
-          estimatedValue: position.estimatedValue ?? null,
-        }),
-    );
+    const enrichedPositions =
+      await portfolioPositionService.listCurrentEnriched(
+        requestId,
+        valuationDate,
+      );
     const positions = await portfolioAllocationService.classifyPositions(
-      normalizedPositions,
+      enrichedPositions,
       requestId,
     );
     const objectives = await portfolioObjectivesRepository.list();
@@ -443,7 +437,7 @@ export class EmergencyReserveService {
       throw new ApplicationError("Revise as transferências selecionadas.", 400);
     }
     const currentPositions =
-      await importRepository.listLatestPositions(requestId);
+      await portfolioPositionService.listCurrentEnriched(requestId);
     const classifiedPositions =
       await portfolioAllocationService.classifyPositions(
         currentPositions,
@@ -453,7 +447,7 @@ export class EmergencyReserveService {
       classifiedPositions.map(
         (position) =>
           [
-            getEmergencyReserveAssetKey(position),
+            getPositionAssetKey(position),
             isReserveFixedIncomePosition(position) ? "Renda fixa" : null,
           ] as const,
       ),
@@ -660,7 +654,7 @@ export class EmergencyReserveService {
       { date: string | null; complete: boolean }
     >();
     for (const position of fixedIncomePositions) {
-      const assetKey = getEmergencyReserveAssetKey(position);
+      const assetKey = getPositionAssetKey(position);
       const effectiveDate =
         position.estimatedThrough ?? position.referenceDate ?? null;
       const existingDate = effectiveDateByAssetKey.get(assetKey);

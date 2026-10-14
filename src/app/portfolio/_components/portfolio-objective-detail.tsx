@@ -81,7 +81,7 @@ export function PortfolioObjectiveDetail({
                   type="button"
                   onClick={onConfigureReserve}
                 >
-                  Configurar reserva
+                  Gerenciar posições
                   <ArrowRight aria-hidden="true" className="ml-2 size-4" />
                 </Button>
               ) : (

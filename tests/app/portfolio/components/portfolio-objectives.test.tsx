@@ -313,7 +313,7 @@ describe("PortfolioObjectives", () => {
   });
 
   it.each([
-    ["reserve", null, "Configurar reserva", "Reserva"],
+    ["reserve", null, "Gerenciar posições", "Reserva"],
     ["objective-trip", null, "Gerenciar posições", "Viagem"],
   ])(
     "opens the deep-linked objective %s",
@@ -602,11 +602,11 @@ describe("PortfolioObjectives", () => {
       screen.getByRole("button", { name: "Abrir objetivo Reserva" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Configurar reserva" }),
+      screen.getByRole("button", { name: "Gerenciar posições" }),
     );
     expect(screen.getByText("Editor da reserva existente")).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Configurar reserva" }),
+      screen.getByRole("heading", { name: "Gerenciar posições" }),
     ).toBeTruthy();
     currentData.objectives[0] = {
       ...currentData.objectives[0],

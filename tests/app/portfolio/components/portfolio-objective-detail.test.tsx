@@ -97,7 +97,7 @@ describe("PortfolioObjectiveDetail", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /Configurar reserva/ }),
+      screen.getByRole("button", { name: /Gerenciar posições/ }),
     );
     expect(onConfigureReserve).toHaveBeenCalledOnce();
     expect(screen.getByText("Não configurada")).toBeTruthy();
