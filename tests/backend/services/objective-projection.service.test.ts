@@ -22,9 +22,7 @@ const service = new ObjectiveProjectionService();
 function input(overrides: Record<string, unknown> = {}) {
   return {
     mode: "project_balance",
-    targetBasis: "future_nominal",
     startingAmount: 1_000,
-    targetAmount: 5_000,
     horizonYears: 1,
     annualReturnPercent: 0,
     annualInflationPercent: 0,
@@ -43,8 +41,6 @@ describe("ObjectiveProjectionService", () => {
     const result = service.simulate(
       input({
         horizonYears: 2,
-        targetBasis: "today_purchasing_power",
-        targetAmount: 5_000,
         annualInflationPercent: 10,
         adjustContributionsForInflation: true,
       }),
@@ -54,8 +50,8 @@ describe("ObjectiveProjectionService", () => {
     expect(result.projectedPurchasingPowerAmount).toBe(2_909.09);
     expect(result.totalInvestedAmount).toBe(3_520);
     expect(result.nominalGrowthAmount).toBe(0);
-    expect(result.nominalTargetAmount).toBe(6_050);
-    expect(result.realTargetAmount).toBe(5_000);
+    expect(result).not.toHaveProperty("nominalTargetAmount");
+    expect(result).not.toHaveProperty("targetBasis");
     expect(result.points).toHaveLength(3);
     expect(result.points[1]).toMatchObject({
       year: 1,
@@ -69,13 +65,12 @@ describe("ObjectiveProjectionService", () => {
     const result = service.simulate(
       input({
         startingAmount: 1_000,
-        targetAmount: 1_250,
         horizonYears: 10,
         monthlyContribution: 200,
       }),
     );
 
-    expect(result.targetReachedMonth).toBe(2);
+    expect(result).not.toHaveProperty("targetReachedMonth");
     expect(result.projectedNominalAmount).toBe(25_000);
     expect(result.totalInvestedAmount).toBe(25_000);
     expect(result.points.at(-1)).toMatchObject({
@@ -83,62 +78,73 @@ describe("ObjectiveProjectionService", () => {
       investedAmount: 25_000,
       nominalAmount: 25_000,
     });
-    expect(result.points).toContainEqual(
-      expect.objectContaining({ year: 2 / 12, nominalAmount: 1_400 }),
-    );
+    expect(result.points).toHaveLength(11);
     expect(result.months).toHaveLength(120);
   });
 
-  it("keeps projecting after growth reaches the goal without contributions", () => {
+  it("projects through the full horizon when there are no contributions", () => {
     const result = service.simulate(
       input({
         startingAmount: 990,
-        targetAmount: 1_000,
         monthlyContribution: 0,
         annualReturnPercent: 12,
       }),
     );
 
-    expect(result.targetReachedMonth).toBe(2);
     expect(result.projectedNominalAmount).toBeCloseTo(1_108.8, 2);
     expect(result.totalInvestedAmount).toBe(990);
   });
 
-  it("marks an already covered goal and still projects the full horizon", () => {
-    const result = service.simulate(
-      input({ startingAmount: 1_200, targetAmount: 1_000 }),
-    );
+  it("projects the full horizon from an initial balance without a target", () => {
+    const result = service.simulate(input({ startingAmount: 1_200 }));
 
-    expect(result.targetReachedMonth).toBe(0);
     expect(result.points.at(-1)?.year).toBe(1);
     expect(result.totalInvestedAmount).toBe(2_400);
+    expect(result).not.toHaveProperty("targetReachedMonth");
   });
 
-  it("inflates a present purchasing-power goal month by month", () => {
+  it("ignores legacy target fields in accumulation mode", () => {
     const result = service.simulate(
       input({
+        targetBasis: "today_purchasing_power",
+        targetAmount: 900_000,
+      }),
+    );
+
+    expect(result.mode).toBe("project_balance");
+    expect(result).not.toHaveProperty("targetAmount");
+    expect(result).not.toHaveProperty("targetBasis");
+    expect(result).not.toHaveProperty("nominalTargetAmount");
+    expect(result).not.toHaveProperty("targetReachedMonth");
+  });
+
+  it("converts a present purchasing-power target for required contributions", () => {
+    const result = service.simulate(
+      input({
+        mode: "required_contribution",
         targetBasis: "today_purchasing_power",
         startingAmount: 900,
         targetAmount: 1_000,
         horizonYears: 1,
-        monthlyContribution: 20,
+        annualReturnPercent: 0,
         annualInflationPercent: 12,
+        monthlyContribution: null,
       }),
     );
 
-    expect(result.targetReachedMonth).toBe(10);
-    expect(result.points.find((point) => point.year === 10 / 12)).toMatchObject(
-      {
-        nominalAmount: 1_100,
-        nominalTargetAmount: 1_099.04,
-        realTargetAmount: 1_000,
-      },
-    );
+    expect(result).toMatchObject({
+      mode: "required_contribution",
+      nominalTargetAmount: 1_120,
+      realTargetAmount: 1_000,
+    });
+    expect(result.requiredMonthlyContribution).toBeGreaterThan(0);
     expect(result.points.at(-1)).toMatchObject({
       year: 1,
-      nominalAmount: 1_140,
+      nominalTargetAmount: 1_120,
+      realTargetAmount: 1_000,
     });
-    expect(result.projectedPurchasingPowerAmount).toBe(1_017.86);
+    expect(result.projectedNominalAmount).toBeGreaterThanOrEqual(1_120);
+    expect(result.projectedPurchasingPowerAmount).toBeGreaterThanOrEqual(1_000);
   });
 
   it("returns monthly balances and annual contribution adjustments for the schedule", () => {
@@ -170,12 +176,11 @@ describe("ObjectiveProjectionService", () => {
     const result = service.simulate(
       input({
         startingAmount: 0,
-        targetAmount: 5_000,
         monthlyContribution: 100,
       }),
     );
 
-    expect(result.targetReachedMonth).toBeNull();
+    expect(result).not.toHaveProperty("targetReachedMonth");
     expect(result.points).toHaveLength(2);
     expect(result.points.at(-1)?.year).toBe(1);
   });
@@ -184,13 +189,15 @@ describe("ObjectiveProjectionService", () => {
     const result = service.simulate(
       input({
         mode: "required_contribution",
+        targetBasis: "future_nominal",
         targetAmount: 1_300,
         monthlyContribution: null,
       }),
     );
 
+    expect(result.mode).toBe("required_contribution");
+    if (result.mode !== "required_contribution") throw new Error("wrong mode");
     expect(result.requiredMonthlyContribution).toBe(25);
-    expect(result.targetReachedMonth).toBeNull();
     expect(result.projectedNominalAmount).toBe(1_300);
     expect(result.projectedPurchasingPowerAmount).toBe(1_300);
     expect(result.totalInvestedAmount).toBe(1_300);
@@ -200,12 +207,15 @@ describe("ObjectiveProjectionService", () => {
     const result = service.simulate(
       input({
         mode: "required_contribution",
+        targetBasis: "future_nominal",
         startingAmount: 1_000,
         targetAmount: 1_000.01,
         monthlyContribution: null,
       }),
     );
 
+    expect(result.mode).toBe("required_contribution");
+    if (result.mode !== "required_contribution") throw new Error("wrong mode");
     expect(result.requiredMonthlyContribution).toBe(0.01);
     expect(result.projectedNominalAmount).toBeGreaterThanOrEqual(1_000.01);
   });
@@ -222,6 +232,8 @@ describe("ObjectiveProjectionService", () => {
       }),
     );
 
+    expect(result.mode).toBe("required_contribution");
+    if (result.mode !== "required_contribution") throw new Error("wrong mode");
     expect(result.nominalTargetAmount).toBe(1_102.5);
     expect(result.realTargetAmount).toBe(1_000);
     expect(result.projectedNominalAmount).toBeGreaterThanOrEqual(1_102.5);
@@ -232,12 +244,15 @@ describe("ObjectiveProjectionService", () => {
     const result = service.simulate(
       input({
         mode: "required_contribution",
+        targetBasis: "future_nominal",
         startingAmount: 2_000,
         targetAmount: 1_000,
         monthlyContribution: null,
       }),
     );
 
+    expect(result.mode).toBe("required_contribution");
+    if (result.mode !== "required_contribution") throw new Error("wrong mode");
     expect(result.requiredMonthlyContribution).toBe(0);
   });
 
@@ -250,13 +265,25 @@ describe("ObjectiveProjectionService", () => {
     );
   });
 
+  it.each([{ targetBasis: "future_nominal" }, { targetAmount: 1_000 }])(
+    "requires a target and its reference for required contributions",
+    (fields) => {
+      expect(() =>
+        service.simulate(input({ mode: "required_contribution", ...fields })),
+      ).toThrow(ApplicationError);
+    },
+  );
+
   it("rejects assumptions whose deflation would exceed the numeric range", () => {
     expect(() =>
       service.simulate(
         input({
+          mode: "required_contribution",
           targetBasis: "future_nominal",
+          targetAmount: 5_000,
           horizonYears: 100,
           annualInflationPercent: -99.999,
+          monthlyContribution: null,
         }),
       ),
     ).toThrow(ApplicationError);

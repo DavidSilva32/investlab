@@ -25,9 +25,7 @@ Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
 function result(horizonYears: number) {
   return simulateObjectiveProjection({
     mode: "project_balance",
-    targetBasis: "future_nominal",
     startingAmount: 1_000,
-    targetAmount: 5_000,
     horizonYears,
     annualReturnPercent: 0,
     annualInflationPercent: 10,

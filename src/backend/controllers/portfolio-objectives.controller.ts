@@ -10,7 +10,9 @@ export class PortfolioObjectivesController {
       requestId,
       mode: data.mode,
       horizonYears: data.horizonYears,
-      targetBasis: data.targetBasis,
+      ...(data.mode === "required_contribution"
+        ? { targetBasis: data.targetBasis }
+        : {}),
     });
     return Response.json(data);
   }

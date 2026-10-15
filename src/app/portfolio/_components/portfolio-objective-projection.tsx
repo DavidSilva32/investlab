@@ -2,15 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowUpRight, Calculator, ChevronDown } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Line,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Area, AreaChart, CartesianGrid, Line, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -200,12 +192,6 @@ export function getProjectionAxisTicks(
   return ticks;
 }
 
-export function formatProjectionCompletion(month: number | null) {
-  if (month === null) return "Meta não alcançada no prazo escolhido.";
-  if (month === 0) return "Meta já alcançada.";
-  return `Meta alcançada em ${formatProjectionYearLabel(month / 12)}.`;
-}
-
 export function formatProjectionCurrency(value: unknown) {
   return formatCurrency(Number(value));
 }
@@ -275,7 +261,6 @@ export function PortfolioObjectiveProjection({
   }
 
   const starting = parseProjectionNumber(startingAmount);
-  const target = parseProjectionNumber(targetAmount);
   const years = parseProjectionNumber(horizonYears);
   const annualReturn = parseProjectionNumber(annualReturnPercent);
   const inflation = parseProjectionNumber(annualInflationPercent);
@@ -284,20 +269,23 @@ export function PortfolioObjectiveProjection({
     () =>
       objectiveProjectionInputSchema.safeParse({
         mode,
-        targetBasis,
+        ...(mode === "required_contribution"
+          ? {
+              targetBasis,
+              targetAmount: parseProjectionNumber(targetAmount),
+            }
+          : { monthlyContribution: contribution }),
         startingAmount: starting,
-        targetAmount: target,
         horizonYears: years,
         annualReturnPercent: annualReturn,
         annualInflationPercent: inflation,
-        monthlyContribution: mode === "project_balance" ? contribution : null,
         adjustContributionsForInflation: contributionAdjustment === "adjust",
       }),
     [
       mode,
       targetBasis,
+      targetAmount,
       starting,
-      target,
       years,
       annualReturn,
       inflation,
@@ -330,7 +318,9 @@ export function PortfolioObjectiveProjection({
     }),
   );
   const hasSelectedAssumptions = Boolean(
-    mode && targetBasis && contributionAdjustment,
+    mode &&
+    contributionAdjustment &&
+    (mode !== "required_contribution" || targetBasis),
   );
   const parsedProjectionInput = projectionInput.success
     ? projectionInput.data
@@ -454,30 +444,32 @@ export function PortfolioObjectiveProjection({
               </SelectContent>
             </Select>
           </Field>
-          <RangeField
-            label="Meta"
-            id="projection-target"
-            value={targetAmount}
-            min={0.01}
-            max={maximumProjectionAmount}
-            sliderMin={0}
-            sliderMax={targetSliderMax}
-            sliderStep={getCurrencySliderStep(targetSliderMax)}
-            currency
-            placeholder="Valor desejado"
-            sliderDisabled={!targetAmount}
-            error={displayableProjectionErrors.targetAmount}
-            onChange={(value) => {
-              updateInput(setTargetAmount, value);
-              setTargetSliderMax(
-                Math.min(
-                  maximumProjectionAmount,
-                  Math.max(1, (parseProjectionNumber(value) ?? 0) * 2),
-                ),
-              );
-            }}
-            onSlide={(value) => updateInput(setTargetAmount, value)}
-          />
+          {mode === "required_contribution" && (
+            <RangeField
+              label="Meta"
+              id="projection-target"
+              value={targetAmount}
+              min={0.01}
+              max={maximumProjectionAmount}
+              sliderMin={0}
+              sliderMax={targetSliderMax}
+              sliderStep={getCurrencySliderStep(targetSliderMax)}
+              currency
+              placeholder="Valor desejado"
+              sliderDisabled={!targetAmount}
+              error={displayableProjectionErrors.targetAmount}
+              onChange={(value) => {
+                updateInput(setTargetAmount, value);
+                setTargetSliderMax(
+                  Math.min(
+                    maximumProjectionAmount,
+                    Math.max(1, (parseProjectionNumber(value) ?? 0) * 2),
+                  ),
+                );
+              }}
+              onSlide={(value) => updateInput(setTargetAmount, value)}
+            />
+          )}
           <RangeField
             label="Prazo em anos"
             id="projection-years"
@@ -562,25 +554,27 @@ export function PortfolioObjectiveProjection({
             }}
             onSlide={(value) => updateInput(setAnnualInflationPercent, value)}
           />
-          <Field label="Valor da meta representa" id="projection-basis">
-            <Select
-              value={targetBasis}
-              onValueChange={(value) => updateInput(setTargetBasis, value)}
-            >
-              <SelectTrigger
-                id="projection-basis"
-                aria-label="Valor da meta representa"
+          {mode === "required_contribution" && (
+            <Field label="Valor da meta representa" id="projection-basis">
+              <Select
+                value={targetBasis}
+                onValueChange={(value) => updateInput(setTargetBasis, value)}
               >
-                <SelectValue placeholder="Escolha o poder de compra" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="future_nominal">Valor futuro</SelectItem>
-                <SelectItem value="today_purchasing_power">
-                  Poder de compra de hoje
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+                <SelectTrigger
+                  id="projection-basis"
+                  aria-label="Valor da meta representa"
+                >
+                  <SelectValue placeholder="Escolha o poder de compra" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="future_nominal">Valor futuro</SelectItem>
+                  <SelectItem value="today_purchasing_power">
+                    Poder de compra de hoje
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <Field label="Aporte aumenta?" id="projection-adjustment">
             <Select
               value={contributionAdjustment}
@@ -868,14 +862,6 @@ function ProjectionResult({
         )}
       </div>
       <div>
-        {result.mode === "project_balance" && (
-          <p
-            className="mb-3 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm font-medium text-foreground"
-            role="status"
-          >
-            {formatProjectionCompletion(result.targetReachedMonth)}
-          </p>
-        )}
         <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-chart-category-1" />
@@ -885,14 +871,18 @@ function ProjectionResult({
             <span className="size-2 rounded-full bg-chart-category-4" />
             Patrimônio real
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-0 w-3 border-t border-dashed border-chart-category-2" />
-            Meta nominal
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-0 w-3 border-t border-dashed border-chart-category-3" />
-            Meta real
-          </span>
+          {result.mode === "required_contribution" && (
+            <>
+              <span className="flex items-center gap-1.5">
+                <span className="h-0 w-3 border-t border-dashed border-chart-category-2" />
+                Meta nominal
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-0 w-3 border-t border-dashed border-chart-category-3" />
+                Meta real
+              </span>
+            </>
+          )}
         </div>
         <ChartContainer
           config={chartConfig}
@@ -991,36 +981,26 @@ function ProjectionResult({
               isAnimationActive={!reducedMotion}
               animationDuration={220}
             />
-            <Line
-              type="monotone"
-              dataKey="nominalTargetAmount"
-              stroke="var(--color-nominalTargetAmount)"
-              strokeDasharray="5 4"
-              strokeWidth={1.5}
-              dot={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="realTargetAmount"
-              stroke="var(--color-realTargetAmount)"
-              strokeDasharray="2 4"
-              strokeWidth={1.5}
-              dot={false}
-            />
-            {result.mode === "project_balance" &&
-              result.targetReachedMonth !== null && (
-                <ReferenceLine
-                  x={result.targetReachedMonth / 12}
-                  stroke="var(--chart-category-3)"
-                  strokeDasharray="3 3"
-                  label={{
-                    value: "Meta",
-                    position: "insideTopRight",
-                    fill: "var(--chart-category-3)",
-                    fontSize: 11,
-                  }}
+            {result.mode === "required_contribution" && (
+              <>
+                <Line
+                  type="monotone"
+                  dataKey="nominalTargetAmount"
+                  stroke="var(--color-nominalTargetAmount)"
+                  strokeDasharray="5 4"
+                  strokeWidth={1.5}
+                  dot={false}
                 />
-              )}
+                <Line
+                  type="monotone"
+                  dataKey="realTargetAmount"
+                  stroke="var(--color-realTargetAmount)"
+                  strokeDasharray="2 4"
+                  strokeWidth={1.5}
+                  dot={false}
+                />
+              </>
+            )}
           </AreaChart>
         </ChartContainer>
       </div>
