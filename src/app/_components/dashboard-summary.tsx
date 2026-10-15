@@ -5,6 +5,7 @@ import type {
 import type { PortfolioPosition } from "@/app/portfolio/_components/portfolio-overview";
 import { DashboardDestinationsOverview } from "@/app/_components/dashboard-destinations-overview";
 import type { DashboardDestinationSummary } from "@/app/_components/dashboard-destinations-overview";
+import type { DashboardDestinationPosition } from "@/app/_components/dashboard-destinations-overview";
 import { DashboardObservations } from "@/app/_components/dashboard-observations";
 import { DashboardQuickActions } from "@/app/_components/dashboard-quick-actions";
 import { DashboardReviewPositions } from "@/app/_components/dashboard-review-positions";
@@ -18,6 +19,8 @@ export function DashboardSummary({
   insights,
   emergencyReserve,
   destinationSummary,
+  destinationPositions,
+  longTermMissingPositionCount = 0,
   destinationsLoading,
   destinationsUnavailable,
   onRetryDestinations,
@@ -34,6 +37,8 @@ export function DashboardSummary({
   insights: PortfolioInsights;
   emergencyReserve?: EmergencyReserveCalculation;
   destinationSummary?: DashboardDestinationSummary | null;
+  destinationPositions?: DashboardDestinationPosition[];
+  longTermMissingPositionCount?: number;
   destinationsLoading?: boolean;
   destinationsUnavailable?: boolean;
   onRetryDestinations?: () => void;
@@ -68,6 +73,8 @@ export function DashboardSummary({
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
         <DashboardDestinationsOverview
           summary={destinationSummary}
+          positions={destinationPositions}
+          longTermMissingPositionCount={longTermMissingPositionCount}
           loading={destinationsLoading}
           unavailable={destinationsUnavailable}
           onRetry={onRetryDestinations}

@@ -12,9 +12,9 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from "@/components/ui/chart";
 import { formatCurrency } from "@/lib/utils";
+import { destinationChartConfig } from "@/lib/portfolio-destination-chart";
 import type { ObjectivePosition } from "./portfolio-objective-assignment";
 import {
   PortfolioObjectiveCard,
@@ -54,23 +54,6 @@ type Props = {
   onCreate: () => void;
   onOrganize?: () => void;
 };
-
-export const destinationChartConfig = {
-  reserve: { label: "Reserva", color: "var(--destination-reserve)" },
-  personal: {
-    label: "Objetivos pessoais",
-    color: "var(--destination-personal)",
-  },
-  long_term: {
-    label: "Investimento de longo prazo",
-    color: "var(--destination-long-term)",
-  },
-  purpose_unknown: {
-    label: "Finalidade não definida",
-    color: "var(--destination-purpose-unknown)",
-  },
-  unassigned: { label: "Sem destino", color: "var(--destination-unassigned)" },
-} satisfies ChartConfig;
 
 const percent = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 1,

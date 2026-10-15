@@ -1,6 +1,7 @@
 "use client";
 
 import type { DashboardDestinationSummary } from "@/app/_components/dashboard-destinations-overview";
+import type { DashboardDestinationPosition } from "@/app/_components/dashboard-destinations-overview";
 import { DashboardSummary } from "@/app/_components/dashboard-summary";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,11 @@ export function DashboardClient({
   );
   const objectivesQuery = usePortfolioObjectives<{
     destinationSummary?: DashboardDestinationSummary;
+    positions?: DashboardDestinationPosition[];
+    objectives?: Array<{
+      purpose?: string | null;
+      missingPositionCount?: number;
+    }>;
   }>();
   const overview = overviewQuery.data;
 
@@ -103,6 +109,18 @@ export function DashboardClient({
         importOpen={importOpen}
         onImportOpenChange={setImportOpen}
         destinationSummary={objectivesQuery.data?.destinationSummary}
+        destinationPositions={objectivesQuery.data?.positions}
+        longTermMissingPositionCount={
+          objectivesQuery.data?.objectives
+            ?.filter(
+              (objective) => objective.purpose === "LONG_TERM_INVESTMENT",
+            )
+            .reduce(
+              (total, objective) =>
+                total + (objective.missingPositionCount ?? 0),
+              0,
+            ) ?? 0
+        }
         destinationsLoading={objectivesQuery.isPending}
         destinationsUnavailable={objectivesQuery.isError}
         onRetryDestinations={() => void objectivesQuery.refetch()}

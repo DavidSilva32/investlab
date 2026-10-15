@@ -28,6 +28,21 @@ vi.mock("next/link", () => ({
     </a>
   ),
 }));
+vi.mock("@/components/ui/chart", () => ({
+  ChartContainer: ({
+    children,
+    ...props
+  }: React.PropsWithChildren<Record<string, unknown>>) => (
+    <div {...props}>{children}</div>
+  ),
+  ChartTooltip: ({ content }: { content: React.ReactNode }) => <>{content}</>,
+  ChartTooltipContent: () => <span />,
+}));
+vi.mock("recharts", () => ({
+  Cell: ({ fill }: { fill: string }) => <span data-fill={fill} />,
+  Pie: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  PieChart: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+}));
 
 vi.mock("@/components/portfolio-chat-microphone", async () => {
   const { forwardRef, useImperativeHandle, useState } = await import("react");
@@ -1152,6 +1167,10 @@ describe("PortfolioChatAssistant", () => {
             knownTotal: 63_171.81,
             missingPositionCount: 1,
             unvaluedPositionCount: 2,
+            categories: [
+              { key: "reserve", value: 1000, percentage: 25 },
+              { key: "long_term", value: 3000, percentage: 75 },
+            ],
           },
         }),
       ),
@@ -1167,13 +1186,50 @@ describe("PortfolioChatAssistant", () => {
     await user.type(input, "Qual é o meu patrimônio hoje?");
     await user.keyboard("{Enter}");
 
-    expect(
-      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
-    ).toBeTruthy();
+    expect(await screen.findByText("R$ 63.171,81")).toBeTruthy();
     expect(screen.getByText(/3 posições sem valor confirmado/)).toBeTruthy();
     expect(
       screen.queryByRole("group", { name: "Perguntas rápidas" }),
     ).toBeNull();
+  });
+
+  it("renders a destination chart with the direct portfolio total answer", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        jsonResponse({
+          objectives: [],
+          destinationSummary: {
+            knownTotal: 4000,
+            categories: [{ key: "reserve", value: 4000, percentage: 100 }],
+          },
+        }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Qual é meu patrimônio?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByRole("img", {
+        name: /Gráfico de rosca do patrimônio conhecido, total R\$\s*4\.000,00, por destino/,
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("Patrimônio conhecido")).toBeTruthy();
+    expect(screen.getByText("R$ 4.000,00").className).toContain("text-primary");
+    expect(
+      screen.getByText("Valores acompanhados na plataforma."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Seu patrimônio conhecido é/)).toBeNull();
   });
 
   it("answers a quick portfolio-total choice when objective data has already loaded", async () => {
@@ -1199,9 +1255,10 @@ describe("PortfolioChatAssistant", () => {
       }),
     );
 
-    expect(
-      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
-    ).toBeTruthy();
+    expect(await screen.findByText("R$ 63.171,81")).toBeTruthy();
+    expect(screen.getByText("R$ 63.171,81").className).toContain(
+      "text-primary",
+    );
   });
 
   it("retries a quick portfolio-total choice when objective data has not loaded", async () => {
@@ -1230,9 +1287,7 @@ describe("PortfolioChatAssistant", () => {
       }),
     );
 
-    expect(
-      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
-    ).toBeTruthy();
+    expect(await screen.findByText("R$ 63.171,81")).toBeTruthy();
   });
 
   it("shows a short relevant suggestion list after a partially recognized question", async () => {
@@ -1325,6 +1380,7 @@ describe("PortfolioChatAssistant", () => {
     expect(
       await screen.findByText(/1 posição sem valor confirmado/),
     ).toBeTruthy();
+    expect(screen.getByText(/o total pode mudar/)).toBeTruthy();
   });
 
   it("ignores invalid counts when describing the known portfolio total", async () => {
@@ -1355,9 +1411,7 @@ describe("PortfolioChatAssistant", () => {
     );
     await user.keyboard("{Enter}");
 
-    expect(
-      await screen.findByText(/Seu patrimônio conhecido é R\$ 63\.171,81/),
-    ).toBeTruthy();
+    expect(await screen.findByText("R$ 63.171,81")).toBeTruthy();
     expect(screen.queryByText(/posições sem valor confirmado/)).toBeNull();
   });
 

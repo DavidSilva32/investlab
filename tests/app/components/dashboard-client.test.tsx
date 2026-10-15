@@ -11,6 +11,7 @@ vi.mock("@/components/app-page-skeleton", () => ({
 vi.mock("@/app/_components/dashboard-summary", () => ({
   DashboardSummary: ({
     destinationSummary,
+    longTermMissingPositionCount,
     destinationsUnavailable,
     destinationsLoading,
     importOpen,
@@ -21,6 +22,7 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
     onObjectivesNavigationChange,
   }: {
     destinationSummary?: { knownTotal: number };
+    longTermMissingPositionCount?: number;
     destinationsUnavailable?: boolean;
     destinationsLoading?: boolean;
     importOpen?: boolean;
@@ -54,6 +56,7 @@ vi.mock("@/app/_components/dashboard-summary", () => ({
       {destinationSummary && (
         <p>Total por destinos: {destinationSummary.knownTotal}</p>
       )}
+      <p>Posições de longo prazo ausentes: {longTermMissingPositionCount}</p>
       {destinationsLoading && <p>Carregando destinos</p>}
       {destinationsUnavailable && (
         <>
@@ -122,6 +125,35 @@ describe("DashboardClient", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts only missing long-term objective positions for the dashboard", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        jsonResponse(
+          url === "/api/portfolio"
+            ? overview
+            : {
+                ...objectivesOverview,
+                objectives: [
+                  {
+                    purpose: "LONG_TERM_INVESTMENT",
+                    missingPositionCount: 2,
+                  },
+                  { purpose: "PERSONAL_GOAL", missingPositionCount: 5 },
+                  { purpose: "LONG_TERM_INVESTMENT" },
+                ],
+              },
+        ),
+      ),
+    );
+
+    renderDashboard();
+
+    expect(
+      await screen.findByText("Posições de longo prazo ausentes: 2"),
+    ).toBeTruthy();
   });
 
   it("opens the reserve in the dashboard panel without changing routes", async () => {
