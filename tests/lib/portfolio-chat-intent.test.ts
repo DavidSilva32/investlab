@@ -142,6 +142,10 @@ describe("recognizePortfolioChatMessage", () => {
     ["Quanto tenho ao todo?", "portfolio-total"],
     ["Quanto que eu tenho na minha conta hoje?", "portfolio-total"],
     ["Quanto tenho na conta agora?", "portfolio-total"],
+    ["Quanto tenho na conta atualmente?", "portfolio-total"],
+    ["Quanto tenho nas minhas contas hoje?", "portfolio-total"],
+    ["Quanto tenho em conta neste momento?", "portfolio-total"],
+    ["Qual o valor que tenho na carteira hoje?", "portfolio-total"],
     ["Qual é o meu patrimônio hoje?", "portfolio-total"],
     ["Qual é o patrimônio total da carteira?", "portfolio-total"],
     ["Qual valor total da minha carteira?", "portfolio-total"],
@@ -186,6 +190,17 @@ describe("recognizePortfolioChatMessage", () => {
       intent,
     );
   });
+
+  it.each([
+    "Quanto tenho na minha conta corrente?",
+    "Quanto tenho na conta da corretora hoje?",
+    "Qual é o saldo da conta bancária agora?",
+  ])(
+    "does not treat an unsupported bank or brokerage account balance as a portfolio asset: %s",
+    (message) => {
+      expect(recognizePortfolioChatMessage(message)).toBeNull();
+    },
+  );
 
   it("resolves common emergency reserve names to the canonical reserve objective", () => {
     for (const message of [
@@ -271,6 +286,8 @@ describe("recognizePortfolioChatMessage", () => {
 
   it.each([
     ["Quanto tenho em FIIs?", "fiis"],
+    ["Quanto tenho em FIIs hoje?", "fiis"],
+    ["Quanto tenho em FIIs neste momento?", "fiis"],
     ["Qual o valor atual de renda fixa?", "fixed_income"],
     ["Quanto tenho em ações e BDRs?", "brazilian_equities"],
     ["Quanto tenho em ETF internacional?", "international_etfs"],
@@ -286,6 +303,8 @@ describe("recognizePortfolioChatMessage", () => {
 
   it.each([
     ["Quanto tenho em ITUB4?", "ITUB4"],
+    ["Quanto tenho de ITUB4 hoje?", "ITUB4"],
+    ["Qual o valor de ITUB4 agora?", "ITUB4"],
     ["Quanto tenho no código ITUB4?", "ITUB4"],
     ["Qual o valor da Petrobras?", "Petrobras"],
     ["Quanto tenho no CDB do Banco Inter?", "Banco Inter"],
@@ -333,6 +352,17 @@ describe("recognizePortfolioChatMessage", () => {
       recognizePortfolioChatMessage("Quais ações e FIIs tenho?"),
     ).toBeNull();
   });
+
+  it.each([
+    "Quais ações e ETFs eu tenho?",
+    "Quais ETFs internacionais tenho?",
+    "Quais ações, renda fixa e FIIs tenho?",
+  ])(
+    "does not silently narrow an unsupported or mixed listing: %s",
+    (message) => {
+      expect(recognizePortfolioChatMessage(message)).toBeNull();
+    },
+  );
 
   it("asks for clarification when a value request combines asset classes", () => {
     expect(
@@ -557,6 +587,16 @@ describe("recognizePortfolioChatMessage", () => {
     expect(rankPortfolioChatIntentSuggestions("meu saldo")).toEqual([
       "objective-value",
     ]);
+    expect(
+      rankPortfolioChatIntentSuggestions(
+        "Quanto tenho na minha conta corrente?",
+      ),
+    ).toEqual(["portfolio-total"]);
+    expect(
+      rankPortfolioChatIntentSuggestions(
+        "Qual é o saldo da conta bancária agora?",
+      ),
+    ).toEqual(["portfolio-total"]);
     expect(
       rankPortfolioChatIntentSuggestions("patrimônio e objetivo", 3),
     ).toEqual(["portfolio-total", "objective-value"]);
