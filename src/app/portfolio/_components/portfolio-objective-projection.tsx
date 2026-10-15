@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ArrowUpRight, Calculator, ChevronDown } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Line, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +35,14 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 import { formatCurrency } from "@/lib/utils";
 import {
   objectiveProjectionInputSchema,
@@ -95,10 +109,7 @@ export function parseProjectionNumber(value: string) {
 
 export function formatProjectionAmountInput(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "";
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatBrazilianAmountValue(String(value), "");
 }
 
 function getCurrencySliderStep(maximum: number) {
@@ -734,12 +745,23 @@ function RangeField({
   onChange: (value: string) => void;
   onSlide: (value: string) => void;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const selectionRef = useRef<CurrencyInputSelection | null>(null);
   const parsed = parseProjectionNumber(value);
+  const displayValue = currency ? formatProjectionAmountInput(parsed) : value;
   const sliderValue = Math.min(
     sliderMax,
     Math.max(sliderMin, parsed ?? sliderMin),
   );
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    const selection = selectionRef.current;
+    if (!input || !selection) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    selectionRef.current = null;
+  }, [displayValue]);
 
   return (
     <div className="space-y-2">
@@ -755,17 +777,34 @@ function RangeField({
         )}
         <Input
           id={id}
+          ref={inputRef}
           type={currency ? "text" : "number"}
           min={currency ? undefined : min}
           max={currency ? undefined : max}
           step={currency ? undefined : "any"}
           inputMode={currency ? "decimal" : inputMode}
-          value={
-            currency && !isEditing ? formatProjectionAmountInput(parsed) : value
-          }
-          onFocus={() => setIsEditing(true)}
-          onBlur={() => setIsEditing(false)}
-          onChange={(event) => onChange(event.target.value)}
+          value={displayValue}
+          onChange={(event) => {
+            if (!currency) {
+              onChange(event.target.value);
+              return;
+            }
+
+            const input = event.target;
+            const rawValue = input.value;
+            const nextValue = formatAmountInput(rawValue, "");
+            selectionRef.current = getCurrencyInputSelection(
+              rawValue,
+              nextValue,
+              input.selectionStart ?? rawValue.length,
+              input.selectionEnd ?? rawValue.length,
+              input.selectionDirection,
+            );
+            const nextAmount = nextValue
+              ? parseBrazilianAmount(nextValue)
+              : Number.NaN;
+            onChange(Number.isFinite(nextAmount) ? String(nextAmount) : "");
+          }}
           placeholder={placeholder}
           disabled={disabled}
           className={currency ? "pl-10 tabular-nums" : undefined}

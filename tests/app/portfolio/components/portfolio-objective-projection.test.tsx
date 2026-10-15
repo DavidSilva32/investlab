@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -195,7 +196,7 @@ describe("PortfolioObjectiveProjection", () => {
 
     const startingAmountInput = screen.getByLabelText("Saldo inicial");
     await user.click(startingAmountInput);
-    expect((startingAmountInput as HTMLInputElement).value).toBe("65000");
+    expect((startingAmountInput as HTMLInputElement).value).toBe("65.000,00");
     await user.tab();
     expect((startingAmountInput as HTMLInputElement).value).toBe("65.000,00");
 
@@ -294,6 +295,80 @@ describe("PortfolioObjectiveProjection", () => {
       ).toBeTruthy();
     });
   }, 15_000);
+
+  it("masks monetary fields as Brazilian currency while typing", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioObjectiveProjection
+        objective={objective}
+        startingBalance={{
+          amount: 65_000,
+          referenceDate: "2026-10-01",
+          source: "portfolio",
+          completeness: "complete",
+        }}
+      />,
+    );
+
+    const startingAmount = screen.getByLabelText("Saldo inicial");
+    expect((startingAmount as HTMLInputElement).value).toBe("65.000,00");
+    fireEvent.change(startingAmount, { target: { value: "123456" } });
+    expect((startingAmount as HTMLInputElement).value).toBe("1.234,56");
+
+    const contribution = screen.getByLabelText("Aporte mensal");
+    fireEvent.change(contribution, { target: { value: "987654" } });
+    expect((contribution as HTMLInputElement).value).toBe("9.876,54");
+
+    await user.click(
+      screen.getByRole("combobox", { name: "O que quer simular" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Quanto preciso aportar?" }),
+    );
+    const target = screen.getByLabelText("Meta");
+    fireEvent.change(target, { target: { value: "123456789" } });
+    expect((target as HTMLInputElement).value).toBe("1.234.567,89");
+  });
+
+  it("keeps the caret at the end while typing and calculates from the masked amount", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioObjectiveProjection
+        objective={objective}
+        startingBalance={{
+          amount: 65_000,
+          referenceDate: "2026-10-01",
+          source: "portfolio",
+          completeness: "complete",
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Prazo em anos"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByLabelText("Rendimento anual (%)"), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByLabelText("Inflação anual (%)"), {
+      target: { value: "0" },
+    });
+
+    const startingAmount = screen.getByLabelText(
+      "Saldo inicial",
+    ) as HTMLInputElement;
+    await user.clear(startingAmount);
+    await user.type(startingAmount, "123456");
+
+    expect(startingAmount.value).toBe("1.234,56");
+    expect(startingAmount.selectionStart).toBe(startingAmount.value.length);
+    expect(startingAmount.selectionEnd).toBe(startingAmount.value.length);
+    expect(
+      within(
+        screen.getByRole("region", { name: "Resultado da simulação" }),
+      ).getByText("Patrimônio nominal projetado").parentElement?.textContent,
+    ).toContain("13.234,56");
+  });
 
   it("keeps the planning form visible while the starting balance and results load", () => {
     render(
