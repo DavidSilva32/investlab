@@ -5,10 +5,15 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PortfolioChatMicrophone } from "@/components/portfolio-chat-microphone";
+import { createRef } from "react";
+import {
+  PortfolioChatMicrophone,
+  type PortfolioChatMicrophoneHandle,
+} from "@/components/portfolio-chat-microphone";
 
 type RecognitionResult = { transcript: string; isFinal: boolean };
 type RecognitionMock = {
@@ -22,6 +27,7 @@ type RecognitionMock = {
         resultIndex: number;
       }) => void)
     | null;
+  onstart: (() => void) | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
   start: ReturnType<typeof vi.fn>;
@@ -46,11 +52,13 @@ function setupRecognition(
     interimResults: true,
     processLocally: false,
     onresult: null,
+    onstart: null,
     onerror: null,
     onend: null,
     start: vi.fn(),
     stop: vi.fn(),
   };
+  recognition.start.mockImplementation(() => recognition.onstart?.());
   const available = vi.fn().mockResolvedValue(availability);
   const constructor = Object.assign(
     function () {
@@ -95,7 +103,9 @@ describe("PortfolioChatMicrophone", () => {
 
     expect(available).toHaveBeenCalledOnce();
     expect(recognition.start).toHaveBeenCalledOnce();
-    expect(screen.getByRole("button", { name: /Parar grava/ })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    ).toBeTruthy();
   });
 
   it("installs the local language through the webkit recognition constructor", async () => {
@@ -159,12 +169,13 @@ describe("PortfolioChatMicrophone", () => {
       await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
     );
     recognition.onresult?.({ results: [], resultIndex: 0 });
+    recognition.onresult?.({ results: [[]], resultIndex: 0 });
     recognition.onresult?.({
       results: [[{ transcript: "   ", isFinal: true }]],
       resultIndex: 0,
     });
     recognition.onresult?.({
-      results: [[{ transcript: "late slot", isFinal: true }]],
+      results: [],
       resultIndex: 1,
     });
 
@@ -205,19 +216,34 @@ describe("PortfolioChatMicrophone", () => {
     await user.click(button);
 
     expect(recognition.lang).toBe("pt-BR");
+    expect(recognition.continuous).toBe(true);
+    expect(recognition.interimResults).toBe(true);
     expect(recognition.processLocally).toBe(true);
     expect(recognition.start).toHaveBeenCalledOnce();
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Cancelar gravação" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cancelar gravação" }).parentElement
+        ?.className,
+    ).toContain("w-full min-w-0");
     expect(
       screen.getByRole("img", { name: "Indicador de gravação" }),
     ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("img", { name: "Indicador de gravação" })
+        .querySelectorAll("span"),
+    ).toHaveLength(9);
 
     recognition.onresult?.({
       results: [[{ transcript: "interim", isFinal: false }]],
       resultIndex: 0,
     });
     expect(onTranscript).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Parar gravação" }));
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
     expect(recognition.stop).toHaveBeenCalledOnce();
     expect(
       screen.queryByRole("img", { name: "Indicador de gravação" }),
@@ -232,16 +258,107 @@ describe("PortfolioChatMicrophone", () => {
       ],
       resultIndex: 0,
     });
-    expect(onTranscript).toHaveBeenCalledExactlyOnceWith(
-      "Comprei CDB no banco Inter",
-    );
+    expect(onTranscript).not.toHaveBeenCalled();
     expect(
       screen.getByRole("button", { name: "Finalizando transcrição" }),
     ).toBeTruthy();
     expect(screen.getByText("Finalizando…")).toBeTruthy();
     recognition.onend?.();
     expect(await screen.findByText("Revise o texto")).toBeTruthy();
+    expect(onTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Comprei CDB no banco Inter",
+    );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("waits for the recognition start event before showing the listening state", async () => {
+    const user = userEvent.setup();
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+
+    expect(recognition.start).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("button", { name: "Iniciando gravação" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Iniciando a transcrição local",
+    );
+    expect(
+      screen.queryByRole("img", { name: "Indicador de gravação" }),
+    ).toBeNull();
+
+    act(() => recognition.onstart?.());
+
+    expect(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Indicador de gravação" }),
+    ).toBeTruthy();
+  });
+
+  it("times out a start that never becomes active and ignores a late start event", async () => {
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    recognition.stop.mockImplementation(() => {
+      throw new Error("start never became stoppable");
+    });
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    const button = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    vi.useFakeTimers();
+
+    fireEvent.click(button);
+    expect(
+      screen.getByRole("button", { name: "Iniciando gravação" }),
+    ).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByText("Áudio indisponível")).toBeTruthy();
+    expect(recognition.stop).toHaveBeenCalledOnce();
+    act(() => recognition.onstart?.());
+    expect(
+      screen.queryByRole("img", { name: "Indicador de gravação" }),
+    ).toBeNull();
+  });
+
+  it("clears the start timeout on start, recognition error, and unmount", async () => {
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    const button = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    vi.useFakeTimers();
+
+    fireEvent.click(button);
+    expect(vi.getTimerCount()).toBe(0);
+
+    recognition.start.mockImplementation(() => undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Finalizar gravação" }));
+    act(() => recognition.onend?.());
+    fireEvent.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => recognition.onerror?.({ error: "not-allowed" }));
+    expect(vi.getTimerCount()).toBe(0);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    cleanup();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("keeps the stop control available after a final transcript while listening", async () => {
@@ -258,16 +375,176 @@ describe("PortfolioChatMicrophone", () => {
       resultIndex: 0,
     });
 
-    expect(onTranscript).toHaveBeenCalledExactlyOnceWith("Minha fala");
-    expect(screen.getByRole("button", { name: "Parar gravação" })).toBeTruthy();
+    expect(onTranscript).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("img", { name: "Indicador de gravação" }),
     ).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Parar gravação" }));
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
     recognition.onend?.();
 
     expect(await screen.findByText("Revise o texto")).toBeTruthy();
+    expect(onTranscript).toHaveBeenCalledExactlyOnceWith("Minha fala");
+  });
+
+  it("cancels a recording once when clicked twice and ignores late results", async () => {
+    const user = userEvent.setup();
+    const onTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={onTranscript} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    recognition.onresult?.({
+      results: [[{ transcript: "Texto que será descartado", isFinal: true }]],
+      resultIndex: 0,
+    });
+
+    expect(onTranscript).not.toHaveBeenCalled();
+    const lateResult = recognition.onresult;
+    const lateEnd = recognition.onend;
+    const cancelButton = screen.getByRole("button", {
+      name: "Cancelar gravação",
+    });
+    act(() => {
+      fireEvent.click(cancelButton);
+      fireEvent.click(cancelButton);
+    });
+
+    expect(recognition.stop).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    ).toBeTruthy();
+    lateResult?.({
+      results: [[{ transcript: "Resultado atrasado", isFinal: true }]],
+      resultIndex: 0,
+    });
+    lateEnd?.();
+
+    expect(onTranscript).not.toHaveBeenCalled();
+    expect(screen.getByText("Áudio local")).toBeTruthy();
+  });
+
+  it("collects every final Chrome result and publishes it when recognition ends", async () => {
+    const user = userEvent.setup();
+    const onTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={onTranscript} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    recognition.onresult?.({
+      results: [
+        [{ transcript: "Tenho", isFinal: true }],
+        [{ transcript: " mil reais", isFinal: false }],
+      ],
+      resultIndex: 1,
+    });
+    recognition.onresult?.({
+      results: [
+        [{ transcript: "Tenho", isFinal: true }],
+        [{ transcript: " mil reais", isFinal: true }],
+      ],
+      resultIndex: 1,
+    });
+
+    expect(onTranscript).not.toHaveBeenCalled();
+    recognition.onend?.();
+
+    expect(onTranscript).toHaveBeenCalledExactlyOnceWith("Tenho mil reais");
+    expect(await screen.findByText("Revise o texto")).toBeTruthy();
+  });
+
+  it("keeps listening through pauses and uses the final result emitted before end", async () => {
+    const user = userEvent.setup();
+    const onTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={onTranscript} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    recognition.onresult?.({
+      results: [[{ transcript: "Quanto tenho", isFinal: false }]],
+      resultIndex: 0,
+    });
+
+    expect(recognition.continuous).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    ).toBeTruthy();
+    expect(onTranscript).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
+    recognition.onresult?.({
+      results: [[{ transcript: "Quanto tenho no Itaú", isFinal: true }]],
+      resultIndex: 0,
+    });
+    recognition.onend?.();
+
+    expect(onTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Quanto tenho no Itaú",
+    );
+  });
+
+  it("uses the latest interim text only when Chrome ends without a final segment", async () => {
+    const user = userEvent.setup();
+    const onTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={onTranscript} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    recognition.onresult?.({
+      results: [[{ transcript: "primeira tentativa", isFinal: false }]],
+      resultIndex: 0,
+    });
+    recognition.onresult?.({
+      results: [[{ transcript: "Minha frase completa", isFinal: false }]],
+      resultIndex: 0,
+    });
+    recognition.onend?.();
+
+    expect(onTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Minha frase completa",
+    );
+  });
+
+  it("combines finalized speech and an interim tail when Chrome ends automatically", async () => {
+    const user = userEvent.setup();
+    const onTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={onTranscript} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    recognition.onresult?.({
+      results: [[{ transcript: "Tenho", isFinal: true }]],
+      resultIndex: 0,
+    });
+    recognition.onresult?.({
+      results: [
+        [{ transcript: "Tenho", isFinal: true }],
+        [{ transcript: " investimentos no Itaú", isFinal: false }],
+      ],
+      resultIndex: 1,
+    });
+    recognition.onend?.();
+
+    expect(onTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Tenho investimentos no Itaú",
+    );
   });
 
   it.each(["downloadable", "downloading"] as const)(
@@ -375,7 +652,7 @@ describe("PortfolioChatMicrophone", () => {
     staleError({ error: "not-allowed" });
     staleError({ error: "not-allowed" });
     staleEnd();
-    expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
+    expect(await screen.findByText("Permissão do microfone")).toBeTruthy();
 
     await user.click(
       screen.getByRole("button", { name: "Gravar mensagem de voz" }),
@@ -392,14 +669,39 @@ describe("PortfolioChatMicrophone", () => {
     vi.useFakeTimers();
     vi.spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined);
     fireEvent.click(recordButton);
-    fireEvent.click(screen.getByRole("button", { name: /Parar grava/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Finalizar grava/ }));
     recognition.onerror?.({ error: "not-allowed" });
 
     await act(async () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(screen.getByRole("status").textContent).toContain("transcri");
+    expect(screen.getByRole("status").textContent).toContain(
+      "bloqueou o microfone",
+    );
+  });
+
+  it("ignores a start timeout queued after recognition has started and ended", async () => {
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    const recordButton = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    await waitFor(() =>
+      expect(recordButton.hasAttribute("disabled")).toBe(false),
+    );
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined);
+
+    fireEvent.click(recordButton);
+    recognition.onstart?.();
+    recognition.onend?.();
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByText("Sem fala detectada")).toBeTruthy();
+    expect(recognition.stop).not.toHaveBeenCalled();
   });
 
   it("shows no-speech and microphone-permission error states accessibly", async () => {
@@ -410,7 +712,9 @@ describe("PortfolioChatMicrophone", () => {
       await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
     );
 
-    await user.click(screen.getByRole("button", { name: "Parar gravação" }));
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
     expect(screen.getByRole("status").textContent).toContain(
       "Finalizando a transcrição",
     );
@@ -436,14 +740,49 @@ describe("PortfolioChatMicrophone", () => {
     await user.click(
       await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
     );
-    await user.click(screen.getByRole("button", { name: "Parar gravação" }));
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
     expect(screen.getByRole("status").textContent).toContain(
       "Finalizando a transcrição",
     );
     recognition.onerror?.({ error: "not-allowed" });
 
-    expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("transcri");
+    expect(await screen.findByText("Permissão do microfone")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "bloqueou o microfone",
+    );
+  });
+
+  it("explains when the browser cannot find an audio capture device", async () => {
+    const user = userEvent.setup();
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+
+    recognition.onerror?.({ error: "audio-capture" });
+
+    expect(await screen.findByText("Microfone não encontrado")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Não encontrei um microfone disponível",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(recognition.start).toHaveBeenCalledTimes(2);
+
+    recognition.onerror?.({ error: "network" });
+    expect(
+      await screen.findByText(
+        "Não foi possível acessar o microfone ou iniciar a transcrição. Confira a permissão e tente novamente.",
+      ),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(recognition.start).toHaveBeenCalledTimes(3);
   });
 
   it("handles failed local availability checks without enabling microphone use", async () => {
@@ -530,7 +869,7 @@ describe("PortfolioChatMicrophone", () => {
       await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
     );
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Parar gravação" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finalizar gravação" }));
     expect(screen.getByRole("status").textContent).toContain(
       "Finalizando a transcrição",
     );
@@ -554,15 +893,19 @@ describe("PortfolioChatMicrophone", () => {
     await user.click(
       await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
     );
-    await user.click(screen.getByRole("button", { name: "Parar gravação" }));
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
     expect(screen.getByRole("status").textContent).toContain(
       "Finalizando a transcrição",
     );
 
     recognition.onerror?.({ error: "not-allowed" });
 
-    expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("transcri");
+    expect(await screen.findByText("Permissão do microfone")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "bloqueou o microfone",
+    );
   });
 
   it("reports an error when the browser rejects a stop request", async () => {
@@ -576,7 +919,9 @@ describe("PortfolioChatMicrophone", () => {
     await user.click(
       await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
     );
-    await user.click(screen.getByRole("button", { name: "Parar gravação" }));
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
 
     expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
   });
@@ -609,19 +954,250 @@ describe("PortfolioChatMicrophone", () => {
       await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
     );
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "Parar gravação" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finalizar gravação" }));
     recognition.onresult?.({
       results: [[{ transcript: "Minha transcrição final", isFinal: true }]],
       resultIndex: 0,
     });
 
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-    });
+    act(() => vi.advanceTimersByTime(2000));
 
     expect(onTranscript).toHaveBeenCalledExactlyOnceWith(
       "Minha transcrição final",
     );
     expect(screen.getByText("Revise o texto")).toBeTruthy();
+  });
+
+  it("submits the recognized transcript when the parent requests send during recording", async () => {
+    const user = userEvent.setup();
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onTranscript = vi.fn();
+    const onSubmitTranscript = vi.fn();
+    const onRecordingChange = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={onTranscript}
+        onSubmitTranscript={onSubmitTranscript}
+        onRecordingChange={onRecordingChange}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(onRecordingChange).toHaveBeenLastCalledWith(true);
+    ref.current?.finalizeAndSubmit();
+    recognition.onresult?.({
+      results: [[{ transcript: "Enviar esta pergunta", isFinal: true }]],
+      resultIndex: 0,
+    });
+    recognition.onend?.();
+
+    expect(onTranscript).not.toHaveBeenCalled();
+    expect(onSubmitTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Enviar esta pergunta",
+    );
+    expect(onRecordingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("completes send with an empty transcript when recognition returns no speech", async () => {
+    const user = userEvent.setup();
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onTranscript = vi.fn();
+    const onSubmitTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={onTranscript}
+        onSubmitTranscript={onSubmitTranscript}
+        onRecordingChange={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    ref.current?.finalizeAndSubmit();
+    recognition.onend?.();
+
+    expect(onTranscript).not.toHaveBeenCalled();
+    expect(onSubmitTranscript).toHaveBeenCalledExactlyOnceWith("");
+    expect(await screen.findByText("Sem fala detectada")).toBeTruthy();
+  });
+
+  it("stops after recognition starts when send was requested during startup", async () => {
+    const user = userEvent.setup();
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onSubmitTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={vi.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    ref.current?.finalizeAndSubmit();
+    act(() => recognition.onstart?.());
+    recognition.onresult?.({
+      results: [[{ transcript: "Pergunta por voz", isFinal: true }]],
+      resultIndex: 0,
+    });
+    recognition.onend?.();
+
+    expect(recognition.stop).toHaveBeenCalledOnce();
+    expect(onSubmitTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Pergunta por voz",
+    );
+  });
+
+  it("uses the stop fallback when recognition does not emit its end event", async () => {
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onSubmitTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={vi.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+      />,
+    );
+    const startButton = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    await waitFor(() =>
+      expect(startButton.hasAttribute("disabled")).toBe(false),
+    );
+
+    fireEvent.click(startButton);
+    ref.current?.finalizeAndSubmit();
+    act(() => recognition.onstart?.());
+    recognition.onresult?.({
+      results: [[{ transcript: "Concluída pelo limite", isFinal: true }]],
+      resultIndex: 0,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+
+    expect(onSubmitTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Concluída pelo limite",
+    );
+    expect(screen.getByText("Revise o texto")).toBeTruthy();
+  });
+
+  it("can convert an in-progress stop into a send request", async () => {
+    const user = userEvent.setup();
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onSubmitTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={vi.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+      />,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Finalizar gravação" }),
+    );
+    ref.current?.finalizeAndSubmit();
+    recognition.onresult?.({
+      results: [[{ transcript: "Enviar depois de parar", isFinal: true }]],
+      resultIndex: 0,
+    });
+    recognition.onend?.();
+
+    expect(onSubmitTranscript).toHaveBeenCalledExactlyOnceWith(
+      "Enviar depois de parar",
+    );
+  });
+
+  it("ignores a stop fallback queued after cancellation during startup", async () => {
+    const user = userEvent.setup();
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onSubmitTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={vi.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+      />,
+    );
+    const recordButton = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    await waitFor(() =>
+      expect(recordButton.hasAttribute("disabled")).toBe(false),
+    );
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined);
+
+    fireEvent.click(recordButton);
+    ref.current?.finalizeAndSubmit();
+    act(() => recognition.onstart?.());
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar gravação" }));
+    act(() => vi.runOnlyPendingTimers());
+
+    expect(onSubmitTranscript).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    ).toBeTruthy();
+  });
+
+  it("ignores a send request when no recognition session exists", async () => {
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onSubmitTranscript = vi.fn();
+    setupRecognition("available");
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={vi.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+      />,
+    );
+
+    ref.current?.finalizeAndSubmit();
+
+    expect(onSubmitTranscript).not.toHaveBeenCalled();
+  });
+
+  it("reports a stop failure when send was requested during startup", async () => {
+    const user = userEvent.setup();
+    const ref = createRef<PortfolioChatMicrophoneHandle>();
+    const onSubmitTranscript = vi.fn();
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    recognition.stop.mockImplementation(() => {
+      throw new Error("recognition could not stop");
+    });
+    render(
+      <PortfolioChatMicrophone
+        ref={ref}
+        onTranscript={vi.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    ref.current?.finalizeAndSubmit();
+    act(() => recognition.onstart?.());
+
+    expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
+    expect(onSubmitTranscript).not.toHaveBeenCalled();
   });
 });

@@ -7,8 +7,6 @@ import {
   ArrowLeft,
   ArrowUpRight,
   ChartNoAxesCombined,
-  LoaderCircle,
-  Plus,
   Send,
   Target,
   Wallet,
@@ -23,11 +21,21 @@ import {
   rankPortfolioChatIntentSuggestions,
   type PortfolioChatManualPositionRequest,
   type PortfolioChatIntent,
+  type PortfolioChatMatch,
 } from "@/lib/portfolio-chat-intent";
 import { PortfolioChatManualPosition } from "@/components/portfolio-chat-manual-position";
-import { PortfolioChatMicrophone } from "@/components/portfolio-chat-microphone";
+import {
+  PortfolioChatMicrophone,
+  type PortfolioChatMicrophoneHandle,
+} from "@/components/portfolio-chat-microphone";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { formatCurrency } from "@/lib/utils";
+import { formatCurrencyCents } from "@/lib/portfolio-money";
+import {
+  PortfolioChatAssetList,
+  PortfolioChatThinkingIndicator,
+  type PortfolioChatListedPosition,
+} from "@/components/portfolio-chat-query-result";
 import { Button } from "@/components/ui/button";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Input } from "@/components/ui/input";
@@ -69,6 +77,19 @@ type ObjectivesResponse = {
     missingPositionCount?: number | null;
     unvaluedPositionCount?: number | null;
   } | null;
+};
+type AssetChoice = {
+  id: string;
+  label: string;
+  detail: string;
+  valueCents: string | null;
+};
+type PortfolioChatQueryResponse = {
+  message: string;
+  items?: PortfolioChatListedPosition[];
+};
+type PortfolioChatQueryMatch = PortfolioChatMatch & {
+  intent: "asset-value" | "asset-class-value" | "asset-list";
 };
 type ChatMessage = { id: number; role: "user" | "assistant"; content: string };
 const emptyObjectives: ObjectiveSummary[] = [];
@@ -132,6 +153,21 @@ const allPromptSuggestions: PortfolioChatIntent[] = [
   ...prompts.map(({ id }) => id),
   "planning",
 ];
+
+type StrategyClassId =
+  "fixed_income" | "brazilian_equities" | "international_etfs" | "fiis";
+const classPromptLabels: Record<StrategyClassId, string> = {
+  fixed_income: "Renda fixa",
+  brazilian_equities: "Ações e BDRs",
+  international_etfs: "ETFs internacionais",
+  fiis: "Fundos imobiliários (FIIs)",
+};
+const classPromptEntries = Object.entries(classPromptLabels) as [
+  StrategyClassId,
+  string,
+][];
+const quickPromptButtonClass =
+  "h-7 rounded-full px-2.5 text-xs transition-[color,background-color,transform] duration-150 hover:-translate-y-0.5 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-0 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none";
 
 function getPortfolioTotalMessage(data: ObjectivesResponse) {
   const summary = data.destinationSummary;
@@ -303,7 +339,16 @@ function AssistantConversation({
   const [promptSuggestions, setPromptSuggestions] = useState<
     PortfolioChatIntent[]
   >([]);
+  const [assetChoices, setAssetChoices] = useState<AssetChoice[]>([]);
+  const [assetList, setAssetList] = useState<PortfolioChatListedPosition[]>([]);
+  const [assetChoiceLimit, setAssetChoiceLimit] = useState(8);
+  const [isPortfolioQueryPending, setIsPortfolioQueryPending] = useState(false);
   const [draft, setDraft] = useState("");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const microphoneRef = useRef<PortfolioChatMicrophoneHandle>(null);
+  const voiceSessionActiveRef = useRef(false);
+  const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messageSequence = useRef(0);
 
@@ -319,6 +364,57 @@ function AssistantConversation({
   const objectives = Array.isArray(objectivesQuery.data?.objectives)
     ? objectivesQuery.data.objectives
     : emptyObjectives;
+
+  const queryPortfolio = useCallback(
+    async (match: PortfolioChatQueryMatch) => {
+      setIsPortfolioQueryPending(true);
+      setIntent(null);
+      setAssetChoices([]);
+      setAssetList([]);
+      try {
+        const response = await fetch("/api/portfolio/chat/query", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            intent: match.intent,
+            ...(match.assetQuery ? { query: match.assetQuery } : {}),
+            ...(match.assetClassId ? { assetClassId: match.assetClassId } : {}),
+          }),
+        });
+        const data = (await response.json()) as PortfolioChatQueryResponse;
+        if (!response.ok) {
+          addMessage(
+            "assistant",
+            typeof data.message === "string" && data.message.trim()
+              ? data.message
+              : "Não foi possível consultar a carteira agora.",
+          );
+          return;
+        }
+        addMessage("assistant", data.message);
+        if (match.intent === "asset-list") {
+          setAssetList(data.items ?? []);
+        } else if ((data.items?.length ?? 0) > 1) {
+          setAssetChoices(
+            data.items!.map((item) => ({
+              id: item.id,
+              label: item.product,
+              detail: [item.assetCode, item.issuer ?? item.institution]
+                .filter(Boolean)
+                .join(" · "),
+              valueCents: item.valueCents,
+            })),
+          );
+          setAssetChoiceLimit(8);
+        }
+      } catch {
+        addMessage("assistant", "Não foi possível consultar a carteira agora.");
+      } finally {
+        setIsPortfolioQueryPending(false);
+      }
+    },
+    [addMessage],
+  );
 
   function chooseIntent(nextIntent: PortfolioChatIntent, label: string) {
     setPromptSuggestions([]);
@@ -364,6 +460,29 @@ function AssistantConversation({
     );
   }
 
+  function askQuickQuestion(message: string) {
+    addMessage("user", message);
+    setPromptSuggestions([]);
+    setAssetChoices([]);
+    setAssetList([]);
+    const match = recognizePortfolioChatMessage(message, objectives)!;
+    if (
+      match.intent === "asset-class-value" ||
+      match.intent === "asset-value" ||
+      match.intent === "asset-list"
+    ) {
+      resolveTextMessage(message, objectives, objectivesQuery.data ?? {});
+      return;
+    }
+    if (!objectivesQuery.isSuccess) {
+      setPendingMessage(message);
+      setIntent(match.intent);
+      void resolvePendingMessage(message);
+      return;
+    }
+    resolveTextMessage(message);
+  }
+
   const resolveTextMessage = useCallback(
     (
       message: string,
@@ -387,9 +506,18 @@ function AssistantConversation({
       }
 
       setPromptSuggestions([]);
+      setAssetChoices([]);
       const objective = availableObjectives.find(
         ({ id }) => id === match.objectiveId,
       );
+      if (
+        match.intent === "asset-class-value" ||
+        match.intent === "asset-value" ||
+        match.intent === "asset-list"
+      ) {
+        void queryPortfolio(match as PortfolioChatQueryMatch);
+        return;
+      }
       if (match.intent === "portfolio-total") {
         setIntent(null);
         setSelectedObjective(null);
@@ -452,9 +580,20 @@ function AssistantConversation({
       setSelectedObjective(null);
       addMessage("assistant", "Qual objetivo você quer consultar?");
     },
-    [addMessage, objectives, objectivesQuery.data],
+    [addMessage, objectives, objectivesQuery.data, queryPortfolio],
   );
 
+  function chooseAsset(choice: AssetChoice) {
+    setAssetChoices([]);
+    setAssetChoiceLimit(8);
+    addMessage("user", choice.label);
+    addMessage(
+      "assistant",
+      choice.valueCents === null
+        ? `Não há valor atual confirmado para ${choice.label}.`
+        : `O valor atual acompanhado de ${choice.label}${choice.detail ? ` (${choice.detail})` : ""} é ${formatCurrencyCents(BigInt(choice.valueCents))}.`,
+    );
+  }
   async function resolvePendingMessage(message: string) {
     const result = await objectivesQuery.refetch();
     if (!result.isSuccess) return;
@@ -468,14 +607,14 @@ function AssistantConversation({
     );
   }
 
-  function submitMessage(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const message = draft.trim();
-    if (!message || pendingMessage) return;
+  function submitMessageText(rawMessage: string) {
+    const message = rawMessage.trim();
+    if (!message || pendingMessage) return false;
 
     addMessage("user", message);
     setDraft("");
     setPromptSuggestions([]);
+    setAssetList([]);
     setSelectedObjective(null);
     setPlanningHref(null);
 
@@ -484,30 +623,57 @@ function AssistantConversation({
         "assistant",
         "Entendi um possível cadastro de posição e também uma consulta. Qual dessas ações você quer fazer primeiro? Reformule a pergunta para eu continuar.",
       );
-      return;
+      return true;
     }
 
     if (isPortfolioChatManualPositionRequest(message)) {
       setIntent(null);
       setPromptSuggestions([]);
       onStartManualPosition(parsePortfolioChatManualPositionRequest(message));
-      return;
+      return true;
     }
 
     const initialMatch = recognizePortfolioChatMessage(message);
     if (!initialMatch) {
       resolveTextMessage(message);
-      return;
+      return true;
+    }
+
+    if (
+      initialMatch.intent === "asset-class-value" ||
+      initialMatch.intent === "asset-value" ||
+      initialMatch.intent === "asset-list"
+    ) {
+      resolveTextMessage(message);
+      return true;
     }
 
     if (!objectivesQuery.isSuccess) {
       setPendingMessage(message);
       setIntent(initialMatch.intent);
       void resolvePendingMessage(message);
-      return;
+      return true;
     }
 
     resolveTextMessage(message);
+    return true;
+  }
+
+  function submitVoiceTranscript(transcript: string) {
+    const existingDraft = draftRef.current.trim();
+    const message = existingDraft
+      ? `${existingDraft} ${transcript}`
+      : transcript;
+    if (submitMessageText(message)) draftRef.current = "";
+  }
+
+  function submitMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (voiceSessionActiveRef.current) {
+      microphoneRef.current?.finalizeAndSubmit();
+      return;
+    }
+    if (submitMessageText(draft)) draftRef.current = "";
   }
 
   function restart() {
@@ -517,6 +683,8 @@ function AssistantConversation({
     setPlanningHref(null);
     setPendingMessage(null);
     setPromptSuggestions([]);
+    setAssetChoices([]);
+    setAssetList([]);
     setDraft("");
   }
 
@@ -567,30 +735,64 @@ function AssistantConversation({
         <>
           <MessageScrollerProvider autoScroll defaultScrollPosition="end">
             <MessageScroller className="min-h-0 flex-1">
-              <MessageScrollerViewport aria-label="Conversa com o assistente">
+              <MessageScrollerViewport
+                aria-label="Conversa com o assistente"
+                className="h-0 min-h-0 flex-1"
+              >
                 <MessageScrollerContent
                   aria-label="Conversa com o assistente"
                   className="gap-3 px-4 py-4"
                 >
                   <MessageScrollerItem messageId="welcome">
                     <AssistantMessage>
-                      <div className="space-y-2">
-                        <p>
-                          Oi! Posso consultar seus objetivos, abrir uma
-                          simulação ou ajudar a cadastrar uma posição manual.
-                        </p>
+                      <p>
+                        Oi! Pergunte o que você quer entender sobre sua
+                        carteira.
+                      </p>
+                    </AssistantMessage>
+                  </MessageScrollerItem>
+                  {messages.length === 0 && (
+                    <MessageScrollerItem
+                      messageId="quick-prompts"
+                      className="mt-auto"
+                    >
+                      <div
+                        className="ml-9 flex flex-wrap gap-1.5"
+                        role="group"
+                        aria-label="Consultas rápidas"
+                      >
                         <Button
                           type="button"
                           size="sm"
-                          variant="outline"
-                          onClick={() => onStartManualPosition()}
+                          variant="secondary"
+                          className={quickPromptButtonClass}
+                          onClick={() =>
+                            askQuickQuestion(
+                              "Quanto tenho de patrimônio conhecido?",
+                            )
+                          }
                         >
-                          <Plus aria-hidden="true" className="mr-1.5 size-4" />
-                          Cadastrar posição manual
+                          Patrimônio
                         </Button>
+                        {classPromptEntries.map(([id, label]) => (
+                          <Button
+                            key={id}
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className={quickPromptButtonClass}
+                            onClick={() =>
+                              askQuickQuestion(`Quanto tenho em ${label}?`)
+                            }
+                          >
+                            {label === "Fundos imobiliários (FIIs)"
+                              ? "FIIs"
+                              : label}
+                          </Button>
+                        ))}
                       </div>
-                    </AssistantMessage>
-                  </MessageScrollerItem>
+                    </MessageScrollerItem>
+                  )}
                   {messages.map((message) => (
                     <MessageScrollerItem
                       key={message.id}
@@ -598,7 +800,9 @@ function AssistantConversation({
                       scrollAnchor={message.role === "user"}
                     >
                       {message.role === "assistant" ? (
-                        <AssistantMessage>{message.content}</AssistantMessage>
+                        <AssistantMessage className="motion-content-reveal">
+                          {message.content}
+                        </AssistantMessage>
                       ) : (
                         <Message align="end">
                           <MessageContent className="w-fit max-w-[85%]">
@@ -612,6 +816,58 @@ function AssistantConversation({
                       )}
                     </MessageScrollerItem>
                   ))}
+                  {assetList.length > 0 && (
+                    <MessageScrollerItem messageId="asset-list">
+                      <PortfolioChatAssetList items={assetList} />
+                    </MessageScrollerItem>
+                  )}
+                  {assetChoices.length > 0 && (
+                    <MessageScrollerItem messageId="asset-choices">
+                      <div
+                        className="ml-9 flex flex-wrap gap-2"
+                        role="group"
+                        aria-label="Escolha o ativo"
+                      >
+                        {assetChoices
+                          .slice(0, assetChoiceLimit)
+                          .map((choice) => (
+                            <Button
+                              key={choice.id}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-auto min-h-9 max-w-full justify-start whitespace-normal text-left"
+                              onClick={() => chooseAsset(choice)}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate">
+                                  {choice.label}
+                                </span>
+                                {choice.detail && (
+                                  <span className="block truncate text-xs text-muted-foreground">
+                                    {choice.detail}
+                                  </span>
+                                )}
+                              </span>
+                            </Button>
+                          ))}
+                        {assetChoices.length > assetChoiceLimit && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 rounded-full px-3 text-xs"
+                            onClick={() =>
+                              setAssetChoiceLimit((current) => current + 8)
+                            }
+                          >
+                            Ver mais ativos (
+                            {assetChoices.length - assetChoiceLimit})
+                          </Button>
+                        )}
+                      </div>
+                    </MessageScrollerItem>
+                  )}
                   {promptSuggestions.length > 0 &&
                     !intent &&
                     !selectedObjective &&
@@ -623,18 +879,14 @@ function AssistantConversation({
                         />
                       </MessageScrollerItem>
                     )}
+                  {isPortfolioQueryPending && (
+                    <MessageScrollerItem messageId="portfolio-query-loading">
+                      <PortfolioChatThinkingIndicator />
+                    </MessageScrollerItem>
+                  )}
                   {intent && objectivesQuery.isPending && (
                     <MessageScrollerItem messageId="loading-objectives">
-                      <p
-                        role="status"
-                        className="flex items-center gap-2 text-sm text-muted-foreground"
-                      >
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="size-4 animate-spin"
-                        />
-                        Carregando seus objetivos...
-                      </p>
+                      <PortfolioChatThinkingIndicator message="Conferindo seus objetivos" />
                     </MessageScrollerItem>
                   )}
                   {intent && objectivesQuery.isError && (
@@ -765,30 +1017,50 @@ function AssistantConversation({
           </MessageScrollerProvider>
 
           <div className="border-t border-border px-4 py-3">
-            <form onSubmit={submitMessage} className="flex gap-2">
-              <Input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                aria-label="Escreva uma pergunta para o assistente"
-                placeholder="Pergunte sobre a carteira ou peça um cadastro"
-                autoComplete="off"
-                disabled={Boolean(pendingMessage)}
-                className="min-w-0"
-              />
+            <form
+              onSubmit={submitMessage}
+              className="flex min-w-0 items-center gap-2"
+            >
+              {!isVoiceSessionActive && (
+                <Input
+                  value={draft}
+                  onChange={(event) => {
+                    draftRef.current = event.target.value;
+                    setDraft(event.target.value);
+                  }}
+                  aria-label="Escreva uma pergunta para o assistente"
+                  placeholder="Pergunte sobre a carteira ou peça um cadastro"
+                  autoComplete="off"
+                  disabled={Boolean(pendingMessage) || isPortfolioQueryPending}
+                  className="min-w-0 flex-1"
+                />
+              )}
               <PortfolioChatMicrophone
-                onTranscript={(transcript) =>
-                  setDraft((current) =>
-                    current.trim()
-                      ? `${current.trim()} ${transcript}`
-                      : transcript,
-                  )
-                }
+                ref={microphoneRef}
+                onRecordingChange={(recording) => {
+                  voiceSessionActiveRef.current = recording;
+                  setIsVoiceSessionActive(recording);
+                }}
+                onTranscript={(transcript) => {
+                  const current = draftRef.current.trim();
+                  const next = current
+                    ? `${current} ${transcript}`
+                    : transcript;
+                  draftRef.current = next;
+                  setDraft(next);
+                }}
+                onSubmitTranscript={submitVoiceTranscript}
               />
               <Button
                 type="submit"
                 size="icon"
                 aria-label="Enviar mensagem"
-                disabled={!draft.trim() || Boolean(pendingMessage)}
+                className="shrink-0"
+                disabled={
+                  (!draft.trim() && !isVoiceSessionActive) ||
+                  Boolean(pendingMessage) ||
+                  isPortfolioQueryPending
+                }
               >
                 <Send aria-hidden="true" className="size-4" />
               </Button>
@@ -889,7 +1161,13 @@ function ObjectiveChoices({
   );
 }
 
-function AssistantMessage({ children }: { children: React.ReactNode }) {
+function AssistantMessage({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <Message>
       <MessageAvatar className="size-6 min-w-6 bg-background">
@@ -902,7 +1180,7 @@ function AssistantMessage({ children }: { children: React.ReactNode }) {
           className="size-6 rounded-full border border-border object-cover"
         />
       </MessageAvatar>
-      <MessageContent className="max-w-[90%]">
+      <MessageContent className={`max-w-[90%] ${className ?? ""}`}>
         <Bubble variant="muted" className="max-w-full">
           <BubbleContent className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
             {children}

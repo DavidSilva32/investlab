@@ -5,6 +5,9 @@ export type PortfolioChatIntent =
   | "objective-gap"
   | "monthly-planned-contribution"
   | "portfolio-total"
+  | "asset-value"
+  | "asset-class-value"
+  | "asset-list"
   | "planning";
 
 export type PortfolioChatObjectiveName = {
@@ -18,6 +21,9 @@ export type PortfolioChatMatch = {
   intent: PortfolioChatIntent;
   objectiveId: string | null;
   objectiveAmbiguous: boolean;
+  assetQuery?: string;
+  assetClassId?:
+    "fixed_income" | "brazilian_equities" | "international_etfs" | "fiis";
 };
 
 export type PortfolioChatManualPositionRequest = {
@@ -373,6 +379,9 @@ const intentClues: Record<PortfolioChatIntent, string[]> = {
     "guardar",
     "guardo",
   ],
+  "asset-value": ["ativo", "ticker", "codigo", "empresa", "papel"],
+  "asset-class-value": ["classe", "fiis", "acoes", "renda fixa", "etfs"],
+  "asset-list": ["quais", "empresas", "acoes", "fiis", "listar"],
   planning: [
     "simular",
     "simulacao",
@@ -393,6 +402,19 @@ const intentOrder: PortfolioChatIntent[] = [
   "monthly-planned-contribution",
   "planning",
 ];
+
+const assetClassAliases = [
+  { id: "fixed_income", aliases: ["renda fixa"] },
+  { id: "brazilian_equities", aliases: ["acoes e bdrs", "acoes", "bdrs"] },
+  {
+    id: "international_etfs",
+    aliases: ["etfs internacionais", "etf internacional"],
+  },
+  {
+    id: "fiis",
+    aliases: ["fundos imobiliarios", "fundo imobiliario", "fiis", "fii"],
+  },
+] as const;
 
 /** Returns deterministic, clue-based suggestions for questions not recognized directly. */
 export function rankPortfolioChatIntentSuggestions(
@@ -462,6 +484,28 @@ function findObjectiveId(
   text: string,
   objectives: PortfolioChatObjectiveName[],
 ): { id: string | null; ambiguous: boolean } {
+  const mentionedNames = objectives
+    .map((objective) => ({
+      id: objective.id,
+      name: normalizePortfolioChatText(objective.name),
+    }))
+    .filter(({ name }) => name && containsPhrase(text, name));
+  const distinctMentionedNames = [
+    ...new Map(mentionedNames.map((match) => [match.id, match])).values(),
+  ];
+  if (distinctMentionedNames.length > 1 && text.includes(" e ")) {
+    return { id: null, ambiguous: true };
+  }
+  const independentNames = distinctMentionedNames.filter(
+    ({ name }) =>
+      !distinctMentionedNames.some(
+        (other) =>
+          other.name !== name &&
+          (other.name.includes(name) || name.includes(other.name)),
+      ),
+  );
+  if (independentNames.length > 1) return { id: null, ambiguous: true };
+
   const matches = objectives.flatMap((objective) => {
     const terms =
       objective.id === reserveObjectiveId || objective.kind === "RESERVE"
@@ -475,16 +519,24 @@ function findObjectiveId(
                 "longo prazo",
               ]
             : [];
-    const matchingTerm = terms
+    const namedObjective = normalizePortfolioChatText(objective.name);
+    const matchingTerms = [...terms, namedObjective]
+      .filter(Boolean)
       .map(normalizePortfolioChatText)
-      .find((term) => containsPhrase(text, term));
-    return matchingTerm ? [{ id: objective.id, name: matchingTerm }] : [];
+      .filter((term) => containsPhrase(text, term));
+    return matchingTerms.map((name) => ({ id: objective.id, name }));
   });
 
   if (matches.length === 0) return { id: null, ambiguous: false };
 
+  const longestMatchLength = Math.max(
+    ...matches.map(({ name }) => name.length),
+  );
+  const mostSpecificMatches = matches.filter(
+    ({ name }) => name.length === longestMatchLength,
+  );
   const uniqueMatches = [
-    ...new Map(matches.map((match) => [match.id, match])).values(),
+    ...new Map(mostSpecificMatches.map((match) => [match.id, match])).values(),
   ];
 
   if (uniqueMatches.length !== 1) return { id: null, ambiguous: true };
@@ -498,7 +550,12 @@ export function recognizePortfolioChatMessage(
   const normalizedMessage = normalizePortfolioChatText(message);
   if (!normalizedMessage) return null;
 
-  const objective = findObjectiveId(normalizedMessage, objectives);
+  const explicitlyPortfolioWide = explicitPortfolioPhrases.some((phrase) =>
+    containsPhrase(normalizedMessage, phrase),
+  );
+  const objective = explicitlyPortfolioWide
+    ? { id: null, ambiguous: false }
+    : findObjectiveId(normalizedMessage, objectives);
   const hasUnclassifiedPlanningClause =
     objective.id !== null &&
     normalizedMessage.includes(" e ") &&
@@ -581,11 +638,50 @@ export function recognizePortfolioChatMessage(
     new Set(normalizedMessage.split(" ")),
     totalKeywords,
   );
-  const explicitlyPortfolioWide = explicitPortfolioPhrases.some((phrase) =>
-    containsPhrase(normalizedMessage, phrase),
-  );
   const hasPortfolioValueQuestion =
     hasKeyword(words, valueDetails) || words.has("quanto");
+  const matchedAssetClassIds = [
+    ...new Set(
+      assetClassAliases
+        .filter(({ aliases }) =>
+          aliases.some((alias) => containsPhrase(normalizedMessage, alias)),
+        )
+        .map(({ id }) => id),
+    ),
+  ];
+  const classMatch = assetClassAliases
+    .flatMap(({ id, aliases }) =>
+      aliases
+        .filter((alias) => containsPhrase(normalizedMessage, alias))
+        .map((alias) => ({ id, alias })),
+    )
+    .sort((left, right) => right.alias.length - left.alias.length)[0];
+  const asksForList = hasKeyword(words, ["quais", "listar", "liste", "lista"]);
+  const requestsEquityList =
+    asksForList &&
+    hasKeyword(words, ["empresa", "empresas", "acao", "acoes", "bdr", "bdrs"]);
+  const requestsFiiList =
+    asksForList &&
+    (hasKeyword(words, ["fii", "fiis"]) || classMatch?.id === "fiis");
+  if (requestsEquityList && requestsFiiList) return null;
+  if (requestsEquityList || requestsFiiList) {
+    return {
+      intent: "asset-list",
+      objectiveId: null,
+      objectiveAmbiguous: false,
+      assetClassId: requestsFiiList ? "fiis" : "brazilian_equities",
+    };
+  }
+  const isAssetValueQuestion =
+    hasPortfolioValueQuestion &&
+    !explicitlyPortfolioWide &&
+    !isPlanning &&
+    !isGap &&
+    !isMonthlyContribution &&
+    !objective.id &&
+    !objective.ambiguous;
+  if (isAssetValueQuestion && matchedAssetClassIds.length > 1) return null;
+  const assetQuery = isAssetValueQuestion ? extractAssetQuery(message) : null;
   const hasObjectiveReference =
     hasNamedObjective ||
     hasKeyword(new Set(normalizedMessage.split(" ")), [
@@ -609,6 +705,23 @@ export function recognizePortfolioChatMessage(
   const mixesPlanningAndGoalActions =
     isPlanning && hasGapSignal && normalizedMessage.includes(" e ");
   if (mixesPlanningAndGoalActions) return null;
+  if (classMatch && isAssetValueQuestion && assetQuery === null) {
+    return {
+      intent: "asset-class-value",
+      objectiveId: null,
+      objectiveAmbiguous: false,
+      assetClassId: classMatch.id,
+    };
+  }
+  if (assetQuery) {
+    return {
+      intent: "asset-value",
+      objectiveId: null,
+      objectiveAmbiguous: false,
+      assetQuery,
+      ...(classMatch ? { assetClassId: classMatch.id } : {}),
+    };
+  }
   if (isPortfolioTotal && !isPlanning && !isGap && !isMonthlyContribution) {
     matchedIntents.push("portfolio-total");
   }
@@ -633,4 +746,43 @@ export function recognizePortfolioChatMessage(
     objectiveId: objective.id,
     objectiveAmbiguous: objective.ambiguous,
   };
+}
+
+function extractAssetQuery(message: string): string | null {
+  const prepositions = [...message.matchAll(/\b(?:em|no|na|de|do|da)\s+/gi)];
+  const lastPreposition = prepositions.at(-1);
+  if (!lastPreposition || lastPreposition.index === undefined) return null;
+  const query = message
+    .slice(lastPreposition.index + lastPreposition[0].length)
+    .replace(/[?!.]+$/, "")
+    .replace(/^(?:um|uma|o|a|meu|minha)\s+/i, "")
+    .replace(/\b(?:ativo|empresa|ticker|código|codigo|papel)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const normalizedQuery = normalizePortfolioChatText(
+    query.replace(/\s*\([^)]*\)/g, ""),
+  );
+  if (
+    !query ||
+    assetClassAliases.some(({ aliases }) =>
+      aliases.some(
+        (alias) => normalizePortfolioChatText(alias) === normalizedQuery,
+      ),
+    ) ||
+    [
+      "carteira",
+      "patrimonio",
+      "patrimonio conhecido",
+      "investimento",
+      "investimentos",
+      "objetivo",
+      "meta",
+      "reserva",
+      "longo prazo",
+      "objetivos pessoais",
+    ].includes(normalizedQuery)
+  ) {
+    return null;
+  }
+  return query;
 }

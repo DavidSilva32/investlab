@@ -29,17 +29,67 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("@/components/portfolio-chat-microphone", () => ({
-  PortfolioChatMicrophone: ({
-    onTranscript,
-  }: {
-    onTranscript: (transcript: string) => void;
-  }) => (
-    <button type="button" onClick={() => onTranscript("texto reconhecido")}>
-      Simular audio
-    </button>
-  ),
-}));
+vi.mock("@/components/portfolio-chat-microphone", async () => {
+  const { forwardRef, useImperativeHandle, useState } = await import("react");
+  return {
+    PortfolioChatMicrophone: forwardRef<
+      { finalizeAndSubmit: () => void },
+      {
+        onTranscript: (transcript: string) => void;
+        onSubmitTranscript: (transcript: string) => void;
+        onRecordingChange: (recording: boolean) => void;
+      }
+    >(function MockPortfolioChatMicrophone(
+      { onTranscript, onSubmitTranscript, onRecordingChange },
+      ref,
+    ) {
+      const [active, setActive] = useState(false);
+      const [recognizedText, setRecognizedText] = useState("texto reconhecido");
+      useImperativeHandle(
+        ref,
+        () => ({
+          finalizeAndSubmit() {
+            setActive(false);
+            onRecordingChange(false);
+            onSubmitTranscript(recognizedText);
+          },
+        }),
+        [recognizedText, onRecordingChange, onSubmitTranscript],
+      );
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => onTranscript("texto reconhecido")}
+          >
+            Simular audio
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRecognizedText("texto reconhecido");
+              setActive(true);
+              onRecordingChange(true);
+            }}
+          >
+            Simular gravação ativa
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRecognizedText("");
+              setActive(true);
+              onRecordingChange(true);
+            }}
+          >
+            Simular gravação sem fala
+          </button>
+          {active && <span>Gravando</span>}
+        </>
+      );
+    }),
+  };
+});
 
 import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -63,6 +113,28 @@ function jsonResponse(body: unknown, ok = true) {
   });
 }
 
+function equityPosition(
+  id: string,
+  issuer: string,
+  canonicalValueCents: string | null,
+  totalValue: string | null = null,
+) {
+  return {
+    id,
+    product: "Ação ordinária",
+    assetCode: id.toUpperCase(),
+    issuer,
+    institution: null,
+    totalValue,
+    canonicalValueCents,
+    classification: {
+      assetClass: "Renda variável",
+      subClass: "Ação ordinária",
+      geography: "Brasil",
+    },
+  };
+}
+
 async function revealSuggestions(user: UserEvent) {
   const input = screen.getByRole("textbox", {
     name: "Escreva uma pergunta para o assistente",
@@ -72,6 +144,16 @@ async function revealSuggestions(user: UserEvent) {
   await screen.findByRole("group", { name: "Perguntas rápidas" });
 }
 
+async function askQuestion(user: UserEvent, question: string) {
+  await user.type(
+    screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    }),
+    question,
+  );
+  await user.keyboard("{Enter}");
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -79,6 +161,558 @@ afterEach(() => {
 });
 
 describe("PortfolioChatAssistant", () => {
+  it("offers compact current portfolio and class queries as opening actions", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+
+    const quickPrompts = screen.getByRole("group", {
+      name: "Consultas rápidas",
+    });
+    const quickPrompt = screen.getByRole("button", { name: "Patrimônio" });
+    expect(quickPrompts.closest('[data-slot="message-scroller"]')).toBeTruthy();
+    expect(
+      quickPrompts.closest('[data-slot="message-scroller-viewport"]'),
+    ).toBeTruthy();
+    expect(
+      quickPrompts.closest('[data-slot="message-scroller-content"]'),
+    ).toBeTruthy();
+    expect(quickPrompts.closest('[role="log"]')).toBeTruthy();
+    expect(
+      quickPrompts.closest('[data-slot="message-scroller-item"]')?.className,
+    ).toContain("mt-auto");
+    expect(quickPrompts.closest("form")).toBeNull();
+    expect(quickPrompts.className).toContain("flex-wrap");
+    expect(quickPrompts.parentElement?.className).not.toContain("border-t");
+    expect(quickPrompt.className).toContain("hover:-translate-y-0.5");
+    expect(quickPrompt.className).toContain("focus-visible:ring-2");
+    expect(quickPrompt.className).toContain("active:scale-[0.98]");
+    expect(quickPrompt.className).toContain("motion-reduce:transition-none");
+    expect(screen.getByRole("button", { name: "FIIs" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Ações na carteira" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "FIIs na carteira" }),
+    ).toBeNull();
+  });
+
+  it("keeps the message field flexible while composer controls retain their size", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+      );
+
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    const form = input.closest("form");
+
+    expect(form?.className).toContain("min-w-0");
+    expect(input.className).toContain("flex-1");
+    expect(
+      form?.querySelector('[aria-label="Enviar mensagem"]')?.className,
+    ).toContain("shrink-0");
+  });
+
+  it("answers the opening portfolio shortcut from the current summary", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() =>
+      jsonResponse({
+        objectives: [],
+        destinationSummary: { knownTotal: 123.45 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Patrimônio" }));
+
+    expect(await screen.findByText(/R\$ 123,45/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a class query from the quick action chips", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+      String(input).includes("/api/portfolio/chat/query")
+        ? jsonResponse({ message: "Valor acompanhado em FIIs: R$ 100,00." })
+        : jsonResponse({ objectives: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.click(screen.getByRole("button", { name: "FIIs" }));
+
+    expect(await screen.findByText(/Valor acompanhado em FIIs/)).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("/api/portfolio/chat/query"),
+      ),
+    ).toBe(true);
+  });
+
+  it("answers a quick class query while objective data is still loading", async () => {
+    const user = userEvent.setup();
+    let resolveObjectives!: (
+      response: Awaited<ReturnType<typeof jsonResponse>>,
+    ) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? jsonResponse({ message: "Valor de FIIs consultado." })
+          : new Promise<Awaited<ReturnType<typeof jsonResponse>>>((resolve) => {
+              resolveObjectives = resolve;
+            }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await screen.findByRole("group", { name: "Consultas rápidas" });
+    await user.click(screen.getByRole("button", { name: "FIIs" }));
+
+    expect(await screen.findByText("Valor de FIIs consultado.")).toBeTruthy();
+    await act(async () =>
+      resolveObjectives(await jsonResponse({ objectives: [] })),
+    );
+  });
+
+  it("holds the opening portfolio shortcut through an objectives error and retry", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => jsonResponse({ message: "Falha" }, false))
+      .mockImplementationOnce(() =>
+        jsonResponse({
+          objectives: [],
+          destinationSummary: { knownTotal: 234.56 },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Patrimônio" }));
+
+    expect(await screen.findByText(/R\$ 234,56/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("lists current equities using the portfolio chat query endpoint", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      return String(input).includes("/api/portfolio/chat/query")
+        ? jsonResponse({
+            message: "Encontrei 1 posição(ões) em Ações e BDRs.",
+            items: [
+              {
+                id: "itub4",
+                product: "Ação preferencial",
+                assetCode: "ITUB4",
+                issuer: "Itaú Unibanco",
+                institution: null,
+                valueCents: "12345",
+              },
+            ],
+          })
+        : jsonResponse({ objectives: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await askQuestion(user, "Quais ações estão na carteira?");
+    expect(
+      await screen.findByText("Encontrei 1 posição(ões) em Ações e BDRs."),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("list", { name: "Ativos encontrados na carteira" }),
+    ).toBeTruthy();
+    expect(screen.getByText("ITUB4").textContent).toContain(
+      "Ação preferencial",
+    );
+    const call = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes("/api/portfolio/chat/query"),
+    );
+    expect(call?.[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      intent: "asset-list",
+      assetClassId: "brazilian_equities",
+    });
+  });
+
+  it("renders a list response with no position items as an empty list", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? jsonResponse({ message: "Não há ativos para mostrar." })
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await askQuestion(user, "Quais ações estão na carteira?");
+    expect(await screen.findByText("Não há ativos para mostrar.")).toBeTruthy();
+    expect(
+      screen.queryByRole("list", { name: "Ativos encontrados na carteira" }),
+    ).toBeNull();
+  });
+
+  it("sends typed ticker and class queries to the backend", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      return String(input).includes("/api/portfolio/chat/query")
+        ? jsonResponse({
+            message: "O valor atual acompanhado de ITUB4 é R$ 250,00.",
+          })
+        : jsonResponse({ objectives: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Quanto tenho em ITUB4?");
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByText(/valor atual acompanhado de ITUB4/),
+    ).toBeTruthy();
+    const call = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/api/portfolio/chat/query"),
+    );
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      intent: "asset-value",
+      query: "ITUB4",
+    });
+  });
+  it("shows and recovers from an objectives request failure", async () => {
+    const user = userEvent.setup();
+    let objectivesCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).includes("/api/portfolio/objectives")) {
+          objectivesCalls += 1;
+          if (objectivesCalls < 3)
+            return Promise.reject(new Error("Objetivos indisponíveis"));
+          return jsonResponse({
+            objectives: [
+              {
+                id: reserveObjectiveId,
+                name: "Reserva de emergência",
+                kind: "RESERVE",
+                targetAmount: 1000,
+                knownValue: 500,
+                remainingAmount: 500,
+                missingPositionCount: 0,
+                unvaluedPositionCount: 0,
+              },
+            ],
+          });
+        }
+        return jsonResponse({});
+      }),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await waitFor(() => expect(objectivesCalls).toBe(1));
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Quanto tenho em reserva?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+
+    expect(
+      await screen.findByText(
+        /O valor conhecido em Reserva de emergência é R\$ 500,00/,
+      ),
+    ).toBeTruthy();
+    expect(objectivesCalls).toBe(3);
+  });
+
+  it("keeps the loading animation only while the portfolio endpoint is pending", async () => {
+    const user = userEvent.setup();
+    let resolveQuery!: (
+      response: Awaited<ReturnType<typeof jsonResponse>>,
+    ) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? new Promise<Awaited<ReturnType<typeof jsonResponse>>>((resolve) => {
+              resolveQuery = resolve;
+            })
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await askQuestion(user, "Quais FIIs tenho?");
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "Conferindo sua carteira",
+    );
+    await act(async () =>
+      resolveQuery(
+        await jsonResponse({
+          message: "Não encontrei posições em Fundos imobiliários (FIIs).",
+          items: [],
+        }),
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "Não encontrei posições em Fundos imobiliários (FIIs).",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows a safe endpoint error and clears the loading state", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? jsonResponse(
+              { message: "Não foi possível consultar os dados da carteira." },
+              false,
+            )
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await askQuestion(user, "Quais FIIs tenho?");
+    expect(
+      await screen.findByText(
+        "Não foi possível consultar os dados da carteira.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("uses a safe fallback when the endpoint error has no usable message", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? jsonResponse({ message: "   " }, false)
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await askQuestion(user, "Quais FIIs tenho?");
+    expect(
+      await screen.findByText("Não foi possível consultar a carteira agora."),
+    ).toBeTruthy();
+  });
+
+  it("uses a safe fallback when the portfolio query request fails", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? Promise.reject(new Error("internal network details"))
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await askQuestion(user, "Quais FIIs tenho?");
+    expect(
+      await screen.findByText("Não foi possível consultar a carteira agora."),
+    ).toBeTruthy();
+    expect(screen.queryByText("internal network details")).toBeNull();
+  });
+
+  it("lets the user choose between candidate positions returned by the backend", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? jsonResponse({
+              message: "Encontrei mais de uma posição para Ação.",
+              items: [
+                {
+                  id: "itub3",
+                  product: "Ação ordinária",
+                  assetCode: "ITUB3",
+                  issuer: "Itaú Unibanco",
+                  institution: null,
+                  valueCents: "10000",
+                },
+                {
+                  id: "itub4",
+                  product: "Ação preferencial",
+                  assetCode: "ITUB4",
+                  issuer: "Itaú Unibanco",
+                  institution: null,
+                  valueCents: "20000",
+                },
+              ],
+            })
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Quanto tenho em ação?");
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByRole("group", { name: "Escolha o ativo" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /ITUB4/ }));
+    expect(await screen.findByText(/R\$\s*200,00/)).toBeTruthy();
+  });
+
+  it("paginates candidate choices and handles a position without value or identity details", async () => {
+    const user = userEvent.setup();
+    const items = Array.from({ length: 9 }, (_, index) => ({
+      id: `asset-${index}`,
+      product: index === 8 ? "Ativo sem detalhes" : `Ação ${index}`,
+      assetCode: index === 8 ? null : `ITUB${index}`,
+      issuer: null,
+      institution: null,
+      valueCents: index === 8 ? null : "10000",
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? jsonResponse({ message: "Encontrei várias posições.", items })
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Quanto tenho em ação?",
+    );
+    await user.keyboard("{Enter}");
+    await user.click(
+      screen.getByRole("button", { name: "Ver mais ativos (1)" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Ativo sem detalhes" }),
+    );
+    expect(
+      await screen.findByText(
+        "Não há valor atual confirmado para Ativo sem detalhes.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows a candidate value when its ticker and issuer are missing", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/api/portfolio/chat/query")
+          ? jsonResponse({
+              message: "Encontrei várias posições.",
+              items: [
+                {
+                  id: "without-identity",
+                  product: "Ativo sem identificação",
+                  assetCode: null,
+                  issuer: null,
+                  institution: null,
+                  valueCents: "12345",
+                },
+                {
+                  id: "other",
+                  product: "Outro ativo",
+                  assetCode: "ITUB4",
+                  issuer: "Itaú Unibanco",
+                  institution: null,
+                  valueCents: "10000",
+                },
+              ],
+            })
+          : jsonResponse({ objectives: [] }),
+      ),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Quanto tenho em ação?",
+    );
+    await user.keyboard("{Enter}");
+    await screen.findByRole("group", { name: "Escolha o ativo" });
+    await user.click(
+      screen.getByRole("button", { name: "Ativo sem identificação" }),
+    );
+    expect(
+      await screen.findByText(
+        /O valor atual acompanhado de Ativo sem identificação é R\$\s*123,45/,
+      ),
+    ).toBeTruthy();
+  });
   it("groups dynamic objective choices by stable purpose and keeps legacy objectives explicit", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
@@ -334,9 +968,13 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Abrir assistente da carteira" }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Cadastrar posição manual" }),
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Quero cadastrar uma posição manual",
     );
+    await user.keyboard("{Enter}");
     await user.type(
       screen.getByRole("textbox", {
         name: "Resposta para o cadastro da posição",
@@ -345,12 +983,16 @@ describe("PortfolioChatAssistant", () => {
     );
     await user.click(screen.getByRole("button", { name: "Cancelar cadastro" }));
     expect(
-      screen.getByRole("button", { name: "Cadastrar posição manual" }),
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: "Cadastrar posição manual" }),
+    ).toBeNull();
 
-    await user.click(
-      screen.getByRole("button", { name: "Cadastrar posição manual" }),
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+      "Quero cadastrar uma posição manual",
     );
+    await user.keyboard("{Enter}");
     expect(
       await screen.findByRole("textbox", {
         name: "Resposta para o cadastro da posição",
@@ -382,6 +1024,121 @@ describe("PortfolioChatAssistant", () => {
     expect((input as HTMLInputElement).value).toBe(
       "Minha pergunta texto reconhecido",
     );
+  });
+
+  it("hides the input while recording and sends the captured transcript once", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Tenho uma dúvida");
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação ativa" }),
+    );
+
+    expect(
+      screen.queryByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeNull();
+    const sendButton = screen.getByRole("button", { name: "Enviar mensagem" });
+    expect(sendButton.hasAttribute("disabled")).toBe(false);
+    await user.click(sendButton);
+
+    expect(
+      await screen.findByText("Tenho uma dúvida texto reconhecido"),
+    ).toBeTruthy();
+    expect(
+      screen.getAllByText("Tenho uma dúvida texto reconhecido"),
+    ).toHaveLength(1);
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("sends the existing draft when recording ends without recognized speech", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Minha pergunta existente");
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação sem fala" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(await screen.findByText("Minha pergunta existente")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Escreva uma pergunta para o assistente",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("");
+  });
+
+  it("sends a voice transcript when no text draft exists", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação ativa" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(await screen.findByText("texto reconhecido")).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps an empty draft when no speech is recognized and there is no text to send", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação sem fala" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("texto reconhecido")).toBeNull();
   });
 
   it("recognizes a direct portfolio question without showing suggestions", async () => {
@@ -634,7 +1391,6 @@ describe("PortfolioChatAssistant", () => {
       "Quanto planejei aportar por mês na Viagem?",
     );
     await user.keyboard("{Enter}");
-    await user.click(await screen.findByRole("button", { name: "Viagem" }));
 
     expect(
       await screen.findByText(/aporte mensal planejado de R\$ 1\.250,00/),
@@ -797,11 +1553,11 @@ describe("PortfolioChatAssistant", () => {
     });
     expect(conversation.querySelector("button")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Cadastrar posição manual" }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("group", { name: "Perguntas rápidas" }),
+      screen.queryByRole("button", { name: "Cadastrar posição manual" }),
     ).toBeNull();
+    expect(
+      screen.getByRole("group", { name: "Consultas rápidas" }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("textbox", {
         name: "Escreva uma pergunta para o assistente",
@@ -845,7 +1601,7 @@ describe("PortfolioChatAssistant", () => {
     fireEvent.submit(input.closest("form")!);
 
     expect(screen.getByRole("log").textContent).toContain(
-      "Oi! Posso consultar seus objetivos",
+      "Oi! Pergunte o que você quer entender sobre sua carteira.",
     );
     expect(screen.getByRole("log").textContent).not.toContain(
       "Ainda não entendi",
@@ -1018,7 +1774,6 @@ describe("PortfolioChatAssistant", () => {
     await user.type(input, "QUAL SALDO conhecido da viagem?");
     expect(sendButton.hasAttribute("disabled")).toBe(false);
     await user.keyboard("{Enter}");
-    await user.click(await screen.findByRole("button", { name: "Viagem" }));
 
     expect(
       await screen.findByText(/O valor conhecido em Viagem é R\$ 12\.000,00/),
@@ -1055,9 +1810,7 @@ describe("PortfolioChatAssistant", () => {
     await user.type(input, "Quero simular um plano para objetivos pessoais");
     await user.keyboard("{Enter}");
 
-    expect(
-      await screen.findByText("Carregando seus objetivos..."),
-    ).toBeTruthy();
+    expect(await screen.findByText("Conferindo seus objetivos")).toBeTruthy();
     expect(screen.getByRole("log").textContent).toContain(
       "Quero simular um plano para objetivos pessoais",
     );
@@ -1454,10 +2207,6 @@ describe("PortfolioChatAssistant", () => {
     await user.type(input, "Quanto de viagem?");
     await user.keyboard("{Enter}");
     expect(
-      await screen.findByText("Qual objetivo você quer consultar?"),
-    ).toBeTruthy();
-    await user.click(await screen.findByRole("button", { name: "Viagem" }));
-    expect(
       await screen.findByText(/O valor conhecido em Viagem é R\$ 9\.000,00/),
     ).toBeTruthy();
 
@@ -1653,9 +2402,7 @@ describe("PortfolioChatAssistant", () => {
     await user.click(
       screen.getByRole("button", { name: "Quanto tenho em um objetivo?" }),
     );
-    expect(
-      await screen.findByText("Carregando seus objetivos..."),
-    ).toBeTruthy();
+    expect(await screen.findByText("Conferindo seus objetivos")).toBeTruthy();
 
     await act(async () => {
       resolveRequest(

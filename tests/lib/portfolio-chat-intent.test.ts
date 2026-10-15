@@ -210,12 +210,12 @@ describe("recognizePortfolioChatMessage", () => {
     }
   });
 
-  it("does not use custom objective names as classification keywords", () => {
+  it("resolves named objectives and favors a more specific overlapping name", () => {
     expect(
       recognizePortfolioChatMessage("Quanto tenho na viagem?", objectives),
     ).toEqual({
       intent: "objective-value",
-      objectiveId: null,
+      objectiveId: "travel",
       objectiveAmbiguous: false,
     });
     expect(
@@ -225,9 +225,117 @@ describe("recognizePortfolioChatMessage", () => {
       ),
     ).toEqual({
       intent: "objective-value",
-      objectiveId: null,
+      objectiveId: "international-trip",
       objectiveAmbiguous: false,
     });
+  });
+
+  it("asks for clarification when a question names multiple objectives", () => {
+    expect(
+      recognizePortfolioChatMessage(
+        "Quanto tenho na Viagem e na Casa nova?",
+        objectives,
+      ),
+    ).toEqual({
+      intent: "objective-value",
+      objectiveId: null,
+      objectiveAmbiguous: true,
+    });
+  });
+
+  it("marks independent objectives joined by 'or' as ambiguous", () => {
+    expect(
+      recognizePortfolioChatMessage("Quanto tenho na Casa nova ou Viagem?", [
+        { id: "house", name: "Casa nova" },
+        { id: "travel", name: "Viagem" },
+      ]),
+    ).toMatchObject({
+      objectiveId: null,
+      objectiveAmbiguous: true,
+    });
+  });
+
+  it("marks a shared objective category as ambiguous when several goals match", () => {
+    expect(
+      recognizePortfolioChatMessage("Quanto tenho em objetivos pessoais?", [
+        { id: "travel", name: "Viagem", purpose: "PERSONAL_GOAL" },
+        { id: "house", name: "Casa", purpose: "PERSONAL_GOAL" },
+      ]),
+    ).toMatchObject({
+      objectiveId: null,
+      objectiveAmbiguous: true,
+    });
+  });
+
+  it.each([
+    ["Quanto tenho em FIIs?", "fiis"],
+    ["Qual o valor atual de renda fixa?", "fixed_income"],
+    ["Quanto tenho em ações e BDRs?", "brazilian_equities"],
+    ["Quanto tenho em ETF internacional?", "international_etfs"],
+  ] as const)(
+    "recognizes current exposure to a supported class: %s",
+    (message, assetClassId) => {
+      expect(recognizePortfolioChatMessage(message)).toMatchObject({
+        intent: "asset-class-value",
+        assetClassId,
+      });
+    },
+  );
+
+  it.each([
+    ["Quanto tenho em ITUB4?", "ITUB4"],
+    ["Quanto tenho no código ITUB4?", "ITUB4"],
+    ["Qual o valor da Petrobras?", "Petrobras"],
+    ["Quanto tenho no CDB do Banco Inter?", "Banco Inter"],
+  ] as const)(
+    "extracts an explicit asset reference without guessing identity: %s",
+    (message, assetQuery) => {
+      expect(recognizePortfolioChatMessage(message)).toMatchObject({
+        intent: "asset-value",
+        assetQuery,
+      });
+    },
+  );
+
+  it.each([
+    ["Quanto tenho em ações da Petrobras?", "Petrobras", "brazilian_equities"],
+    ["Quanto tenho em FIIs da HGLG11?", "HGLG11", "fiis"],
+  ] as const)(
+    "resolves the asset named alongside a class: %s",
+    (message, assetQuery, assetClassId) => {
+      expect(recognizePortfolioChatMessage(message)).toMatchObject({
+        intent: "asset-value",
+        assetQuery,
+        assetClassId,
+      });
+    },
+  );
+
+  it.each([
+    ["Quais empresas estão na carteira?", "brazilian_equities"],
+    ["Quais ações eu tenho?", "brazilian_equities"],
+    ["Quais FIIs tenho?", "fiis"],
+    ["Quais fundos imobiliários estão na carteira?", "fiis"],
+  ] as const)(
+    "recognizes a request to list current positions: %s",
+    (message, assetClassId) => {
+      expect(recognizePortfolioChatMessage(message)).toMatchObject({
+        intent: "asset-list",
+        assetClassId,
+      });
+    },
+  );
+
+  it("asks for clarification when a listing request combines equities and FIIs", () => {
+    expect(
+      recognizePortfolioChatMessage("Quais ações e FIIs tenho?"),
+    ).toBeNull();
+  });
+
+  it("asks for clarification when a value request combines asset classes", () => {
+    expect(
+      recognizePortfolioChatMessage("Quanto tenho em ações e FIIs?"),
+    ).toBeNull();
   });
 
   it("recognizes purpose keywords but not a custom objective label", () => {
@@ -253,7 +361,7 @@ describe("recognizePortfolioChatMessage", () => {
     });
   });
 
-  it("marks a purpose as ambiguous when several objectives share it", () => {
+  it("uses the named objective instead of inferring from the shared purpose", () => {
     expect(
       recognizePortfolioChatMessage("Quanto falta para a viagem?", [
         { id: "one", name: "Viagem", purpose: "PERSONAL_GOAL" },
@@ -261,7 +369,7 @@ describe("recognizePortfolioChatMessage", () => {
       ]),
     ).toEqual({
       intent: "objective-gap",
-      objectiveId: null,
+      objectiveId: "one",
       objectiveAmbiguous: false,
     });
   });
@@ -275,7 +383,7 @@ describe("recognizePortfolioChatMessage", () => {
     ).toEqual({
       intent: "objective-gap",
       objectiveId: null,
-      objectiveAmbiguous: false,
+      objectiveAmbiguous: true,
     });
     expect(
       recognizePortfolioChatMessage(
@@ -285,7 +393,7 @@ describe("recognizePortfolioChatMessage", () => {
     ).toEqual({
       intent: "objective-gap",
       objectiveId: null,
-      objectiveAmbiguous: false,
+      objectiveAmbiguous: true,
     });
     expect(
       recognizePortfolioChatMessage(
@@ -293,6 +401,18 @@ describe("recognizePortfolioChatMessage", () => {
         objectives,
       ),
     ).toEqual({
+      intent: "planning",
+      objectiveId: null,
+      objectiveAmbiguous: true,
+    });
+  });
+
+  it("marks a named goal as ambiguous when combined with planning intent", () => {
+    expect(
+      recognizePortfolioChatMessage("Quero simular e planejar a Viagem", [
+        { id: "travel", name: "Viagem" },
+      ]),
+    ).toMatchObject({
       intent: "planning",
       objectiveId: null,
       objectiveAmbiguous: true,
@@ -357,7 +477,7 @@ describe("recognizePortfolioChatMessage", () => {
       ),
     ).toEqual({
       intent: "monthly-planned-contribution",
-      objectiveId: null,
+      objectiveId: "house",
       objectiveAmbiguous: false,
     });
     expect(
@@ -380,7 +500,7 @@ describe("recognizePortfolioChatMessage", () => {
       ),
     ).toEqual({
       intent: "objective-value",
-      objectiveId: null,
+      objectiveId: "travel",
       objectiveAmbiguous: false,
     });
     expect(
@@ -390,7 +510,7 @@ describe("recognizePortfolioChatMessage", () => {
       ),
     ).toEqual({
       intent: "objective-value",
-      objectiveId: null,
+      objectiveId: "travel",
       objectiveAmbiguous: false,
     });
     expect(
@@ -400,7 +520,7 @@ describe("recognizePortfolioChatMessage", () => {
       ),
     ).toEqual({
       intent: "objective-value",
-      objectiveId: null,
+      objectiveId: "travel",
       objectiveAmbiguous: false,
     });
   });
