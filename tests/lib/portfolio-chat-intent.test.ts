@@ -140,6 +140,8 @@ describe("recognizePortfolioChatMessage", () => {
   it.each([
     ["Quanto tenho de patrimônio conhecido?", "portfolio-total"],
     ["Quanto tenho ao todo?", "portfolio-total"],
+    ["Quanto que eu tenho na minha conta hoje?", "portfolio-total"],
+    ["Quanto tenho na conta agora?", "portfolio-total"],
     ["Qual é o meu patrimônio hoje?", "portfolio-total"],
     ["Qual é o patrimônio total da carteira?", "portfolio-total"],
     ["Qual valor total da minha carteira?", "portfolio-total"],

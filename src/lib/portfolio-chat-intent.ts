@@ -640,6 +640,10 @@ export function recognizePortfolioChatMessage(
   );
   const hasPortfolioValueQuestion =
     hasKeyword(words, valueDetails) || words.has("quanto");
+  const hasGenericAccountReference =
+    /\b(?:na|em)\s+(?:minha\s+)?conta(?:\s+(?:hoje|agora))?\s*$/.test(
+      normalizedMessage,
+    );
   const matchedAssetClassIds = [
     ...new Set(
       assetClassAliases
@@ -675,6 +679,7 @@ export function recognizePortfolioChatMessage(
   const isAssetValueQuestion =
     hasPortfolioValueQuestion &&
     !explicitlyPortfolioWide &&
+    !hasGenericAccountReference &&
     !isPlanning &&
     !isGap &&
     !isMonthlyContribution &&
@@ -696,6 +701,7 @@ export function recognizePortfolioChatMessage(
     );
   const isPortfolioTotal =
     explicitlyPortfolioWide ||
+    (hasGenericAccountReference && hasPortfolioValueQuestion) ||
     (!hasObjectiveReference &&
       !hasSpecificReferent &&
       hasPortfolioValueQuestion &&
