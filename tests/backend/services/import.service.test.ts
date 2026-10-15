@@ -8,12 +8,18 @@ const repository = vi.hoisted(() => ({
   listLatestPositions: vi.fn(),
   create: vi.fn(),
   deleteByDocumentType: vi.fn(),
+  deleteLatestPosition: vi.fn(),
+  deleteUnreconciledMovement: vi.fn(),
 }));
 const manual = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("@/backend/repositories/manual-portfolio-position.repository", () => ({
   manualPortfolioPositionRepository: manual,
 }));
 const objectives = vi.hoisted(() => ({ list: vi.fn() }));
+const reconciliation = vi.hoisted(() => ({ listEvents: vi.fn() }));
+vi.mock("@/backend/repositories/position-reconciliation.repository", () => ({
+  positionReconciliationRepository: reconciliation,
+}));
 vi.mock("@/backend/services/b3-xlsx-parser", () => ({ parseB3Xlsx: parser }));
 vi.mock("@/backend/repositories/import.repository", () => ({
   importRepository: repository,
@@ -29,6 +35,7 @@ import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 beforeEach(() => {
   vi.clearAllMocks();
   manual.list.mockResolvedValue([]);
+  reconciliation.listEvents.mockResolvedValue([]);
   repository.listLatestPositions.mockResolvedValue([]);
   objectives.list.mockResolvedValue({ objectives: [], assignments: [] });
 });
@@ -512,5 +519,54 @@ describe("existing snapshot reconciliation", () => {
       "r",
     );
     expect(repository.updatePositionReferenceDate).not.toHaveBeenCalled();
+  });
+});
+
+describe("individual import deletion", () => {
+  const validId = "00000000-0000-4000-8000-000000000001";
+
+  it("deletes an individual B3 position", async () => {
+    repository.deleteLatestPosition.mockResolvedValue(1);
+
+    await expect(
+      importService.delete("B3_POSITION_XLSX", "request-position", validId),
+    ).resolves.toEqual({
+      message: "Posição removida do fechamento atual.",
+    });
+
+    expect(repository.deleteLatestPosition).toHaveBeenCalledWith(
+      validId,
+      "request-position",
+    );
+    expect(repository.deleteUnreconciledMovement).not.toHaveBeenCalled();
+  });
+
+  it("deletes an individual B3 movement", async () => {
+    repository.deleteUnreconciledMovement.mockResolvedValue(1);
+
+    await expect(
+      importService.delete("B3_MOVEMENT_XLSX", "request-movement", validId),
+    ).resolves.toEqual({ message: "Movimentação excluída." });
+
+    expect(repository.deleteUnreconciledMovement).toHaveBeenCalledWith(
+      validId,
+      "request-movement",
+    );
+    expect(repository.deleteLatestPosition).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid record identifiers and keeps bulk deletion delegated", async () => {
+    await expect(
+      importService.delete("B3_POSITION_XLSX", "request", "invalid-id"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    repository.deleteByDocumentType.mockResolvedValue(2);
+    await expect(
+      importService.delete("B3_MOVEMENT_XLSX", "request-bulk"),
+    ).resolves.toBe(2);
+    expect(repository.deleteByDocumentType).toHaveBeenCalledWith(
+      "B3_MOVEMENT_XLSX",
+      "request-bulk",
+    );
   });
 });

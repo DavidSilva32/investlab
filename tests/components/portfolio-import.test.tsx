@@ -613,7 +613,7 @@ describe("PortfolioImport", () => {
   });
 });
 
-it("requires a decision for each candidate and submits explicit link/separate choices", async () => {
+it("requires a decision per manual position and submits explicit pair decisions", async () => {
   const candidates = ["probable", "unequivocal", "conflict"].map(
     (status, index) => ({
       manualAssetKey: `manual:${index}`,
@@ -622,9 +622,13 @@ it("requires a decision for each candidate and submits explicit link/separate ch
       manualUpdatedAt: "2026-10-01T12:00:00Z",
       manualProduct: `Manual ${index}`,
       importedProduct: `B3 ${index}`,
+      manualAssetCode: null,
+      importedAssetCode: `CERT-${index}`,
+      manualInstitution: index ? null : "Banco manual",
       manualValue: index ? null : "10",
       importedValue: "11",
       institution: index ? null : "Banco",
+      reasons: ["missing_code", ...(index === 2 ? ["different_values"] : [])],
     }),
   );
   const fetch = vi
@@ -655,13 +659,37 @@ it("requires a decision for each candidate and submits explicit link/separate ch
   );
   const confirm = screen.getByRole("button", { name: /Confirmar 1 arquivo/ });
   expect(confirm.hasAttribute("disabled")).toBe(true);
-  const linkButtons = screen.getAllByRole("button", { name: "Mesma posição" });
-  fireEvent.click(linkButtons[0]);
-  fireEvent.click(linkButtons[1]);
-  fireEvent.click(linkButtons[2]);
+  const candidateHeading = screen.getByRole("heading", {
+    name: "Correspondências possíveis",
+  });
+  const firstPositionColumn = screen.getByRole("columnheader", {
+    name: "Produto",
+  });
+  expect(
+    candidateHeading.compareDocumentPosition(firstPositionColumn) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
   fireEvent.click(
-    screen.getAllByRole("button", { name: "Posições distintas" })[2],
+    screen.getByRole("button", {
+      name: "Usar B3 0, código CERT-0, valor R$ 11,00, como a mesma posição de Manual 0",
+    }),
   );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Usar B3 1, código CERT-1, valor R$ 11,00, como a mesma posição de Manual 1",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Nenhuma posição da B3 corresponde a Manual 2",
+    }),
+  );
+  expect(
+    screen.getAllByRole("button", {
+      name: /como a mesma posição de Manual/,
+    }),
+  ).toHaveLength(3);
+  expect(screen.getByText(/CERT-0/)).toBeTruthy();
   expect(confirm.hasAttribute("disabled")).toBe(false);
   fireEvent.click(confirm);
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
@@ -676,4 +704,64 @@ it("requires a decision for each candidate and submits explicit link/separate ch
   );
   cleanup();
   vi.restoreAllMocks();
+});
+
+it("groups many possible matches and expands or collapses the extra options", async () => {
+  const candidates = Array.from({ length: 4 }, (_, index) => ({
+    manualAssetKey: "manual:cdb",
+    importedAssetKey: `b3:${index}`,
+    status: "conflict",
+    manualUpdatedAt: "2026-10-01T12:00:00Z",
+    manualProduct: "CDB Banco Inter",
+    importedProduct: `CDB ${index}`,
+    manualAssetCode: null,
+    importedAssetCode: index === 3 ? null : `CERT-${index}`,
+    manualInstitution: "Banco Inter",
+    manualValue: "3000",
+    importedValue: index === 0 ? "3000" : index === 3 ? null : "3100",
+    institution: index === 1 ? null : "Banco Inter",
+    reasons: index === 0 ? ["missing_code"] : ["different_values"],
+    closestValue: index === 0,
+  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...positionPreview,
+        reconciliationCandidates: candidates,
+      }),
+    }),
+  );
+  const { container } = render(<PortfolioImport />);
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [spreadsheet("cdbs.xlsx")] },
+  });
+
+  expect(await screen.findByText("Valor mais próximo")).toBeTruthy();
+  expect(
+    screen.getAllByRole("button", { name: /como a mesma posição/ }),
+  ).toHaveLength(3);
+  expect(
+    screen.getByText(/Instituição não informada.*Código: CERT-1/),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Mostrar outros 1 candidatos" }),
+  ).toBeTruthy();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mostrar outros 1 candidatos" }),
+  );
+  expect(
+    screen.getAllByRole("button", { name: /como a mesma posição/ }),
+  ).toHaveLength(4);
+  expect(
+    screen.getByRole("button", { name: "Ocultar candidatos adicionais" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Ocultar candidatos adicionais" }),
+  );
+  expect(
+    screen.getAllByRole("button", { name: /como a mesma posição/ }),
+  ).toHaveLength(3);
 });

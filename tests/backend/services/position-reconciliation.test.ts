@@ -4,6 +4,7 @@ import {
   applyPositionReconciliation,
   getReconciliationCandidates,
   importedReconciliationKey,
+  unresolvedReconciliationCandidates,
   type ReconciliationEvent,
 } from "@/backend/services/position-reconciliation";
 const imported = {
@@ -95,6 +96,217 @@ describe("explicit source reconciliation", () => {
         [{ ...manual, totalValue: null }],
       )[0].status,
     ).toBe("probable");
+  });
+  it("suggests the supplied manual CDB as a probable match using the normalized product without amount inference", () => {
+    const importedCdb = {
+      product: "CDB - BANCO INTER S/A",
+      assetCode: "CDBA266ZVZV",
+      institution: "BANCO INTER S/A",
+      totalValue: "3000",
+    };
+    const manualCdb = {
+      product: "CDB Banco Inter",
+      assetCode: null,
+      institution: "BANCO INTER S/A",
+      totalValue: "3000",
+      assetKey: "manual:cdb",
+      updatedAt: "2026-10-01T12:00:00Z",
+    };
+
+    expect(getReconciliationCandidates([importedCdb], [manualCdb])).toEqual([
+      expect.objectContaining({
+        status: "probable",
+        manualAssetCode: null,
+        importedAssetCode: "CDBA266ZVZV",
+        manualInstitution: "BANCO INTER S/A",
+        institution: "BANCO INTER S/A",
+        manualValue: "3000",
+        importedValue: "3000",
+        reasons: ["missing_code"],
+      }),
+    ]);
+  });
+  it("orders possible matches by value, marks only a unique closest value, and keeps unknown values last", () => {
+    const candidates = getReconciliationCandidates(
+      [
+        { product: "CDB Banco Inter", totalValue: "3100", assetCode: "C-2" },
+        { product: "CDB Banco Inter", totalValue: "3000", assetCode: "C-1" },
+        { product: "CDB Banco Inter", totalValue: null, assetCode: "C-3" },
+      ],
+      [
+        {
+          product: "CDB Banco Inter",
+          totalValue: "3000",
+          assetKey: "manual:cdb",
+        },
+      ],
+    );
+
+    expect(
+      candidates.map(({ importedAssetCode, closestValue }) => [
+        importedAssetCode,
+        closestValue,
+      ]),
+    ).toEqual([
+      ["C-1", false],
+      ["C-2", false],
+      ["C-3", false],
+    ]);
+    expect(
+      getReconciliationCandidates(
+        [
+          { product: "CDB Banco Inter", totalValue: null, assetCode: "C-3" },
+          { product: "CDB Banco Inter", totalValue: "3000", assetCode: "C-1" },
+        ],
+        [
+          {
+            product: "CDB Banco Inter",
+            totalValue: "3000",
+            assetKey: "manual:cdb",
+          },
+        ],
+      ).map(({ importedAssetCode }) => importedAssetCode),
+    ).toEqual(["C-1", "C-3"]);
+
+    const fullyComparable = getReconciliationCandidates(
+      [
+        { product: "CDB Banco Inter", totalValue: "3000", assetCode: "C-1" },
+        { product: "CDB Banco Inter", totalValue: "3100", assetCode: "C-2" },
+      ],
+      [
+        {
+          product: "CDB Banco Inter",
+          totalValue: "3000",
+          assetKey: "manual:cdb",
+        },
+      ],
+    );
+    expect(
+      fullyComparable.map(({ importedAssetCode, closestValue }) => [
+        importedAssetCode,
+        closestValue,
+      ]),
+    ).toEqual([
+      ["C-1", true],
+      ["C-2", false],
+    ]);
+
+    const tied = (positions: Array<typeof imported>) =>
+      getReconciliationCandidates(positions, [
+        {
+          ...manual,
+          product: "CDB Banco Inter",
+          assetCode: null,
+          institution: "Banco Inter",
+          totalValue: "1000",
+        },
+      ]).map(({ importedAssetCode }) => importedAssetCode);
+    const matchingInstitution = {
+      ...imported,
+      product: "CDB Banco Inter",
+      institution: "Banco Inter",
+      totalValue: "1100",
+      assetCode: "C-1",
+    };
+    const otherInstitution = {
+      ...matchingInstitution,
+      institution: "Outro banco",
+      assetCode: "C-2",
+    };
+    expect(tied([otherInstitution, matchingInstitution])).toEqual([
+      "C-1",
+      "C-2",
+    ]);
+    expect(tied([matchingInstitution, otherInstitution])).toEqual([
+      "C-1",
+      "C-2",
+    ]);
+
+    const sameCodeZ = {
+      ...matchingInstitution,
+      product: "CDB - BANCO INTER",
+      assetCode: "C-1",
+      issuer: "BANCO Z",
+    };
+    const sameCodeA = { ...sameCodeZ, issuer: "BANCO A" };
+    const differentCode = {
+      ...matchingInstitution,
+      product: "CDB Banco Inter S/A",
+      assetCode: "C-2",
+      issuer: "BANCO Z",
+    };
+    expect(
+      getReconciliationCandidates(
+        [differentCode, sameCodeZ, sameCodeA],
+        [
+          {
+            ...manual,
+            product: "CDB Banco Inter",
+            assetCode: null,
+            institution: "Banco Inter",
+            totalValue: "1000",
+          },
+        ],
+      ).map(({ importedAssetCode, importedAssetKey }) => [
+        importedAssetCode,
+        importedAssetKey,
+      ]),
+    ).toEqual([
+      ["C-1", importedReconciliationKey(sameCodeZ)],
+      ["C-1", importedReconciliationKey(sameCodeA)],
+      ["C-2", importedReconciliationKey(differentCode)],
+    ]);
+  });
+  it("reopens unlinked pairs and keeps separated or linked pairs out of the review", () => {
+    const candidates = getReconciliationCandidates(
+      [{ ...imported, product: "CDB Banco", assetCode: "CDB-1" }],
+      [{ ...manual, product: "CDB Banco", assetCode: null }],
+    );
+    const candidate = candidates[0];
+    const event = (
+      status: ReconciliationEvent["status"],
+      id: string,
+      recordedAt: string,
+      effectiveFrom: string,
+    ): ReconciliationEvent => ({
+      id,
+      manualAssetKey: candidate.manualAssetKey,
+      importedAssetKey: candidate.importedAssetKey,
+      status,
+      recordedAt,
+      effectiveFrom,
+    });
+
+    expect(unresolvedReconciliationCandidates(candidates, [])).toEqual(
+      candidates,
+    );
+    expect(
+      unresolvedReconciliationCandidates(candidates, [
+        event("UNLINK", "unlink", "2026-02-02", "2026-02-02"),
+      ]),
+    ).toEqual(candidates);
+    expect(
+      unresolvedReconciliationCandidates(candidates, [
+        event("SEPARATE", "separate", "2026-02-02", "2026-02-02"),
+      ]),
+    ).toEqual([]);
+
+    // The latest effective event removes the active link, while the newer
+    // audit timestamp makes LINK the latest decision for this exact pair.
+    expect(
+      unresolvedReconciliationCandidates(candidates, [
+        event("LINK", "link", "2026-02-03", "2026-02-01"),
+        event("UNLINK", "unlink", "2026-02-02", "2026-02-02"),
+      ]),
+    ).toEqual([]);
+  });
+  it("does not suggest different B3 certificate codes even when product labels match", () => {
+    expect(
+      getReconciliationCandidates(
+        [{ ...imported, product: "CDB Banco Inter", assetCode: "CDB-2" }],
+        [{ ...manual, product: "CDB Banco Inter", assetCode: "CDB-1" }],
+      ),
+    ).toEqual([]);
   });
   it("preserves instrument fields in the canonical identity", () => {
     const contract = {

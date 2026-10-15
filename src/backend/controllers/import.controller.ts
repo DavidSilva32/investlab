@@ -92,14 +92,22 @@ export class ImportController {
     );
   }
 
-  async delete(documentType: string | null, requestId: string) {
-    const deletedImports = await importService.delete(documentType, requestId);
-    logger.info("b3_imports_deleted", {
-      requestId,
-      documentType,
-      deletedImports,
-    });
-    return Response.json({ deletedImports });
+  async delete(
+    documentType: string | null,
+    requestId: string,
+    itemId: string | null = null,
+  ) {
+    const result = await importService.delete(documentType, requestId, itemId);
+    if (typeof result === "number") {
+      logger.info("b3_imports_deleted", {
+        requestId,
+        documentType,
+        deletedImports: result,
+      });
+      return Response.json({ deletedImports: result });
+    }
+    logger.info("b3_import_item_deleted", { requestId, documentType, itemId });
+    return Response.json(result);
   }
 }
 export const importController = new ImportController();

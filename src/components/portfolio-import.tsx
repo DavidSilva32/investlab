@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Image from "next/image";
 import {
   Building2,
+  ChevronDown,
   CircleDollarSign,
   FileSpreadsheet,
   Layers3,
@@ -13,12 +14,16 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
-import { PositionReconciliation } from "@/components/position-reconciliation";
 import { getApiMessage } from "@/lib/api-message";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import {
   Table,
@@ -79,14 +84,28 @@ export type ReconciliationCandidate = {
   manualUpdatedAt: string;
   manualProduct: string;
   importedProduct: string;
+  manualAssetCode: string | null;
+  importedAssetCode: string | null;
+  manualInstitution: string | null;
   manualValue: string | null;
   importedValue: string | null;
   institution: string | null;
+  valueDifferenceCents: string | null;
+  closestValue: boolean;
 };
 type ReconciliationDecision = Pick<
   ReconciliationCandidate,
   "manualAssetKey" | "importedAssetKey" | "manualUpdatedAt"
 > & { action: "link" | "separate" };
+type ReconciliationGroup = {
+  manualAssetKey: string;
+  manualUpdatedAt: string;
+  manualProduct: string;
+  manualAssetCode: string | null;
+  manualInstitution: string | null;
+  manualValue: string | null;
+  candidates: ReconciliationCandidate[];
+};
 type Preview =
   | {
       documentType: "B3_POSITION_XLSX";
@@ -122,6 +141,27 @@ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 function formatMoney(value: string | null) {
   return value === null ? "—" : money.format(Number(value));
+}
+
+function groupReconciliationCandidates(
+  candidates: ReconciliationCandidate[],
+): ReconciliationGroup[] {
+  const groups = new Map<string, ReconciliationGroup>();
+  for (const candidate of candidates) {
+    const group = groups.get(candidate.manualAssetKey);
+    if (group) group.candidates.push(candidate);
+    else
+      groups.set(candidate.manualAssetKey, {
+        manualAssetKey: candidate.manualAssetKey,
+        manualUpdatedAt: candidate.manualUpdatedAt,
+        manualProduct: candidate.manualProduct,
+        manualAssetCode: candidate.manualAssetCode,
+        manualInstitution: candidate.manualInstitution,
+        manualValue: candidate.manualValue,
+        candidates: [candidate],
+      });
+  }
+  return [...groups.values()];
 }
 
 export function PortfolioImport() {
@@ -270,8 +310,8 @@ export function PortfolioImport() {
 
   function updateReconciliation(
     file: File,
-    candidate: ReconciliationCandidate,
-    action: "link" | "separate",
+    group: ReconciliationGroup,
+    selectedImportedAssetKey: string | null,
   ) {
     setItems((current) =>
       current.map((item) =>
@@ -282,15 +322,17 @@ export function PortfolioImport() {
               reconciliationDecisions: [
                 ...(item.reconciliationDecisions ?? []).filter(
                   (decision) =>
-                    decision.manualAssetKey !== candidate.manualAssetKey ||
-                    decision.importedAssetKey !== candidate.importedAssetKey,
+                    decision.manualAssetKey !== group.manualAssetKey,
                 ),
-                {
+                ...group.candidates.map((candidate) => ({
                   manualAssetKey: candidate.manualAssetKey,
                   importedAssetKey: candidate.importedAssetKey,
                   manualUpdatedAt: candidate.manualUpdatedAt,
-                  action,
-                },
+                  action:
+                    candidate.importedAssetKey === selectedImportedAssetKey
+                      ? ("link" as const)
+                      : ("separate" as const),
+                })),
               ],
             },
       ),
@@ -320,7 +362,6 @@ export function PortfolioImport() {
         }}
       />
       <div className="space-y-5">
-        <PositionReconciliation />
         <div className="flex flex-col gap-4 rounded-xl border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-14 shrink-0 place-items-center rounded-xl bg-background p-1 sm:size-16">
@@ -430,8 +471,8 @@ function PreviewItem({
   onReferenceDateChange: (file: File, referenceDate: string) => void;
   onReconciliationChange: (
     file: File,
-    candidate: ReconciliationCandidate,
-    action: "link" | "separate",
+    group: ReconciliationGroup,
+    selectedImportedAssetKey: string | null,
   ) => void;
 }) {
   if (item.error)
@@ -448,98 +489,17 @@ function PreviewItem({
           fileName={item.file.name}
           preview={item.preview}
           referenceDate={item.referenceDate ?? ""}
+          reconciliationGroups={groupReconciliationCandidates(
+            item.preview.reconciliationCandidates ?? [],
+          )}
+          reconciliationDecisions={item.reconciliationDecisions ?? []}
+          onReconciliationChange={(group, selectedImportedAssetKey) =>
+            onReconciliationChange(item.file, group, selectedImportedAssetKey)
+          }
           onReferenceDateChange={(referenceDate) =>
             onReferenceDateChange(item.file, referenceDate)
           }
         />
-        {item.preview.reconciliationCandidates?.map((candidate) => {
-          const decision = item.reconciliationDecisions?.find(
-            (entry) =>
-              entry.manualAssetKey === candidate.manualAssetKey &&
-              entry.importedAssetKey === candidate.importedAssetKey,
-          );
-          return (
-            <Card
-              key={`${candidate.manualAssetKey}:${candidate.importedAssetKey}`}
-              className="border-status-warning/30"
-            >
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Link2
-                    aria-hidden="true"
-                    className="size-4 text-status-warning"
-                  />
-                  Revisar possível duplicidade
-                  <Badge variant="secondary">
-                    {candidate.status === "conflict"
-                      ? "Dados divergentes"
-                      : candidate.status === "unequivocal"
-                        ? "Identidade compatível"
-                        : "Confirmar identidade"}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 p-4 pt-0">
-                <div className="grid gap-2 text-sm sm:grid-cols-2">
-                  <div>
-                    <span className="text-xs text-muted-foreground">
-                      Manual
-                    </span>
-                    <p className="font-medium">{candidate.manualProduct}</p>
-                    <p className="tabular-nums">
-                      {formatMoney(candidate.manualValue)}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">B3</span>
-                    <p className="font-medium">{candidate.importedProduct}</p>
-                    <p className="tabular-nums">
-                      {formatMoney(candidate.importedValue)}
-                    </p>
-                    {candidate.institution && (
-                      <p className="text-xs text-muted-foreground">
-                        {candidate.institution}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Confirme o mesmo investimento e a mesma conta. Mesma posição:
-                  o valor da B3 prevalece; o histórico manual é preservado.
-                  Posições distintas continuam somadas.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant={
-                      decision?.action === "link" ? "default" : "outline"
-                    }
-                    aria-pressed={decision?.action === "link"}
-                    onClick={() =>
-                      onReconciliationChange(item.file, candidate, "link")
-                    }
-                  >
-                    <Link2 aria-hidden="true" className="size-4" />
-                    Mesma posição
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={
-                      decision?.action === "separate" ? "default" : "outline"
-                    }
-                    aria-pressed={decision?.action === "separate"}
-                    onClick={() =>
-                      onReconciliationChange(item.file, candidate, "separate")
-                    }
-                  >
-                    <Split aria-hidden="true" className="size-4" />
-                    Posições distintas
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
       </div>
     );
 
@@ -610,13 +570,23 @@ function PositionPreview({
   fileName,
   preview,
   referenceDate,
+  reconciliationGroups,
+  reconciliationDecisions,
+  onReconciliationChange,
   onReferenceDateChange,
 }: {
   fileName: string;
   preview: Extract<Preview, { documentType: "B3_POSITION_XLSX" }>;
   referenceDate: string;
+  reconciliationGroups: ReconciliationGroup[];
+  reconciliationDecisions: ReconciliationDecision[];
+  onReconciliationChange: (
+    group: ReconciliationGroup,
+    selectedImportedAssetKey: string | null,
+  ) => void;
   onReferenceDateChange: (referenceDate: string) => void;
 }) {
+  const [expandedCandidates, setExpandedCandidates] = useState<string[]>([]);
   const valuedPositions = preview.positions.filter(
     (position) => position.totalValue !== null,
   );
@@ -680,6 +650,194 @@ function PositionPreview({
             dia CDI aplicável.
           </p>
         </div>
+        {reconciliationGroups.length > 0 && (
+          <section
+            aria-labelledby={`candidate-review-${fileName}`}
+            className="space-y-3 border-t pt-4"
+          >
+            <div>
+              <h3
+                id={`candidate-review-${fileName}`}
+                className="text-sm font-semibold"
+              >
+                Correspondências possíveis
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Escolher uma vincula essa e marca as demais como distintas; a
+                ordem não confirma identidade.
+              </p>
+            </div>
+            {reconciliationGroups.map((group) => {
+              const decisions = group.candidates.map((candidate) =>
+                reconciliationDecisions.find(
+                  (entry) =>
+                    entry.manualAssetKey === candidate.manualAssetKey &&
+                    entry.importedAssetKey === candidate.importedAssetKey,
+                ),
+              );
+              const resolved = decisions.every(Boolean);
+              const selectedImportedAssetKey =
+                decisions.find((decision) => decision?.action === "link")
+                  ?.importedAssetKey ?? null;
+              const isExpanded = expandedCandidates.includes(
+                group.manualAssetKey,
+              );
+              const visibleCandidates = group.candidates.slice(0, 3);
+              const additionalCandidates = group.candidates.slice(3);
+              const renderCandidate = (candidate: ReconciliationCandidate) => {
+                const sharesInstitution =
+                  Boolean(group.manualInstitution) &&
+                  Boolean(candidate.institution) &&
+                  group.manualInstitution?.trim().toLocaleUpperCase("pt-BR") ===
+                    candidate.institution?.trim().toLocaleUpperCase("pt-BR");
+                return (
+                  <li
+                    key={candidate.importedAssetKey}
+                    className={`flex min-w-0 flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between ${candidate.closestValue ? "border-l-2 border-l-primary bg-primary/5" : ""}`}
+                  >
+                    <div className="min-w-0 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="min-w-0 break-words font-medium">
+                          {candidate.importedProduct}
+                        </p>
+                        {candidate.closestValue && (
+                          <Badge className="border-primary/30 bg-primary/10 text-primary">
+                            Valor mais próximo
+                          </Badge>
+                        )}
+                      </div>
+                      <p
+                        className={`break-words text-xs ${sharesInstitution ? "font-medium text-primary" : "text-muted-foreground"}`}
+                      >
+                        {candidate.institution ?? "Instituição não informada"}
+                        {" · "}Código: {candidate.importedAssetCode ?? "—"}
+                      </p>
+                      <p className="font-medium tabular-nums">
+                        {formatMoney(candidate.importedValue)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full shrink-0 sm:w-auto"
+                      variant={
+                        selectedImportedAssetKey === candidate.importedAssetKey
+                          ? "default"
+                          : "outline"
+                      }
+                      aria-pressed={
+                        selectedImportedAssetKey === candidate.importedAssetKey
+                      }
+                      aria-label={
+                        "Usar " +
+                        candidate.importedProduct +
+                        ", código " +
+                        (candidate.importedAssetCode ?? "não informado") +
+                        ", valor " +
+                        formatMoney(candidate.importedValue) +
+                        ", como a mesma posição de " +
+                        group.manualProduct
+                      }
+                      onClick={() =>
+                        onReconciliationChange(
+                          group,
+                          candidate.importedAssetKey,
+                        )
+                      }
+                    >
+                      <Link2 aria-hidden="true" className="size-4" />
+                      Mesma posição
+                    </Button>
+                  </li>
+                );
+              };
+              return (
+                <Card key={group.manualAssetKey} className="border-primary/20">
+                  <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <Link2
+                        aria-hidden="true"
+                        className="size-4 text-primary"
+                      />
+                      <span className="min-w-0 break-words">
+                        {group.manualProduct}
+                      </span>
+                      <Badge variant="secondary">Manual</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 p-3 pt-0 sm:p-4 sm:pt-0">
+                    <p className="break-words text-xs text-muted-foreground">
+                      {group.manualInstitution ?? "Instituição não informada"}
+                      {" · "}Código: {group.manualAssetCode ?? "—"}
+                      {" · "}
+                      {formatMoney(group.manualValue)}
+                    </p>
+                    <ul className="divide-y rounded-md border">
+                      {visibleCandidates.map(renderCandidate)}
+                    </ul>
+                    {additionalCandidates.length > 0 && (
+                      <Collapsible
+                        open={isExpanded}
+                        onOpenChange={(open) =>
+                          setExpandedCandidates((current) =>
+                            open
+                              ? [...new Set([...current, group.manualAssetKey])]
+                              : current.filter(
+                                  (key) => key !== group.manualAssetKey,
+                                ),
+                          )
+                        }
+                      >
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="group h-auto min-h-9 px-2 text-primary"
+                            aria-label={
+                              isExpanded
+                                ? "Ocultar candidatos adicionais"
+                                : "Mostrar outros " +
+                                  additionalCandidates.length +
+                                  " candidatos"
+                            }
+                          >
+                            <ChevronDown
+                              aria-hidden="true"
+                              className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                            />
+                            {isExpanded
+                              ? "Ocultar opções"
+                              : "Mostrar outros " + additionalCandidates.length}
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <ul className="mt-2 divide-y rounded-md border">
+                            {additionalCandidates.map(renderCandidate)}
+                          </ul>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                    <Button
+                      size="sm"
+                      aria-label={`Nenhuma posição da B3 corresponde a ${group.manualProduct}`}
+                      variant={
+                        resolved && selectedImportedAssetKey === null
+                          ? "default"
+                          : "outline"
+                      }
+                      aria-pressed={
+                        resolved && selectedImportedAssetKey === null
+                      }
+                      onClick={() => onReconciliationChange(group, null)}
+                    >
+                      <Split aria-hidden="true" className="size-4" />
+                      Nenhuma destas
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </section>
+        )}
         {preview.identityConflicts?.length ? (
           <Alert variant="destructive" role="alert">
             <AlertTitle>

@@ -70,6 +70,71 @@ describe("position reconciliation audit repository", () => {
     expect(tx.insert).toHaveBeenCalledWith(positionReconciliationEvents);
     expect(previous.status).toBe("LINK");
   });
+  it("reopens a prior explicit separate decision for the selected pair", async () => {
+    const previous = {
+      manualAssetKey: "manual:one",
+      importedAssetKey: "b3:one",
+      id: "separate",
+      effectiveFrom: "2026-09-01",
+      status: "SEPARATE",
+      recordedAt: new Date("2026-09-02T00:00:00Z"),
+    };
+    let appended: unknown;
+    const tx = {
+      execute: vi.fn(),
+      select: () => ({
+        from: () => ({ where: () => ({ orderBy: async () => [previous] }) }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: (value: unknown) => {
+          appended = value;
+          return { returning: async () => [value] };
+        },
+      }),
+    };
+    mocks.client.transaction.mockImplementation((callback) => callback(tx));
+
+    await expect(
+      repository.reverse("manual:one", "2026-10-11", "request", "b3:one"),
+    ).resolves.toMatchObject({ status: "UNLINK", importedAssetKey: "b3:one" });
+    expect(appended).toEqual(
+      expect.objectContaining({
+        manualAssetKey: "manual:one",
+        importedAssetKey: "b3:one",
+        status: "UNLINK",
+        effectiveFrom: "2026-10-11",
+        requestId: "request",
+      }),
+    );
+  });
+  it("does not reopen a pair whose latest decision is linked or absent", async () => {
+    for (const rows of [
+      [
+        {
+          manualAssetKey: "manual:one",
+          importedAssetKey: "b3:one",
+          status: "LINK",
+          effectiveFrom: "2026-09-01",
+          recordedAt: new Date("2026-09-02T00:00:00Z"),
+        },
+      ],
+      [],
+    ]) {
+      const tx = {
+        execute: vi.fn(),
+        select: () => ({
+          from: () => ({ where: () => ({ orderBy: async () => rows }) }),
+        }),
+        insert: vi.fn(),
+      };
+      mocks.client.transaction.mockImplementation((callback) => callback(tx));
+
+      await expect(
+        repository.reverse("manual:one", "2026-10-11", "request", "b3:one"),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(tx.insert).not.toHaveBeenCalled();
+    }
+  });
   it.each(
     [[], [{ status: "UNLINK" }], [{ status: "SEPARATE" }]].map((rows) => ({
       rows,

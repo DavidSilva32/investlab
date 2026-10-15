@@ -1,18 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const events = vi.hoisted(() => ({ listEvents: vi.fn(), reverse: vi.fn() }));
 const manual = vi.hoisted(() => ({ list: vi.fn() }));
+const imported = vi.hoisted(() => ({ listLatestPositions: vi.fn() }));
 vi.mock("@/backend/repositories/position-reconciliation.repository", () => ({
   positionReconciliationRepository: events,
 }));
 vi.mock("@/backend/repositories/manual-portfolio-position.repository", () => ({
   manualPortfolioPositionRepository: manual,
 }));
+vi.mock("@/backend/repositories/import.repository", () => ({
+  importRepository: imported,
+}));
 import { positionReconciliationService as service } from "@/backend/services/position-reconciliation.service";
 const key = "manual:00000000-0000-0000-0000-000000000001";
 beforeEach(() => {
   vi.clearAllMocks();
+  imported.listLatestPositions.mockResolvedValue([]);
 });
 describe("position reconciliation management", () => {
+  it("indexes the current imported positions before assembling the view", async () => {
+    events.listEvents.mockResolvedValue([]);
+    manual.list.mockResolvedValue([]);
+    imported.listLatestPositions.mockResolvedValue([
+      { product: "CDB - Banco", assetCode: "CDB-1", totalValue: "100" },
+    ]);
+
+    await expect(service.list("request")).resolves.toEqual({
+      links: [],
+      separateDecisions: [],
+    });
+
+    expect(imported.listLatestPositions).toHaveBeenCalledWith("request");
+  });
+
   it("lists only the last linked state with deterministic audit ordering, without losing archived labels", async () => {
     events.listEvents.mockResolvedValue([
       {
@@ -27,6 +47,7 @@ describe("position reconciliation management", () => {
         id: "b",
         manualAssetKey: key,
         status: "UNLINK",
+        importedAssetKey: "b3",
         effectiveFrom: "2026-09-30",
         recordedAt: "2026-10-01T12:00:00Z",
       },
@@ -59,6 +80,7 @@ describe("position reconciliation management", () => {
           manualProduct: "BBAS3",
         }),
       ],
+      separateDecisions: [],
     });
   });
   it("reverses with server São Paulo date and refuses invalid identities", async () => {
@@ -68,7 +90,30 @@ describe("position reconciliation management", () => {
       await expect(
         service.reverse({ manualAssetKey: key }, "r"),
       ).resolves.toHaveProperty("message");
-      expect(events.reverse).toHaveBeenCalledWith(key, "2026-10-10", "r");
+      expect(events.reverse).toHaveBeenCalledWith(
+        key,
+        "2026-10-10",
+        "r",
+        undefined,
+      );
+      await expect(
+        service.reverse(
+          {
+            manualAssetKey: key,
+            importedAssetKey: `v1:${"a".repeat(64)}`,
+          },
+          "r",
+        ),
+      ).resolves.toEqual({
+        message:
+          "Decisão reaberta. O par poderá ser revisado na próxima prévia B3.",
+      });
+      expect(events.reverse).toHaveBeenLastCalledWith(
+        key,
+        "2026-10-10",
+        "r",
+        `v1:${"a".repeat(64)}`,
+      );
       await expect(
         service.reverse({ manualAssetKey: "bad" }, "r"),
       ).rejects.toMatchObject({ statusCode: 400 });

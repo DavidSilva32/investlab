@@ -8,6 +8,7 @@ export type ReconciliationEvent = {
   status: "LINK" | "UNLINK" | "SEPARATE";
   effectiveFrom: string;
   recordedAt: Date | string;
+  importId?: string | null;
 };
 export type ReconciliationDecision = {
   manualAssetKey: string;
@@ -26,12 +27,30 @@ type Position = {
   maturityAt?: string | null;
   currency?: string;
   totalValue?: string | null;
+  quantity?: string | null;
+  availableQuantity?: string | null;
+  unavailableQuantity?: string | null;
+  unitPrice?: string | null;
+  valuationSource?: string | null;
+  mtmUnitPrice?: string | null;
+  mtmTotalValue?: string | null;
+  curveUnitPrice?: string | null;
+  curveTotalValue?: string | null;
+  closingUnitPrice?: string | null;
+  closingTotalValue?: string | null;
   assetKey?: string;
   updatedAt?: Date | string;
   referenceDate?: string | null;
 };
 const normalized = (value?: string | null) =>
   value?.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR") ?? "";
+const normalizedProduct = (value?: string | null) =>
+  normalized(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+(?:S A|SA|LTDA|LIMITADA|CIA|COMPANHIA)$/g, "");
 export function importedReconciliationKey(position: Position) {
   return getEmergencyReserveAssetKey({
     product: position.product,
@@ -51,14 +70,15 @@ export function getReconciliationCandidates(
   return manual.flatMap((position) => {
     if (!position.assetKey) return [];
     const code = normalized(position.assetCode);
-    return imported.flatMap((incoming) => {
+    const candidates = imported.flatMap((incoming) => {
       const incomingCode = normalized(incoming.assetCode);
       // Full codes preserve share classes. A name is only a possible match,
       // and can never establish identity without an explicit decision.
       if (
         code && incomingCode
           ? code !== incomingCode
-          : normalized(position.product) !== normalized(incoming.product)
+          : normalizedProduct(position.product) !==
+            normalizedProduct(incoming.product)
       )
         return [];
       const reasons: string[] = [];
@@ -98,14 +118,119 @@ export function getReconciliationCandidates(
           manualUpdatedAt,
           manualProduct: position.product,
           importedProduct: incoming.product,
+          manualAssetCode: position.assetCode ?? null,
+          importedAssetCode: incoming.assetCode ?? null,
+          manualInstitution: position.institution ?? null,
           manualValue: position.totalValue ?? null,
           importedValue: incoming.totalValue ?? null,
           institution: incoming.institution ?? null,
+          valueDifferenceCents:
+            manualValue !== null && importedValue !== null
+              ? manualValue >= importedValue
+                ? manualValue - importedValue
+                : importedValue - manualValue
+              : null,
           reasons,
         },
       ];
     });
+    candidates.sort((left, right) => {
+      if (
+        left.valueDifferenceCents === null &&
+        right.valueDifferenceCents !== null
+      )
+        return 1;
+      if (
+        right.valueDifferenceCents === null &&
+        left.valueDifferenceCents !== null
+      )
+        return -1;
+      if (
+        left.valueDifferenceCents !== null &&
+        right.valueDifferenceCents !== null &&
+        left.valueDifferenceCents !== right.valueDifferenceCents
+      )
+        return left.valueDifferenceCents < right.valueDifferenceCents ? -1 : 1;
+      const leftSameInstitution =
+        Boolean(position.institution) &&
+        normalized(position.institution) === normalized(left.institution);
+      const rightSameInstitution =
+        Boolean(position.institution) &&
+        normalized(position.institution) === normalized(right.institution);
+      if (leftSameInstitution !== rightSameInstitution)
+        return leftSameInstitution ? -1 : 1;
+      return (
+        normalizedProduct(left.importedProduct).localeCompare(
+          normalizedProduct(right.importedProduct),
+        ) ||
+        normalized(left.importedAssetCode).localeCompare(
+          normalized(right.importedAssetCode),
+        ) ||
+        left.importedAssetKey.localeCompare(right.importedAssetKey)
+      );
+    });
+    const differences = candidates.map(
+      (candidate) => candidate.valueDifferenceCents,
+    );
+    const knownDifferences = differences.filter(
+      (difference): difference is bigint => difference !== null,
+    );
+    const minimum = knownDifferences.reduce<bigint | null>(
+      (current, difference) =>
+        current === null || difference < current ? difference : current,
+      null,
+    );
+    const hasUniqueComparableMinimum =
+      candidates.length > 1 &&
+      minimum !== null &&
+      knownDifferences.length === candidates.length &&
+      knownDifferences.filter((difference) => difference === minimum).length ===
+        1;
+    return candidates.map((candidate) => ({
+      ...candidate,
+      valueDifferenceCents: candidate.valueDifferenceCents?.toString() ?? null,
+      closestValue:
+        hasUniqueComparableMinimum &&
+        candidate.valueDifferenceCents === minimum,
+    }));
   });
+}
+
+export function unresolvedReconciliationCandidates(
+  candidates: ReturnType<typeof getReconciliationCandidates>,
+  events: ReconciliationEvent[],
+) {
+  const latestByPair = latestReconciliationEventsByPair(events);
+  const linkedManual = new Set(
+    activeReconciliationLinks(events).map((event) => event.manualAssetKey),
+  );
+  return candidates.filter((candidate) => {
+    if (linkedManual.has(candidate.manualAssetKey)) return false;
+    const latest = latestByPair.get(
+      JSON.stringify([candidate.manualAssetKey, candidate.importedAssetKey]),
+    );
+    if (!latest || latest.status === "UNLINK") return true;
+    if (latest.status === "LINK") return false;
+    return false;
+  });
+}
+
+export function latestReconciliationEventsByPair(
+  events: ReconciliationEvent[],
+) {
+  const latestByPair = new Map<string, ReconciliationEvent>();
+  const ordered = [...events].sort(
+    (left, right) =>
+      new Date(left.recordedAt).getTime() -
+        new Date(right.recordedAt).getTime() || left.id.localeCompare(right.id),
+  );
+  for (const event of ordered) {
+    latestByPair.set(
+      JSON.stringify([event.manualAssetKey, event.importedAssetKey]),
+      event,
+    );
+  }
+  return latestByPair;
 }
 export function activeReconciliationLinks(
   events: ReconciliationEvent[],
@@ -124,10 +249,7 @@ export function activeReconciliationLinks(
   for (const event of ordered) {
     const previous = latest.get(event.manualAssetKey);
     if (event.status === "LINK") latest.set(event.manualAssetKey, event);
-    else if (
-      event.status === "UNLINK" ||
-      previous?.importedAssetKey === event.importedAssetKey
-    )
+    else if (previous?.importedAssetKey === event.importedAssetKey)
       latest.delete(event.manualAssetKey);
   }
   return [...latest.values()].filter((event) => event.status === "LINK");
