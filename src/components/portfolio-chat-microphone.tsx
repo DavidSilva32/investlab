@@ -15,6 +15,7 @@ type LocalRecognition = {
   interimResults: boolean;
   processLocally: boolean;
   onresult: ((event: RecognitionResultEvent) => void) | null;
+  onstart: (() => void) | null;
   onerror: ((event: RecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
   start: () => void;
@@ -42,11 +43,14 @@ type RecordingState =
   | "ready"
   | "downloadable"
   | "installing"
+  | "starting"
   | "installation-error"
   | "recording"
   | "stopping"
   | "unavailable"
   | "error"
+  | "permission-error"
+  | "capture-error"
   | "no-speech"
   | "transcribed";
 
@@ -57,6 +61,7 @@ const stateMessages: Record<
     | "ready"
     | "downloadable"
     | "installing"
+    | "starting"
     | "recording"
     | "stopping"
   >,
@@ -68,6 +73,10 @@ const stateMessages: Record<
     "Este navegador não oferece transcrição local em português. Você pode digitar sua mensagem.",
   error:
     "Não foi possível acessar o microfone ou iniciar a transcrição. Confira a permissão e tente novamente.",
+  "permission-error":
+    "O navegador bloqueou o microfone. Libere a permissão para este site e tente novamente.",
+  "capture-error":
+    "Não encontrei um microfone disponível. Confira a conexão do dispositivo e tente novamente.",
   "no-speech": "Não detectei fala. Tente novamente ou digite sua mensagem.",
   transcribed: "Transcrição pronta. Revise o texto antes de enviar.",
 };
@@ -77,6 +86,7 @@ const localSpeechOptions: { langs: string[]; processLocally: true } = {
   processLocally: true,
 };
 const stopFallbackDelayMs = 2000;
+const startFallbackDelayMs = 5000;
 
 export function PortfolioChatMicrophone({
   onTranscript,
@@ -87,7 +97,14 @@ export function PortfolioChatMicrophone({
   const recognitionRef = useRef<LocalRecognition | null>(null);
   const transcriptRef = useRef("");
   const sessionActiveRef = useRef(false);
+  const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearStartTimeout() {
+    if (startTimeoutRef.current === null) return;
+    clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = null;
+  }
 
   function clearStopTimeout() {
     if (stopTimeoutRef.current === null) return;
@@ -133,6 +150,7 @@ export function PortfolioChatMicrophone({
       const recognition = recognitionRef.current;
       recognitionRef.current = null;
       sessionActiveRef.current = false;
+      clearStartTimeout();
       clearStopTimeout();
       recognition?.stop();
     };
@@ -193,7 +211,9 @@ export function PortfolioChatMicrophone({
       state === "ready" ||
       state === "transcribed" ||
       state === "no-speech" ||
-      state === "error";
+      state === "error" ||
+      state === "permission-error" ||
+      state === "capture-error";
     if (!Recognition || !canStartRecording) return;
 
     transcriptRef.current = "";
@@ -203,6 +223,12 @@ export function PortfolioChatMicrophone({
       recognition.continuous = false;
       recognition.interimResults = false;
       recognition.processLocally = true;
+      recognition.onstart = () => {
+        if (recognitionRef.current !== recognition || !sessionActiveRef.current)
+          return;
+        clearStartTimeout();
+        setState("recording");
+      };
       recognition.onresult = (event) => {
         if (recognitionRef.current !== recognition || !sessionActiveRef.current)
           return;
@@ -215,13 +241,24 @@ export function PortfolioChatMicrophone({
       };
       recognition.onerror = (event) => {
         if (recognitionRef.current !== recognition) return;
+        clearStartTimeout();
         clearStopTimeout();
         sessionActiveRef.current = false;
         recognitionRef.current = null;
-        setState(event.error === "no-speech" ? "no-speech" : "error");
+        setState(
+          event.error === "no-speech"
+            ? "no-speech"
+            : event.error === "not-allowed" ||
+                event.error === "service-not-allowed"
+              ? "permission-error"
+              : event.error === "audio-capture"
+                ? "capture-error"
+                : "error",
+        );
       };
       recognition.onend = () => {
         if (recognitionRef.current !== recognition) return;
+        clearStartTimeout();
         clearStopTimeout();
         sessionActiveRef.current = false;
         recognitionRef.current = null;
@@ -229,9 +266,22 @@ export function PortfolioChatMicrophone({
       };
       recognitionRef.current = recognition;
       sessionActiveRef.current = true;
-      setState("recording");
+      setState("starting");
+      startTimeoutRef.current = setTimeout(() => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
+        sessionActiveRef.current = false;
+        startTimeoutRef.current = null;
+        try {
+          recognition.stop();
+        } catch {
+          // The browser may reject stop before the recognition session starts.
+        }
+        setState("error");
+      }, startFallbackDelayMs);
       recognition.start();
     } catch {
+      clearStartTimeout();
       clearStopTimeout();
       recognitionRef.current = null;
       sessionActiveRef.current = false;
@@ -243,15 +293,18 @@ export function PortfolioChatMicrophone({
     state === "checking" ||
     state === "unavailable" ||
     state === "installing" ||
+    state === "starting" ||
     state === "stopping";
   const buttonLabel =
     state === "recording"
       ? "Parar gravação"
-      : state === "stopping"
-        ? "Finalizando transcrição"
-        : state === "downloadable" || state === "installation-error"
-          ? "Instalar idioma para áudio local"
-          : "Gravar mensagem de voz";
+      : state === "starting"
+        ? "Iniciando gravação"
+        : state === "stopping"
+          ? "Finalizando transcrição"
+          : state === "downloadable" || state === "installation-error"
+            ? "Instalar idioma para áudio local"
+            : "Gravar mensagem de voz";
   const message =
     state === "checking"
       ? "Verificando suporte à transcrição local…"
@@ -261,11 +314,13 @@ export function PortfolioChatMicrophone({
           ? "O idioma português pode ser instalado neste dispositivo para habilitar a transcrição local."
           : state === "installing"
             ? "Instalando o idioma para transcrição local…"
-            : state === "stopping"
-              ? "Finalizando a transcrição…"
-              : state === "recording"
-                ? "Ouvindo… O áudio não é enviado nem armazenado."
-                : stateMessages[state];
+            : state === "starting"
+              ? "Iniciando a transcrição local…"
+              : state === "stopping"
+                ? "Finalizando a transcrição…"
+                : state === "recording"
+                  ? "Ouvindo… O áudio não é enviado nem armazenado."
+                  : stateMessages[state];
 
   return (
     <div className="flex min-w-0 flex-col items-center">
@@ -293,20 +348,18 @@ export function PortfolioChatMicrophone({
         <div
           role="img"
           aria-label="Indicador de gravação"
-          className="mt-1 flex h-4 items-end gap-0.5"
+          className="mt-1 flex h-4 items-center gap-0.5"
         >
-          <span
-            aria-hidden="true"
-            className="h-2 w-1 rounded-full bg-destructive motion-safe:animate-bounce motion-reduce:animate-none"
-          />
-          <span
-            aria-hidden="true"
-            className="h-4 w-1 rounded-full bg-destructive [animation-delay:120ms] motion-safe:animate-bounce motion-reduce:animate-none"
-          />
-          <span
-            aria-hidden="true"
-            className="h-2.5 w-1 rounded-full bg-destructive [animation-delay:240ms] motion-safe:animate-bounce motion-reduce:animate-none"
-          />
+          {["h-1.5", "h-2.5", "h-4", "h-2", "h-3.5", "h-2.5", "h-1.5"].map(
+            (height, index) => (
+              <span
+                key={`${height}-${index}`}
+                aria-hidden="true"
+                className={`${height} w-1 rounded-full bg-destructive motion-safe:animate-bounce motion-reduce:animate-none`}
+                style={{ animationDelay: `${index * 80}ms` }}
+              />
+            ),
+          )}
         </div>
       )}
       <span className="sr-only" role="status" aria-live="polite">
@@ -321,17 +374,23 @@ export function PortfolioChatMicrophone({
               ? "Instalar áudio local"
               : state === "installing"
                 ? "Instalando idioma…"
-                : state === "stopping"
-                  ? "Finalizando…"
-                  : state === "recording"
-                    ? "Ouvindo…"
-                    : state === "transcribed"
-                      ? "Revise o texto"
-                      : state === "no-speech"
-                        ? "Sem fala detectada"
-                        : state === "installation-error"
-                          ? "Falha ao instalar idioma"
-                          : "Áudio indisponível"}
+                : state === "starting"
+                  ? "Iniciando…"
+                  : state === "stopping"
+                    ? "Finalizando…"
+                    : state === "recording"
+                      ? "Ouvindo…"
+                      : state === "transcribed"
+                        ? "Revise o texto"
+                        : state === "no-speech"
+                          ? "Sem fala detectada"
+                          : state === "permission-error"
+                            ? "Permissão do microfone"
+                            : state === "capture-error"
+                              ? "Microfone não encontrado"
+                              : state === "installation-error"
+                                ? "Falha ao instalar idioma"
+                                : "Áudio indisponível"}
       </span>
     </div>
   );

@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +23,7 @@ type RecognitionMock = {
         resultIndex: number;
       }) => void)
     | null;
+  onstart: (() => void) | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
   start: ReturnType<typeof vi.fn>;
@@ -46,11 +48,13 @@ function setupRecognition(
     interimResults: true,
     processLocally: false,
     onresult: null,
+    onstart: null,
     onerror: null,
     onend: null,
     start: vi.fn(),
     stop: vi.fn(),
   };
+  recognition.start.mockImplementation(() => recognition.onstart?.());
   const available = vi.fn().mockResolvedValue(availability);
   const constructor = Object.assign(
     function () {
@@ -211,6 +215,11 @@ describe("PortfolioChatMicrophone", () => {
     expect(
       screen.getByRole("img", { name: "Indicador de gravação" }),
     ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("img", { name: "Indicador de gravação" })
+        .querySelectorAll("span"),
+    ).toHaveLength(7);
 
     recognition.onresult?.({
       results: [[{ transcript: "interim", isFinal: false }]],
@@ -242,6 +251,94 @@ describe("PortfolioChatMicrophone", () => {
     recognition.onend?.();
     expect(await screen.findByText("Revise o texto")).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("waits for the recognition start event before showing the listening state", async () => {
+    const user = userEvent.setup();
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+
+    expect(recognition.start).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("button", { name: "Iniciando gravação" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Iniciando a transcrição local",
+    );
+    expect(
+      screen.queryByRole("img", { name: "Indicador de gravação" }),
+    ).toBeNull();
+
+    act(() => recognition.onstart?.());
+
+    expect(screen.getByRole("button", { name: "Parar gravação" })).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Indicador de gravação" }),
+    ).toBeTruthy();
+  });
+
+  it("times out a start that never becomes active and ignores a late start event", async () => {
+    const { recognition } = setupRecognition("available");
+    recognition.start.mockImplementation(() => undefined);
+    recognition.stop.mockImplementation(() => {
+      throw new Error("start never became stoppable");
+    });
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    const button = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    vi.useFakeTimers();
+
+    fireEvent.click(button);
+    expect(
+      screen.getByRole("button", { name: "Iniciando gravação" }),
+    ).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByText("Áudio indisponível")).toBeTruthy();
+    expect(recognition.stop).toHaveBeenCalledOnce();
+    act(() => recognition.onstart?.());
+    expect(
+      screen.queryByRole("img", { name: "Indicador de gravação" }),
+    ).toBeNull();
+  });
+
+  it("clears the start timeout on start, recognition error, and unmount", async () => {
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    const button = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    vi.useFakeTimers();
+
+    fireEvent.click(button);
+    expect(vi.getTimerCount()).toBe(0);
+
+    recognition.start.mockImplementation(() => undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Parar gravação" }));
+    act(() => recognition.onend?.());
+    fireEvent.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => recognition.onerror?.({ error: "not-allowed" }));
+    expect(vi.getTimerCount()).toBe(0);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    cleanup();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("keeps the stop control available after a final transcript while listening", async () => {
@@ -375,7 +472,7 @@ describe("PortfolioChatMicrophone", () => {
     staleError({ error: "not-allowed" });
     staleError({ error: "not-allowed" });
     staleEnd();
-    expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
+    expect(await screen.findByText("Permissão do microfone")).toBeTruthy();
 
     await user.click(
       screen.getByRole("button", { name: "Gravar mensagem de voz" }),
@@ -399,7 +496,32 @@ describe("PortfolioChatMicrophone", () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(screen.getByRole("status").textContent).toContain("transcri");
+    expect(screen.getByRole("status").textContent).toContain(
+      "bloqueou o microfone",
+    );
+  });
+
+  it("ignores a start timeout queued after recognition has started and ended", async () => {
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    const recordButton = await screen.findByRole("button", {
+      name: "Gravar mensagem de voz",
+    });
+    await waitFor(() =>
+      expect(recordButton.hasAttribute("disabled")).toBe(false),
+    );
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined);
+
+    fireEvent.click(recordButton);
+    recognition.onstart?.();
+    recognition.onend?.();
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByText("Sem fala detectada")).toBeTruthy();
+    expect(recognition.stop).not.toHaveBeenCalled();
   });
 
   it("shows no-speech and microphone-permission error states accessibly", async () => {
@@ -442,8 +564,41 @@ describe("PortfolioChatMicrophone", () => {
     );
     recognition.onerror?.({ error: "not-allowed" });
 
-    expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("transcri");
+    expect(await screen.findByText("Permissão do microfone")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "bloqueou o microfone",
+    );
+  });
+
+  it("explains when the browser cannot find an audio capture device", async () => {
+    const user = userEvent.setup();
+    const { recognition } = setupRecognition("available");
+    render(<PortfolioChatMicrophone onTranscript={vi.fn()} />);
+    await user.click(
+      await screen.findByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+
+    recognition.onerror?.({ error: "audio-capture" });
+
+    expect(await screen.findByText("Microfone não encontrado")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Não encontrei um microfone disponível",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(recognition.start).toHaveBeenCalledTimes(2);
+
+    recognition.onerror?.({ error: "network" });
+    expect(
+      await screen.findByText(
+        "Não foi possível acessar o microfone ou iniciar a transcrição. Confira a permissão e tente novamente.",
+      ),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Gravar mensagem de voz" }),
+    );
+    expect(recognition.start).toHaveBeenCalledTimes(3);
   });
 
   it("handles failed local availability checks without enabling microphone use", async () => {
@@ -561,8 +716,10 @@ describe("PortfolioChatMicrophone", () => {
 
     recognition.onerror?.({ error: "not-allowed" });
 
-    expect(await screen.findByText("Áudio indisponível")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("transcri");
+    expect(await screen.findByText("Permissão do microfone")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "bloqueou o microfone",
+    );
   });
 
   it("reports an error when the browser rejects a stop request", async () => {
