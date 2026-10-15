@@ -24,7 +24,10 @@ import {
   type PortfolioChatMatch,
 } from "@/lib/portfolio-chat-intent";
 import { PortfolioChatManualPosition } from "@/components/portfolio-chat-manual-position";
-import { PortfolioChatMicrophone } from "@/components/portfolio-chat-microphone";
+import {
+  PortfolioChatMicrophone,
+  type PortfolioChatMicrophoneHandle,
+} from "@/components/portfolio-chat-microphone";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { formatCurrency } from "@/lib/utils";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
@@ -341,6 +344,11 @@ function AssistantConversation({
   const [assetChoiceLimit, setAssetChoiceLimit] = useState(8);
   const [isPortfolioQueryPending, setIsPortfolioQueryPending] = useState(false);
   const [draft, setDraft] = useState("");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const microphoneRef = useRef<PortfolioChatMicrophoneHandle>(null);
+  const voiceSessionActiveRef = useRef(false);
+  const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messageSequence = useRef(0);
 
@@ -599,10 +607,9 @@ function AssistantConversation({
     );
   }
 
-  function submitMessage(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const message = draft.trim();
-    if (!message || pendingMessage) return;
+  function submitMessageText(rawMessage: string) {
+    const message = rawMessage.trim();
+    if (!message || pendingMessage) return false;
 
     addMessage("user", message);
     setDraft("");
@@ -616,20 +623,20 @@ function AssistantConversation({
         "assistant",
         "Entendi um possível cadastro de posição e também uma consulta. Qual dessas ações você quer fazer primeiro? Reformule a pergunta para eu continuar.",
       );
-      return;
+      return true;
     }
 
     if (isPortfolioChatManualPositionRequest(message)) {
       setIntent(null);
       setPromptSuggestions([]);
       onStartManualPosition(parsePortfolioChatManualPositionRequest(message));
-      return;
+      return true;
     }
 
     const initialMatch = recognizePortfolioChatMessage(message);
     if (!initialMatch) {
       resolveTextMessage(message);
-      return;
+      return true;
     }
 
     if (
@@ -638,17 +645,35 @@ function AssistantConversation({
       initialMatch.intent === "asset-list"
     ) {
       resolveTextMessage(message);
-      return;
+      return true;
     }
 
     if (!objectivesQuery.isSuccess) {
       setPendingMessage(message);
       setIntent(initialMatch.intent);
       void resolvePendingMessage(message);
-      return;
+      return true;
     }
 
     resolveTextMessage(message);
+    return true;
+  }
+
+  function submitVoiceTranscript(transcript: string) {
+    const existingDraft = draftRef.current.trim();
+    const message = existingDraft
+      ? `${existingDraft} ${transcript}`
+      : transcript;
+    if (submitMessageText(message)) draftRef.current = "";
+  }
+
+  function submitMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (voiceSessionActiveRef.current) {
+      microphoneRef.current?.finalizeAndSubmit();
+      return;
+    }
+    if (submitMessageText(draft)) draftRef.current = "";
   }
 
   function restart() {
@@ -992,31 +1017,47 @@ function AssistantConversation({
           </MessageScrollerProvider>
 
           <div className="border-t border-border px-4 py-3">
-            <form onSubmit={submitMessage} className="flex gap-2">
-              <Input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                aria-label="Escreva uma pergunta para o assistente"
-                placeholder="Pergunte sobre a carteira ou peça um cadastro"
-                autoComplete="off"
-                disabled={Boolean(pendingMessage) || isPortfolioQueryPending}
-                className="min-w-0"
-              />
+            <form
+              onSubmit={submitMessage}
+              className="flex min-w-0 items-center gap-2"
+            >
+              {!isVoiceSessionActive && (
+                <Input
+                  value={draft}
+                  onChange={(event) => {
+                    draftRef.current = event.target.value;
+                    setDraft(event.target.value);
+                  }}
+                  aria-label="Escreva uma pergunta para o assistente"
+                  placeholder="Pergunte sobre a carteira ou peça um cadastro"
+                  autoComplete="off"
+                  disabled={Boolean(pendingMessage) || isPortfolioQueryPending}
+                  className="min-w-0 flex-1"
+                />
+              )}
               <PortfolioChatMicrophone
-                onTranscript={(transcript) =>
-                  setDraft((current) =>
-                    current.trim()
-                      ? `${current.trim()} ${transcript}`
-                      : transcript,
-                  )
-                }
+                ref={microphoneRef}
+                onRecordingChange={(recording) => {
+                  voiceSessionActiveRef.current = recording;
+                  setIsVoiceSessionActive(recording);
+                }}
+                onTranscript={(transcript) => {
+                  const current = draftRef.current.trim();
+                  const next = current
+                    ? `${current} ${transcript}`
+                    : transcript;
+                  draftRef.current = next;
+                  setDraft(next);
+                }}
+                onSubmitTranscript={submitVoiceTranscript}
               />
               <Button
                 type="submit"
                 size="icon"
                 aria-label="Enviar mensagem"
+                className="shrink-0"
                 disabled={
-                  !draft.trim() ||
+                  (!draft.trim() && !isVoiceSessionActive) ||
                   Boolean(pendingMessage) ||
                   isPortfolioQueryPending
                 }

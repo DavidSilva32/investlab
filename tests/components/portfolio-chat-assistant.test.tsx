@@ -29,17 +29,67 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("@/components/portfolio-chat-microphone", () => ({
-  PortfolioChatMicrophone: ({
-    onTranscript,
-  }: {
-    onTranscript: (transcript: string) => void;
-  }) => (
-    <button type="button" onClick={() => onTranscript("texto reconhecido")}>
-      Simular audio
-    </button>
-  ),
-}));
+vi.mock("@/components/portfolio-chat-microphone", async () => {
+  const { forwardRef, useImperativeHandle, useState } = await import("react");
+  return {
+    PortfolioChatMicrophone: forwardRef<
+      { finalizeAndSubmit: () => void },
+      {
+        onTranscript: (transcript: string) => void;
+        onSubmitTranscript: (transcript: string) => void;
+        onRecordingChange: (recording: boolean) => void;
+      }
+    >(function MockPortfolioChatMicrophone(
+      { onTranscript, onSubmitTranscript, onRecordingChange },
+      ref,
+    ) {
+      const [active, setActive] = useState(false);
+      const [recognizedText, setRecognizedText] = useState("texto reconhecido");
+      useImperativeHandle(
+        ref,
+        () => ({
+          finalizeAndSubmit() {
+            setActive(false);
+            onRecordingChange(false);
+            onSubmitTranscript(recognizedText);
+          },
+        }),
+        [recognizedText, onRecordingChange, onSubmitTranscript],
+      );
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => onTranscript("texto reconhecido")}
+          >
+            Simular audio
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRecognizedText("texto reconhecido");
+              setActive(true);
+              onRecordingChange(true);
+            }}
+          >
+            Simular gravação ativa
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRecognizedText("");
+              setActive(true);
+              onRecordingChange(true);
+            }}
+          >
+            Simular gravação sem fala
+          </button>
+          {active && <span>Gravando</span>}
+        </>
+      );
+    }),
+  };
+});
 
 import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -151,6 +201,30 @@ describe("PortfolioChatAssistant", () => {
     expect(
       screen.queryByRole("button", { name: "FIIs na carteira" }),
     ).toBeNull();
+  });
+
+  it("keeps the message field flexible while composer controls retain their size", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+      );
+
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    const form = input.closest("form");
+
+    expect(form?.className).toContain("min-w-0");
+    expect(input.className).toContain("flex-1");
+    expect(
+      form?.querySelector('[aria-label="Enviar mensagem"]')?.className,
+    ).toContain("shrink-0");
   });
 
   it("answers the opening portfolio shortcut from the current summary", async () => {
@@ -950,6 +1024,121 @@ describe("PortfolioChatAssistant", () => {
     expect((input as HTMLInputElement).value).toBe(
       "Minha pergunta texto reconhecido",
     );
+  });
+
+  it("hides the input while recording and sends the captured transcript once", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Tenho uma dúvida");
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação ativa" }),
+    );
+
+    expect(
+      screen.queryByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeNull();
+    const sendButton = screen.getByRole("button", { name: "Enviar mensagem" });
+    expect(sendButton.hasAttribute("disabled")).toBe(false);
+    await user.click(sendButton);
+
+    expect(
+      await screen.findByText("Tenho uma dúvida texto reconhecido"),
+    ).toBeTruthy();
+    expect(
+      screen.getAllByText("Tenho uma dúvida texto reconhecido"),
+    ).toHaveLength(1);
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("sends the existing draft when recording ends without recognized speech", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    const input = screen.getByRole("textbox", {
+      name: "Escreva uma pergunta para o assistente",
+    });
+    await user.type(input, "Minha pergunta existente");
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação sem fala" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(await screen.findByText("Minha pergunta existente")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Escreva uma pergunta para o assistente",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("");
+  });
+
+  it("sends a voice transcript when no text draft exists", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação ativa" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(await screen.findByText("texto reconhecido")).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps an empty draft when no speech is recognized and there is no text to send", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ objectives: [] })),
+    );
+    renderAssistant();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir assistente da carteira" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Simular gravação sem fala" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    expect(
+      screen.getByRole("textbox", {
+        name: "Escreva uma pergunta para o assistente",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("texto reconhecido")).toBeNull();
   });
 
   it("recognizes a direct portfolio question without showing suggestions", async () => {
