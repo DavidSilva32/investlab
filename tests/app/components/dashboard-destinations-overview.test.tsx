@@ -126,6 +126,8 @@ describe("DashboardDestinationsOverview", () => {
     const drilldown = screen.getByRole("button", {
       name: "Ver composição do investimento de longo prazo",
     });
+    expect(drilldown.className).toContain("flex-1");
+    expect(drilldown.className).toContain("px-0");
     expect(drilldown.closest("li")?.textContent).toContain("0%");
     expect(drilldown.closest("li")?.textContent).toContain("0,00");
     fireEvent.click(drilldown);

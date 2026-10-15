@@ -205,7 +205,7 @@ export function DashboardDestinationsOverview({
                     <Button
                       type="button"
                       variant="ghost"
-                      className="h-auto min-w-0 justify-start gap-2 px-1 py-1 text-sm font-normal"
+                      className="h-auto min-w-0 flex-1 justify-start gap-2 px-0 py-1 text-left text-sm font-normal"
                       aria-label="Ver composição do investimento de longo prazo"
                       onClick={() => setShowLongTerm(true)}
                     >
@@ -220,7 +220,7 @@ export function DashboardDestinationsOverview({
                       <span className="truncate">{category.label}</span>
                     </Button>
                   ) : (
-                    <span className="flex min-w-0 items-center gap-2">
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
                       <span
                         aria-hidden="true"
                         className="size-2 shrink-0 rounded-full"
