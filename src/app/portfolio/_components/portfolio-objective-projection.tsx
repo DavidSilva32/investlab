@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ArrowUpRight, Calculator, ChevronDown } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Line, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +35,14 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 import { formatCurrency } from "@/lib/utils";
 import {
   objectiveProjectionInputSchema,
@@ -36,6 +50,7 @@ import {
 } from "@/lib/objective-projection";
 import type { ObjectiveProjectionResult } from "@/lib/objective-projection";
 import type { PortfolioObjective } from "./portfolio-objective-card";
+import { ProjectionAnnualSchedule } from "./projection-annual-schedule";
 
 type Props = {
   objective: PortfolioObjective | null;
@@ -94,10 +109,7 @@ export function parseProjectionNumber(value: string) {
 
 export function formatProjectionAmountInput(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "";
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatBrazilianAmountValue(String(value), "");
 }
 
 function getCurrencySliderStep(maximum: number) {
@@ -191,12 +203,6 @@ export function getProjectionAxisTicks(
   return ticks;
 }
 
-export function formatProjectionCompletion(month: number | null) {
-  if (month === null) return "Meta não alcançada no prazo escolhido.";
-  if (month === 0) return "Meta já alcançada.";
-  return `Meta alcançada em ${formatProjectionYearLabel(month / 12)}.`;
-}
-
 export function formatProjectionCurrency(value: unknown) {
   return formatCurrency(Number(value));
 }
@@ -266,7 +272,6 @@ export function PortfolioObjectiveProjection({
   }
 
   const starting = parseProjectionNumber(startingAmount);
-  const target = parseProjectionNumber(targetAmount);
   const years = parseProjectionNumber(horizonYears);
   const annualReturn = parseProjectionNumber(annualReturnPercent);
   const inflation = parseProjectionNumber(annualInflationPercent);
@@ -275,20 +280,23 @@ export function PortfolioObjectiveProjection({
     () =>
       objectiveProjectionInputSchema.safeParse({
         mode,
-        targetBasis,
+        ...(mode === "required_contribution"
+          ? {
+              targetBasis,
+              targetAmount: parseProjectionNumber(targetAmount),
+            }
+          : { monthlyContribution: contribution }),
         startingAmount: starting,
-        targetAmount: target,
         horizonYears: years,
         annualReturnPercent: annualReturn,
         annualInflationPercent: inflation,
-        monthlyContribution: mode === "project_balance" ? contribution : null,
         adjustContributionsForInflation: contributionAdjustment === "adjust",
       }),
     [
       mode,
       targetBasis,
+      targetAmount,
       starting,
-      target,
       years,
       annualReturn,
       inflation,
@@ -321,7 +329,9 @@ export function PortfolioObjectiveProjection({
     }),
   );
   const hasSelectedAssumptions = Boolean(
-    mode && targetBasis && contributionAdjustment,
+    mode &&
+    contributionAdjustment &&
+    (mode !== "required_contribution" || targetBasis),
   );
   const parsedProjectionInput = projectionInput.success
     ? projectionInput.data
@@ -445,30 +455,32 @@ export function PortfolioObjectiveProjection({
               </SelectContent>
             </Select>
           </Field>
-          <RangeField
-            label="Meta"
-            id="projection-target"
-            value={targetAmount}
-            min={0.01}
-            max={maximumProjectionAmount}
-            sliderMin={0}
-            sliderMax={targetSliderMax}
-            sliderStep={getCurrencySliderStep(targetSliderMax)}
-            currency
-            placeholder="Valor desejado"
-            sliderDisabled={!targetAmount}
-            error={displayableProjectionErrors.targetAmount}
-            onChange={(value) => {
-              updateInput(setTargetAmount, value);
-              setTargetSliderMax(
-                Math.min(
-                  maximumProjectionAmount,
-                  Math.max(1, (parseProjectionNumber(value) ?? 0) * 2),
-                ),
-              );
-            }}
-            onSlide={(value) => updateInput(setTargetAmount, value)}
-          />
+          {mode === "required_contribution" && (
+            <RangeField
+              label="Meta"
+              id="projection-target"
+              value={targetAmount}
+              min={0.01}
+              max={maximumProjectionAmount}
+              sliderMin={0}
+              sliderMax={targetSliderMax}
+              sliderStep={getCurrencySliderStep(targetSliderMax)}
+              currency
+              placeholder="Valor desejado"
+              sliderDisabled={!targetAmount}
+              error={displayableProjectionErrors.targetAmount}
+              onChange={(value) => {
+                updateInput(setTargetAmount, value);
+                setTargetSliderMax(
+                  Math.min(
+                    maximumProjectionAmount,
+                    Math.max(1, (parseProjectionNumber(value) ?? 0) * 2),
+                  ),
+                );
+              }}
+              onSlide={(value) => updateInput(setTargetAmount, value)}
+            />
+          )}
           <RangeField
             label="Prazo em anos"
             id="projection-years"
@@ -553,25 +565,27 @@ export function PortfolioObjectiveProjection({
             }}
             onSlide={(value) => updateInput(setAnnualInflationPercent, value)}
           />
-          <Field label="Valor da meta representa" id="projection-basis">
-            <Select
-              value={targetBasis}
-              onValueChange={(value) => updateInput(setTargetBasis, value)}
-            >
-              <SelectTrigger
-                id="projection-basis"
-                aria-label="Valor da meta representa"
+          {mode === "required_contribution" && (
+            <Field label="Valor da meta representa" id="projection-basis">
+              <Select
+                value={targetBasis}
+                onValueChange={(value) => updateInput(setTargetBasis, value)}
               >
-                <SelectValue placeholder="Escolha o poder de compra" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="future_nominal">Valor futuro</SelectItem>
-                <SelectItem value="today_purchasing_power">
-                  Poder de compra de hoje
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+                <SelectTrigger
+                  id="projection-basis"
+                  aria-label="Valor da meta representa"
+                >
+                  <SelectValue placeholder="Escolha o poder de compra" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="future_nominal">Valor futuro</SelectItem>
+                  <SelectItem value="today_purchasing_power">
+                    Poder de compra de hoje
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <Field label="Aporte aumenta?" id="projection-adjustment">
             <Select
               value={contributionAdjustment}
@@ -594,7 +608,13 @@ export function PortfolioObjectiveProjection({
           <RangeField
             label="Aporte mensal"
             id="projection-contribution"
-            value={monthlyContribution}
+            value={
+              mode === "required_contribution"
+                ? formatProjectionAmountInput(
+                    result?.requiredMonthlyContribution ?? null,
+                  )
+                : monthlyContribution
+            }
             min={0}
             max={maximumProjectionAmount}
             sliderMin={0}
@@ -725,12 +745,23 @@ function RangeField({
   onChange: (value: string) => void;
   onSlide: (value: string) => void;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const selectionRef = useRef<CurrencyInputSelection | null>(null);
   const parsed = parseProjectionNumber(value);
+  const displayValue = currency ? formatProjectionAmountInput(parsed) : value;
   const sliderValue = Math.min(
     sliderMax,
     Math.max(sliderMin, parsed ?? sliderMin),
   );
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    const selection = selectionRef.current;
+    if (!input || !selection) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    selectionRef.current = null;
+  }, [displayValue]);
 
   return (
     <div className="space-y-2">
@@ -746,17 +777,34 @@ function RangeField({
         )}
         <Input
           id={id}
+          ref={inputRef}
           type={currency ? "text" : "number"}
           min={currency ? undefined : min}
           max={currency ? undefined : max}
           step={currency ? undefined : "any"}
           inputMode={currency ? "decimal" : inputMode}
-          value={
-            currency && !isEditing ? formatProjectionAmountInput(parsed) : value
-          }
-          onFocus={() => setIsEditing(true)}
-          onBlur={() => setIsEditing(false)}
-          onChange={(event) => onChange(event.target.value)}
+          value={displayValue}
+          onChange={(event) => {
+            if (!currency) {
+              onChange(event.target.value);
+              return;
+            }
+
+            const input = event.target;
+            const rawValue = input.value;
+            const nextValue = formatAmountInput(rawValue, "");
+            selectionRef.current = getCurrencyInputSelection(
+              rawValue,
+              nextValue,
+              input.selectionStart ?? rawValue.length,
+              input.selectionEnd ?? rawValue.length,
+              input.selectionDirection,
+            );
+            const nextAmount = nextValue
+              ? parseBrazilianAmount(nextValue)
+              : Number.NaN;
+            onChange(Number.isFinite(nextAmount) ? String(nextAmount) : "");
+          }}
           placeholder={placeholder}
           disabled={disabled}
           className={currency ? "pl-10 tabular-nums" : undefined}
@@ -842,23 +890,17 @@ function ProjectionResult({
               label="Patrimônio nominal projetado"
               value={formatCurrency(result.projectedNominalAmount)}
               emphasized
+              description="Resultado ao fim do prazo escolhido."
             />
             <ResultMetric
               label="Patrimônio em poder de compra de hoje"
               value={formatCurrency(realValue)}
+              description="Valores descontados pela inflação informada."
             />
           </>
         )}
       </div>
       <div>
-        {result.mode === "project_balance" && (
-          <p
-            className="mb-3 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm font-medium text-foreground"
-            role="status"
-          >
-            {formatProjectionCompletion(result.targetReachedMonth)}
-          </p>
-        )}
         <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-chart-category-1" />
@@ -868,14 +910,18 @@ function ProjectionResult({
             <span className="size-2 rounded-full bg-chart-category-4" />
             Patrimônio real
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-0 w-3 border-t border-dashed border-chart-category-2" />
-            Meta nominal
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-0 w-3 border-t border-dashed border-chart-category-3" />
-            Meta real
-          </span>
+          {result.mode === "required_contribution" && (
+            <>
+              <span className="flex items-center gap-1.5">
+                <span className="h-0 w-3 border-t border-dashed border-chart-category-2" />
+                Meta nominal
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-0 w-3 border-t border-dashed border-chart-category-3" />
+                Meta real
+              </span>
+            </>
+          )}
         </div>
         <ChartContainer
           config={chartConfig}
@@ -974,25 +1020,30 @@ function ProjectionResult({
               isAnimationActive={!reducedMotion}
               animationDuration={220}
             />
-            <Line
-              type="monotone"
-              dataKey="nominalTargetAmount"
-              stroke="var(--color-nominalTargetAmount)"
-              strokeDasharray="5 4"
-              strokeWidth={1.5}
-              dot={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="realTargetAmount"
-              stroke="var(--color-realTargetAmount)"
-              strokeDasharray="2 4"
-              strokeWidth={1.5}
-              dot={false}
-            />
+            {result.mode === "required_contribution" && (
+              <>
+                <Line
+                  type="monotone"
+                  dataKey="nominalTargetAmount"
+                  stroke="var(--color-nominalTargetAmount)"
+                  strokeDasharray="5 4"
+                  strokeWidth={1.5}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="realTargetAmount"
+                  stroke="var(--color-realTargetAmount)"
+                  strokeDasharray="2 4"
+                  strokeWidth={1.5}
+                  dot={false}
+                />
+              </>
+            )}
           </AreaChart>
         </ChartContainer>
       </div>
+      <ProjectionAnnualSchedule result={result} />
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <ArrowUpRight aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
         Cenário matemático baseado nas premissas escolhidas. Retorno e inflação

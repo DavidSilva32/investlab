@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +17,6 @@ import {
   getProjectionAxisTicks,
   parseProjectionNumber,
   formatProjectionAxisTimeLabel,
-  formatProjectionCompletion,
   formatProjectionYearLabel,
   PortfolioObjectiveProjection,
 } from "@/app/portfolio/_components/portfolio-objective-projection";
@@ -45,8 +45,6 @@ function createMonthlyProjectionPoints(monthCount: number) {
     investedAmount: 0,
     nominalAmount: 0,
     purchasingPowerAmount: 0,
-    nominalTargetAmount: 0,
-    realTargetAmount: 0,
   }));
 }
 
@@ -142,11 +140,6 @@ describe("PortfolioObjectiveProjection", () => {
     expect(longHorizonTicks).toEqual([0, 20, 40, 60, 80, 100]);
     expect(longHorizonTicks).toHaveLength(6);
     expect(longHorizonTicks.at(-1)).toBe(100);
-    expect(formatProjectionCompletion(2)).toBe("Meta alcançada em 2 meses.");
-    expect(formatProjectionCompletion(0)).toBe("Meta já alcançada.");
-    expect(formatProjectionCompletion(null)).toBe(
-      "Meta não alcançada no prazo escolhido.",
-    );
     expect(formatProjectionCurrency(1250)).toBe("R$ 1.250,00");
     expect(parseProjectionNumber("Infinity")).toBeNull();
     expect(parseProjectionNumber("R$ 1.234,56")).toBe(1234.56);
@@ -203,7 +196,7 @@ describe("PortfolioObjectiveProjection", () => {
 
     const startingAmountInput = screen.getByLabelText("Saldo inicial");
     await user.click(startingAmountInput);
-    expect((startingAmountInput as HTMLInputElement).value).toBe("65000");
+    expect((startingAmountInput as HTMLInputElement).value).toBe("65.000,00");
     await user.tab();
     expect((startingAmountInput as HTMLInputElement).value).toBe("65.000,00");
 
@@ -213,9 +206,8 @@ describe("PortfolioObjectiveProjection", () => {
     await user.click(
       screen.getByRole("option", { name: "Quanto posso acumular?" }),
     );
-    fireEvent.change(screen.getByLabelText("Meta"), {
-      target: { value: "2000000" },
-    });
+    expect(screen.queryByLabelText("Meta")).toBeNull();
+    expect(screen.queryByLabelText("Valor da meta representa")).toBeNull();
     fireEvent.change(screen.getByLabelText("Prazo em anos"), {
       target: { value: "10" },
     });
@@ -246,18 +238,12 @@ describe("PortfolioObjectiveProjection", () => {
     fireEvent.change(screen.getByLabelText("Aporte mensal"), {
       target: { value: "1200" },
     });
-    for (const label of ["Meta", "Saldo inicial", "Aporte mensal"]) {
+    for (const label of ["Saldo inicial", "Aporte mensal"]) {
       const input = screen.getByLabelText(label);
       const originalValue = (input as HTMLInputElement).value;
       fireEvent.change(input, { target: { value: "" } });
       fireEvent.change(input, { target: { value: originalValue } });
     }
-    await user.click(
-      screen.getByRole("combobox", { name: "Valor da meta representa" }),
-    );
-    await user.click(
-      screen.getByRole("option", { name: "Poder de compra de hoje" }),
-    );
     await user.click(screen.getByRole("combobox", { name: "Aporte aumenta?" }));
     await user.click(
       screen.getByRole("option", { name: "Aumentar pela inflação" }),
@@ -276,7 +262,6 @@ describe("PortfolioObjectiveProjection", () => {
     expect(screen.getByLabelText(/Gráfico com projeção nominal/)).toBeTruthy();
 
     const editableSliders = [
-      "Meta, controle deslizante",
       "Prazo em anos, controle deslizante",
       "Rendimento anual (%), controle deslizante",
       "Saldo inicial, controle deslizante",
@@ -311,6 +296,80 @@ describe("PortfolioObjectiveProjection", () => {
     });
   }, 15_000);
 
+  it("masks monetary fields as Brazilian currency while typing", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioObjectiveProjection
+        objective={objective}
+        startingBalance={{
+          amount: 65_000,
+          referenceDate: "2026-10-01",
+          source: "portfolio",
+          completeness: "complete",
+        }}
+      />,
+    );
+
+    const startingAmount = screen.getByLabelText("Saldo inicial");
+    expect((startingAmount as HTMLInputElement).value).toBe("65.000,00");
+    fireEvent.change(startingAmount, { target: { value: "123456" } });
+    expect((startingAmount as HTMLInputElement).value).toBe("1.234,56");
+
+    const contribution = screen.getByLabelText("Aporte mensal");
+    fireEvent.change(contribution, { target: { value: "987654" } });
+    expect((contribution as HTMLInputElement).value).toBe("9.876,54");
+
+    await user.click(
+      screen.getByRole("combobox", { name: "O que quer simular" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Quanto preciso aportar?" }),
+    );
+    const target = screen.getByLabelText("Meta");
+    fireEvent.change(target, { target: { value: "123456789" } });
+    expect((target as HTMLInputElement).value).toBe("1.234.567,89");
+  });
+
+  it("keeps the caret at the end while typing and calculates from the masked amount", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioObjectiveProjection
+        objective={objective}
+        startingBalance={{
+          amount: 65_000,
+          referenceDate: "2026-10-01",
+          source: "portfolio",
+          completeness: "complete",
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Prazo em anos"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByLabelText("Rendimento anual (%)"), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByLabelText("Inflação anual (%)"), {
+      target: { value: "0" },
+    });
+
+    const startingAmount = screen.getByLabelText(
+      "Saldo inicial",
+    ) as HTMLInputElement;
+    await user.clear(startingAmount);
+    await user.type(startingAmount, "123456");
+
+    expect(startingAmount.value).toBe("1.234,56");
+    expect(startingAmount.selectionStart).toBe(startingAmount.value.length);
+    expect(startingAmount.selectionEnd).toBe(startingAmount.value.length);
+    expect(
+      within(
+        screen.getByRole("region", { name: "Resultado da simulação" }),
+      ).getByText("Patrimônio nominal projetado").parentElement?.textContent,
+    ).toContain("13.234,56");
+  });
+
   it("keeps the planning form visible while the starting balance and results load", () => {
     render(
       <PortfolioObjectiveProjection
@@ -326,7 +385,7 @@ describe("PortfolioObjectiveProjection", () => {
     expect(
       screen.getByRole("status", { name: "Carregando projeção" }),
     ).toBeTruthy();
-    expect(screen.getByLabelText("Meta")).toBeTruthy();
+    expect(screen.queryByLabelText("Meta")).toBeNull();
     expect(screen.getByLabelText("Prazo em anos")).toBeTruthy();
     expect(screen.getByLabelText("Rendimento anual (%)")).toBeTruthy();
     expect(
@@ -349,12 +408,12 @@ describe("PortfolioObjectiveProjection", () => {
     expect(screen.getByRole("alert").textContent).toContain(
       "Falha ao carregar o saldo.",
     );
-    expect(screen.getByLabelText("Meta")).toBeTruthy();
+    expect(screen.queryByLabelText("Meta")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(onRetryStartingBalance).toHaveBeenCalledOnce();
   });
 
-  it("shows the early completion month and ends the projection at the goal", async () => {
+  it("keeps accumulation independent from objective targets", () => {
     const { container } = render(
       <PortfolioObjectiveProjection
         objective={{ ...objective, targetAmount: 16_000 }}
@@ -371,20 +430,42 @@ describe("PortfolioObjectiveProjection", () => {
       target: { value: "2000" },
     });
 
-    expect(screen.getByRole("status").textContent).toBe(
-      "Meta alcançada em 2 meses.",
-    );
+    expect(screen.queryByText(/Meta alcançada/)).toBeNull();
+    expect(screen.queryByText("Meta nominal")).toBeNull();
+    expect(screen.queryByText("Meta real")).toBeNull();
     expect(
       [
         ...container.querySelectorAll(
           ".recharts-xAxis .recharts-cartesian-axis-tick-value",
         ),
       ].map((tick) => tick.textContent),
-    ).toEqual(["0", "1m", "2m"]);
+    ).toEqual(["0", "2a", "4a", "6a", "8a", "10a"]);
+    expect(
+      screen.getByRole("table", { name: "Evolução anual da projeção" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("row", { name: /Ano 10/ })).toBeTruthy();
+    expect(container.querySelector(".recharts-reference-line")).toBeNull();
     expect(
       screen.getByRole("region", { name: "Resultado da simulação" })
         .textContent,
     ).toContain("Patrimônio nominal projetado");
+  });
+
+  it("does not show a goal in accumulation mode even when an objective exists", () => {
+    const { container } = render(
+      <PortfolioObjectiveProjection
+        objective={{ ...objective, targetAmount: 10_000 }}
+        startingBalance={{
+          amount: 12_335.83,
+          referenceDate: "2026-10-01",
+          source: "portfolio",
+          completeness: "complete",
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/Meta/)).toBeNull();
+    expect(container.querySelector(".recharts-reference-line")).toBeNull();
   });
 
   it("asks for a starting balance instead of treating missing data as zero", () => {
@@ -434,9 +515,7 @@ describe("PortfolioObjectiveProjection", () => {
     expect(screen.getByText("Planejar patrimônio").className).toContain(
       "text-lg",
     );
-    expect((screen.getByLabelText("Meta") as HTMLInputElement).value).toBe(
-      "1.000.000,00",
-    );
+    expect(screen.queryByLabelText("Meta")).toBeNull();
     expect(
       (screen.getByLabelText("Prazo em anos") as HTMLInputElement).value,
     ).toBe("10");
@@ -462,6 +541,22 @@ describe("PortfolioObjectiveProjection", () => {
     expect(
       screen.getByRole("region", { name: "Resultado da simulação" }),
     ).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "O que quer simular" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Quanto preciso aportar?" }),
+    );
+    expect(screen.getByLabelText("Meta")).toBeTruthy();
+    expect(screen.getByLabelText("Valor da meta representa")).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "O que quer simular" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Quanto posso acumular?" }),
+    );
+    expect(screen.queryByLabelText("Meta")).toBeNull();
+    expect(screen.queryByLabelText("Valor da meta representa")).toBeNull();
   });
 
   it("supports the required-contribution scenario with an inflation-adjusted starting payment", async () => {
@@ -484,6 +579,8 @@ describe("PortfolioObjectiveProjection", () => {
     await user.click(
       screen.getByRole("option", { name: "Quanto preciso aportar?" }),
     );
+    expect(screen.getByLabelText("Meta")).toBeTruthy();
+    expect(screen.getByLabelText("Valor da meta representa")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Prazo em anos"), {
       target: { value: "5" },
     });
@@ -493,10 +590,6 @@ describe("PortfolioObjectiveProjection", () => {
     fireEvent.change(screen.getByLabelText("Inflação anual (%)"), {
       target: { value: "4" },
     });
-    await user.click(
-      screen.getByRole("combobox", { name: "Valor da meta representa" }),
-    );
-    await user.click(screen.getByRole("option", { name: "Valor futuro" }));
     await user.click(screen.getByRole("combobox", { name: "Aporte aumenta?" }));
     await user.click(
       screen.getByRole("option", { name: "Aumentar pela inflação" }),
@@ -505,6 +598,11 @@ describe("PortfolioObjectiveProjection", () => {
     await waitFor(() => {
       expect(screen.getByText("Aporte mensal inicial necessário")).toBeTruthy();
     });
+    const calculatedContribution = screen.getByLabelText(
+      "Aporte mensal",
+    ) as HTMLInputElement;
+    expect(calculatedContribution.disabled).toBe(true);
+    expect(calculatedContribution.value).not.toBe("0,00");
     expect(
       screen.getByText(
         "Valor do primeiro mês; reajuste anual pela inflação escolhida.",
@@ -554,10 +652,6 @@ describe("PortfolioObjectiveProjection", () => {
     fireEvent.change(screen.getByLabelText("Inflação anual (%)"), {
       target: { value: "-99.99" },
     });
-    await user.click(
-      screen.getByRole("combobox", { name: "Valor da meta representa" }),
-    );
-    await user.click(screen.getByRole("option", { name: "Valor futuro" }));
     await user.click(screen.getByRole("combobox", { name: "Aporte aumenta?" }));
     await user.click(screen.getByRole("option", { name: "Manter valor" }));
 
