@@ -84,9 +84,6 @@ export function PortfolioOverview({
   emergencyReserve?: EmergencyReserveCalculation;
   onReviewClassification?: (trigger: HTMLElement) => void;
 }) {
-  const positionsWithCaveat =
-    insights.provisionalEstimates + insights.unavailableEstimates;
-
   const institutionDistribution = insights.chartAllocations.map((item) => ({
     label: item.institution,
     value: item.value,
@@ -101,7 +98,7 @@ export function PortfolioOverview({
   return (
     <div className="space-y-5">
       <Card className="motion-content-reveal">
-        <CardContent className="grid gap-4 p-4 sm:gap-5 sm:p-6 lg:grid-cols-3 lg:divide-x lg:gap-0">
+        <CardContent className="grid gap-4 p-4 sm:gap-5 sm:p-6 lg:grid-cols-2 lg:divide-x lg:gap-0">
           <div className="min-w-0 lg:px-6 lg:first:pl-0 lg:last:pr-0">
             <p className="text-sm font-medium text-muted-foreground">
               Valor conhecido da carteira
@@ -122,23 +119,6 @@ export function PortfolioOverview({
                 posições com valor
               </span>
             </p>
-          </div>
-          <div className="border-t pt-4 lg:border-t-0 lg:px-6 lg:pt-0 lg:first:pl-0 lg:last:pr-0">
-            <p className="text-sm font-medium text-muted-foreground">
-              Qualidade dos valores
-            </p>
-            <p className="mt-1 text-xl font-semibold sm:text-2xl">
-              {insights.provisionalEstimates === 0 &&
-              insights.unavailableEstimates === 0
-                ? "Sem estimativas pendentes"
-                : `${positionsWithCaveat} ${positionsWithCaveat === 1 ? "posição" : "posições"} com ressalva`}
-            </p>
-            {(insights.provisionalEstimates > 0 ||
-              insights.unavailableEstimates > 0) && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Alguns valores podem ser estimativas.
-              </p>
-            )}
           </div>
         </CardContent>
       </Card>

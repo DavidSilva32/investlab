@@ -93,7 +93,7 @@ function classified(
 }
 
 describe("PortfolioOverview", () => {
-  it("keeps the three-part summary and top-position rows responsive", () => {
+  it("keeps the two-part summary and top-position rows responsive", () => {
     const html = renderToStaticMarkup(
       <PortfolioOverview
         classifiedPositions={[]}
@@ -102,8 +102,9 @@ describe("PortfolioOverview", () => {
       />,
     );
 
-    expect(html).toContain("lg:grid-cols-3 lg:divide-x");
+    expect(html).toContain("lg:grid-cols-2 lg:divide-x");
     expect(html).toContain("lg:border-t-0 lg:px-6");
+    expect(html).not.toContain("Qualidade dos valores");
     expect(html).toContain(
       "text-2xl font-semibold tracking-tight text-primary tabular-nums sm:text-3xl lg:text-4xl",
     );
@@ -193,11 +194,13 @@ describe("PortfolioOverview", () => {
     );
 
     expect(html).toContain("Estimativas de CDB com ressalvas");
+    expect(html).not.toContain("Qualidade dos valores");
+    expect(html).not.toContain("posições com ressalva");
     expect(html).toContain("Próximo vencimento informado");
     expect(html).toContain("Informação");
   });
 
-  it("uses singular wording for one position with a caveat", () => {
+  it("keeps one CDB caveat in the actionable diagnostics instead of repeating it in the summary", () => {
     const html = renderToStaticMarkup(
       <PortfolioOverview
         classifiedPositions={[]}
@@ -211,7 +214,10 @@ describe("PortfolioOverview", () => {
       />,
     );
 
-    expect(html).toContain("1 posição com ressalva");
+    expect(html).not.toContain("Qualidade dos valores");
+    expect(html).not.toContain("1 posição com ressalva");
+    expect(html).toContain("Estimativas de CDB com ressalvas");
+    expect(html).toContain("Ver posições");
   });
 
   it("explains empty and unavailable chart data without financial judgment", () => {

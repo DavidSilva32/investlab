@@ -330,6 +330,13 @@ const explicitPortfolioPhrases = [
   "valor da carteira",
   "carteira inteira",
 ];
+const unsupportedBankAccountReferences = [
+  "conta corrente",
+  "conta bancaria",
+  "conta da corretora",
+  "conta do banco",
+  "conta na corretora",
+];
 
 const intentClues: Record<PortfolioChatIntent, string[]> = {
   "portfolio-total": [
@@ -423,6 +430,16 @@ export function rankPortfolioChatIntentSuggestions(
 ): PortfolioChatIntent[] {
   const words = new Set(normalizePortfolioChatText(message).split(" "));
   if (words.size === 0 || limit <= 0) return [];
+  const asksAboutUntrackedAccountBalance =
+    unsupportedBankAccountReferences.some((reference) =>
+      containsPhrase([...words].join(" "), reference),
+    );
+  if (
+    asksAboutUntrackedAccountBalance &&
+    hasKeyword(words, ["quanto", "saldo", "valor", "valores"])
+  ) {
+    return (["portfolio-total"] as PortfolioChatIntent[]).slice(0, limit);
+  }
 
   return intentOrder
     .map((intent, order) => ({
@@ -640,6 +657,17 @@ export function recognizePortfolioChatMessage(
   );
   const hasPortfolioValueQuestion =
     hasKeyword(words, valueDetails) || words.has("quanto");
+  const hasGenericAccountReference =
+    /\b(?:na|em|nas|nos)\s+(?:(?:minha|minhas|meu|meus)\s+)?contas?(?:\s+(?:hoje|agora|atualmente|neste\s+momento|no\s+momento))*\s*$/.test(
+      normalizedMessage,
+    );
+  const hasUnsupportedBankAccountReference =
+    unsupportedBankAccountReferences.some((reference) =>
+      containsPhrase(normalizedMessage, reference),
+    );
+  if (isValue && hasUnsupportedBankAccountReference) {
+    return null;
+  }
   const matchedAssetClassIds = [
     ...new Set(
       assetClassAliases
@@ -663,7 +691,15 @@ export function recognizePortfolioChatMessage(
   const requestsFiiList =
     asksForList &&
     (hasKeyword(words, ["fii", "fiis"]) || classMatch?.id === "fiis");
-  if (requestsEquityList && requestsFiiList) return null;
+  const supportedListClassIds = new Set(["brazilian_equities", "fiis"]);
+  if (
+    asksForList &&
+    (matchedAssetClassIds.length > 1 ||
+      matchedAssetClassIds.some((id) => !supportedListClassIds.has(id)) ||
+      hasKeyword(words, ["etf", "etfs"]))
+  ) {
+    return null;
+  }
   if (requestsEquityList || requestsFiiList) {
     return {
       intent: "asset-list",
@@ -675,6 +711,7 @@ export function recognizePortfolioChatMessage(
   const isAssetValueQuestion =
     hasPortfolioValueQuestion &&
     !explicitlyPortfolioWide &&
+    !hasGenericAccountReference &&
     !isPlanning &&
     !isGap &&
     !isMonthlyContribution &&
@@ -696,6 +733,7 @@ export function recognizePortfolioChatMessage(
     );
   const isPortfolioTotal =
     explicitlyPortfolioWide ||
+    (hasGenericAccountReference && hasPortfolioValueQuestion) ||
     (!hasObjectiveReference &&
       !hasSpecificReferent &&
       hasPortfolioValueQuestion &&
@@ -755,6 +793,10 @@ function extractAssetQuery(message: string): string | null {
   const query = message
     .slice(lastPreposition.index + lastPreposition[0].length)
     .replace(/[?!.]+$/, "")
+    .replace(
+      /(?:\s+(?:hoje|agora|atualmente|neste\s+momento|no\s+momento))+$/i,
+      "",
+    )
     .replace(/^(?:um|uma|o|a|meu|minha)\s+/i, "")
     .replace(/\b(?:ativo|empresa|ticker|código|codigo|papel)\b/gi, " ")
     .replace(/\s+/g, " ")

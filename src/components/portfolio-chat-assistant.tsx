@@ -25,6 +25,10 @@ import {
 } from "@/lib/portfolio-chat-intent";
 import { PortfolioChatManualPosition } from "@/components/portfolio-chat-manual-position";
 import {
+  PortfolioChatWealthChart,
+  type PortfolioDestinationValue,
+} from "@/components/portfolio-chat-wealth-chart";
+import {
   PortfolioChatMicrophone,
   type PortfolioChatMicrophoneHandle,
 } from "@/components/portfolio-chat-microphone";
@@ -76,6 +80,7 @@ type ObjectivesResponse = {
     knownTotal?: number | null;
     missingPositionCount?: number | null;
     unvaluedPositionCount?: number | null;
+    categories?: PortfolioDestinationValue[];
   } | null;
 };
 type AssetChoice = {
@@ -91,7 +96,13 @@ type PortfolioChatQueryResponse = {
 type PortfolioChatQueryMatch = PortfolioChatMatch & {
   intent: "asset-value" | "asset-class-value" | "asset-list";
 };
-type ChatMessage = { id: number; role: "user" | "assistant"; content: string };
+type ChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  destinationBreakdown?: PortfolioDestinationValue[];
+  portfolioTotal?: number;
+};
 const emptyObjectives: ObjectiveSummary[] = [];
 
 type ObjectiveCategory =
@@ -187,9 +198,25 @@ function getPortfolioTotalMessage(data: ObjectivesResponse) {
       : `${incompleteCount} posições sem valor confirmado`;
   const extra =
     incompleteCount > 0
-      ? ` Há ${incompletePositions}; o patrimônio conhecido pode mudar quando esses dados forem atualizados.`
-      : " Esse total considera os valores conhecidos e acompanhados na plataforma.";
-  return `Seu patrimônio conhecido é ${formatCurrency(knownTotal)}.${extra}`;
+      ? `Há ${incompletePositions}; o total pode mudar.`
+      : "Valores acompanhados na plataforma.";
+  return extra;
+}
+
+function getPortfolioTotalValue(data: ObjectivesResponse) {
+  const value = data.destinationSummary?.knownTotal;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function getPortfolioDestinationBreakdown(data: ObjectivesResponse) {
+  return data.destinationSummary?.categories?.filter(
+    (category) =>
+      Number.isFinite(category.value) &&
+      category.value > 0 &&
+      Number.isFinite(category.percentage),
+  );
 }
 
 function getMonthlyPlannedContributionMessage(objective: ObjectiveSummary) {
@@ -353,10 +380,24 @@ function AssistantConversation({
   const messageSequence = useRef(0);
 
   const addMessage = useCallback(
-    (role: ChatMessage["role"], content: string) => {
+    (
+      role: ChatMessage["role"],
+      content: string,
+      destinationBreakdown?: PortfolioDestinationValue[],
+      portfolioTotal?: number,
+    ) => {
       const id = messageSequence.current + 1;
       messageSequence.current = id;
-      setMessages((current) => [...current, { id, role, content }]);
+      setMessages((current) => [
+        ...current,
+        {
+          id,
+          role,
+          content,
+          ...(destinationBreakdown?.length ? { destinationBreakdown } : {}),
+          ...(portfolioTotal !== undefined ? { portfolioTotal } : {}),
+        },
+      ]);
     },
     [],
   );
@@ -425,7 +466,12 @@ function AssistantConversation({
     if (nextIntent === "portfolio-total") {
       if (objectivesQuery.isSuccess) {
         setIntent(null);
-        addMessage("assistant", getPortfolioTotalMessage(objectivesQuery.data));
+        addMessage(
+          "assistant",
+          getPortfolioTotalMessage(objectivesQuery.data),
+          getPortfolioDestinationBreakdown(objectivesQuery.data),
+          getPortfolioTotalValue(objectivesQuery.data),
+        );
       } else {
         setPendingMessage(label);
         void resolvePendingMessage(label);
@@ -521,7 +567,12 @@ function AssistantConversation({
       if (match.intent === "portfolio-total") {
         setIntent(null);
         setSelectedObjective(null);
-        addMessage("assistant", getPortfolioTotalMessage(response));
+        addMessage(
+          "assistant",
+          getPortfolioTotalMessage(response),
+          getPortfolioDestinationBreakdown(response),
+          getPortfolioTotalValue(response),
+        );
         return;
       }
       if (match.intent === "planning") {
@@ -802,6 +853,12 @@ function AssistantConversation({
                       {message.role === "assistant" ? (
                         <AssistantMessage className="motion-content-reveal">
                           {message.content}
+                          {message.portfolioTotal !== undefined && (
+                            <PortfolioChatWealthChart
+                              categories={message.destinationBreakdown ?? []}
+                              knownTotal={message.portfolioTotal}
+                            />
+                          )}
                         </AssistantMessage>
                       ) : (
                         <Message align="end">

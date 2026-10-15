@@ -97,7 +97,8 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Patrimônio conhecido");
     expect(html).toMatch(/R\$\s400,00/);
     expect(html).toContain("2 de 2");
-    expect(html).toContain("Dados de 01/09/2026");
+    expect(html).not.toContain("Data-base");
+    expect(html).not.toContain("Dados de 01/09/2026");
     expect(html).toContain("Ações rápidas");
     expect(html).toContain("Adicionar posição");
     expect(html).not.toContain('href="/portfolio#manual-positions"');

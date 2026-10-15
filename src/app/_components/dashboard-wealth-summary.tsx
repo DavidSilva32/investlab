@@ -1,12 +1,9 @@
-import { CalendarDays } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import type {
   PortfolioInsightPosition,
   PortfolioInsights,
 } from "@/lib/portfolio-insights";
 import { formatCurrency } from "@/lib/utils";
-
-const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 export function DashboardWealthSummary({
   positions,
@@ -15,27 +12,12 @@ export function DashboardWealthSummary({
   positions: PortfolioInsightPosition[];
   insights: PortfolioInsights;
 }) {
-  const effectiveDates = positions.map(
-    (position) => position.estimatedThrough ?? position.referenceDate,
-  );
-  const referenceDates = [
-    ...new Set(
-      effectiveDates.filter((value): value is string => Boolean(value)),
-    ),
-  ];
-  const referenceDate =
-    referenceDates.length === 1 &&
-    positions.length > 0 &&
-    effectiveDates.every((value) => value === referenceDates[0])
-      ? referenceDates[0]
-      : null;
-  const dataDateIsMixed = referenceDates.length > 0 && referenceDate === null;
   const missingValueCount = insights.unvaluedPositions;
 
   return (
     <section aria-labelledby="dashboard-where-am-i">
       <Card className="motion-content-reveal overflow-hidden shadow-sm">
-        <CardContent className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(10rem,0.7fr)_minmax(12rem,0.8fr)] lg:items-center">
+        <CardContent className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(10rem,0.7fr)] lg:items-center">
           <div className="min-w-0">
             <h2 id="dashboard-where-am-i" className="text-lg font-semibold">
               Patrimônio conhecido
@@ -59,19 +41,6 @@ export function DashboardWealthSummary({
                 {missingValueCount} sem valor atual
               </p>
             )}
-          </div>
-          <div className="border-t pt-4 lg:border-l lg:border-t-0 lg:py-2 lg:pl-5">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <CalendarDays aria-hidden="true" className="size-3.5" />
-              Data-base
-            </p>
-            <p className="mt-1 text-sm font-semibold">
-              {referenceDate
-                ? `Dados de ${date.format(new Date(`${referenceDate}T00:00:00Z`))}`
-                : dataDateIsMixed
-                  ? "Datas-base variadas ou incompletas"
-                  : "Não informada"}
-            </p>
           </div>
         </CardContent>
       </Card>

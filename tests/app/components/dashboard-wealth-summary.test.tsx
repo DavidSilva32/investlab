@@ -8,7 +8,7 @@ import { getPortfolioInsights } from "@/lib/portfolio-insights";
 describe("DashboardWealthSummary", () => {
   afterEach(cleanup);
 
-  it("shows known wealth, valued position count, and the shared reference date", () => {
+  it("shows known wealth and valued position count without a generic reference date", () => {
     const positions = [
       {
         product: "Tesouro Selic",
@@ -31,14 +31,15 @@ describe("DashboardWealthSummary", () => {
       /<p class="mt-2 text-3xl font-semibold tracking-tight text-primary tabular-nums sm:text-4xl">R\$/,
     );
     expect(html).toContain("1 de 1");
-    expect(html).toContain("Dados de 01/09/2026");
+    expect(html).not.toContain("Data-base");
+    expect(html).not.toContain("Dados de 01/09/2026");
     expect(html).not.toContain(
       "Patrimônio da carteira que o InvestLab conhece",
     );
     expect(html).not.toContain("Dos valores registrados");
   });
 
-  it("shows mixed or incomplete dates and values missing from the known total", () => {
+  it("shows missing values without a generic mixed-date warning", () => {
     const positions = [
       {
         product: "CDB",
@@ -64,10 +65,10 @@ describe("DashboardWealthSummary", () => {
 
     expect(html).toContain("1 de 2");
     expect(html).toContain("1 sem valor atual");
-    expect(html).toContain("Datas-base variadas ou incompletas");
+    expect(html).not.toContain("Datas-base variadas ou incompletas");
   });
 
-  it("uses the CDB estimate date instead of its older snapshot date", () => {
+  it("does not surface an individual valuation date in the summary", () => {
     const positions = [
       {
         product: "CDB",
@@ -87,11 +88,12 @@ describe("DashboardWealthSummary", () => {
       />,
     );
 
-    expect(html).toContain("Dados de 08/09/2026");
+    expect(html).not.toContain("Data-base");
+    expect(html).not.toContain("Dados de 08/09/2026");
     expect(html).not.toContain("Dados de 01/09/2026");
   });
 
-  it("shows varied dates when positions have different effective valuation dates", () => {
+  it("keeps mixed valuation dates out of the summary", () => {
     const positions = [
       {
         product: "CDB",
@@ -117,7 +119,8 @@ describe("DashboardWealthSummary", () => {
       />,
     );
 
-    expect(html).toContain("Datas-base variadas ou incompletas");
+    expect(html).not.toContain("Datas-base variadas ou incompletas");
+    expect(html).not.toContain("Data-base");
     expect(html).not.toContain("Dados de 08/09/2026");
     expect(html).not.toContain("Dados de 07/09/2026");
   });
@@ -132,6 +135,7 @@ describe("DashboardWealthSummary", () => {
 
     expect(html).toContain("Ainda sem valores conhecidos");
     expect(html).toContain("0 de 0");
-    expect(html).toContain("Não informada");
+    expect(html).not.toContain("Data-base");
+    expect(html).not.toContain("Não informada");
   });
 });

@@ -7,10 +7,8 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  destinationChartConfig,
-  PortfolioObjectivesOverview,
-} from "@/app/portfolio/_components/portfolio-objectives-overview";
+import { PortfolioObjectivesOverview } from "@/app/portfolio/_components/portfolio-objectives-overview";
+import { destinationChartConfig } from "@/lib/portfolio-destination-chart";
 import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
