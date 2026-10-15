@@ -39,6 +39,15 @@ export type ObjectiveProjectionPoint = {
   realTargetAmount: number;
 };
 
+export type ObjectiveProjectionMonth = {
+  month: number;
+  year: number;
+  monthlyContribution: number;
+  investedAmount: number;
+  nominalAmount: number;
+  purchasingPowerAmount: number;
+};
+
 export type ObjectiveProjectionResult = {
   mode: ObjectiveProjectionInput["mode"];
   targetBasis: ObjectiveProjectionInput["targetBasis"];
@@ -56,6 +65,7 @@ export type ObjectiveProjectionResult = {
   nominalGrowthAmount: number;
   targetReachedMonth: number | null;
   points: ObjectiveProjectionPoint[];
+  months: ObjectiveProjectionMonth[];
   contributionTiming: "end_of_month";
 };
 
@@ -159,6 +169,7 @@ export function simulateObjectiveProjection(
           ),
         );
   const points: ObjectiveProjectionPoint[] = [];
+  const monthlyPoints: ObjectiveProjectionMonth[] = [];
   const addPoint = (month: number) => {
     const elapsedInflation = annualInflationFactor ** (month / 12);
     points.push({
@@ -174,29 +185,22 @@ export function simulateObjectiveProjection(
   };
   addPoint(0);
 
-  for (
-    let month = 1;
-    month <= months &&
-    (input.mode === "required_contribution" || targetReachedMonth === null);
-    month += 1
-  ) {
+  for (let month = 1; month <= months; month += 1) {
     balance *= 1 + monthlyReturn;
     const targetAtMonth = getNominalTargetAtMonth(month);
-    if (input.mode === "project_balance" && balance >= targetAtMonth) {
+    if (
+      input.mode === "project_balance" &&
+      targetReachedMonth === null &&
+      balance >= targetAtMonth
+    ) {
       targetReachedMonth = month;
     }
     const annualAdjustment = input.adjustContributionsForInflation
       ? annualInflationFactor ** Math.floor((month - 1) / 12)
       : 1;
     const plannedContribution = contributionToProject * annualAdjustment;
-    const contribution =
-      input.mode === "project_balance" && targetReachedMonth === null
-        ? Math.min(plannedContribution, Math.max(0, targetAtMonth - balance))
-        : input.mode === "project_balance"
-          ? 0
-          : plannedContribution;
-    balance += contribution;
-    totalInvested += contribution;
+    balance += plannedContribution;
+    totalInvested += plannedContribution;
     if (
       input.mode === "project_balance" &&
       targetReachedMonth === null &&
@@ -205,13 +209,23 @@ export function simulateObjectiveProjection(
       targetReachedMonth = month;
     }
 
+    monthlyPoints.push({
+      month,
+      year: Math.ceil(month / 12),
+      monthlyContribution: assertFiniteResult(plannedContribution),
+      investedAmount: roundToCents(assertFiniteResult(totalInvested)),
+      nominalAmount: roundToCents(assertFiniteResult(balance)),
+      purchasingPowerAmount: roundToCents(
+        assertFiniteResult(balance / annualInflationFactor ** (month / 12)),
+      ),
+    });
+
     if (month % 12 === 0 || month === months || targetReachedMonth === month) {
       addPoint(month);
     }
   }
 
-  const projectedMonths = targetReachedMonth ?? months;
-  const elapsedInflation = annualInflationFactor ** (projectedMonths / 12);
+  const elapsedInflation = annualInflationFactor ** input.horizonYears;
 
   return {
     mode: input.mode,
@@ -234,6 +248,7 @@ export function simulateObjectiveProjection(
     ),
     targetReachedMonth,
     points,
+    months: monthlyPoints,
     contributionTiming: "end_of_month",
   };
 }

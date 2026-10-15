@@ -354,7 +354,7 @@ describe("PortfolioObjectiveProjection", () => {
     expect(onRetryStartingBalance).toHaveBeenCalledOnce();
   });
 
-  it("shows the early completion month and ends the projection at the goal", async () => {
+  it("shows early goal completion while keeping the chart through the horizon", () => {
     const { container } = render(
       <PortfolioObjectiveProjection
         objective={{ ...objective, targetAmount: 16_000 }}
@@ -380,11 +380,33 @@ describe("PortfolioObjectiveProjection", () => {
           ".recharts-xAxis .recharts-cartesian-axis-tick-value",
         ),
       ].map((tick) => tick.textContent),
-    ).toEqual(["0", "1m", "2m"]);
+    ).toEqual(["0", "2a", "4a", "6a", "8a", "10a"]);
+    expect(
+      screen.getByRole("table", { name: "Evolução anual da projeção" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("row", { name: /Ano 10/ })).toBeTruthy();
+    expect(container.querySelector(".recharts-reference-line")).toBeTruthy();
     expect(
       screen.getByRole("region", { name: "Resultado da simulação" })
         .textContent,
     ).toContain("Patrimônio nominal projetado");
+  });
+
+  it("marks a goal already reached at the start of the chart", () => {
+    const { container } = render(
+      <PortfolioObjectiveProjection
+        objective={{ ...objective, targetAmount: 10_000 }}
+        startingBalance={{
+          amount: 12_335.83,
+          referenceDate: "2026-10-01",
+          source: "portfolio",
+          completeness: "complete",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toBe("Meta já alcançada.");
+    expect(container.querySelector(".recharts-reference-line")).toBeTruthy();
   });
 
   it("asks for a starting balance instead of treating missing data as zero", () => {
@@ -505,6 +527,11 @@ describe("PortfolioObjectiveProjection", () => {
     await waitFor(() => {
       expect(screen.getByText("Aporte mensal inicial necessário")).toBeTruthy();
     });
+    const calculatedContribution = screen.getByLabelText(
+      "Aporte mensal",
+    ) as HTMLInputElement;
+    expect(calculatedContribution.disabled).toBe(true);
+    expect(calculatedContribution.value).not.toBe("0,00");
     expect(
       screen.getByText(
         "Valor do primeiro mês; reajuste anual pela inflação escolhida.",

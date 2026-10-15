@@ -2,7 +2,15 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowUpRight, Calculator, ChevronDown } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, Line, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +44,7 @@ import {
 } from "@/lib/objective-projection";
 import type { ObjectiveProjectionResult } from "@/lib/objective-projection";
 import type { PortfolioObjective } from "./portfolio-objective-card";
+import { ProjectionAnnualSchedule } from "./projection-annual-schedule";
 
 type Props = {
   objective: PortfolioObjective | null;
@@ -594,7 +603,13 @@ export function PortfolioObjectiveProjection({
           <RangeField
             label="Aporte mensal"
             id="projection-contribution"
-            value={monthlyContribution}
+            value={
+              mode === "required_contribution"
+                ? formatProjectionAmountInput(
+                    result?.requiredMonthlyContribution ?? null,
+                  )
+                : monthlyContribution
+            }
             min={0}
             max={maximumProjectionAmount}
             sliderMin={0}
@@ -842,10 +857,12 @@ function ProjectionResult({
               label="Patrimônio nominal projetado"
               value={formatCurrency(result.projectedNominalAmount)}
               emphasized
+              description="Resultado ao fim do prazo escolhido."
             />
             <ResultMetric
               label="Patrimônio em poder de compra de hoje"
               value={formatCurrency(realValue)}
+              description="Valores descontados pela inflação informada."
             />
           </>
         )}
@@ -990,9 +1007,24 @@ function ProjectionResult({
               strokeWidth={1.5}
               dot={false}
             />
+            {result.mode === "project_balance" &&
+              result.targetReachedMonth !== null && (
+                <ReferenceLine
+                  x={result.targetReachedMonth / 12}
+                  stroke="var(--chart-category-3)"
+                  strokeDasharray="3 3"
+                  label={{
+                    value: "Meta",
+                    position: "insideTopRight",
+                    fill: "var(--chart-category-3)",
+                    fontSize: 11,
+                  }}
+                />
+              )}
           </AreaChart>
         </ChartContainer>
       </div>
+      <ProjectionAnnualSchedule result={result} />
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <ArrowUpRight aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
         Cenário matemático baseado nas premissas escolhidas. Retorno e inflação
