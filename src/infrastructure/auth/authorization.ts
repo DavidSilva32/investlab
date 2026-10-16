@@ -9,7 +9,8 @@ export async function getAuthenticatedUser(
   const session = await auth.api.getSession({
     headers: requestHeaders ?? (await headers()),
   });
-  return session?.user ?? null;
+  if (!session?.user || session.user.accountStatus === "DISABLED") return null;
+  return session.user;
 }
 
 export async function requireAuthenticatedUser(

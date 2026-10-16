@@ -65,6 +65,58 @@ export class AuthService {
     };
   }
 
+  async canAttemptLogin(email: string) {
+    const user = await authRepository.getLoginEligibility(email);
+    return !user || user.accountStatus !== "DISABLED";
+  }
+
+  async recordSuccessfulLogin(email: string) {
+    return authRepository.recordSuccessfulLogin(email);
+  }
+
+  async updateManagedUser(input: {
+    id: string;
+    actorId: string;
+    name?: string;
+    role?: "USER" | "ADMIN";
+    isActive?: boolean;
+  }) {
+    const updates = { ...input };
+    if (updates.name !== undefined) {
+      updates.name = updates.name.trim();
+      if (!updates.name) {
+        throw new ApplicationError("Informe o nome do usuário.", 400);
+      }
+    }
+    if (
+      updates.name === undefined &&
+      updates.role === undefined &&
+      updates.isActive === undefined
+    ) {
+      throw new ApplicationError(
+        "Informe ao menos um campo para atualizar.",
+        400,
+      );
+    }
+
+    const result = await authRepository.updateManagedUser(updates);
+    if (result.kind === "not-found") {
+      throw new ApplicationError("Usuário não encontrado.", 404);
+    }
+    if (result.kind === "self-deactivation") {
+      throw new ApplicationError(
+        "Você não pode desativar a própria conta.",
+        409,
+      );
+    }
+    if (result.kind === "last-admin") {
+      throw new ApplicationError(
+        "Não é possível desativar ou remover o papel do último administrador ativo.",
+        409,
+      );
+    }
+  }
+
   async createInvitation(emailValue: string, createdByUserId: string) {
     const email = emailValue.trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(email)) {

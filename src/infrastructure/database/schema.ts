@@ -26,6 +26,8 @@ export const authUsers = pgTable(
     emailVerified: boolean().notNull().default(false),
     image: text(),
     role: varchar({ length: 10 }).notNull().default("USER"),
+    accountStatus: varchar({ length: 12 }).notNull().default("ACTIVE"),
+    lastLoginAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
@@ -34,6 +36,10 @@ export const authUsers = pgTable(
       sql`lower(trim(${table.email}))`,
     ),
     check("auth_users_role_check", sql`${table.role} in ('USER', 'ADMIN')`),
+    check(
+      "auth_users_account_status_check",
+      sql`${table.accountStatus} in ('ACTIVE', 'PENDING', 'DISABLED')`,
+    ),
   ],
 );
 export const imports = pgTable(

@@ -112,6 +112,19 @@ describe("AppShell", () => {
     paintReferences.forEach((id) => expect(gradientIds).toContain(id));
   });
 
+  it("uses the semantic high-contrast sidebar surface and visible focus ring", () => {
+    navigation.pathname = "/carteira";
+    renderShell();
+
+    const sidebar = screen.getByRole("complementary");
+    expect(sidebar.className).toContain("bg-sidebar-background");
+    expect(sidebar.className).toContain("text-sidebar-foreground");
+    expect(sidebar.className).toContain("border-sidebar-border");
+    expect(
+      screen.getAllByRole("link", { name: "Carteira" })[0].className,
+    ).toContain("focus-visible:ring-sidebar-ring");
+  });
+
   it("groups administration in a disclosure for admins and keeps the current route open", () => {
     navigation.pathname = "/admin/usuarios";
     renderShell(admin);
@@ -151,6 +164,24 @@ describe("AppShell", () => {
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("link", { name: "Usuários" }));
 
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("shows the non-active users link in the mobile admin disclosure and closes after selection", async () => {
+    navigation.pathname = "/carteira";
+    const user = userEvent.setup();
+    renderShell(admin);
+
+    await user.click(screen.getByRole("button", { name: "Abrir menu" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Administração" }),
+    );
+    const usersLink = within(dialog).getByRole("link", { name: "Usuários" });
+    expect(usersLink.getAttribute("href")).toBe("/admin/usuarios");
+    expect(usersLink.hasAttribute("aria-current")).toBe(false);
+
+    await user.click(usersLink);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 

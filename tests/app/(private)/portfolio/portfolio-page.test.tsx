@@ -7,6 +7,7 @@ vi.mock("@/components/logout-button", () => ({
 }));
 
 import PortfolioPage from "@/app/(private)/portfolio/page";
+import { ShellUserProvider } from "@/components/app-shell";
 import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
 
 describe("PortfolioPage", () => {
@@ -17,9 +18,17 @@ describe("PortfolioPage", () => {
     ["other", "Visão geral"],
   ])("selects %s as the matching portfolio view", async (view, label) => {
     const html = renderToStaticMarkup(
-      <QueryClientWrapper>
-        {await PortfolioPage({ searchParams: Promise.resolve({ view }) })}
-      </QueryClientWrapper>,
+      <ShellUserProvider
+        user={{
+          name: "Test User",
+          email: "user@example.com",
+          role: "USER",
+        }}
+      >
+        <QueryClientWrapper>
+          {await PortfolioPage({ searchParams: Promise.resolve({ view }) })}
+        </QueryClientWrapper>
+      </ShellUserProvider>,
     );
     expect(html).toContain("atualizada pela API");
     expect(html).toContain("Carregando carteira");

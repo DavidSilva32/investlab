@@ -41,4 +41,23 @@ describe("PrivateLayout", () => {
     });
     expect(result.props.children).toBe(children);
   });
+
+  it("normalizes a missing profile name and preserves the ADMIN role for the shell", async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValueOnce({
+      id: "admin-1",
+      name: null,
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as never);
+    const children = "private admin" as unknown as ReactNode;
+
+    const result = await PrivateLayout({ children });
+
+    expect(result.type).toBe(ShellUserProvider);
+    expect(result.props.user).toEqual({
+      name: "",
+      email: "admin@example.com",
+      role: "ADMIN",
+    });
+  });
 });

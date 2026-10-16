@@ -94,10 +94,127 @@ export class AuthRepository {
         name: authUsers.name,
         email: authUsers.email,
         role: authUsers.role,
+        accountStatus: authUsers.accountStatus,
+        lastLoginAt: authUsers.lastLoginAt,
         createdAt: authUsers.createdAt,
+        updatedAt: authUsers.updatedAt,
       })
       .from(authUsers)
       .orderBy(desc(authUsers.createdAt));
+  }
+
+  async getLoginEligibility(email: string) {
+    const [user] = await getDatabaseClient()
+      .select({ id: authUsers.id, accountStatus: authUsers.accountStatus })
+      .from(authUsers)
+      .where(eq(authUsers.email, email))
+      .limit(1);
+    return user ?? null;
+  }
+
+  async recordSuccessfulLogin(email: string) {
+    return getDatabaseClient().transaction(async (transaction) => {
+      const now = new Date();
+      const [updated] = await transaction
+        .update(authUsers)
+        .set({
+          accountStatus: "ACTIVE",
+          lastLoginAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(authUsers.email, email),
+            sql`${authUsers.accountStatus} <> 'DISABLED'`,
+          ),
+        )
+        .returning({ id: authUsers.id });
+      if (updated) return true;
+
+      const [user] = await transaction
+        .select({ id: authUsers.id })
+        .from(authUsers)
+        .where(eq(authUsers.email, email))
+        .limit(1);
+      if (user) {
+        await transaction
+          .delete(authSessions)
+          .where(eq(authSessions.userId, user.id));
+      }
+      return false;
+    });
+  }
+
+  async updateManagedUser(input: {
+    id: string;
+    actorId: string;
+    name?: string;
+    role?: "USER" | "ADMIN";
+    isActive?: boolean;
+  }) {
+    return getDatabaseClient().transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext('investlab-auth-user-lifecycle'))`,
+      );
+      const [target] = await transaction
+        .select({
+          id: authUsers.id,
+          role: authUsers.role,
+          accountStatus: authUsers.accountStatus,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.id, input.id))
+        .for("update")
+        .limit(1);
+      if (!target) return { kind: "not-found" as const };
+      if (input.actorId === target.id && input.isActive === false) {
+        return { kind: "self-deactivation" as const };
+      }
+
+      const removesActiveAdmin =
+        target.accountStatus !== "DISABLED" &&
+        target.role === "ADMIN" &&
+        (input.isActive === false || input.role === "USER");
+      if (removesActiveAdmin) {
+        const [result] = await transaction
+          .select({ total: sql<number>`count(*)::int` })
+          .from(authUsers)
+          .where(
+            and(
+              eq(authUsers.role, "ADMIN"),
+              sql`${authUsers.accountStatus} <> 'DISABLED'`,
+            ),
+          );
+        if (Number(result?.total ?? 0) <= 1) {
+          return { kind: "last-admin" as const };
+        }
+      }
+
+      const updates: {
+        updatedAt: Date;
+        name?: string;
+        role?: "USER" | "ADMIN";
+        accountStatus?: "ACTIVE" | "DISABLED";
+      } = { updatedAt: new Date() };
+      if (input.name !== undefined) updates.name = input.name;
+      if (input.role !== undefined) updates.role = input.role;
+      if (input.isActive !== undefined) {
+        updates.accountStatus = input.isActive ? "ACTIVE" : "DISABLED";
+      }
+
+      const [updated] = await transaction
+        .update(authUsers)
+        .set(updates)
+        .where(eq(authUsers.id, target.id))
+        .returning({ id: authUsers.id });
+      if (!updated) return { kind: "not-found" as const };
+      if (target.accountStatus !== "DISABLED" && input.isActive === false) {
+        await transaction
+          .delete(authSessions)
+          .where(eq(authSessions.userId, target.id));
+      }
+      return { kind: "updated" as const };
+    });
   }
 
   async listInvitations() {

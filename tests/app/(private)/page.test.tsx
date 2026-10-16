@@ -10,6 +10,7 @@ vi.mock("@/app/(private)/_components/dashboard-client", () => ({
   ),
 }));
 import HomePage, { dynamic } from "@/app/(private)/page";
+import { ShellUserProvider } from "@/components/app-shell";
 import { QueryClientWrapper } from "../../utils/query-client-wrapper";
 describe("HomePage", () => {
   it("renders only the API-backed dashboard shell", async () => {
@@ -17,7 +18,15 @@ describe("HomePage", () => {
       searchParams: Promise.resolve({ openImport: "1" }),
     });
     const html = renderToStaticMarkup(
-      <QueryClientWrapper>{page}</QueryClientWrapper>,
+      <ShellUserProvider
+        user={{
+          name: "Test User",
+          email: "user@example.com",
+          role: "USER",
+        }}
+      >
+        <QueryClientWrapper>{page}</QueryClientWrapper>
+      </ShellUserProvider>,
     );
     expect(dynamic).toBe("force-dynamic");
     expect(html).toContain("Dashboard");

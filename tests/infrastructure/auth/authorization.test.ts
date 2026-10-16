@@ -22,6 +22,7 @@ const user = {
   emailVerified: true,
   createdAt: new Date(),
   updatedAt: new Date(),
+  accountStatus: "ACTIVE",
 };
 
 describe("server authorization helpers", () => {
@@ -30,6 +31,16 @@ describe("server authorization helpers", () => {
 
   it("returns null for absent or expired persistent sessions", async () => {
     mocks.getSession.mockResolvedValue(null);
+    expect(await getAuthenticatedUser(new Headers())).toBeNull();
+    await expect(requireAuthenticatedUser(new Headers())).rejects.toMatchObject(
+      { statusCode: 401 },
+    );
+  });
+
+  it("rejects an existing session when its account has been deactivated", async () => {
+    mocks.getSession.mockResolvedValue({
+      user: { ...user, accountStatus: "DISABLED" },
+    });
     expect(await getAuthenticatedUser(new Headers())).toBeNull();
     await expect(requireAuthenticatedUser(new Headers())).rejects.toMatchObject(
       { statusCode: 401 },

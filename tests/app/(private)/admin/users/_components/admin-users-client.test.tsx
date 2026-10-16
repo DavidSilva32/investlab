@@ -81,7 +81,7 @@ describe("AdminUsersClient remaining action states", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<AdminUsersClient />);
-    await screen.findByText("person@example.com");
+    await screen.findAllByText("person@example.com");
     await user.click(screen.getByRole("button", { name: "Revogar" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenNthCalledWith(
@@ -117,7 +117,7 @@ describe("AdminUsersClient remaining action states", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<AdminUsersClient />);
-    await screen.findByText("person@example.com");
+    await screen.findAllByText("person@example.com");
     await user.click(screen.getByRole("button", { name: "Revogar" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(expect.any(String)),
@@ -165,7 +165,7 @@ describe("AdminUsersClient error and link operations", () => {
         Response.json({ message: "Convite recusado" }, { status: 400 }),
       )
       .mockResolvedValueOnce(
-        Response.json({ message: "RevogaÃ§Ã£o recusada" }, { status: 409 }),
+        Response.json({ message: "Revogação recusada" }, { status: 409 }),
       );
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -192,7 +192,7 @@ describe("AdminUsersClient error and link operations", () => {
     );
     await user.click(screen.getByRole("button", { name: "Revogar" }));
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("RevogaÃ§Ã£o recusada"),
+      expect(toast.error).toHaveBeenCalledWith("Revogação recusada"),
     );
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/admin/invitations/invite-1",
@@ -368,5 +368,103 @@ describe("AdminUsersClient", () => {
       await screen.findByDisplayValue(/redefinir-senha\/secret-reset/),
     ).toBeTruthy();
     expect(screen.getByText("Links de redefinição de senha")).toBeTruthy();
+  });
+
+  it("updates a user's name through the admin API and reloads the list", async () => {
+    const accountData = {
+      users: [
+        {
+          id: "user-1",
+          name: "Ana Souza",
+          email: "ana@example.com",
+          role: "USER",
+          accountStatus: "ACTIVE",
+          lastLoginAt: "2026-10-15T12:00:00.000Z",
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      invitations: [],
+      passwordResets: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(accountData))
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+      .mockResolvedValueOnce(Response.json(accountData));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Editar nome de ana@example.com",
+      }),
+    );
+    const nameInput = screen.getByRole("textbox", { name: "Nome" });
+    await user.clear(nameInput);
+    await user.type(nameInput, "Ana Silva");
+    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        "/api/admin/users/user-1",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ name: "Ana Silva" }),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Conta atualizada."),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the edit dialog open and shows server feedback when an update fails", async () => {
+    const accountData = {
+      users: [
+        {
+          id: "user-1",
+          name: "Ana Souza",
+          email: "ana@example.com",
+          role: "USER",
+          accountStatus: "PENDING",
+          lastLoginAt: null,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      invitations: [],
+      passwordResets: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(accountData))
+      .mockResolvedValueOnce(
+        Response.json(
+          { message: "O último administrador não pode ser removido." },
+          { status: 409 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Editar nome de ana@example.com",
+      }),
+    );
+    const nameInput = screen.getByRole("textbox", { name: "Nome" });
+    await user.clear(nameInput);
+    await user.type(nameInput, "Ana Silva");
+    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "O último administrador não pode ser removido.",
+      ),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });

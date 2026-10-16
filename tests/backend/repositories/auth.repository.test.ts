@@ -136,6 +136,152 @@ describe("AuthRepository", () => {
     expect(resetOrderBy).toHaveBeenCalledOnce();
   });
 
+  it("records first and most recent successful login only for active users", async () => {
+    const updateQuery = createUpdateQuery([{ id: "user-1" }]);
+    const transaction = {
+      update: vi.fn().mockReturnValue(updateQuery),
+      select: vi.fn(),
+      delete: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.recordSuccessfulLogin("user@example.com"),
+    ).resolves.toBe(true);
+    expect(updateQuery.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountStatus: "ACTIVE",
+        lastLoginAt: expect.any(Date),
+        updatedAt: expect.any(Date),
+      }),
+    );
+    expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it("clears sessions when a concurrent deactivation prevents login recording", async () => {
+    const updateQuery = createUpdateQuery([]);
+    const sessionDeleteWhere = vi.fn().mockResolvedValue(undefined);
+    const sessionDelete = vi
+      .fn()
+      .mockReturnValue({ where: sessionDeleteWhere });
+    const selectLimit = vi.fn().mockResolvedValue([{ id: "user-1" }]);
+    const transaction = {
+      update: vi.fn().mockReturnValue(updateQuery),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ where: vi.fn(() => ({ limit: selectLimit })) })),
+      })),
+      delete: sessionDelete,
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.recordSuccessfulLogin("user@example.com"),
+    ).resolves.toBe(false);
+    expect(sessionDelete).toHaveBeenCalledOnce();
+    expect(sessionDeleteWhere).toHaveBeenCalledOnce();
+  });
+
+  it("serializes lifecycle changes and deletes sessions when deactivating a user", async () => {
+    const userLimit = vi
+      .fn()
+      .mockResolvedValue([
+        { id: "user-1", role: "USER", accountStatus: "PENDING" },
+      ]);
+    const userForUpdate = vi.fn().mockReturnValue({ limit: userLimit });
+    const userWhere = vi.fn().mockReturnValue({ for: userForUpdate });
+    const userFrom = vi.fn().mockReturnValue({ where: userWhere });
+    const updateQuery = createUpdateQuery([{ id: "user-1" }]);
+    const sessionDeleteWhere = vi.fn().mockResolvedValue(undefined);
+    const sessionDelete = vi
+      .fn()
+      .mockReturnValue({ where: sessionDeleteWhere });
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({ from: userFrom })),
+      update: vi.fn().mockReturnValue(updateQuery),
+      delete: sessionDelete,
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.updateManagedUser({
+        id: "user-1",
+        actorId: "admin-1",
+        isActive: false,
+      }),
+    ).resolves.toEqual({ kind: "updated" });
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    expect(userForUpdate).toHaveBeenCalledWith("update");
+    expect(updateQuery.set).toHaveBeenCalledWith({
+      accountStatus: "DISABLED",
+      updatedAt: expect.any(Date),
+    });
+    expect(sessionDelete).toHaveBeenCalledOnce();
+    expect(sessionDeleteWhere).toHaveBeenCalledOnce();
+  });
+
+  it("prevents self-deactivation and removal of the last active administrator", async () => {
+    const makeTransaction = (target: unknown, activeAdmins = 0) => {
+      const targetLimit = vi.fn().mockResolvedValue([target]);
+      const targetFor = vi.fn().mockReturnValue({ limit: targetLimit });
+      const targetWhere = vi.fn().mockReturnValue({ for: targetFor });
+      const targetFrom = vi.fn().mockReturnValue({ where: targetWhere });
+      const countWhere = vi.fn().mockResolvedValue([{ total: activeAdmins }]);
+      const countFrom = vi.fn().mockReturnValue({ where: countWhere });
+      const select = vi
+        .fn()
+        .mockReturnValueOnce({ from: targetFrom })
+        .mockReturnValue({ from: countFrom });
+      return {
+        execute: vi.fn().mockResolvedValue(undefined),
+        update: vi.fn(),
+        select,
+        delete: vi.fn(),
+      };
+    };
+    const selfUpdateTransaction = makeTransaction({
+      id: "admin-1",
+      role: "ADMIN",
+      accountStatus: "ACTIVE",
+    });
+    const lastAdminTransaction = makeTransaction(
+      { id: "admin-1", role: "ADMIN", accountStatus: "ACTIVE" },
+      1,
+    );
+    database.transaction
+      .mockImplementationOnce(async (callback) =>
+        callback(selfUpdateTransaction),
+      )
+      .mockImplementationOnce(async (callback) =>
+        callback(lastAdminTransaction),
+      );
+
+    await expect(
+      repository.updateManagedUser({
+        id: "admin-1",
+        actorId: "admin-1",
+        isActive: false,
+      }),
+    ).resolves.toEqual({ kind: "self-deactivation" });
+    await expect(
+      repository.updateManagedUser({
+        id: "admin-1",
+        actorId: "admin-2",
+        role: "USER",
+      }),
+    ).resolves.toEqual({ kind: "last-admin" });
+    expect(selfUpdateTransaction.execute).toHaveBeenCalledOnce();
+    expect(lastAdminTransaction.execute).toHaveBeenCalledOnce();
+    expect(selfUpdateTransaction.update).not.toHaveBeenCalled();
+    expect(lastAdminTransaction.update).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["password reset", "revokePasswordReset"],
     ["invitation", "revokeInvitation"],

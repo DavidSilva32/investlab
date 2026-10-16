@@ -40,12 +40,46 @@ const resetSchema = z.object({
   token: z.string().min(32),
   password: z.string().min(12).max(128),
 });
+const managedUserUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    role: z.enum(["USER", "ADMIN"]).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (body) =>
+      body.name !== undefined ||
+      body.role !== undefined ||
+      body.isActive !== undefined,
+  );
 
 export class AuthController {
   async adminData(request: Request) {
     try {
       await requireRole("ADMIN", request.headers);
       return Response.json(await authService.listAdministrationData());
+    } catch (error) {
+      return errorResponse(error);
+    }
+  }
+
+  async updateUser(request: Request, id: string) {
+    try {
+      const admin = await requireRole("ADMIN", request.headers);
+      const body = managedUserUpdateSchema.safeParse(await jsonBody(request));
+      if (!body.success) {
+        return Response.json(
+          { message: "Informe nome, papel ou situação válida para atualizar." },
+          { status: 400 },
+        );
+      }
+      await authService.updateManagedUser({
+        id,
+        actorId: admin.id,
+        ...body.data,
+      });
+      return Response.json({ ok: true });
     } catch (error) {
       return errorResponse(error);
     }
@@ -178,6 +212,12 @@ export class AuthController {
           { status: 429, headers: { "Retry-After": String(retryAfter) } },
         );
       }
+      if (!(await authService.canAttemptLogin(credentials.email))) {
+        return Response.json(
+          { message: "E-mail ou senha incorretos." },
+          { status: 401 },
+        );
+      }
       let response = await auth.api.signInEmail({
         body: credentials,
         headers: request.headers,
@@ -234,7 +274,15 @@ export class AuthController {
           });
         }
       }
-      if (response.ok) return response;
+      if (response.ok) {
+        if (!(await authService.recordSuccessfulLogin(credentials.email))) {
+          return Response.json(
+            { message: "E-mail ou senha incorretos." },
+            { status: 401 },
+          );
+        }
+        return response;
+      }
       if (response.status === 429)
         return Response.json(
           { message: "Muitas tentativas. Aguarde antes de tentar novamente." },

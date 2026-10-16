@@ -105,7 +105,7 @@ function Navigation({
             key={href}
             href={href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-brand/15 text-brand shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+            className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${active ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
           >
             <Icon aria-hidden="true" className="size-4" />
             {label}
@@ -130,7 +130,7 @@ function Navigation({
               type="button"
               variant="ghost"
               aria-label="Administração"
-              className="flex min-h-11 w-full justify-between rounded-xl px-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              className="flex min-h-11 w-full justify-between rounded-xl px-3 text-sm font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-sidebar-ring"
             >
               <span className="flex items-center gap-3">
                 <UserRoundCog aria-hidden="true" className="size-4" />
@@ -150,7 +150,7 @@ function Navigation({
                   aria-current={
                     pathname.startsWith("/admin/usuarios") ? "page" : undefined
                   }
-                  className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${pathname.startsWith("/admin/usuarios") ? "bg-brand/15 text-brand shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+                  className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${pathname.startsWith("/admin/usuarios") ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
                 >
                   Usuários
                 </Link>
@@ -161,7 +161,7 @@ function Navigation({
                 aria-current={
                   pathname.startsWith("/admin/usuarios") ? "page" : undefined
                 }
-                className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${pathname.startsWith("/admin/usuarios") ? "bg-brand/15 text-brand shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"}`}
+                className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${pathname.startsWith("/admin/usuarios") ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
               >
                 Usuários
               </Link>
@@ -190,15 +190,15 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-background lg:flex">
-      <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-card/55 p-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+      <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar-background p-5 text-sidebar-foreground lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col [&_.text-brand]:text-sidebar-brand [&_.text-foreground]:text-sidebar-foreground">
         <div className="px-1 py-2">
           <Brand />
         </div>
         <div className="mt-8">
           <Navigation pathname={pathname} user={user} />
         </div>
-        <div className="mt-auto border-t border-border/70 pt-5">
-          <p className="mb-3 px-3 text-xs font-medium text-muted-foreground">
+        <div className="mt-auto border-t border-sidebar-border pt-5 [&>button]:text-sidebar-muted [&>button]:hover:text-sidebar-foreground [&>button]:focus-visible:ring-sidebar-ring">
+          <p className="mb-3 px-3 text-xs font-medium text-sidebar-muted">
             CONTA
           </p>
           <LogoutButton />
@@ -218,12 +218,12 @@ export function AppShell({
                   <Menu aria-hidden="true" className="size-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent>
+              <SheetContent className="bg-sidebar-background text-sidebar-foreground [&_.text-brand]:text-sidebar-brand [&_.text-foreground]:text-sidebar-foreground">
                 <Brand />
                 <div className="mt-9">
                   <Navigation pathname={pathname} user={user} closeOnSelect />
                 </div>
-                <div className="mt-8 border-t pt-4">
+                <div className="mt-8 border-t border-sidebar-border pt-4 [&>button]:text-sidebar-muted [&>button]:hover:text-sidebar-foreground [&>button]:focus-visible:ring-sidebar-ring">
                   <LogoutButton />
                 </div>
               </SheetContent>

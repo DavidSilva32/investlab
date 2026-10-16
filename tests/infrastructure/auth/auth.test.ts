@@ -127,7 +127,24 @@ describe("Better Auth configuration", () => {
         role: "ADMIN",
       }),
     ).resolves.toEqual({
-      data: { email: "person@example.com", role: "USER" },
+      data: {
+        email: "person@example.com",
+        role: "USER",
+        accountStatus: "PENDING",
+      },
+    });
+  });
+
+  it("keeps account lifecycle fields server-controlled", async () => {
+    vi.stubEnv("AUTH_SECRET", "a-secure-auth-secret-with-at-least-32-chars");
+    vi.stubEnv("NODE_ENV", "development");
+    await loadAuth();
+    const options = mocks.authOptions as {
+      user: { additionalFields: Record<string, { input?: boolean }> };
+    };
+    expect(options.user.additionalFields).toMatchObject({
+      accountStatus: { input: false },
+      lastLoginAt: { input: false },
     });
   });
 });

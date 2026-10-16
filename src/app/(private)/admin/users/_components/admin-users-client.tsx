@@ -13,15 +13,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  AdminUsersTable,
+  type ManagedUser,
+} from "@/app/(private)/admin/users/_components/admin-users-table";
 
 type AccessData = {
-  users: Array<{
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    createdAt: string;
-  }>;
+  users: ManagedUser[];
   invitations: AccessLink[];
   passwordResets: AccessLink[];
 };
@@ -125,6 +123,35 @@ export function AdminUsersClient() {
           ? error.message
           : "Não foi possível revogar o link.",
       );
+    }
+  }
+
+  async function updateUser(
+    id: string,
+    changes: { name?: string; role?: "USER" | "ADMIN"; isActive?: boolean },
+  ): Promise<boolean> {
+    try {
+      const response = await fetch(`/api/admin/users/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          getApiMessage(body, "Não foi possível atualizar esta conta."),
+        );
+      }
+      toast.success("Conta atualizada.");
+      await loadData();
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar esta conta.",
+      );
+      return false;
     }
   }
 
@@ -284,8 +311,10 @@ export function AdminUsersClient() {
             <div>
               <CardTitle>Usuários</CardTitle>
               <CardDescription>
-                Contas cadastradas e papel de acesso. A lista não permite
-                consultar dados financeiros.
+                Pesquise contas e convites, confira os acessos e atualize o
+                nome, o papel ou a situação. Dados financeiros não aparecem
+                nesta área. O último acesso fica sem data quando ainda não foi
+                registrado pelo sistema.
               </CardDescription>
             </div>
             <Button
@@ -298,32 +327,17 @@ export function AdminUsersClient() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {loading ? (
-            <p role="status">Carregando usuários…</p>
-          ) : !data ? null : data.users.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nenhum usuário cadastrado.
+            <p className="p-5 text-sm text-muted-foreground" role="status">
+              Carregando usuários…
             </p>
-          ) : (
-            <ul className="divide-y">
-              {(data?.users ?? []).map((user) => (
-                <li
-                  className="flex flex-wrap justify-between gap-2 py-3"
-                  key={user.id}
-                >
-                  <span>
-                    <span className="block font-medium">{user.name}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {user.email}
-                    </span>
-                  </span>
-                  <span className="text-sm">
-                    {user.role === "ADMIN" ? "Administrador" : "Usuário"}
-                  </span>
-                </li>
-              ))}
-            </ul>
+          ) : !data ? null : (
+            <AdminUsersTable
+              users={data.users}
+              invitations={data.invitations}
+              onUpdate={updateUser}
+            />
           )}
         </CardContent>
       </Card>

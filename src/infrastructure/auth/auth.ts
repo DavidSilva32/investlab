@@ -38,6 +38,17 @@ export const auth = betterAuth({
         defaultValue: "USER",
         input: false,
       },
+      accountStatus: {
+        type: "string",
+        required: false,
+        defaultValue: "PENDING",
+        input: false,
+      },
+      lastLoginAt: {
+        type: "date",
+        required: false,
+        input: false,
+      },
     },
   },
   session: {
@@ -72,6 +83,7 @@ export const auth = betterAuth({
             ...user,
             email: user.email.trim().toLowerCase(),
             role: "USER",
+            accountStatus: "PENDING",
           },
         }),
       },

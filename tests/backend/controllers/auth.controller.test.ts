@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
     createPasswordReset: vi.fn(),
     resetPassword: vi.fn(),
     checkLoginRateLimit: vi.fn(),
+    canAttemptLogin: vi.fn(),
+    recordSuccessfulLogin: vi.fn(),
+    updateManagedUser: vi.fn(),
     bootstrapLegacyAdministrator: vi.fn(),
   },
   requireRole: vi.fn(),
@@ -58,6 +61,8 @@ describe("AuthController", () => {
   beforeEach(() => {
     Object.values(mocks.service).forEach((mock) => mock.mockReset());
     mocks.service.checkLoginRateLimit.mockResolvedValue(null);
+    mocks.service.canAttemptLogin.mockResolvedValue(true);
+    mocks.service.recordSuccessfulLogin.mockResolvedValue(true);
     mocks.requireRole.mockReset().mockResolvedValue(admin);
     mocks.signInEmail
       .mockReset()
@@ -88,6 +93,36 @@ describe("AuthController", () => {
     await expect(failure.json()).resolves.toEqual({
       message: "Não foi possível concluir a solicitação.",
     });
+  });
+
+  it("updates managed users only after administrator authorization and strict validation", async () => {
+    const success = await controller.updateUser(
+      request({ name: " New Name ", role: "USER", isActive: false }),
+      "user-1",
+    );
+    expect(success.status).toBe(200);
+    expect(mocks.service.updateManagedUser).toHaveBeenCalledWith({
+      id: "user-1",
+      actorId: "admin-1",
+      name: "New Name",
+      role: "USER",
+      isActive: false,
+    });
+
+    expect(
+      (
+        await controller.updateUser(
+          request({ email: "changed@example.com" }),
+          "u1",
+        )
+      ).status,
+    ).toBe(400);
+    mocks.requireRole.mockRejectedValueOnce(
+      new ApplicationError("Denied", 403),
+    );
+    expect(
+      (await controller.updateUser(request({ name: "A" }), "u1")).status,
+    ).toBe(403);
   });
 
   it("validates and creates invitations only for administrators", async () => {
@@ -315,6 +350,18 @@ describe("AuthController", () => {
         )
       ).status,
     ).toBe(503);
+  });
+
+  it("rejects disabled accounts with the generic credential response", async () => {
+    mocks.service.canAttemptLogin.mockResolvedValueOnce(false);
+    const response = await controller.legacyLogin(
+      request({ email: "disabled@example.com", password: "password" }),
+    );
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      message: "E-mail ou senha incorretos.",
+    });
+    expect(mocks.signInEmail).not.toHaveBeenCalled();
   });
 
   it("completes valid sign-ins and retries legacy administrator bootstrap", async () => {

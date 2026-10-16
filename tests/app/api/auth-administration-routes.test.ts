@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   controller: {
     adminData: vi.fn(),
+    updateUser: vi.fn(),
     createInvite: vi.fn(),
     revokeInvite: vi.fn(),
     revokePasswordReset: vi.fn(),
@@ -28,6 +29,7 @@ import {
   GET as getUsers,
   POST as postInvite,
 } from "@/app/api/admin/users/route";
+import { PATCH as patchUser } from "@/app/api/admin/users/[id]/route";
 import { DELETE as deleteInvite } from "@/app/api/admin/invitations/[id]/route";
 import { POST as postReset } from "@/app/api/admin/password-resets/route";
 import { DELETE as deleteReset } from "@/app/api/admin/password-resets/[id]/route";
@@ -49,6 +51,19 @@ describe("auth administration route handlers", () => {
     ).resolves.toBe(response);
     expect(mocks.controller.adminData).toHaveBeenCalledWith(request);
     expect(mocks.controller.createInvite).toHaveBeenCalledOnce();
+  });
+
+  it("delegates protected account updates through the dynamic route", async () => {
+    const request = new Request("https://test/api/admin/users/user-1", {
+      method: "PATCH",
+      body: JSON.stringify({ isActive: false }),
+    });
+    const response = Response.json({ ok: true });
+    mocks.controller.updateUser.mockResolvedValueOnce(response);
+    await expect(
+      patchUser(request, { params: Promise.resolve({ id: "user-1" }) }),
+    ).resolves.toBe(response);
+    expect(mocks.controller.updateUser).toHaveBeenCalledWith(request, "user-1");
   });
 
   it("delegates invitation and reset revocation with route parameters", async () => {

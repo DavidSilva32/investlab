@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
     hasAnyUser: vi.fn(),
     promoteLegacyAdmin: vi.fn(),
     checkAuthenticationRateLimits: vi.fn(),
+    getLoginEligibility: vi.fn(),
+    recordSuccessfulLogin: vi.fn(),
+    updateManagedUser: vi.fn(),
   },
   signUpEmail: vi.fn(),
   hashPassword: vi.fn(),
@@ -103,6 +106,88 @@ describe("AuthService", () => {
         .update("email:person@example.com")
         .digest("hex"),
     );
+  });
+
+  it("allows new, active, and pending accounts to log in but rejects disabled accounts", async () => {
+    mocks.repository.getLoginEligibility
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "user-1", accountStatus: "ACTIVE" })
+      .mockResolvedValueOnce({ id: "user-2", accountStatus: "PENDING" })
+      .mockResolvedValueOnce({ id: "user-3", accountStatus: "DISABLED" });
+    await expect(authService.canAttemptLogin("new@example.com")).resolves.toBe(
+      true,
+    );
+    await expect(
+      authService.canAttemptLogin("active@example.com"),
+    ).resolves.toBe(true);
+    await expect(
+      authService.canAttemptLogin("pending@example.com"),
+    ).resolves.toBe(true);
+    await expect(
+      authService.canAttemptLogin("disabled@example.com"),
+    ).resolves.toBe(false);
+  });
+
+  it("records a successful login through the repository", async () => {
+    mocks.repository.recordSuccessfulLogin.mockResolvedValue(true);
+    await expect(
+      authService.recordSuccessfulLogin("person@example.com"),
+    ).resolves.toBe(true);
+    expect(mocks.repository.recordSuccessfulLogin).toHaveBeenCalledWith(
+      "person@example.com",
+    );
+  });
+
+  it("validates and maps managed-user lifecycle updates", async () => {
+    await expect(
+      authService.updateManagedUser({ id: "u1", actorId: "admin-1" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      authService.updateManagedUser({
+        id: "u1",
+        actorId: "admin-1",
+        name: "   ",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    mocks.repository.updateManagedUser
+      .mockResolvedValueOnce({ kind: "updated" })
+      .mockResolvedValueOnce({ kind: "not-found" })
+      .mockResolvedValueOnce({ kind: "self-deactivation" })
+      .mockResolvedValueOnce({ kind: "last-admin" });
+    await expect(
+      authService.updateManagedUser({
+        id: "u1",
+        actorId: "admin-1",
+        name: " User ",
+      }),
+    ).resolves.toBeUndefined();
+    expect(mocks.repository.updateManagedUser).toHaveBeenCalledWith({
+      id: "u1",
+      actorId: "admin-1",
+      name: "User",
+    });
+    await expect(
+      authService.updateManagedUser({
+        id: "missing",
+        actorId: "admin-1",
+        role: "USER",
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    await expect(
+      authService.updateManagedUser({
+        id: "admin-1",
+        actorId: "admin-1",
+        isActive: false,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      authService.updateManagedUser({
+        id: "u1",
+        actorId: "admin-1",
+        role: "USER",
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it("fails closed when the rate-limit secret is missing", async () => {
