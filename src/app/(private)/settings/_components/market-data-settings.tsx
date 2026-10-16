@@ -1,8 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ChevronDown,
@@ -11,7 +9,6 @@ import {
   RefreshCw,
   XCircle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
@@ -25,7 +22,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { getApiMessage } from "@/lib/api-message";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -58,7 +54,6 @@ function ageLabel(value: string) {
 }
 
 export function MarketDataSettings() {
-  const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryKey: queryKeys.settings.marketData(),
     queryFn: () =>
@@ -70,84 +65,6 @@ export function MarketDataSettings() {
   });
   const status = statusQuery.data ?? null;
   const loading = statusQuery.isPending;
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const loadStatus = async () => {
-    const result = await statusQuery.refetch();
-    if (result.error) setError(result.error.message);
-  };
-
-  async function refresh() {
-    setRefreshing(true);
-    setError(null);
-    setNotice("Preparando atualização dos dados de mercado.");
-    let remaining = 1;
-    let initialTotal: number | null = null;
-    let updated = 0;
-    let unavailable = 0;
-    let apiSuccessMessage = "";
-    try {
-      while (remaining > 0) {
-        const response = await fetch("/api/screener/market/refresh", {
-          method: "POST",
-          cache: "no-store",
-        });
-        const body = (await response.json()) as {
-          message?: string;
-          remainingIssuers?: number;
-          totalStaleIssuers?: number;
-          updatedIssuers?: number;
-          unavailableIssuers?: number;
-          attemptedIssuers?: number;
-        };
-        if (!response.ok) {
-          toast.error(
-            getApiMessage(body, "A atualização de mercado não foi concluída."),
-          );
-          setNotice(null);
-          return;
-        }
-        apiSuccessMessage = getApiMessage(body, "") || apiSuccessMessage;
-        initialTotal ??= body.totalStaleIssuers ?? 0;
-        updated += body.updatedIssuers ?? 0;
-        unavailable += body.unavailableIssuers ?? 0;
-        remaining = body.remainingIssuers ?? 0;
-        setNotice(
-          `Atualizando dados de mercado: ${initialTotal - remaining} de ${initialTotal} emissores.`,
-        );
-        if (remaining > 0 && (body.attemptedIssuers ?? 0) === 0) {
-          toast.error("A atualização não avançou. Tente novamente mais tarde.");
-          setNotice(null);
-          return;
-        }
-      }
-      await loadStatus();
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.analyses.all,
-      });
-      const unavailableSummary =
-        unavailable === 1
-          ? "; 1 emissor indisponível"
-          : unavailable > 1
-            ? `; ${number.format(unavailable)} emissores indisponíveis`
-            : "";
-      const successMessage =
-        apiSuccessMessage ||
-        `Mercado atualizado: ${number.format(updated)} emissores com cotação validada${unavailableSummary}.`;
-      if (unavailable > 0) toast.warning(successMessage);
-      else toast.success(successMessage);
-      setNotice(null);
-    } catch {
-      toast.error("Não foi possível atualizar os dados de mercado.");
-      setNotice(null);
-      await loadStatus();
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
   const run = status?.latestRun;
   const label = !run
     ? "Ainda não executada"
@@ -163,21 +80,6 @@ export function MarketDataSettings() {
       : run.status === "COMPLETED"
         ? CheckCircle2
         : XCircle;
-  const refreshDisabled = refreshing || loading || run?.status === "RUNNING";
-  const refreshButton = (
-    <Button
-      className="w-full shrink-0 sm:w-auto"
-      onClick={() => void refresh()}
-      disabled={refreshDisabled}
-    >
-      <RefreshCw
-        className={`size-4 ${refreshing ? "animate-spin" : ""}`}
-        aria-hidden="true"
-      />
-      {refreshing ? "Atualizando…" : "Atualizar mercado"}
-    </Button>
-  );
-
   return (
     <Card>
       <CardHeader>
@@ -192,19 +94,14 @@ export function MarketDataSettings() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {(error || statusQuery.error) && (
+        {statusQuery.error && (
           <div
             role="alert"
             className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
           >
             <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-            <span>{error ?? statusQuery.error!.message}</span>
+            <span>{statusQuery.error.message}</span>
           </div>
-        )}
-        {notice && (
-          <p role="status" className="text-sm text-status-success">
-            {notice}
-          </p>
         )}
         {loading ? (
           <div
@@ -216,12 +113,9 @@ export function MarketDataSettings() {
             <span className="sr-only">
               Consultando a última atualização do mercado…
             </span>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="grid w-full gap-3 sm:grid-cols-2">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-              </div>
-              {refreshButton}
+            <div className="grid w-full gap-3 sm:grid-cols-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
             </div>
           </div>
         ) : (
@@ -242,7 +136,6 @@ export function MarketDataSettings() {
                     : "nenhuma cotação registrada"}
                 </p>
               </div>
-              {refreshButton}
             </div>
             <Collapsible className="rounded-lg border p-3 text-xs text-muted-foreground">
               <CollapsibleTrigger className="group flex w-full cursor-pointer items-center justify-between gap-2 rounded-sm border-b pb-3 text-left font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">

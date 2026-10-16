@@ -12,7 +12,9 @@ import {
 import { logger } from "@/infrastructure/logging/logger";
 
 const maxQuoteCallsPerBatch = 4;
-const marketFreshnessMs = 7 * 24 * 60 * 60 * 1000;
+// Leave one day of margin so a weekly scheduler does not run just before a
+// seven-day boundary while the previous weekly batch is still completing.
+const marketFreshnessMs = 6 * 24 * 60 * 60 * 1000;
 const invalidQuoteRetryMs = 60 * 60 * 1000;
 
 type QuoteProvider = Pick<BrapiMarketDataProvider, "getQuoteByTicker">;

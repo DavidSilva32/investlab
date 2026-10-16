@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Pencil } from "lucide-react";
+import {
+  MoreHorizontal,
+  Pencil,
+  UserRoundCheck,
+  UserRoundX,
+} from "lucide-react";
 import {
   PortfolioTable,
   type PortfolioTableColumn,
@@ -18,6 +23,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -222,34 +234,56 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
     {
       id: "actions",
       label: "Ações",
-      width: "10rem",
+      width: "4rem",
       sortable: false,
       render: (row) => {
         if (row.isPendingInvite) return null;
         const user = row.sourceUser;
         const isActive = user.accountStatus !== "DISABLED";
         return (
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label={`Editar nome de ${row.email}`}
-              onClick={() => {
-                setEditingUser(user);
-                setName(user.name);
-              }}
-            >
-              <Pencil aria-hidden="true" className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void onUpdate(row.id, { isActive: !isActive })}
-            >
-              {isActive ? "Desativar" : "Ativar"}
-            </Button>
+          <div className="flex justify-end">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  aria-label={`Ações para ${row.email}`}
+                >
+                  <MoreHorizontal aria-hidden="true" className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setEditingUser(user);
+                    setName(user.name);
+                  }}
+                >
+                  <Pencil aria-hidden="true" />
+                  Editar nome
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className={
+                    isActive
+                      ? "text-status-danger focus:text-status-danger"
+                      : undefined
+                  }
+                  onSelect={() =>
+                    void onUpdate(row.id, { isActive: !isActive })
+                  }
+                >
+                  {isActive ? (
+                    <UserRoundX aria-hidden="true" />
+                  ) : (
+                    <UserRoundCheck aria-hidden="true" />
+                  )}
+                  {isActive ? "Desativar conta" : "Ativar conta"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       },

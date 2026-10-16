@@ -462,6 +462,31 @@ describe("ScreenerMarketService", () => {
     expect(provider.getQuoteByTicker).not.toHaveBeenCalled();
   });
 
+  it("refreshes quotes older than six days so a weekly run leaves freshness margin", async () => {
+    const sixDaysAndOneMillisecondAgo = new Date(
+      now.getTime() - 6 * 24 * 60 * 60 * 1000 - 1,
+    );
+    const staleCompany = company("stale-weekly", ["SLCE3"], {
+      marketCap: 1000,
+      observedAt: sixDaysAndOneMillisecondAgo,
+      quoteObservedAt: sixDaysAndOneMillisecondAgo,
+      sourceTicker: "SLCE3",
+      classSemanticsValidated: true,
+      marketRefreshRunId: "market-run-previous-week",
+    });
+    const repository = repositoryFor([staleCompany]);
+    const provider = {
+      getQuoteByTicker: vi.fn().mockResolvedValue(quote("SLCE3")),
+    };
+    const service = new ScreenerMarketService(provider, repository, () => now);
+
+    await expect(service.refreshBatch()).resolves.toMatchObject({
+      attemptedIssuers: 1,
+      remainingIssuers: 0,
+    });
+    expect(provider.getQuoteByTicker).toHaveBeenCalledOnce();
+  });
+
   it("rejects a market refresh when another run already owns the lease", async () => {
     const repository = repositoryFor([company("slc")]);
     repository.startMarketRefreshRun.mockResolvedValue(null);

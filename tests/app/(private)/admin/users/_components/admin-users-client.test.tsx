@@ -248,9 +248,11 @@ describe("AdminUsersClient", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    render(<AdminUsersClient />);
+    const { container } = render(<AdminUsersClient />);
 
     await screen.findAllByText("Nenhum registro.");
+    expect(container.firstElementChild?.className).toContain("w-full");
+    expect(container.firstElementChild?.className).not.toContain("max-w-5xl");
     await user.click(
       screen.getByRole("button", {
         name: "Atualizar lista de usuários e links",
@@ -414,10 +416,9 @@ describe("AdminUsersClient", () => {
     render(<AdminUsersClient />);
 
     await user.click(
-      await screen.findByRole("button", {
-        name: "Editar nome de ana@example.com",
-      }),
+      await screen.findByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     const nameInput = screen.getByRole("textbox", { name: "Nome" });
     await user.clear(nameInput);
     await user.type(nameInput, "Ana Silva");
@@ -469,10 +470,9 @@ describe("AdminUsersClient", () => {
     render(<AdminUsersClient />);
 
     await user.click(
-      await screen.findByRole("button", {
-        name: "Editar nome de ana@example.com",
-      }),
+      await screen.findByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     const nameInput = screen.getByRole("textbox", { name: "Nome" });
     await user.clear(nameInput);
     await user.type(nameInput, "Ana Silva");
@@ -511,10 +511,9 @@ describe("AdminUsersClient", () => {
     render(<AdminUsersClient />);
 
     await user.click(
-      await screen.findByRole("button", {
-        name: "Editar nome de ana@example.com",
-      }),
+      await screen.findByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     await user.clear(screen.getByRole("textbox", { name: "Nome" }));
     await user.type(screen.getByRole("textbox", { name: "Nome" }), "Ana Silva");
     await user.click(screen.getByRole("button", { name: "Salvar nome" }));

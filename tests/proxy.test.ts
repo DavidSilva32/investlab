@@ -47,5 +47,21 @@ describe("optimistic authentication proxy", () => {
     expect(
       proxy(new NextRequest("http://test/redefinir-senha/token")).status,
     ).toBe(200);
+    for (const task of ["fundamentals", "market"]) {
+      expect(
+        proxy(
+          new NextRequest(`http://test/api/cron/weekly-screener-sync/${task}`, {
+            method: "GET",
+          }),
+        ).status,
+      ).toBe(200);
+    }
+    expect(
+      proxy(
+        new NextRequest("http://test/api/cron/weekly-screener-sync/unknown", {
+          method: "GET",
+        }),
+      ).status,
+    ).toBe(401);
   });
 });

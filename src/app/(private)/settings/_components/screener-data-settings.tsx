@@ -1,8 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ChevronDown,
@@ -11,7 +9,6 @@ import {
   RefreshCw,
   XCircle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
@@ -25,7 +22,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { getApiMessage } from "@/lib/api-message";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -68,7 +64,6 @@ function formatDuration(durationMs: number) {
 }
 
 export function ScreenerDataSettings() {
-  const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryKey: queryKeys.settings.screener(),
     queryFn: () =>
@@ -80,63 +75,6 @@ export function ScreenerDataSettings() {
   });
   const status = statusQuery.data ?? null;
   const loading = statusQuery.isPending;
-  const [syncing, setSyncing] = useState(false);
-  const [syncStartedAt, setSyncStartedAt] = useState(() => Date.now());
-  const [syncCurrentTime, setSyncCurrentTime] = useState(() => Date.now());
-  const [error, setError] = useState<string | null>(null);
-
-  const loadStatus = useCallback(async () => {
-    setError(null);
-    const result = await statusQuery.refetch();
-    if (result.error) setError(result.error.message);
-  }, [statusQuery]);
-
-  useEffect(() => {
-    if (!syncing) return;
-    const interval = window.setInterval(() => {
-      setSyncCurrentTime(Date.now());
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, [syncing]);
-
-  async function synchronize() {
-    const startedAt = Date.now();
-    setSyncStartedAt(startedAt);
-    setSyncCurrentTime(startedAt);
-    setSyncing(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/settings/screener/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        toast.error(
-          getApiMessage(
-            body,
-            "A sincronização não foi concluída. Consulte o status abaixo.",
-          ),
-        );
-        return;
-      }
-      toast.success(
-        getApiMessage(body, "Sincronização concluída com sucesso."),
-      );
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.analyses.all,
-      });
-    } catch {
-      toast.error(
-        "A sincronização não foi concluída. Consulte o status abaixo.",
-      );
-    } finally {
-      await loadStatus();
-      setSyncing(false);
-    }
-  }
-
   const run = status?.latestRun;
   const runLabel = !run
     ? "Ainda não executada"
@@ -152,19 +90,6 @@ export function ScreenerDataSettings() {
       : run.status === "COMPLETED"
         ? CheckCircle2
         : XCircle;
-  const synchronizeButton = (
-    <Button
-      className="w-full shrink-0 sm:w-auto"
-      onClick={() => void synchronize()}
-      disabled={syncing || loading}
-    >
-      <RefreshCw
-        className={`size-4 ${syncing ? "animate-spin" : ""}`}
-        aria-hidden="true"
-      />
-      {syncing ? "Sincronizando…" : "Sincronizar agora"}
-    </Button>
-  );
 
   return (
     <Card>
@@ -180,7 +105,7 @@ export function ScreenerDataSettings() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {(error || statusQuery.error) && (
+        {statusQuery.error && (
           <div
             role="alert"
             className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
@@ -189,19 +114,8 @@ export function ScreenerDataSettings() {
               className="mt-0.5 size-4 shrink-0"
               aria-hidden="true"
             />
-            <span>{error ?? statusQuery.error!.message}</span>
+            <span>{statusQuery.error.message}</span>
           </div>
-        )}
-        {syncing && (
-          <>
-            <p role="status" className="text-sm text-muted-foreground">
-              Sincronização iniciada.
-            </p>
-            <p aria-live="off" className="text-sm text-muted-foreground">
-              Tempo decorrido:{" "}
-              {formatDuration(Math.max(0, syncCurrentTime - syncStartedAt))}.
-            </p>
-          </>
         )}
         {loading && !status ? (
           <div
@@ -211,12 +125,9 @@ export function ScreenerDataSettings() {
             className="space-y-4"
           >
             <span className="sr-only">Consultando a última sincronização…</span>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="grid w-full gap-3 sm:grid-cols-2">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-              </div>
-              {synchronizeButton}
+            <div className="grid w-full gap-3 sm:grid-cols-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
             </div>
           </div>
         ) : (
@@ -237,7 +148,6 @@ export function ScreenerDataSettings() {
                     : "nenhuma sincronização concluída"}
                 </p>
               )}
-              {synchronizeButton}
             </div>
             {run ? (
               <>
@@ -320,8 +230,9 @@ export function ScreenerDataSettings() {
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Os dados ainda não foram sincronizados. Inicie a primeira carga
-                para habilitar o Screener.
+                Ainda não há dados sincronizados. A primeira carga será feita
+                pela execução semanal agendada; esta tela apenas acompanha o
+                status.
               </p>
             )}
           </>

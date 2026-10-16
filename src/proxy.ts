@@ -11,6 +11,8 @@ const publicPaths = new Set([
   "/api/auth/session",
   "/api/auth/invitations/activate",
   "/api/auth/password-resets/consume",
+  "/api/cron/weekly-screener-sync/fundamentals",
+  "/api/cron/weekly-screener-sync/market",
 ]);
 
 function isPublicPath(pathname: string) {

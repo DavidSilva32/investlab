@@ -203,8 +203,17 @@ describe("AdminUsersTable", () => {
       expect(onUpdate).toHaveBeenCalledWith("user-1", { role: "ADMIN" }),
     );
 
-    await user.click(screen.getByRole("button", { name: "Ativar" }));
+    await user.click(
+      screen.getByRole("button", { name: "Ações para bruno@example.com" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Ativar conta" }));
     expect(onUpdate).toHaveBeenCalledWith("user-2", { isActive: true });
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Desativar conta" }));
+    expect(onUpdate).toHaveBeenCalledWith("user-1", { isActive: false });
   });
 
   it("edits a user's name and keeps the dialog open when the update fails", async () => {
@@ -215,8 +224,9 @@ describe("AdminUsersTable", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     const nameInput = screen.getByRole("textbox", { name: "Nome" });
     await user.clear(nameInput);
     await user.type(nameInput, "Ana Silva");
@@ -236,8 +246,9 @@ describe("AdminUsersTable", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     const nameInput = screen.getByRole("textbox", { name: "Nome" });
     await user.clear(nameInput);
     await user.type(nameInput, "Ana Silva");
@@ -254,8 +265,9 @@ describe("AdminUsersTable", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -270,8 +282,9 @@ describe("AdminUsersTable", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
 
     await user.keyboard("{Escape}");
@@ -292,8 +305,9 @@ describe("AdminUsersTable", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Editar nome" }));
     const nameInput = screen.getByRole("textbox", { name: "Nome" });
     await user.clear(nameInput);
     await user.type(nameInput, "Ana Silva");
