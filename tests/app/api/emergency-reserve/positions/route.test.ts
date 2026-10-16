@@ -1,4 +1,8 @@
-﻿import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/infrastructure/auth/authorization", () => ({
+  getAuthenticatedUser: vi.fn(async () => ({ id: "owner-1", role: "ADMIN" })),
+  isLegacyPortfolioOwner: vi.fn(async () => true),
+}));
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const controller = vi.hoisted(() => ({ updatePositions: vi.fn() }));
 const logger = vi.hoisted(() => ({

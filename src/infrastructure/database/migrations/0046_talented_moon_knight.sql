@@ -1,0 +1,1 @@
+ALTER TABLE "imports" ADD CONSTRAINT "imports_userId_auth_users_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."auth_users"("id") ON DELETE cascade ON UPDATE no action;

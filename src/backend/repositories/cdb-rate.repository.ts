@@ -1,5 +1,6 @@
-import { and, desc, gt, inArray, lte, lt } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte, lt } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   cdbRateConfigurations,
   cdiDailyRates,
@@ -8,19 +9,29 @@ import {
 export class CdbRateRepository {
   async listConfigurations(assetCodes: string[]) {
     if (!assetCodes.length) return [];
+    const userId = requireDataOwnerId();
     return getDatabaseClient()
       .select()
       .from(cdbRateConfigurations)
-      .where(inArray(cdbRateConfigurations.assetCode, assetCodes));
+      .where(
+        and(
+          inArray(cdbRateConfigurations.assetCode, assetCodes),
+          eq(cdbRateConfigurations.userId, userId),
+        ),
+      );
   }
 
   async upsert(assetCode: string, cdiPercentage: string) {
+    const userId = requireDataOwnerId();
     return (
       await getDatabaseClient()
         .insert(cdbRateConfigurations)
-        .values({ assetCode, cdiPercentage })
+        .values({ userId, assetCode, cdiPercentage })
         .onConflictDoUpdate({
-          target: cdbRateConfigurations.assetCode,
+          target: [
+            cdbRateConfigurations.userId,
+            cdbRateConfigurations.assetCode,
+          ],
           set: { cdiPercentage, updatedAt: new Date() },
         })
         .returning()
@@ -29,12 +40,18 @@ export class CdbRateRepository {
 
   async upsertMany(assetCodes: string[], cdiPercentage: string) {
     if (!assetCodes.length) return 0;
+    const userId = requireDataOwnerId();
     return (
       await getDatabaseClient()
         .insert(cdbRateConfigurations)
-        .values(assetCodes.map((assetCode) => ({ assetCode, cdiPercentage })))
+        .values(
+          assetCodes.map((assetCode) => ({ userId, assetCode, cdiPercentage })),
+        )
         .onConflictDoUpdate({
-          target: cdbRateConfigurations.assetCode,
+          target: [
+            cdbRateConfigurations.userId,
+            cdbRateConfigurations.assetCode,
+          ],
           set: { cdiPercentage, updatedAt: new Date() },
         })
         .returning()

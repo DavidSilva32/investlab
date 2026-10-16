@@ -24,6 +24,20 @@ vi.mock("@/backend/services/objective-projection.service", () => ({
 
 import { PortfolioObjectivesController } from "@/backend/controllers/portfolio-objectives.controller";
 
+it("logs the target basis for a required-contribution projection", () => {
+  const result = {
+    mode: "required_contribution",
+    horizonYears: 8,
+    targetBasis: "today_purchasing_power",
+  };
+  projectionService.simulate.mockReturnValue(result);
+  const response = new PortfolioObjectivesController().simulateProjection(
+    { mode: "required_contribution" },
+    "required-projection",
+  );
+  expect(response.status).toBe(200);
+});
+
 describe("PortfolioObjectivesController", () => {
   beforeEach(() => vi.clearAllMocks());
 

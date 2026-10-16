@@ -1,27 +1,34 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import { stockOpportunityAnalysisSettings } from "@/infrastructure/database/schema";
-
-const settingsId = 1;
 
 export class StockOpportunityAnalysisSettingsRepository {
   async get() {
+    const userId = requireDataOwnerId();
     const [settings] = await getDatabaseClient()
       .select()
       .from(stockOpportunityAnalysisSettings)
-      .where(eq(stockOpportunityAnalysisSettings.id, settingsId))
+      .where(
+        and(
+          eq(stockOpportunityAnalysisSettings.userId, userId),
+          eq(stockOpportunityAnalysisSettings.id, userId),
+        ),
+      )
       .limit(1);
-    return (
-      settings ?? { id: settingsId, bazinTargetYield: "6", updatedAt: null }
-    );
+    return settings ?? { id: userId, bazinTargetYield: "6", updatedAt: null };
   }
 
   async saveBazinTargetYield(value: number) {
+    const userId = requireDataOwnerId();
     const [settings] = await getDatabaseClient()
       .insert(stockOpportunityAnalysisSettings)
-      .values({ id: settingsId, bazinTargetYield: value.toFixed(4) })
+      .values({ userId, id: userId, bazinTargetYield: value.toFixed(4) })
       .onConflictDoUpdate({
-        target: stockOpportunityAnalysisSettings.id,
+        target: [
+          stockOpportunityAnalysisSettings.userId,
+          stockOpportunityAnalysisSettings.id,
+        ],
         set: { bazinTargetYield: value.toFixed(4), updatedAt: new Date() },
       })
       .returning();

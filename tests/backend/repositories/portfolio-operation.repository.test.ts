@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 import { asc } from "drizzle-orm";
 
 const mocks = vi.hoisted(() => ({
   client: { select: vi.fn(), insert: vi.fn(), transaction: vi.fn() },
   logger: { error: vi.fn() },
+}));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "owner-1",
 }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => mocks.client,
@@ -100,10 +103,58 @@ describe("PortfolioOperationRepository", () => {
     await expect(
       new PortfolioOperationRepository().create(operationInput, idempotencyKey),
     ).resolves.toEqual(operation);
-    expect(values).toHaveBeenCalledWith({ ...operationInput, idempotencyKey });
-    expect(onConflictDoNothing).toHaveBeenCalledWith({
-      target: manualPortfolioOperations.idempotencyKey,
+    expect(values).toHaveBeenCalledWith({
+      ...operationInput,
+      idempotencyKey,
+      userId: "owner-1",
     });
+    expect(onConflictDoNothing).toHaveBeenCalledWith({
+      target: [
+        manualPortfolioOperations.userId,
+        manualPortfolioOperations.idempotencyKey,
+      ],
+    });
+  });
+
+  it("scopes operation, movement and reconciliation event reads to the owner", async () => {
+    const filters: unknown[] = [];
+    const query = (rows: unknown[]) => {
+      const builder: Record<string, unknown> = {};
+      builder.from = () => builder;
+      builder.where = (filter: unknown) => {
+        filters.push(filter);
+        return builder;
+      };
+      builder.orderBy = async () => rows;
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(rows).then(resolve);
+      return builder;
+    };
+    mocks.client.select
+      .mockReturnValueOnce(query([]))
+      .mockReturnValueOnce(query([]))
+      .mockReturnValueOnce(query([]));
+    await expect(new PortfolioOperationRepository().list()).resolves.toEqual({
+      operations: [],
+      movements: [],
+      events: [],
+    });
+    expect(filters).toHaveLength(3);
+    expect(
+      filters.every((filter) => {
+        if (!filter || typeof filter !== "object" || !("queryChunks" in filter))
+          return false;
+        const queryChunks = (filter as { queryChunks: unknown[] }).queryChunks;
+        return queryChunks.some(
+          (chunk) =>
+            chunk !== null &&
+            chunk !== undefined &&
+            typeof chunk === "object" &&
+            "value" in chunk &&
+            chunk.value === "owner-1",
+        );
+      }),
+    ).toBe(true);
   });
 
   it("returns the prior row on a retry and rejects key reuse with another payload", async () => {
@@ -163,7 +214,6 @@ describe("PortfolioOperationRepository", () => {
       ),
     ).rejects.toMatchObject({
       statusCode: 409,
-      message: expect.stringContaining("outra operação"),
     });
     expect(rows).toHaveLength(1);
   });

@@ -84,7 +84,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
   }) => {
     await page.emulateMedia({ reducedMotion });
     await mockPortfolio(page);
-    await page.goto("/portfolio");
+    await page.goto("/carteira");
     await expect(
       page.getByText("Distribuição por classes incompleta"),
     ).toBeVisible();
@@ -140,7 +140,7 @@ test("mobile diagnostics remain operable without horizontal overflow", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await mockPortfolio(page);
-  await page.goto("/portfolio");
+  await page.goto("/carteira");
   await page.getByRole("button", { name: "Revisar classes" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect

@@ -74,8 +74,8 @@ As orientações da ANPD são referências para o trabalho de conformidade. Este
 
 - [README](../../README.md) — arquitetura, banco e provedores indicados.
 - [Sessão](../../src/infrastructure/auth/session.ts), [login](../../src/app/api/auth/login/route.ts), [proxy](../../src/proxy.ts) e [configuração de credenciais](../../src/infrastructure/auth/auth-configuration.ts).
-- [Configurações](../../src/app/settings/page.tsx) e [inventário das rotas ativas](../design/active-route-inventory.md).
-- [Preferências locais](../../src/lib/stock-criteria-preferences.ts), [histórico recente](../../src/app/analyses/_components/stock-analysis-dashboard.tsx) e [provedor de tema](../../src/components/theme-provider.tsx).
+- [Configurações](<../../src/app/(private)/settings/page.tsx>) e [inventário das rotas ativas](../design/active-route-inventory.md).
+- [Preferências locais](../../src/lib/stock-criteria-preferences.ts), [histórico recente](<../../src/app/(private)/analyses/_components/stock-analysis-dashboard.tsx>) e [provedor de tema](../../src/components/theme-provider.tsx).
 - [Fluxo de importação](../../src/components/portfolio-import.tsx), [serviço de importação](../../src/backend/services/import.service.ts) e [repositório de importação](../../src/backend/repositories/import.repository.ts).
 - [Esquema do banco](../../src/infrastructure/database/schema.ts), [logger](../../src/infrastructure/logging/logger.ts) e [logging de requisições](../../src/infrastructure/logging/api-request.ts).
 - Provedores em `src/backend/providers/` e consultas BCB em `src/backend/services/bcb-*`.

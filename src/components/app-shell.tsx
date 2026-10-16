@@ -11,7 +11,9 @@ import {
   Menu,
   Settings,
   WalletCards,
+  UserRoundCog,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { BrandLogo } from "@/components/brand-logo";
 import { LogoutButton } from "@/components/logout-button";
 import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
@@ -21,12 +23,12 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const navigation = [
   { href: "/", label: "Dashboard", Icon: LayoutDashboard },
-  { href: "/portfolio", label: "Carteira", Icon: WalletCards },
-  { href: "/planning", label: "Planejamento", Icon: Calculator },
-  { href: "/strategy", label: "Estratégia", Icon: Compass },
-  { href: "/learn", label: "Aprender", Icon: BookOpen },
-  { href: "/analyses", label: "Análises", Icon: BarChart3 },
-  { href: "/settings", label: "Configurações", Icon: Settings },
+  { href: "/carteira", label: "Carteira", Icon: WalletCards },
+  { href: "/planejamento", label: "Planejamento", Icon: Calculator },
+  { href: "/estrategia", label: "Estratégia", Icon: Compass },
+  { href: "/aprender", label: "Aprender", Icon: BookOpen },
+  { href: "/analises", label: "Análises", Icon: BarChart3 },
+  { href: "/configuracoes", label: "Configurações", Icon: Settings },
 ];
 function Brand() {
   return (
@@ -39,15 +41,27 @@ function Brand() {
     </Link>
   );
 }
-function Navigation({ pathname }: { pathname: string }) {
+function Navigation({
+  pathname,
+  isAdmin,
+}: {
+  pathname: string;
+  isAdmin: boolean;
+}) {
+  const visibleNavigation = isAdmin
+    ? [
+        ...navigation,
+        { href: "/admin/usuarios", label: "Usuários", Icon: UserRoundCog },
+      ]
+    : navigation.filter((item) => item.href !== "/configuracoes");
   return (
     <nav className="flex flex-col gap-1.5" aria-label="Navegação principal">
-      {navigation.map(({ href, label, Icon }) => {
+      {visibleNavigation.map(({ href, label, Icon }) => {
         const active =
           pathname === href ||
-          (href === "/learn" && pathname?.startsWith("/learn")) ||
-          (href === "/planning" && pathname?.startsWith("/planning")) ||
-          (href === "/analyses" && pathname?.startsWith("/analyses"));
+          (href === "/aprender" && pathname?.startsWith("/aprender")) ||
+          (href === "/planejamento" && pathname?.startsWith("/planejamento")) ||
+          (href === "/analises" && pathname?.startsWith("/analises"));
         return (
           <Link
             key={href}
@@ -71,6 +85,21 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((body: { user?: { role?: string } } | null) => {
+        if (active) setIsAdmin(body?.user?.role === "ADMIN");
+      })
+      .catch(() => {
+        if (active) setIsAdmin(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   return (
     <div className="min-h-screen bg-background lg:flex">
       <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-card/55 p-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
@@ -78,7 +107,7 @@ export function AppShell({
           <Brand />
         </div>
         <div className="mt-8">
-          <Navigation pathname={pathname} />
+          <Navigation pathname={pathname} isAdmin={isAdmin} />
         </div>
         <div className="mt-auto border-t border-border/70 pt-5">
           <p className="mb-3 px-3 text-xs font-medium text-muted-foreground">
@@ -104,7 +133,7 @@ export function AppShell({
               <SheetContent>
                 <Brand />
                 <div className="mt-9">
-                  <Navigation pathname={pathname} />
+                  <Navigation pathname={pathname} isAdmin={isAdmin} />
                 </div>
                 <div className="mt-8 border-t pt-4">
                   <LogoutButton />

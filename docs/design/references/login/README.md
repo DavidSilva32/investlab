@@ -6,7 +6,7 @@
 
 ## Contexto funcional
 
-Conferido em `src/app/login/page.tsx` e `src/app/login/loading.tsx`. O formulário usa e-mail e senha, permite exibir/ocultar a senha, valida formato de e-mail, desabilita o envio durante a requisição e redireciona para `/` após sucesso. Falha de API/rede usa toast; erro de formato aparece junto ao formulário. A imagem representa apenas o estado inicial.
+Conferido em `src/app/(public)/login/page.tsx` e `src/app/(public)/login/loading.tsx`. O formulário usa e-mail e senha, permite exibir/ocultar a senha, valida formato de e-mail, desabilita o envio durante a requisição e redireciona para `/` após sucesso. Falha de API/rede usa toast; erro de formato aparece junto ao formulário. A imagem representa apenas o estado inicial.
 
 ## Tokens e diferenças
 

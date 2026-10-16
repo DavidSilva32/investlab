@@ -1,5 +1,5 @@
-import type { ObjectivePosition } from "@/app/portfolio/_components/portfolio-objective-assignment";
-import type { PortfolioObjective } from "@/app/portfolio/_components/portfolio-objective-card";
+import type { ObjectivePosition } from "@/app/(private)/portfolio/_components/portfolio-objective-assignment";
+import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 export type DatedProjectionBalance = {

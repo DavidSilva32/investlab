@@ -1,0 +1,1 @@
+ALTER TABLE "auth_password_resets" ADD COLUMN "revokedAt" timestamp with time zone;

@@ -12,6 +12,8 @@ import {
 } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
+import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import {
   portfolioObjectivePositions,
   portfolioObjectiveBalanceReferences,
@@ -177,6 +179,80 @@ export function createAllocationSourceFingerprint(input: {
 }
 
 export class PortfolioObjectivesRepository {
+  private async assertOwnedAssetKeys(
+    transaction: Pick<DatabaseTransaction, "select">,
+    assetKeys: string[],
+  ) {
+    const uniqueKeys = [...new Set(assetKeys)].filter(
+      (key) => key.startsWith("manual:") || key.startsWith("v1:"),
+    );
+    if (!uniqueKeys.length) return;
+    const userId = requireDataOwnerId();
+    const manualIds = uniqueKeys
+      .filter((key) => key.startsWith("manual:"))
+      .map((key) => key.slice("manual:".length));
+    const ownedManual = manualIds.length
+      ? await transaction
+          .select({ assetKey: manualPortfolioPositions.assetKey })
+          .from(manualPortfolioPositions)
+          .where(
+            and(
+              inArray(manualPortfolioPositions.assetKey, manualIds),
+              eq(manualPortfolioPositions.userId, userId),
+            ),
+          )
+      : [];
+    const validKeys = new Set(
+      ownedManual.map((position) => `manual:${position.assetKey}`),
+    );
+    const importedKeys = uniqueKeys.filter((key) => key.startsWith("v1:"));
+    if (importedKeys.length) {
+      const [snapshot] = await transaction
+        .select()
+        .from(positionSnapshots)
+        .where(eq(positionSnapshots.userId, userId))
+        .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
+        .limit(1);
+      if (snapshot) {
+        const imported = await transaction
+          .select()
+          .from(positionItems)
+          .where(
+            and(
+              eq(positionItems.snapshotId, snapshot.id),
+              eq(positionItems.userId, userId),
+            ),
+          );
+        for (const position of imported)
+          validKeys.add(getEmergencyReserveAssetKey(position));
+      }
+    }
+    if (uniqueKeys.some((key) => !validKeys.has(key))) {
+      throw new ApplicationError("Uma posição não está mais disponível.", 404);
+    }
+  }
+
+  private async assertOwnedObjectives(
+    transaction: Pick<DatabaseTransaction, "select">,
+    objectiveIds: string[],
+  ) {
+    const uniqueIds = [...new Set(objectiveIds)];
+    if (!uniqueIds.length) return;
+    const userId = requireDataOwnerId();
+    const owned = await transaction
+      .select({ id: portfolioObjectives.id })
+      .from(portfolioObjectives)
+      .where(
+        and(
+          inArray(portfolioObjectives.id, uniqueIds),
+          eq(portfolioObjectives.userId, userId),
+        ),
+      );
+    if (owned.length !== uniqueIds.length) {
+      throw new ApplicationError("O objetivo não está mais disponível.", 404);
+    }
+  }
+
   private async lockAllocationSources(transaction: DatabaseTransaction) {
     // Minimal unit-test transaction doubles omit execute; PostgreSQL clients always provide it.
     if (typeof transaction.execute !== "function") return false;
@@ -193,18 +269,25 @@ export class PortfolioObjectivesRepository {
     transaction: DatabaseTransaction,
     valuationDate: string,
   ) {
+    const userId = requireDataOwnerId();
     const locked = await this.lockAllocationSources(transaction);
     if (!locked) return null;
     const [snapshot] = await transaction
       .select()
       .from(positionSnapshots)
+      .where(eq(positionSnapshots.userId, userId))
       .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
       .limit(1);
     const importedRows = snapshot
       ? await transaction
           .select()
           .from(positionItems)
-          .where(eq(positionItems.snapshotId, snapshot.id))
+          .where(
+            and(
+              eq(positionItems.snapshotId, snapshot.id),
+              eq(positionItems.userId, userId),
+            ),
+          )
           .orderBy(positionItems.id)
       : [];
     const imported = importedRows.map((position) => ({
@@ -216,6 +299,7 @@ export class PortfolioObjectivesRepository {
     const manualRows = await transaction
       .select()
       .from(manualPortfolioPositions)
+      .where(eq(manualPortfolioPositions.userId, userId))
       .orderBy(manualPortfolioPositions.id);
     const manual = manualRows.map((position) => ({
       ...position,
@@ -238,7 +322,12 @@ export class PortfolioObjectivesRepository {
       ? await transaction
           .select()
           .from(cdbRateConfigurations)
-          .where(inArray(cdbRateConfigurations.assetCode, codes))
+          .where(
+            and(
+              inArray(cdbRateConfigurations.assetCode, codes),
+              eq(cdbRateConfigurations.userId, userId),
+            ),
+          )
       : [];
     const percentageByCode = new Map(
       configurations.map((configuration) => [
@@ -290,7 +379,10 @@ export class PortfolioObjectivesRepository {
       };
     });
     const [assignments, objectives] = await Promise.all([
-      transaction.select().from(portfolioObjectivePositions),
+      transaction
+        .select()
+        .from(portfolioObjectivePositions)
+        .where(eq(portfolioObjectivePositions.userId, userId)),
       transaction
         .select({
           id: portfolioObjectives.id,
@@ -298,7 +390,8 @@ export class PortfolioObjectivesRepository {
           kind: portfolioObjectives.kind,
           purpose: portfolioObjectives.purpose,
         })
-        .from(portfolioObjectives),
+        .from(portfolioObjectives)
+        .where(eq(portfolioObjectives.userId, userId)),
     ]);
     return hashAllocationInputs({
       valuationDate,
@@ -310,10 +403,12 @@ export class PortfolioObjectivesRepository {
   }
 
   async list() {
+    const userId = requireDataOwnerId();
     const [objectives, assignments] = await Promise.all([
       getDatabaseClient()
         .select()
         .from(portfolioObjectives)
+        .where(eq(portfolioObjectives.userId, userId))
         .orderBy(portfolioObjectives.createdAt),
       this.listAssignments(),
     ]);
@@ -321,7 +416,11 @@ export class PortfolioObjectivesRepository {
   }
 
   async listAssignments() {
-    return getDatabaseClient().select().from(portfolioObjectivePositions);
+    const userId = requireDataOwnerId();
+    return getDatabaseClient()
+      .select()
+      .from(portfolioObjectivePositions)
+      .where(eq(portfolioObjectivePositions.userId, userId));
   }
 
   async create(input: {
@@ -330,9 +429,10 @@ export class PortfolioObjectivesRepository {
     targetAmount: string | null;
     monthlyPlannedAmount: string | null;
   }) {
+    const userId = requireDataOwnerId();
     const [objective] = await getDatabaseClient()
       .insert(portfolioObjectives)
-      .values({ ...input, kind: "CUSTOM" })
+      .values({ ...input, userId, kind: "CUSTOM" })
       .returning();
     return objective;
   }
@@ -346,31 +446,53 @@ export class PortfolioObjectivesRepository {
       monthlyPlannedAmount: string | null;
     },
   ) {
+    const userId = requireDataOwnerId();
     const [objective] = await getDatabaseClient()
       .update(portfolioObjectives)
       .set({ ...input, updatedAt: new Date() })
-      .where(eq(portfolioObjectives.id, objectiveId))
+      .where(
+        and(
+          eq(portfolioObjectives.id, objectiveId),
+          eq(portfolioObjectives.userId, userId),
+        ),
+      )
       .returning();
     return objective ?? null;
   }
 
   async delete(objectiveId: string) {
+    const userId = requireDataOwnerId();
     const [objective] = await getDatabaseClient()
       .delete(portfolioObjectives)
-      .where(eq(portfolioObjectives.id, objectiveId))
+      .where(
+        and(
+          eq(portfolioObjectives.id, objectiveId),
+          eq(portfolioObjectives.userId, userId),
+        ),
+      )
       .returning();
     return objective ?? null;
   }
 
   async replaceAssignments(objectiveId: string, assetKeys: string[]) {
+    const userId = requireDataOwnerId();
     return getDatabaseClient().transaction(async (transaction) => {
+      await this.assertOwnedObjectives(transaction, [objectiveId]);
+      await this.assertOwnedAssetKeys(transaction, assetKeys);
       await transaction
         .delete(portfolioObjectivePositions)
-        .where(eq(portfolioObjectivePositions.objectiveId, objectiveId));
+        .where(
+          and(
+            eq(portfolioObjectivePositions.objectiveId, objectiveId),
+            eq(portfolioObjectivePositions.userId, userId),
+          ),
+        );
       if (assetKeys.length) {
         await transaction
           .insert(portfolioObjectivePositions)
-          .values(assetKeys.map((assetKey) => ({ objectiveId, assetKey })));
+          .values(
+            assetKeys.map((assetKey) => ({ objectiveId, assetKey, userId })),
+          );
       }
     });
   }
@@ -380,28 +502,49 @@ export class PortfolioObjectivesRepository {
     assetKeys: string[],
     transfers: ObjectiveAssignmentTransfer[],
   ) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        await this.assertOwnedObjectives(transaction, [objectiveId]);
+        await this.assertOwnedAssetKeys(transaction, assetKeys);
+        await this.assertOwnedObjectives(
+          transaction,
+          transfers.flatMap((transfer) => [
+            transfer.fromObjectiveId,
+            transfer.toObjectiveId,
+          ]),
+        );
         if (assetKeys.length) {
           await transaction
             .delete(portfolioObjectivePositions)
             .where(
               and(
                 eq(portfolioObjectivePositions.objectiveId, objectiveId),
+                eq(portfolioObjectivePositions.userId, userId),
                 notInArray(portfolioObjectivePositions.assetKey, assetKeys),
               ),
             );
         } else {
           await transaction
             .delete(portfolioObjectivePositions)
-            .where(eq(portfolioObjectivePositions.objectiveId, objectiveId));
+            .where(
+              and(
+                eq(portfolioObjectivePositions.objectiveId, objectiveId),
+                eq(portfolioObjectivePositions.userId, userId),
+              ),
+            );
         }
         await this.transferAssignments(transaction, transfers);
         if (!assetKeys.length) return;
         const assignments = await transaction
           .select()
           .from(portfolioObjectivePositions)
-          .where(inArray(portfolioObjectivePositions.assetKey, assetKeys))
+          .where(
+            and(
+              inArray(portfolioObjectivePositions.assetKey, assetKeys),
+              eq(portfolioObjectivePositions.userId, userId),
+            ),
+          )
           .for("update");
         const assignedByKey = new Map(
           assignments.map((assignment) => [
@@ -416,7 +559,12 @@ export class PortfolioObjectivesRepository {
           const [currentObjective] = await transaction
             .select({ name: portfolioObjectives.name })
             .from(portfolioObjectives)
-            .where(eq(portfolioObjectives.id, conflict.objectiveId))
+            .where(
+              and(
+                eq(portfolioObjectives.id, conflict.objectiveId),
+                eq(portfolioObjectives.userId, userId),
+              ),
+            )
             .limit(1);
           throw new ApplicationError(
             currentObjective?.name
@@ -431,7 +579,9 @@ export class PortfolioObjectivesRepository {
         if (unassigned.length) {
           await transaction
             .insert(portfolioObjectivePositions)
-            .values(unassigned.map((assetKey) => ({ objectiveId, assetKey })));
+            .values(
+              unassigned.map((assetKey) => ({ objectiveId, assetKey, userId })),
+            );
         }
       });
     } catch (error) {
@@ -439,7 +589,7 @@ export class PortfolioObjectivesRepository {
       if (
         postgresError.code === "23505" &&
         postgresError.constraint ===
-          "portfolio_objective_positions_assetKey_unique"
+          "portfolio_objective_positions_user_asset_uidx"
       ) {
         const assignments = await Promise.all(
           assetKeys.map((assetKey) => this.findAssignment(assetKey)),
@@ -463,6 +613,7 @@ export class PortfolioObjectivesRepository {
     transfers: ObjectiveAssignmentTransfer[],
   ) {
     if (transfers.length === 0) return;
+    const userId = requireDataOwnerId();
     const assetKeys = transfers.map((transfer) => transfer.assetKey);
     if (
       new Set(assetKeys).size !== assetKeys.length ||
@@ -472,10 +623,23 @@ export class PortfolioObjectivesRepository {
     ) {
       throw new ApplicationError("Revise as transferências de posições.", 400);
     }
+    await this.assertOwnedObjectives(
+      transaction,
+      transfers.flatMap((transfer) => [
+        transfer.fromObjectiveId,
+        transfer.toObjectiveId,
+      ]),
+    );
+    await this.assertOwnedAssetKeys(transaction, assetKeys);
     const assignments = await transaction
       .select()
       .from(portfolioObjectivePositions)
-      .where(inArray(portfolioObjectivePositions.assetKey, assetKeys))
+      .where(
+        and(
+          inArray(portfolioObjectivePositions.assetKey, assetKeys),
+          eq(portfolioObjectivePositions.userId, userId),
+        ),
+      )
       .for("update");
     const assignmentByKey = new Map(
       assignments.map((assignment) => [assignment.assetKey, assignment]),
@@ -487,7 +651,12 @@ export class PortfolioObjectivesRepository {
           await transaction
             .select()
             .from(portfolioObjectivePositions)
-            .where(eq(portfolioObjectivePositions.assetKey, transfer.assetKey))
+            .where(
+              and(
+                eq(portfolioObjectivePositions.assetKey, transfer.assetKey),
+                eq(portfolioObjectivePositions.userId, userId),
+              ),
+            )
             .for("update")
         )[0];
       if (assignment?.objectiveId !== transfer.fromObjectiveId) {
@@ -495,7 +664,12 @@ export class PortfolioObjectivesRepository {
           ? await transaction
               .select({ name: portfolioObjectives.name })
               .from(portfolioObjectives)
-              .where(eq(portfolioObjectives.id, assignment.objectiveId))
+              .where(
+                and(
+                  eq(portfolioObjectives.id, assignment.objectiveId),
+                  eq(portfolioObjectives.userId, userId),
+                ),
+              )
               .limit(1)
           : [];
         throw new ApplicationError(
@@ -515,16 +689,23 @@ export class PortfolioObjectivesRepository {
               portfolioObjectivePositions.objectiveId,
               transfer.fromObjectiveId,
             ),
+            eq(portfolioObjectivePositions.userId, userId),
           ),
         );
     }
   }
 
   async findAssignment(assetKey: string) {
+    const userId = requireDataOwnerId();
     const [assignment] = await getDatabaseClient()
       .select()
       .from(portfolioObjectivePositions)
-      .where(eq(portfolioObjectivePositions.assetKey, assetKey))
+      .where(
+        and(
+          eq(portfolioObjectivePositions.assetKey, assetKey),
+          eq(portfolioObjectivePositions.userId, userId),
+        ),
+      )
       .limit(1);
     if (!assignment) return null;
     const objective = await this.getObjective(assignment.objectiveId);
@@ -532,15 +713,22 @@ export class PortfolioObjectivesRepository {
   }
 
   async getObjective(objectiveId: string) {
+    const userId = requireDataOwnerId();
     const [objective] = await getDatabaseClient()
       .select()
       .from(portfolioObjectives)
-      .where(eq(portfolioObjectives.id, objectiveId))
+      .where(
+        and(
+          eq(portfolioObjectives.id, objectiveId),
+          eq(portfolioObjectives.userId, userId),
+        ),
+      )
       .limit(1);
     return objective ?? null;
   }
 
   async listLatestBalanceReferences() {
+    const userId = requireDataOwnerId();
     const rows = await getDatabaseClient()
       .select({
         objectiveId: portfolioObjectiveBalanceReferences.objectiveId,
@@ -555,6 +743,22 @@ export class PortfolioObjectivesRepository {
         eq(
           portfolioObjectiveBalanceReferences.batchId,
           portfolioObjectiveReferenceBatches.id,
+        ),
+      )
+      .innerJoin(
+        portfolioObjectives,
+        and(
+          eq(
+            portfolioObjectiveBalanceReferences.objectiveId,
+            portfolioObjectives.id,
+          ),
+          eq(portfolioObjectives.userId, userId),
+        ),
+      )
+      .where(
+        and(
+          eq(portfolioObjectiveBalanceReferences.userId, userId),
+          eq(portfolioObjectiveReferenceBatches.userId, userId),
         ),
       )
       .orderBy(
@@ -581,21 +785,28 @@ export class PortfolioObjectivesRepository {
     observedOn: string;
     cdiPercentage: string | null;
   }) {
+    const userId = requireDataOwnerId();
     return getDatabaseClient().transaction(async (transaction) => {
       const [objective] = await transaction
         .select({ id: portfolioObjectives.id })
         .from(portfolioObjectives)
-        .where(eq(portfolioObjectives.id, input.objectiveId))
+        .where(
+          and(
+            eq(portfolioObjectives.id, input.objectiveId),
+            eq(portfolioObjectives.userId, userId),
+          ),
+        )
         .for("update");
       if (!objective) return null;
       const [batch] = await transaction
         .insert(portfolioObjectiveReferenceBatches)
-        .values({ observedOn: input.observedOn })
+        .values({ userId, observedOn: input.observedOn })
         .returning({ id: portfolioObjectiveReferenceBatches.id });
       const [reference] = await transaction
         .insert(portfolioObjectiveBalanceReferences)
         .values({
           batchId: batch.id,
+          userId,
           objectiveId: input.objectiveId,
           amountCents: input.amountCents,
           cdiPercentage: input.cdiPercentage,
@@ -612,6 +823,7 @@ export class PortfolioObjectivesRepository {
     allocation: Record<string, string | null>;
     references: AllocationReference[];
   }) {
+    const userId = requireDataOwnerId();
     const db = getDatabaseClient();
     try {
       return await db.transaction(
@@ -631,6 +843,7 @@ export class PortfolioObjectivesRepository {
             );
           }
           const assetKeys = Object.keys(input.expectedOwners).sort();
+          await this.assertOwnedAssetKeys(transaction, assetKeys);
           if (
             assetKeys.length !== Object.keys(input.allocation).length ||
             assetKeys.some((assetKey) => !(assetKey in input.allocation))
@@ -644,7 +857,12 @@ export class PortfolioObjectivesRepository {
             ? await transaction
                 .select()
                 .from(portfolioObjectivePositions)
-                .where(inArray(portfolioObjectivePositions.assetKey, assetKeys))
+                .where(
+                  and(
+                    inArray(portfolioObjectivePositions.assetKey, assetKeys),
+                    eq(portfolioObjectivePositions.userId, userId),
+                  ),
+                )
                 .orderBy(portfolioObjectivePositions.assetKey)
                 .for("update")
             : [];
@@ -673,7 +891,12 @@ export class PortfolioObjectivesRepository {
           const validObjectives = await transaction
             .select({ id: portfolioObjectives.id })
             .from(portfolioObjectives)
-            .where(inArray(portfolioObjectives.id, destinationIds))
+            .where(
+              and(
+                inArray(portfolioObjectives.id, destinationIds),
+                eq(portfolioObjectives.userId, userId),
+              ),
+            )
             .for("update");
           if (
             destinationIds.some(
@@ -687,7 +910,7 @@ export class PortfolioObjectivesRepository {
           }
           const batch = await transaction
             .insert(portfolioObjectiveReferenceBatches)
-            .values({ observedOn: input.observedOn })
+            .values({ userId, observedOn: input.observedOn })
             .returning({ id: portfolioObjectiveReferenceBatches.id });
           const batchId = batch[0].id;
           if (input.references.length) {
@@ -697,6 +920,7 @@ export class PortfolioObjectivesRepository {
                 input.references.map((reference) => ({
                   ...reference,
                   batchId,
+                  userId,
                 })),
               );
           }
@@ -711,13 +935,14 @@ export class PortfolioObjectivesRepository {
                   and(
                     eq(portfolioObjectivePositions.assetKey, assetKey),
                     eq(portfolioObjectivePositions.objectiveId, from),
+                    eq(portfolioObjectivePositions.userId, userId),
                   ),
                 );
             }
             if (to !== null) {
               await transaction
                 .insert(portfolioObjectivePositions)
-                .values({ assetKey, objectiveId: to });
+                .values({ assetKey, objectiveId: to, userId });
             }
           }
           return { batchId };
@@ -735,7 +960,7 @@ export class PortfolioObjectivesRepository {
       if (
         postgresError.code === "23505" &&
         postgresError.constraint ===
-          "portfolio_objective_positions_assetKey_unique"
+          "portfolio_objective_positions_user_asset_uidx"
       ) {
         throw new ApplicationError(
           "Uma posição foi atribuída a outro objetivo durante a confirmação. Atualize e tente novamente.",

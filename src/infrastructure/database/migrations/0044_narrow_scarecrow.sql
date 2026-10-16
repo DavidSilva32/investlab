@@ -1,0 +1,22 @@
+ALTER TABLE "cdb_rate_configurations" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "emergency_reserve_settings" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "imports" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "manual_portfolio_adjustment_events" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "manual_portfolio_operations" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "manual_portfolio_position_snapshots" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "manual_portfolio_positions" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "movement_items" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "personal_investment_strategy" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "portfolio_allocation_targets" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "portfolio_asset_classifications" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "portfolio_objective_balance_references" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "portfolio_objective_positions" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "portfolio_objective_reference_batches" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "portfolio_objectives" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "portfolio_operation_reconciliation_events" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "position_items" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "position_reconciliation_events" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "position_snapshots" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "stock_opportunity_analysis_settings" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "stock_opportunity_manual_inputs" ADD COLUMN "userId" text;--> statement-breakpoint
+ALTER TABLE "treasury_position_liquidity_facts" ADD COLUMN "userId" text;

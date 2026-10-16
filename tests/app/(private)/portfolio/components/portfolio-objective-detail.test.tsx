@@ -1,0 +1,198 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { PortfolioObjectiveDetail } from "@/app/(private)/portfolio/_components/portfolio-objective-detail";
+import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  value: class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
+
+Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+  configurable: true,
+  value: () => false,
+});
+Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+  configurable: true,
+  value: () => undefined,
+});
+Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+  configurable: true,
+  value: () => undefined,
+});
+
+const objective: PortfolioObjective = {
+  id: "trip",
+  kind: "CUSTOM",
+  name: "Viagem",
+  targetAmount: 1000,
+  monthlyPlannedAmount: 150,
+  currentValue: null,
+  knownValue: 200,
+  remainingAmount: null,
+  progressPercent: null,
+  assignedPositionCount: 2,
+  missingPositionCount: 1,
+  unvaluedPositionCount: 1,
+  assignedAssetKeys: [],
+  canEditAssignments: true,
+};
+
+describe("PortfolioObjectiveDetail", () => {
+  afterEach(cleanup);
+
+  it("shows incomplete known values and opens personal objective actions", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const onManagePositions = vi.fn();
+    render(
+      <PortfolioObjectiveDetail
+        objective={objective}
+        onEdit={onEdit}
+        onManagePositions={onManagePositions}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Subtotal conhecido: R$ 200,00")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "1 vínculo(s) sem correspondência",
+    );
+    expect(
+      screen.getByText(/intenção pessoal, não uma obrigação/),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Gerenciar posições" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Editar objetivo" }));
+    expect(onManagePositions).toHaveBeenCalledOnce();
+    expect(onEdit).toHaveBeenCalledOnce();
+  });
+
+  it("exposes separate position and reserve settings actions", async () => {
+    const user = userEvent.setup();
+    const onManagePositions = vi.fn();
+    const onConfigureReserve = vi.fn();
+    render(
+      <PortfolioObjectiveDetail
+        objective={{
+          ...objective,
+          id: reserveObjectiveId,
+          kind: "RESERVE",
+          name: "Reserva",
+          targetAmount: null,
+          remainingAmount: null,
+          progressPercent: null,
+        }}
+        onEdit={vi.fn()}
+        onManagePositions={onManagePositions}
+        onConfigureReserve={onConfigureReserve}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Gerenciar posições/ }),
+    );
+    expect(onManagePositions).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Editar reserva" }));
+    expect(onConfigureReserve).toHaveBeenCalledOnce();
+    expect(screen.getByText("Não configurada")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Editar objetivo" }),
+    ).toBeNull();
+  });
+
+  it("explains when an objective has no configured financial target", () => {
+    render(
+      <PortfolioObjectiveDetail
+        objective={{
+          ...objective,
+          targetAmount: null,
+          remainingAmount: null,
+          progressPercent: null,
+        }}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Sem meta financeira")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Acompanha o valor destinado, sem cálculo de progresso ou falta.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Falta/)).toBeNull();
+  });
+
+  it("labels long-term and personal goals in their detail view", () => {
+    const { rerender } = render(
+      <PortfolioObjectiveDetail
+        objective={{ ...objective, purpose: "LONG_TERM_INVESTMENT" }}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Investimento de longo prazo")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Ativos da carteira separados pela sua estratégia de longo prazo.",
+      ),
+    ).toBeTruthy();
+
+    rerender(
+      <PortfolioObjectiveDetail
+        objective={{ ...objective, purpose: "PERSONAL_GOAL" }}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Objetivo pessoal")).toBeTruthy();
+  });
+
+  it("supports the optional balance-save action when it is omitted", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioObjectiveDetail
+        objective={objective}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Saldo observado de Viagem"), "50");
+    await user.click(
+      screen.getByRole("button", { name: "Salvar saldo observado" }),
+    );
+
+    expect(screen.getByLabelText("Saldo observado de Viagem")).toBeTruthy();
+    expect(screen.queryByText(/Informe um valor entre/)).toBeNull();
+  });
+
+  it("links a personal objective to its planning scenario", () => {
+    render(
+      <PortfolioObjectiveDetail
+        objective={objective}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Planejar este objetivo" })
+        .getAttribute("href"),
+    ).toBe("/planejamento?objective=trip");
+  });
+});

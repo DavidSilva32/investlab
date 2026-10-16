@@ -1,6 +1,7 @@
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   portfolioObjectivesRepository,
   type ObjectiveAssignmentTransfer,
@@ -12,14 +13,18 @@ import {
 } from "@/infrastructure/database/schema";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
-const singletonId = "default";
-
 export class EmergencyReserveRepository {
   async getSettings() {
+    const userId = requireDataOwnerId();
     const [settings] = await getDatabaseClient()
       .select()
       .from(emergencyReserveSettings)
-      .where(eq(emergencyReserveSettings.id, singletonId))
+      .where(
+        and(
+          eq(emergencyReserveSettings.id, userId),
+          eq(emergencyReserveSettings.userId, userId),
+        ),
+      )
       .limit(1);
     const selectedAssetKeys =
       await portfolioObjectivesRepository.listReserveAssignments();
@@ -32,15 +37,17 @@ export class EmergencyReserveRepository {
   }
 
   async saveSettings(input: { monthlyExpenses: string; targetMonths: number }) {
+    const userId = requireDataOwnerId();
     return getDatabaseClient()
       .insert(emergencyReserveSettings)
       .values({
-        id: singletonId,
+        id: userId,
+        userId,
         monthlyExpenses: input.monthlyExpenses,
         targetMonths: input.targetMonths,
       })
       .onConflictDoUpdate({
-        target: emergencyReserveSettings.id,
+        target: [emergencyReserveSettings.userId, emergencyReserveSettings.id],
         set: {
           monthlyExpenses: input.monthlyExpenses,
           targetMonths: input.targetMonths,
@@ -54,6 +61,7 @@ export class EmergencyReserveRepository {
     selectedAssetKeys: string[];
     transfers?: ObjectiveAssignmentTransfer[];
   }) {
+    const userId = requireDataOwnerId();
     const transfers = input.transfers ?? [];
     if (
       transfers.some(
@@ -73,6 +81,7 @@ export class EmergencyReserveRepository {
             .where(
               and(
                 eq(portfolioObjectivePositions.objectiveId, reserveObjectiveId),
+                eq(portfolioObjectivePositions.userId, userId),
                 notInArray(portfolioObjectivePositions.assetKey, selectedKeys),
               ),
             );
@@ -80,7 +89,10 @@ export class EmergencyReserveRepository {
           await transaction
             .delete(portfolioObjectivePositions)
             .where(
-              eq(portfolioObjectivePositions.objectiveId, reserveObjectiveId),
+              and(
+                eq(portfolioObjectivePositions.objectiveId, reserveObjectiveId),
+                eq(portfolioObjectivePositions.userId, userId),
+              ),
             );
         }
         await portfolioObjectivesRepository.transferAssignments(
@@ -91,7 +103,12 @@ export class EmergencyReserveRepository {
           const assignments = await transaction
             .select()
             .from(portfolioObjectivePositions)
-            .where(inArray(portfolioObjectivePositions.assetKey, selectedKeys))
+            .where(
+              and(
+                inArray(portfolioObjectivePositions.assetKey, selectedKeys),
+                eq(portfolioObjectivePositions.userId, userId),
+              ),
+            )
             .for("update");
           const assignedByKey = new Map(
             assignments.map((assignment) => [
@@ -106,7 +123,12 @@ export class EmergencyReserveRepository {
             const [currentObjective] = await transaction
               .select({ name: portfolioObjectives.name })
               .from(portfolioObjectives)
-              .where(eq(portfolioObjectives.id, conflict.objectiveId))
+              .where(
+                and(
+                  eq(portfolioObjectives.id, conflict.objectiveId),
+                  eq(portfolioObjectives.userId, userId),
+                ),
+              )
               .limit(1);
             throw new ApplicationError(
               currentObjective?.name
@@ -122,6 +144,7 @@ export class EmergencyReserveRepository {
             await transaction.insert(portfolioObjectivePositions).values(
               unassigned.map((assetKey) => ({
                 objectiveId: reserveObjectiveId,
+                userId,
                 assetKey,
               })),
             );
@@ -134,7 +157,7 @@ export class EmergencyReserveRepository {
       if (
         postgresError.code === "23505" &&
         postgresError.constraint ===
-          "portfolio_objective_positions_assetKey_unique"
+          "portfolio_objective_positions_user_asset_uidx"
       ) {
         const current = await Promise.all(
           input.selectedAssetKeys.map((assetKey) =>

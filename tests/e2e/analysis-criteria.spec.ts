@@ -90,7 +90,7 @@ test("compares verified valuation and quality signals using shared criteria", as
   );
 
   await addSignedInSession(page);
-  await page.goto("/analyses");
+  await page.goto("/analises");
   await page.getByRole("tab", { name: "Comparar empresas" }).click();
   const search = page.getByRole("combobox", { name: "Pesquisar ação" });
   await search.fill("PETR");
@@ -141,7 +141,7 @@ test("recovers unavailable quote history without reloading the stock analysis", 
   );
 
   await addSignedInSession(page);
-  await page.goto("/analyses?ticker=PETR4");
+  await page.goto("/analises?ticker=PETR4");
   await expect(
     page.getByText("Histórico temporariamente indisponível"),
   ).toBeVisible();

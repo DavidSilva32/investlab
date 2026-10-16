@@ -1,7 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   client: { select: vi.fn(), transaction: vi.fn() },
   logger: { error: vi.fn() },
+}));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "owner-1",
 }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => mocks.client,
@@ -15,10 +18,14 @@ describe("position reconciliation audit repository", () => {
   beforeEach(() => vi.clearAllMocks());
   it("lists immutable audit events in deterministic order", async () => {
     const rows = [{ id: "event" }];
-    const from = vi.fn().mockReturnValue({ orderBy: async () => rows });
+    const where = vi.fn().mockReturnValue({ orderBy: async () => rows });
+    const from = vi.fn().mockReturnValue({ where });
     mocks.client.select.mockReturnValue({ from });
     await expect(repository.listEvents()).resolves.toBe(rows);
     expect(from).toHaveBeenCalledWith(positionReconciliationEvents);
+    expect(where.mock.calls[0]?.[0].queryChunks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ value: "owner-1" })]),
+    );
   });
   it("logs failed audit reads without hiding failure", async () => {
     const error = new Error("unavailable");
@@ -65,6 +72,7 @@ describe("position reconciliation audit repository", () => {
       recordedAt: new Date(previous.recordedAt.getTime() + 1),
       effectiveFrom: "2026-10-11",
       requestId: "request",
+      userId: "owner-1",
     });
     expect(tx.execute).toHaveBeenCalledOnce();
     expect(tx.insert).toHaveBeenCalledWith(positionReconciliationEvents);

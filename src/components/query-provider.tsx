@@ -16,7 +16,7 @@ export function QueryProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("portfolio:updated", invalidatePortfolio);
     const handleUnauthorized = () => {
-      if (window.location.pathname !== "/login") router.replace("/login");
+      if (window.location.pathname !== "/entrar") router.replace("/entrar");
     };
     window.addEventListener("auth:unauthorized", handleUnauthorized);
     return () => {

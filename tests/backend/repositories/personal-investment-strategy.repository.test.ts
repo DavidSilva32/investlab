@@ -5,6 +5,9 @@ const logger = vi.hoisted(() => ({ error: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => database,
 }));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "user-1",
+}));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger }));
 
 import { PersonalInvestmentStrategyRepository } from "@/backend/repositories/personal-investment-strategy.repository";
@@ -56,7 +59,8 @@ describe("PersonalInvestmentStrategyRepository", () => {
       ),
     ).resolves.toEqual(record);
     expect(values).toHaveBeenCalledWith({
-      id: "default",
+      id: "user-1",
+      userId: "user-1",
       answers,
       selectedDirection: "consider_international",
       updatedAt: expect.any(Date),
@@ -111,7 +115,8 @@ describe("PersonalInvestmentStrategyRepository", () => {
       ),
     ).resolves.toEqual(record);
     expect(values).toHaveBeenCalledWith({
-      id: "default",
+      id: "user-1",
+      userId: "user-1",
       allocationPercentages: percentages,
       updatedAt: expect.any(Date),
     });
@@ -158,7 +163,8 @@ describe("PersonalInvestmentStrategyRepository", () => {
       new PersonalInvestmentStrategyRepository().activateAllocation("req-on"),
     ).resolves.toEqual(record);
     expect(values).toHaveBeenCalledWith({
-      id: "default",
+      id: "user-1",
+      userId: "user-1",
       allocationActive: true,
       updatedAt: expect.any(Date),
     });

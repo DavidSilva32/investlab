@@ -1,8 +1,9 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { activeReconciliationLinks } from "@/backend/services/position-reconciliation";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   manualPortfolioAdjustmentEvents,
   manualPortfolioPositionSnapshots,
@@ -64,6 +65,7 @@ export class ManualPortfolioPositionRepository {
     await transaction
       .insert(manualPortfolioPositionSnapshots)
       .values({
+        userId: position.userId,
         assetKey: position.assetKey,
         product: position.product,
         assetCode: position.assetCode,
@@ -78,6 +80,7 @@ export class ManualPortfolioPositionRepository {
       })
       .onConflictDoNothing({
         target: [
+          manualPortfolioPositionSnapshots.userId,
           manualPortfolioPositionSnapshots.assetKey,
           manualPortfolioPositionSnapshots.recordedAt,
         ],
@@ -85,10 +88,12 @@ export class ManualPortfolioPositionRepository {
   }
 
   async list(requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient()
         .select()
         .from(manualPortfolioPositions)
+        .where(eq(manualPortfolioPositions.userId, userId))
         .orderBy(
           manualPortfolioPositions.product,
           desc(manualPortfolioPositions.updatedAt),
@@ -103,10 +108,12 @@ export class ManualPortfolioPositionRepository {
   }
 
   async listSnapshots(requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient()
         .select()
         .from(manualPortfolioPositionSnapshots)
+        .where(eq(manualPortfolioPositionSnapshots.userId, userId))
         .orderBy(
           manualPortfolioPositionSnapshots.recordedAt,
           manualPortfolioPositionSnapshots.assetKey,
@@ -125,6 +132,7 @@ export class ManualPortfolioPositionRepository {
     requestId?: string,
     classification?: ManualPortfolioPositionClassification,
   ) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         await transaction.execute(
@@ -132,7 +140,7 @@ export class ManualPortfolioPositionRepository {
         );
         const [position] = await transaction
           .insert(manualPortfolioPositions)
-          .values(input)
+          .values({ ...input, userId })
           .returning();
         await this.recordSnapshot(
           transaction,
@@ -145,6 +153,7 @@ export class ManualPortfolioPositionRepository {
             .insert(portfolioAssetClassifications)
             .values({
               assetKey: input.assetKey,
+              userId,
               ...classification,
             })
             .onConflictDoUpdate({
@@ -155,6 +164,7 @@ export class ManualPortfolioPositionRepository {
                 geography: sql.raw('excluded."geography"'),
                 updatedAt: new Date(),
               },
+              setWhere: eq(portfolioAssetClassifications.userId, userId),
             });
         }
         return position;
@@ -174,6 +184,7 @@ export class ManualPortfolioPositionRepository {
     requestId?: string,
     classification?: ManualPortfolioPositionClassification,
   ) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         await transaction.execute(
@@ -182,7 +193,12 @@ export class ManualPortfolioPositionRepository {
         const [previous] = await transaction
           .select()
           .from(manualPortfolioPositions)
-          .where(eq(manualPortfolioPositions.id, id))
+          .where(
+            and(
+              eq(manualPortfolioPositions.id, id),
+              eq(manualPortfolioPositions.userId, userId),
+            ),
+          )
           .for("update")
           .limit(1);
         if (!previous) return null;
@@ -190,7 +206,13 @@ export class ManualPortfolioPositionRepository {
           .select()
           .from(positionReconciliationEvents)
           .where(
-            eq(positionReconciliationEvents.manualAssetKey, previous.assetKey),
+            and(
+              eq(
+                positionReconciliationEvents.manualAssetKey,
+                previous.assetKey,
+              ),
+              eq(positionReconciliationEvents.userId, userId),
+            ),
           )
           .orderBy(
             desc(positionReconciliationEvents.recordedAt),
@@ -229,7 +251,12 @@ export class ManualPortfolioPositionRepository {
         const [position] = await transaction
           .update(manualPortfolioPositions)
           .set({ ...input, updatedAt })
-          .where(eq(manualPortfolioPositions.id, id))
+          .where(
+            and(
+              eq(manualPortfolioPositions.id, id),
+              eq(manualPortfolioPositions.userId, userId),
+            ),
+          )
           .returning();
         if (!position) return null;
         await this.recordSnapshot(
@@ -241,6 +268,7 @@ export class ManualPortfolioPositionRepository {
         if (hasEconomicChange) {
           await transaction.insert(manualPortfolioAdjustmentEvents).values({
             assetKey: position.assetKey,
+            userId,
             eventType: "NEUTRAL_ADJUSTMENT",
             previousQuantity: previous.quantity,
             quantity: position.quantity,
@@ -267,6 +295,7 @@ export class ManualPortfolioPositionRepository {
             .insert(portfolioAssetClassifications)
             .values({
               assetKey: position.assetKey,
+              userId,
               ...classification,
             })
             .onConflictDoUpdate({
@@ -277,6 +306,7 @@ export class ManualPortfolioPositionRepository {
                 geography: sql.raw('excluded."geography"'),
                 updatedAt: new Date(),
               },
+              setWhere: eq(portfolioAssetClassifications.userId, userId),
             });
         }
         return position;
@@ -291,6 +321,7 @@ export class ManualPortfolioPositionRepository {
   }
 
   async delete(id: string, requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         await transaction.execute(
@@ -299,7 +330,12 @@ export class ManualPortfolioPositionRepository {
         const [position] = await transaction
           .select()
           .from(manualPortfolioPositions)
-          .where(eq(manualPortfolioPositions.id, id))
+          .where(
+            and(
+              eq(manualPortfolioPositions.id, id),
+              eq(manualPortfolioPositions.userId, userId),
+            ),
+          )
           .for("update")
           .limit(1);
         if (!position) return null;
@@ -323,7 +359,12 @@ export class ManualPortfolioPositionRepository {
         );
         const [deleted] = await transaction
           .delete(manualPortfolioPositions)
-          .where(eq(manualPortfolioPositions.id, id))
+          .where(
+            and(
+              eq(manualPortfolioPositions.id, id),
+              eq(manualPortfolioPositions.userId, userId),
+            ),
+          )
           .returning({ id: manualPortfolioPositions.id });
         return deleted ?? null;
       });

@@ -10,6 +10,9 @@ const database = vi.hoisted(() => ({
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => database,
 }));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "user-1",
+}));
 
 import {
   createAllocationSourceFingerprint,
@@ -30,16 +33,226 @@ const sqlChunksText = (chunks: unknown[]) =>
     .join("");
 
 describe("PortfolioObjectivesRepository", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedObjectives: (
+          transaction: unknown,
+          objectiveIds: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedObjectives",
+    ).mockResolvedValue(undefined);
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedAssetKeys: (
+          transaction: unknown,
+          assetKeys: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedAssetKeys",
+    ).mockResolvedValue(undefined);
+  });
+
+  it("skips PostgreSQL locks when a unit-test transaction has no execute method", async () => {
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      lockAllocationSources: (transaction: object) => Promise<boolean>;
+    };
+    await expect(repository.lockAllocationSources({})).resolves.toBe(false);
+  });
+
+  it("accepts the complete set of objectives owned by the active user", async () => {
+    vi.restoreAllMocks();
+    const where = vi.fn().mockResolvedValue([{ id: "goal-1" }]);
+    const transaction = {
+      select: () => ({ from: () => ({ where }) }),
+    };
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedObjectives: (
+        transaction: unknown,
+        objectiveIds: string[],
+      ) => Promise<void>;
+    };
+    await expect(
+      repository.assertOwnedObjectives(transaction, ["goal-1"]),
+    ).resolves.toBeUndefined();
+    expect(where).toHaveBeenCalledOnce();
+  });
+
+  it("skips ownership lookup for an empty objective list", async () => {
+    vi.restoreAllMocks();
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedObjectives: (
+        transaction: unknown,
+        objectiveIds: string[],
+      ) => Promise<void>;
+    };
+    await expect(
+      repository.assertOwnedObjectives({}, []),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects an objective owned by another account", async () => {
+    const where = vi.fn().mockResolvedValue([]);
+    const transaction = {
+      select: () => ({ from: () => ({ where }) }),
+    };
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedObjectives: (
+        transaction: unknown,
+        objectiveIds: string[],
+      ) => Promise<void>;
+    };
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedObjectives: (
+          transaction: unknown,
+          objectiveIds: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedObjectives",
+    ).mockRestore();
+
+    await expect(
+      repository.assertOwnedObjectives(transaction, ["foreign-goal"]),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(where).toHaveBeenCalledOnce();
+  });
+
+  it("skips asset ownership queries for keys that are not portfolio positions", async () => {
+    const select = vi.fn();
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedAssetKeys: (
+        transaction: unknown,
+        assetKeys: string[],
+      ) => Promise<void>;
+    };
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedAssetKeys: (
+          transaction: unknown,
+          assetKeys: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedAssetKeys",
+    ).mockRestore();
+
+    await expect(
+      repository.assertOwnedAssetKeys({ select }, [
+        "market:public",
+        "market:public",
+      ]),
+    ).resolves.toBeUndefined();
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("accepts owned manual and latest imported position keys", async () => {
+    const importedPosition = {
+      product: "CDB",
+      assetCode: "BANK-1",
+      institution: "Banco",
+      issuer: null,
+      indexer: "CDI",
+      regimeType: null,
+      issuedAt: null,
+      maturityAt: null,
+    };
+    const importedKey = (
+      await import("@/lib/emergency-reserve-asset-key")
+    ).getEmergencyReserveAssetKey(importedPosition);
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({ where: async () => [{ assetKey: "manual-1" }] }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "snapshot-1" }] }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: async () => [importedPosition] }),
+      });
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedAssetKeys: (
+        transaction: unknown,
+        assetKeys: string[],
+      ) => Promise<void>;
+    };
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedAssetKeys: (
+          transaction: unknown,
+          assetKeys: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedAssetKeys",
+    ).mockRestore();
+
+    await expect(
+      repository.assertOwnedAssetKeys({ select }, [
+        "manual:manual-1",
+        importedKey,
+        "manual:manual-1",
+      ]),
+    ).resolves.toBeUndefined();
+    expect(select).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    {
+      name: "manual position belongs to another user",
+      keys: ["manual:foreign"],
+      select: vi.fn(() => ({
+        from: () => ({ where: async () => [] }),
+      })),
+    },
+    {
+      name: "imported position has no current snapshot",
+      keys: ["v1:missing"],
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: async () => [] }),
+          }),
+        }),
+      })),
+    },
+  ])("rejects an unavailable asset when $name", async ({ keys, select }) => {
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedAssetKeys: (
+        transaction: unknown,
+        assetKeys: string[],
+      ) => Promise<void>;
+    };
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedAssetKeys: (
+          transaction: unknown,
+          assetKeys: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedAssetKeys",
+    ).mockRestore();
+
+    await expect(
+      repository.assertOwnedAssetKeys({ select }, keys),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
 
   it("loads objectives together with their unique assignments", async () => {
     const objectives = [{ id: "goal-1", name: "Viagem" }];
     const assignments = [{ objectiveId: "goal-1", assetKey: "manual:one" }];
     const objectiveOrderBy = vi.fn().mockResolvedValue(objectives);
+    const objectiveWhere = vi.fn(() => ({ orderBy: objectiveOrderBy }));
+    const assignmentWhere = vi.fn().mockResolvedValue(assignments);
     const from = vi
       .fn()
-      .mockReturnValueOnce({ orderBy: objectiveOrderBy })
-      .mockResolvedValueOnce(assignments);
+      .mockReturnValueOnce({ where: objectiveWhere })
+      .mockReturnValueOnce({ where: assignmentWhere });
     database.select.mockReturnValue({ from });
 
     await expect(new PortfolioObjectivesRepository().list()).resolves.toEqual({
@@ -68,6 +281,7 @@ describe("PortfolioObjectivesRepository", () => {
       targetAmount: "1000.00",
       monthlyPlannedAmount: null,
       kind: "CUSTOM",
+      userId: "user-1",
     });
   });
 
@@ -211,8 +425,8 @@ describe("PortfolioObjectivesRepository", () => {
 
     await repository.replaceAssignments("goal-1", ["asset-a", "asset-b"]);
     expect(insertValues).toHaveBeenCalledWith([
-      { objectiveId: "goal-1", assetKey: "asset-a" },
-      { objectiveId: "goal-1", assetKey: "asset-b" },
+      { objectiveId: "goal-1", assetKey: "asset-a", userId: "user-1" },
+      { objectiveId: "goal-1", assetKey: "asset-b", userId: "user-1" },
     ]);
 
     await repository.replaceAssignments("goal-1", []);
@@ -249,7 +463,7 @@ describe("PortfolioObjectivesRepository", () => {
     expect(transaction.delete).toHaveBeenCalledOnce();
     expect(transaction.select).toHaveBeenCalledOnce();
     expect(insertValues).toHaveBeenCalledWith([
-      { objectiveId: "goal-1", assetKey: "asset-new" },
+      { objectiveId: "goal-1", assetKey: "asset-new", userId: "user-1" },
     ]);
   });
 
@@ -350,7 +564,7 @@ describe("PortfolioObjectivesRepository", () => {
     const name = vi.fn().mockResolvedValue([{ name: "Casa" }]);
     database.transaction.mockRejectedValue({
       code: "23505",
-      constraint: "portfolio_objective_positions_assetKey_unique",
+      constraint: "portfolio_objective_positions_user_asset_uidx",
     });
     database.select
       .mockReturnValueOnce({ from: () => ({ where: () => ({ limit: row }) }) })
@@ -374,7 +588,7 @@ describe("PortfolioObjectivesRepository", () => {
     const row = vi.fn().mockResolvedValue([]);
     database.transaction.mockRejectedValue({
       code: "23505",
-      constraint: "portfolio_objective_positions_assetKey_unique",
+      constraint: "portfolio_objective_positions_user_asset_uidx",
     });
     database.select.mockReturnValue({
       from: () => ({ where: () => ({ limit: row }) }),
@@ -416,7 +630,9 @@ describe("PortfolioObjectivesRepository", () => {
       { objectiveId: "00000000-0000-4000-8000-000000000010", assetKey: "v1:a" },
       { objectiveId: "goal-1", assetKey: "v1:b" },
     ];
-    database.select.mockReturnValue({ from: () => Promise.resolve(rows) });
+    database.select.mockReturnValue({
+      from: () => ({ where: () => Promise.resolve(rows) }),
+    });
     const repository = new PortfolioObjectivesRepository();
     await expect(repository.listReserveAssignments()).resolves.toEqual([
       "v1:a",
@@ -757,7 +973,9 @@ describe("PortfolioObjectivesRepository", () => {
       },
     ];
     const orderBy = vi.fn().mockResolvedValue(rows);
-    const innerJoin = vi.fn().mockReturnValue({ orderBy });
+    const where = vi.fn().mockReturnValue({ orderBy });
+    const secondInnerJoin = vi.fn().mockReturnValue({ where });
+    const innerJoin = vi.fn().mockReturnValue({ innerJoin: secondInnerJoin });
     database.select.mockReturnValue({ from: () => ({ innerJoin }) });
     await expect(
       new PortfolioObjectivesRepository().listLatestBalanceReferences(),
@@ -1560,7 +1778,7 @@ describe("PortfolioObjectivesRepository", () => {
   it("maps the exclusive asset constraint to a conflict", async () => {
     database.transaction.mockRejectedValue({
       code: "23505",
-      constraint: "portfolio_objective_positions_assetKey_unique",
+      constraint: "portfolio_objective_positions_user_asset_uidx",
     });
     await expect(
       new PortfolioObjectivesRepository().saveGlobalAllocation({

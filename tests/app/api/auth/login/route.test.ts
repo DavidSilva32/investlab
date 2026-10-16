@@ -1,101 +1,149 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  signInEmail: vi.fn(),
+  checkLoginRateLimit: vi.fn(),
   verify: vi.fn(),
-  session: vi.fn(),
-  logger: vi.fn(),
+  bootstrap: vi.fn(),
 }));
 
+vi.mock("@/infrastructure/auth/auth", () => ({
+  auth: { api: { signInEmail: mocks.signInEmail } },
+}));
 vi.mock("@/infrastructure/auth/credentials.service", () => ({
   credentialsService: { verify: mocks.verify },
 }));
-vi.mock("@/infrastructure/auth/session", () => ({
-  createSession: mocks.session,
-  sessionCookieName: "session",
+vi.mock("@/infrastructure/auth/auth-configuration", () => ({
+  getCredentialsConfiguration: () => ({ email: "legacy@example.com" }),
 }));
-vi.mock("@/infrastructure/logging/logger", () => ({
-  logger: {
-    error: mocks.logger,
-    info: vi.fn(),
-    withContext: (_context: unknown, operation: () => unknown) => operation(),
+vi.mock("@/backend/services/auth.service", () => ({
+  authService: {
+    checkLoginRateLimit: mocks.checkLoginRateLimit,
+    bootstrapLegacyAdministrator: mocks.bootstrap,
   },
 }));
 
 import { POST } from "@/app/api/auth/login/route";
 
 const request = (body: unknown) =>
-  new Request("http://test", { method: "POST", body: JSON.stringify(body) });
+  new Request("http://investlab.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-real-ip": "192.0.2.1" },
+    body: JSON.stringify(body),
+  });
 
 describe("login route", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
+  beforeEach(() => {
+    mocks.signInEmail.mockReset();
+    mocks.checkLoginRateLimit.mockReset().mockResolvedValue(null);
+    mocks.verify.mockReset();
+    mocks.bootstrap.mockReset();
   });
+  afterEach(() => vi.unstubAllEnvs());
 
-  it("rejects malformed JSON, an invalid e-mail and a non-string password", async () => {
-    let response = await POST(
-      new Request("http://test", { method: "POST", body: "{" }),
-    );
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      message: "Informe um e-mail válido.",
-    });
-
-    response = await POST(request(null));
-    expect(response.status).toBe(400);
-
-    response = await POST(request({ email: "invalido", password: "senha" }));
-    expect(response.status).toBe(400);
-
-    response = await POST(request({ email: "usuario@exemplo.com" }));
-    expect(response.status).toBe(401);
-  });
-
-  it("rejects credentials that do not correspond", async () => {
-    mocks.verify.mockResolvedValue(false);
-
+  it("returns one generic invalid-credential response for unknown e-mails and bad passwords", async () => {
+    mocks.signInEmail.mockResolvedValue(new Response("{}", { status: 401 }));
     const response = await POST(
-      request({ email: "usuario@exemplo.com", password: "senha" }),
+      request({ email: "unknown@example.com", password: "incorrect" }),
     );
-
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       message: "E-mail ou senha incorretos.",
     });
+    expect(mocks.verify).not.toHaveBeenCalled();
   });
 
-  it("returns a safe server error when authentication configuration fails", async () => {
-    mocks.verify.mockRejectedValue(new Error("configuration is invalid"));
-
-    const response = await POST(
-      request({ email: "usuario@exemplo.com", password: "senha" }),
+  it("passes normalized credentials to Better Auth and preserves the HttpOnly cookie", async () => {
+    mocks.signInEmail.mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          "Set-Cookie":
+            "better-auth.session_token=value; HttpOnly; SameSite=Lax",
+        },
+      }),
     );
-
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({
-      message: "Não foi possível concluir o login.",
-    });
-    expect(mocks.logger).toHaveBeenCalledWith("auth_login_failed", {
-      error: expect.any(Error),
-    });
+    const response = await POST(
+      request({ email: "  USER@Example.com ", password: "a-long-password" }),
+    );
+    expect(mocks.signInEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { email: "user@example.com", password: "a-long-password" },
+        asResponse: true,
+      }),
+    );
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
   });
 
-  it("sets a session cookie after a successful login", async () => {
-    mocks.verify.mockResolvedValue(true);
-    mocks.session.mockResolvedValue("token");
-    vi.stubEnv("NODE_ENV", "development");
+  it("returns Retry-After for distributed throttling before credential verification", async () => {
+    mocks.checkLoginRateLimit.mockResolvedValue(42);
+    const response = await POST(
+      request({ email: "user@example.com", password: "incorrect" }),
+    );
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    expect(mocks.signInEmail).not.toHaveBeenCalled();
+  });
 
-    let response = await POST(
-      request({ email: "usuario@exemplo.com", password: "senha" }),
+  it("fails closed when the PostgreSQL rate limiter is unavailable", async () => {
+    mocks.checkLoginRateLimit.mockRejectedValue(
+      new Error("database unavailable"),
+    );
+    const response = await POST(
+      request({ email: "user@example.com", password: "incorrect" }),
+    );
+    expect(response.status).toBe(503);
+    expect(mocks.signInEmail).not.toHaveBeenCalled();
+  });
+
+  it("migrates the configured legacy credential only when no Better Auth user exists", async () => {
+    mocks.signInEmail
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    mocks.verify.mockResolvedValue(true);
+    mocks.bootstrap.mockResolvedValue(true);
+    const response = await POST(
+      request({ email: "LEGACY@example.com", password: "legacy-password" }),
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get("set-cookie")).toContain("session=token");
-    expect(response.headers.get("set-cookie")).not.toContain("; Secure");
-
-    vi.stubEnv("NODE_ENV", "production");
-    response = await POST(
-      request({ email: "usuario@exemplo.com", password: "senha" }),
+    expect(mocks.bootstrap).toHaveBeenCalledWith(
+      "legacy@example.com",
+      "legacy-password",
     );
-    expect(response.headers.get("set-cookie")).toContain("; Secure");
+  });
+
+  it("does not promote or create legacy admin when users already exist", async () => {
+    mocks.signInEmail.mockResolvedValue(new Response("{}", { status: 401 }));
+    mocks.verify.mockResolvedValue(true);
+    mocks.bootstrap.mockResolvedValue(false);
+    const response = await POST(
+      request({ email: "legacy@example.com", password: "legacy-password" }),
+    );
+    expect(response.status).toBe(401);
+    expect(mocks.bootstrap).toHaveBeenCalledOnce();
+  });
+
+  it("retries legacy ADMIN promotion on a later successful sign-in", async () => {
+    mocks.signInEmail.mockResolvedValue(new Response("{}", { status: 200 }));
+    mocks.verify.mockResolvedValue(true);
+    mocks.bootstrap.mockResolvedValue(true);
+    const response = await POST(
+      request({ email: "legacy@example.com", password: "legacy-password" }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.bootstrap).toHaveBeenCalledWith(
+      "legacy@example.com",
+      "legacy-password",
+    );
+  });
+
+  it("rejects malformed JSON and credentials", async () => {
+    expect(
+      (await POST(new Request("http://test", { method: "POST", body: "{" })))
+        .status,
+    ).toBe(401);
+    expect((await POST(request({ email: "bad", password: "x" }))).status).toBe(
+      401,
+    );
   });
 });

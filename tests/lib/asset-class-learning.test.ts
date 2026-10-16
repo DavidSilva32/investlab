@@ -11,10 +11,10 @@ describe("asset class learning links", () => {
 
   it("builds direct links with a stable class query and content anchor", () => {
     expect(getLearningClassHref("fiis")).toBe(
-      "/learn?class=fiis#class-content",
+      "/aprender?class=fiis#class-content",
     );
     expect(getLearningClassHref("brazilian_equities")).toBe(
-      "/learn?class=brazilian_equities#class-content",
+      "/aprender?class=brazilian_equities#class-content",
     );
   });
 

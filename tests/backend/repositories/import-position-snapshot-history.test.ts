@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   logger: { error: vi.fn() },
 }));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "owner-1",
+}));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => ({ select: mocks.select }),
 }));

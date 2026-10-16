@@ -1,20 +1,30 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const signOut = vi.hoisted(() => vi.fn());
+vi.mock("@/infrastructure/auth/auth", () => ({ auth: { api: { signOut } } }));
 
 import { POST } from "@/app/api/auth/logout/route";
 
 describe("logout route", () => {
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("clears a production session cookie", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const response = await POST();
-    expect(response.headers.get("set-cookie")).toContain("Max-Age=0; Secure");
-  });
-
-  it("clears a development session cookie without Secure", async () => {
-    vi.stubEnv("NODE_ENV", "development");
-    const response = await POST();
+  it("revokes the persisted server session and clears the Better Auth cookie", async () => {
+    signOut.mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: {
+          "Set-Cookie":
+            "better-auth.session_token=; Max-Age=0; HttpOnly; SameSite=Lax",
+        },
+      }),
+    );
+    const response = await POST(
+      new Request("http://investlab.test/api/auth/logout", {
+        method: "POST",
+        headers: { cookie: "better-auth.session_token=abc" },
+      }),
+    );
+    expect(signOut).toHaveBeenCalledWith(
+      expect.objectContaining({ asResponse: true }),
+    );
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
-    expect(response.headers.get("set-cookie")).not.toContain("; Secure");
   });
 });

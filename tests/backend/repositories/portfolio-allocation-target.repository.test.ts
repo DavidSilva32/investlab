@@ -5,6 +5,9 @@ const logger = vi.hoisted(() => ({ error: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => client,
 }));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "user-1",
+}));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger }));
 
 import { PortfolioAllocationTargetRepository } from "@/backend/repositories/portfolio-allocation-target.repository";
@@ -53,7 +56,8 @@ describe("PortfolioAllocationTargetRepository", () => {
       new PortfolioAllocationTargetRepository().save(percentages, "req-save"),
     ).resolves.toEqual(percentages);
     expect(values).toHaveBeenCalledWith({
-      id: "default",
+      id: "user-1",
+      userId: "user-1",
       percentages,
       updatedAt: expect.any(Date),
     });
