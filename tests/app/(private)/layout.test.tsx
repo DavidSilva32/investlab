@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { getAuthenticatedUser } from "@/infrastructure/auth/authorization";
 import PrivateLayout from "@/app/(private)/layout";
+import { ShellUserProvider } from "@/components/app-shell";
 
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/navigation", () => ({
@@ -25,11 +26,19 @@ describe("PrivateLayout", () => {
   it("renders private pages after validating the session", async () => {
     vi.mocked(getAuthenticatedUser).mockResolvedValueOnce({
       id: "user-1",
+      name: "Test User",
       email: "user@example.com",
       role: "USER",
     } as never);
     const children = "private" as unknown as ReactNode;
 
-    await expect(PrivateLayout({ children })).resolves.toBe(children);
+    const result = await PrivateLayout({ children });
+    expect(result.type).toBe(ShellUserProvider);
+    expect(result.props.user).toEqual({
+      name: "Test User",
+      email: "user@example.com",
+      role: "USER",
+    });
+    expect(result.props.children).toBe(children);
   });
 });

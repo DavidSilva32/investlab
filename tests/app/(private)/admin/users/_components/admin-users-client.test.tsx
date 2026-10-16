@@ -14,21 +14,46 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("AdminUsersClient remaining action states", () => {
-  it("shows generic feedback for non-Error load and invite failures", async () => {
+  it("shows an inline load error, suppresses empty states, and retries", async () => {
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce("load failed")
+      .mockResolvedValueOnce(
+        Response.json({ users: [], invitations: [], passwordResets: [] }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível carregar os usuários",
+    );
+    expect(screen.queryByText("Nenhum registro.")).toBeNull();
+    expect(screen.queryByText("Nenhum usuário cadastrado.")).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(await screen.findAllByText("Nenhum registro.")).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows operation feedback for a failed invitation", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ users: [], invitations: [], passwordResets: [] }),
+      )
       .mockRejectedValueOnce("invite failed");
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<AdminUsersClient />);
-    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    await screen.findAllByText("Nenhum registro.");
     await user.type(
-      screen.getByLabelText("E-mail para convite"),
+      screen.getByLabelText("E-mail da pessoa convidada"),
       "person@example.com",
     );
-    await user.click(screen.getByRole("button", { name: /Emitir convite/ }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByRole("button", { name: /Gerar convite/ }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -146,17 +171,22 @@ describe("AdminUsersClient error and link operations", () => {
     const user = userEvent.setup();
     render(<AdminUsersClient />);
 
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Falha ao carregar contas"),
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Falha ao carregar contas",
     );
-    await user.click(screen.getByRole("button", { name: "Atualizar lista" }));
+    expect(toast.error).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Tentar novamente",
+      }),
+    );
     expect(await screen.findByText("Administrador")).toBeTruthy();
     expect(screen.getByText(/custom status/)).toBeTruthy();
     await user.type(
-      screen.getByLabelText("E-mail para convite"),
+      screen.getByLabelText("E-mail da pessoa convidada"),
       "person@example.com",
     );
-    await user.click(screen.getByRole("button", { name: /Emitir convite/ }));
+    await user.click(screen.getByRole("button", { name: /Gerar convite/ }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Convite recusado"),
     );
@@ -192,12 +222,12 @@ describe("AdminUsersClient error and link operations", () => {
     render(<AdminUsersClient />);
     await screen.findAllByText("Nenhum registro.");
     await user.type(
-      screen.getByLabelText("E-mail para convite"),
+      screen.getByLabelText("E-mail da pessoa convidada"),
       "person@example.com",
     );
-    await user.click(screen.getByRole("button", { name: /Emitir convite/ }));
+    await user.click(screen.getByRole("button", { name: /Gerar convite/ }));
     await screen.findByDisplayValue(/copy-token/);
-    await user.click(screen.getByRole("button", { name: "Copiar" }));
+    await user.click(screen.getByRole("button", { name: "Copiar link" }));
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(
         `${window.location.origin}/convite/copy-token`,
@@ -205,7 +235,7 @@ describe("AdminUsersClient error and link operations", () => {
     );
     expect(toast.success).toHaveBeenCalledWith("Link copiado.");
     writeText.mockRejectedValueOnce(new Error("clipboard denied"));
-    await user.click(screen.getByRole("button", { name: "Copiar" }));
+    await user.click(screen.getByRole("button", { name: "Copiar link" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(expect.any(String)),
     );
@@ -278,10 +308,10 @@ describe("AdminUsersClient", () => {
     render(<AdminUsersClient />);
     await screen.findAllByText("Nenhum registro.");
     await user.type(
-      screen.getByLabelText("E-mail para convite"),
+      screen.getByLabelText("E-mail da pessoa convidada"),
       "person@example.com",
     );
-    await user.click(screen.getByRole("button", { name: /Emitir convite/ }));
+    await user.click(screen.getByRole("button", { name: /Gerar convite/ }));
     expect(
       await screen.findByDisplayValue(/convite\/one-time-token/),
     ).toBeTruthy();
@@ -292,7 +322,7 @@ describe("AdminUsersClient", () => {
     );
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
-        expect.stringContaining("Link emitido"),
+        expect.stringContaining("Link gerado"),
       ),
     );
   });
@@ -328,13 +358,15 @@ describe("AdminUsersClient", () => {
     render(<AdminUsersClient />);
     await screen.findAllByText("Nenhum registro.");
     await user.type(
-      screen.getByLabelText(/E-mail para redefini/),
+      screen.getByLabelText(/E-mail da conta cuja identidade foi confirmada/),
       "person@example.com",
     );
-    await user.click(screen.getByRole("button", { name: /Emitir link de/ }));
+    await user.click(
+      screen.getByRole("button", { name: /Gerar link para redefinir senha/ }),
+    );
     expect(
       await screen.findByDisplayValue(/redefinir-senha\/secret-reset/),
     ).toBeTruthy();
-    expect(screen.getByText(/Solicita/)).toBeTruthy();
+    expect(screen.getByText("Links de redefinição de senha")).toBeTruthy();
   });
 });

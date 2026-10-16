@@ -22,18 +22,15 @@ type AccessData = {
     role: string;
     createdAt: string;
   }>;
-  invitations: Array<{
-    id: string;
-    email: string;
-    expiresAt: string;
-    status: string;
-  }>;
-  passwordResets: Array<{
-    id: string;
-    email: string;
-    expiresAt: string;
-    status: string;
-  }>;
+  invitations: AccessLink[];
+  passwordResets: AccessLink[];
+};
+
+type AccessLink = {
+  id: string;
+  email: string;
+  expiresAt: string;
+  status: string;
 };
 
 const statusLabels: Record<string, string> = {
@@ -46,6 +43,7 @@ const statusLabels: Record<string, string> = {
 export function AdminUsersClient() {
   const [data, setData] = useState<AccessData>();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [resetEmail, setResetEmail] = useState("");
@@ -53,19 +51,21 @@ export function AdminUsersClient() {
   const [issuedLabel, setIssuedLabel] = useState("");
 
   async function loadData() {
+    setLoading(true);
+    setLoadError(null);
     try {
       const response = await fetch("/api/admin/users", { cache: "no-store" });
       const body = await response.json();
-      if (!response.ok)
-        throw new Error(
-          getApiMessage(body, "Não foi possível carregar usuários."),
+      if (!response.ok) {
+        setLoadError(
+          getApiMessage(body, "Não foi possível carregar os usuários."),
         );
+        return;
+      }
       setData(body as AccessData);
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível carregar usuários.",
+    } catch {
+      setLoadError(
+        "Não foi possível carregar os usuários. Verifique sua conexão e tente novamente.",
       );
     } finally {
       setLoading(false);
@@ -73,7 +73,7 @@ export function AdminUsersClient() {
   }
 
   useEffect(() => {
-    // This starts the initial request; state updates happen after its response.
+    // Start the initial request; state updates happen after its response.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, []);
@@ -88,19 +88,20 @@ export function AdminUsersClient() {
         body: JSON.stringify({ email: targetEmail }),
       });
       const body = await response.json();
-      if (!response.ok)
-        throw new Error(getApiMessage(body, "Não foi possível emitir o link."));
+      if (!response.ok) {
+        throw new Error(getApiMessage(body, "Não foi possível gerar o link."));
+      }
       setIssuedLink(body.url as string);
       setIssuedLabel(label);
       toast.success(
-        "Link emitido. Copie e compartilhe diretamente com a pessoa.",
+        "Link gerado. Copie e compartilhe diretamente com a pessoa.",
       );
       await loadData();
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Não foi possível emitir o link.",
+          : "Não foi possível gerar o link.",
       );
     } finally {
       setActionLoading(false);
@@ -111,10 +112,11 @@ export function AdminUsersClient() {
     try {
       const response = await fetch(path, { method: "DELETE" });
       const body = await response.json();
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(
           getApiMessage(body, "Não foi possível revogar o link."),
         );
+      }
       toast.success("Link revogado.");
       await loadData();
     } catch (error) {
@@ -134,78 +136,128 @@ export function AdminUsersClient() {
       toast.success("Link copiado.");
     } catch {
       toast.error(
-        "Não foi possível copiar o link. Selecione e copie o endereço exibido.",
+        "Não foi possível copiar. Selecione e copie o endereço exibido.",
       );
     }
   }
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      {loadError && (
+        <div
+          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+          role="alert"
+        >
+          <p className="text-sm text-foreground">{loadError}</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void loadData()}
+            disabled={loading}
+          >
+            <RefreshCw aria-hidden="true" className="size-4" />
+            Tentar novamente
+          </Button>
+        </div>
+      )}
       <Card>
         <CardHeader>
-          <CardTitle>Contas</CardTitle>
+          <CardTitle>Acessos</CardTitle>
           <CardDescription>
-            Gerencie convites e recuperação assistida. Esta área não mostra
-            carteiras nem senhas.
+            Convide participantes e gere links de redefinição após confirmar a
+            identidade da pessoa. Esta área não mostra carteiras nem senhas.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <form
-            className="flex flex-col gap-3 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void issueLink("/api/admin/users", email, "Convite");
-            }}
+          <section aria-labelledby="invite-heading" className="space-y-3">
+            <div>
+              <h2 id="invite-heading" className="text-sm font-semibold">
+                Convidar participante
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                O convite fica vinculado a este e-mail e pode ser usado uma vez
+                antes do vencimento.
+              </p>
+            </div>
+            <form
+              className="flex flex-col gap-3 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void issueLink("/api/admin/users", email, "Convite");
+              }}
+            >
+              <label className="sr-only" htmlFor="invite-email">
+                E-mail da pessoa convidada
+              </label>
+              <Input
+                id="invite-email"
+                type="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="E-mail da pessoa convidada"
+              />
+              <Button type="submit" disabled={actionLoading}>
+                <UserPlus aria-hidden="true" className="size-4" />
+                Gerar convite
+              </Button>
+            </form>
+          </section>
+
+          <section
+            aria-labelledby="reset-heading"
+            className="space-y-3 border-t pt-5"
           >
-            <label className="sr-only" htmlFor="invite-email">
-              E-mail para convite
-            </label>
-            <Input
-              id="invite-email"
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="E-mail da pessoa convidada"
-            />
-            <Button type="submit" disabled={actionLoading}>
-              <UserPlus aria-hidden="true" className="size-4" /> Emitir convite
-            </Button>
-          </form>
-          <form
-            className="flex flex-col gap-3 border-t pt-5 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void issueLink(
-                "/api/admin/password-resets",
-                resetEmail,
-                "Redefinição de senha",
-              );
-            }}
-          >
-            <label className="sr-only" htmlFor="reset-email">
-              E-mail para redefinição de senha
-            </label>
-            <Input
-              id="reset-email"
-              type="email"
-              required
-              value={resetEmail}
-              onChange={(event) => setResetEmail(event.target.value)}
-              placeholder="E-mail da conta após verificar a identidade"
-            />
-            <Button type="submit" variant="outline" disabled={actionLoading}>
-              <Link2 aria-hidden="true" className="size-4" /> Emitir link de
-              redefinição
-            </Button>
-          </form>
+            <div>
+              <h2 id="reset-heading" className="text-sm font-semibold">
+                Redefinição assistida de senha
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Confirme a identidade da pessoa por um canal confiável antes de
+                gerar o link. Ele permite que ela escolha uma nova senha e
+                encerra as sessões anteriores.
+              </p>
+            </div>
+            <form
+              className="flex flex-col gap-3 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void issueLink(
+                  "/api/admin/password-resets",
+                  resetEmail,
+                  "Link para redefinir senha",
+                );
+              }}
+            >
+              <label className="sr-only" htmlFor="reset-email">
+                E-mail da conta cuja identidade foi confirmada
+              </label>
+              <Input
+                id="reset-email"
+                type="email"
+                required
+                value={resetEmail}
+                onChange={(event) => setResetEmail(event.target.value)}
+                placeholder="E-mail da conta após confirmar a identidade"
+              />
+              <Button type="submit" variant="outline" disabled={actionLoading}>
+                <Link2 aria-hidden="true" className="size-4" />
+                Gerar link para redefinir senha
+              </Button>
+            </form>
+          </section>
+
           {issuedLink && (
             <div
               className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-4"
               role="status"
             >
               <p className="text-sm font-medium">
-                {issuedLabel}: link mostrado uma única vez
+                {issuedLabel}: link disponível somente agora
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Copie e envie diretamente à pessoa. O link não será exibido
+                novamente depois que você sair desta tela.
               </p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
@@ -218,26 +270,28 @@ export function AdminUsersClient() {
                   variant="secondary"
                   onClick={() => void copyLink()}
                 >
-                  <Copy aria-hidden="true" className="size-4" /> Copiar
+                  <Copy aria-hidden="true" className="size-4" /> Copiar link
                 </Button>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle>Usuários</CardTitle>
               <CardDescription>
-                Contas cadastradas e papel atribuído.
+                Contas cadastradas e papel de acesso. A lista não permite
+                consultar dados financeiros.
               </CardDescription>
             </div>
             <Button
               variant="outline"
               size="icon"
-              aria-label="Atualizar lista"
+              aria-label="Atualizar lista de usuários e links"
               onClick={() => void loadData()}
             >
               <RefreshCw aria-hidden="true" className="size-4" />
@@ -247,6 +301,10 @@ export function AdminUsersClient() {
         <CardContent>
           {loading ? (
             <p role="status">Carregando usuários…</p>
+          ) : !data ? null : data.users.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhum usuário cadastrado.
+            </p>
           ) : (
             <ul className="divide-y">
               {(data?.users ?? []).map((user) => (
@@ -269,18 +327,23 @@ export function AdminUsersClient() {
           )}
         </CardContent>
       </Card>
-      <AccessLinkList
-        title="Convites"
-        items={data?.invitations ?? []}
-        onRevoke={(id) => void revoke(`/api/admin/invitations/${id}`)}
-        loading={loading}
-      />
-      <AccessLinkList
-        title="Solicitações de redefinição"
-        items={data?.passwordResets ?? []}
-        onRevoke={(id) => void revoke(`/api/admin/password-resets/${id}`)}
-        loading={loading}
-      />
+
+      {(data || loading) && (
+        <>
+          <AccessLinkList
+            title="Convites"
+            items={data?.invitations ?? []}
+            onRevoke={(id) => void revoke(`/api/admin/invitations/${id}`)}
+            loading={loading}
+          />
+          <AccessLinkList
+            title="Links de redefinição de senha"
+            items={data?.passwordResets ?? []}
+            onRevoke={(id) => void revoke(`/api/admin/password-resets/${id}`)}
+            loading={loading}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -292,12 +355,7 @@ function AccessLinkList({
   loading,
 }: {
   title: string;
-  items: Array<{
-    id: string;
-    email: string;
-    expiresAt: string;
-    status: string;
-  }>;
+  items: AccessLink[];
   onRevoke: (id: string) => void;
   loading: boolean;
 }) {
@@ -305,6 +363,9 @@ function AccessLinkList({
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
+        <CardDescription>
+          Tokens não são armazenados nem exibidos nesta lista.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (

@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  within,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const navigation = vi.hoisted(() => ({
@@ -11,18 +18,24 @@ vi.mock("next/link", () => ({
     href,
     children,
     className,
+    onClick,
     "aria-current": ariaCurrent,
     "aria-label": ariaLabel,
   }: {
     href: string;
     children: React.ReactNode;
     className?: string;
+    onClick?: React.MouseEventHandler<HTMLAnchorElement>;
     "aria-current"?: "page";
     "aria-label"?: string;
   }) => (
     <a
       href={href}
       className={className}
+      onClick={(event) => {
+        onClick?.(event);
+        event.preventDefault();
+      }}
       aria-current={ariaCurrent}
       aria-label={ariaLabel}
     >
@@ -33,64 +46,26 @@ vi.mock("next/link", () => ({
 vi.mock("@/components/logout-button", () => ({
   LogoutButton: () => <button>Sair</button>,
 }));
-import { AppShell } from "@/components/app-shell";
+import { AppShell, ShellUserProvider } from "@/components/app-shell";
+import type { ShellUser } from "@/components/app-shell";
 import { BrandLogo } from "@/components/brand-logo";
 
-it("ignores session request results after the shell unmounts", async () => {
-  let resolveRequest!: (response: Response) => void;
-  const request = new Promise<Response>((resolve) => {
-    resolveRequest = resolve;
-  });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => request),
-  );
-  const shell = render(
-    <AppShell title="Conta">
-      <p>Context</p>
-    </AppShell>,
-  );
-  shell.unmount();
-  await act(async () => {
-    resolveRequest(Response.json({ user: { role: "ADMIN" } }));
-    await request;
-  });
-  let rejectRequest!: (error: Error) => void;
-  const failedRequest = new Promise<Response>((_, reject) => {
-    rejectRequest = reject;
-  });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => failedRequest),
-  );
-  const failedShell = render(
-    <AppShell title="Conta">
-      <p>Context</p>
-    </AppShell>,
-  );
-  failedShell.unmount();
-  await act(async () => {
-    rejectRequest(new Error("session unavailable"));
-    await failedRequest.catch(() => undefined);
-  });
-});
+const admin = {
+  name: "David Silva",
+  email: "david@example.com",
+  role: "ADMIN" as const,
+};
+const regularUser = { ...admin, role: "USER" as const };
 
-it("keeps administration hidden when the session endpoint is unavailable", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => Response.json({}, { status: 401 })),
+function renderShell(user: ShellUser = regularUser) {
+  return render(
+    <ShellUserProvider user={user}>
+      <AppShell title="Carteira">
+        <p>Conteúdo</p>
+      </AppShell>
+    </ShellUserProvider>,
   );
-  render(
-    <AppShell title="Conta">
-      <p>Context</p>
-    </AppShell>,
-  );
-  expect(
-    await screen.findAllByRole("link", { name: "Dashboard" }),
-  ).toHaveLength(1);
-  expect(screen.queryByRole("link", { name: /Usu/ })).toBeNull();
-  expect(screen.queryByRole("link", { name: /Config/ })).toBeNull();
-});
+}
 
 afterEach(() => {
   cleanup();
@@ -98,19 +73,22 @@ afterEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders navigation, title and user context", () => {
+  it("renders the authenticated identity and active navigation without fetching the session", () => {
     navigation.pathname = "/carteira";
-    render(
-      <AppShell title="Carteira">
-        <p>Conteúdo</p>
-      </AppShell>,
-    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderShell();
+
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: "Importações" })).toBeNull();
+    expect(screen.getAllByText("David Silva").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Usuário autorizado")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Configurações" })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(
       screen
-        .getAllByRole("link", { name: "Aprender" })
-        .every((link) => link.getAttribute("href") === "/aprender"),
+        .getAllByRole("link", { name: "Carteira" })
+        .every((link) => link.getAttribute("aria-current") === "page"),
     ).toBe(true);
     expect(
       screen
@@ -132,99 +110,89 @@ describe("AppShell", () => {
       .map((paint) => paint?.slice(5, -1));
     expect(paintReferences.length).toBeGreaterThan(0);
     paintReferences.forEach((id) => expect(gradientIds).toContain(id));
-    expect(screen.getAllByText("Carteira").length).toBeGreaterThan(1);
-    expect(screen.getAllByText("Usuário autorizado").length).toBeGreaterThan(0);
+  });
+
+  it("groups administration in a disclosure for admins and keeps the current route open", () => {
+    navigation.pathname = "/admin/usuarios";
+    renderShell(admin);
+
+    expect(
+      screen.getAllByRole("button", { name: "Administração" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("link", { name: "Usuários" }).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Configurações" })).toHaveLength(
+      1,
+    );
     expect(
       screen
-        .getAllByRole("link", { name: "Carteira" })
+        .getAllByRole("link", { name: "Usuários" })
         .every((link) => link.getAttribute("aria-current") === "page"),
     ).toBe(true);
   });
 
-  it("supports the isolated symbol variant", () => {
+  it("allows an admin to open the administration disclosure from another route", async () => {
+    navigation.pathname = "/carteira";
+    const user = userEvent.setup();
+    renderShell(admin);
+
+    expect(screen.queryByRole("link", { name: "Usuários" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Administração" }));
+    expect(screen.getByRole("link", { name: "Usuários" })).toBeTruthy();
+  });
+
+  it("closes the mobile menu after choosing the users page", async () => {
+    navigation.pathname = "/admin/usuarios";
+    const user = userEvent.setup();
+    renderShell(admin);
+
+    await user.click(screen.getByRole("button", { name: "Abrir menu" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("link", { name: "Usuários" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("does not show administration for regular users", () => {
+    navigation.pathname = "/analises/filtros";
+    renderShell();
+    expect(screen.queryByRole("button", { name: "Administração" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Usuários" })).toBeNull();
+    const links = screen.getAllByRole("link", { name: "Análises" });
+    expect(links.length).toBeGreaterThan(0);
+    expect(
+      links.every((link) => link.getAttribute("aria-current") === "page"),
+    ).toBe(true);
+  });
+
+  it("supports a null pathname while rendering navigation", () => {
+    navigation.pathname = null;
+    renderShell();
+    expect(
+      screen.getAllByRole("navigation", { name: "Navegação principal" }),
+    ).toHaveLength(1);
+  });
+
+  it("falls back to the account email when the profile has no name", () => {
+    navigation.pathname = "/";
+    renderShell({ ...regularUser, name: "" });
+    expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
+  });
+
+  it("requires the authenticated server identity provider", () => {
+    expect(() =>
+      render(
+        <AppShell title="Carteira">
+          <p>Conteúdo</p>
+        </AppShell>,
+      ),
+    ).toThrow("AppShell precisa ser renderizado dentro de ShellUserProvider.");
+  });
+
+  it("supports the isolated brand symbol variant", () => {
     render(<BrandLogo symbolOnly />);
     expect(screen.getByTestId("investlab-symbol")).toBeTruthy();
     expect(screen.queryByText("InvestLab")).toBeNull();
-  });
-
-  it("keeps the analysis navigation active on nested analysis paths", () => {
-    navigation.pathname = "/analises/filtros";
-    render(
-      <AppShell title="Explorar">
-        <p>Conteúdo</p>
-      </AppShell>,
-    );
-    const links = screen.getAllByRole("link", { name: "Análises" });
-    expect(links.length).toBeGreaterThan(0);
-    expect(links.every((link) => link.className.includes("bg-brand"))).toBe(
-      true,
-    );
-    expect(
-      links.every((link) => link.getAttribute("aria-current") === "page"),
-    ).toBe(true);
-  });
-
-  it("keeps planning active on its route", () => {
-    navigation.pathname = "/planejamento";
-    render(
-      <AppShell title="Planejamento">
-        <p>Conteúdo</p>
-      </AppShell>,
-    );
-    const links = screen.getAllByRole("link", { name: "Planejamento" });
-    expect(links.length).toBeGreaterThan(0);
-    expect(
-      links.every((link) => link.getAttribute("href") === "/planejamento"),
-    ).toBe(true);
-    expect(
-      links.every((link) => link.getAttribute("aria-current") === "page"),
-    ).toBe(true);
-  });
-
-  it("handles a null pathname while rendering the navigation", () => {
-    navigation.pathname = null;
-    render(
-      <AppShell title="Carregando">
-        <p>Conteúdo</p>
-      </AppShell>,
-    );
-    expect(
-      screen.getAllByRole("navigation", { name: "Navegação principal" }).length,
-    ).toBeGreaterThan(0);
-  });
-
-  it("shows the administration item only for an ADMIN session", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ user: { role: "ADMIN" } })),
-    );
-    render(
-      <AppShell title="Admin">
-        <p>Conteúdo</p>
-      </AppShell>,
-    );
-    expect(
-      await screen.findAllByRole("link", { name: "Usuários" }),
-    ).toHaveLength(1);
-    expect(screen.getAllByRole("link", { name: "Configurações" })).toHaveLength(
-      1,
-    );
-  });
-
-  it("does not show administration navigation for USER sessions", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ user: { role: "USER" } })),
-    );
-    render(
-      <AppShell title="Conta">
-        <p>Conteúdo</p>
-      </AppShell>,
-    );
-    expect(
-      await screen.findAllByRole("link", { name: "Dashboard" }),
-    ).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: "Usuários" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Configurações" })).toBeNull();
   });
 });
