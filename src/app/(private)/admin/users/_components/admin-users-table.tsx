@@ -13,6 +13,7 @@ import {
 } from "@/components/portfolio-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import {
   Dialog,
   DialogContent,
@@ -126,6 +127,9 @@ function statusBadge(status: UserTableRow["status"]) {
 
 export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [deactivatingUser, setDeactivatingUser] = useState<ManagedUser | null>(
+    null,
+  );
   const [name, setName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const rows: UserTableRow[] = [
@@ -271,9 +275,10 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
                       ? "text-status-danger focus:text-status-danger"
                       : undefined
                   }
-                  onSelect={() =>
-                    void onUpdate(row.id, { isActive: !isActive })
-                  }
+                  onSelect={() => {
+                    if (isActive) setDeactivatingUser(user);
+                    else void onUpdate(row.id, { isActive: true });
+                  }}
                 >
                   {isActive ? (
                     <UserRoundX aria-hidden="true" />
@@ -357,6 +362,23 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
           </DialogContent>
         )}
       </Dialog>
+      {deactivatingUser && (
+        <ConfirmActionDialog
+          open
+          onOpenChange={() => setDeactivatingUser(null)}
+          hideTrigger
+          title="Desativar usuário?"
+          description={`A conta de ${deactivatingUser.name} (${deactivatingUser.email}) perderá o acesso ao InvestLab. Você poderá reativá-la depois.`}
+          confirmLabel="Desativar usuário"
+          onConfirm={() => {
+            void onUpdate(deactivatingUser.id, { isActive: false }).then(
+              (updated) => {
+                if (updated) setDeactivatingUser(null);
+              },
+            );
+          }}
+        />
+      )}
     </>
   );
 }

@@ -208,12 +208,55 @@ describe("AdminUsersTable", () => {
     );
     await user.click(screen.getByRole("menuitem", { name: "Ativar conta" }));
     expect(onUpdate).toHaveBeenCalledWith("user-2", { isActive: true });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
     await user.click(
       screen.getByRole("button", { name: "Ações para ana@example.com" }),
     );
     await user.click(screen.getByRole("menuitem", { name: "Desativar conta" }));
-    expect(onUpdate).toHaveBeenCalledWith("user-1", { isActive: false });
+    expect(onUpdate).not.toHaveBeenCalledWith("user-1", { isActive: false });
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText(/perderá o acesso ao InvestLab/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Desativar usuário" }));
+    await waitFor(() =>
+      expect(onUpdate).toHaveBeenCalledWith("user-1", { isActive: false }),
+    );
+  });
+
+  it("cancels deactivation without updating the account", async () => {
+    const onUpdate = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Desativar conta" }));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the confirmation open when deactivation fails", async () => {
+    const onUpdate = vi.fn().mockResolvedValue(false);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Desativar conta" }));
+    await user.click(screen.getByRole("button", { name: "Desativar usuário" }));
+
+    await waitFor(() =>
+      expect(onUpdate).toHaveBeenCalledWith("user-1", { isActive: false }),
+    );
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
   });
 
   it("edits a user's name and keeps the dialog open when the update fails", async () => {
