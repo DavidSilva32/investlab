@@ -11,8 +11,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const navigation = vi.hoisted(() => ({
   pathname: "/carteira" as string | null,
+  refresh: vi.fn(),
 }));
-vi.mock("next/navigation", () => ({ usePathname: () => navigation.pathname }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => navigation.pathname,
+  useRouter: () => ({ refresh: navigation.refresh }),
+}));
 vi.mock("next/link", () => ({
   default: ({
     href,
@@ -85,6 +89,7 @@ describe("AppShell", () => {
     expect(screen.queryByText("Usuário autorizado")).toBeNull();
     expect(screen.queryByRole("link", { name: "Configurações" })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Meu perfil" })).toBeTruthy();
     expect(
       screen
         .getAllByRole("link", { name: "Carteira" })
@@ -209,6 +214,26 @@ describe("AppShell", () => {
     navigation.pathname = "/";
     renderShell({ ...regularUser, name: "" });
     expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
+  });
+
+  it("updates the account identity in the header after saving a name", async () => {
+    navigation.pathname = "/carteira";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(Response.json({ ok: true })),
+    );
+    const user = userEvent.setup();
+    renderShell();
+
+    await user.click(screen.getByRole("button", { name: "Meu perfil" }));
+    const name = screen.getByLabelText("Nome");
+    await user.clear(name);
+    await user.type(name, "Alex Silva");
+    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText("Alex Silva").length).toBeGreaterThan(0),
+    );
   });
 
   it("requires the authenticated server identity provider", () => {

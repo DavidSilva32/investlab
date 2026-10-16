@@ -20,6 +20,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { LogoutButton } from "@/components/logout-button";
 import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { UserProfileDialog } from "@/components/user-profile-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -39,7 +40,10 @@ export type ShellUser = {
   role: "USER" | "ADMIN";
 };
 
-const ShellUserContext = createContext<ShellUser | null>(null);
+const ShellUserContext = createContext<{
+  user: ShellUser;
+  updateName: (name: string) => void;
+} | null>(null);
 
 export function ShellUserProvider({
   user,
@@ -48,8 +52,15 @@ export function ShellUserProvider({
   user: ShellUser;
   children: ReactNode;
 }) {
+  const [currentUser, setCurrentUser] = useState(user);
   return (
-    <ShellUserContext.Provider value={user}>
+    <ShellUserContext.Provider
+      value={{
+        user: currentUser,
+        updateName: (name) =>
+          setCurrentUser((previous) => ({ ...previous, name })),
+      }}
+    >
       {children}
     </ShellUserContext.Provider>
   );
@@ -181,12 +192,13 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname() ?? "";
-  const user = useContext(ShellUserContext);
-  if (!user) {
+  const userContext = useContext(ShellUserContext);
+  if (!userContext) {
     throw new Error(
       "AppShell precisa ser renderizado dentro de ShellUserProvider.",
     );
   }
+  const { user, updateName } = userContext;
 
   return (
     <div className="min-h-screen bg-background lg:flex">
@@ -237,20 +249,11 @@ export function AppShell({
           </div>
           <div className="flex min-w-0 items-center gap-3">
             <ThemeToggle />
-            <div className="hidden min-w-0 border-l border-border/70 pl-4 text-right sm:block">
-              <p
-                className="max-w-52 truncate text-sm font-medium"
-                title={user.name || user.email}
-              >
-                {user.name || user.email}
-              </p>
-              <p
-                className="max-w-52 truncate text-xs text-muted-foreground"
-                title={user.email}
-              >
-                {user.email}
-              </p>
-            </div>
+            <UserProfileDialog
+              name={user.name}
+              email={user.email}
+              onNameUpdated={updateName}
+            />
           </div>
         </header>
         <main className="w-full p-4 sm:p-6 lg:p-8">{children}</main>

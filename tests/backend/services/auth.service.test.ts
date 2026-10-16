@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
     updateManagedUser: vi.fn(),
   },
   signUpEmail: vi.fn(),
+  updateUser: vi.fn(),
+  changePassword: vi.fn(),
   hashPassword: vi.fn(),
   verifyLegacyPassword: vi.fn(),
 }));
@@ -31,7 +33,11 @@ vi.mock("@/backend/repositories/auth.repository", () => ({
 }));
 vi.mock("@/infrastructure/auth/auth", () => ({
   auth: {
-    api: { signUpEmail: mocks.signUpEmail },
+    api: {
+      signUpEmail: mocks.signUpEmail,
+      updateUser: mocks.updateUser,
+      changePassword: mocks.changePassword,
+    },
     $context: Promise.resolve({ password: { hash: mocks.hashPassword } }),
   },
 }));
@@ -46,6 +52,8 @@ describe("AuthService", () => {
   beforeEach(() => {
     Object.values(mocks.repository).forEach((mock) => mock.mockReset());
     mocks.signUpEmail.mockReset();
+    mocks.updateUser.mockReset();
+    mocks.changePassword.mockReset();
     mocks.hashPassword.mockReset();
     mocks.verifyLegacyPassword.mockReset().mockResolvedValue(true);
   });
@@ -136,6 +144,139 @@ describe("AuthService", () => {
     expect(mocks.repository.recordSuccessfulLogin).toHaveBeenCalledWith(
       "person@example.com",
     );
+  });
+
+  it("updates only the current Better Auth user's name and returns a safe response", async () => {
+    const headers = new Headers({ cookie: "session=secret" });
+    const betterAuthResponse = new Response(JSON.stringify({ status: true }), {
+      headers: { "set-cookie": "session=rotated; HttpOnly; SameSite=Lax" },
+    });
+    mocks.updateUser.mockResolvedValue(betterAuthResponse);
+
+    const response = await authService.updateOwnProfile(
+      "  New Name  ",
+      headers,
+    );
+
+    expect(mocks.updateUser).toHaveBeenCalledWith({
+      body: { name: "New Name" },
+      headers,
+      asResponse: true,
+    });
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(response.headers.getSetCookie()).toEqual([
+      "session=rotated; HttpOnly; SameSite=Lax",
+    ]);
+  });
+
+  it("does not expose Better Auth errors when updating the profile fails", async () => {
+    mocks.updateUser.mockResolvedValue(new Response(null, { status: 500 }));
+    await expect(
+      authService.updateOwnProfile("Name", new Headers()),
+    ).rejects.toMatchObject({ statusCode: 500 });
+
+    for (const status of [401, 403]) {
+      mocks.updateUser.mockResolvedValueOnce(
+        Response.json({ message: "internal detail" }, { status }),
+      );
+      await expect(
+        authService.updateOwnProfile("Name", new Headers()),
+      ).rejects.toMatchObject({
+        statusCode: status,
+        message:
+          status === 401
+            ? "Sua sessão não pôde ser validada. Entre novamente."
+            : "A alteração não foi autorizada.",
+      });
+    }
+
+    mocks.updateUser.mockRejectedValueOnce(new Error("internal"));
+    await expect(
+      authService.updateOwnProfile("Name", new Headers()),
+    ).rejects.toMatchObject({ statusCode: 500 });
+  });
+
+  it("changes the current password through Better Auth and hides the rotated bearer token", async () => {
+    const headers = new Headers({ cookie: "session=old" });
+    mocks.changePassword.mockResolvedValue(
+      new Response(JSON.stringify({ token: "rotated-secret", user: {} }), {
+        headers: { "set-cookie": "session=new; HttpOnly; SameSite=Lax" },
+      }),
+    );
+
+    const response = await authService.changeOwnPassword(
+      "current password",
+      "a-new-password-value",
+      headers,
+    );
+
+    expect(mocks.changePassword).toHaveBeenCalledWith({
+      body: {
+        currentPassword: "current password",
+        newPassword: "a-new-password-value",
+        revokeOtherSessions: true,
+      },
+      headers,
+      asResponse: true,
+    });
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(response.headers.getSetCookie()).toEqual([
+      "session=new; HttpOnly; SameSite=Lax",
+    ]);
+  });
+
+  it("maps password validation and authorization errors without exposing Better Auth details", async () => {
+    mocks.changePassword.mockResolvedValue(new Response(null, { status: 400 }));
+    await expect(
+      authService.changeOwnPassword(
+        "wrong",
+        "a-new-password-value",
+        new Headers(),
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message:
+        "Não foi possível validar a senha atual. Confira a senha e tente novamente.",
+    });
+
+    for (const status of [401, 403]) {
+      mocks.changePassword.mockResolvedValueOnce(
+        Response.json({ message: "internal detail" }, { status }),
+      );
+      await expect(
+        authService.changeOwnPassword(
+          "current",
+          "a-new-password-value",
+          new Headers(),
+        ),
+      ).rejects.toMatchObject({
+        statusCode: status,
+        message:
+          status === 401
+            ? "Sua sessão não pôde ser validada. Entre novamente."
+            : "A alteração não foi autorizada.",
+      });
+    }
+
+    mocks.changePassword.mockResolvedValueOnce(
+      new Response(null, { status: 500 }),
+    );
+    await expect(
+      authService.changeOwnPassword(
+        "current",
+        "a-new-password-value",
+        new Headers(),
+      ),
+    ).rejects.toMatchObject({ statusCode: 500 });
+
+    mocks.changePassword.mockRejectedValueOnce(new Error("internal"));
+    await expect(
+      authService.changeOwnPassword(
+        "current",
+        "a-new-password-value",
+        new Headers(),
+      ),
+    ).rejects.toMatchObject({ statusCode: 500 });
   });
 
   it("validates and maps managed-user lifecycle updates", async () => {

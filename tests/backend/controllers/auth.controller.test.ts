@@ -14,8 +14,11 @@ const mocks = vi.hoisted(() => ({
     canAttemptLogin: vi.fn(),
     recordSuccessfulLogin: vi.fn(),
     updateManagedUser: vi.fn(),
+    updateOwnProfile: vi.fn(),
+    changeOwnPassword: vi.fn(),
     bootstrapLegacyAdministrator: vi.fn(),
   },
+  requireAuthenticatedUser: vi.fn(),
   requireRole: vi.fn(),
   signInEmail: vi.fn(),
   verifyLegacyPassword: vi.fn(),
@@ -27,6 +30,7 @@ vi.mock("@/backend/services/auth.service", () => ({
   authService: mocks.service,
 }));
 vi.mock("@/infrastructure/auth/authorization", () => ({
+  requireAuthenticatedUser: mocks.requireAuthenticatedUser,
   requireRole: mocks.requireRole,
 }));
 vi.mock("@/infrastructure/auth/auth", () => ({
@@ -60,6 +64,11 @@ describe("AuthController", () => {
 
   beforeEach(() => {
     Object.values(mocks.service).forEach((mock) => mock.mockReset());
+    mocks.requireAuthenticatedUser.mockReset().mockResolvedValue({
+      id: "user-1",
+      email: "person@example.com",
+      name: "Person",
+    });
     mocks.service.checkLoginRateLimit.mockResolvedValue(null);
     mocks.service.canAttemptLogin.mockResolvedValue(true);
     mocks.service.recordSuccessfulLogin.mockResolvedValue(true);
@@ -73,6 +82,101 @@ describe("AuthController", () => {
     });
     mocks.logger.warn.mockReset();
     mocks.logger.error.mockReset();
+  });
+
+  it("validates and updates only the current profile name", async () => {
+    mocks.service.updateOwnProfile.mockResolvedValue(
+      Response.json({ ok: true }),
+    );
+    const success = await controller.updateOwnProfile(
+      request({ name: " New Person " }),
+    );
+    expect(success.status).toBe(200);
+    expect(success.headers.get("cache-control")).toBe("no-store");
+    expect(mocks.service.updateOwnProfile).toHaveBeenCalledWith(
+      "New Person",
+      expect.any(Headers),
+    );
+
+    expect(
+      (await controller.updateOwnProfile(request({ name: " " }))).status,
+    ).toBe(400);
+    expect(
+      (await controller.updateOwnProfile(request({ name: " " }))).headers.get(
+        "cache-control",
+      ),
+    ).toBe("no-store");
+    expect(
+      (
+        await controller.updateOwnProfile(
+          request({ name: "New", email: "other@example.com" }),
+        )
+      ).status,
+    ).toBe(400);
+    mocks.requireAuthenticatedUser.mockRejectedValueOnce(
+      new ApplicationError("Denied", 401),
+    );
+    expect(
+      (await controller.updateOwnProfile(request({ name: "New" }))).status,
+    ).toBe(401);
+    expect(mocks.service.updateOwnProfile).toHaveBeenCalledOnce();
+  });
+
+  it("validates and changes only the current user's password", async () => {
+    mocks.service.changeOwnPassword.mockResolvedValue(
+      Response.json({ ok: true }),
+    );
+    const success = await controller.changeOwnPassword(
+      request({
+        currentPassword: "old-password",
+        newPassword: "new-password-long",
+        confirmPassword: "new-password-long",
+      }),
+    );
+    expect(success.status).toBe(200);
+    expect(success.headers.get("cache-control")).toBe("no-store");
+    expect(mocks.service.changeOwnPassword).toHaveBeenCalledWith(
+      "old-password",
+      "new-password-long",
+      expect.any(Headers),
+    );
+
+    expect(
+      (
+        await controller.changeOwnPassword(
+          request({
+            currentPassword: "old-password",
+            newPassword: "short",
+            confirmPassword: "short",
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await controller.changeOwnPassword(
+          request({
+            currentPassword: "old-password",
+            newPassword: "new-password-long",
+            confirmPassword: "different-password",
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    mocks.requireAuthenticatedUser.mockRejectedValueOnce(
+      new ApplicationError("Denied", 401),
+    );
+    expect(
+      (
+        await controller.changeOwnPassword(
+          request({
+            currentPassword: "old-password",
+            newPassword: "new-password-long",
+            confirmPassword: "new-password-long",
+          }),
+        )
+      ).status,
+    ).toBe(401);
   });
 
   it("returns administrative data and maps service failures to safe responses", async () => {

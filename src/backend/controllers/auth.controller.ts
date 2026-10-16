@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { authService } from "@/backend/services/auth.service";
 import { ApplicationError } from "@/backend/errors/application-error";
-import { requireRole } from "@/infrastructure/auth/authorization";
+import {
+  requireAuthenticatedUser,
+  requireRole,
+} from "@/infrastructure/auth/authorization";
 import { logger } from "@/infrastructure/logging/logger";
 
 function errorType(error: unknown) {
@@ -29,6 +32,15 @@ function errorResponse(error: unknown) {
   );
 }
 
+function noStore(response: Response) {
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+function profileErrorResponse(error: unknown) {
+  return noStore(errorResponse(error));
+}
+
 const inviteSchema = z.object({ email: z.email() });
 const activateSchema = z.object({
   token: z.string().min(32),
@@ -53,8 +65,60 @@ const managedUserUpdateSchema = z
       body.role !== undefined ||
       body.isActive !== undefined,
   );
+const profileUpdateSchema = z
+  .object({ name: z.string().trim().min(1).max(120) })
+  .strict();
+const ownPasswordChangeSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: z.string().min(12).max(128),
+    confirmPassword: z.string().min(12).max(128),
+  })
+  .strict()
+  .refine((body) => body.newPassword === body.confirmPassword);
 
 export class AuthController {
+  async updateOwnProfile(request: Request) {
+    try {
+      await requireAuthenticatedUser(request.headers);
+      const body = profileUpdateSchema.safeParse(await jsonBody(request));
+      if (!body.success) {
+        return Response.json(
+          { message: "Informe um nome com até 120 caracteres." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const response = await authService.updateOwnProfile(
+        body.data.name,
+        request.headers,
+      );
+      return noStore(response);
+    } catch (error) {
+      return profileErrorResponse(error);
+    }
+  }
+
+  async changeOwnPassword(request: Request) {
+    try {
+      await requireAuthenticatedUser(request.headers);
+      const body = ownPasswordChangeSchema.safeParse(await jsonBody(request));
+      if (!body.success) {
+        return Response.json(
+          { message: "Confira as senhas e tente novamente." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const response = await authService.changeOwnPassword(
+        body.data.currentPassword,
+        body.data.newPassword,
+        request.headers,
+      );
+      return noStore(response);
+    } catch (error) {
+      return profileErrorResponse(error);
+    }
+  }
+
   async adminData(request: Request) {
     try {
       await requireRole("ADMIN", request.headers);

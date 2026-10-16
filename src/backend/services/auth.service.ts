@@ -8,6 +8,81 @@ const digest = (token: string) =>
 const createToken = () => randomBytes(32).toString("base64url");
 
 export class AuthService {
+  async updateOwnProfile(name: string, headers: Headers) {
+    const { auth } = await import("@/infrastructure/auth/auth");
+    let response: Response;
+    try {
+      response = await auth.api.updateUser({
+        body: { name: name.trim() },
+        headers,
+        asResponse: true,
+      });
+    } catch {
+      throw new ApplicationError("Não foi possível atualizar seu perfil.", 500);
+    }
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new ApplicationError(
+          "Sua sessão não pôde ser validada. Entre novamente.",
+          401,
+        );
+      }
+      if (response.status === 403) {
+        throw new ApplicationError("A alteração não foi autorizada.", 403);
+      }
+      throw new ApplicationError("Não foi possível atualizar seu perfil.", 500);
+    }
+    return this.safeAuthSuccess(response);
+  }
+
+  async changeOwnPassword(
+    currentPassword: string,
+    newPassword: string,
+    headers: Headers,
+  ) {
+    const { auth } = await import("@/infrastructure/auth/auth");
+    let response: Response;
+    try {
+      response = await auth.api.changePassword({
+        body: { currentPassword, newPassword, revokeOtherSessions: true },
+        headers,
+        asResponse: true,
+      });
+    } catch {
+      throw new ApplicationError("Não foi possível alterar sua senha.", 500);
+    }
+    if (!response.ok) {
+      if (response.status === 400) {
+        throw new ApplicationError(
+          "Não foi possível validar a senha atual. Confira a senha e tente novamente.",
+          400,
+        );
+      }
+      if (response.status === 401) {
+        throw new ApplicationError(
+          "Sua sessão não pôde ser validada. Entre novamente.",
+          401,
+        );
+      }
+      if (response.status === 403) {
+        throw new ApplicationError("A alteração não foi autorizada.", 403);
+      }
+      throw new ApplicationError("Não foi possível alterar sua senha.", 500);
+    }
+    // Better Auth returns the rotated session token in its JSON body when
+    // other sessions are revoked. Keep only its HttpOnly cookie for the
+    // current session; never expose that token to client-side code.
+    return this.safeAuthSuccess(response);
+  }
+
+  private async safeAuthSuccess(response: Response) {
+    const headers = new Headers({ "Cache-Control": "no-store" });
+    for (const cookie of response.headers.getSetCookie()) {
+      headers.append("Set-Cookie", cookie);
+    }
+    return Response.json({ ok: true }, { status: response.status, headers });
+  }
+
   async checkLoginRateLimit(request: Request, normalizedEmail: string) {
     const secret = process.env.AUTH_SECRET;
     if (!secret || secret.length < 32)
