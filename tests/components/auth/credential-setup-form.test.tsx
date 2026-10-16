@@ -27,6 +27,35 @@ afterEach(() => {
 });
 
 describe("CredentialSetupForm", () => {
+  it("toggles each password field independently", async () => {
+    const user = userEvent.setup();
+    render(<CredentialSetupForm mode="reset" token="reset-token" />);
+
+    const password = screen.getByLabelText("Nova senha");
+    const confirmation = screen.getByLabelText("Confirme a senha");
+
+    expect((password as HTMLInputElement).type).toBe("password");
+    expect((confirmation as HTMLInputElement).type).toBe("password");
+
+    await user.click(
+      screen.getByRole("button", { name: "Mostrar nova senha" }),
+    );
+    expect((password as HTMLInputElement).type).toBe("text");
+    expect((confirmation as HTMLInputElement).type).toBe("password");
+
+    await user.click(
+      screen.getByRole("button", { name: "Mostrar confirmação da senha" }),
+    );
+    expect((password as HTMLInputElement).type).toBe("text");
+    expect((confirmation as HTMLInputElement).type).toBe("text");
+
+    await user.click(
+      screen.getByRole("button", { name: "Ocultar nova senha" }),
+    );
+    expect((password as HTMLInputElement).type).toBe("password");
+    expect((confirmation as HTMLInputElement).type).toBe("text");
+  });
+
   it("activates an invited account using the URL-bound token and the invited person’s chosen password", async () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);

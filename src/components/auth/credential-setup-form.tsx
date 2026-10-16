@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ export function CredentialSetupForm({
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmationVisible, setConfirmationVisible] = useState(false);
   const title = mode === "invite" ? "Ative sua conta" : "Redefina sua senha";
   const endpoint =
     mode === "invite"
@@ -99,27 +102,71 @@ export function CredentialSetupForm({
             )}
             <div className="space-y-2">
               <label htmlFor="password">Nova senha</label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                required
-                minLength={12}
-                maxLength={128}
-                autoComplete="new-password"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={passwordVisible ? "text" : "password"}
+                  required
+                  minLength={12}
+                  maxLength={128}
+                  autoComplete="new-password"
+                  className="pr-11"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-9 w-9"
+                  aria-label={
+                    passwordVisible
+                      ? "Ocultar nova senha"
+                      : "Mostrar nova senha"
+                  }
+                  aria-pressed={passwordVisible}
+                  onClick={() => setPasswordVisible((visible) => !visible)}
+                >
+                  {passwordVisible ? (
+                    <EyeOff aria-hidden="true" />
+                  ) : (
+                    <Eye aria-hidden="true" />
+                  )}
+                </Button>
+              </div>
             </div>
             <div className="space-y-2">
               <label htmlFor="confirmation">Confirme a senha</label>
-              <Input
-                id="confirmation"
-                name="confirmation"
-                type="password"
-                required
-                minLength={12}
-                maxLength={128}
-                autoComplete="new-password"
-              />
+              <div className="relative">
+                <Input
+                  id="confirmation"
+                  name="confirmation"
+                  type={confirmationVisible ? "text" : "password"}
+                  required
+                  minLength={12}
+                  maxLength={128}
+                  autoComplete="new-password"
+                  className="pr-11"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-9 w-9"
+                  aria-label={
+                    confirmationVisible
+                      ? "Ocultar confirmação da senha"
+                      : "Mostrar confirmação da senha"
+                  }
+                  aria-pressed={confirmationVisible}
+                  onClick={() => setConfirmationVisible((visible) => !visible)}
+                >
+                  {confirmationVisible ? (
+                    <EyeOff aria-hidden="true" />
+                  ) : (
+                    <Eye aria-hidden="true" />
+                  )}
+                </Button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={pending}>
               {pending ? "Salvando…" : "Salvar senha"}
