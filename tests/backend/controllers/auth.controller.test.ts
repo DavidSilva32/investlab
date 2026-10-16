@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   signInEmail: vi.fn(),
   verifyLegacyPassword: vi.fn(),
   getCredentialsConfiguration: vi.fn(),
+  logger: { warn: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("@/backend/services/auth.service", () => ({
@@ -36,6 +37,9 @@ vi.mock("@/infrastructure/auth/credentials.service", () => ({
 }));
 vi.mock("@/infrastructure/auth/auth-configuration", () => ({
   getCredentialsConfiguration: mocks.getCredentialsConfiguration,
+}));
+vi.mock("@/infrastructure/logging/logger", () => ({
+  logger: mocks.logger,
 }));
 
 import { AuthController } from "@/backend/controllers/auth.controller";
@@ -62,6 +66,8 @@ describe("AuthController", () => {
     mocks.getCredentialsConfiguration.mockReset().mockReturnValue({
       email: "legacy@example.com",
     });
+    mocks.logger.warn.mockReset();
+    mocks.logger.error.mockReset();
   });
 
   it("returns administrative data and maps service failures to safe responses", async () => {
@@ -390,5 +396,40 @@ describe("AuthController", () => {
     await expect(failed.json()).resolves.toEqual({
       message: "Não foi possível concluir o login.",
     });
+    expect(mocks.logger.error).toHaveBeenCalledWith("auth.login.failed", {
+      errorType: "Error",
+    });
+
+    mocks.signInEmail.mockRejectedValueOnce("unknown failure");
+    const unknownFailure = await controller.legacyLogin(
+      request({ email: "person@example.com", password: "password" }),
+    );
+    expect(unknownFailure.status).toBe(500);
+    expect(mocks.logger.error).toHaveBeenLastCalledWith("auth.login.failed", {
+      errorType: "UnknownError",
+    });
+  });
+
+  it("logs only the error type when first legacy administrator setup fails", async () => {
+    mocks.verifyLegacyPassword.mockResolvedValueOnce(true);
+    mocks.signInEmail.mockResolvedValueOnce(
+      new Response("{}", { status: 401 }),
+    );
+    mocks.service.bootstrapLegacyAdministrator.mockRejectedValueOnce(
+      new Error("database credentials must not be logged"),
+    );
+
+    const response = await controller.legacyLogin(
+      request({ email: "legacy@example.com", password: "password" }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      "auth.legacy_admin_bootstrap_failed",
+      { errorType: "Error" },
+    );
+    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain(
+      "database credentials",
+    );
   });
 });

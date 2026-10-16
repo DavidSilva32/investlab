@@ -21,12 +21,15 @@ export class AuthService {
     return authRepository.checkAuthenticationRateLimits({
       keys: [
         ...(trustedIngressIp
-          ? [{ key: key("ip", trustedIngressIp), maximum: 20 }]
+          ? [{ key: key("ip", trustedIngressIp), maximum: 10 }]
           : []),
-        { key: key("email", normalizedEmail.trim().toLowerCase()), maximum: 8 },
+        {
+          key: key("email", normalizedEmail.trim().toLowerCase()),
+          maximum: 10,
+        },
       ],
       now: Date.now(),
-      windowMs: 15 * 60 * 1000,
+      windowMs: 60 * 1000,
     });
   }
 

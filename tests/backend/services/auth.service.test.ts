@@ -64,6 +64,10 @@ describe("AuthService", () => {
       mocks.repository.checkAuthenticationRateLimits.mock.calls[0][0];
     expect(retry).toBe(37);
     expect(input.keys).toHaveLength(2);
+    expect(
+      input.keys.map((entry: { maximum: number }) => entry.maximum),
+    ).toEqual([10, 10]);
+    expect(input.windowMs).toBe(60_000);
     expect(JSON.stringify(input.keys)).not.toContain("person@example.com");
     expect(JSON.stringify(input.keys)).not.toContain("203.0.113.8");
     expect(JSON.stringify(input.keys)).not.toContain("198.51.100.99");

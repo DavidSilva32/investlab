@@ -2,6 +2,11 @@ import { z } from "zod";
 import { authService } from "@/backend/services/auth.service";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { requireRole } from "@/infrastructure/auth/authorization";
+import { logger } from "@/infrastructure/logging/logger";
+
+function errorType(error: unknown) {
+  return error instanceof Error ? error.name : "UnknownError";
+}
 
 async function jsonBody(request: Request) {
   try {
@@ -208,8 +213,11 @@ export class AuthController {
               asResponse: true,
             });
           }
-        } catch {
+        } catch (error) {
           /* Generic response prevents account enumeration. */
+          logger.warn("auth.legacy_admin_bootstrap_failed", {
+            errorType: errorType(error),
+          });
         }
       } else if (response.ok && isLegacyCredential) {
         // Recover the rare case where sign-up committed but role promotion
@@ -219,8 +227,11 @@ export class AuthController {
             credentials.email,
             credentials.password,
           );
-        } catch {
+        } catch (error) {
           /* Keep the valid sign-in; the next legacy sign-in retries promotion. */
+          logger.warn("auth.legacy_admin_promotion_retry_failed", {
+            errorType: errorType(error),
+          });
         }
       }
       if (response.ok) return response;
@@ -238,7 +249,8 @@ export class AuthController {
         { message: "E-mail ou senha incorretos." },
         { status: 401 },
       );
-    } catch {
+    } catch (error) {
+      logger.error("auth.login.failed", { errorType: errorType(error) });
       return Response.json(
         { message: "Não foi possível concluir o login." },
         { status: 500 },
