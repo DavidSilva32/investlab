@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as databaseSchema from "@/infrastructure/database/schema";
 
 const mocks = vi.hoisted(() => ({
   authOptions: undefined as Record<string, unknown> | undefined,
@@ -56,12 +57,28 @@ describe("Better Auth configuration", () => {
       database: mocks.database,
       provider: "pg",
       schema: expect.objectContaining({
+        auth_users: expect.any(Object),
+        auth_sessions: expect.any(Object),
+        auth_accounts: expect.any(Object),
+        auth_verifications: expect.any(Object),
+        auth_rate_limits: expect.any(Object),
         user: expect.any(Object),
         session: expect.any(Object),
         account: expect.any(Object),
         verification: expect.any(Object),
         rateLimit: expect.any(Object),
       }),
+    });
+    const adapterSchema = mocks.adapterOptions?.schema as Record<
+      string,
+      unknown
+    >;
+    expect(adapterSchema).toMatchObject({
+      auth_users: databaseSchema.authUsers,
+      auth_sessions: databaseSchema.authSessions,
+      auth_accounts: databaseSchema.authAccounts,
+      auth_verifications: databaseSchema.authVerifications,
+      auth_rate_limits: databaseSchema.authRateLimits,
     });
     expect(options.emailAndPassword).toMatchObject({
       enabled: true,
