@@ -45,7 +45,7 @@ export function getPortfolioDiagnostics({
         "O total conhecido não inclui todas as posições. Revise os valores disponíveis.",
       count: insights.unvaluedPositions,
       action: "positions",
-      href: "/portfolio?view=positions",
+      href: "/carteira?view=positions",
     });
   }
   const estimateCount =
@@ -59,7 +59,7 @@ export function getPortfolioDiagnostics({
         "Há estimativas provisórias ou indisponíveis. Consulte a situação de cada posição antes de usar esses valores.",
       count: estimateCount,
       action: "positions",
-      href: "/portfolio?view=positions",
+      href: "/carteira?view=positions",
     });
   }
   if (
@@ -89,7 +89,7 @@ export function getPortfolioDiagnostics({
       detail:
         "A reserva contém seleções ausentes ou grupos sem valor. Revise as posições vinculadas antes de comparar com sua meta.",
       action: "reserve",
-      href: "/portfolio?panel=objectives&objective=reserve",
+      href: "/carteira?panel=objectives&objective=reserve",
     });
   }
   if (
@@ -109,8 +109,8 @@ export function getPortfolioDiagnostics({
           : "strategy",
       href:
         nextContributionGuidance.allocationMode === "legacy"
-          ? "/portfolio?panel=classification"
-          : "/strategy",
+          ? "/carteira?panel=classification"
+          : "/estrategia",
     });
   }
   const maturity = insights.upcomingMaturities[0];
@@ -126,7 +126,7 @@ export function getPortfolioDiagnostics({
         title: "Próximo vencimento informado",
         detail: `${maturity.product} · ${new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(parsed)}. Vencimento não confirma disponibilidade para resgate.`,
         action: "positions",
-        href: "/portfolio?view=positions",
+        href: "/carteira?view=positions",
       });
     }
   }

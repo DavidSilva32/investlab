@@ -18,7 +18,7 @@ test("redirects anonymous visitors to login before rendering the home page", asy
 }) => {
   await page.goto("/");
 
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/entrar$/);
   await expect(
     page.getByText("Acesse sua conta", { exact: true }),
   ).toBeVisible();
@@ -61,8 +61,8 @@ test("rejects an expired or tampered session", async ({ page, request }) => {
     },
   ]);
 
-  await page.goto("/portfolio");
-  await expect(page).toHaveURL(/\/login$/);
+  await page.goto("/carteira");
+  await expect(page).toHaveURL(/\/entrar$/);
 
   const response = await request.get("/api/portfolio", {
     headers: {

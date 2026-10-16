@@ -1634,7 +1634,7 @@ describe("PortfolioChatAssistant", () => {
       screen
         .getByRole("link", { name: /Planejar esta meta/ })
         .getAttribute("href"),
-    ).toBe("/planning?objective=long-term");
+    ).toBe("/planejamento?objective=long-term");
   });
 
   it("closes the conversation from its close button and ignores blank submissions", async () => {
@@ -1896,7 +1896,7 @@ describe("PortfolioChatAssistant", () => {
       name: "Abrir planejamento",
     });
     expect(planningLink.getAttribute("href")).toBe(
-      "/planning?objective=travel",
+      "/planejamento?objective=travel",
     );
     expect(screen.getByRole("log").textContent).toContain("Viagem selecionado");
   });
@@ -1936,7 +1936,7 @@ describe("PortfolioChatAssistant", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /Ver objetivos/ }).getAttribute("href"),
-    ).toBe("/portfolio?panel=objectives");
+    ).toBe("/carteira?panel=objectives");
   });
 
   it("preserves a pending planning request through a load error and retry", async () => {
@@ -2172,7 +2172,7 @@ describe("PortfolioChatAssistant", () => {
       screen
         .getByRole("link", { name: /Abrir planejamento/ })
         .getAttribute("href"),
-    ).toBe("/planning?objective=travel%20trip");
+    ).toBe("/planejamento?objective=travel%20trip");
   });
 
   it("opens general planning when a planning request has no objective name", async () => {
@@ -2203,7 +2203,7 @@ describe("PortfolioChatAssistant", () => {
       screen
         .getByRole("link", { name: "Abrir planejamento" })
         .getAttribute("href"),
-    ).toBe("/planning");
+    ).toBe("/planejamento");
   });
 
   it("recognizes conversational balance questions for travel and reserve objectives", async () => {
@@ -2331,7 +2331,7 @@ describe("PortfolioChatAssistant", () => {
       screen
         .getByRole("link", { name: "Abrir planejamento" })
         .getAttribute("href"),
-    ).toBe("/planning");
+    ).toBe("/planejamento");
     expect(
       screen.queryByRole("link", { name: "Planejar esta meta" }),
     ).toBeNull();
@@ -2373,7 +2373,7 @@ describe("PortfolioChatAssistant", () => {
       screen
         .getByRole("link", { name: "Abrir planejamento" })
         .getAttribute("href"),
-    ).toBe("/planning?objective=travel");
+    ).toBe("/planejamento?objective=travel");
   }, 15_000);
 
   it("offers total planning when ambiguous matches contain no individually plannable objectives", async () => {
@@ -2429,7 +2429,7 @@ describe("PortfolioChatAssistant", () => {
       screen
         .getByRole("link", { name: /Planejar patrimônio total/ })
         .getAttribute("href"),
-    ).toBe("/planning");
+    ).toBe("/planejamento");
     expect(screen.queryByRole("button", { name: "Reserva" })).toBeNull();
   }, 15_000);
 
@@ -2583,7 +2583,7 @@ describe("PortfolioChatAssistant", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /Ver objetivos/ }).getAttribute("href"),
-    ).toBe("/portfolio?panel=objectives");
+    ).toBe("/carteira?panel=objectives");
   });
 
   it("distinguishes missing values, missing targets, and an already reached goal", async () => {

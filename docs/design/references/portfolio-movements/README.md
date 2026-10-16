@@ -2,10 +2,10 @@
 
 ## Contexto funcional
 
-- Rota: `/portfolio?view=movements`, tabela preenchida e tema escuro; a proposta mostra somente o conteúdo da página em viewport desktop, sem AppShell.
+- Rota: `/carteira?view=movements`, tabela preenchida e tema escuro; a proposta mostra somente o conteúdo da página em viewport desktop, sem AppShell.
 - A experiência lista movimentações registradas em tabela com Data, Tipo, Produto / código, Instituição, Quantidade, Preço unitário e Valor.
 - A ação existente permite excluir movimentações importadas. Esta proposta enquadra apenas o conteúdo da experiência; navegação global e estados responsivos ficam fora do recorte.
-- Fonte funcional: `src/app/portfolio/_components/portfolio-details.tsx` e a seleção de aba na rota `/portfolio`.
+- Fonte funcional: `src/app/(private)/portfolio/_components/portfolio-details.tsx` e a seleção de aba na rota `/carteira`.
 
 ## Referência
 

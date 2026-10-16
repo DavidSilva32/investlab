@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const database = vi.hoisted(() => ({
   getDatabaseClient: vi.fn(),
@@ -21,6 +21,9 @@ const database = vi.hoisted(() => ({
     delete: vi.fn(),
   },
   logger: { error: vi.fn() },
+}));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "owner-1",
 }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: database.getDatabaseClient,
@@ -81,6 +84,19 @@ describe("ManualPortfolioPositionRepository", () => {
     );
   });
 
+  it("scopes position reads to the authenticated owner", async () => {
+    const where = vi.fn().mockReturnValue({
+      orderBy: async () => [row],
+    });
+    database.query.from.mockReturnValue({ where });
+    await expect(
+      new ManualPortfolioPositionRepository().list(),
+    ).resolves.toEqual([row]);
+    expect(where.mock.calls[0]?.[0].queryChunks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ value: "owner-1" })]),
+    );
+  });
+
   it("lists positions in the repository-defined order", async () => {
     await expect(
       new ManualPortfolioPositionRepository().list("req"),
@@ -109,7 +125,10 @@ describe("ManualPortfolioPositionRepository", () => {
     await expect(
       new ManualPortfolioPositionRepository().create({ ...row }, "req"),
     ).resolves.toEqual(row);
-    expect(database.query.values).toHaveBeenNthCalledWith(1, row);
+    expect(database.query.values).toHaveBeenNthCalledWith(1, {
+      ...row,
+      userId: "owner-1",
+    });
     expect(database.query.values).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
@@ -129,7 +148,10 @@ describe("ManualPortfolioPositionRepository", () => {
       }),
     );
     await new ManualPortfolioPositionRepository().create(position, "req");
-    expect(database.query.values).toHaveBeenNthCalledWith(1, position);
+    expect(database.query.values).toHaveBeenNthCalledWith(1, {
+      ...position,
+      userId: "owner-1",
+    });
 
     await expect(
       new ManualPortfolioPositionRepository().list("req"),
@@ -331,7 +353,7 @@ describe("ManualPortfolioPositionRepository", () => {
     await expect(
       repository.create({ ...row }, "req", {
         assetClass: "Fundos",
-        subClass: "ETF de ações",
+        subClass: "ETF de aÃ§Ãµes",
         geography: "Exterior",
       }),
     ).resolves.toEqual(row);
@@ -339,8 +361,9 @@ describe("ManualPortfolioPositionRepository", () => {
     expect(database.query.insert).toHaveBeenCalledTimes(3);
     expect(database.query.values).toHaveBeenLastCalledWith({
       assetKey: row.assetKey,
+      userId: "owner-1",
       assetClass: "Fundos",
-      subClass: "ETF de ações",
+      subClass: "ETF de aÃ§Ãµes",
       geography: "Exterior",
     });
     expect(database.query.onConflictDoUpdate).toHaveBeenCalledWith(
@@ -409,7 +432,7 @@ describe("ManualPortfolioPositionRepository", () => {
     await expect(
       repository.update(id, { ...row }, "req", {
         assetClass: "Fundos",
-        subClass: "ETF de ações",
+        subClass: "ETF de aÃ§Ãµes",
         geography: "Exterior",
       }),
     ).resolves.toEqual(row);
@@ -426,8 +449,9 @@ describe("ManualPortfolioPositionRepository", () => {
     );
     expect(database.query.values).toHaveBeenLastCalledWith({
       assetKey: row.assetKey,
+      userId: "owner-1",
       assetClass: "Fundos",
-      subClass: "ETF de ações",
+      subClass: "ETF de aÃ§Ãµes",
       geography: "Exterior",
     });
     expect(database.query.onConflictDoUpdate).toHaveBeenCalledWith(
@@ -446,7 +470,7 @@ describe("ManualPortfolioPositionRepository", () => {
     await expect(
       new ManualPortfolioPositionRepository().update(id, { ...row }, "req", {
         assetClass: "Fundos",
-        subClass: "ETF de ações",
+        subClass: "ETF de aÃ§Ãµes",
         geography: "Exterior",
       }),
     ).resolves.toBeNull();

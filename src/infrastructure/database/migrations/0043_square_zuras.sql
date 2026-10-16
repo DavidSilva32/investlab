@@ -1,0 +1,1 @@
+CREATE INDEX "auth_rate_limits_last_request_idx" ON "auth_rate_limits" USING btree ("lastRequest");

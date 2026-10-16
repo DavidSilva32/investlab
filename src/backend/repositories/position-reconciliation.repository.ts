@@ -1,4 +1,4 @@
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import {
@@ -6,6 +6,7 @@ import {
   manualPortfolioPositions,
 } from "@/infrastructure/database/schema";
 import { logger } from "@/infrastructure/logging/logger";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   activeReconciliationLinks,
   latestReconciliationEventsByPair,
@@ -14,10 +15,12 @@ import {
 
 export class PositionReconciliationRepository {
   async listEvents(requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient()
         .select()
         .from(positionReconciliationEvents)
+        .where(eq(positionReconciliationEvents.userId, userId))
         .orderBy(
           asc(positionReconciliationEvents.recordedAt),
           asc(positionReconciliationEvents.id),
@@ -37,6 +40,7 @@ export class PositionReconciliationRepository {
     requestId: string,
     importedAssetKey?: string,
   ) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         await transaction.execute(
@@ -46,7 +50,10 @@ export class PositionReconciliationRepository {
           .select()
           .from(positionReconciliationEvents)
           .where(
-            eq(positionReconciliationEvents.manualAssetKey, manualAssetKey),
+            and(
+              eq(positionReconciliationEvents.manualAssetKey, manualAssetKey),
+              eq(positionReconciliationEvents.userId, userId),
+            ),
           )
           .orderBy(
             desc(positionReconciliationEvents.recordedAt),
@@ -74,6 +81,7 @@ export class PositionReconciliationRepository {
           .insert(positionReconciliationEvents)
           .values({
             manualAssetKey,
+            userId,
             importedAssetKey: latest.importedAssetKey,
             status: "UNLINK",
             effectiveFrom,

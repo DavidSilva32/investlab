@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { LogOut } from "lucide-react";
@@ -13,7 +13,7 @@ export function LogoutButton() {
       onClick={async () => {
         await fetch("/api/auth/logout", { method: "POST" });
         queryClient.clear();
-        router.push("/login");
+        router.push("/entrar");
       }}
     >
       <LogOut className="size-4" />

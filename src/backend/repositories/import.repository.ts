@@ -3,6 +3,7 @@ import { and, asc, inArray, desc, eq, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   imports,
   movementItems,
@@ -54,12 +55,14 @@ export class ImportRepository {
     >[0],
     input: Extract<ImportCreateInput, { documentType: "B3_POSITION_XLSX" }>,
     importId: string,
+    userId: string,
     requestId?: string,
   ) {
     if (input.reconciliationDecisions?.length) {
       const events = await transaction
         .select({ recordedAt: positionReconciliationEvents.recordedAt })
-        .from(positionReconciliationEvents);
+        .from(positionReconciliationEvents)
+        .where(eq(positionReconciliationEvents.userId, userId));
       const recordedAt = new Date(
         events.reduce(
           (latest, event) => Math.max(latest, event.recordedAt.getTime()),
@@ -69,6 +72,7 @@ export class ImportRepository {
       await transaction.insert(positionReconciliationEvents).values(
         input.reconciliationDecisions.map((decision) => ({
           manualAssetKey: decision.manualAssetKey,
+          userId,
           importedAssetKey: decision.importedAssetKey,
           status:
             decision.action === "link"
@@ -83,13 +87,16 @@ export class ImportRepository {
     }
   }
   async existsByHash(fileHash: string, requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return Boolean(
         (
           await getDatabaseClient()
             .select({ id: imports.id })
             .from(imports)
-            .where(eq(imports.fileHash, fileHash))
+            .where(
+              and(eq(imports.fileHash, fileHash), eq(imports.userId, userId)),
+            )
             .limit(1)
         )[0],
       );
@@ -107,6 +114,7 @@ export class ImportRepository {
     referenceDate: string,
     requestId?: string,
   ) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         const [importRecord] = await transaction
@@ -116,6 +124,7 @@ export class ImportRepository {
             and(
               eq(imports.fileHash, fileHash),
               eq(imports.documentType, "B3_POSITION_XLSX"),
+              eq(imports.userId, userId),
             ),
           )
           .limit(1);
@@ -126,13 +135,20 @@ export class ImportRepository {
         const [snapshot] = await transaction
           .update(positionSnapshots)
           .set({ referenceDate, estimationBaseDate: referenceDate })
-          .where(eq(positionSnapshots.importId, importRecord.id))
+          .where(
+            and(
+              eq(positionSnapshots.importId, importRecord.id),
+              eq(positionSnapshots.userId, userId),
+            ),
+          )
           .returning({ id: positionSnapshots.id });
         if (!snapshot) return null;
         await transaction
           .update(imports)
           .set({ referenceDate, estimationBaseDate: referenceDate })
-          .where(eq(imports.id, importRecord.id));
+          .where(
+            and(eq(imports.id, importRecord.id), eq(imports.userId, userId)),
+          );
         return { importId: importRecord.id, snapshotId: snapshot.id };
       });
     } catch (error) {
@@ -152,6 +168,7 @@ export class ImportRepository {
       ParsedB3Import,
       { documentType: "B3_POSITION_XLSX" }
     >["positions"],
+    userId: string,
   ) {
     await transaction.execute(
       sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions} IN SHARE ROW EXCLUSIVE MODE`,
@@ -159,6 +176,7 @@ export class ImportRepository {
     const [latestSnapshot] = await transaction
       .select({ id: positionSnapshots.id })
       .from(positionSnapshots)
+      .where(eq(positionSnapshots.userId, userId))
       .orderBy(
         sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
         desc(positionSnapshots.createdAt),
@@ -170,7 +188,12 @@ export class ImportRepository {
     const currentPositions = await transaction
       .select()
       .from(positionItems)
-      .where(eq(positionItems.snapshotId, latestSnapshot.id));
+      .where(
+        and(
+          eq(positionItems.snapshotId, latestSnapshot.id),
+          eq(positionItems.userId, userId),
+        ),
+      );
     const positionByAssetKey = new Map(
       currentPositions.map((position) => [
         getEmergencyReserveAssetKey(position),
@@ -183,9 +206,12 @@ export class ImportRepository {
       .select()
       .from(portfolioObjectivePositions)
       .where(
-        inArray(portfolioObjectivePositions.assetKey, [
-          ...positionByAssetKey.keys(),
-        ]),
+        and(
+          eq(portfolioObjectivePositions.userId, userId),
+          inArray(portfolioObjectivePositions.assetKey, [
+            ...positionByAssetKey.keys(),
+          ]),
+        ),
       );
     const incomingAssetKeys = new Set(
       incomingPositions.map(getEmergencyReserveAssetKey),
@@ -201,7 +227,12 @@ export class ImportRepository {
     const affectedObjectives = await transaction
       .select({ id: portfolioObjectives.id, name: portfolioObjectives.name })
       .from(portfolioObjectives)
-      .where(inArray(portfolioObjectives.id, affectedObjectiveIds));
+      .where(
+        and(
+          eq(portfolioObjectives.userId, userId),
+          inArray(portfolioObjectives.id, affectedObjectiveIds),
+        ),
+      );
     const objectiveNameById = new Map(
       affectedObjectives.map((objective) => [objective.id, objective.name]),
     );
@@ -214,6 +245,7 @@ export class ImportRepository {
   }
 
   async create(input: ImportCreateInput, requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         if (input.documentType === "B3_POSITION_XLSX") {
@@ -223,13 +255,16 @@ export class ImportRepository {
           await this.lockAndValidateAssignedPositionIdentities(
             transaction,
             input.positions,
+            userId,
           );
           const manual = await transaction
             .select()
-            .from(manualPortfolioPositions);
+            .from(manualPortfolioPositions)
+            .where(eq(manualPortfolioPositions.userId, userId));
           const existingEvents = await transaction
             .select()
-            .from(positionReconciliationEvents);
+            .from(positionReconciliationEvents)
+            .where(eq(positionReconciliationEvents.userId, userId));
           const candidates = unresolvedReconciliationCandidates(
             getReconciliationCandidates(input.positions, manual),
             existingEvents,
@@ -300,10 +335,13 @@ export class ImportRepository {
               .select()
               .from(portfolioObjectivePositions)
               .where(
-                inArray(portfolioObjectivePositions.assetKey, [
-                  ...linkedManual,
-                  ...linkedImported,
-                ]),
+                and(
+                  eq(portfolioObjectivePositions.userId, userId),
+                  inArray(portfolioObjectivePositions.assetKey, [
+                    ...linkedManual,
+                    ...linkedImported,
+                  ]),
+                ),
               );
             const objectiveByKey = new Map(
               assignments.map((assignment) => [
@@ -329,10 +367,13 @@ export class ImportRepository {
               .select()
               .from(portfolioAssetClassifications)
               .where(
-                inArray(portfolioAssetClassifications.assetKey, [
-                  ...linkedManual,
-                  ...linkedImported,
-                ]),
+                and(
+                  eq(portfolioAssetClassifications.userId, userId),
+                  inArray(portfolioAssetClassifications.assetKey, [
+                    ...linkedManual,
+                    ...linkedImported,
+                  ]),
+                ),
               );
             const classificationByKey = new Map(
               classifications.map((classification) => [
@@ -378,6 +419,7 @@ export class ImportRepository {
               and(
                 eq(imports.fileHash, input.fileHash),
                 eq(imports.documentType, "B3_POSITION_XLSX"),
+                eq(imports.userId, userId),
               ),
             )
             .limit(1);
@@ -396,7 +438,12 @@ export class ImportRepository {
               referenceDate: positionSnapshots.referenceDate,
             })
             .from(positionSnapshots)
-            .where(eq(positionSnapshots.importId, existingImport.id))
+            .where(
+              and(
+                eq(positionSnapshots.importId, existingImport.id),
+                eq(positionSnapshots.userId, userId),
+              ),
+            )
             .limit(1);
           if (
             !existingSnapshot ||
@@ -412,6 +459,7 @@ export class ImportRepository {
             transaction,
             input,
             existingImport.id,
+            userId,
             requestId,
           );
           return {
@@ -422,6 +470,7 @@ export class ImportRepository {
         const [importRecord] = await transaction
           .insert(imports)
           .values({
+            userId,
             fileName: input.fileName,
             fileHash: input.fileHash,
             documentType: input.documentType,
@@ -440,16 +489,20 @@ export class ImportRepository {
             .insert(movementItems)
             .values(
               input.movements.map((movement) => ({
+                userId,
                 importId: importRecord.id,
                 ...movement,
               })),
             )
-            .onConflictDoNothing({ target: movementItems.eventFingerprint });
+            .onConflictDoNothing({
+              target: [movementItems.userId, movementItems.eventFingerprint],
+            });
           return { importId: importRecord.id };
         }
         const [snapshot] = await transaction
           .insert(positionSnapshots)
           .values({
+            userId,
             importId: importRecord.id,
             referenceDate: input.referenceDate,
             estimationBaseDate: input.estimationBaseDate ?? null,
@@ -465,6 +518,7 @@ export class ImportRepository {
           .values(
             positionRows.map(({ id, position }) => ({
               id,
+              userId,
               snapshotId: snapshot.id,
               ...position,
             })),
@@ -480,6 +534,7 @@ export class ImportRepository {
           return [
             {
               positionItemId: id,
+              userId,
               snapshotId: snapshot.id,
               ruleVersion: fact.ruleVersion,
               status: fact.status,
@@ -505,6 +560,7 @@ export class ImportRepository {
           transaction,
           input,
           importRecord.id,
+          userId,
           requestId,
         );
         return { importId: importRecord.id, snapshotId: snapshot.id };
@@ -516,27 +572,41 @@ export class ImportRepository {
   }
 
   async deleteByDocumentType(documentType: B3DocumentType, requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         const records = await transaction
           .select({ id: imports.id })
           .from(imports)
-          .where(eq(imports.documentType, documentType));
+          .where(
+            and(
+              eq(imports.documentType, documentType),
+              eq(imports.userId, userId),
+            ),
+          );
         const importIds = records.map((record) => record.id);
         if (!importIds.length) return 0;
         if (documentType === "B3_MOVEMENT_XLSX") {
           const sourceMovements = await transaction
             .select({ id: movementItems.id })
             .from(movementItems)
-            .where(inArray(movementItems.importId, importIds));
+            .where(
+              and(
+                eq(movementItems.userId, userId),
+                inArray(movementItems.importId, importIds),
+              ),
+            );
           if (sourceMovements.length) {
             const reconciliations = await transaction
               .select({ id: portfolioOperationReconciliationEvents.id })
               .from(portfolioOperationReconciliationEvents)
               .where(
-                inArray(
-                  portfolioOperationReconciliationEvents.movementId,
-                  sourceMovements.map(({ id }) => id),
+                and(
+                  eq(portfolioOperationReconciliationEvents.userId, userId),
+                  inArray(
+                    portfolioOperationReconciliationEvents.movementId,
+                    sourceMovements.map(({ id }) => id),
+                  ),
                 ),
               )
               .limit(1);
@@ -548,7 +618,12 @@ export class ImportRepository {
           }
           await transaction
             .delete(movementItems)
-            .where(inArray(movementItems.importId, importIds));
+            .where(
+              and(
+                eq(movementItems.userId, userId),
+                inArray(movementItems.importId, importIds),
+              ),
+            );
         } else {
           await transaction.execute(
             sql`LOCK TABLE ${positionSnapshots}, ${positionItems} IN SHARE ROW EXCLUSIVE MODE`,
@@ -556,18 +631,37 @@ export class ImportRepository {
           const snapshots = await transaction
             .select({ id: positionSnapshots.id })
             .from(positionSnapshots)
-            .where(inArray(positionSnapshots.importId, importIds));
+            .where(
+              and(
+                eq(positionSnapshots.userId, userId),
+                inArray(positionSnapshots.importId, importIds),
+              ),
+            );
           const snapshotIds = snapshots.map((snapshot) => snapshot.id);
           if (snapshotIds.length) {
             await transaction
               .delete(positionItems)
-              .where(inArray(positionItems.snapshotId, snapshotIds));
+              .where(
+                and(
+                  eq(positionItems.userId, userId),
+                  inArray(positionItems.snapshotId, snapshotIds),
+                ),
+              );
             await transaction
               .delete(positionSnapshots)
-              .where(inArray(positionSnapshots.id, snapshotIds));
+              .where(
+                and(
+                  eq(positionSnapshots.userId, userId),
+                  inArray(positionSnapshots.id, snapshotIds),
+                ),
+              );
           }
         }
-        await transaction.delete(imports).where(inArray(imports.id, importIds));
+        await transaction
+          .delete(imports)
+          .where(
+            and(eq(imports.userId, userId), inArray(imports.id, importIds)),
+          );
         return importIds.length;
       });
     } catch (error) {
@@ -581,6 +675,7 @@ export class ImportRepository {
   }
 
   async deleteLatestPosition(positionId: string, requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         await transaction.execute(
@@ -589,6 +684,7 @@ export class ImportRepository {
         const [latestSnapshot] = await transaction
           .select({ id: positionSnapshots.id })
           .from(positionSnapshots)
+          .where(eq(positionSnapshots.userId, userId))
           .orderBy(
             sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
             desc(positionSnapshots.createdAt),
@@ -607,6 +703,7 @@ export class ImportRepository {
             and(
               eq(positionItems.id, positionId),
               eq(positionItems.snapshotId, latestSnapshot.id),
+              eq(positionItems.userId, userId),
             ),
           )
           .limit(1);
@@ -617,7 +714,12 @@ export class ImportRepository {
           );
         await transaction
           .delete(positionItems)
-          .where(eq(positionItems.id, positionId));
+          .where(
+            and(
+              eq(positionItems.id, positionId),
+              eq(positionItems.userId, userId),
+            ),
+          );
         return 1;
       });
     } catch (error) {
@@ -631,6 +733,7 @@ export class ImportRepository {
   }
 
   async deleteUnreconciledMovement(movementId: string, requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         await transaction.execute(
@@ -639,7 +742,12 @@ export class ImportRepository {
         const [movement] = await transaction
           .select({ id: movementItems.id })
           .from(movementItems)
-          .where(eq(movementItems.id, movementId))
+          .where(
+            and(
+              eq(movementItems.id, movementId),
+              eq(movementItems.userId, userId),
+            ),
+          )
           .limit(1);
         if (!movement)
           throw new ApplicationError(
@@ -650,7 +758,10 @@ export class ImportRepository {
           .select({ id: portfolioOperationReconciliationEvents.id })
           .from(portfolioOperationReconciliationEvents)
           .where(
-            eq(portfolioOperationReconciliationEvents.movementId, movementId),
+            and(
+              eq(portfolioOperationReconciliationEvents.movementId, movementId),
+              eq(portfolioOperationReconciliationEvents.userId, userId),
+            ),
           )
           .limit(1);
         if (reconciliation)
@@ -660,7 +771,12 @@ export class ImportRepository {
           );
         await transaction
           .delete(movementItems)
-          .where(eq(movementItems.id, movementId));
+          .where(
+            and(
+              eq(movementItems.id, movementId),
+              eq(movementItems.userId, userId),
+            ),
+          );
         return 1;
       });
     } catch (error) {
@@ -674,10 +790,12 @@ export class ImportRepository {
   }
 
   async listLatestPositions(requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       const [snapshot] = await getDatabaseClient()
         .select()
         .from(positionSnapshots)
+        .where(eq(positionSnapshots.userId, userId))
         .orderBy(
           sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
           desc(positionSnapshots.createdAt),
@@ -690,7 +808,12 @@ export class ImportRepository {
       const positions = await getDatabaseClient()
         .select()
         .from(positionItems)
-        .where(eq(positionItems.snapshotId, snapshot.id))
+        .where(
+          and(
+            eq(positionItems.snapshotId, snapshot.id),
+            eq(positionItems.userId, userId),
+          ),
+        )
         .orderBy(asc(positionItems.product), asc(positionItems.id));
       const positionIds = positions.flatMap((position) =>
         typeof position.id === "string" ? [position.id] : [],
@@ -700,9 +823,12 @@ export class ImportRepository {
             .select()
             .from(treasuryPositionLiquidityFacts)
             .where(
-              inArray(
-                treasuryPositionLiquidityFacts.positionItemId,
-                positionIds,
+              and(
+                eq(treasuryPositionLiquidityFacts.userId, userId),
+                inArray(
+                  treasuryPositionLiquidityFacts.positionItemId,
+                  positionIds,
+                ),
               ),
             )
         : [];
@@ -741,6 +867,7 @@ export class ImportRepository {
   }
 
   async listPositionSnapshots(requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       const snapshots = await getDatabaseClient()
         .select({
@@ -757,6 +884,8 @@ export class ImportRepository {
           and(
             eq(imports.documentType, "B3_POSITION_XLSX"),
             eq(imports.status, "CONFIRMED"),
+            eq(imports.userId, userId),
+            eq(positionSnapshots.userId, userId),
           ),
         )
         .orderBy(
@@ -782,9 +911,12 @@ export class ImportRepository {
         })
         .from(positionItems)
         .where(
-          inArray(
-            positionItems.snapshotId,
-            snapshots.map((snapshot) => snapshot.id),
+          and(
+            eq(positionItems.userId, userId),
+            inArray(
+              positionItems.snapshotId,
+              snapshots.map((snapshot) => snapshot.id),
+            ),
           ),
         );
       const positionsBySnapshot = new Map<
@@ -841,10 +973,12 @@ export class ImportRepository {
   }
 
   async listMovements(requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient()
         .select()
         .from(movementItems)
+        .where(eq(movementItems.userId, userId))
         .orderBy(desc(movementItems.occurredAt), desc(movementItems.createdAt));
     } catch (error) {
       logger.error("database_movements_query_failed", { requestId, error });

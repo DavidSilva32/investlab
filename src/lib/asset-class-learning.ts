@@ -58,7 +58,7 @@ export const assetClassLearningContent: Record<
 };
 
 export function getLearningClassHref(id: StrategyAssetClassId) {
-  return `/learn?class=${id}#class-content`;
+  return `/aprender?class=${id}#class-content`;
 }
 
 export function resolveLearningClassId(

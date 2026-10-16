@@ -1,25 +1,34 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 import { getApiRequestId } from "@/infrastructure/logging/api-request";
 import { logger } from "@/infrastructure/logging/logger";
-import {
-  sessionCookieName,
-  verifySession,
-} from "@/infrastructure/auth/session";
 
-const publicPaths = new Set(["/login", "/api/auth/login"]);
+const publicPaths = new Set([
+  "/entrar",
+  "/entrar",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/auth/session",
+  "/api/auth/invitations/activate",
+  "/api/auth/password-resets/consume",
+]);
 
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const authenticated = await verifySession(
-    request.cookies.get(sessionCookieName)?.value,
+function isPublicPath(pathname: string) {
+  return (
+    publicPaths.has(pathname) ||
+    pathname.startsWith("/convite/") ||
+    pathname.startsWith("/convite/") ||
+    pathname.startsWith("/redefinir-senha/") ||
+    pathname.startsWith("/redefinir-senha/") ||
+    pathname === "/access-unavailable"
   );
+}
 
-  if (authenticated && pathname === "/login") {
-    const response = NextResponse.redirect(new URL("/", request.url));
-    response.headers.set("Cache-Control", "no-store");
-    return response;
-  }
-  if (authenticated || publicPaths.has(pathname)) return NextResponse.next();
+export function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const authenticated = Boolean(getSessionCookie(request));
+
+  if (authenticated || isPublicPath(pathname)) return NextResponse.next();
   if (pathname.startsWith("/api/")) {
     const requestId = getApiRequestId(request);
     logger.withContext({ requestId }, () =>
@@ -36,7 +45,7 @@ export async function proxy(request: NextRequest) {
     response.headers.set("x-request-id", requestId);
     return response;
   }
-  const response = NextResponse.redirect(new URL("/login", request.url));
+  const response = NextResponse.redirect(new URL("/entrar", request.url));
   response.headers.set("Cache-Control", "no-store");
   return response;
 }

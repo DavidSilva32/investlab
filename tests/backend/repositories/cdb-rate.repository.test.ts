@@ -4,6 +4,9 @@ const client = vi.hoisted(() => ({ insert: vi.fn(), select: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => client,
 }));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "user-1",
+}));
 
 import { CdbRateRepository } from "@/backend/repositories/cdb-rate.repository";
 

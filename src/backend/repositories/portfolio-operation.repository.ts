@@ -1,7 +1,8 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
+import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   manualPortfolioOperations,
   movementItems,
@@ -19,20 +20,23 @@ const normalizeNumeric = (value: string | null) => {
 
 export class PortfolioOperationRepository {
   async list(requestId?: string) {
+    const userId = requireDataOwnerId();
     try {
       const db = getDatabaseClient();
       const [operations, movements, events] = await Promise.all([
         db
           .select()
           .from(manualPortfolioOperations)
+          .where(eq(manualPortfolioOperations.userId, userId))
           .orderBy(
             asc(manualPortfolioOperations.effectiveDate),
             asc(manualPortfolioOperations.createdAt),
           ),
-        db.select().from(movementItems),
+        db.select().from(movementItems).where(eq(movementItems.userId, userId)),
         db
           .select()
           .from(portfolioOperationReconciliationEvents)
+          .where(eq(portfolioOperationReconciliationEvents.userId, userId))
           .orderBy(asc(portfolioOperationReconciliationEvents.eventOrder)),
       ]);
       return { operations, movements, events };
@@ -50,13 +54,17 @@ export class PortfolioOperationRepository {
     idempotencyKey: string,
     requestId?: string,
   ) {
+    const userId = requireDataOwnerId();
     try {
       const db = getDatabaseClient();
       const [operation] = await db
         .insert(manualPortfolioOperations)
-        .values({ ...input, idempotencyKey })
+        .values({ ...input, idempotencyKey, userId })
         .onConflictDoNothing({
-          target: manualPortfolioOperations.idempotencyKey,
+          target: [
+            manualPortfolioOperations.userId,
+            manualPortfolioOperations.idempotencyKey,
+          ],
         })
         .returning();
       if (operation) return operation;
@@ -64,7 +72,12 @@ export class PortfolioOperationRepository {
       const [existing] = await db
         .select()
         .from(manualPortfolioOperations)
-        .where(eq(manualPortfolioOperations.idempotencyKey, idempotencyKey))
+        .where(
+          and(
+            eq(manualPortfolioOperations.idempotencyKey, idempotencyKey),
+            eq(manualPortfolioOperations.userId, userId),
+          ),
+        )
         .limit(1);
       if (!existing)
         throw new Error("Idempotent operation insert returned no row.");
@@ -101,6 +114,7 @@ export class PortfolioOperationRepository {
     action: "LINK" | "UNLINK",
     requestId: string,
   ) {
+    const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         await transaction.execute(
@@ -109,12 +123,22 @@ export class PortfolioOperationRepository {
         const [operation] = await transaction
           .select({ id: manualPortfolioOperations.id })
           .from(manualPortfolioOperations)
-          .where(eq(manualPortfolioOperations.id, operationId))
+          .where(
+            and(
+              eq(manualPortfolioOperations.id, operationId),
+              eq(manualPortfolioOperations.userId, userId),
+            ),
+          )
           .limit(1);
         const [movement] = await transaction
           .select({ id: movementItems.id })
           .from(movementItems)
-          .where(eq(movementItems.id, movementId))
+          .where(
+            and(
+              eq(movementItems.id, movementId),
+              eq(movementItems.userId, userId),
+            ),
+          )
           .limit(1);
         if (!operation || !movement)
           throw new ApplicationError(
@@ -124,6 +148,7 @@ export class PortfolioOperationRepository {
         const events = await transaction
           .select()
           .from(portfolioOperationReconciliationEvents)
+          .where(eq(portfolioOperationReconciliationEvents.userId, userId))
           .orderBy(asc(portfolioOperationReconciliationEvents.eventOrder));
         const active = new Map<string, string>();
         const movementOwners = new Map<string, string>();
@@ -156,7 +181,13 @@ export class PortfolioOperationRepository {
         }
         const [event] = await transaction
           .insert(portfolioOperationReconciliationEvents)
-          .values({ operationId, movementId, status: action, requestId })
+          .values({
+            operationId,
+            movementId,
+            status: action,
+            requestId,
+            userId,
+          })
           .returning();
         return event;
       });

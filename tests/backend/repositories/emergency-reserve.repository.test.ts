@@ -13,6 +13,9 @@ const objectiveAssignments = vi.hoisted(() => ({
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => client,
 }));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "user-1",
+}));
 vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
   portfolioObjectivesRepository: objectiveAssignments,
 }));
@@ -56,7 +59,7 @@ describe("EmergencyReserveRepository", () => {
 
   it("upserts the singleton settings and refreshes its update timestamp", async () => {
     const saved = {
-      id: "default",
+      id: "user-1",
       monthlyExpenses: "1200.00",
       targetMonths: 6,
     };
@@ -72,7 +75,8 @@ describe("EmergencyReserveRepository", () => {
       }),
     ).resolves.toEqual([saved]);
     expect(settingsValues).toHaveBeenCalledWith({
-      id: "default",
+      id: "user-1",
+      userId: "user-1",
       monthlyExpenses: "1200.00",
       targetMonths: 6,
     });
@@ -336,7 +340,7 @@ describe("EmergencyReserveRepository", () => {
     async ({ objectiveId, objectiveName, assignment, expectedMessage }) => {
       const uniqueConflict = Object.assign(new Error("duplicate key"), {
         code: "23505",
-        constraint: "portfolio_objective_positions_assetKey_unique",
+        constraint: "portfolio_objective_positions_user_asset_uidx",
       });
       const transaction = {
         insert: vi.fn().mockReturnValueOnce({

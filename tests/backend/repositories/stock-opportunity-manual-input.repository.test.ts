@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 
 const database = vi.hoisted(() => ({
   select: vi.fn(),
@@ -16,7 +19,9 @@ describe("StockOpportunityManualInputRepository", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns no rows for an empty ticker list", async () => {
-    await expect(repository.listByTickers([])).resolves.toEqual([]);
+    await expect(
+      runWithDataOwner("owner-a", () => repository.listByTickers([])),
+    ).resolves.toEqual([]);
     expect(database.select).not.toHaveBeenCalled();
   });
 
@@ -25,12 +30,25 @@ describe("StockOpportunityManualInputRepository", () => {
     const where = vi.fn().mockResolvedValue(rows);
     const from = vi.fn().mockReturnValue({ where });
     database.select.mockReturnValue({ from });
-    await expect(repository.listByTickers(["ABCD3", "EFGH4"])).resolves.toBe(
-      rows,
+    const queryA = runWithDataOwner("owner-a", () =>
+      repository.listByTickers(["ABCD3", "EFGH4"]),
     );
-    expect(database.select).toHaveBeenCalledOnce();
-    expect(from).toHaveBeenCalledOnce();
-    expect(where).toHaveBeenCalledOnce();
+    const queryB = runWithDataOwner("owner-b", () =>
+      repository.listByTickers(["ABCD3", "EFGH4"]),
+    );
+    await expect(queryA).resolves.toBe(rows);
+    await expect(queryB).resolves.toBe(rows);
+    expect(database.select).toHaveBeenCalledTimes(2);
+    expect(from).toHaveBeenCalledTimes(2);
+    expect(where).toHaveBeenCalledTimes(2);
+    const dialect = new PgDialect();
+    const ownerParameters = where.mock.calls.map(
+      ([condition]) => dialect.sqlToQuery(condition as SQL).params,
+    );
+    expect(ownerParameters).toEqual([
+      expect.arrayContaining(["owner-a", "ABCD3", "EFGH4"]),
+      expect.arrayContaining(["owner-b", "ABCD3", "EFGH4"]),
+    ]);
   });
 
   it("lists inputs for one ticker", async () => {
@@ -38,7 +56,9 @@ describe("StockOpportunityManualInputRepository", () => {
     const where = vi.fn().mockResolvedValue(rows);
     const from = vi.fn().mockReturnValue({ where });
     database.select.mockReturnValue({ from });
-    await expect(repository.listByTicker("ABCD3")).resolves.toBe(rows);
+    await expect(
+      runWithDataOwner("owner-a", () => repository.listByTicker("ABCD3")),
+    ).resolves.toBe(rows);
     expect(where).toHaveBeenCalledOnce();
   });
 
@@ -55,19 +75,29 @@ describe("StockOpportunityManualInputRepository", () => {
     database.insert.mockImplementation(insert);
 
     await expect(
-      repository.upsert({
-        ticker: "ABCD3",
-        inputKey: "graham_eps",
-        value: 2.5,
-        source: "Annual report",
-        asOf: "2026-09-30",
-      }),
+      runWithDataOwner("owner-a", () =>
+        repository.upsert({
+          ticker: "ABCD3",
+          inputKey: "graham_eps",
+          value: 2.5,
+          source: "Annual report",
+          asOf: "2026-09-30",
+        }),
+      ),
     ).resolves.toBe(row);
     expect(insert).toHaveBeenCalledOnce();
     expect(values).toHaveBeenCalledWith(
-      expect.objectContaining({ ticker: "ABCD3", value: "2.50000000" }),
+      expect.objectContaining({
+        userId: "owner-a",
+        ticker: "ABCD3",
+        value: "2.50000000",
+      }),
     );
-    expect(onConflictDoUpdate).toHaveBeenCalledWith(
+    const conflictConfig = onConflictDoUpdate.mock.calls[0][0];
+    expect(
+      conflictConfig.target.map((column: { name: string }) => column.name),
+    ).toEqual(["userId", "ticker", "inputKey"]);
+    expect(conflictConfig).toEqual(
       expect.objectContaining({
         set: expect.objectContaining({
           value: "2.50000000",
@@ -79,15 +109,74 @@ describe("StockOpportunityManualInputRepository", () => {
     );
   });
 
+  it("stores the same manual-input key independently for different owners", async () => {
+    const returning = vi.fn().mockImplementation(async () => [{} as never]);
+    const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+    database.insert.mockReturnValue({ values });
+
+    await runWithDataOwner("owner-a", () =>
+      repository.upsert({
+        ticker: "ABCD3",
+        inputKey: "graham_eps",
+        value: 1,
+        source: "A",
+        asOf: "2026-09-30",
+      }),
+    );
+    await runWithDataOwner("owner-b", () =>
+      repository.upsert({
+        ticker: "ABCD3",
+        inputKey: "graham_eps",
+        value: 2,
+        source: "B",
+        asOf: "2026-09-30",
+      }),
+    );
+
+    expect(values.mock.calls.map(([row]) => row)).toEqual([
+      expect.objectContaining({
+        userId: "owner-a",
+        ticker: "ABCD3",
+        inputKey: "graham_eps",
+      }),
+      expect.objectContaining({
+        userId: "owner-b",
+        ticker: "ABCD3",
+        inputKey: "graham_eps",
+      }),
+    ]);
+    const targets = onConflictDoUpdate.mock.calls.map(
+      ([config]) => config.target,
+    );
+    expect(targets).toHaveLength(2);
+    expect(
+      targets.map((target) =>
+        target.map((column: { name: string }) => column.name),
+      ),
+    ).toEqual([
+      ["userId", "ticker", "inputKey"],
+      ["userId", "ticker", "inputKey"],
+    ]);
+  });
+
   it("deletes and returns the record id or null", async () => {
     const returning = vi.fn().mockResolvedValue([{ id: "row-1" }]);
     const where = vi.fn().mockReturnValue({ returning });
     database.delete.mockReturnValue({ where });
-    await expect(repository.delete("ABCD3", "graham_eps")).resolves.toEqual({
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.delete("ABCD3", "graham_eps"),
+      ),
+    ).resolves.toEqual({
       id: "row-1",
     });
     expect(where).toHaveBeenCalledOnce();
     returning.mockResolvedValueOnce([]);
-    await expect(repository.delete("ABCD3", "graham_eps")).resolves.toBeNull();
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.delete("ABCD3", "graham_eps"),
+      ),
+    ).resolves.toBeNull();
   });
 });

@@ -1,0 +1,382 @@
+/** @vitest-environment jsdom */
+vi.mock("@/infrastructure/auth/authorization", () => ({
+  getAuthenticatedUser: vi.fn(async () => ({ id: "owner-1", role: "ADMIN" })),
+  isLegacyPortfolioOwner: vi.fn(async () => true),
+}));
+import {
+  cleanup,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
+import { ScreenerDataSettings } from "@/app/(private)/settings/_components/screener-data-settings";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
+
+const render = (ui: Parameters<typeof rtlRender>[0]) =>
+  rtlRender(ui, { wrapper: QueryClientWrapper });
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const response = (body: unknown, ok = true) =>
+  Promise.resolve({ ok, json: () => Promise.resolve(body) });
+const cleanStatus = {
+  hasSuccessfulSync: true,
+  lastSuccessfulCompletedAt: "2026-09-24T10:02:30.000Z",
+  latestRun: {
+    status: "COMPLETED" as const,
+    startedAt: "2026-09-24T10:00:00.000Z",
+    completedAt: "2026-09-24T10:02:30.000Z",
+    durationMs: 150000,
+    issuerCount: 400,
+    securityCount: 520,
+    factCount: 8000,
+    errorMessage: null,
+  },
+};
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.error).mockReset();
+});
+
+describe("ScreenerDataSettings", () => {
+  it("renders a local skeleton while the sync status is pending", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
+    render(<ScreenerDataSettings />);
+    expect(
+      screen
+        .getByRole("status", {
+          name: "Carregando status da base de empresas",
+        })
+        .getAttribute("aria-busy"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Sincronizar agora" }),
+    ).toBeTruthy();
+  });
+
+  it("loads run metadata and triggers a manual sync through the session route", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(cleanStatus))
+      .mockResolvedValueOnce(response({ issuers: 400 }))
+      .mockResolvedValueOnce(response(cleanStatus));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText("Status: Concluída")).toBeTruthy();
+    expect(screen.getByText(/Última atualização concluída/)).toBeTruthy();
+    expect(screen.queryByText("520")).toBeNull();
+    const sourceDetails = screen.getByRole("button", {
+      name: "Detalhes técnicos",
+      expanded: false,
+    });
+    await user.click(sourceDetails);
+    expect(
+      screen.getByRole("button", {
+        name: "Detalhes técnicos",
+        expanded: true,
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("520")).toBeTruthy();
+    expect(screen.getByText("8.000")).toBeTruthy();
+    expect(screen.getByText("2 min 30 s")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Calend.rio de entrega da CVM/ }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Sincronização concluída com sucesso.",
+      ),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/settings/screener/sync",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    );
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/settings/screener", {
+      cache: "no-store",
+      headers: {},
+    });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Sincronização concluída com sucesso.",
+      ),
+    );
+  });
+
+  it("announces elapsed time accessibly while the sync request is pending", async () => {
+    const user = userEvent.setup();
+    let currentTime = 1_800_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => currentTime);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(cleanStatus))
+      .mockImplementationOnce(() => new Promise(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      render(<ScreenerDataSettings />);
+      await user.click(
+        await screen.findByRole("button", { name: "Detalhes técnicos" }),
+      );
+      await user.click(
+        await screen.findByRole("button", { name: "Sincronizar agora" }),
+      );
+      expect((await screen.findByRole("status")).textContent).toBe(
+        "Sincronização iniciada.",
+      );
+      expect(
+        screen.getByText("Tempo decorrido: 0 s.").getAttribute("aria-live"),
+      ).toBe("off");
+      currentTime += 5_900;
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(screen.getByText("Tempo decorrido: 5 s.")).toBeTruthy();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+  it("shows running status, short duration, and missing counts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          hasSuccessfulSync: false,
+          latestRun: {
+            ...cleanStatus.latestRun,
+            status: "RUNNING",
+            durationMs: 12000,
+            completedAt: null,
+            issuerCount: null,
+            securityCount: null,
+            factCount: null,
+          },
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText("Status: Em andamento")).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Detalhes técnicos" }));
+    expect(screen.getByText("12 s")).toBeTruthy();
+    expect(screen.getAllByText("—")).toHaveLength(3);
+  });
+
+  it("uses a generic message for an initial network failure and an empty sync error", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce("offline")
+      .mockRejectedValueOnce(new Error(""))
+      .mockResolvedValueOnce(
+        response({ hasSuccessfulSync: false, latestRun: null }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDataSettings />);
+    expect(
+      await screen.findByText(
+        "Não foi possível consultar o status da sincronização.",
+      ),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A sincronização não foi concluída. Consulte o status abaixo.",
+      ),
+    );
+  });
+  it.each([
+    [{ message: "Status refresh failed." }, "Status refresh failed."],
+    [{}, "Não foi possível consultar o status da sincronização."],
+  ])(
+    "preserves sync success and reports a status refresh failure",
+    async (body, message) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(response(cleanStatus))
+        .mockResolvedValueOnce(response({ issuers: 400 }))
+        .mockResolvedValueOnce(response(body, false));
+      vi.stubGlobal("fetch", fetchMock);
+      const user = userEvent.setup();
+      render(<ScreenerDataSettings />);
+      await user.click(
+        await screen.findByRole("button", { name: "Detalhes técnicos" }),
+      );
+      await user.click(
+        await screen.findByRole("button", { name: "Sincronizar agora" }),
+      );
+      expect(await screen.findByText(message)).toBeTruthy();
+    },
+  );
+
+  it.each([true, false])(
+    "ignores status responses after unmount",
+    async (succeeds) => {
+      let resolveResponse!: (value: {
+        ok: boolean;
+        json: () => Promise<unknown>;
+      }) => void;
+      const pending = new Promise<{
+        ok: boolean;
+        json: () => Promise<unknown>;
+      }>((resolve) => {
+        resolveResponse = resolve;
+      });
+      const fetchMock = vi.fn(() => pending);
+      vi.stubGlobal("fetch", fetchMock);
+      const { unmount } = render(<ScreenerDataSettings />);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+      unmount();
+      resolveResponse(
+        succeeds
+          ? { ok: true, json: () => Promise.resolve(cleanStatus) }
+          : { ok: false, json: () => Promise.resolve({}) },
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.body.textContent).toBe("");
+    },
+  );
+  it("renders failed runs with a client-safe error message", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          hasSuccessfulSync: false,
+          latestRun: {
+            ...cleanStatus.latestRun,
+            status: "FAILED",
+            errorMessage: "A fonte de dados não respondeu.",
+          },
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText("Status: Falhou")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Detalhes técnicos" }));
+    expect(screen.getByText("A fonte de dados não respondeu.")).toBeTruthy();
+  });
+
+  it("reports loading failures and keeps the retry action available", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ message: "Falha temporária." }, false))
+      .mockResolvedValueOnce(response({ issuers: 0 }))
+      .mockResolvedValueOnce(
+        response({ hasSuccessfulSync: false, latestRun: null }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(
+      screen.getByText(/Os dados ainda não foram sincronizados/),
+    ).toBeTruthy();
+  });
+
+  it("shows a safe status fallback when the post-sync status request rejects", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(cleanStatus))
+      .mockResolvedValueOnce(response({ message: "Sincronização iniciada." }))
+      .mockRejectedValueOnce(new Error("private status detail"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDataSettings />);
+
+    await screen.findByText("Status: Concluída");
+    await user.click(screen.getByRole("button", { name: "Detalhes técnicos" }));
+    await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Sincronização iniciada."),
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível consultar o status da sincronização.",
+    );
+    expect(screen.queryByText("private status detail")).toBeNull();
+  });
+
+  it("shows the empty history state and a generic error when sync fails", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({ hasSuccessfulSync: false, latestRun: null }),
+      )
+      .mockResolvedValueOnce(
+        response({ message: "A sincronização não foi concluída." }, false),
+      )
+      .mockResolvedValueOnce(
+        response({ hasSuccessfulSync: false, latestRun: null }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ScreenerDataSettings />);
+    expect(
+      await screen.findByText(/Os dados ainda não foram sincronizados/),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Sincronizar agora" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A sincronização não foi concluída.",
+      ),
+    );
+  });
+  it("shows an elapsed age for an older successful CVM sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...cleanStatus,
+          lastSuccessfulCompletedAt: new Date(
+            Date.now() - 3 * 86_400_000,
+          ).toISOString(),
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText(/há 3 dias/)).toBeTruthy();
+  });
+  it("shows a one-day age for the latest successful CVM sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...cleanStatus,
+          lastSuccessfulCompletedAt: new Date(
+            Date.now() - 86_400_000,
+          ).toISOString(),
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText(/1 dia/)).toBeTruthy();
+  });
+  it("shows today's age for the latest successful CVM sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...cleanStatus,
+          lastSuccessfulCompletedAt: new Date().toISOString(),
+        }),
+      ),
+    );
+    render(<ScreenerDataSettings />);
+    expect(await screen.findByText(/hoje/)).toBeTruthy();
+  });
+});

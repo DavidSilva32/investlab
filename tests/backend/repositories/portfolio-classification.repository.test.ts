@@ -9,6 +9,9 @@ const logger = vi.hoisted(() => ({ error: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => db,
 }));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "user-1",
+}));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger }));
 import { PortfolioClassificationRepository } from "@/backend/repositories/portfolio-classification.repository";
 
@@ -75,7 +78,10 @@ describe("PortfolioClassificationRepository", () => {
         "req-3",
       ),
     ).resolves.toBe(row);
-    expect(values).toHaveBeenCalledWith(record("key-1"));
+    expect(values).toHaveBeenCalledWith({
+      ...record("key-1"),
+      userId: "user-1",
+    });
     expect(onConflictDoUpdate).toHaveBeenCalledOnce();
   });
 
@@ -120,7 +126,10 @@ describe("PortfolioClassificationRepository", () => {
       ),
     ).resolves.toBe(rows);
     expect(db.transaction).toHaveBeenCalledOnce();
-    expect(values).toHaveBeenCalledWith([record("key-1"), record("key-2")]);
+    expect(values).toHaveBeenCalledWith([
+      { ...record("key-1"), userId: "user-1" },
+      { ...record("key-2"), userId: "user-1" },
+    ]);
   });
 
   it("does not open a transaction for an empty batch", async () => {

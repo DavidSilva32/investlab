@@ -1,0 +1,340 @@
+// @vitest-environment jsdom
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBase,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AnalysisStockSearch } from "@/app/(private)/analyses/_components/analysis-stock-search";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
+import type { ReactNode } from "react";
+
+function render(ui: ReactNode) {
+  const result = renderBase(<QueryClientWrapper>{ui}</QueryClientWrapper>);
+  return {
+    ...result,
+    rerender: (next: ReactNode) =>
+      result.rerender(<QueryClientWrapper>{next}</QueryClientWrapper>),
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+const response = (
+  results: Array<{ ticker: string; name: string; logoUrl?: string }>,
+  status = 200,
+) => new Response(JSON.stringify({ results }), { status });
+async function advanceSearch(waitForRequest = true) {
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 251));
+  });
+  if (!waitForRequest) return;
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+describe("AnalysisStockSearch", () => {
+  it("shows catalog logos without additional API requests and preserves them on selection", async () => {
+    const logoUrl = "https://icons.brapi.dev/icons/VALE3.svg";
+    const result = { ticker: "VALE3", name: "Vale S.A.", logoUrl };
+    const fetcher = vi.fn().mockResolvedValue(response([result]));
+    vi.stubGlobal("fetch", fetcher);
+    const onSelect = vi.fn();
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={onSelect} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+    await advanceSearch();
+    const option = await screen.findByRole("option", {
+      name: /VALE3.*Vale S\.A\./,
+    });
+    expect(option.querySelector("img")?.getAttribute("src")).toBe(logoUrl);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    fireEvent.error(option.querySelector("img")!);
+    expect(option.querySelector("img")).toBeNull();
+    fireEvent.click(option);
+    expect(onSelect).toHaveBeenCalledWith(result);
+  });
+
+  it("exposes a meaningful accessible name for the combobox", () => {
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    expect(
+      screen.getByRole("combobox", { name: "Pesquisar ação" }),
+    ).toBeTruthy();
+  });
+  it("keeps search compact without redundant provider instructions", () => {
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    expect(
+      screen.getByRole("combobox", { name: "Pesquisar ação" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/catálogo de ações/)).toBeNull();
+  });
+  it("synchronizes its input without searching the previous ticker", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const { rerender } = render(
+      <AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />,
+    );
+    rerender(<AnalysisStockSearch ticker="VALE3" onSelect={vi.fn()} />);
+
+    await waitFor(() => {
+      expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe(
+        "VALE3",
+      );
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("searches dynamically and selects a ticker by click", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(response([{ ticker: "VALE3", name: "Vale S.A." }]));
+    vi.stubGlobal("fetch", fetcher);
+    const onSelect = vi.fn();
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={onSelect} />);
+    const input = screen.getByRole("combobox", {
+      name: "Pesquisar ação",
+    });
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.change(input, { target: { value: "Vale" } });
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    await advanceSearch();
+    const option = await screen.findByRole("option", {
+      name: /VALE3.*Vale S\.A\./,
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/analyses/stocks/search?q=Vale",
+      expect.any(Object),
+    );
+    fireEvent.click(option);
+    expect(onSelect).toHaveBeenCalledWith({
+      ticker: "VALE3",
+      name: "Vale S.A.",
+    });
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("renders only the first result for tickers that differ by letter case", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response([
+          { ticker: "petr4", name: "Petrobras (primeiro resultado)" },
+          { ticker: "PETR4", name: "Petrobras (duplicado)" },
+        ]),
+      ),
+    );
+    render(<AnalysisStockSearch ticker="VALE3" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Petr" },
+    });
+    await advanceSearch();
+
+    expect(
+      await screen.findAllByRole("option", { name: /petr4/i }),
+    ).toHaveLength(1);
+    expect(
+      await screen.findByRole("option", { name: /primeiro resultado/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /duplicado/ })).toBeNull();
+  });
+
+  it("does not search short or currently selected input and supports an empty result", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response([]));
+    vi.stubGlobal("fetch", fetcher);
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "V" } });
+    await advanceSearch(false);
+    fireEvent.change(input, { target: { value: "PETR4" } });
+    await advanceSearch();
+    expect(fetcher).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "ZZZ" } });
+    await advanceSearch();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Nenhuma ação encontrada.",
+      ),
+    );
+  });
+
+  it("shows a helpful error when the search API fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("{}", { status: 503 })),
+    );
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+    await advanceSearch();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Não foi possível pesquisar ações agora.",
+      ),
+    );
+  });
+
+  it("shows a safe fallback for a rejected network request", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+
+    await advanceSearch();
+
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Não foi possível pesquisar ações agora.",
+      ),
+    );
+  });
+
+  it("treats a successful response without results as an empty search", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 })),
+    );
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+
+    await advanceSearch();
+
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Nenhuma ação encontrada.",
+      ),
+    );
+  });
+
+  it("preserves a safe API message in the autocomplete status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ message: "Catálogo temporariamente indisponível." }),
+          {
+            status: 503,
+          },
+        ),
+      ),
+    );
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Vale" },
+    });
+    await advanceSearch();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "Catálogo temporariamente indisponível.",
+      ),
+    );
+  });
+
+  it("clears prior options before debounce so Enter cannot select stale results", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(response([{ ticker: "PETR3", name: "Petrobras" }]))
+      .mockResolvedValueOnce(response([{ ticker: "VALE3", name: "Vale" }]));
+    vi.stubGlobal("fetch", fetcher);
+    const onSelect = vi.fn();
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={onSelect} />);
+    const input = screen.getByRole("combobox");
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.change(input, { target: { value: "Petr" } });
+    await advanceSearch();
+    expect(await screen.findByRole("option", { name: /PETR3/ })).toBeTruthy();
+    fireEvent.change(input, { target: { value: "Vale" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.queryByRole("option", { name: /PETR3/ })).toBeNull();
+    await advanceSearch();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.getAttribute("aria-autocomplete")).toBe("list");
+    const result = await screen.findByRole("option", { name: /VALE3/ });
+    expect(result.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith({ ticker: "VALE3", name: "Vale" });
+  });
+
+  it("supports Escape and keeps unresolved requests from replacing newer results", async () => {
+    let resolveOld!: (result: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      resolveOld = resolve;
+    });
+    const fetcher = vi
+      .fn()
+      .mockReturnValueOnce(oldResponse)
+      .mockResolvedValueOnce(response([{ ticker: "VALE3", name: "Vale" }]));
+    vi.stubGlobal("fetch", fetcher);
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "Petr" } });
+    await advanceSearch(false);
+    fireEvent.change(input, { target: { value: "Vale" } });
+    await advanceSearch();
+    resolveOld(response([{ ticker: "PETR3", name: "Petrobras" }]));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("option", { name: /VALE3/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /PETR3/ })).toBeNull();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.focus(input);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+  it("silently ignores a request rejected by its abort signal", async () => {
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url: string, options: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () =>
+              reject(
+                Object.assign(new Error("Aborted"), { name: "AbortError" }),
+              ),
+            );
+          }),
+      )
+      .mockResolvedValueOnce(response([{ ticker: "VALE3", name: "Vale" }]));
+    vi.stubGlobal("fetch", fetcher);
+    render(<AnalysisStockSearch ticker="PETR4" onSelect={vi.fn()} />);
+    const input = screen.getByRole("combobox");
+
+    fireEvent.change(input, { target: { value: "Petr" } });
+    await advanceSearch();
+    fireEvent.change(input, { target: { value: "Vale" } });
+    await advanceSearch();
+
+    expect(
+      await screen.findByRole("option", { name: /VALE3.*Vale/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});

@@ -1,6 +1,7 @@
 import { and, eq, lt, sql } from "drizzle-orm";
 import {
   boolean,
+  bigint,
   bigserial,
   check,
   date,
@@ -16,18 +17,119 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-export const imports = pgTable("imports", {
-  id: uuid().defaultRandom().primaryKey(),
-  origin: varchar({ length: 40 }).notNull().default("B3"),
-  documentType: varchar({ length: 40 }).notNull().default("B3_POSITION_XLSX"),
-  fileName: text().notNull(),
-  fileHash: varchar({ length: 64 }).notNull().unique(),
-  referenceDate: date(),
-  estimationBaseDate: date(),
-  status: varchar({ length: 20 }).notNull().default("CONFIRMED"),
+export const authUsers = pgTable(
+  "auth_users",
+  {
+    id: text().primaryKey(),
+    name: text().notNull(),
+    email: text().notNull(),
+    emailVerified: boolean().notNull().default(false),
+    image: text(),
+    role: varchar({ length: 10 }).notNull().default("USER"),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("auth_users_email_normalized_uidx").on(
+      sql`lower(trim(${table.email}))`,
+    ),
+    check("auth_users_role_check", sql`${table.role} in ('USER', 'ADMIN')`),
+  ],
+);
+export const imports = pgTable(
+  "imports",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    origin: varchar({ length: 40 }).notNull().default("B3"),
+    documentType: varchar({ length: 40 }).notNull().default("B3_POSITION_XLSX"),
+    fileName: text().notNull(),
+    fileHash: varchar({ length: 64 }).notNull(),
+    referenceDate: date(),
+    estimationBaseDate: date(),
+    status: varchar({ length: 20 }).notNull().default("CONFIRMED"),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("imports_user_file_hash_uidx").on(table.userId, table.fileHash),
+  ],
+);
+
+export const authSessions = pgTable("auth_sessions", {
+  id: text().primaryKey(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  token: text().notNull().unique(),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  ipAddress: text(),
+  userAgent: text(),
+  userId: text()
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+});
+export const authAccounts = pgTable("auth_accounts", {
+  id: text().primaryKey(),
+  accountId: text().notNull(),
+  providerId: text().notNull(),
+  userId: text()
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+  accessToken: text(),
+  refreshToken: text(),
+  idToken: text(),
+  accessTokenExpiresAt: timestamp({ withTimezone: true }),
+  refreshTokenExpiresAt: timestamp({ withTimezone: true }),
+  scope: text(),
+  password: text(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+export const authVerifications = pgTable("auth_verifications", {
+  id: text().primaryKey(),
+  identifier: text().notNull(),
+  value: text().notNull(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+export const authRateLimits = pgTable(
+  "auth_rate_limits",
+  {
+    id: text().primaryKey(),
+    key: text().notNull().unique(),
+    count: integer().notNull(),
+    lastRequest: bigint({ mode: "number" }).notNull(),
+  },
+  (table) => [index("auth_rate_limits_last_request_idx").on(table.lastRequest)],
+);
+export const authInvitations = pgTable("auth_invitations", {
+  id: uuid().defaultRandom().primaryKey(),
+  email: text().notNull(),
+  tokenHash: varchar({ length: 64 }).notNull().unique(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  usedAt: timestamp({ withTimezone: true }),
+  revokedAt: timestamp({ withTimezone: true }),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  createdByUserId: text()
+    .notNull()
+    .references(() => authUsers.id),
+});
+export const authPasswordResets = pgTable("auth_password_resets", {
+  id: uuid().defaultRandom().primaryKey(),
+  userId: text()
+    .notNull()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+  tokenHash: varchar({ length: 64 }).notNull().unique(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  usedAt: timestamp({ withTimezone: true }),
+  revokedAt: timestamp({ withTimezone: true }),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  createdByUserId: text()
+    .notNull()
+    .references(() => authUsers.id),
 });
 export const positionSnapshots = pgTable("position_snapshots", {
+  userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
   id: uuid().defaultRandom().primaryKey(),
   importId: uuid()
     .notNull()
@@ -38,6 +140,7 @@ export const positionSnapshots = pgTable("position_snapshots", {
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 export const positionItems = pgTable("position_items", {
+  userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
   id: uuid().defaultRandom().primaryKey(),
   snapshotId: uuid()
     .notNull()
@@ -93,6 +196,7 @@ export const treasuryLiquidityRules = pgTable("treasury_liquidity_rules", {
 export const treasuryPositionLiquidityFacts = pgTable(
   "treasury_position_liquidity_facts",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     positionItemId: uuid()
       .notNull()
@@ -132,27 +236,38 @@ export const treasuryPositionLiquidityFacts = pgTable(
   ],
 );
 
-export const manualPortfolioPositions = pgTable("manual_portfolio_positions", {
-  id: uuid().defaultRandom().primaryKey(),
-  assetKey: varchar({ length: 64 }).notNull().unique(),
-  product: text().notNull(),
-  assetCode: varchar({ length: 24 }),
-  institution: text(),
-  quantity: numeric({ precision: 24, scale: 8 }).notNull(),
-  currency: varchar({ length: 3 }).notNull(),
-  unitPrice: numeric({ precision: 24, scale: 8 }),
-  totalValue: numeric({ precision: 24, scale: 8 }).notNull(),
-  valueBasis: varchar({ length: 16 }).notNull(),
-  informationalCdiPercentage: numeric({ precision: 8, scale: 4 }),
-  positionDate: date().notNull(),
-  convertedValueBrl: numeric({ precision: 24, scale: 8 }),
-  conversionDate: date(),
-  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
+export const manualPortfolioPositions = pgTable(
+  "manual_portfolio_positions",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    assetKey: varchar({ length: 64 }).notNull(),
+    product: text().notNull(),
+    assetCode: varchar({ length: 24 }),
+    institution: text(),
+    quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    currency: varchar({ length: 3 }).notNull(),
+    unitPrice: numeric({ precision: 24, scale: 8 }),
+    totalValue: numeric({ precision: 24, scale: 8 }).notNull(),
+    valueBasis: varchar({ length: 16 }).notNull(),
+    informationalCdiPercentage: numeric({ precision: 8, scale: 4 }),
+    positionDate: date().notNull(),
+    convertedValueBrl: numeric({ precision: 24, scale: 8 }),
+    conversionDate: date(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("manual_portfolio_positions_user_asset_uidx").on(
+      table.userId,
+      table.assetKey,
+    ),
+  ],
+);
 export const manualPortfolioPositionSnapshots = pgTable(
   "manual_portfolio_position_snapshots",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     assetKey: varchar({ length: 64 }).notNull(),
     product: text().notNull(),
@@ -167,15 +282,15 @@ export const manualPortfolioPositionSnapshots = pgTable(
     recordedAt: timestamp({ withTimezone: true }).notNull(),
   },
   (table) => [
-    uniqueIndex("manual_portfolio_position_snapshots_asset_recorded_uidx").on(
-      table.assetKey,
-      table.recordedAt,
-    ),
+    uniqueIndex(
+      "manual_portfolio_position_snapshots_user_asset_recorded_uidx",
+    ).on(table.userId, table.assetKey, table.recordedAt),
   ],
 );
 export const manualPortfolioAdjustmentEvents = pgTable(
   "manual_portfolio_adjustment_events",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     assetKey: varchar({ length: 64 }).notNull(),
     eventType: varchar({ length: 32 })
@@ -215,6 +330,7 @@ export const manualPortfolioAdjustmentEvents = pgTable(
 export const positionReconciliationEvents = pgTable(
   "position_reconciliation_events",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     manualAssetKey: varchar({ length: 64 }).notNull(),
     importedAssetKey: varchar({ length: 67 }).notNull(),
@@ -238,23 +354,44 @@ export const positionReconciliationEvents = pgTable(
   ],
 );
 
-export const cdbRateConfigurations = pgTable("cdb_rate_configurations", {
-  id: uuid().defaultRandom().primaryKey(),
-  assetCode: text().notNull().unique(),
-  cdiPercentage: numeric({ precision: 9, scale: 4 }).notNull(),
-  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
-export const emergencyReserveSettings = pgTable("emergency_reserve_settings", {
-  id: varchar({ length: 20 }).primaryKey().default("default"),
-  monthlyExpenses: numeric({ precision: 18, scale: 2 }),
-  targetMonths: integer(),
-  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
+export const cdbRateConfigurations = pgTable(
+  "cdb_rate_configurations",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    assetCode: text().notNull(),
+    cdiPercentage: numeric({ precision: 9, scale: 4 }).notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("cdb_rate_configurations_user_asset_uidx").on(
+      table.userId,
+      table.assetCode,
+    ),
+  ],
+);
+export const emergencyReserveSettings = pgTable(
+  "emergency_reserve_settings",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: text().primaryKey(),
+    monthlyExpenses: numeric({ precision: 18, scale: 2 }),
+    targetMonths: integer(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("emergency_reserve_settings_user_id_uidx").on(
+      table.userId,
+      table.id,
+    ),
+  ],
+);
 /* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
 export const portfolioObjectives = pgTable(
   "portfolio_objectives",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     kind: varchar({ length: 16 }).notNull().default("CUSTOM"),
     purpose: varchar({ length: 32 }),
@@ -274,14 +411,19 @@ export const portfolioObjectives = pgTable(
 export const portfolioObjectivePositions = pgTable(
   "portfolio_objective_positions",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     objectiveId: uuid()
       .notNull()
       .references(() => portfolioObjectives.id, { onDelete: "cascade" }),
-    assetKey: varchar({ length: 80 }).notNull().unique(),
+    assetKey: varchar({ length: 80 }).notNull(),
     assignedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex("portfolio_objective_positions_user_asset_uidx").on(
+      table.userId,
+      table.assetKey,
+    ),
     index("portfolio_objective_positions_objective_idx").on(table.objectiveId),
   ],
 );
@@ -290,6 +432,7 @@ export const portfolioObjectivePositions = pgTable(
 export const portfolioObjectiveReferenceBatches = pgTable(
   "portfolio_objective_reference_batches",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     observedOn: date().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -298,6 +441,7 @@ export const portfolioObjectiveReferenceBatches = pgTable(
 export const portfolioObjectiveBalanceReferences = pgTable(
   "portfolio_objective_balance_references",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     batchId: uuid()
       .notNull()
@@ -329,15 +473,23 @@ export const portfolioObjectiveBalanceReferences = pgTable(
 export const portfolioAllocationTargets = pgTable(
   "portfolio_allocation_targets",
   {
-    id: varchar({ length: 20 }).primaryKey().default("default"),
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: text().primaryKey(),
     percentages: jsonb().$type<Record<string, number>>().notNull().default({}),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
+  (table) => [
+    uniqueIndex("portfolio_allocation_targets_user_id_uidx").on(
+      table.userId,
+      table.id,
+    ),
+  ],
 );
 export const personalInvestmentStrategy = pgTable(
   "personal_investment_strategy",
   {
-    id: varchar({ length: 20 }).primaryKey().default("default"),
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: text().primaryKey(),
     answers: jsonb().$type<{
       horizonYears: number;
       internationalInterest: "interested" | "not_interested" | "unsure";
@@ -347,32 +499,49 @@ export const personalInvestmentStrategy = pgTable(
     allocationActive: boolean().notNull().default(false),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
+  (table) => [
+    uniqueIndex("personal_investment_strategy_user_id_uidx").on(
+      table.userId,
+      table.id,
+    ),
+  ],
 );
 export const cdiDailyRates = pgTable("cdi_daily_rates", {
   rateDate: date().primaryKey(),
   annualRate: numeric({ precision: 9, scale: 6 }).notNull(),
   fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
-export const movementItems = pgTable("movement_items", {
-  id: uuid().defaultRandom().primaryKey(),
-  importId: uuid()
-    .notNull()
-    .references(() => imports.id),
-  eventFingerprint: varchar({ length: 32 }).notNull().unique(),
-  direction: varchar({ length: 10 }).notNull(),
-  occurredAt: date().notNull(),
-  movementType: text().notNull(),
-  product: text().notNull(),
-  assetCode: text(),
-  institution: text(),
-  quantity: numeric({ precision: 24, scale: 8 }).notNull(),
-  unitPrice: numeric({ precision: 24, scale: 8 }),
-  operationValue: numeric({ precision: 24, scale: 8 }),
-  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
+export const movementItems = pgTable(
+  "movement_items",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    importId: uuid()
+      .notNull()
+      .references(() => imports.id),
+    eventFingerprint: varchar({ length: 32 }).notNull(),
+    direction: varchar({ length: 10 }).notNull(),
+    occurredAt: date().notNull(),
+    movementType: text().notNull(),
+    product: text().notNull(),
+    assetCode: text(),
+    institution: text(),
+    quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    unitPrice: numeric({ precision: 24, scale: 8 }),
+    operationValue: numeric({ precision: 24, scale: 8 }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("movement_items_user_event_fingerprint_uidx").on(
+      table.userId,
+      table.eventFingerprint,
+    ),
+  ],
+);
 export const manualPortfolioOperations = pgTable(
   "manual_portfolio_operations",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     idempotencyKey: uuid().notNull().defaultRandom(),
     side: varchar({ length: 8 }).$type<"BUY" | "SELL">().notNull(),
@@ -387,6 +556,7 @@ export const manualPortfolioOperations = pgTable(
   },
   (table) => [
     uniqueIndex("manual_portfolio_operations_idempotency_key_unique").on(
+      table.userId,
       table.idempotencyKey,
     ),
     check(
@@ -414,6 +584,7 @@ export const manualPortfolioOperations = pgTable(
 export const portfolioOperationReconciliationEvents = pgTable(
   "portfolio_operation_reconciliation_events",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     eventOrder: bigserial({ mode: "number" }).notNull(),
     operationId: uuid()
@@ -479,6 +650,7 @@ export const stockFundamentals = pgTable("stock_fundamentals", {
 export const stockOpportunityManualInputs = pgTable(
   "stock_opportunity_manual_inputs",
   {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     ticker: varchar({ length: 16 }).notNull(),
     inputKey: varchar({ length: 24 }).notNull(),
@@ -488,7 +660,8 @@ export const stockOpportunityManualInputs = pgTable(
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("stock_opportunity_manual_ticker_input_idx").on(
+    uniqueIndex("stock_opportunity_manual_user_ticker_input_idx").on(
+      table.userId,
       table.ticker,
       table.inputKey,
     ),
@@ -499,12 +672,19 @@ export const stockOpportunityManualInputs = pgTable(
 export const stockOpportunityAnalysisSettings = pgTable(
   "stock_opportunity_analysis_settings",
   {
-    id: integer().primaryKey().default(1),
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: text().primaryKey(),
     bazinTargetYield: numeric({ precision: 8, scale: 4 })
       .notNull()
       .default("6"),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
+  (table) => [
+    uniqueIndex("stock_opportunity_analysis_settings_user_id_uidx").on(
+      table.userId,
+      table.id,
+    ),
+  ],
 );
 export const screenerMarketRefreshRuns = pgTable(
   "screener_market_refresh_runs",
@@ -733,12 +913,20 @@ export const screenerMarketSnapshotQuotes = pgTable(
 export const portfolioAssetClassifications = pgTable(
   "portfolio_asset_classifications",
   {
-    assetKey: varchar({ length: 64 }).primaryKey(),
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    assetKey: varchar({ length: 64 }).notNull(),
     assetClass: varchar({ length: 80 }),
     subClass: varchar({ length: 120 }),
     geography: varchar({ length: 40 }),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
+  (table) => [
+    uniqueIndex("portfolio_asset_classifications_user_asset_uidx").on(
+      table.userId,
+      table.assetKey,
+    ),
+  ],
 );
 
 /* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */

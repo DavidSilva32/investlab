@@ -1,3 +1,7 @@
+vi.mock("@/infrastructure/auth/authorization", () => ({
+  getAuthenticatedUser: vi.fn(async () => ({ id: "owner-1", role: "ADMIN" })),
+  isLegacyPortfolioOwner: vi.fn(async () => true),
+}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationError } from "@/backend/errors/application-error";
 const mocks = vi.hoisted(() => ({ refresh: vi.fn(), error: vi.fn() }));

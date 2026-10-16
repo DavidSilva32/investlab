@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { getCurrentRequestId } from "@/infrastructure/logging/request-context";
 import { logger } from "@/infrastructure/logging/logger";
+import { getAuthenticatedUser } from "@/infrastructure/auth/authorization";
+import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 
 type ApiHandler<Arguments extends unknown[]> = (
   ...arguments_: Arguments
@@ -31,7 +33,35 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
       });
 
       try {
-        const response = await handler(...arguments_);
+        const privateApi =
+          /^\/api\/(portfolio|imports|positions|emergency-reserve|cdb-rates)(\/|$)/.test(
+            route,
+          ) || route.startsWith("/api/analyses/portfolio-opportunities");
+        const adminRoute =
+          route.startsWith("/api/admin/") ||
+          route.startsWith("/api/settings/") ||
+          route === "/api/screener/market/refresh";
+        let authenticatedUserId: string | null = null;
+        if (privateApi || adminRoute) {
+          const user = await getAuthenticatedUser(request?.headers);
+          if (!user)
+            return Response.json(
+              { message: "Não autenticado." },
+              { status: 401 },
+            );
+          authenticatedUserId = user.id;
+          if (adminRoute && user.role !== "ADMIN") {
+            return Response.json(
+              { message: "Acesso não autorizado." },
+              { status: 403 },
+            );
+          }
+        }
+        const response = authenticatedUserId
+          ? await runWithDataOwner(authenticatedUserId, () =>
+              handler(...arguments_),
+            )
+          : await handler(...arguments_);
         response.headers.set("x-request-id", requestId);
         logger.info("api_request_completed", {
           method,

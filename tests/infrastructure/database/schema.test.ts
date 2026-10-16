@@ -1,6 +1,7 @@
 import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import * as databaseSchema from "@/infrastructure/database/schema";
 
 import {
   positionReconciliationEvents,
@@ -15,13 +16,34 @@ import {
   positionSnapshots,
   manualPortfolioPositionSnapshots,
   stockOpportunityManualInputs,
+  authUsers,
 } from "@/infrastructure/database/schema";
 
 describe("database schema", () => {
+  it("exposes valid Drizzle configurations for every declared table", () => {
+    const configs = Object.values(databaseSchema).map((table) =>
+      getTableConfig(table),
+    );
+    configs.forEach((config) =>
+      config.foreignKeys.forEach((foreignKey) => {
+        const reference = foreignKey.reference();
+        expect(reference.foreignColumns.length).toBeGreaterThan(0);
+      }),
+    );
+    const names = configs.map((config) => config.name);
+
+    expect(configs.length).toBeGreaterThan(0);
+    expect(names.every((name) => name.length > 0)).toBe(true);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it("retains reconciliation audit events without cascading source deletion", () => {
     const config = getTableConfig(positionReconciliationEvents);
     expect(config.name).toBe("position_reconciliation_events");
-    expect(config.foreignKeys).toHaveLength(0);
+    expect(config.foreignKeys).toHaveLength(1);
+    expect(config.foreignKeys[0].reference().foreignColumns).toContain(
+      authUsers.id,
+    );
     expect(config.indexes).toHaveLength(1);
     expect(config.checks).toHaveLength(1);
   });
@@ -30,20 +52,35 @@ describe("database schema", () => {
     expect(getTableName(positionSnapshots)).toBe("position_snapshots");
     expect(getTableName(positionItems)).toBe("position_items");
     expect(getTableName(movementItems)).toBe("movement_items");
-    const snapshotForeignKey = getTableConfig(positionSnapshots).foreignKeys[0];
-    const itemForeignKey = getTableConfig(positionItems).foreignKeys[0];
-    const movementForeignKey = getTableConfig(movementItems).foreignKeys[0];
-    expect(snapshotForeignKey.reference().foreignColumns).toContain(imports.id);
-    expect(itemForeignKey.reference().foreignColumns).toContain(
+    const snapshotForeignKey = getTableConfig(
+      positionSnapshots,
+    ).foreignKeys.find((key) =>
+      key.reference().foreignColumns.includes(imports.id),
+    );
+    const itemForeignKey = getTableConfig(positionItems).foreignKeys.find(
+      (key) => key.reference().foreignColumns.includes(positionSnapshots.id),
+    );
+    const movementForeignKey = getTableConfig(movementItems).foreignKeys.find(
+      (key) => key.reference().foreignColumns.includes(imports.id),
+    );
+    expect(snapshotForeignKey).toBeDefined();
+    expect(itemForeignKey).toBeDefined();
+    expect(movementForeignKey).toBeDefined();
+    expect(snapshotForeignKey?.reference().foreignColumns).toContain(
+      imports.id,
+    );
+    expect(itemForeignKey?.reference().foreignColumns).toContain(
       positionSnapshots.id,
     );
-    expect(movementForeignKey.reference().foreignColumns).toContain(imports.id);
-    expect(movementItems.eventFingerprint).toMatchObject({
-      name: "eventFingerprint",
-      notNull: true,
-      isUnique: true,
-      uniqueName: "movement_items_eventFingerprint_unique",
-    });
+    expect(movementForeignKey?.reference().foreignColumns).toContain(
+      imports.id,
+    );
+    const movementFingerprintIndex = getTableConfig(movementItems).indexes.find(
+      (index) =>
+        index.config.name === "movement_items_user_event_fingerprint_uidx",
+    );
+    expect(movementFingerprintIndex?.config.columns).toHaveLength(2);
+    expect(movementItems.eventFingerprint.notNull).toBe(true);
   });
 
   it("stores portfolio objectives with single-objective position assignments", () => {
@@ -59,14 +96,20 @@ describe("database schema", () => {
     ).toBe(true);
 
     const assignmentConfig = getTableConfig(portfolioObjectivePositions);
-    expect(assignmentConfig.foreignKeys).toHaveLength(1);
+    expect(assignmentConfig.foreignKeys).toHaveLength(2);
+    const objectiveForeignKey = assignmentConfig.foreignKeys.find((key) =>
+      key.reference().foreignColumns.includes(portfolioObjectives.id),
+    );
+    expect(objectiveForeignKey).toBeDefined();
+    expect(objectiveForeignKey?.reference().foreignColumns).toContain(
+      portfolioObjectives.id,
+    );
     expect(
-      assignmentConfig.foreignKeys[0].reference().foreignColumns,
-    ).toContain(portfolioObjectives.id);
-    expect(
-      assignmentConfig.columns.find((column) => column.name === "assetKey")
-        ?.isUnique,
-    ).toBe(true);
+      assignmentConfig.indexes.find(
+        (index) =>
+          index.config.name === "portfolio_objective_positions_user_asset_uidx",
+      )?.config.columns,
+    ).toHaveLength(2);
   });
 
   it("stores manual stock opportunity inputs with unique ticker and input keys", () => {
@@ -76,7 +119,7 @@ describe("database schema", () => {
     const config = getTableConfig(stockOpportunityManualInputs);
     expect(config.indexes).toHaveLength(2);
     expect(config.indexes.map((index) => index.config.name)).toEqual([
-      "stock_opportunity_manual_ticker_input_idx",
+      "stock_opportunity_manual_user_ticker_input_idx",
       "stock_opportunity_manual_ticker_idx",
     ]);
     expect(config.columns.map((column) => column.name)).toContain("inputKey");
@@ -86,17 +129,23 @@ describe("database schema", () => {
     const config = getTableConfig(manualPortfolioPositionSnapshots);
     expect(config.name).toBe("manual_portfolio_position_snapshots");
     expect(config.indexes.map((index) => index.config.name)).toContain(
-      "manual_portfolio_position_snapshots_asset_recorded_uidx",
+      "manual_portfolio_position_snapshots_user_asset_recorded_uidx",
     );
     expect(config.columns.map((column) => column.name)).toContain(
       "conversionDate",
     );
-    expect(config.foreignKeys).toHaveLength(0);
+    expect(config.foreignKeys).toHaveLength(1);
+    expect(config.foreignKeys[0].reference().foreignColumns).toContain(
+      authUsers.id,
+    );
   });
   it("stores economic changes as explicit neutral manual adjustment events", () => {
     const config = getTableConfig(manualPortfolioAdjustmentEvents);
     expect(config.name).toBe("manual_portfolio_adjustment_events");
-    expect(config.foreignKeys).toHaveLength(0);
+    expect(config.foreignKeys).toHaveLength(1);
+    expect(config.foreignKeys[0].reference().foreignColumns).toContain(
+      authUsers.id,
+    );
     expect(config.indexes.map((index) => index.config.name)).toContain(
       "manual_portfolio_adjustment_events_asset_recorded_idx",
     );
@@ -141,7 +190,7 @@ describe("database schema", () => {
     expect(reconciliations.name).toBe(
       "portfolio_operation_reconciliation_events",
     );
-    expect(reconciliations.foreignKeys).toHaveLength(2);
+    expect(reconciliations.foreignKeys).toHaveLength(3);
     expect(reconciliations.columns.map((column) => column.name)).toContain(
       "eventOrder",
     );

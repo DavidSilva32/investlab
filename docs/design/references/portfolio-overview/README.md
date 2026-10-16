@@ -3,7 +3,7 @@
 ## Contexto funcional
 
 - Rota: `/portfolio`, visão geral com dados carregados e tema escuro; a proposta inclui o AppShell em viewport desktop.
-- Fonte da experiência: `src/app/portfolio/_components/portfolio-overview.tsx` e componentes compartilhados de taxas e distribuição.
+- Fonte da experiência: `src/app/(private)/portfolio/_components/portfolio-overview.tsx` e componentes compartilhados de taxas e distribuição.
 - Conteúdo suportado: valor conhecido da carteira e sua qualidade, posições valorizadas, referência de Selic/CDI com data, distribuição por instituição e categoria disponível, principais posições, pontos de atenção e atalhos para objetivos/detalhes.
 - Categorias apresentadas na distribuição são valores amplos do cadastro da carteira. Suas barras usam cores genéricas `chart-category-*` associadas explicitamente ao valor; isso não as reclassifica como as quatro classes específicas do catálogo.
 

@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   client: { select: vi.fn(), transaction: vi.fn() },
   logger: { error: vi.fn() },
   forcedCandidates: null as unknown[] | null,
   forcedLinks: null as unknown[] | null,
+}));
+vi.mock("@/infrastructure/auth/data-owner-context", () => ({
+  requireDataOwnerId: () => "owner-1",
 }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => mocks.client,
@@ -43,6 +46,19 @@ vi.mock(
 
 import { importRepository } from "@/backend/repositories/import.repository";
 import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
+
+function containsSqlParameter(
+  value: unknown,
+  expected: unknown,
+  seen = new Set<object>(),
+): boolean {
+  if (value === expected) return true;
+  if (!value || typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  return Object.values(value).some((nested) =>
+    containsSqlParameter(nested, expected, seen),
+  );
+}
 import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
 import {
   portfolioAssetClassifications,
@@ -72,15 +88,32 @@ const positions = [
   },
 ] as never;
 const chain = (result: unknown) => ({
-  from: () => ({
-    where: () => ({ limit: async () => result, orderBy: async () => result }),
-    orderBy: () => ({ limit: async () => result }),
-  }),
+  from: () => {
+    const query: Record<string, unknown> = {};
+    query.where = () => query;
+    query.orderBy = () => query;
+    query.limit = async () => result;
+    query.then = (resolve: (value: unknown) => unknown) =>
+      Promise.resolve(result).then(resolve);
+    return query;
+  },
 });
+const queryChain = (result: unknown) => {
+  const query: Record<string, unknown> = {};
+  query.where = () => query;
+  query.orderBy = () => query;
+  query.limit = async () => result;
+  query.then = (resolve: (value: unknown) => unknown) =>
+    Promise.resolve(result).then(resolve);
+  return query;
+};
 const emptyImportGuard = () => ({
   execute: vi.fn().mockResolvedValue(undefined),
   select: vi.fn().mockReturnValue({
-    from: () => ({ orderBy: () => ({ limit: async () => [] }) }),
+    from: () => ({
+      where: () => ({ orderBy: () => ({ limit: async () => [] }) }),
+      orderBy: () => ({ limit: async () => [] }),
+    }),
   }),
 });
 const withManualRead = <
@@ -95,8 +128,10 @@ const withManualRead = <
     from: (table: unknown) =>
       table === manualPortfolioPositions ||
       table === positionReconciliationEvents
-        ? Promise.resolve([])
-        : transaction.select(...args).from(table),
+        ? { where: () => Promise.resolve([]) }
+        : table === manualPortfolioPositions
+          ? { where: () => Promise.resolve([]) }
+          : transaction.select(...args).from(table),
   }),
 });
 const sqlChunksText = (chunks: unknown[]) =>
@@ -157,22 +192,16 @@ describe("import repository", () => {
       execute: vi.fn(),
       select: vi.fn().mockImplementation(() => ({
         from: (table: unknown) => {
-          if (table === imports && replay)
-            return { where: () => ({ limit: async () => replay.imports }) };
-          if (table === positionSnapshots && replay)
-            return {
-              orderBy: () => ({ limit: async () => [] }),
-              where: () => ({ limit: async () => replay.snapshots }),
-            };
-          if (table === manualPortfolioPositions)
-            return Promise.resolve(manual);
-          if (table === positionReconciliationEvents)
-            return Promise.resolve(events);
+          if (table === imports && replay) return queryChain(replay.imports);
+          if (table === positionSnapshots)
+            return queryChain(replay ? replay.snapshots : []);
+          if (table === manualPortfolioPositions) return queryChain(manual);
+          if (table === positionReconciliationEvents) return queryChain(events);
           if (table === portfolioAssetClassifications)
-            return { where: async () => classifications };
+            return queryChain(classifications);
           if (table === portfolioObjectivePositions)
-            return { where: async () => assignments };
-          return { orderBy: () => ({ limit: async () => [] }) };
+            return queryChain(assignments);
+          return queryChain([]);
         },
       })),
       insert: vi.fn().mockImplementation((table: unknown) => ({
@@ -427,6 +456,7 @@ describe("import repository", () => {
             recordedAt: expect.any(Date),
             requestId: "req",
             importId: "import",
+            userId: "owner-1",
           },
         ],
       ]);
@@ -477,8 +507,8 @@ describe("import repository", () => {
     ).rejects.toMatchObject({ statusCode: 409 });
   });
   const sameClassification = {
-    assetClass: "Renda variável",
-    subClass: "Ações",
+    assetClass: "Renda variÃ¡vel",
+    subClass: "AÃ§Ãµes",
     geography: "Brasil",
   };
   it.each(["assetClass", "subClass", "geography"] as const)(
@@ -710,6 +740,18 @@ describe("import repository", () => {
     await expect(importRepository.existsByHash("hash")).resolves.toBe(true);
     await expect(importRepository.existsByHash("hash")).resolves.toBe(false);
   });
+  it("scopes duplicate hash checks to the authenticated owner", async () => {
+    const where = vi.fn().mockReturnValue({ limit: async () => [] });
+    mocks.client.select.mockReturnValue({
+      from: () => ({ where }),
+    });
+    await expect(
+      importRepository.existsByHash("owner-file-hash"),
+    ).resolves.toBe(false);
+    expect(containsSqlParameter(where.mock.calls[0]?.[0], "owner-1")).toBe(
+      true,
+    );
+  });
   it("updates one B3 reference date as both snapshot and estimation metadata", async () => {
     const changes: unknown[] = [];
     const tx = {
@@ -834,12 +876,14 @@ describe("import repository", () => {
     mocks.client.select
       .mockReturnValueOnce({
         from: () => ({
-          orderBy: (...ordering: unknown[]) => {
-            snapshotOrdering(...ordering);
-            return {
-              limit: async () => [{ id: "snapshot-1", referenceDate: null }],
-            };
-          },
+          where: () => ({
+            orderBy: (...ordering: unknown[]) => {
+              snapshotOrdering(...ordering);
+              return {
+                limit: async () => [{ id: "snapshot-1", referenceDate: null }],
+              };
+            },
+          }),
         }),
       } as never)
       .mockReturnValueOnce({
@@ -912,6 +956,7 @@ describe("import repository", () => {
     ]);
     expect(persistedPositions).toEqual([
       expect.objectContaining({
+        userId: "owner-1",
         snapshotId: "snapshot-1",
         valuationSource: "CURVA",
         curveUnitPrice: "0.01059225",
@@ -927,7 +972,7 @@ describe("import repository", () => {
       institution: "Banco A",
       issuer: "Banco A",
       indexer: "CDI",
-      regimeType: "PÓS",
+      regimeType: "PÃ“S",
       issuedAt: "2025-01-01",
       maturityAt: "2027-01-01",
     };
@@ -937,7 +982,11 @@ describe("import repository", () => {
         .fn()
         .mockReturnValueOnce({
           from: () => ({
-            orderBy: () => ({ limit: async () => [{ id: "snapshot-latest" }] }),
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "snapshot-latest" }],
+              }),
+            }),
           }),
         })
         .mockReturnValueOnce({
@@ -995,7 +1044,11 @@ describe("import repository", () => {
         .fn()
         .mockReturnValueOnce({
           from: () => ({
-            orderBy: () => ({ limit: async () => [{ id: "snapshot-empty" }] }),
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "snapshot-empty" }],
+              }),
+            }),
           }),
         })
         .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
@@ -1035,7 +1088,7 @@ describe("import repository", () => {
       institution: "Banco A",
       issuer: "Banco A",
       indexer: "CDI",
-      regimeType: "PÓS",
+      regimeType: "PÃ“S",
       issuedAt: "2025-01-01",
       maturityAt: "2027-01-01",
     };
@@ -1045,7 +1098,9 @@ describe("import repository", () => {
         .fn()
         .mockReturnValueOnce({
           from: () => ({
-            orderBy: () => ({ limit: async () => [{ id: "snapshot-old" }] }),
+            where: () => ({
+              orderBy: () => ({ limit: async () => [{ id: "snapshot-old" }] }),
+            }),
           }),
         })
         .mockReturnValueOnce({
@@ -1083,12 +1138,12 @@ describe("import repository", () => {
 
   it("returns a safe generic conflict when an assignment has no objective name", async () => {
     const currentPosition = {
-      product: "CDB órfão",
+      product: "CDB Ã³rfÃ£o",
       assetCode: "CDB-ORPHAN",
       institution: "Banco A",
       issuer: "Banco A",
       indexer: "CDI",
-      regimeType: "PÓS",
+      regimeType: "PÃ“S",
       issuedAt: "2025-01-01",
       maturityAt: "2027-01-01",
     };
@@ -1098,7 +1153,9 @@ describe("import repository", () => {
         .fn()
         .mockReturnValueOnce({
           from: () => ({
-            orderBy: () => ({ limit: async () => [{ id: "snapshot-old" }] }),
+            where: () => ({
+              orderBy: () => ({ limit: async () => [{ id: "snapshot-old" }] }),
+            }),
           }),
         })
         .mockReturnValueOnce({
@@ -1470,7 +1527,7 @@ describe("import repository", () => {
             eventFingerprint: "a".repeat(32),
             direction: "CREDITO",
             occurredAt: "2026-09-11",
-            movementType: "APLICAÇÃO",
+            movementType: "APLICAÃ‡ÃƒO",
             product: "CDB",
             assetCode: null,
             institution: null,
@@ -1572,7 +1629,9 @@ describe("import repository", () => {
 
   it("lists movements and logs movement-query failures", async () => {
     mocks.client.select.mockReturnValue({
-      from: () => ({ orderBy: async () => [{ id: "movement-1" }] }),
+      from: () => ({
+        where: () => ({ orderBy: async () => [{ id: "movement-1" }] }),
+      }),
     });
     await expect(importRepository.listMovements()).resolves.toEqual([
       { id: "movement-1" },
@@ -1744,7 +1803,11 @@ describe("import repository", () => {
         .fn()
         .mockReturnValueOnce({
           from: () => ({
-            orderBy: () => ({ limit: async () => [{ id: "latest-snapshot" }] }),
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "latest-snapshot" }],
+              }),
+            }),
           }),
         })
         .mockReturnValueOnce({
@@ -1778,7 +1841,11 @@ describe("import repository", () => {
       select: vi
         .fn()
         .mockReturnValueOnce({
-          from: () => ({ orderBy: () => ({ limit: async () => snapshots }) }),
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({ limit: async () => snapshots }),
+            }),
+          }),
         })
         .mockReturnValueOnce({
           from: () => ({ where: () => ({ limit: async () => positions }) }),

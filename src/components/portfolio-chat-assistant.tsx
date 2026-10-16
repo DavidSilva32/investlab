@@ -486,7 +486,7 @@ function AssistantConversation({
     if (intent === "planning") {
       setSelectedObjective(null);
       setPlanningHref(
-        `/planning?objective=${encodeURIComponent(objective.id)}`,
+        `/planejamento?objective=${encodeURIComponent(objective.id)}`,
       );
       addMessage(
         "assistant",
@@ -579,7 +579,7 @@ function AssistantConversation({
         setSelectedObjective(null);
         if (objective && !isPlanningObjective(objective)) {
           setIntent(null);
-          setPlanningHref("/planning");
+          setPlanningHref("/planejamento");
           addMessage(
             "assistant",
             "A reserva não pode ser simulada como objetivo individual. Posso abrir o planejamento do patrimônio total.",
@@ -589,7 +589,7 @@ function AssistantConversation({
         if (objective) {
           setIntent(null);
           setPlanningHref(
-            `/planning?objective=${encodeURIComponent(objective.id)}`,
+            `/planejamento?objective=${encodeURIComponent(objective.id)}`,
           );
           addMessage(
             "assistant",
@@ -604,7 +604,7 @@ function AssistantConversation({
         }
 
         setIntent(null);
-        setPlanningHref("/planning");
+        setPlanningHref("/planejamento");
         addMessage(
           "assistant",
           "Posso abrir o planejamento para você explorar um cenário.",
@@ -978,7 +978,7 @@ function AssistantConversation({
                         <AssistantMessage>
                           Você ainda não tem objetivos cadastrados.
                           <Link
-                            href="/portfolio?panel=objectives"
+                            href="/carteira?panel=objectives"
                             className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             Ver objetivos{" "}
@@ -1000,7 +1000,7 @@ function AssistantConversation({
                           Não há objetivos disponíveis para esse planejamento.
                           Você ainda pode simular o patrimônio total.
                           <Link
-                            href="/planning"
+                            href="/planejamento"
                             className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             Planejar patrimônio total{" "}
@@ -1054,7 +1054,7 @@ function AssistantConversation({
                         {isPlanningObjective(selectedObjective) && (
                           <Button asChild size="sm">
                             <Link
-                              href={`/planning?objective=${encodeURIComponent(selectedObjective.id)}`}
+                              href={`/planejamento?objective=${encodeURIComponent(selectedObjective.id)}`}
                             >
                               <ChartNoAxesCombined
                                 aria-hidden="true"
@@ -1158,7 +1158,7 @@ function QuickPrompts({
           variant="outline"
           className="h-auto min-h-10 w-full justify-start gap-2 whitespace-normal py-2 text-left"
         >
-          <Link href="/planning">
+          <Link href="/planejamento">
             <ChartNoAxesCombined
               aria-hidden="true"
               className="size-4 shrink-0 text-primary"

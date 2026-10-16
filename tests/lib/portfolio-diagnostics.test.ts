@@ -46,7 +46,7 @@ describe("getPortfolioDiagnostics", () => {
       {
         id: "allocation",
         action: "classification",
-        href: "/portfolio?panel=classification",
+        href: "/carteira?panel=classification",
       },
     ]);
     expect(
@@ -56,7 +56,7 @@ describe("getPortfolioDiagnostics", () => {
         }),
       ),
     ).toMatchObject([
-      { id: "allocation", action: "strategy", href: "/strategy" },
+      { id: "allocation", action: "strategy", href: "/estrategia" },
     ]);
   });
   it("is discreet with an empty portfolio, missing goals and dates without a freshness policy", () => {
@@ -117,18 +117,18 @@ describe("getPortfolioDiagnostics", () => {
       rows.find(({ id }) => id === "classification")?.href,
     ).toBeUndefined();
     expect(rows.find(({ id }) => id === "reserve")?.href).toBe(
-      "/portfolio?panel=objectives&objective=reserve",
+      "/carteira?panel=objectives&objective=reserve",
     );
     expect(rows.find(({ id }) => id === "allocation")).toMatchObject({
       severity: "information",
-      href: "/strategy",
+      href: "/estrategia",
       detail: guidance.explanation,
     });
     expect(rows.find(({ id }) => id === "maturity")?.detail).toContain(
       "31/01/2030",
     );
     expect(rows.find(({ id }) => id === "values")?.href).toBe(
-      "/portfolio?view=positions",
+      "/carteira?view=positions",
     );
     expect(getPortfolioDiagnostics(data)).toEqual(rows);
     expect(data).toEqual(original);
