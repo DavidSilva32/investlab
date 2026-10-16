@@ -77,19 +77,27 @@ afterEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders the authenticated identity and active navigation without fetching the session", () => {
+  it("renders the authenticated identity and active navigation without fetching the session", async () => {
     navigation.pathname = "/carteira";
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
     renderShell();
 
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getAllByText("David Silva").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
     expect(screen.queryByText("Usuário autorizado")).toBeNull();
     expect(screen.queryByRole("link", { name: "Configurações" })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Meu perfil" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Abrir menu da conta" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Abrir menu da conta" }),
+    );
+    expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
+    expect(screen.getByRole("menuitem", { name: "Meu perfil" })).toBeTruthy();
+    await user.keyboard("{Escape}");
     expect(
       screen
         .getAllByRole("link", { name: "Carteira" })
@@ -225,7 +233,10 @@ describe("AppShell", () => {
     const user = userEvent.setup();
     renderShell();
 
-    await user.click(screen.getByRole("button", { name: "Meu perfil" }));
+    await user.click(
+      screen.getByRole("button", { name: "Abrir menu da conta" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Meu perfil" }));
     const name = screen.getByLabelText("Nome");
     await user.clear(name);
     await user.type(name, "Alex Silva");

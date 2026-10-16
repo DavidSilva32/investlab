@@ -25,17 +25,19 @@ vi.mock("sonner", () => ({
 
 import { UserProfileDialog } from "@/components/user-profile-dialog";
 
-async function renderProfile() {
+async function renderProfile(role: "USER" | "ADMIN" = "USER") {
   const user = userEvent.setup();
   const onNameUpdated = vi.fn();
   render(
     <UserProfileDialog
       name="David"
       email="david@example.com"
+      role={role}
       onNameUpdated={onNameUpdated}
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Meu perfil" }));
+  await user.click(screen.getByRole("button", { name: "Abrir menu da conta" }));
+  await user.click(screen.getByRole("menuitem", { name: "Meu perfil" }));
   return { user, onNameUpdated };
 }
 
@@ -47,6 +49,26 @@ afterEach(() => {
 });
 
 describe("UserProfileDialog", () => {
+  it("shows a separate assisted recovery path when the current password is forgotten", async () => {
+    await renderProfile();
+
+    expect(screen.getByText("Esqueceu a senha atual?")).toBeTruthy();
+    expect(screen.getByText(/Peça ao administrador do InvestLab/)).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: "Abrir redefinição assistida" }),
+    ).toBeNull();
+  });
+
+  it("gives administrators a direct route to the existing assisted reset form", async () => {
+    await renderProfile("ADMIN");
+
+    expect(
+      screen
+        .getByRole("link", { name: "Abrir redefinição assistida" })
+        .getAttribute("href"),
+    ).toBe("/admin/usuarios#password-reset");
+  });
+
   it("saves the current user's display name, keeps email read-only, and refreshes the header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
@@ -123,7 +145,7 @@ describe("UserProfileDialog", () => {
       screen.getByLabelText("Confirmar nova senha"),
       "new-password-long",
     );
-    await user.click(screen.getByRole("button", { name: "Alterar senha" }));
+    await user.click(screen.getByRole("button", { name: "Trocar senha" }));
     await waitFor(() => expect(mocks.error).toHaveBeenCalledTimes(2));
 
     expect(mocks.error).not.toHaveBeenCalledWith("internal name detail");
@@ -149,7 +171,7 @@ describe("UserProfileDialog", () => {
     await user.type(screen.getByLabelText("Senha atual"), "current-password");
     await user.type(screen.getByLabelText("Nova senha"), "short");
     await user.type(screen.getByLabelText("Confirmar nova senha"), "short");
-    await user.click(screen.getByRole("button", { name: "Alterar senha" }));
+    await user.click(screen.getByRole("button", { name: "Trocar senha" }));
     expect(
       screen.getByLabelText("Nova senha").getAttribute("aria-invalid"),
     ).toBe("true");
@@ -172,7 +194,7 @@ describe("UserProfileDialog", () => {
       screen.getByLabelText("Confirmar nova senha"),
       "different-password",
     );
-    await user.click(screen.getByRole("button", { name: "Alterar senha" }));
+    await user.click(screen.getByRole("button", { name: "Trocar senha" }));
     expect(
       screen.getByText("A confirmação não corresponde à nova senha."),
     ).toBeTruthy();
@@ -257,7 +279,7 @@ describe("UserProfileDialog", () => {
       screen.getByLabelText("Confirmar nova senha"),
       "new-password-long",
     );
-    await user.click(screen.getByRole("button", { name: "Alterar senha" }));
+    await user.click(screen.getByRole("button", { name: "Trocar senha" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/profile/password", {
@@ -306,14 +328,14 @@ describe("UserProfileDialog", () => {
       screen.getByLabelText("Confirmar nova senha"),
       "new-password-long",
     );
-    await user.click(screen.getByRole("button", { name: "Alterar senha" }));
+    await user.click(screen.getByRole("button", { name: "Trocar senha" }));
     await waitFor(() =>
       expect(mocks.error).toHaveBeenCalledWith(
         "Não foi possível validar a senha atual. Confira a senha e tente novamente.",
       ),
     );
 
-    await user.click(screen.getByRole("button", { name: "Alterar senha" }));
+    await user.click(screen.getByRole("button", { name: "Trocar senha" }));
     await waitFor(() =>
       expect(mocks.error).toHaveBeenCalledWith(
         "Não foi possível alterar sua senha.",
@@ -336,14 +358,17 @@ describe("UserProfileDialog", () => {
     );
     await user.type(next, "short");
     await user.type(screen.getByLabelText("Confirmar nova senha"), "short");
-    await user.click(screen.getByRole("button", { name: "Alterar senha" }));
+    await user.click(screen.getByRole("button", { name: "Trocar senha" }));
     expect(
       screen.getByText("A nova senha deve ter entre 12 e 128 caracteres."),
     ).toBeTruthy();
     expect(current.type).toBe("text");
 
     await user.click(screen.getByRole("button", { name: "Close" }));
-    await user.click(screen.getByRole("button", { name: "Meu perfil" }));
+    await user.click(
+      screen.getByRole("button", { name: "Abrir menu da conta" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Meu perfil" }));
 
     expect(
       (screen.getByLabelText("Senha atual") as HTMLInputElement).value,

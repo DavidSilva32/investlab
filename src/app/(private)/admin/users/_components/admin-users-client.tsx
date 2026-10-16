@@ -232,6 +232,7 @@ export function AdminUsersClient() {
           </section>
 
           <section
+            id="password-reset"
             aria-labelledby="reset-heading"
             className="space-y-3 border-t pt-5"
           >

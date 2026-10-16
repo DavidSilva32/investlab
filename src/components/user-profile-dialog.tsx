@@ -2,30 +2,40 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, UserRound } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown, Eye, EyeOff, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, apiRequest } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 
 type UserProfileDialogProps = {
   name: string;
   email: string;
+  role: "USER" | "ADMIN";
   onNameUpdated: (name: string) => void;
 };
 
 export function UserProfileDialog({
   name,
   email,
+  role,
   onNameUpdated,
 }: UserProfileDialogProps) {
   const router = useRouter();
@@ -139,245 +149,289 @@ export function UserProfileDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          aria-label="Meu perfil"
-          className="h-9 min-w-9 gap-0 px-0 text-foreground hover:bg-accent sm:h-auto sm:gap-3 sm:px-3"
-        >
-          <UserRound aria-hidden="true" className="size-5 sm:hidden" />
-          <span className="sr-only sm:hidden">Meu perfil</span>
-          <span className="hidden min-w-0 border-l border-border/70 pl-4 text-right sm:block">
-            <span
-              className="block max-w-52 truncate text-sm font-medium"
-              title={name || email}
-            >
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            aria-label="Abrir menu da conta"
+            className="h-10 min-w-10 gap-2 rounded-lg border-border bg-background px-2.5 text-foreground shadow-sm hover:border-primary/40 hover:bg-accent focus-visible:ring-2 sm:h-11 sm:gap-3 sm:px-3"
+          >
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+              <UserRound aria-hidden="true" className="size-4" />
+            </span>
+            <span className="hidden min-w-0 text-left sm:block">
+              <span className="block max-w-44 truncate text-sm font-medium leading-5">
+                {name || email}
+              </span>
+              <span className="block text-xs leading-4 text-muted-foreground">
+                Minha conta
+              </span>
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="font-normal">
+            <span className="block truncate text-sm font-medium text-foreground">
               {name || email}
             </span>
-            <span
-              className="block max-w-52 truncate text-xs text-muted-foreground"
-              title={email}
-            >
+            <span className="block truncate text-xs text-muted-foreground">
               {email}
             </span>
-            <span className="block text-xs text-muted-foreground">
-              Meu perfil
-            </span>
-          </span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Meu perfil</DialogTitle>
-          <DialogDescription>
-            Atualize seu nome ou altere sua senha. O e-mail permanece somente
-            para leitura.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-6">
-          <section
-            aria-labelledby="profile-account-title"
-            className="grid gap-4"
-          >
-            <h2 id="profile-account-title" className="text-sm font-semibold">
-              Dados da conta
-            </h2>
-            <form className="grid gap-4" onSubmit={saveName}>
-              <div className="grid gap-2">
-                <Label htmlFor="profile-name">Nome</Label>
-                <Input
-                  id="profile-name"
-                  autoComplete="name"
-                  maxLength={120}
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  aria-invalid={Boolean(nameError)}
-                  aria-describedby={
-                    nameError ? "profile-name-error" : undefined
-                  }
-                />
-                {nameError && (
-                  <p
-                    id="profile-name-error"
-                    className="text-sm text-destructive"
-                  >
-                    {nameError}
-                  </p>
-                )}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="profile-email">E-mail</Label>
-                <Input id="profile-email" type="email" value={email} readOnly />
-              </div>
-              <div>
-                <Button type="submit" disabled={savingName}>
-                  {savingName ? "Salvando…" : "Salvar nome"}
-                </Button>
-              </div>
-            </form>
-          </section>
-          <section
-            aria-labelledby="profile-password-title"
-            className="grid gap-4 border-t border-border pt-5"
-          >
-            <div>
-              <h2 id="profile-password-title" className="text-sm font-semibold">
-                Alterar senha
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => handleOpenChange(true)}>
+            <UserRound aria-hidden="true" className="size-4" />
+            Meu perfil
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Meu perfil</DialogTitle>
+            <DialogDescription>
+              Atualize seu nome ou altere sua senha. O e-mail permanece somente
+              para leitura.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6">
+            <section
+              aria-labelledby="profile-account-title"
+              className="grid gap-4"
+            >
+              <h2 id="profile-account-title" className="text-sm font-semibold">
+                Dados da conta
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Confirme sua senha atual. As outras sessões serão encerradas
-                após a alteração.
-              </p>
-            </div>
-            <form className="grid gap-4" onSubmit={changePassword}>
-              <div className="grid gap-2">
-                <Label htmlFor="profile-current-password">Senha atual</Label>
-                <div className="relative">
+              <form className="grid gap-4" onSubmit={saveName}>
+                <div className="grid gap-2">
+                  <Label htmlFor="profile-name">Nome</Label>
                   <Input
-                    id="profile-current-password"
-                    type={currentPasswordVisible ? "text" : "password"}
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                    required
-                    className="pr-11"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-9 w-9"
-                    aria-label={
-                      currentPasswordVisible
-                        ? "Ocultar senha atual"
-                        : "Mostrar senha atual"
-                    }
-                    aria-pressed={currentPasswordVisible}
-                    onClick={() =>
-                      setCurrentPasswordVisible((visible) => !visible)
-                    }
-                  >
-                    {currentPasswordVisible ? (
-                      <EyeOff aria-hidden="true" />
-                    ) : (
-                      <Eye aria-hidden="true" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="profile-new-password">Nova senha</Label>
-                <div className="relative">
-                  <Input
-                    id="profile-new-password"
-                    type={newPasswordVisible ? "text" : "password"}
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    required
-                    className="pr-11"
-                    aria-invalid={passwordError?.field === "newPassword"}
+                    id="profile-name"
+                    autoComplete="name"
+                    maxLength={120}
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    aria-invalid={Boolean(nameError)}
                     aria-describedby={
-                      passwordError?.field === "newPassword"
-                        ? "profile-new-password-error"
-                        : undefined
+                      nameError ? "profile-name-error" : undefined
                     }
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-9 w-9"
-                    aria-label={
-                      newPasswordVisible
-                        ? "Ocultar nova senha"
-                        : "Mostrar nova senha"
-                    }
-                    aria-pressed={newPasswordVisible}
-                    onClick={() => setNewPasswordVisible((visible) => !visible)}
-                  >
-                    {newPasswordVisible ? (
-                      <EyeOff aria-hidden="true" />
-                    ) : (
-                      <Eye aria-hidden="true" />
-                    )}
-                  </Button>
+                  {nameError && (
+                    <p
+                      id="profile-name-error"
+                      className="text-sm text-destructive"
+                    >
+                      {nameError}
+                    </p>
+                  )}
                 </div>
-                {passwordError?.field === "newPassword" && (
-                  <p
-                    id="profile-new-password-error"
-                    className="text-sm text-destructive"
-                  >
-                    {passwordError.message}
-                  </p>
-                )}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="profile-confirm-password">
-                  Confirmar nova senha
-                </Label>
-                <div className="relative">
+                <div className="grid gap-2">
+                  <Label htmlFor="profile-email">E-mail</Label>
                   <Input
-                    id="profile-confirm-password"
-                    type={confirmPasswordVisible ? "text" : "password"}
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    required
-                    className="pr-11"
-                    aria-invalid={passwordError?.field === "confirmPassword"}
-                    aria-describedby={
-                      passwordError?.field === "confirmPassword"
-                        ? "profile-confirm-password-error"
-                        : undefined
-                    }
+                    id="profile-email"
+                    type="email"
+                    value={email}
+                    readOnly
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-9 w-9"
-                    aria-label={
-                      confirmPasswordVisible
-                        ? "Ocultar confirmação da nova senha"
-                        : "Mostrar confirmação da nova senha"
-                    }
-                    aria-pressed={confirmPasswordVisible}
-                    onClick={() =>
-                      setConfirmPasswordVisible((visible) => !visible)
-                    }
-                  >
-                    {confirmPasswordVisible ? (
-                      <EyeOff aria-hidden="true" />
-                    ) : (
-                      <Eye aria-hidden="true" />
-                    )}
+                </div>
+                <div>
+                  <Button type="submit" disabled={savingName}>
+                    {savingName ? "Salvando…" : "Salvar nome"}
                   </Button>
                 </div>
-                {passwordError?.field === "confirmPassword" && (
-                  <p
-                    id="profile-confirm-password-error"
-                    className="text-sm text-destructive"
-                  >
-                    {passwordError.message}
-                  </p>
-                )}
-              </div>
+              </form>
+            </section>
+            <section
+              aria-labelledby="profile-password-title"
+              className="grid gap-4 border-t border-border pt-5"
+            >
               <div>
-                <Button type="submit" disabled={savingPassword}>
-                  {savingPassword ? "Alterando…" : "Alterar senha"}
-                </Button>
+                <h2
+                  id="profile-password-title"
+                  className="text-sm font-semibold"
+                >
+                  Trocar senha
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Use esta opção se você lembra da senha atual. As outras
+                  sessões serão encerradas após a troca.
+                </p>
               </div>
-            </form>
-          </section>
-        </div>
-      </DialogContent>
-    </Dialog>
+              <form className="grid gap-4" onSubmit={changePassword}>
+                <div className="grid gap-2">
+                  <Label htmlFor="profile-current-password">Senha atual</Label>
+                  <div className="relative">
+                    <Input
+                      id="profile-current-password"
+                      type={currentPasswordVisible ? "text" : "password"}
+                      autoComplete="current-password"
+                      value={currentPassword}
+                      onChange={(event) =>
+                        setCurrentPassword(event.target.value)
+                      }
+                      required
+                      className="pr-11"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-9 w-9"
+                      aria-label={
+                        currentPasswordVisible
+                          ? "Ocultar senha atual"
+                          : "Mostrar senha atual"
+                      }
+                      aria-pressed={currentPasswordVisible}
+                      onClick={() =>
+                        setCurrentPasswordVisible((visible) => !visible)
+                      }
+                    >
+                      {currentPasswordVisible ? (
+                        <EyeOff aria-hidden="true" />
+                      ) : (
+                        <Eye aria-hidden="true" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="profile-new-password">Nova senha</Label>
+                  <div className="relative">
+                    <Input
+                      id="profile-new-password"
+                      type={newPasswordVisible ? "text" : "password"}
+                      autoComplete="new-password"
+                      minLength={12}
+                      maxLength={128}
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      required
+                      className="pr-11"
+                      aria-invalid={passwordError?.field === "newPassword"}
+                      aria-describedby={
+                        passwordError?.field === "newPassword"
+                          ? "profile-new-password-error"
+                          : undefined
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-9 w-9"
+                      aria-label={
+                        newPasswordVisible
+                          ? "Ocultar nova senha"
+                          : "Mostrar nova senha"
+                      }
+                      aria-pressed={newPasswordVisible}
+                      onClick={() =>
+                        setNewPasswordVisible((visible) => !visible)
+                      }
+                    >
+                      {newPasswordVisible ? (
+                        <EyeOff aria-hidden="true" />
+                      ) : (
+                        <Eye aria-hidden="true" />
+                      )}
+                    </Button>
+                  </div>
+                  {passwordError?.field === "newPassword" && (
+                    <p
+                      id="profile-new-password-error"
+                      className="text-sm text-destructive"
+                    >
+                      {passwordError.message}
+                    </p>
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="profile-confirm-password">
+                    Confirmar nova senha
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="profile-confirm-password"
+                      type={confirmPasswordVisible ? "text" : "password"}
+                      autoComplete="new-password"
+                      minLength={12}
+                      maxLength={128}
+                      value={confirmPassword}
+                      onChange={(event) =>
+                        setConfirmPassword(event.target.value)
+                      }
+                      required
+                      className="pr-11"
+                      aria-invalid={passwordError?.field === "confirmPassword"}
+                      aria-describedby={
+                        passwordError?.field === "confirmPassword"
+                          ? "profile-confirm-password-error"
+                          : undefined
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-9 w-9"
+                      aria-label={
+                        confirmPasswordVisible
+                          ? "Ocultar confirmação da nova senha"
+                          : "Mostrar confirmação da nova senha"
+                      }
+                      aria-pressed={confirmPasswordVisible}
+                      onClick={() =>
+                        setConfirmPasswordVisible((visible) => !visible)
+                      }
+                    >
+                      {confirmPasswordVisible ? (
+                        <EyeOff aria-hidden="true" />
+                      ) : (
+                        <Eye aria-hidden="true" />
+                      )}
+                    </Button>
+                  </div>
+                  {passwordError?.field === "confirmPassword" && (
+                    <p
+                      id="profile-confirm-password-error"
+                      className="text-sm text-destructive"
+                    >
+                      {passwordError.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Button type="submit" disabled={savingPassword}>
+                    {savingPassword ? "Trocando…" : "Trocar senha"}
+                  </Button>
+                </div>
+              </form>
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <h3 className="text-sm font-medium">Esqueceu a senha atual?</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Peça ao administrador do InvestLab um link seguro de
+                  redefinição. Ele confirma sua identidade e o link permite
+                  criar uma nova senha sem informar a atual.
+                </p>
+                {role === "ADMIN" && (
+                  <Button asChild className="mt-3" size="sm" variant="outline">
+                    <Link href="/admin/usuarios#password-reset">
+                      Abrir redefinição assistida
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -252,6 +252,7 @@ export function AppShell({
             <UserProfileDialog
               name={user.name}
               email={user.email}
+              role={user.role}
               onNameUpdated={updateName}
             />
           </div>
