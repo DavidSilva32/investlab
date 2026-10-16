@@ -136,6 +136,25 @@ describe("AuthRepository", () => {
     expect(resetOrderBy).toHaveBeenCalledOnce();
   });
 
+  it("returns login eligibility for an existing user and null for an unknown email", async () => {
+    const limit = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "user-1", accountStatus: "ACTIVE" }])
+      .mockResolvedValueOnce([]);
+    const where = vi.fn().mockReturnValue({ limit });
+    const from = vi.fn().mockReturnValue({ where });
+    database.select.mockReturnValue({ from });
+
+    await expect(
+      repository.getLoginEligibility("person@example.com"),
+    ).resolves.toEqual({ id: "user-1", accountStatus: "ACTIVE" });
+    await expect(
+      repository.getLoginEligibility("missing@example.com"),
+    ).resolves.toBeNull();
+    expect(limit).toHaveBeenCalledWith(1);
+    expect(where).toHaveBeenCalledTimes(2);
+  });
+
   it("records first and most recent successful login only for active users", async () => {
     const updateQuery = createUpdateQuery([{ id: "user-1" }]);
     const transaction = {
@@ -183,6 +202,127 @@ describe("AuthRepository", () => {
     ).resolves.toBe(false);
     expect(sessionDelete).toHaveBeenCalledOnce();
     expect(sessionDeleteWhere).toHaveBeenCalledOnce();
+  });
+
+  it("rejects login recording if the account was deleted concurrently", async () => {
+    const updateQuery = createUpdateQuery([]);
+    const selectLimit = vi.fn().mockResolvedValue([]);
+    const transaction = {
+      update: vi.fn().mockReturnValue(updateQuery),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ where: vi.fn(() => ({ limit: selectLimit })) })),
+      })),
+      delete: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.recordSuccessfulLogin("deleted@example.com"),
+    ).resolves.toBe(false);
+    expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when a managed account no longer exists", async () => {
+    const targetLimit = vi.fn().mockResolvedValue([]);
+    const targetFor = vi.fn().mockReturnValue({ limit: targetLimit });
+    const targetWhere = vi.fn().mockReturnValue({ for: targetFor });
+    const targetFrom = vi.fn().mockReturnValue({ where: targetWhere });
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({ from: targetFrom })),
+      update: vi.fn(),
+      delete: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.updateManagedUser({
+        id: "deleted-user",
+        actorId: "admin-1",
+        name: "New name",
+      }),
+    ).resolves.toEqual({ kind: "not-found" });
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  it("allows editing and demoting an administrator while another active admin remains", async () => {
+    const targetLimit = vi
+      .fn()
+      .mockResolvedValue([
+        { id: "admin-2", role: "ADMIN", accountStatus: "ACTIVE" },
+      ]);
+    const targetFor = vi.fn().mockReturnValue({ limit: targetLimit });
+    const targetWhere = vi.fn().mockReturnValue({ for: targetFor });
+    const targetFrom = vi.fn().mockReturnValue({ where: targetWhere });
+    const countWhere = vi.fn().mockResolvedValue([{ total: 2 }]);
+    const countFrom = vi.fn().mockReturnValue({ where: countWhere });
+    const updateQuery = createUpdateQuery([{ id: "admin-2" }]);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({ from: targetFrom })
+        .mockReturnValueOnce({ from: countFrom }),
+      update: vi.fn().mockReturnValue(updateQuery),
+      delete: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.updateManagedUser({
+        id: "admin-2",
+        actorId: "admin-1",
+        name: "Updated name",
+        role: "USER",
+        isActive: true,
+      }),
+    ).resolves.toEqual({ kind: "updated" });
+    expect(updateQuery.set).toHaveBeenCalledWith({
+      name: "Updated name",
+      role: "USER",
+      accountStatus: "ACTIVE",
+      updatedAt: expect.any(Date),
+    });
+    expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it("returns not found if a managed account disappears before its update", async () => {
+    const targetLimit = vi
+      .fn()
+      .mockResolvedValue([
+        { id: "user-1", role: "USER", accountStatus: "ACTIVE" },
+      ]);
+    const targetFor = vi.fn().mockReturnValue({ limit: targetLimit });
+    const targetWhere = vi.fn().mockReturnValue({ for: targetFor });
+    const targetFrom = vi.fn().mockReturnValue({ where: targetWhere });
+    const updateQuery = createUpdateQuery([]);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({ from: targetFrom })),
+      update: vi.fn().mockReturnValue(updateQuery),
+      delete: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.updateManagedUser({
+        id: "user-1",
+        actorId: "admin-1",
+        name: "Updated name",
+      }),
+    ).resolves.toEqual({ kind: "not-found" });
+    expect(updateQuery.set).toHaveBeenCalledWith({
+      updatedAt: expect.any(Date),
+      name: "Updated name",
+    });
   });
 
   it("serializes lifecycle changes and deletes sessions when deactivating a user", async () => {

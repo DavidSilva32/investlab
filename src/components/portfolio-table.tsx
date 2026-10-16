@@ -25,17 +25,36 @@ import {
   type PortfolioTableFilterOption,
 } from "@/components/portfolio-table-filter-builder";
 
-export type PortfolioTableColumn<Row> = {
+type PortfolioTableColumnBase<Row> = {
   id: string;
   label: string;
   className?: string;
   width: string;
-  sortable?: boolean;
-  value: (row: Row) => string | number | null;
   searchValue?: (row: Row) => string | number | null;
   filterOptions?: PortfolioTableFilterOption[];
   render: (row: Row) => ReactNode;
 };
+
+export type PortfolioTableColumn<Row> = PortfolioTableColumnBase<Row> &
+  (
+    | {
+        sortable: false;
+        value?: (row: Row) => string | number | null;
+      }
+    | {
+        sortable?: true;
+        value: (row: Row) => string | number | null;
+      }
+  );
+
+function isSortableColumn<Row>(
+  column: PortfolioTableColumn<Row>,
+): column is PortfolioTableColumn<Row> & {
+  sortable?: true;
+  value: (row: Row) => string | number | null;
+} {
+  return column.sortable !== false;
+}
 
 type Sort = { id: string; direction: "asc" | "desc" };
 
@@ -69,20 +88,19 @@ export function PortfolioTable<Row extends { id: string }>({
   );
   if (pagination.rows !== rows) setPagination({ rows, page: 0 });
   const page = pagination.rows === rows ? pagination.page : 0;
+  const sortableColumns = columns.filter(isSortableColumn);
   const activeSortColumn =
-    columns.find((item) => item.id === sort.id) ?? columns[0];
-  const filterColumns = columns
-    .filter((column) => column.sortable !== false)
-    .map((column) => ({
-      id: column.id,
-      label: column.label,
-      options: column.filterOptions,
-    }));
+    sortableColumns.find((item) => item.id === sort.id) ?? sortableColumns[0];
+  const filterColumns = columns.filter(isSortableColumn).map((column) => ({
+    id: column.id,
+    label: column.label,
+    options: column.filterOptions,
+  }));
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
       return appliedFilters.every((filter) => {
         const column = columns.find((item) => item.id === filter.columnId);
-        if (!column) return false;
+        if (!column || !isSortableColumn(column)) return false;
         const rowValue = (column.searchValue ?? column.value)(row);
         if (rowValue === null) return false;
         if (column.filterOptions) return String(rowValue) === filter.value;
@@ -93,6 +111,7 @@ export function PortfolioTable<Row extends { id: string }>({
     });
   }, [appliedFilters, columns, rows]);
   const sortedRows = useMemo(() => {
+    if (!activeSortColumn) return [...filteredRows];
     return [...filteredRows].sort((left, right) => {
       const leftValue = activeSortColumn.value(left);
       const rightValue = activeSortColumn.value(right);
@@ -215,7 +234,7 @@ export function PortfolioTable<Row extends { id: string }>({
         <TableHeader>
           <TableRow>
             {columns.map((column) => {
-              const active = activeSortColumn.id === column.id;
+              const active = activeSortColumn?.id === column.id;
               const Icon = active
                 ? sort.direction === "asc"
                   ? ArrowUp

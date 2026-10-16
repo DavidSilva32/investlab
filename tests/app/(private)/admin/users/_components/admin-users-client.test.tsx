@@ -242,6 +242,24 @@ describe("AdminUsersClient error and link operations", () => {
   });
 });
 describe("AdminUsersClient", () => {
+  it("reloads the administration data from the refresh action", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({ users: [], invitations: [], passwordResets: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+
+    await screen.findAllByText("Nenhum registro.");
+    await user.click(
+      screen.getByRole("button", {
+        name: "Atualizar lista de usuários e links",
+      }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
   it("lists users and pending/used invitation states without showing tokens", async () => {
     vi.stubGlobal(
       "fetch",
@@ -464,6 +482,46 @@ describe("AdminUsersClient", () => {
       expect(toast.error).toHaveBeenCalledWith(
         "O último administrador não pode ser removido.",
       ),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("uses a safe fallback when an update request rejects with a non-Error", async () => {
+    const accountData = {
+      users: [
+        {
+          id: "user-1",
+          name: "Ana Souza",
+          email: "ana@example.com",
+          role: "USER",
+          accountStatus: "ACTIVE",
+          lastLoginAt: null,
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      invitations: [],
+      passwordResets: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(accountData))
+      .mockRejectedValueOnce("network failure");
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Editar nome de ana@example.com",
+      }),
+    );
+    await user.clear(screen.getByRole("textbox", { name: "Nome" }));
+    await user.type(screen.getByRole("textbox", { name: "Nome" }), "Ana Silva");
+    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce());
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível atualizar esta conta.",
     );
     expect(screen.getByRole("dialog")).toBeTruthy();
   });

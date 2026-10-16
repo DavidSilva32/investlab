@@ -120,6 +120,74 @@ describe("AdminUsersTable", () => {
     expect(screen.queryByText("ana@example.com")).toBeNull();
   });
 
+  it("filters by role and account status values", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable
+        users={users}
+        invitations={[
+          { id: "invite-1", email: "invitee@example.com", status: "pending" },
+        ]}
+        onUpdate={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Papel" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    await user.click(screen.getByRole("option", { name: "Administrador" }));
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    expect(screen.getByText("bruno@example.com")).toBeTruthy();
+    expect(screen.queryByText("ana@example.com")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Situação" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    await user.click(screen.getByRole("option", { name: "Desativado" }));
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    expect(screen.getByText("bruno@example.com")).toBeTruthy();
+    expect(screen.queryByText("ana@example.com")).toBeNull();
+  });
+
+  it("sorts by role, account status, and last access", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable
+        users={users}
+        invitations={[
+          {
+            id: "invite-sort",
+            email: "invitee@example.com",
+            status: "pending",
+          },
+        ]}
+        onUpdate={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Papel" }));
+    expect(screen.getAllByRole("row")[1].textContent).toContain(
+      "bruno@example.com",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Situação" }));
+    expect(screen.getAllByRole("row")[1].textContent).toContain(
+      "ana@example.com",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Último acesso registrado" }),
+    );
+    expect(screen.getAllByRole("row")[1].textContent).toContain(
+      "bruno@example.com",
+    );
+  });
+
   it("updates role and account status through the protected update callback", async () => {
     const onUpdate = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
@@ -175,6 +243,71 @@ describe("AdminUsersTable", () => {
     await user.type(nameInput, "Ana Silva");
     await user.click(screen.getByRole("button", { name: "Salvar nome" }));
 
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("cancels editing without submitting the name change", async () => {
+    const onUpdate = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("closes the rename dialog with Escape while idle", async () => {
+    const onUpdate = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the rename dialog open on Escape while saving, then closes after success", async () => {
+    let resolveUpdate!: (updated: boolean) => void;
+    const pendingUpdate = new Promise<boolean>((resolve) => {
+      resolveUpdate = resolve;
+    });
+    const onUpdate = vi.fn().mockReturnValue(pendingUpdate);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Editar nome de ana@example.com" }),
+    );
+    const nameInput = screen.getByRole("textbox", { name: "Nome" });
+    await user.clear(nameInput);
+    await user.type(nameInput, "Ana Silva");
+    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+
+    await waitFor(() =>
+      expect(onUpdate).toHaveBeenCalledWith("user-1", { name: "Ana Silva" }),
+    );
+    expect(screen.getByRole("button", { name: "Salvando…" })).toBeTruthy();
+
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    resolveUpdate(true);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 

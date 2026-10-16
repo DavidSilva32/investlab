@@ -42,15 +42,23 @@ export type PendingInvitation = {
   status: string;
 };
 
-type UserTableRow = {
+type UserTableRowBase = {
   id: string;
   name: string;
   email: string;
-  role: "USER" | "ADMIN" | null;
   status: "waiting" | "active" | "disabled";
   lastLoginAt: string | null;
-  isPendingInvite: boolean;
 };
+
+type UserTableRow = UserTableRowBase &
+  (
+    | {
+        role: "USER" | "ADMIN";
+        sourceUser: ManagedUser;
+        isPendingInvite: false;
+      }
+    | { role: null; sourceUser: null; isPendingInvite: true }
+  );
 
 type Props = {
   users: ManagedUser[];
@@ -120,7 +128,8 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
           ? "waiting"
           : "active") as UserTableRow["status"],
       lastLoginAt: user.lastLoginAt,
-      isPendingInvite: false,
+      sourceUser: user,
+      isPendingInvite: false as const,
     })),
     ...invitations
       .filter((invitation) => invitation.status === "pending")
@@ -131,7 +140,8 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
         role: null,
         status: "waiting" as const,
         lastLoginAt: null,
-        isPendingInvite: true,
+        sourceUser: null,
+        isPendingInvite: true as const,
       })),
   ];
 
@@ -161,7 +171,6 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
       filterOptions: accessRoleOptions,
       render: (row) => {
         if (!row.role) return <span className="text-muted-foreground">—</span>;
-        const user = users.find((candidate) => candidate.id === row.id);
         return (
           <Select
             value={row.role}
@@ -180,7 +189,7 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
                 <SelectItem
                   key={option.value}
                   value={option.value}
-                  disabled={user?.role === option.value}
+                  disabled={row.sourceUser.role === option.value}
                 >
                   {option.label}
                 </SelectItem>
@@ -215,11 +224,9 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
       label: "Ações",
       width: "10rem",
       sortable: false,
-      value: () => null,
       render: (row) => {
         if (row.isPendingInvite) return null;
-        const user = users.find((candidate) => candidate.id === row.id);
-        if (!user) return null;
+        const user = row.sourceUser;
         const isActive = user.accountStatus !== "DISABLED";
         return (
           <div className="flex items-center gap-1">
@@ -249,12 +256,14 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
     },
   ];
 
-  async function submitName(event: FormEvent<HTMLFormElement>) {
+  async function submitName(
+    event: FormEvent<HTMLFormElement>,
+    user: ManagedUser,
+  ) {
     event.preventDefault();
-    if (!editingUser) return;
     setSavingName(true);
     try {
-      if (await onUpdate(editingUser.id, { name })) setEditingUser(null);
+      if (await onUpdate(user.id, { name })) setEditingUser(null);
     } finally {
       setSavingName(false);
     }
@@ -275,39 +284,44 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
           if (!open && !savingName) setEditingUser(null);
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar nome</DialogTitle>
-            <DialogDescription>
-              O e-mail da conta não pode ser alterado por esta tela.
-            </DialogDescription>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={submitName}>
-            <div className="space-y-2">
-              <Label htmlFor="managed-user-name">Nome</Label>
-              <Input
-                id="managed-user-name"
-                required
-                maxLength={120}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditingUser(null)}
-                disabled={savingName}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={savingName || !name.trim()}>
-                {savingName ? "Salvando…" : "Salvar nome"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
+        {editingUser && (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar nome</DialogTitle>
+              <DialogDescription>
+                O e-mail da conta não pode ser alterado por esta tela.
+              </DialogDescription>
+            </DialogHeader>
+            <form
+              className="space-y-4"
+              onSubmit={(event) => void submitName(event, editingUser)}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="managed-user-name">Nome</Label>
+                <Input
+                  id="managed-user-name"
+                  required
+                  maxLength={120}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingUser(null)}
+                  disabled={savingName}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={savingName || !name.trim()}>
+                  {savingName ? "Salvando…" : "Salvar nome"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        )}
       </Dialog>
     </>
   );

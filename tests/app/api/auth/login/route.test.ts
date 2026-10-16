@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   signInEmail: vi.fn(),
   checkLoginRateLimit: vi.fn(),
+  canAttemptLogin: vi.fn(),
+  recordSuccessfulLogin: vi.fn(),
   verify: vi.fn(),
   bootstrap: vi.fn(),
 }));
@@ -19,6 +21,8 @@ vi.mock("@/infrastructure/auth/auth-configuration", () => ({
 vi.mock("@/backend/services/auth.service", () => ({
   authService: {
     checkLoginRateLimit: mocks.checkLoginRateLimit,
+    canAttemptLogin: mocks.canAttemptLogin,
+    recordSuccessfulLogin: mocks.recordSuccessfulLogin,
     bootstrapLegacyAdministrator: mocks.bootstrap,
   },
 }));
@@ -36,6 +40,8 @@ describe("login route", () => {
   beforeEach(() => {
     mocks.signInEmail.mockReset();
     mocks.checkLoginRateLimit.mockReset().mockResolvedValue(null);
+    mocks.canAttemptLogin.mockReset().mockResolvedValue(true);
+    mocks.recordSuccessfulLogin.mockReset().mockResolvedValue(true);
     mocks.verify.mockReset();
     mocks.bootstrap.mockReset();
   });

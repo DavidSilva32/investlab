@@ -185,7 +185,7 @@ export class AuthRepository {
               sql`${authUsers.accountStatus} <> 'DISABLED'`,
             ),
           );
-        if (Number(result?.total ?? 0) <= 1) {
+        if (result.total <= 1) {
           return { kind: "last-admin" as const };
         }
       }

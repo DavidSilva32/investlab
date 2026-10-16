@@ -385,6 +385,25 @@ describe("AuthController", () => {
     ).resolves.toBe(success);
   });
 
+  it("does not return a session when account activation loses a concurrent race", async () => {
+    const signedIn = new Response("signed-in", {
+      status: 200,
+      headers: { "Set-Cookie": "better-auth.session_token=opaque; HttpOnly" },
+    });
+    mocks.signInEmail.mockResolvedValueOnce(signedIn);
+    mocks.service.recordSuccessfulLogin.mockResolvedValueOnce(false);
+
+    const response = await controller.legacyLogin(
+      request({ email: "person@example.com", password: "password" }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      message: "E-mail ou senha incorretos.",
+    });
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
   it("keeps the generic login failure when legacy bootstrap is unavailable", async () => {
     mocks.verifyLegacyPassword.mockResolvedValue(true);
     mocks.service.bootstrapLegacyAdministrator.mockResolvedValue(false);

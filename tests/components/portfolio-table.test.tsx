@@ -105,6 +105,39 @@ describe("PortfolioTable", () => {
     expect(screen.queryByRole("button", { name: /Ações/ })).toBeNull();
     expect(screen.getByText("Editar")).toBeTruthy();
   });
+
+  it("renders rows when every column is non-sortable", () => {
+    const staticColumns: PortfolioTableColumn<Row>[] = [
+      {
+        id: "name",
+        label: "Nome",
+        width: "50%",
+        sortable: false,
+        render: (row) => row.name,
+      },
+      {
+        id: "value",
+        label: "Valor",
+        width: "50%",
+        sortable: false,
+        render: (row) => row.value ?? "Sem valor",
+      },
+    ];
+
+    render(
+      <PortfolioTable
+        columns={staticColumns}
+        rows={[{ id: "1", name: "Alfa", value: 42 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    expect(bodyCellTexts()).toEqual(["Alfa", "42"]);
+    expect(screen.queryByRole("button", { name: /Nome/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Valor/ })).toBeNull();
+  });
+
   it("handles equal values and a null left comparison", () => {
     render(
       <PortfolioTable
