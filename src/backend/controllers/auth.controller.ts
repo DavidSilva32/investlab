@@ -239,7 +239,7 @@ export class AuthController {
     }
   }
 
-  async legacyLogin(request: Request) {
+  async login(request: Request) {
     const body = await jsonBody(request);
     const parsed = z
       .object({
@@ -282,62 +282,11 @@ export class AuthController {
           { status: 401 },
         );
       }
-      let response = await auth.api.signInEmail({
+      const response = await auth.api.signInEmail({
         body: credentials,
         headers: request.headers,
         asResponse: true,
       });
-      let isLegacyCredential = false;
-      try {
-        const { credentialsService } =
-          await import("@/infrastructure/auth/credentials.service");
-        const { getCredentialsConfiguration } =
-          await import("@/infrastructure/auth/auth-configuration");
-        const legacy = getCredentialsConfiguration();
-        isLegacyCredential =
-          credentials.email === legacy.email.trim().toLowerCase() &&
-          (await credentialsService.verify(
-            credentials.email,
-            credentials.password,
-          ));
-      } catch {
-        /* Legacy bootstrap is optional after the transition. */
-      }
-      if (!response.ok && response.status === 401 && isLegacyCredential) {
-        try {
-          if (
-            await authService.bootstrapLegacyAdministrator(
-              credentials.email,
-              credentials.password,
-            )
-          ) {
-            response = await auth.api.signInEmail({
-              body: credentials,
-              headers: request.headers,
-              asResponse: true,
-            });
-          }
-        } catch (error) {
-          /* Generic response prevents account enumeration. */
-          logger.warn("auth.legacy_admin_bootstrap_failed", {
-            errorType: errorType(error),
-          });
-        }
-      } else if (response.ok && isLegacyCredential) {
-        // Recover the rare case where sign-up committed but role promotion
-        // failed in the previous request.
-        try {
-          await authService.bootstrapLegacyAdministrator(
-            credentials.email,
-            credentials.password,
-          );
-        } catch (error) {
-          /* Keep the valid sign-in; the next legacy sign-in retries promotion. */
-          logger.warn("auth.legacy_admin_promotion_retry_failed", {
-            errorType: errorType(error),
-          });
-        }
-      }
       if (response.ok) {
         if (!(await authService.recordSuccessfulLogin(credentials.email))) {
           return Response.json(

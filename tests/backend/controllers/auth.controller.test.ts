@@ -16,14 +16,11 @@ const mocks = vi.hoisted(() => ({
     updateManagedUser: vi.fn(),
     updateOwnProfile: vi.fn(),
     changeOwnPassword: vi.fn(),
-    bootstrapLegacyAdministrator: vi.fn(),
   },
   requireAuthenticatedUser: vi.fn(),
   requireRole: vi.fn(),
   signInEmail: vi.fn(),
-  verifyLegacyPassword: vi.fn(),
-  getCredentialsConfiguration: vi.fn(),
-  logger: { warn: vi.fn(), error: vi.fn() },
+  logger: { error: vi.fn() },
 }));
 
 vi.mock("@/backend/services/auth.service", () => ({
@@ -38,12 +35,6 @@ vi.mock("@/infrastructure/auth/auth", () => ({
     api: { signInEmail: mocks.signInEmail },
     $context: Promise.resolve({ password: { hash: vi.fn() } }),
   },
-}));
-vi.mock("@/infrastructure/auth/credentials.service", () => ({
-  credentialsService: { verify: mocks.verifyLegacyPassword },
-}));
-vi.mock("@/infrastructure/auth/auth-configuration", () => ({
-  getCredentialsConfiguration: mocks.getCredentialsConfiguration,
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
   logger: mocks.logger,
@@ -76,11 +67,6 @@ describe("AuthController", () => {
     mocks.signInEmail
       .mockReset()
       .mockResolvedValue(new Response("{}", { status: 401 }));
-    mocks.verifyLegacyPassword.mockReset().mockResolvedValue(false);
-    mocks.getCredentialsConfiguration.mockReset().mockReturnValue({
-      email: "legacy@example.com",
-    });
-    mocks.logger.warn.mockReset();
     mocks.logger.error.mockReset();
   });
 
@@ -423,12 +409,12 @@ describe("AuthController", () => {
   });
 
   it("normalizes valid login input and returns a generic response for invalid credentials", async () => {
-    expect(
-      (await controller.legacyLogin(request({ email: "bad" }))).status,
-    ).toBe(401);
+    expect((await controller.login(request({ email: "bad" }))).status).toBe(
+      401,
+    );
     const response = new Response("{}", { status: 401 });
     mocks.signInEmail.mockResolvedValueOnce(response);
-    const invalid = await controller.legacyLogin(
+    const invalid = await controller.login(
       request({ email: " User@Example.com ", password: "incorrect" }),
     );
     expect(invalid.status).toBe(401);
@@ -441,7 +427,7 @@ describe("AuthController", () => {
 
   it("enforces rate limits and fails closed when the limiter is unavailable", async () => {
     mocks.service.checkLoginRateLimit.mockResolvedValueOnce(25);
-    const limited = await controller.legacyLogin(
+    const limited = await controller.login(
       request({ email: "user@example.com", password: "password" }),
     );
     expect(limited.status).toBe(429);
@@ -449,7 +435,7 @@ describe("AuthController", () => {
     mocks.service.checkLoginRateLimit.mockRejectedValueOnce(new Error("db"));
     expect(
       (
-        await controller.legacyLogin(
+        await controller.login(
           request({ email: "user@example.com", password: "password" }),
         )
       ).status,
@@ -458,7 +444,7 @@ describe("AuthController", () => {
 
   it("rejects disabled accounts with the generic credential response", async () => {
     mocks.service.canAttemptLogin.mockResolvedValueOnce(false);
-    const response = await controller.legacyLogin(
+    const response = await controller.login(
       request({ email: "disabled@example.com", password: "password" }),
     );
     expect(response.status).toBe(401);
@@ -468,25 +454,16 @@ describe("AuthController", () => {
     expect(mocks.signInEmail).not.toHaveBeenCalled();
   });
 
-  it("completes valid sign-ins and retries legacy administrator bootstrap", async () => {
+  it("completes valid sign-ins without creating or promoting accounts", async () => {
     const success = new Response("signed-in", { status: 200 });
     mocks.signInEmail.mockResolvedValueOnce(success);
     await expect(
-      controller.legacyLogin(
+      controller.login(
         request({ email: "person@example.com", password: "password" }),
       ),
     ).resolves.toBe(success);
-
-    mocks.verifyLegacyPassword.mockResolvedValueOnce(true);
-    mocks.service.bootstrapLegacyAdministrator.mockResolvedValueOnce(true);
-    mocks.signInEmail
-      .mockResolvedValueOnce(new Response("{}", { status: 401 }))
-      .mockResolvedValueOnce(success);
-    await expect(
-      controller.legacyLogin(
-        request({ email: "legacy@example.com", password: "password" }),
-      ),
-    ).resolves.toBe(success);
+    expect(mocks.service.createInvitation).not.toHaveBeenCalled();
+    expect(mocks.signInEmail).toHaveBeenCalledOnce();
   });
 
   it("does not return a session when account activation loses a concurrent race", async () => {
@@ -497,7 +474,7 @@ describe("AuthController", () => {
     mocks.signInEmail.mockResolvedValueOnce(signedIn);
     mocks.service.recordSuccessfulLogin.mockResolvedValueOnce(false);
 
-    const response = await controller.legacyLogin(
+    const response = await controller.login(
       request({ email: "person@example.com", password: "password" }),
     );
 
@@ -508,37 +485,6 @@ describe("AuthController", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
-  it("keeps the generic login failure when legacy bootstrap is unavailable", async () => {
-    mocks.verifyLegacyPassword.mockResolvedValue(true);
-    mocks.service.bootstrapLegacyAdministrator.mockResolvedValue(false);
-    mocks.signInEmail.mockResolvedValue(new Response("{}", { status: 401 }));
-
-    const response = await controller.legacyLogin(
-      request({ email: "legacy@example.com", password: "incorrect" }),
-    );
-
-    expect(response.status).toBe(401);
-    expect(mocks.signInEmail).toHaveBeenCalledOnce();
-    expect(mocks.service.bootstrapLegacyAdministrator).toHaveBeenCalledWith(
-      "legacy@example.com",
-      "incorrect",
-    );
-  });
-
-  it("keeps successful legacy sign-ins working when admin promotion fails", async () => {
-    const success = new Response("signed-in", { status: 200 });
-    mocks.signInEmail.mockResolvedValueOnce(success);
-    mocks.verifyLegacyPassword.mockResolvedValueOnce(true);
-    mocks.service.bootstrapLegacyAdministrator.mockRejectedValueOnce(
-      new Error("promotion unavailable"),
-    );
-    await expect(
-      controller.legacyLogin(
-        request({ email: "legacy@example.com", password: "password" }),
-      ),
-    ).resolves.toBe(success);
-  });
-
   it("maps Better Auth throttling and hides unexpected sign-in failures", async () => {
     mocks.signInEmail.mockResolvedValueOnce(
       new Response("{}", {
@@ -546,7 +492,7 @@ describe("AuthController", () => {
         headers: { "Retry-After": "80" },
       }),
     );
-    const limited = await controller.legacyLogin(
+    const limited = await controller.login(
       request({ email: "person@example.com", password: "password" }),
     );
     expect(limited.status).toBe(429);
@@ -554,12 +500,12 @@ describe("AuthController", () => {
     mocks.signInEmail.mockResolvedValueOnce(
       new Response("{}", { status: 429 }),
     );
-    const fallbackLimit = await controller.legacyLogin(
+    const fallbackLimit = await controller.login(
       request({ email: "person@example.com", password: "password" }),
     );
     expect(fallbackLimit.headers.get("retry-after")).toBe("60");
     mocks.signInEmail.mockRejectedValueOnce(new Error("secret database error"));
-    const failed = await controller.legacyLogin(
+    const failed = await controller.login(
       request({ email: "person@example.com", password: "password" }),
     );
     expect(failed.status).toBe(500);
@@ -571,35 +517,12 @@ describe("AuthController", () => {
     });
 
     mocks.signInEmail.mockRejectedValueOnce("unknown failure");
-    const unknownFailure = await controller.legacyLogin(
+    const unknownFailure = await controller.login(
       request({ email: "person@example.com", password: "password" }),
     );
     expect(unknownFailure.status).toBe(500);
     expect(mocks.logger.error).toHaveBeenLastCalledWith("auth.login.failed", {
       errorType: "UnknownError",
     });
-  });
-
-  it("logs only the error type when first legacy administrator setup fails", async () => {
-    mocks.verifyLegacyPassword.mockResolvedValueOnce(true);
-    mocks.signInEmail.mockResolvedValueOnce(
-      new Response("{}", { status: 401 }),
-    );
-    mocks.service.bootstrapLegacyAdministrator.mockRejectedValueOnce(
-      new Error("database credentials must not be logged"),
-    );
-
-    const response = await controller.legacyLogin(
-      request({ email: "legacy@example.com", password: "password" }),
-    );
-
-    expect(response.status).toBe(401);
-    expect(mocks.logger.warn).toHaveBeenCalledWith(
-      "auth.legacy_admin_bootstrap_failed",
-      { errorType: "Error" },
-    );
-    expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain(
-      "database credentials",
-    );
   });
 });

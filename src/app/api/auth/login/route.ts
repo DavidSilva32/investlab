@@ -5,5 +5,5 @@ export const runtime = "nodejs";
 export const POST = withApiRequestLogging(
   "POST",
   "/api/auth/login",
-  authController.legacyLogin.bind(authController),
+  authController.login.bind(authController),
 );

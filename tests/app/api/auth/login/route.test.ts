@@ -5,25 +5,16 @@ const mocks = vi.hoisted(() => ({
   checkLoginRateLimit: vi.fn(),
   canAttemptLogin: vi.fn(),
   recordSuccessfulLogin: vi.fn(),
-  verify: vi.fn(),
-  bootstrap: vi.fn(),
 }));
 
 vi.mock("@/infrastructure/auth/auth", () => ({
   auth: { api: { signInEmail: mocks.signInEmail } },
-}));
-vi.mock("@/infrastructure/auth/credentials.service", () => ({
-  credentialsService: { verify: mocks.verify },
-}));
-vi.mock("@/infrastructure/auth/auth-configuration", () => ({
-  getCredentialsConfiguration: () => ({ email: "legacy@example.com" }),
 }));
 vi.mock("@/backend/services/auth.service", () => ({
   authService: {
     checkLoginRateLimit: mocks.checkLoginRateLimit,
     canAttemptLogin: mocks.canAttemptLogin,
     recordSuccessfulLogin: mocks.recordSuccessfulLogin,
-    bootstrapLegacyAdministrator: mocks.bootstrap,
   },
 }));
 
@@ -42,8 +33,6 @@ describe("login route", () => {
     mocks.checkLoginRateLimit.mockReset().mockResolvedValue(null);
     mocks.canAttemptLogin.mockReset().mockResolvedValue(true);
     mocks.recordSuccessfulLogin.mockReset().mockResolvedValue(true);
-    mocks.verify.mockReset();
-    mocks.bootstrap.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -56,7 +45,6 @@ describe("login route", () => {
     expect(await response.json()).toEqual({
       message: "E-mail ou senha incorretos.",
     });
-    expect(mocks.verify).not.toHaveBeenCalled();
   });
 
   it("passes normalized credentials to Better Auth and preserves the HttpOnly cookie", async () => {
@@ -102,45 +90,16 @@ describe("login route", () => {
     expect(mocks.signInEmail).not.toHaveBeenCalled();
   });
 
-  it("migrates the configured legacy credential only when no Better Auth user exists", async () => {
-    mocks.signInEmail
-      .mockResolvedValueOnce(new Response("{}", { status: 401 }))
-      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
-    mocks.verify.mockResolvedValue(true);
-    mocks.bootstrap.mockResolvedValue(true);
-    const response = await POST(
-      request({ email: "LEGACY@example.com", password: "legacy-password" }),
-    );
-    expect(response.status).toBe(200);
-    expect(mocks.bootstrap).toHaveBeenCalledWith(
-      "legacy@example.com",
-      "legacy-password",
-    );
-  });
-
-  it("does not promote or create legacy admin when users already exist", async () => {
+  it("does not create or promote an account when Better Auth rejects credentials", async () => {
     mocks.signInEmail.mockResolvedValue(new Response("{}", { status: 401 }));
-    mocks.verify.mockResolvedValue(true);
-    mocks.bootstrap.mockResolvedValue(false);
     const response = await POST(
       request({ email: "legacy@example.com", password: "legacy-password" }),
     );
     expect(response.status).toBe(401);
-    expect(mocks.bootstrap).toHaveBeenCalledOnce();
-  });
-
-  it("retries legacy ADMIN promotion on a later successful sign-in", async () => {
-    mocks.signInEmail.mockResolvedValue(new Response("{}", { status: 200 }));
-    mocks.verify.mockResolvedValue(true);
-    mocks.bootstrap.mockResolvedValue(true);
-    const response = await POST(
-      request({ email: "legacy@example.com", password: "legacy-password" }),
-    );
-    expect(response.status).toBe(200);
-    expect(mocks.bootstrap).toHaveBeenCalledWith(
-      "legacy@example.com",
-      "legacy-password",
-    );
+    expect(await response.json()).toEqual({
+      message: "E-mail ou senha incorretos.",
+    });
+    expect(mocks.signInEmail).toHaveBeenCalledOnce();
   });
 
   it("rejects malformed JSON and credentials", async () => {

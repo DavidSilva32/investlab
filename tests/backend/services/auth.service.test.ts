@@ -14,8 +14,6 @@ const mocks = vi.hoisted(() => ({
     createPasswordReset: vi.fn(),
     revokePasswordReset: vi.fn(),
     applyPasswordReset: vi.fn(),
-    hasAnyUser: vi.fn(),
-    promoteLegacyAdmin: vi.fn(),
     checkAuthenticationRateLimits: vi.fn(),
     getLoginEligibility: vi.fn(),
     recordSuccessfulLogin: vi.fn(),
@@ -25,7 +23,6 @@ const mocks = vi.hoisted(() => ({
   updateUser: vi.fn(),
   changePassword: vi.fn(),
   hashPassword: vi.fn(),
-  verifyLegacyPassword: vi.fn(),
 }));
 
 vi.mock("@/backend/repositories/auth.repository", () => ({
@@ -41,10 +38,6 @@ vi.mock("@/infrastructure/auth/auth", () => ({
     $context: Promise.resolve({ password: { hash: mocks.hashPassword } }),
   },
 }));
-vi.mock("@/infrastructure/auth/credentials.service", () => ({
-  credentialsService: { verify: mocks.verifyLegacyPassword },
-}));
-
 import { authService } from "@/backend/services/auth.service";
 import { ApplicationError } from "@/backend/errors/application-error";
 
@@ -55,7 +48,6 @@ describe("AuthService", () => {
     mocks.updateUser.mockReset();
     mocks.changePassword.mockReset();
     mocks.hashPassword.mockReset();
-    mocks.verifyLegacyPassword.mockReset().mockResolvedValue(true);
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -533,110 +525,5 @@ describe("AuthService", () => {
     await expect(
       authService.resetPassword("r".repeat(43), "A-long-safe-password-123"),
     ).rejects.toBeInstanceOf(ApplicationError);
-  });
-
-  it("bootstraps only the first legacy account and assigns ADMIN after creation", async () => {
-    mocks.repository.hasAnyUser
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
-    expect(
-      await authService.bootstrapLegacyAdministrator(
-        "legacy@example.com",
-        "password",
-      ),
-    ).toBe(false);
-    mocks.signUpEmail.mockResolvedValue({
-      user: { id: "legacy-1", email: "legacy@example.com" },
-    });
-    mocks.repository.promoteLegacyAdmin.mockResolvedValue({ id: "legacy-1" });
-    expect(
-      await authService.bootstrapLegacyAdministrator(
-        "legacy@example.com",
-        "password",
-      ),
-    ).toBe(true);
-    expect(mocks.signUpEmail).toHaveBeenCalledWith({
-      body: {
-        name: "legacy",
-        email: "legacy@example.com",
-        password: "password",
-      },
-    });
-    expect(mocks.repository.promoteLegacyAdmin).toHaveBeenCalledWith(
-      "legacy@example.com",
-    );
-  });
-
-  it("rejects invalid legacy credentials without reading or creating an account", async () => {
-    mocks.verifyLegacyPassword.mockResolvedValue(false);
-    await expect(
-      authService.bootstrapLegacyAdministrator(
-        "legacy@example.com",
-        "incorrect",
-      ),
-    ).resolves.toBe(false);
-    expect(mocks.repository.findUserByEmail).not.toHaveBeenCalled();
-    expect(mocks.repository.hasAnyUser).not.toHaveBeenCalled();
-    expect(mocks.signUpEmail).not.toHaveBeenCalled();
-  });
-
-  it("fails explicitly when a legacy user cannot be promoted to ADMIN", async () => {
-    mocks.repository.findUserByEmail.mockResolvedValue({ id: "legacy-1" });
-    mocks.repository.promoteLegacyAdmin.mockResolvedValue(null);
-    await expect(
-      authService.bootstrapLegacyAdministrator(
-        " LEGACY@example.com ",
-        "password",
-      ),
-    ).rejects.toThrow("Legacy administrator promotion failed.");
-    expect(mocks.repository.promoteLegacyAdmin).toHaveBeenCalledWith(
-      "legacy@example.com",
-    );
-    expect(mocks.signUpEmail).not.toHaveBeenCalled();
-  });
-
-  it("fails explicitly if the newly created legacy administrator cannot be promoted", async () => {
-    mocks.repository.findUserByEmail.mockResolvedValue(null);
-    mocks.repository.hasAnyUser.mockResolvedValue(false);
-    mocks.repository.promoteLegacyAdmin.mockResolvedValue(null);
-    mocks.signUpEmail.mockResolvedValue({
-      user: { id: "legacy-1", email: "legacy@example.com" },
-    });
-
-    await expect(
-      authService.bootstrapLegacyAdministrator(
-        "legacy@example.com",
-        "password",
-      ),
-    ).rejects.toThrow("Legacy administrator promotion failed.");
-    expect(mocks.signUpEmail).toHaveBeenCalledOnce();
-  });
-
-  it("recovers legacy ADMIN promotion when account creation committed before promotion failed", async () => {
-    mocks.repository.findUserByEmail
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: "legacy-1", email: "legacy@example.com" });
-    mocks.repository.hasAnyUser.mockResolvedValue(false);
-    mocks.signUpEmail.mockResolvedValue({
-      user: { id: "legacy-1", email: "legacy@example.com" },
-    });
-    mocks.repository.promoteLegacyAdmin
-      .mockRejectedValueOnce(new Error("write failed"))
-      .mockResolvedValueOnce({ id: "legacy-1" });
-    await expect(
-      authService.bootstrapLegacyAdministrator(
-        "LEGACY@example.com",
-        "password",
-      ),
-    ).rejects.toThrow("write failed");
-
-    await expect(
-      authService.bootstrapLegacyAdministrator(
-        "legacy@example.com",
-        "password",
-      ),
-    ).resolves.toBe(true);
-    expect(mocks.signUpEmail).toHaveBeenCalledOnce();
-    expect(mocks.repository.promoteLegacyAdmin).toHaveBeenCalledTimes(2);
   });
 });

@@ -36,6 +36,23 @@ describe("optimistic authentication proxy", () => {
     ).toBe(200);
   });
 
+  it("keeps arbitrary Better Auth signup endpoints private while invite activation stays public", () => {
+    expect(
+      proxy(
+        new NextRequest("http://test/api/auth/sign-up/email", {
+          method: "POST",
+        }),
+      ).status,
+    ).toBe(401);
+    expect(
+      proxy(
+        new NextRequest("http://test/api/auth/invitations/activate", {
+          method: "POST",
+        }),
+      ).status,
+    ).toBe(200);
+  });
+
   it("leaves login visibility to the server layout and allows public reset links", () => {
     expect(
       proxy(

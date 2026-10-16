@@ -298,33 +298,6 @@ export class AuthService {
       );
     }
   }
-
-  async bootstrapLegacyAdministrator(email: string, password: string) {
-    const normalizedEmail = email.trim().toLowerCase();
-    const { credentialsService } =
-      await import("@/infrastructure/auth/credentials.service");
-    if (!(await credentialsService.verify(normalizedEmail, password))) {
-      return false;
-    }
-    const { auth } = await import("@/infrastructure/auth/auth");
-    const existingUser = await authRepository.findUserByEmail(normalizedEmail);
-    if (existingUser) {
-      const promoted = await authRepository.promoteLegacyAdmin(normalizedEmail);
-      if (!promoted) throw new Error("Legacy administrator promotion failed.");
-      return true;
-    }
-    if (await authRepository.hasAnyUser()) return false;
-    await auth.api.signUpEmail({
-      body: {
-        name: normalizedEmail.split("@")[0],
-        email: normalizedEmail,
-        password,
-      },
-    });
-    const promoted = await authRepository.promoteLegacyAdmin(normalizedEmail);
-    if (!promoted) throw new Error("Legacy administrator promotion failed.");
-    return true;
-  }
 }
 
 export const authService = new AuthService();

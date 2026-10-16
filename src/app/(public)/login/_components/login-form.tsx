@@ -1,0 +1,186 @@
+"use client";
+
+import { Eye, EyeOff, LockKeyhole } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { type SyntheticEvent, useState } from "react";
+import { toast } from "sonner";
+import { getApiMessage } from "@/lib/api-message";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type LoginFormProps = {
+  supportWhatsAppUrl: string | null;
+};
+
+export function LoginForm({ supportWhatsAppUrl }: LoginFormProps) {
+  const router = useRouter();
+  const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  async function submit(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const email = String(form.get("email") ?? "").trim();
+    const password = String(form.get("password") ?? "");
+    if (!emailPattern.test(email)) {
+      setError("Informe um e-mail válido.");
+      return;
+    }
+    setLoading(true);
+    setError(undefined);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        toast.error(getApiMessage(body, "Não foi possível concluir o login."));
+        return;
+      }
+      router.push("/");
+    } catch {
+      toast.error("Não foi possível concluir o login.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="relative isolate grid min-h-screen place-items-center overflow-hidden bg-background p-4">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 mx-auto h-[min(72vh,46rem)] w-[min(72vw,64rem)] rounded-full bg-brand/10 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-40 -right-24 size-[28rem] rounded-full bg-brand/5 blur-3xl"
+      />
+      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+        <ThemeToggle />
+      </div>
+      <Card className="w-full max-w-md border-border/70 bg-card/90 shadow-2xl shadow-brand/10 backdrop-blur-xl">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-3 grid size-11 place-items-center rounded-xl bg-primary text-primary-foreground">
+            <LockKeyhole className="size-5" />
+          </div>
+          <p className="text-sm font-semibold text-primary">InvestLab</p>
+          <CardTitle className="text-2xl">Acesse sua conta</CardTitle>
+          <CardDescription>Entre para acompanhar sua carteira.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="email">
+                E-mail
+              </label>
+              <Input
+                id="email"
+                name="email"
+                required
+                type="email"
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="password">
+                Senha
+              </label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  required
+                  type={visible ? "text" : "password"}
+                  autoComplete="current-password"
+                  className="pr-11"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-10 w-10"
+                  aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
+                  onClick={() => setVisible((value) => !value)}
+                >
+                  {visible ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            {error && (
+              <p
+                aria-live="polite"
+                className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+              >
+                {error}
+              </p>
+            )}
+            <Button className="w-full" disabled={loading} type="submit">
+              {loading ? "Entrando..." : "Entrar"}
+            </Button>
+          </form>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button
+                className="mt-4 h-auto p-0 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                variant="link"
+              >
+                Esqueceu sua senha?
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Ajuda para recuperar o acesso</DialogTitle>
+                <DialogDescription>
+                  O suporte pode verificar sua identidade por um canal confiável
+                  e, depois disso, um administrador poderá gerar um link seguro
+                  para você criar uma nova senha.
+                </DialogDescription>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Nunca envie sua senha pelo WhatsApp. O link de redefinição é
+                individual, temporário e encerra as sessões anteriores.
+              </p>
+              {supportWhatsAppUrl ? (
+                <Button asChild className="w-full">
+                  <a href={supportWhatsAppUrl} target="_blank" rel="noreferrer">
+                    Falar com o suporte pelo WhatsApp
+                  </a>
+                </Button>
+              ) : (
+                <p className="rounded-lg bg-muted p-3 text-sm" role="status">
+                  O WhatsApp de suporte ainda não está configurado. Entre em
+                  contato com o administrador por um canal que você já conhece.
+                </p>
+              )}
+            </DialogContent>
+          </Dialog>
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
