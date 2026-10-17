@@ -21,7 +21,22 @@ describe("StockComparisonController", () => {
   });
 
   it("forwards the request and responds with its request ID", async () => {
-    const result = { sector: "Bancos", companies: [{ ticker: "ITUB4" }] };
+    const result = {
+      sector: "Bancos",
+      companies: [
+        {
+          ticker: "ITUB4",
+          fundamentals: {
+            roe: {
+              value: 12,
+              sourceSummary: "CVM ITR",
+              comparisonStatus: "not_comparable",
+              comparisonReason: "O peer não tem demonstrativo validado.",
+            },
+          },
+        },
+      ],
+    };
     mocks.compare.mockResolvedValue(result);
     const controller = new StockComparisonController();
 

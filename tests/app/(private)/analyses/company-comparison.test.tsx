@@ -59,8 +59,12 @@ function metric(
     sourceDocument: "ITR" as const,
     sourceSummary: "DFP 2025 + ITR acumulado 2026 − comparativo 2025",
     marketDataDate: "2026-10-06T15:00:00Z",
+    valuationSource: null,
+    valuationMethod: null,
     accountProvenance: "CVM consolidado",
     unavailableReason,
+    comparisonStatus: "comparable" as const,
+    comparisonReason: null,
     ...overrides,
   };
 }
@@ -151,6 +155,49 @@ describe("CompanyComparison", () => {
     expect(screen.queryByText("33000167000101")).toBeNull();
   });
 
+  it("shows valid issuer data and marks the metric non-comparable when a peer is missing", async () => {
+    const first = company("PETR3", "33000167000101");
+    const second = company("VALE3", "33000167000102");
+    first.fundamentals.roe = metric(12, null, {
+      comparisonStatus: "not_comparable",
+      comparisonReason:
+        "Um ou mais emissores não têm esta métrica validada: demonstração indisponível.",
+    });
+    second.fundamentals.roe = metric(null, "Demonstração indisponível.", {
+      comparisonStatus: "not_comparable",
+      comparisonReason:
+        "Um ou mais emissores não têm esta métrica validada: demonstração indisponível.",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        sector: "Mineração",
+        sectorMetadataAsOf: "2026-10-01T00:00:00.000Z",
+        companies: [first, second],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<CompanyComparison initialTicker="PETR3" />);
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    expect(await screen.findByText("12%")).toBeTruthy();
+    expect(
+      screen.getAllByText(/DFP 2025 \+ ITR acumulado 2026/).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen
+        .getAllByRole("note")
+        .some((note) =>
+          note.textContent?.includes("Sem comparação direta entre empresas"),
+        ),
+    ).toBe(true);
+    expect(
+      screen.getAllByText("Demonstração indisponível.").length,
+    ).toBeGreaterThan(0);
+  });
   it("prevents more than five selected tickers and lets the user remove a selection", async () => {
     render(<CompanyComparison />);
     const user = userEvent.setup();

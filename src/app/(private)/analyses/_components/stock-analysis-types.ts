@@ -86,3 +86,14 @@ export type StockAnalysis = {
   fundamentals: AnalysisPeriod[];
   indicators: AnalysisIndicator[];
 };
+
+export type StockMarketSnapshot = Pick<
+  StockAnalysis,
+  | "ticker"
+  | "cnpj"
+  | "companyName"
+  | "logoUrl"
+  | "price"
+  | "priceUpdatedAt"
+  | "changePercent"
+>;

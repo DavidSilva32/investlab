@@ -12,7 +12,8 @@ describe("StockAnalysisController history", () => {
     const result = {
       ticker: "PETR4",
       history: [{ date: "2026-09-30", close: 34.2 }],
-      historyStatus: "available",
+      historyStatus: "partial",
+      historyFailure: { reason: "timeout" },
     };
     service.getHistoryByTicker.mockResolvedValue(result);
 

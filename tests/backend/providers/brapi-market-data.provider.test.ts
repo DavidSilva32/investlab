@@ -211,6 +211,36 @@ describe("BrapiMarketDataProvider", () => {
     });
   });
 
+  it("shares one in-flight quote between fast and full market requests", async () => {
+    let releaseQuote!: (response: Response) => void;
+    const quoteResponse = new Promise<Response>((resolve) => {
+      releaseQuote = resolve;
+    });
+    const fetcher = vi.fn<typeof fetch>((input) => {
+      const url = String(input);
+      if (url.includes("/stocks/quote")) return quoteResponse;
+      if (url.includes("/stocks/profile"))
+        return Promise.resolve(
+          jsonResponse({ results: [{ data: { cnpj: "33000167000101" } }] }),
+        );
+      return Promise.resolve(jsonResponse({ results: [{ data: {} }] }));
+    });
+    const provider = new BrapiMarketDataProvider(fetcher);
+    const fast = provider.getQuoteByTicker("PETR4");
+    const full = provider.getByTicker("PETR4");
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(
+      fetcher.mock.calls.filter(([url]) =>
+        String(url).includes("/stocks/quote"),
+      ),
+    ).toHaveLength(1);
+    releaseQuote(
+      jsonResponse(quote({ regularMarketPrice: 50, marketCap: 200 })),
+    );
+    await expect(fast).resolves.toMatchObject({ ticker: "PETR4", price: 50 });
+    await expect(full).resolves.toMatchObject({ ticker: "PETR4", price: 50 });
+  });
+
   it("loads only a quote and parses issuer market capitalization and quote time", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       jsonResponse(
@@ -226,6 +256,7 @@ describe("BrapiMarketDataProvider", () => {
     const result = await provider.getQuoteByTicker("PETR4");
     expect(result).toEqual({
       ticker: "PETR4",
+      cnpj: null,
       companyName: "Petrobras PN",
       price: 49.26,
       marketCap: 669710376952,
@@ -242,7 +273,22 @@ describe("BrapiMarketDataProvider", () => {
       .mockResolvedValue(jsonResponse(quote({ marketCap: 100 })));
     await expect(
       new BrapiMarketDataProvider(fetcher).getQuoteByTicker("PETR4"),
-    ).resolves.toMatchObject({ observedAt: null, marketCap: 100 });
+    ).resolves.toMatchObject({ cnpj: null, observedAt: null, marketCap: 100 });
+  });
+
+  it("returns quote data without waiting for a slow or unavailable profile", async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL) =>
+      String(input).includes("/stocks/quote")
+        ? Promise.resolve(
+            jsonResponse(quote({ regularMarketPrice: 49.26, marketCap: 1000 })),
+          )
+        : new Promise<Response>(() => undefined),
+    );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getQuoteByTicker("PETR4"),
+    ).resolves.toMatchObject({ ticker: "PETR4", price: 49.26, cnpj: null });
+    expect(fetcher).toHaveBeenCalledOnce();
   });
   it("keeps absent, invalid, and unnamed quote fields null", async () => {
     const fetcher = vi
@@ -254,6 +300,7 @@ describe("BrapiMarketDataProvider", () => {
       new BrapiMarketDataProvider(fetcher).getQuoteByTicker("PETR4"),
     ).resolves.toEqual({
       ticker: "PETR4",
+      cnpj: null,
       companyName: null,
       price: null,
       marketCap: null,
@@ -560,7 +607,11 @@ describe("BrapiMarketDataProvider", () => {
       );
     await expect(
       new BrapiMarketDataProvider(unavailable).getByTicker("PETR4"),
-    ).resolves.toMatchObject({ history: [], historyStatus: "empty" });
+    ).resolves.toMatchObject({
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "provider_error" },
+    });
     expect(unavailable.mock.calls[2]?.[0]).toContain("range=5y");
     expect(unavailable.mock.calls[3]?.[0]).toContain("range=1y");
   });
@@ -834,7 +885,8 @@ describe("BrapiMarketDataProvider", () => {
       await expect(resultPromise).resolves.toMatchObject({
         price: 50,
         history: [{ date: "2026-01-01", close: 49 }],
-        historyStatus: "available",
+        historyStatus: "partial",
+        historyFailure: { reason: "timeout" },
       });
       expect(fetcher).toHaveBeenCalledTimes(4);
       expect(fetcher.mock.calls[2]?.[0]).toContain("range=5y");
@@ -843,6 +895,40 @@ describe("BrapiMarketDataProvider", () => {
     } finally {
       timeoutSpy.mockRestore();
     }
+  });
+
+  it("preserves one-year points as partial after a retryable five-year provider failure", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              data: {
+                historicalDataPrice: [
+                  { date: 1767225600, close: 49 },
+                  { date: 1767139200, close: 48 },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+      history: [
+        { date: "2025-12-31", close: 48 },
+        { date: "2026-01-01", close: 49 },
+      ],
+      historyStatus: "partial",
+      historyFailure: { reason: "provider_error" },
+    });
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain("range=5y");
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain("range=1y");
   });
 
   it("returns unavailable history after both attempts time out while retaining the quote", async () => {

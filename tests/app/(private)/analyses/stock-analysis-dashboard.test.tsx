@@ -130,6 +130,14 @@ const analysis = {
     },
   ],
 };
+const marketSnapshot = (ticker = "PETR4") => ({
+  ticker,
+  cnpj: analysis.cnpj,
+  companyName: ticker === "PETR4" ? "Petrobras" : "Vale",
+  price: 30,
+  priceUpdatedAt: "2026-09-19T15:30:00-03:00",
+  changePercent: null,
+});
 
 const jsonResponse = (body: unknown, status = 200, headers?: HeadersInit) =>
   new Response(JSON.stringify(body), {
@@ -156,6 +164,79 @@ afterEach(() => {
 });
 
 describe("StockAnalysisDashboard", () => {
+  it("shows a verified quote while the CVM analysis request is pending", async () => {
+    let resolveAnalysis!: (response: Response) => void;
+    const analysisResponse = new Promise<Response>((resolve) => {
+      resolveAnalysis = resolve;
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL) =>
+      String(input).endsWith("/market")
+        ? Promise.resolve(
+            jsonResponse({
+              ticker: "PETR4",
+              cnpj: analysis.cnpj,
+              companyName: "Petrobras",
+              price: 30,
+              priceUpdatedAt: "2026-09-19T15:30:00-03:00",
+              changePercent: null,
+            }),
+          )
+        : analysisResponse,
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    expect(await screen.findByRole("heading", { name: "PETR4" })).toBeTruthy();
+    expect(screen.getByText(/R\$\s*30,00/)).toBeTruthy();
+    expect(
+      screen.getByText("Cotação carregada; consultando demonstrativos da CVM."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("Como os números mudaram nos últimos cinco anos"),
+    ).toBeNull();
+
+    resolveAnalysis(jsonResponse(analysis));
+    expect(
+      await screen.findByText("Como os números mudaram nos últimos cinco anos"),
+    ).toBeTruthy();
+  });
+
+  it("keeps the market quote visible and offers a fundamentals retry after failure", async () => {
+    let rejectAnalysis!: (response: Response) => void;
+    const analysisResponse = new Promise<Response>((_resolve, reject) => {
+      rejectAnalysis = reject;
+    });
+    const fetcher = vi.fn((input: RequestInfo | URL) =>
+      String(input).endsWith("/market")
+        ? Promise.resolve(
+            jsonResponse({
+              ticker: "PETR4",
+              cnpj: analysis.cnpj,
+              companyName: "Petrobras",
+              price: 30,
+              priceUpdatedAt: "2026-09-19T15:30:00-03:00",
+              changePercent: null,
+            }),
+          )
+        : analysisResponse,
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    expect(await screen.findByRole("heading", { name: "PETR4" })).toBeTruthy();
+    expect(screen.getByText(/R\$\s*30,00/)).toBeTruthy();
+    rejectAnalysis(jsonResponse({ message: "offline" }, 502));
+    expect(
+      await screen.findByText(
+        "Os fundamentos da CVM não foram carregados. A cotação acima continua disponível.",
+      ),
+    ).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Tentar novamente" });
+    await userEvent.setup().click(retry);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(fetcher.mock.calls[2]?.[0]).toBe("/api/analyses/stocks/PETR4");
+  });
+
   it("labels the last observed quote and retrieval time of stale financial data", async () => {
     vi.stubGlobal(
       "fetch",
@@ -206,22 +287,24 @@ describe("StockAnalysisDashboard", () => {
     let analysisRequests = 0;
     const user = userEvent.setup();
     const fetcher = vi.fn((input: RequestInfo | URL) =>
-      String(input).includes("/search?")
-        ? Promise.resolve(
-            jsonResponse({ results: [{ ticker: "VALE3", name: "Vale" }] }),
-          )
-        : Promise.resolve(
-            analysisRequests++ === 0
-              ? jsonResponse(
-                  { message: "Consulta indisponível para Vale." },
-                  503,
-                )
-              : jsonResponse({
-                  ...analysis,
-                  ticker: "VALE3",
-                  companyName: "Vale",
-                }),
-          ),
+      String(input).endsWith("/market")
+        ? Promise.resolve(jsonResponse(marketSnapshot("VALE3")))
+        : String(input).includes("/search?")
+          ? Promise.resolve(
+              jsonResponse({ results: [{ ticker: "VALE3", name: "Vale" }] }),
+            )
+          : Promise.resolve(
+              analysisRequests++ === 0
+                ? jsonResponse(
+                    { message: "Consulta indisponível para Vale." },
+                    503,
+                  )
+                : jsonResponse({
+                    ...analysis,
+                    ticker: "VALE3",
+                    companyName: "Vale",
+                  }),
+            ),
     );
     vi.stubGlobal("fetch", fetcher);
     render(<StockAnalysisDashboard />);
@@ -265,6 +348,12 @@ describe("StockAnalysisDashboard", () => {
       if (url.includes("/search?"))
         return Promise.resolve(
           jsonResponse({ results: [{ ticker: "VALE3", name: "Vale" }] }),
+        );
+      if (url.endsWith("/market"))
+        return Promise.resolve(
+          jsonResponse(
+            marketSnapshot(url.includes("VALE3") ? "VALE3" : "PETR4"),
+          ),
         );
       if (url.endsWith("/VALE3"))
         return Promise.resolve(

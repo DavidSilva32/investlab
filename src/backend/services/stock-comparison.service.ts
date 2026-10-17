@@ -40,8 +40,12 @@ type MetricCell = {
   sourceDocument: "DFP" | "ITR" | null;
   sourceSummary: string | null;
   marketDataDate: string | null;
+  valuationSource: string | null;
+  valuationMethod: string | null;
   accountProvenance: string | null;
   unavailableReason: string | null;
+  comparisonStatus: "comparable" | "not_comparable";
+  comparisonReason: string | null;
 };
 type Candidate = {
   metadata: Metadata;
@@ -62,10 +66,24 @@ const unavailable = (
   sourceDocument: null,
   sourceSummary: null,
   marketDataDate: null,
+  valuationSource: null,
+  valuationMethod: null,
   accountProvenance: null,
   unavailableReason: reason,
+  comparisonStatus: "not_comparable",
+  comparisonReason: null,
   ...values,
 });
+
+function applyComparability(cells: MetricCell[], reason: string | null) {
+  return cells.map((cell) => ({
+    ...cell,
+    comparisonStatus: reason
+      ? ("not_comparable" as const)
+      : ("comparable" as const),
+    comparisonReason: reason,
+  }));
+}
 
 function normalizeCnpj(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "");
@@ -87,6 +105,23 @@ function normalizeAccountLabel(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .toLocaleUpperCase("pt-BR");
+}
+
+function marketTradingDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = new Map(parts.map(({ type, value }) => [type, value]));
+  const year = values.get("year");
+  const month = values.get("month");
+  const day = values.get("day");
+  return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
 function getIndicator(candidate: Candidate, key: MetricKey) {
@@ -125,11 +160,32 @@ function metricBaseReason(candidate: Candidate) {
   return null;
 }
 
+type FinancialMetricSupport =
+  | {
+      flow: undefined;
+      indicator: AnalysisIndicator | undefined;
+      reason: string;
+    }
+  | {
+      flow: NonNullable<ReturnType<typeof getFlow>>;
+      indicator: AnalysisIndicator;
+      reason: null;
+    };
+
 function supportsFinancialMetric(
   candidate: Candidate,
   metric: "roe" | "netMargin",
   indicator: AnalysisIndicator | undefined,
-) {
+): FinancialMetricSupport {
+  const unsupported = (reason: string): FinancialMetricSupport => ({
+    flow: undefined,
+    indicator,
+    reason,
+  });
+  if (candidate.analysis?.fundamentalsIsStale)
+    return unsupported(
+      "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
+    );
   const flow = getFlow(candidate, indicator);
   if (
     !indicator ||
@@ -137,28 +193,23 @@ function supportsFinancialMetric(
     !Number.isFinite(indicator.value) ||
     !flow
   )
-    return {
-      flow: undefined,
-      reason:
-        indicator?.unavailableReason ??
+    return unsupported(
+      indicator?.unavailableReason ??
         "A fonte CVM não disponibilizou a métrica.",
-    };
+    );
   if (
     !flow.netIncomeConcept ||
     !flow.netIncomeAccount ||
     (metric === "roe" && (!flow.equityConcept || !flow.equityAccount))
   )
-    return {
-      flow: undefined,
-      reason:
-        "A origem e o conceito das contas CVM não permitem confirmar esta métrica.",
-    };
+    return unsupported(
+      "A origem e o conceito das contas CVM não permitem confirmar esta métrica.",
+    );
   if (metric === "netMargin" && !flow.revenueAccountLabel)
-    return {
-      flow: undefined,
-      reason: "A conta de receita do demonstrativo não está identificada.",
-    };
-  return { flow, reason: null };
+    return unsupported(
+      "A conta de receita do demonstrativo não está identificada.",
+    );
+  return { flow, indicator, reason: null };
 }
 
 function financialBaseReason(candidates: Candidate[]) {
@@ -308,129 +359,206 @@ function buildFundamentalCells(
   candidates: Candidate[],
   metric: "roe" | "netMargin",
 ): MetricCell[] {
-  const comparisonReason = financialBaseReason(candidates);
-  if (comparisonReason)
-    return candidates.map((candidate) =>
-      unavailable(metricBaseReason(candidate) ?? comparisonReason),
-    );
+  type FinancialPair = {
+    candidate: Candidate;
+    indicator: AnalysisIndicator;
+    flow: NonNullable<ReturnType<typeof getFlow>>;
+  };
 
-  const sector = normalizeSector(candidates[0]?.metadata.sector);
-  const classification = classifyCvmSector(candidates[0]?.metadata.sector);
-  if (classification === "financial" && sector !== "BANCOS")
-    return candidates.map(() =>
-      unavailable(
-        "A metodologia aprovada não permite atribuir métricas financeiras ou de seguradoras ao ticker.",
-      ),
+  const evaluated = candidates.map((candidate) => {
+    const sector = normalizeSector(candidate.metadata.sector);
+    const classification = classifyCvmSector(candidate.metadata.sector);
+    const support = supportsFinancialMetric(
+      candidate,
+      metric,
+      getIndicator(candidate, metric),
     );
-  if (classification !== "non_financial" && sector !== "BANCOS")
-    return candidates.map(() =>
-      unavailable("O setor CVM não possui metodologia comparável aprovada."),
-    );
-  if (sector === "BANCOS" && metric !== "roe")
-    return candidates.map(() =>
-      unavailable("Margem bancária sem definição comparável aprovada."),
-    );
+    const baseReason = metricBaseReason(candidate);
+    const contextualValues = {
+      referenceDate: support.indicator?.referenceDate ?? null,
+      periodBasis: support.indicator?.periodBasis ?? null,
+      sourceDocument: support.indicator?.sourceDocument ?? null,
+    };
 
-  const pairs = candidates.map((candidate) => {
-    const indicator = getIndicator(candidate, metric);
-    const supported = supportsFinancialMetric(candidate, metric, indicator);
-    return { candidate, indicator, ...supported };
-  });
-  const missing = pairs.find((pair) => !pair.indicator || !pair.flow);
-  if (missing)
-    return pairs.map((pair) =>
-      unavailable(pair.reason!, {
-        referenceDate: pair.indicator?.referenceDate ?? null,
-        periodBasis: pair.indicator?.periodBasis ?? null,
-        sourceDocument: pair.indicator?.sourceDocument ?? null,
-      }),
-    );
+    if (baseReason)
+      return { cell: unavailable(baseReason, contextualValues), pair: null };
+    if (classification === "financial" && sector !== "BANCOS")
+      return {
+        cell: unavailable(
+          "A metodologia aprovada não permite atribuir métricas financeiras ou de seguradoras ao ticker.",
+        ),
+        pair: null,
+      };
+    if (classification !== "non_financial" && sector !== "BANCOS")
+      return {
+        cell: unavailable(
+          "O setor CVM não possui metodologia comparável aprovada.",
+        ),
+        pair: null,
+      };
+    if (sector === "BANCOS" && metric !== "roe")
+      return {
+        cell: unavailable("Margem bancária sem definição comparável aprovada."),
+        pair: null,
+      };
+    if (!support.flow)
+      return {
+        cell: unavailable(support.reason, contextualValues),
+        pair: null,
+      };
 
-  const validPairs = pairs.map(
-    (pair) =>
-      pair as typeof pair & {
-        indicator: AnalysisIndicator;
-        flow: NonNullable<ReturnType<typeof getFlow>>;
-      },
-  );
-  if (!samePeriod(validPairs))
-    return validPairs.map(({ indicator }) =>
-      unavailable("As métricas usam períodos ou datas-base incompatíveis.", {
-        referenceDate: indicator.referenceDate,
-        periodBasis: indicator.periodBasis,
-        sourceDocument: indicator.sourceDocument,
-      }),
-    );
-  if (sector !== "BANCOS" && !accountSetMatches(validPairs, metric))
-    return validPairs.map(({ indicator }) =>
-      unavailable(
-        "As contas e os conceitos CVM não têm a mesma origem semântica entre os emissores.",
-        {
-          referenceDate: indicator.referenceDate,
-          periodBasis: indicator.periodBasis,
-          sourceDocument: indicator.sourceDocument,
-        },
-      ),
-    );
-  if (
-    sector === "BANCOS" &&
-    validPairs.some(
-      ({ indicator, flow }) =>
-        indicator.periodBasis !== "trailing_twelve_months" ||
-        flow.netIncomeConcept !== "consolidated_net_income" ||
-        !["3.09", "3.11"].includes(flow.netIncomeAccount ?? "") ||
-        flow.equityConcept !== "consolidated_equity" ||
-        !["2.03", "2.07", "2.08"].includes(flow.equityAccount!),
+    const { flow, indicator } = support;
+    const pair: FinancialPair = {
+      candidate,
+      indicator,
+      flow,
+    };
+    if (sector !== "BANCOS" && !accountSetMatches([pair], metric))
+      return {
+        cell: unavailable(
+          "As contas e os conceitos CVM não permitem validar esta métrica isoladamente.",
+          contextualValues,
+        ),
+        pair: null,
+      };
+    if (
+      sector === "BANCOS" &&
+      (indicator.periodBasis !== "trailing_twelve_months" ||
+        pair.flow.netIncomeConcept !== "consolidated_net_income" ||
+        !["3.09", "3.11"].includes(pair.flow.netIncomeAccount ?? "") ||
+        pair.flow.equityConcept !== "consolidated_equity" ||
+        !["2.03", "2.07", "2.08"].includes(pair.flow.equityAccount ?? ""))
     )
-  )
-    return validPairs.map(({ indicator }) =>
-      unavailable(
-        "O ROE bancário exige lucro e patrimônio líquidos consolidados em LTM compatível com a metodologia aprovada.",
-        {
-          referenceDate: indicator.referenceDate,
-          periodBasis: indicator.periodBasis,
-          sourceDocument: indicator.sourceDocument,
-        },
-      ),
-    );
+      return {
+        cell: unavailable(
+          "O ROE bancário exige lucro e patrimônio líquidos consolidados em LTM compatível com a metodologia aprovada.",
+          contextualValues,
+        ),
+        pair: null,
+      };
 
-  const sourceSummaries = validPairs.map(({ candidate, flow }) =>
-    ltmSourceSummary(candidate, flow, metric),
+    const sourceSummary = ltmSourceSummary(candidate, pair.flow, metric);
+    if (sourceSummary === null)
+      return {
+        cell: unavailable(
+          "Não foi possível confirmar os documentos e períodos usados para esta métrica.",
+          contextualValues,
+        ),
+        pair: null,
+      };
+
+    return {
+      cell: {
+        value: indicator.value,
+        referenceDate: indicator.referenceDate,
+        periodStart: pair.flow.periodStart ?? null,
+        periodBasis: indicator.periodBasis!,
+        sourceDocument: indicator.sourceDocument,
+        sourceSummary,
+        marketDataDate: null,
+        valuationSource: null,
+        valuationMethod: null,
+        accountProvenance:
+          metric === "roe"
+            ? "CVM consolidado · lucro " +
+              pair.flow.netIncomeAccount +
+              " · patrimônio " +
+              pair.flow.equityAccount
+            : "CVM consolidado · receita 3.01 (" +
+              pair.flow.revenueAccountLabel +
+              ") · lucro " +
+              pair.flow.netIncomeAccount,
+        unavailableReason: null,
+        comparisonStatus: "not_comparable" as const,
+        comparisonReason: null,
+      },
+      pair,
+    };
+  });
+
+  const validPairs = evaluated.flatMap(({ pair }) => (pair ? [pair] : []));
+  let comparisonReason = financialBaseReason(candidates);
+  const missing = evaluated.find(({ pair }) => pair === null);
+  if (!comparisonReason && missing)
+    comparisonReason =
+      "Um ou mais emissores não têm esta métrica validada: " +
+      missing.cell.unavailableReason;
+  if (!comparisonReason && validPairs.length === candidates.length) {
+    if (!samePeriod(validPairs))
+      comparisonReason =
+        "As métricas usam períodos ou datas-base incompatíveis.";
+    else if (
+      normalizeSector(candidates[0]?.metadata.sector) !== "BANCOS" &&
+      !accountSetMatches(validPairs, metric)
+    )
+      comparisonReason =
+        "As contas e os conceitos CVM não têm a mesma origem semântica entre os emissores.";
+  }
+
+  return applyComparability(
+    evaluated.map(({ cell }) => cell),
+    comparisonReason,
   );
-  if (sourceSummaries.some((summary) => summary === null))
-    return validPairs.map(({ indicator }) =>
-      unavailable(
-        "Não foi possível confirmar os documentos e períodos usados para esta métrica.",
-        {
-          referenceDate: indicator.referenceDate,
-          periodBasis: indicator.periodBasis,
-          sourceDocument: indicator.sourceDocument,
-        },
-      ),
-    );
-
-  return validPairs.map(({ indicator, flow }, index) => ({
-    value: indicator.value,
-    referenceDate: indicator.referenceDate,
-    periodStart: flow.periodStart ?? null,
-    periodBasis: indicator.periodBasis!,
-    sourceDocument: indicator.sourceDocument,
-    sourceSummary: sourceSummaries[index]!,
-    marketDataDate: null,
-    accountProvenance:
-      metric === "roe"
-        ? `CVM consolidado · lucro ${flow.netIncomeAccount} · patrimônio ${flow.equityAccount}`
-        : `CVM consolidado · receita 3.01 (${flow.revenueAccountLabel}) · lucro ${flow.netIncomeAccount}`,
-    unavailableReason: null,
-  }));
 }
-
 function buildValuationCells(candidates: Candidate[], metric: "pe" | "pb") {
-  return candidates.map((candidate) => {
+  const cells = candidates.map((candidate) => {
     const indicator = getIndicator(candidate, metric);
+    if (candidate.analysis?.fundamentalsIsStale)
+      return unavailable(
+        "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
+        {
+          referenceDate: indicator?.referenceDate ?? null,
+          periodBasis: indicator?.periodBasis ?? null,
+          sourceDocument: indicator?.sourceDocument ?? null,
+          marketDataDate: indicator?.marketDataDate ?? null,
+        },
+      );
+    if (
+      candidate.identityVerified &&
+      candidate.analysis?.marketCapIdentityVerified === true &&
+      indicator?.value !== null &&
+      indicator?.value !== undefined &&
+      Number.isFinite(indicator.value) &&
+      marketTradingDate(indicator.marketDataDate) &&
+      indicator.valuationSource &&
+      indicator.valuationMethod &&
+      indicator.referenceDate &&
+      indicator.sourceDocument &&
+      (metric === "pe"
+        ? indicator.periodBasis === "annual" ||
+          indicator.periodBasis === "trailing_twelve_months"
+        : indicator.periodBasis === "point_in_time")
+    )
+      return {
+        value: indicator.value,
+        referenceDate: indicator.referenceDate,
+        periodStart: null,
+        periodBasis: indicator.periodBasis!,
+        sourceDocument: indicator.sourceDocument,
+        sourceSummary:
+          indicator.valuationSource +
+          " · " +
+          indicator.valuationMethod +
+          " · " +
+          indicator.marketDataDate +
+          " · CVM " +
+          indicator.sourceDocument +
+          " com data-base " +
+          indicator.referenceDate,
+        marketDataDate: indicator.marketDataDate,
+        valuationSource: indicator.valuationSource,
+        valuationMethod: indicator.valuationMethod,
+        accountProvenance: null,
+        unavailableReason: null,
+        comparisonStatus: "not_comparable" as const,
+        comparisonReason: null,
+      } satisfies MetricCell;
     return unavailable(
       metricBaseReason(candidate) ??
-        "Data-base de mercado e classe da ação sem reconciliação.",
+        (candidate.analysis?.marketDataIdentityVerified !== true
+          ? "Data-base de mercado e classe da ação sem reconciliação."
+          : (indicator?.unavailableReason ??
+            "A fonte não disponibilizou a métrica.")),
       {
         referenceDate: indicator?.referenceDate ?? null,
         periodBasis: indicator?.periodBasis ?? null,
@@ -439,8 +567,25 @@ function buildValuationCells(candidates: Candidate[], metric: "pe" | "pb") {
       },
     );
   });
+  const available = cells.filter((cell) => cell.value !== null);
+  const bases = available.map(
+    (cell) =>
+      cell.periodBasis + "|" + cell.referenceDate + "|" + cell.sourceDocument,
+  );
+  const marketDays = available.map((cell) =>
+    marketTradingDate(cell.marketDataDate),
+  );
+  const differentMarketDays = new Set(marketDays).size > 1;
+  const comparisonReason =
+    available.length !== cells.length
+      ? "Um ou mais emissores não têm este valuation validado; os valores disponíveis são individuais."
+      : available.length > 1 && (new Set(bases).size > 1 || differentMarketDays)
+        ? differentMarketDays
+          ? "Os indicadores usam datas de mercado diferentes; os valores individuais não são comparáveis."
+          : "Os indicadores usam bases ou datas CVM diferentes; os valores individuais não são comparáveis."
+        : null;
+  return applyComparability(cells, comparisonReason);
 }
-
 function compareCandidates(candidates: Candidate[]) {
   return candidates.map((candidate) => ({
     ticker: candidate.metadata.ticker,

@@ -1,6 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const playwrightPort = process.env.PLAYWRIGHT_PORT ?? "3000";
+const configuredChromiumPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const useInstalledWindowsChrome =
+  process.platform === "win32" && !process.env.CI && !configuredChromiumPath;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -8,10 +11,12 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${playwrightPort}`,
     trace: "on-first-retry",
-    launchOptions: {
-      executablePath:
-        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ?? "/usr/bin/chromium",
-    },
+    ...(useInstalledWindowsChrome ? { channel: "chrome" as const } : {}),
+    launchOptions: useInstalledWindowsChrome
+      ? {}
+      : {
+          executablePath: configuredChromiumPath ?? "/usr/bin/chromium",
+        },
   },
   webServer: {
     command: `pnpm exec next dev --hostname 127.0.0.1 --port ${playwrightPort}`,

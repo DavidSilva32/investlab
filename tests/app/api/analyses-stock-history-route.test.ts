@@ -24,7 +24,8 @@ describe("stock history route", () => {
       Response.json({
         ticker: "PETR4",
         history: [{ date: "2026-09-30", close: 34.2 }],
-        historyStatus: "available",
+        historyStatus: "partial",
+        historyFailure: { reason: "timeout" },
       }),
     );
 
@@ -37,7 +38,8 @@ describe("stock history route", () => {
     expect(response.headers.get("x-request-id")).toBe("history-1");
     await expect(response.json()).resolves.toMatchObject({
       ticker: "PETR4",
-      historyStatus: "available",
+      historyStatus: "partial",
+      historyFailure: { reason: "timeout" },
     });
   });
 

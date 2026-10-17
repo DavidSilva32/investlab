@@ -136,6 +136,97 @@ describe("PriceHistoryChart", () => {
     ).toBeTruthy();
   });
 
+  it("explains a fallback failure and offers retry while partial points remain visible", () => {
+    const onRetry = vi.fn();
+    render(
+      <PriceHistoryChart
+        points={[
+          { date: "2026-01-01", close: 10 },
+          { date: "2026-01-02", close: 11 },
+        ]}
+        status="partial"
+        failure={{ reason: "timeout" }}
+        onRetry={onRetry}
+      />,
+    );
+
+    expect(screen.getByTestId("price-chart").dataset.points).toBe(
+      "2026-01-01,2026-01-02",
+    );
+    expect(screen.getByRole("status").textContent).toContain(
+      "A consulta de histórico demorou mais que o esperado.",
+    );
+    expect(
+      screen.queryByText("Algumas cotações incompletas foram ignoradas."),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("shows failed retry progress for a partial chart", () => {
+    render(
+      <PriceHistoryChart
+        points={[
+          { date: "2026-01-01", close: 10 },
+          { date: "2026-01-02", close: 11 },
+        ]}
+        status="partial"
+        failure={{ reason: "timeout" }}
+        retrying
+        retryError
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Não foi possível atualizar agora. Tente novamente.",
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Atualizando…" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("shows the retry cooldown for a partial chart", () => {
+    const onRetry = vi.fn();
+    render(
+      <PriceHistoryChart
+        points={[
+          { date: "2026-01-01", close: 10 },
+          { date: "2026-01-02", close: 11 },
+        ]}
+        status="partial"
+        failure={{ reason: "rate_limited", retryAfterSeconds: 8 }}
+        retryAfterSeconds={8}
+        onRetry={onRetry}
+      />,
+    );
+
+    const retry = screen.getByRole("button", { name: "Aguarde 8s" });
+    expect((retry as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it("shows the original provider failure with retry in the compact partial state", () => {
+    const onRetry = vi.fn();
+    render(
+      <PriceHistoryChart
+        points={[{ date: "2026-01-01", close: 10 }]}
+        status="partial"
+        failure={{ reason: "provider_error" }}
+        onRetry={onRetry}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "A fonte de cotações está temporariamente indisponível.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("shows a compact partial state and keeps manual retry available", () => {
     const onRetry = vi.fn();
     render(
