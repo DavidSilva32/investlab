@@ -60,9 +60,7 @@ describe("AdminSupportViewBanner", () => {
       "Cliente: Marcos Paulo (m@example.com)",
     );
     expect(screen.getByText("Somente leitura.")).toBeTruthy();
-    await user.click(
-      screen.getByRole("button", { name: "Encerrar visualização" }),
-    );
+    await user.click(screen.getByRole("button"));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -186,5 +184,31 @@ describe("AdminSupportViewBanner", () => {
       new CustomEvent("admin-support-view-changed", { detail: activeView }),
     );
     expect(await screen.findByText("Visualização de suporte")).toBeTruthy();
+  });
+  it("reports active and ended support mode to the shell", async () => {
+    const onSupportViewChange = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ targets: [target], supportView: activeView }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ supportView: null }),
+        }),
+    );
+    const user = userEvent.setup();
+    render(
+      <AdminSupportViewBanner onSupportViewChange={onSupportViewChange} />,
+    );
+
+    await waitFor(() => expect(onSupportViewChange).toHaveBeenCalledWith(true));
+    await user.click(screen.getByRole("button"));
+    await waitFor(() =>
+      expect(onSupportViewChange).toHaveBeenCalledWith(false),
+    );
   });
 });

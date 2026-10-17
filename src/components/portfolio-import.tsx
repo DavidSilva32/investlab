@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronDown,
   CircleDollarSign,
+  ExternalLink,
   FileSpreadsheet,
   Layers3,
   Link2,
@@ -164,7 +165,11 @@ function groupReconciliationCandidates(
   return [...groups.values()];
 }
 
-export function PortfolioImport() {
+export function PortfolioImport({
+  readOnly = false,
+}: {
+  readOnly?: boolean;
+} = {}) {
   const input = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
@@ -392,6 +397,17 @@ export function PortfolioImport() {
               </p>
             </div>
           </div>
+          {!readOnly && (
+            <a
+              href="https://www.investidor.b3.com.br/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Acessar Área do Investidor da B3
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+            </a>
+          )}
           <Button
             className="w-full shrink-0 sm:w-auto"
             disabled={loading}

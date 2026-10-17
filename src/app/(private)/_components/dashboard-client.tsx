@@ -4,6 +4,7 @@ import type { DashboardDestinationSummary } from "@/app/(private)/_components/da
 import type { DashboardDestinationPosition } from "@/app/(private)/_components/dashboard-destinations-overview";
 import { DashboardSummary } from "@/app/(private)/_components/dashboard-summary";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
+import { useAdminSupportView } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import type { PortfolioPosition } from "@/app/(private)/portfolio/_components/portfolio-overview";
 import type { PortfolioInsights } from "@/lib/portfolio-insights";
@@ -25,6 +26,7 @@ export function DashboardClient({
   openImportOnLoad?: boolean;
 }) {
   const router = useRouter();
+  const supportView = useAdminSupportView();
   const [objectivesNavigation, setObjectivesNavigation] = useState({
     open: false,
     objectiveId: null as string | null,
@@ -108,6 +110,7 @@ export function DashboardClient({
         }
         importOpen={importOpen}
         onImportOpenChange={setImportOpen}
+        supportReadOnly={supportView !== false}
         destinationSummary={objectivesQuery.data?.destinationSummary}
         destinationPositions={objectivesQuery.data?.positions}
         longTermMissingPositionCount={

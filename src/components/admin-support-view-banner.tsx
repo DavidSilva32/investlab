@@ -10,7 +10,11 @@ import { Button } from "@/components/ui/button";
 type SupportTarget = { id: string; name: string; email: string };
 type SupportView = { target: SupportTarget; expiresAt: string };
 
-export function AdminSupportViewBanner() {
+export function AdminSupportViewBanner({
+  onSupportViewChange,
+}: {
+  onSupportViewChange?: (active: boolean) => void;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [supportView, setSupportView] = useState<SupportView | null>(null);
@@ -22,12 +26,15 @@ export function AdminSupportViewBanner() {
         cache: "no-store",
       });
       const body = await response.json();
-      if (response.ok)
-        setSupportView((body.supportView as SupportView | null) ?? null);
+      if (response.ok) {
+        const nextView = (body.supportView as SupportView | null) ?? null;
+        setSupportView(nextView);
+        onSupportViewChange?.(nextView !== null);
+      }
     } catch {
       setSupportView(null);
     }
-  }, []);
+  }, [onSupportViewChange]);
 
   useEffect(() => {
     // Load the server-backed support context; state changes after the response arrives.
@@ -36,11 +43,12 @@ export function AdminSupportViewBanner() {
     const onChange = (event: Event) => {
       const detail = (event as CustomEvent<SupportView | null>).detail;
       setSupportView(detail);
+      onSupportViewChange?.(detail !== null);
     };
     window.addEventListener("admin-support-view-changed", onChange);
     return () =>
       window.removeEventListener("admin-support-view-changed", onChange);
-  }, [load, pathname]);
+  }, [load, onSupportViewChange, pathname]);
 
   useEffect(() => {
     if (!supportView) return;
@@ -67,6 +75,7 @@ export function AdminSupportViewBanner() {
           getApiMessage(body, "Não foi possível encerrar a visualização."),
         );
       setSupportView(null);
+      onSupportViewChange?.(false);
       window.dispatchEvent(
         new CustomEvent("admin-support-view-changed", { detail: null }),
       );

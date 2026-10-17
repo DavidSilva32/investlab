@@ -63,6 +63,22 @@ describe("PortfolioImport", () => {
     vi.restoreAllMocks();
   });
 
+  it("links to the official B3 investor area and hides it in read-only support", () => {
+    const { rerender } = render(<PortfolioImport />);
+    const investorAreaLink = screen.getByRole("link", {
+      name: /Investidor da B3/,
+    });
+
+    expect(investorAreaLink.getAttribute("href")).toBe(
+      "https://www.investidor.b3.com.br/",
+    );
+    expect(investorAreaLink.getAttribute("target")).toBe("_blank");
+    expect(investorAreaLink.getAttribute("rel")).toBe("noopener noreferrer");
+
+    rerender(<PortfolioImport readOnly />);
+    expect(screen.queryByRole("link", { name: /Investidor da B3/ })).toBeNull();
+  });
+
   it("previews every selected file automatically", async () => {
     const fetch = vi
       .fn()

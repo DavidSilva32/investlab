@@ -31,6 +31,7 @@ export function DashboardSummary({
   onOpenReserve = () => {},
   importOpen = false,
   onImportOpenChange = () => {},
+  supportReadOnly = false,
 }: {
   positions: PortfolioInsightPosition[];
   manualPositions?: PortfolioPosition[];
@@ -56,19 +57,30 @@ export function DashboardSummary({
   onOpenReserve?: () => void;
   importOpen?: boolean;
   onImportOpenChange?: (open: boolean) => void;
+  supportReadOnly?: boolean;
 }) {
+  const firstAccess = positions.length === 0;
+
+  const quickActions = (
+    <DashboardQuickActions
+      positions={manualPositions}
+      objectivesOpen={objectivesOpen}
+      onObjectivesOpenChange={onObjectivesOpenChange}
+      objectivesNavigation={objectivesNavigation}
+      onObjectivesNavigationChange={onObjectivesNavigationChange}
+      importOpen={importOpen}
+      onImportOpenChange={onImportOpenChange}
+      firstAccess={firstAccess}
+      supportReadOnly={supportReadOnly}
+    />
+  );
+
+  if (firstAccess) return <div>{quickActions}</div>;
+
   return (
     <div className="space-y-4">
       <DashboardWealthSummary positions={positions} insights={insights} />
-      <DashboardQuickActions
-        positions={manualPositions}
-        objectivesOpen={objectivesOpen}
-        onObjectivesOpenChange={onObjectivesOpenChange}
-        objectivesNavigation={objectivesNavigation}
-        onObjectivesNavigationChange={onObjectivesNavigationChange}
-        importOpen={importOpen}
-        onImportOpenChange={onImportOpenChange}
-      />
+      {quickActions}
 
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
         <DashboardDestinationsOverview

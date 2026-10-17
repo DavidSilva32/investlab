@@ -86,6 +86,16 @@ const reserve = {
 describe("DashboardSummary", () => {
   afterEach(cleanup);
 
+  it("shows first-access guidance only when no positions are registered", () => {
+    const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
+
+    expect(html).toContain("Sua carteira começa aqui");
+    expect(html).toContain("Importar arquivo da B3");
+    expect(html).toContain("Cadastrar manualmente");
+    expect(html).not.toContain("PatrimÃ´nio conhecido");
+    expect(html).not.toContain("AÃ§Ãµes rÃ¡pidas");
+  });
+
   it("prioritizes current wealth and exposes the approved quick actions", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
@@ -99,7 +109,7 @@ describe("DashboardSummary", () => {
     expect(html).toContain("2 de 2");
     expect(html).not.toContain("Data-base");
     expect(html).not.toContain("Dados de 01/09/2026");
-    expect(html).toContain("Ações rápidas");
+    expect(html).toContain("Importar e conciliar");
     expect(html).toContain("Adicionar posição");
     expect(html).not.toContain('href="/carteira#manual-positions"');
     expect(html).toContain("Importar e conciliar");
@@ -180,7 +190,7 @@ describe("DashboardSummary", () => {
     });
     fireEvent.click(importButton);
 
-    expect(importButton.getAttribute("aria-expanded")).toBe("false");
+    expect(importButton.getAttribute("aria-expanded")).toBeNull();
   });
 
   it("shows a concise review action only when positions have no current value", () => {
@@ -246,10 +256,12 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Distribuição parcial · valores conhecidos.");
   });
 
-  it("does not fabricate facts or unvalued-position review when the portfolio has none", () => {
+  it("shows first-access guidance instead of portfolio facts when no positions exist", () => {
     const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
 
-    expect(html).toContain("Ainda sem valores conhecidos");
+    expect(html).toContain("Sua carteira começa aqui");
+    expect(html).toContain("Importar arquivo da B3");
+    expect(html).toContain("Cadastrar manualmente");
     expect(html).not.toContain("Dados para revisar");
     expect(html).not.toContain("Fatos da carteira");
   });

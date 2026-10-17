@@ -2,7 +2,10 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const routerReplace = vi.hoisted(() => vi.fn());
+const mocks = vi.hoisted(() => ({
+  routerReplace: vi.fn(),
+  supportView: false as boolean | null,
+}));
 
 vi.mock("@/components/app-page-skeleton", () => ({
   AppContentSkeleton: () => <p>Carregando dashboard...</p>,
@@ -20,6 +23,7 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     onRetryDestinations,
     onObjectivesOpenChange,
     onObjectivesNavigationChange,
+    supportReadOnly,
   }: {
     destinationSummary?: { knownTotal: number };
     longTermMissingPositionCount?: number;
@@ -34,9 +38,11 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
       objectiveId: string | null,
       screen?: string | null,
     ) => void;
+    supportReadOnly?: boolean;
   }) => (
     <>
       <p>Resumo do dashboard</p>
+      {supportReadOnly && <p>Dashboard em modo somente leitura</p>}
       <button type="button" onClick={onOpenReserve}>
         Ver reserva
       </button>
@@ -74,7 +80,10 @@ import { DashboardClient } from "@/app/(private)/_components/dashboard-client";
 import { QueryProvider } from "@/components/query-provider";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: routerReplace }),
+  useRouter: () => ({ replace: mocks.routerReplace }),
+}));
+vi.mock("@/components/app-shell", () => ({
+  useAdminSupportView: () => mocks.supportView,
 }));
 
 function renderDashboard() {
@@ -108,7 +117,8 @@ describe("DashboardClient", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    routerReplace.mockReset();
+    mocks.routerReplace.mockReset();
+    mocks.supportView = false;
     window.history.replaceState(null, "", "/");
   });
 
@@ -125,6 +135,22 @@ describe("DashboardClient", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes support mode to the empty dashboard so onboarding stays read only", async () => {
+    mocks.supportView = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
+      ),
+    );
+
+    renderDashboard();
+
+    expect(
+      await screen.findByText("Dashboard em modo somente leitura"),
+    ).toBeTruthy();
   });
 
   it("counts only missing long-term objective positions for the dashboard", async () => {
@@ -169,7 +195,7 @@ describe("DashboardClient", () => {
     expect(
       await screen.findByText("Objetivo aberto no painel: reserve"),
     ).toBeTruthy();
-    expect(routerReplace).not.toHaveBeenCalled();
+    expect(mocks.routerReplace).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/");
   });
 
@@ -211,7 +237,7 @@ describe("DashboardClient", () => {
 
     expect(await screen.findByText("Importação lateral aberta")).toBeTruthy();
     await waitFor(() =>
-      expect(routerReplace).toHaveBeenCalledWith("/", { scroll: false }),
+      expect(mocks.routerReplace).toHaveBeenCalledWith("/", { scroll: false }),
     );
   });
 
@@ -300,11 +326,11 @@ describe("DashboardClient", () => {
     await screen.findByText("Resumo do dashboard");
 
     window.dispatchEvent(new Event("auth:unauthorized"));
-    expect(routerReplace).toHaveBeenCalledWith("/entrar");
+    expect(mocks.routerReplace).toHaveBeenCalledWith("/entrar");
 
-    routerReplace.mockClear();
+    mocks.routerReplace.mockClear();
     window.history.replaceState(null, "", "/entrar");
     window.dispatchEvent(new Event("auth:unauthorized"));
-    expect(routerReplace).not.toHaveBeenCalled();
+    expect(mocks.routerReplace).not.toHaveBeenCalled();
   });
 });
