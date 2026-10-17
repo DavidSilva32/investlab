@@ -3,10 +3,10 @@
 import type { DashboardDestinationSummary } from "@/app/(private)/_components/dashboard-destinations-overview";
 import type { DashboardDestinationPosition } from "@/app/(private)/_components/dashboard-destinations-overview";
 import { DashboardSummary } from "@/app/(private)/_components/dashboard-summary";
-import { ADMIN_SUPPORT_VIEW_RETRY_EVENT } from "@/components/admin-support-view-banner";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { useAdminSupportView } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
+import { LoaderCircle } from "lucide-react";
 import type { PortfolioPosition } from "@/app/(private)/portfolio/_components/portfolio-overview";
 import type { PortfolioInsights } from "@/lib/portfolio-insights";
 import { useEffect, useState } from "react";
@@ -89,23 +89,15 @@ export function DashboardClient({
           </Button>
         </div>
       )}
-      {supportCheckError && overview.positions.length > 0 && (
-        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
-          <p className="text-muted-foreground">
-            Não foi possível confirmar o estado de suporte. As ações permanecem
-            bloqueadas até uma nova tentativa.
-          </p>
-          <Button
-            type="button"
-            variant="link"
-            className="h-auto p-0 text-foreground"
-            onClick={() =>
-              window.dispatchEvent(new Event(ADMIN_SUPPORT_VIEW_RETRY_EVENT))
-            }
-          >
-            Tentar novamente
-          </Button>
-        </div>
+      {supportView === null && overview.positions.length > 0 && (
+        <p
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+          role="status"
+        >
+          <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+          Verificando o modo de visualização. As ações de edição ficam
+          indisponíveis até a confirmação.
+        </p>
       )}
       <DashboardSummary
         {...overview}
@@ -141,9 +133,6 @@ export function DashboardClient({
         supportReadOnly={supportView === true}
         supportChecking={supportView === null}
         supportCheckError={supportCheckError}
-        onRetrySupportCheck={() =>
-          window.dispatchEvent(new Event(ADMIN_SUPPORT_VIEW_RETRY_EVENT))
-        }
         destinationSummary={objectivesQuery.data?.destinationSummary}
         destinationPositions={objectivesQuery.data?.positions}
         longTermMissingPositionCount={

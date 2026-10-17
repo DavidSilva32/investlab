@@ -28,7 +28,6 @@ export function DashboardQuickActions({
   supportReadOnly = false,
   supportChecking = false,
   supportCheckError = false,
-  onRetrySupportCheck = () => {},
 }: {
   positions: PortfolioPosition[];
   objectivesOpen: boolean;
@@ -48,11 +47,13 @@ export function DashboardQuickActions({
   supportReadOnly?: boolean;
   supportChecking?: boolean;
   supportCheckError?: boolean;
-  onRetrySupportCheck?: () => void;
 }) {
   const actionsEnabled =
     !supportReadOnly && !supportChecking && !supportCheckError;
   const readOnly = !actionsEnabled;
+
+  if (!firstAccess && readOnly) return null;
+
   return (
     <Sheet
       open={importOpen && actionsEnabled}
@@ -64,7 +65,6 @@ export function DashboardQuickActions({
             readOnly={readOnly}
             contextPending={supportChecking}
             contextError={supportCheckError}
-            onRetryContext={onRetrySupportCheck}
             onImport={() => onImportOpenChange(true)}
             onCreateManual={() =>
               window.dispatchEvent(

@@ -150,6 +150,7 @@ describe("DashboardQuickActions", () => {
     );
 
     expect(screen.queryByRole("button", { name: /Adicionar posi/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Ações rápidas" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Importar e conciliar" }),
     ).toBeNull();
@@ -169,7 +170,7 @@ describe("DashboardQuickActions", () => {
     ).toBeNull();
   });
 
-  it("keeps first-access actions blocked when the support retry callback is omitted", () => {
+  it("keeps first-access actions blocked after support status fails", () => {
     render(
       <DashboardQuickActions
         positions={[]}
@@ -182,7 +183,9 @@ describe("DashboardQuickActions", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(
+      screen.queryByRole("button", { name: "Tentar novamente" }),
+    ).toBeNull();
     expect(
       screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
     ).toBeNull();

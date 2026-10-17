@@ -17,14 +17,12 @@ export function DashboardFirstAccess({
   readOnly = false,
   contextPending = false,
   contextError = false,
-  onRetryContext = () => {},
 }: {
   onImport: () => void;
   onCreateManual: () => void;
   readOnly?: boolean;
   contextPending?: boolean;
   contextError?: boolean;
-  onRetryContext?: () => void;
 }) {
   return (
     <section aria-labelledby="dashboard-first-access-title">
@@ -100,30 +98,15 @@ export function DashboardFirstAccess({
               </Button>
             ) : null}
           </div>
-          {contextError ? (
-            <div
-              className="flex flex-wrap items-center justify-between gap-2 text-sm sm:col-span-2"
-              role="alert"
+          {contextPending ? (
+            <p
+              className="text-sm text-muted-foreground sm:col-span-2"
+              role="status"
             >
-              <p className="text-muted-foreground">
-                Não foi possível confirmar o estado de suporte. As ações
-                permanecem bloqueadas até uma nova tentativa.
-              </p>
-              <Button
-                type="button"
-                variant="link"
-                className="h-auto p-0"
-                onClick={onRetryContext}
-              >
-                Tentar novamente
-              </Button>
-            </div>
-          ) : contextPending ? (
-            <p className="text-sm text-muted-foreground sm:col-span-2">
               Verificando o acesso a esta conta. As ações serão liberadas após a
               confirmação.
             </p>
-          ) : readOnly ? (
+          ) : readOnly && !contextError ? (
             <p className="text-sm text-muted-foreground sm:col-span-2">
               A visualização de suporte é somente leitura. Os cadastros devem
               ser feitos pelo titular da conta.

@@ -127,6 +127,15 @@ describe("DashboardSummary", () => {
     expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
   });
 
+  it("shows the destination loading state during first access", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary positions={[]} destinationsLoading />,
+    );
+
+    expect(html).toContain('aria-label="Carregando destinos da carteira"');
+    expect(html).toContain("Sua carteira começa aqui");
+  });
+
   it("preserves configured read-only summaries without opening editable panels", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
@@ -367,10 +376,17 @@ describe("DashboardSummary", () => {
     expect(html).not.toContain("Reserva de emergência");
   });
 
-  it("keeps the support retry fallback safe without a callback", () => {
+  it("keeps first-access actions blocked after support status fails", () => {
     render(<DashboardSummary positions={[]} supportCheckError />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(screen.getByText(/As ações permanecem bloqueadas/)).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Tentar novamente" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cadastrar manualmente" }),
+    ).toBeNull();
   });
 });

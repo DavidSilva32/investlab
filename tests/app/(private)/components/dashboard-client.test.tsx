@@ -32,7 +32,6 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     supportReadOnly,
     supportChecking,
     supportCheckError,
-    onRetrySupportCheck,
     onImportOpenChange,
     configuredObjectivesCount,
     manualPositions,
@@ -53,7 +52,6 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     supportReadOnly?: boolean;
     supportChecking?: boolean;
     supportCheckError?: boolean;
-    onRetrySupportCheck?: () => void;
     onImportOpenChange?: (open: boolean) => void;
     configuredObjectivesCount?: number;
     manualPositions?: unknown[];
@@ -62,12 +60,6 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
       <p>Resumo do dashboard</p>
       {supportReadOnly && <p>Dashboard em modo somente leitura</p>}
       {supportChecking && <p>Contexto de suporte pendente</p>}
-      {supportCheckError && <p>Falha recuperável no contexto de suporte</p>}
-      {supportCheckError && (
-        <button type="button" onClick={onRetrySupportCheck}>
-          Tentar novamente o contexto
-        </button>
-      )}
       {!supportReadOnly && !supportChecking && !supportCheckError && (
         <button type="button">Adicionar posição</button>
       )}
@@ -222,6 +214,9 @@ describe("DashboardClient", () => {
     const dashboard = renderDashboard(true);
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
     expect(screen.getByText("Contexto de suporte pendente")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Verificando o modo de visualização",
+    );
     expect(screen.getByText("Posições visíveis: 1")).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "Adicionar posição" }),
@@ -275,29 +270,20 @@ describe("DashboardClient", () => {
         ),
       ),
     );
-    const dispatch = vi.spyOn(window, "dispatchEvent");
-
     renderDashboard(true);
 
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
     expect(screen.getByText("Posições visíveis: 1")).toBeTruthy();
     expect(
-      screen.getByText("Falha recuperável no contexto de suporte"),
-    ).toBeTruthy();
+      screen.queryByText("Falha recuperável no contexto de suporte"),
+    ).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Adicionar posição" }),
     ).toBeNull();
     expect(screen.queryByText("Importação lateral aberta")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "admin-support-view-retry" }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Tentar novamente o contexto" }),
-    );
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "admin-support-view-retry" }),
-    );
+    expect(
+      screen.queryByRole("button", { name: "Tentar novamente o contexto" }),
+    ).toBeNull();
   });
 
   it("counts only missing long-term objective positions for the dashboard", async () => {

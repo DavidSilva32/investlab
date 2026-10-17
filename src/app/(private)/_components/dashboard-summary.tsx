@@ -35,7 +35,6 @@ export function DashboardSummary({
   supportReadOnly = false,
   supportChecking = false,
   supportCheckError = false,
-  onRetrySupportCheck = () => {},
 }: {
   positions: PortfolioInsightPosition[];
   manualPositions?: PortfolioPosition[];
@@ -65,7 +64,6 @@ export function DashboardSummary({
   supportReadOnly?: boolean;
   supportChecking?: boolean;
   supportCheckError?: boolean;
-  onRetrySupportCheck?: () => void;
 }) {
   const firstAccess = positions.length === 0;
   const readOnly = supportReadOnly || supportChecking || supportCheckError;
@@ -83,12 +81,14 @@ export function DashboardSummary({
       supportReadOnly={supportReadOnly}
       supportChecking={supportChecking}
       supportCheckError={supportCheckError}
-      onRetrySupportCheck={onRetrySupportCheck}
     />
   );
 
   const showDestinations =
-    !firstAccess || configuredObjectivesCount > 0 || destinationsUnavailable;
+    !firstAccess ||
+    configuredObjectivesCount > 0 ||
+    destinationsUnavailable ||
+    destinationsLoading;
   const showEmergencyReserve = firstAccess
     ? Boolean(
         emergencyReserve &&
