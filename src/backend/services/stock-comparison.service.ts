@@ -40,6 +40,8 @@ type MetricCell = {
   sourceDocument: "DFP" | "ITR" | null;
   sourceSummary: string | null;
   marketDataDate: string | null;
+  valuationSource: string | null;
+  valuationMethod: string | null;
   accountProvenance: string | null;
   unavailableReason: string | null;
 };
@@ -62,6 +64,8 @@ const unavailable = (
   sourceDocument: null,
   sourceSummary: null,
   marketDataDate: null,
+  valuationSource: null,
+  valuationMethod: null,
   accountProvenance: null,
   unavailableReason: reason,
   ...values,
@@ -87,6 +91,23 @@ function normalizeAccountLabel(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .toLocaleUpperCase("pt-BR");
+}
+
+function marketTradingDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = new Map(parts.map(({ type, value }) => [type, value]));
+  const year = values.get("year");
+  const month = values.get("month");
+  const day = values.get("day");
+  return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
 function getIndicator(candidate: Candidate, key: MetricKey) {
@@ -423,6 +444,8 @@ function buildFundamentalCells(
     sourceDocument: indicator.sourceDocument,
     sourceSummary: sourceSummaries[index]!,
     marketDataDate: null,
+    valuationSource: null,
+    valuationMethod: null,
     accountProvenance:
       metric === "roe"
         ? `CVM consolidado · lucro ${flow.netIncomeAccount} · patrimônio ${flow.equityAccount}`
@@ -446,11 +469,13 @@ function buildValuationCells(candidates: Candidate[], metric: "pe" | "pb") {
       );
     if (
       candidate.identityVerified &&
-      candidate.analysis?.marketDataIdentityVerified === true &&
+      candidate.analysis?.marketCapIdentityVerified === true &&
       indicator?.value !== null &&
       indicator?.value !== undefined &&
       Number.isFinite(indicator.value) &&
-      indicator.marketDataDate &&
+      marketTradingDate(indicator.marketDataDate) &&
+      indicator.valuationSource &&
+      indicator.valuationMethod &&
       indicator.referenceDate &&
       indicator.sourceDocument &&
       (metric === "pe"
@@ -464,8 +489,10 @@ function buildValuationCells(candidates: Candidate[], metric: "pe" | "pb") {
         periodStart: null,
         periodBasis: indicator.periodBasis!,
         sourceDocument: indicator.sourceDocument,
-        sourceSummary: `Cotação validada em ${indicator.marketDataDate} · CVM ${indicator.sourceDocument} com data-base ${indicator.referenceDate}`,
+        sourceSummary: `${indicator.valuationSource} · ${indicator.valuationMethod} · ${indicator.marketDataDate} · CVM ${indicator.sourceDocument} com data-base ${indicator.referenceDate}`,
         marketDataDate: indicator.marketDataDate,
+        valuationSource: indicator.valuationSource,
+        valuationMethod: indicator.valuationMethod,
         accountProvenance: null,
         unavailableReason: null,
       } satisfies MetricCell;
@@ -488,18 +515,26 @@ function buildValuationCells(candidates: Candidate[], metric: "pe" | "pb") {
     (cell) =>
       `${cell.periodBasis}|${cell.referenceDate}|${cell.sourceDocument}`,
   );
-  if (available.length > 1 && new Set(bases).size > 1)
+  const marketDays = available.map((cell) =>
+    marketTradingDate(cell.marketDataDate),
+  );
+  const differentMarketDays = new Set(marketDays).size > 1;
+  if (available.length > 1 && (new Set(bases).size > 1 || differentMarketDays))
     return cells.map((cell) =>
       cell.value === null
         ? cell
         : unavailable(
-            "Os indicadores usam bases ou datas CVM diferentes; não são comparáveis.",
+            differentMarketDays
+              ? "Os indicadores usam datas de mercado diferentes; não são comparáveis."
+              : "Os indicadores usam bases ou datas CVM diferentes; não são comparáveis.",
             {
               referenceDate: cell.referenceDate,
               periodBasis: cell.periodBasis,
               sourceDocument: cell.sourceDocument,
               sourceSummary: cell.sourceSummary,
               marketDataDate: cell.marketDataDate,
+              valuationSource: cell.valuationSource,
+              valuationMethod: cell.valuationMethod,
             },
           ),
     );

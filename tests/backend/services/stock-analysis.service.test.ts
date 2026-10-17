@@ -16,6 +16,15 @@ import {
   StockAnalysisService,
 } from "@/backend/services/stock-analysis.service";
 
+function validatedCapEvidence(marketCap: number) {
+  return {
+    marketCap,
+    marketDataDate: "2026-10-16T15:00:00.000Z",
+    source: "ScreenerRepository.getValidatedAnalysisQuote" as const,
+    unavailableReason: "",
+  };
+}
+
 function rejectedScreenerLookups() {
   return {
     getComparisonMetadata: vi.fn().mockRejectedValue(new Error("offline")),
@@ -126,6 +135,55 @@ describe("StockAnalysisService isolated history refresh", () => {
 });
 
 describe("StockAnalysisService", () => {
+  it("keeps BRAPI market cap out of individual valuation on a fresh quote", async () => {
+    const getValidatedAnalysisQuote = vi.fn().mockResolvedValue(null);
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue({
+          ticker: "PETR4",
+          companyName: "Petrobras",
+          cnpj: "33000167000101",
+          price: 30,
+          marketCap: 300_000_000,
+          changePercent: 1,
+          priceUpdatedAt: new Date().toISOString(),
+          history: [],
+        }),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      {
+        getComparisonMetadata: vi.fn().mockResolvedValue([
+          {
+            ticker: "PETR4",
+            cnpj: "33000167000101",
+            sector: "Petróleo e Gás",
+            subType: "stock",
+            issuerMetadataUpdatedAt: new Date(),
+          },
+        ]),
+        getValidatedAnalysisQuote,
+      },
+    );
+
+    const result = await service.getByTicker("PETR4");
+
+    expect(result.price).toBe(30);
+    expect(result.marketCap).toBeNull();
+    expect(result.indicators.find(({ key }) => key === "pe")).toMatchObject({
+      value: null,
+      valuationSource: null,
+      valuationMethod: null,
+      marketDataDate: null,
+      unavailableReason: expect.stringContaining(
+        "capitalização consolidada entre classes ativas",
+      ),
+    });
+    expect(getValidatedAnalysisQuote).not.toHaveBeenCalled();
+  });
+
   it("returns market data when fundamentals are absent from the cache", async () => {
     const marketProvider = {
       searchTickers: vi.fn().mockResolvedValue([]),
@@ -296,16 +354,24 @@ describe("StockAnalysisService", () => {
       expect.arrayContaining([
         expect.objectContaining({
           key: "pe",
-          value: 5,
-          referenceDate: "2026-06-30",
-          periodBasis: "trailing_twelve_months",
-          marketDataDate: "2026-09-19T15:30:00-03:00",
+          value: null,
+          referenceDate: null,
+          periodBasis: null,
+          marketDataDate: null,
+          valuationSource: null,
+          valuationMethod: null,
+          unavailableReason: expect.stringContaining(
+            "capitalização consolidada entre classes ativas",
+          ),
         }),
         expect.objectContaining({
           key: "pb",
-          value: 240 / 90,
-          referenceDate: "2026-06-30",
-          periodBasis: "point_in_time",
+          value: null,
+          referenceDate: null,
+          periodBasis: null,
+          marketDataDate: null,
+          valuationSource: null,
+          valuationMethod: null,
         }),
       ]),
     );
@@ -376,7 +442,7 @@ describe("StockAnalysisService optional Screener lookups", () => {
       statusCode: 502,
     });
     expect(warn).toHaveBeenCalledWith(
-      "stock_analysis_last_quote_lookup_failed",
+      "stock_analysis_valuation_quote_lookup_failed",
       expect.objectContaining({ ticker: "PETR4" }),
     );
     warn.mockRestore();
@@ -462,6 +528,50 @@ it("calculates only ratios supported by compatible statement periods", () => {
       expect.objectContaining({ key: "pb", value: null }),
     ]),
   );
+});
+
+it("explains unavailable ratios when cap evidence or positive equity is missing", () => {
+  const period = {
+    referenceDate: "2025-12-31",
+    periodStart: "2025-01-01",
+    periodEnd: "2025-12-31",
+    filingReferenceDate: "2026-03-20",
+    exerciseOrder: "last" as const,
+    periodBasis: "annual" as const,
+    periodType: "annual" as const,
+    sourceDocument: "DFP" as const,
+    netIncomeAccount: "3.11",
+    netIncomeConcept: "consolidated_net_income" as const,
+    equityAccount: "2.07",
+    equityConcept: "consolidated_equity" as const,
+    revenue: "100",
+    netIncome: "20",
+    equity: null,
+    assets: null,
+    liabilities: null,
+    cash: null,
+    debt: null,
+  };
+
+  const unavailable = calculateAnalysisIndicators([period], {
+    marketCap: null,
+    marketDataDate: null,
+    source: null,
+    unavailableReason: null,
+  });
+  expect(unavailable.find(({ key }) => key === "pe")?.unavailableReason).toBe(
+    "Indisponível: a metodologia atual não comprova a capitalização consolidada entre classes ativas e eventos societários; o snapshot de preço não basta.",
+  );
+
+  const withCapEvidence = calculateAnalysisIndicators(
+    [period],
+    validatedCapEvidence(200),
+  );
+  expect(withCapEvidence.find(({ key }) => key === "pb")).toMatchObject({
+    value: null,
+    unavailableReason:
+      "Indisponível: as demonstrações financeiras anuais mais recentes não informam patrimônio líquido positivo compatível.",
+  });
 });
 
 it("keeps annual ROE unavailable when either year lacks matching concepts", () => {
@@ -623,7 +733,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
     },
   );
 
-  const indicators = calculateAnalysisIndicators(periods, 240);
+  const indicators = calculateAnalysisIndicators(
+    periods,
+    validatedCapEvidence(240),
+  );
   expect(indicators).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -659,9 +772,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       : period,
   );
   expect(
-    calculateAnalysisIndicators(mismatchedOpeningAccount, 240).find(
-      ({ key }) => key === "roe",
-    ),
+    calculateAnalysisIndicators(
+      mismatchedOpeningAccount,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "roe"),
   ).toMatchObject({
     value: null,
     unavailableReason: expect.stringContaining("lucro LTM encerrado em"),
@@ -674,9 +788,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
     equity: "71",
   };
   expect(
-    calculateAnalysisIndicators([...periods, legacyDuplicateOpening], 240).find(
-      ({ key }) => key === "roe",
-    ),
+    calculateAnalysisIndicators(
+      [...periods, legacyDuplicateOpening],
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "roe"),
   ).toMatchObject({
     value: null,
     unavailableReason: expect.stringContaining("lucro LTM encerrado em"),
@@ -689,9 +804,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
     equity: "91",
   };
   expect(
-    calculateAnalysisIndicators([...periods, duplicateEndingBalance], 240).find(
-      ({ key }) => key === "roe",
-    ),
+    calculateAnalysisIndicators(
+      [...periods, duplicateEndingBalance],
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "roe"),
   ).toMatchObject({
     value: null,
     unavailableReason: expect.stringContaining("lucro LTM encerrado em"),
@@ -706,7 +822,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
   expect(
     calculateAnalysisIndicators(
       [...periods, sameBalanceReportedAsQuarterly],
-      240,
+      validatedCapEvidence(240),
     ).find(({ key }) => key === "roe"),
   ).toMatchObject({ value: 30 });
 
@@ -717,7 +833,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
   expect(
     calculateAnalysisIndicators(
       [...periods, conflictingSameCutoffBalance],
-      240,
+      validatedCapEvidence(240),
     ).find(({ key }) => key === "roe"),
   ).toMatchObject({
     value: null,
@@ -730,9 +846,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       : period,
   );
   expect(
-    calculateAnalysisIndicators(mismatchedIncomeConcept, 240).find(
-      ({ key }) => key === "pe",
-    ),
+    calculateAnalysisIndicators(
+      mismatchedIncomeConcept,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "pe"),
   ).toMatchObject({
     value: null,
     referenceDate: null,
@@ -745,9 +862,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       : period,
   );
   expect(
-    calculateAnalysisIndicators(mismatchedInterimAccount, 240).find(
-      ({ key }) => key === "pe",
-    ),
+    calculateAnalysisIndicators(
+      mismatchedInterimAccount,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "pe"),
   ).toMatchObject({
     value: 12,
     referenceDate: "2025-12-31",
@@ -760,9 +878,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       : period,
   );
   expect(
-    calculateAnalysisIndicators(missingIncomeConcept, 240).find(
-      ({ key }) => key === "pe",
-    ),
+    calculateAnalysisIndicators(
+      missingIncomeConcept,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "pe"),
   ).toMatchObject({
     value: 12,
     referenceDate: "2025-12-31",
@@ -775,9 +894,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       : period,
   );
   expect(
-    calculateAnalysisIndicators(missingAnnualIncomeAccount, 240).find(
-      ({ key }) => key === "pe",
-    ),
+    calculateAnalysisIndicators(
+      missingAnnualIncomeAccount,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "pe"),
   ).toMatchObject({
     value: null,
     unavailableReason: expect.stringContaining(
@@ -792,7 +912,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
         revenue: "invalid amount",
         netIncome: "invalid amount",
       })),
-      240,
+      validatedCapEvidence(240),
     ).find(({ key }) => key === "pe"),
   ).toMatchObject({
     value: null,
@@ -871,9 +991,10 @@ it("reconciles ITUB4 LTM ROE when the same CVM balance is reported twice", () =>
   };
 
   expect(
-    calculateAnalysisIndicators([...periods, quarterlyBalance], 240).find(
-      ({ key }) => key === "roe",
-    ),
+    calculateAnalysisIndicators(
+      [...periods, quarterlyBalance],
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "roe"),
   ).toMatchObject({
     value: expect.closeTo(21.48, 2),
     referenceDate: "2026-06-30",
@@ -882,7 +1003,7 @@ it("reconciles ITUB4 LTM ROE when the same CVM balance is reported twice", () =>
   expect(
     calculateAnalysisIndicators(
       [...periods, { ...quarterlyBalance, equity: "228027000" }],
-      240,
+      validatedCapEvidence(240),
     ).find(({ key }) => key === "roe"),
   ).toMatchObject({ value: null });
 });
@@ -1127,7 +1248,7 @@ it("keeps CSAN3 margin and P/VP when the opening equity needed for ROE is unavai
         equity: null,
       },
     ],
-    1000,
+    validatedCapEvidence(1000),
   );
 
   expect(indicators).toEqual(
@@ -1210,7 +1331,10 @@ it("keeps valid LTM income and ROE when revenue is unavailable", () => {
     },
   ];
 
-  const indicators = calculateAnalysisIndicators(periods, 240);
+  const indicators = calculateAnalysisIndicators(
+    periods,
+    validatedCapEvidence(240),
+  );
   expect(indicators).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -1292,7 +1416,10 @@ it("does not expose bank intermediation income as a comparable net margin", () =
     },
   ];
 
-  const indicators = calculateAnalysisIndicators(periods, 240);
+  const indicators = calculateAnalysisIndicators(
+    periods,
+    validatedCapEvidence(240),
+  );
   expect(indicators.find(({ key }) => key === "pe")).toMatchObject({
     value: 10,
     periodBasis: "trailing_twelve_months",
@@ -1339,7 +1466,7 @@ it("does not derive LTM when the comparative YTD came from another filing", () =
         exerciseOrder: "previous",
       },
     ],
-    200,
+    validatedCapEvidence(200),
   );
   expect(indicators.find(({ key }) => key === "pe")).toMatchObject({
     value: null,
@@ -1404,7 +1531,7 @@ it("uses the annual fallback when flow versions do not align", () => {
         netIncomeVersion: "1",
       },
     ],
-    240,
+    validatedCapEvidence(240),
   );
 
   expect(indicators.find(({ key }) => key === "pe")).toMatchObject({
@@ -1487,7 +1614,10 @@ it("explains unavailable ratios using their active LTM basis", () => {
     },
   ];
 
-  const indicators = calculateAnalysisIndicators(periods, 240);
+  const indicators = calculateAnalysisIndicators(
+    periods,
+    validatedCapEvidence(240),
+  );
   expect(indicators.find(({ key }) => key === "pe")?.unavailableReason).toBe(
     "Indisponível: o lucro líquido positivo não está disponível no LTM encerrado em 2026-06-30.",
   );
@@ -1522,7 +1652,7 @@ it("calculates P/L and P/VP only from market cap and the latest annual DFP", () 
         debt: null,
       },
     ],
-    400,
+    validatedCapEvidence(400),
   );
 
   expect(indicators).toEqual(
@@ -1571,7 +1701,7 @@ it("uses the reported reference date when a legacy balance lacks period metadata
         debt: null,
       },
     ],
-    200,
+    validatedCapEvidence(200),
   );
 
   expect(indicators.find(({ key }) => key === "pb")).toMatchObject({
@@ -1610,14 +1740,15 @@ it("makes P/VP unavailable for conflicting balances at the latest cutoff", () =>
   };
 
   expect(
-    calculateAnalysisIndicators([balance, quarterlyEquivalent], 200).find(
-      ({ key }) => key === "pb",
-    ),
+    calculateAnalysisIndicators(
+      [balance, quarterlyEquivalent],
+      validatedCapEvidence(200),
+    ).find(({ key }) => key === "pb"),
   ).toMatchObject({ value: 2, referenceDate: "2025-06-30" });
   expect(
     calculateAnalysisIndicators(
       [balance, { ...quarterlyEquivalent, equity: "110" }],
-      200,
+      validatedCapEvidence(200),
     ).find(({ key }) => key === "pb"),
   ).toMatchObject({
     value: null,
@@ -1806,6 +1937,7 @@ describe("StockAnalysisService cache and failures", () => {
     await expect(service.getMarketByTicker("PETR4")).resolves.toMatchObject({
       ticker: "PETR4",
       cnpj: "33000167000101",
+      marketCap: null,
       priceUpdatedAt: null,
     });
   });
@@ -1893,11 +2025,21 @@ describe("StockAnalysisService cache and failures", () => {
 
     expect(result).toMatchObject({
       marketDataIdentityVerified: true,
+      marketCapIdentityVerified: false,
       price: 30,
-      marketCap: 300,
+      marketCap: null,
       priceUpdatedAt: observedAt.toISOString(),
     });
     expect(service["marketProvider"].getQuoteByTicker).not.toHaveBeenCalled();
+    expect(result.indicators.find(({ key }) => key === "pe")).toMatchObject({
+      value: null,
+      valuationSource: null,
+      valuationMethod: null,
+      marketDataDate: null,
+      unavailableReason: expect.stringContaining(
+        "capitalização consolidada entre classes ativas",
+      ),
+    });
   });
 
   it("uses the validated provider price but not unreconciled issuer capitalization", async () => {
@@ -2654,7 +2796,7 @@ describe("StockAnalysisService cache and failures", () => {
       ticker: "PETR4",
       cnpj: "33000167000101",
       price: 31.25,
-      marketCap: 300000000000,
+      marketCap: null,
       changePercent: null,
       priceUpdatedAt: observedAt.toISOString(),
       priceIsStale: true,
@@ -2712,7 +2854,7 @@ describe("StockAnalysisService cache and failures", () => {
 
       expect(result).toMatchObject({
         price: 31.25,
-        marketCap: 300000000000,
+        marketCap: null,
         priceUpdatedAt: observedAt.toISOString(),
         priceIsStale: true,
       });
