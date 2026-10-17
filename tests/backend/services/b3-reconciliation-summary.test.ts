@@ -22,7 +22,7 @@ const trade = (id: string, overrides: Record<string, unknown> = {}) => ({
 const movement = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
   direction: "CREDITO",
-  occurredAt: "2026-10-14",
+  occurredAt: "2026-10-16",
   movementType: "Transferência - Liquidação",
   product: "BBSE3",
   assetCode: "BBSE3",
@@ -35,7 +35,7 @@ const movement = (id: string, overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("buildB3ReconciliationSummary", () => {
-  it("returns exact date-compatible candidates, unmatched rows, and uncertain duplicates separately", () => {
+  it("returns D+2 candidates, unmatched rows, and uncertain duplicates separately", () => {
     const summary = buildB3ReconciliationSummary(
       [trade("trade-1"), trade("trade-2", { tradingDate: "2026-10-15" })],
       [movement("movement-1")],
@@ -63,6 +63,70 @@ describe("buildB3ReconciliationSummary", () => {
       ],
       history: { complete: false },
     });
+  });
+
+  it("calculates D+2 across weekends and requires compatible direction", () => {
+    const friday = buildB3ReconciliationSummary(
+      [trade("trade-friday", { tradingDate: "2026-10-16" })],
+      [movement("movement-tuesday", { occurredAt: "2026-10-20" })],
+    );
+    const wrongMonday = buildB3ReconciliationSummary(
+      [trade("trade-friday", { tradingDate: "2026-10-16" })],
+      [movement("movement-monday", { occurredAt: "2026-10-19" })],
+    );
+    const sell = buildB3ReconciliationSummary(
+      [trade("trade-sell", { side: "SELL" })],
+      [movement("movement-credit")],
+    );
+
+    expect(friday.candidates).toMatchObject([
+      { tradeId: "trade-friday", movementId: "movement-tuesday" },
+    ]);
+    expect(wrongMonday.candidates).toEqual([]);
+    expect(sell.candidates).toEqual([]);
+  });
+
+  it("keeps a value discrepancy visible without rejecting a D+2 candidate", () => {
+    const summary = buildB3ReconciliationSummary(
+      [trade("trade-1", { grossValue: "205.00" })],
+      [movement("movement-1", { operationValue: "206.25" })],
+    );
+
+    expect(summary.candidates).toMatchObject([
+      {
+        valueComparison: "different",
+        valueDifferenceCents: "125",
+      },
+    ]);
+  });
+
+  it("marks values as unavailable when either source omits its operation value", () => {
+    const missingTradeValue = buildB3ReconciliationSummary(
+      [trade("trade-no-value", { grossValue: null })],
+      [movement("movement-with-value")],
+    );
+    const missingMovementValue = buildB3ReconciliationSummary(
+      [trade("trade-with-value")],
+      [movement("movement-no-value", { operationValue: null })],
+    );
+
+    expect(missingTradeValue.candidates).toMatchObject([
+      { valueComparison: "unavailable", valueDifferenceCents: null },
+    ]);
+    expect(missingMovementValue.candidates).toMatchObject([
+      { valueComparison: "unavailable", valueDifferenceCents: null },
+    ]);
+  });
+
+  it("does not suggest when dates cannot be calculated and explains the missing calendar", () => {
+    const summary = buildB3ReconciliationSummary(
+      [trade("trade-1", { tradingDate: "2026-10-17" })],
+      [movement("movement-1", { occurredAt: "2026-10-20" })],
+    );
+
+    expect(summary.candidates).toEqual([]);
+    expect(summary.unmatched[0]?.reason).toContain("calend");
+    expect(summary.history.reasons.join(" ")).toContain("feriados");
   });
 
   it("matches quantities and operation values with meaningful fractional precision", () => {
@@ -104,13 +168,9 @@ describe("buildB3ReconciliationSummary", () => {
     { trade: { assetCode: null } },
     { movement: { assetCode: null } },
     { movement: { assetCode: "HGLG11" } },
-    { movement: { institution: null } },
-    { trade: { institution: null } },
     { movement: { institution: "Outra corretora" } },
     { movement: { quantity: "11" } },
-    { trade: { grossValue: null } },
-    { movement: { operationValue: null } },
-    { movement: { operationValue: "206" } },
+    { movement: { direction: "DEBITO" } },
   ])(
     "keeps financially incomplete or mismatched rows unmatched (%j)",
     ({ trade: tradeChanges, movement: movementChanges }) => {

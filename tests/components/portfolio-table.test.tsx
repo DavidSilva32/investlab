@@ -478,11 +478,29 @@ describe("PortfolioTable", () => {
       configurable: true,
       value: vi.fn(),
     });
-    type OriginRow = Row & { source: string };
+    type OriginRow = Row & { source: string; instrumentKind: string };
     const rows: OriginRow[] = [
-      { id: "1", name: "VOO", value: 100, source: "Manual" },
-      { id: "2", name: "CDB", value: 200, source: "B3" },
-      { id: "3", name: "Desconhecido", value: 300, source: "" },
+      {
+        id: "1",
+        name: "VOO",
+        value: 100,
+        source: "Manual",
+        instrumentKind: "ETF",
+      },
+      {
+        id: "2",
+        name: "CDB",
+        value: 200,
+        source: "B3",
+        instrumentKind: "FIXED_INCOME",
+      },
+      {
+        id: "3",
+        name: "Desconhecido",
+        value: 300,
+        source: "B3",
+        instrumentKind: "UNKNOWN",
+      },
     ];
     const originColumns: PortfolioTableColumn<OriginRow>[] = [
       ...columns,
@@ -497,6 +515,19 @@ describe("PortfolioTable", () => {
           { value: "B3", label: "B3" },
         ],
         render: (row) => row.source || "—",
+      },
+      {
+        id: "instrumentKind",
+        label: "Tipo",
+        width: "20%",
+        value: (row) => row.instrumentKind,
+        searchValue: (row) => row.instrumentKind,
+        filterOptions: [
+          { value: "ETF", label: "ETF" },
+          { value: "FIXED_INCOME", label: "Renda fixa" },
+          { value: "UNKNOWN", label: "Tipo não identificado" },
+        ],
+        render: (row) => row.instrumentKind,
       },
     ];
     render(
@@ -541,6 +572,24 @@ describe("PortfolioTable", () => {
     await user.click(screen.getByRole("button", { name: "Filtrar" }));
     expect(screen.getByText("CDB")).toBeTruthy();
     expect(screen.queryByText("VOO")).toBeNull();
+    expect(screen.getByText("Desconhecido")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Tipo" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    await user.click(screen.getByRole("option", { name: "ETF" }));
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.click(screen.getByRole("combobox", { name: "Coluna 2" }));
+    await user.click(screen.getByRole("option", { name: "Origem" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 2" }));
+    await user.click(screen.getByRole("option", { name: "Manual" }));
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("VOO")).toBeTruthy();
+    expect(screen.queryByText("CDB")).toBeNull();
     expect(screen.queryByText("Desconhecido")).toBeNull();
   });
 

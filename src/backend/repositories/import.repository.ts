@@ -26,6 +26,7 @@ import type { ParsedB3Trade } from "@/backend/services/b3-trading-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
 import type { MonthlyPortfolioSnapshot } from "@/backend/services/monthly-portfolio-review";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import { classifyInstrumentKind } from "@/lib/instrument-kind";
 import {
   activeReconciliationLinks,
   getReconciliationCandidates,
@@ -915,8 +916,17 @@ export class ImportRepository {
       const ruleByVersion = new Map(rules.map((rule) => [rule.version, rule]));
       return positions.map((position) => {
         const fact = factByPositionId.get(position.id);
+        const classifiedInstrumentKind = classifyInstrumentKind({
+          product: position.product,
+          sourceType: position.sourceType,
+          sourceSheet: position.sourceSheet,
+        });
         return {
           ...position,
+          instrumentKind:
+            classifiedInstrumentKind === "UNKNOWN"
+              ? position.instrumentKind
+              : classifiedInstrumentKind,
           [sourceSnapshotIdKey]: snapshot.id,
           referenceDate,
           estimationBaseDate,

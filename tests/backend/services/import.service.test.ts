@@ -200,7 +200,7 @@ describe("ImportService", () => {
       {
         id: "movement-1",
         direction: "CREDITO",
-        occurredAt: "2026-10-14",
+        occurredAt: "2026-10-16",
         movementType: "Transferência - Liquidação",
         assetCode: "BBSE3",
         institution: "Corretora",
@@ -362,7 +362,7 @@ describe("ImportService persistence", () => {
       {
         id: "22222222-2222-4222-8222-222222222222",
         direction: "CREDITO",
-        occurredAt: "2026-10-14",
+        occurredAt: "2026-10-16",
         movementType: "Transferência - Liquidação",
         assetCode: "BBSE3",
         institution: "Corretora",
@@ -428,7 +428,7 @@ describe("ImportService persistence", () => {
         {
           id: currentMovementId,
           direction: "CREDITO",
-          occurredAt: "2026-10-14",
+          occurredAt: "2026-10-16",
           movementType: "Transferência - Liquidação",
           assetCode: "ABCD3",
           institution: "Corretora",
@@ -440,7 +440,7 @@ describe("ImportService persistence", () => {
               {
                 id: otherMovementId,
                 direction: "CREDITO",
-                occurredAt: "2026-10-14",
+                occurredAt: "2026-10-16",
                 movementType: "Transferência - Liquidação",
                 assetCode: "ABCD3",
                 institution: "Corretora",
@@ -854,7 +854,7 @@ describe("reconciliation import decisions", () => {
       {
         id: movementId,
         direction: "CREDITO",
-        occurredAt: "2026-10-14",
+        occurredAt: "2026-10-16",
         movementType: "Transferência - Liquidação",
         assetCode: "WXYZ4",
         institution: "Corretora",

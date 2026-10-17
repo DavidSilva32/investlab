@@ -1,6 +1,10 @@
 ﻿import * as XLSX from "xlsx";
 
 import { ApplicationError } from "@/backend/errors/application-error";
+import {
+  classifyInstrumentKind,
+  type InstrumentKind,
+} from "@/lib/instrument-kind";
 
 export type ParsedB3PositionDocument = {
   positions: ParsedB3Position[];
@@ -8,8 +12,7 @@ export type ParsedB3PositionDocument = {
 export type ParsedB3Position = {
   sourceSheet: string;
   sourceRow: number;
-  instrumentKind:
-    "EQUITY" | "FII" | "FIXED_INCOME" | "INVESTMENT_FUND" | "UNKNOWN";
+  instrumentKind: InstrumentKind;
   product: string;
   institution: string | null;
   account: string | null;
@@ -78,20 +81,6 @@ const normalizeAssetCode = (value: string | null) => {
   return normalized.match(/^([A-Z]{4}\d{1,2})F$/)?.[1] ?? normalized;
 };
 
-const instrumentKindForSheet = (
-  sheetName: string,
-  sourceType: string | null,
-): ParsedB3Position["instrumentKind"] => {
-  const normalizedSheet = normalizeHeader(sheetName);
-  const normalizedType = normalizeHeader(sourceType ?? "");
-  if (/renda fixa/.test(normalizedSheet)) return "FIXED_INCOME";
-  if (/acoes/.test(normalizedSheet)) return "EQUITY";
-  if (/^(fii|fundo imobiliario)$/.test(normalizedType)) return "FII";
-  if (normalizedType || /fundo de investimento/.test(normalizedSheet))
-    return "INVESTMENT_FUND";
-  return "UNKNOWN";
-};
-
 type Valuation = {
   source: ParsedB3Position["valuationSource"];
   unitPrice: string | null;
@@ -99,9 +88,8 @@ type Valuation = {
 };
 
 const selectValuation = (valuations: Valuation[]) =>
-  valuations.find(
-    (valuation) => valuation.unitPrice || valuation.totalValue,
-  ) ?? {
+  valuations.find((valuation) => valuation.totalValue) ??
+  valuations.find((valuation) => valuation.unitPrice) ?? {
     source: null,
     unitPrice: null,
     totalValue: null,
@@ -176,10 +164,11 @@ function parseB3PositionXlsx(file: Buffer): ParsedB3PositionDocument {
         {
           sourceSheet: sheetName,
           sourceRow: headerRowIndex + rowIndex + 2,
-          instrumentKind: instrumentKindForSheet(
-            sheetName,
-            text(value(row, ["tipo"])),
-          ),
+          instrumentKind: classifyInstrumentKind({
+            sourceSheet: sheetName,
+            sourceType: text(value(row, ["tipo"])),
+            product,
+          }),
           product,
           institution: text(value(row, ["instituicao"])),
           account: text(value(row, ["conta", "conta investimento"])),

@@ -73,6 +73,7 @@ describe("ManualPortfolioPositionService", () => {
       undefined,
     );
     expect(result.source).toBe("MANUAL");
+    expect(result.instrumentKind).toBe("ETF");
     expect(result.totalValue).toBeNull();
     expect(result.reportedTotalValue).toBe("200.00000000");
     expect(result.assetKey).toMatch(/^manual:/);
@@ -100,6 +101,7 @@ describe("ManualPortfolioPositionService", () => {
     );
     expect(result.informationalCdiPercentage).toBe("112.5000");
     expect(result.estimatedValue).toBeNull();
+    expect(result.instrumentKind).toBe("FIXED_INCOME");
   });
 
   it("rejects an informative CDI percentage on a non-CDB position", async () => {

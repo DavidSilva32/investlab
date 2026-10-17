@@ -1441,6 +1441,46 @@ describe("import repository", () => {
       ],
     );
   });
+  it("corrects persisted instrument kinds from preserved B3 evidence on read", async () => {
+    const persisted = [
+      {
+        product: "XP Malls Fundo de Investimento Imobiliário - FII",
+        sourceSheet: "Fundos de Investimento",
+        sourceType: "Cotas",
+        instrumentKind: "INVESTMENT_FUND",
+      },
+      {
+        product: "Pátria Log - FDO INV IMOB - Responsabilidade Ltda.",
+        sourceSheet: "Fundos de Investimento",
+        sourceType: "Cotas",
+        instrumentKind: "INVESTMENT_FUND",
+      },
+      {
+        product: "ITAU UNIBANCO HOLDING S.A.",
+        sourceSheet: "Ações",
+        sourceType: "PN",
+        instrumentKind: "EQUITY",
+      },
+      {
+        product: "CDB - Banco Exemplo",
+        sourceSheet: "Renda Fixa",
+        sourceType: "CDB",
+        instrumentKind: "FIXED_INCOME",
+      },
+    ];
+    mocks.client.select
+      .mockReturnValueOnce(chain([{ id: "snapshot-1" }]))
+      .mockReturnValueOnce(chain(persisted));
+
+    await expect(importRepository.listLatestPositions()).resolves.toMatchObject(
+      [
+        { instrumentKind: "FII" },
+        { instrumentKind: "FII" },
+        { instrumentKind: "EQUITY" },
+        { instrumentKind: "FIXED_INCOME" },
+      ],
+    );
+  });
   it("returns the latest position fact with its versioned general rule", async () => {
     const position = { id: "position-1", product: "Tesouro Selic 2029" };
     const fact = {

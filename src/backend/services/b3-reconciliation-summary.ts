@@ -1,3 +1,5 @@
+import { decimalToCents } from "@/lib/portfolio-money";
+
 type TradingRecord = {
   id: string;
   importId: string;
@@ -49,6 +51,46 @@ const decimal = (value: string) => {
     : normalizedInteger;
 };
 
+function expectedSettlementDate(tradingDate: string) {
+  const date = new Date(`${tradingDate}T00:00:00Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(tradingDate) ||
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== tradingDate ||
+    date.getUTCDay() === 0 ||
+    date.getUTCDay() === 6
+  )
+    return null;
+
+  let businessDays = 0;
+  while (businessDays < 2) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const weekday = date.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) businessDays += 1;
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function valueComparison(
+  tradeValue: string | null,
+  movementValue: string | null,
+) {
+  const tradeCents = decimalToCents(tradeValue);
+  const movementCents = decimalToCents(movementValue);
+  if (tradeCents === null || movementCents === null) {
+    return {
+      valueDifferenceCents: null,
+      valueComparison: "unavailable" as const,
+    };
+  }
+  const difference = movementCents - tradeCents;
+  return {
+    valueDifferenceCents: difference.toString(),
+    valueComparison:
+      difference === 0n ? ("equal" as const) : ("different" as const),
+  };
+}
+
 const pairDetails = (trade: TradingRecord, movement: MovementRecord) => ({
   tradeId: trade.id,
   movementId: movement.id,
@@ -77,6 +119,7 @@ const pairDetails = (trade: TradingRecord, movement: MovementRecord) => ({
     unitPrice: movement.unitPrice,
     value: movement.operationValue,
   },
+  ...valueComparison(trade.grossValue, movement.operationValue),
 });
 
 export function buildB3ReconciliationSummary(
@@ -168,20 +211,34 @@ export function buildB3ReconciliationSummary(
     reason: string;
   }> = [];
   const possibleByTrade = new Map<string, MovementRecord[]>();
+  const dateMismatchByTrade = new Set<string>();
   for (const trade of trades) {
-    const compatible = movements.filter((movement) => {
+    const settlementDate = expectedSettlementDate(trade.tradingDate);
+    const sameOperation = (movement: MovementRecord) => {
       if (!trade.assetCode || !movement.assetCode) return false;
       if (normalized(trade.assetCode) !== normalized(movement.assetCode))
         return false;
-      if (trade.tradingDate !== movement.occurredAt) return false;
-      if (!trade.institution || !movement.institution) return false;
-      if (normalized(trade.institution) !== normalized(movement.institution))
+      const expectedDirection = trade.side === "BUY" ? "CREDITO" : "DEBITO";
+      if (normalized(expectedDirection) !== normalized(movement.direction))
+        return false;
+      if (
+        trade.institution &&
+        movement.institution &&
+        normalized(trade.institution) !== normalized(movement.institution)
+      )
         return false;
       if (decimal(trade.quantity) !== decimal(movement.quantity)) return false;
-      if (!trade.grossValue || !movement.operationValue) return false;
-      if (decimal(trade.grossValue) !== decimal(movement.operationValue))
-        return false;
       return normalized(movement.movementType).includes("LIQUIDACAO");
+    };
+    if (!settlementDate && movements.some(sameOperation))
+      dateMismatchByTrade.add(trade.id);
+    const compatible = movements.filter((movement) => {
+      if (!sameOperation(movement)) return false;
+      if (!settlementDate || movement.occurredAt !== settlementDate) {
+        dateMismatchByTrade.add(trade.id);
+        return false;
+      }
+      return true;
     });
     for (const movement of compatible) {
       const decision = latestDecisionByPair.get(
@@ -251,8 +308,9 @@ export function buildB3ReconciliationSummary(
           unitPrice: trade.unitPrice,
           value: trade.grossValue,
         },
-        reason:
-          "Nenhuma liquidação com data e dados financeiros compatíveis foi encontrada.",
+        reason: dateMismatchByTrade.has(trade.id)
+          ? "A data não coincide com D+2 em dias úteis. Sem calendário oficial de feriados da B3, não é possível sugerir este vínculo com segurança."
+          : "Nenhuma liquidação com código, direção, quantidade e data D+2 compatíveis foi encontrada.",
       });
     }
   }
@@ -270,6 +328,7 @@ export function buildB3ReconciliationSummary(
       reasons: [
         "O período importado não comprova o histórico completo de negociações.",
         "Vínculos entre negociação e movimentação são candidatos e exigem confirmação.",
+        "D+2 considera fins de semana; feriados e suspensões de pregão exigem revisão porque o calendário oficial da B3 não está integrado.",
       ],
     },
   };

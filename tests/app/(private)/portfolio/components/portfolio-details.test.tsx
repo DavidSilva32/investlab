@@ -290,12 +290,45 @@ describe("portfolio detail components", () => {
             assetCode: "FUND11",
             instrumentKind: "FII",
           },
+          {
+            ...position,
+            id: "xpml11",
+            product: "XP Malls Fundo de Investimento Imobiliário - FII",
+            assetCode: "XPML11",
+            instrumentKind: "FII",
+            sourceType: "Cotas",
+          },
+          {
+            ...position,
+            id: "hglg11",
+            product: "Pátria Log - FDO INV IMOB",
+            assetCode: "HGLG11",
+            instrumentKind: "FII",
+            sourceType: "Cotas",
+          },
+          {
+            ...position,
+            id: "voo",
+            source: "MANUAL",
+            product: "Vanguard S&P 500 ETF",
+            assetCode: "VOO",
+            instrumentKind: "ETF",
+          },
+          {
+            ...position,
+            id: "cdb",
+            product: "CDB - Banco Exemplo",
+            instrumentKind: "FIXED_INCOME",
+          },
         ]}
       />,
     );
 
     expect(html).toContain(">Ação</div>");
+    expect(html).toContain(">Tipo</span>");
     expect(html).toContain(">FII</div>");
+    expect(html).toContain(">ETF</div>");
+    expect(html).toContain(">Renda fixa</div>");
     expect(html).toContain("Tipo informado pela B3: ON");
     expect(html).toContain("Código recebido: ABCD3F");
   });

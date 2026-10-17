@@ -411,6 +411,8 @@ describe("PortfolioImport", () => {
       "Arquivo importado com sucesso.",
     );
     expect(screen.queryByText("ETF")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Import");
+    expect(screen.queryByText(/pr?via aparecer/i)).toBeNull();
     window.removeEventListener("portfolio:updated", portfolioUpdated);
   });
 
@@ -816,14 +818,18 @@ describe("PortfolioImport", () => {
     expect(within(table).getAllByText("Compra")).toHaveLength(2);
     expect(within(table).getAllByText("Venda")).toHaveLength(2);
     expect(within(table).getAllByText(/Original: ABCD3F/)).toHaveLength(2);
-    expect(screen.getByText(/Histórico parcial/)).toBeTruthy();
-    expect(screen.getByText(/1 grupo\(s\) contém linhas/)).toBeTruthy();
+    expect(screen.getByText(/Hist.*parcial/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Detalhes do hist/ }));
     expect(
-      screen.getByText(/Linhas 7, 8: 3 ocorrência\(s\), 1 já importada\(s\)/),
+      screen.getByText(/1 grupo.*linhas possivelmente repetidas/),
     ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Ver linhas para revisar/ }),
+    );
+    expect(screen.getByText(/Linhas 7, 8: 3 ocorr.*1 j.*import/)).toBeTruthy();
     expect(screen.queryByText("must-not-render")).toBeNull();
     expect(
-      screen.getByText(/vínculo continuará pendente de revisão/),
+      screen.getByText(/v.*culo continuar.*pendente de revis.*o/),
     ).toBeTruthy();
   });
 

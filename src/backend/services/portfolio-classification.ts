@@ -13,6 +13,7 @@ type ClassifiableAsset = {
   institution: string | null;
   indexer: string | null;
   regimeType: string | null;
+  instrumentKind?: string | null;
 };
 
 const normalize = (value: string | null | undefined) =>
@@ -45,7 +46,12 @@ export function inferPortfolioAssetClassification(
   const product = normalize(asset.product);
   const indexer = normalize(asset.indexer);
 
-  if (/\b(fiis?|fundos? imobiliarios?)\b/.test(product)) {
+  if (
+    asset.instrumentKind === "FII" ||
+    /\b(fiis?|fundos? imobiliarios?)\b/.test(product) ||
+    /\bfdo\.?\s+inv\.?\s+imob\b/.test(product) ||
+    /\bfdo\.?\s+imob\b/.test(product)
+  ) {
     return {
       assetClass: "Renda variável",
       subClass: asset.product.trim(),

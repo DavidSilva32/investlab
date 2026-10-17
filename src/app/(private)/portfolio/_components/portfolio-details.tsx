@@ -78,6 +78,7 @@ const instrumentKindLabel: Record<
 > = {
   EQUITY: "Ação",
   FII: "FII",
+  ETF: "ETF",
   FIXED_INCOME: "Renda fixa",
   INVESTMENT_FUND: "Fundo de investimento",
   UNKNOWN: "Tipo não identificado",
@@ -106,11 +107,6 @@ const positionColumns = (
         <AssetLogo ticker={row.assetCode} name={row.product} size="sm" />
         <div className="min-w-0">
           <span className="font-medium">{row.product}</span>
-          {row.instrumentKind && (
-            <Badge variant="outline" className="ml-2 align-middle text-xs">
-              {instrumentKindLabel[row.instrumentKind]}
-            </Badge>
-          )}
           {row.sourceType && (
             <span className="block text-xs text-muted-foreground">
               Tipo informado pela B3: {row.sourceType}
@@ -130,6 +126,21 @@ const positionColumns = (
             )}
         </div>
       </div>
+    ),
+  },
+  {
+    id: "instrumentKind",
+    label: "Tipo",
+    width: "9%",
+    value: (row) => row.instrumentKind ?? "UNKNOWN",
+    searchValue: (row) => row.instrumentKind ?? "UNKNOWN",
+    filterOptions: Object.entries(instrumentKindLabel).map(
+      ([value, label]) => ({ value, label }),
+    ),
+    render: (row) => (
+      <Badge variant="outline">
+        {instrumentKindLabel[row.instrumentKind ?? "UNKNOWN"]}
+      </Badge>
     ),
   },
   {

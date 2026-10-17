@@ -8,6 +8,7 @@ import {
 } from "@/backend/repositories/manual-portfolio-position.repository";
 import { portfolioClassificationRepository } from "@/backend/repositories/portfolio-classification.repository";
 import { logger } from "@/infrastructure/logging/logger";
+import { classifyInstrumentKind } from "@/lib/instrument-kind";
 import {
   portfolioAssetClassOptions,
   portfolioAssetGeographyOptions,
@@ -145,6 +146,7 @@ export function toPortfolioPosition(
     assetKey: record.assetKey,
     source: "MANUAL" as const,
     product: record.product,
+    instrumentKind: classifyInstrumentKind({ product: record.product }),
     assetCode: record.assetCode,
     institution: record.institution,
     issuer: null,

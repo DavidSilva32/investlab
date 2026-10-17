@@ -177,6 +177,35 @@ describe("TradingReconciliationReview", () => {
     ).toBeTruthy();
   });
 
+  it("shows value discrepancies and unavailable comparisons without blocking review", () => {
+    const discrepancy = {
+      ...pair("movement-different-value"),
+      valueDifferenceCents: "125",
+      valueComparison: "different" as const,
+    };
+    const unavailable = {
+      ...pair("movement-missing-value"),
+      valueDifferenceCents: null,
+      valueComparison: "unavailable" as const,
+    };
+    const negativeDifference = {
+      ...pair("movement-negative-difference"),
+      valueDifferenceCents: "-225",
+      valueComparison: "different" as const,
+    };
+
+    render(
+      <TradingReconciliationReview
+        summary={summary([discrepancy, unavailable, negativeDifference])}
+        onSummaryChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Valores diferem em R\$ 1,25/)).toBeTruthy();
+    expect(screen.getByText(/Valores diferem em R\$ 2,25/)).toBeTruthy();
+    expect(screen.getByText("Valores não comparáveis")).toBeTruthy();
+  });
+
   it("uses product fallbacks for sales whose optional market values are absent", () => {
     const sparsePair: ReconciliationPair = {
       ...pair("movement-sparse"),
