@@ -273,24 +273,27 @@ describe("parseB3TradingXlsx", () => {
     ).toThrow(ApplicationError);
   });
 
-  it("rejects calendar-invalid trading dates", () => {
-    expect(() =>
-      parseB3TradingXlsx(
-        workbookBuffer([
-          headers,
-          [
-            "31/02/2026",
-            "Compra",
-            "Vista",
-            "-",
-            "Corretora",
-            "ABCD3",
-            2,
-            10,
-            20,
-          ],
-        ]),
-      ),
-    ).toThrow(ApplicationError);
-  });
+  it.each(["31/02/2026", "31/99/2026"])(
+    "rejects calendar-invalid trading date %s",
+    (tradingDate) => {
+      expect(() =>
+        parseB3TradingXlsx(
+          workbookBuffer([
+            headers,
+            [
+              tradingDate,
+              "Compra",
+              "Vista",
+              "-",
+              "Corretora",
+              "ABCD3",
+              2,
+              10,
+              20,
+            ],
+          ]),
+        ),
+      ).toThrow(ApplicationError);
+    },
+  );
 });

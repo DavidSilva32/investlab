@@ -61,6 +61,7 @@ const date = (value: unknown) => {
   const [, day, month, year] = match;
   const isoDate = `${year}-${month}-${day}`;
   const parsedDate = new Date(`${isoDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsedDate.getTime())) return null;
   return parsedDate.toISOString().slice(0, 10) === isoDate ? isoDate : null;
 };
 
