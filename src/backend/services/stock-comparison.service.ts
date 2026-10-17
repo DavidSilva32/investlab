@@ -130,6 +130,12 @@ function supportsFinancialMetric(
   metric: "roe" | "netMargin",
   indicator: AnalysisIndicator | undefined,
 ) {
+  if (candidate.analysis?.fundamentalsIsStale)
+    return {
+      flow: undefined,
+      reason:
+        "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
+    };
   const flow = getFlow(candidate, indicator);
   if (
     !indicator ||
@@ -357,7 +363,7 @@ function buildFundamentalCells(
     return validPairs.map(({ indicator }) =>
       unavailable("As métricas usam períodos ou datas-base incompatíveis.", {
         referenceDate: indicator.referenceDate,
-        periodBasis: indicator.periodBasis,
+        periodBasis: indicator.periodBasis!,
         sourceDocument: indicator.sourceDocument,
       }),
     );
@@ -426,11 +432,49 @@ function buildFundamentalCells(
 }
 
 function buildValuationCells(candidates: Candidate[], metric: "pe" | "pb") {
-  return candidates.map((candidate) => {
+  const cells = candidates.map((candidate) => {
     const indicator = getIndicator(candidate, metric);
+    if (candidate.analysis?.fundamentalsIsStale)
+      return unavailable(
+        "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
+        {
+          referenceDate: indicator?.referenceDate ?? null,
+          periodBasis: indicator?.periodBasis ?? null,
+          sourceDocument: indicator?.sourceDocument ?? null,
+          marketDataDate: indicator?.marketDataDate ?? null,
+        },
+      );
+    if (
+      candidate.identityVerified &&
+      candidate.analysis?.marketDataIdentityVerified === true &&
+      indicator?.value !== null &&
+      indicator?.value !== undefined &&
+      Number.isFinite(indicator.value) &&
+      indicator.marketDataDate &&
+      indicator.referenceDate &&
+      indicator.sourceDocument &&
+      (metric === "pe"
+        ? indicator.periodBasis === "annual" ||
+          indicator.periodBasis === "trailing_twelve_months"
+        : indicator.periodBasis === "point_in_time")
+    )
+      return {
+        value: indicator.value,
+        referenceDate: indicator.referenceDate,
+        periodStart: null,
+        periodBasis: indicator.periodBasis!,
+        sourceDocument: indicator.sourceDocument,
+        sourceSummary: `Cotação validada em ${indicator.marketDataDate} · CVM ${indicator.sourceDocument} com data-base ${indicator.referenceDate}`,
+        marketDataDate: indicator.marketDataDate,
+        accountProvenance: null,
+        unavailableReason: null,
+      } satisfies MetricCell;
     return unavailable(
       metricBaseReason(candidate) ??
-        "Data-base de mercado e classe da ação sem reconciliação.",
+        (candidate.analysis?.marketDataIdentityVerified !== true
+          ? "Data-base de mercado e classe da ação sem reconciliação."
+          : (indicator?.unavailableReason ??
+            "A fonte não disponibilizou a métrica.")),
       {
         referenceDate: indicator?.referenceDate ?? null,
         periodBasis: indicator?.periodBasis ?? null,
@@ -439,6 +483,27 @@ function buildValuationCells(candidates: Candidate[], metric: "pe" | "pb") {
       },
     );
   });
+  const available = cells.filter((cell) => cell.value !== null);
+  const bases = available.map(
+    (cell) =>
+      `${cell.periodBasis}|${cell.referenceDate}|${cell.sourceDocument}`,
+  );
+  if (available.length > 1 && new Set(bases).size > 1)
+    return cells.map((cell) =>
+      cell.value === null
+        ? cell
+        : unavailable(
+            "Os indicadores usam bases ou datas CVM diferentes; não são comparáveis.",
+            {
+              referenceDate: cell.referenceDate,
+              periodBasis: cell.periodBasis,
+              sourceDocument: cell.sourceDocument,
+              sourceSummary: cell.sourceSummary,
+              marketDataDate: cell.marketDataDate,
+            },
+          ),
+    );
+  return cells;
 }
 
 function compareCandidates(candidates: Candidate[]) {

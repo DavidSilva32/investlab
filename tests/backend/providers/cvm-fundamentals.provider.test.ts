@@ -599,6 +599,43 @@ describe("CvmFundamentalsProvider", () => {
     expect(requestedUrls.filter((url) => url === priorItrUrl)).toHaveLength(1);
   });
 
+  it("starts independent historical ITR reads concurrently after annual and current ITR resolve", async () => {
+    const year = new Date().getUTCFullYear();
+    const provider = new CvmFundamentalsProvider(
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(issuerCsv(["33.000.167/0001-01;9512;PETROBRAS;ATIVO"])),
+        ),
+    );
+    const readDocument = vi.spyOn(
+      provider as unknown as {
+        readDocument: (...args: unknown[]) => Promise<FundamentalPeriod[]>;
+      },
+      "readDocument",
+    );
+    const historyResolvers: Array<(value: FundamentalPeriod[]) => void> = [];
+    readDocument.mockImplementation((async (
+      document: string,
+      archiveYear: number,
+    ) => {
+      if (document === "ITR" && archiveYear < year - 1)
+        return await new Promise<FundamentalPeriod[]>((resolve) =>
+          historyResolvers.push(resolve),
+        );
+      return [];
+    }) as never);
+
+    const result = provider.getByTicker({
+      ticker: "PETR4",
+      cnpj: "33.000.167/0001-01",
+    });
+    await vi.waitFor(() => expect(historyResolvers).toHaveLength(3));
+    historyResolvers.forEach((resolve) => resolve([]));
+
+    await expect(result).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("normalizes issuer data and streamed DFP and ITR accounts, preferring the latest version", async () => {
     const year = new Date().getUTCFullYear();
     const dfpRows = [

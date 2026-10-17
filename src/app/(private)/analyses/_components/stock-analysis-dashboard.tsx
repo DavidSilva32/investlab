@@ -222,6 +222,43 @@ export function StockAnalysisDashboard({
       return data;
     },
   });
+  const marketQuery = useQuery({
+    queryKey: ["analyses", "stock-market", selectedTicker.toUpperCase()],
+    enabled: false,
+    queryFn: async () => {
+      const { data } = await apiRequestWithResponse<
+        Pick<
+          StockAnalysis,
+          | "ticker"
+          | "cnpj"
+          | "companyName"
+          | "logoUrl"
+          | "price"
+          | "priceUpdatedAt"
+          | "changePercent"
+        >
+      >(
+        `/api/analyses/stocks/${encodeURIComponent(selectedTicker)}/market`,
+        undefined,
+        "Não foi possível consultar a cotação agora.",
+      );
+      return data;
+    },
+  });
+  const refetchMarket = marketQuery.refetch;
+  useEffect(() => {
+    if (!selectedTicker || !analysisQuery.isPending || analysisQuery.data)
+      return;
+    const timer = window.setTimeout(() => {
+      void refetchMarket();
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [
+    analysisQuery.data,
+    analysisQuery.isPending,
+    refetchMarket,
+    selectedTicker,
+  ]);
   const historyRetryQuery = useQuery({
     queryKey: queryKeys.analyses.stockHistory(selectedTicker.toUpperCase()),
     enabled: false,
@@ -238,13 +275,28 @@ export function StockAnalysisDashboard({
       ),
   });
   const refetchHistory = historyRetryQuery.refetch;
-  const analysis = selectedTicker ? (analysisQuery.data ?? null) : null;
+  const analysis = useMemo(
+    () =>
+      selectedTicker
+        ? (analysisQuery.data ??
+          (marketQuery.data
+            ? {
+                ...marketQuery.data,
+                history: [],
+                fundamentals: [],
+                indicators: [],
+              }
+            : null))
+        : null,
+    [analysisQuery.data, marketQuery.data, selectedTicker],
+  );
   const error =
     !analysis && analysisQuery.error instanceof Error
       ? analysisQuery.error.message
       : null;
   const showErrorInline = notifiedTicker !== selectedTicker;
-  const loading = Boolean(selectedTicker) && analysisQuery.isPending;
+  const loading =
+    Boolean(selectedTicker) && analysisQuery.isPending && !marketQuery.data;
   const retryAfter =
     analysisQuery.error instanceof ApiError &&
     analysisQuery.error.status === 429
@@ -575,6 +627,11 @@ export function StockAnalysisDashboard({
   return (
     <div className="space-y-4">
       {search}
+      {!analysisQuery.data && analysisQuery.isPending && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Cotação carregada; consultando demonstrativos da CVM.
+        </p>
+      )}
       <Card className="motion-content-reveal">
         <CardContent className="flex flex-wrap items-center gap-4 py-4 sm:flex-nowrap sm:gap-5">
           <AssetLogo
@@ -671,178 +728,209 @@ export function StockAnalysisDashboard({
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>Cotação histórica</CardTitle>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={`Variação do preço no período · ${selectedIntervalLabel}`}
-                    className={`mt-1 rounded-sm text-sm font-semibold tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${priceChangeTone}`}
-                  >
-                    {priceChange === null
-                      ? "Indisponível"
-                      : pricePercent.format(priceChange)}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="motion-reduce:animate-none">
-                  Variação do preço no período · {selectedIntervalLabel}. Não
-                  inclui dividendos.
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          {intervals.length > 0 && (
-            <div
-              className="flex flex-wrap gap-2 sm:justify-end"
-              role="group"
-              aria-label="Intervalo do histórico"
-            >
-              {intervals.map((interval) => (
-                <Button
-                  key={interval.days}
-                  type="button"
-                  size="sm"
-                  variant={interval.days === days ? "default" : "outline"}
-                  aria-pressed={interval.days === days}
-                  onClick={() => setDays(interval.days)}
-                >
-                  {interval.label}
-                </Button>
-              ))}
-            </div>
-          )}
-        </CardHeader>
-        <CardContent>
-          <PriceHistoryChart
-            points={points}
-            status={
-              historyRetryQuery.data?.historyStatus ??
-              analysis.historyStatus ??
-              "unavailable"
-            }
-            failure={historyFailure}
-            retrying={historyRetryQuery.isFetching}
-            retryError={historyRetryQuery.error instanceof Error}
-            retryAfterSeconds={historyRetryRemaining}
-            onRetry={retryHistoryManually}
-          />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="space-y-5 py-5">
-          <StockCriteriaSummary analysis={analysis} />
-          <div className="border-t pt-4">
-            <h3 className="mb-3 text-sm font-medium">O que os dados mostram</h3>
-            <StockAnalysisReading periods={annual} />
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Como os números mudaram nos últimos cinco anos</CardTitle>
-          <CardDescription>
-            Receita, lucro e patrimônio da empresa em cada ano disponível.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <FundamentalsEvolution periods={analysis.fundamentals} />
-        </CardContent>
-      </Card>
-      <Collapsible>
+      {!analysisQuery.data ? (
         <Card>
-          <CardHeader className="pb-3">
-            <div>
-              <h2 className="font-semibold leading-none tracking-tight">
-                <CollapsibleTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-auto justify-between gap-3 p-0 text-left hover:bg-transparent"
-                  >
-                    <span>Ver dados detalhados</span>
-                    <ChevronDown
-                      className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]_&]:rotate-180"
-                      aria-hidden="true"
-                    />
-                  </Button>
-                </CollapsibleTrigger>
-              </h2>
-              <CardDescription className="mt-1">
-                Resultados por período, origem dos dados e como os números são
-                calculados.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="space-y-6 pt-0">
-              <section
-                aria-labelledby="analysis-data-origin-title"
-                className="space-y-2 rounded-lg bg-muted/40 p-4 text-sm"
+          <CardContent className="py-5 text-sm text-muted-foreground">
+            {analysisQuery.error
+              ? "Os fundamentos da CVM não foram carregados. A cotação acima continua disponível."
+              : "Consultando demonstrativos da CVM; indicadores e histórico serão exibidos quando a análise terminar."}
+            {analysisQuery.error && (
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-3"
+                onClick={() => void analysisQuery.refetch()}
               >
-                <h3 id="analysis-data-origin-title" className="font-medium">
-                  De onde vêm estes dados
-                </h3>
-                <p className="text-muted-foreground">
-                  Os dados financeiros vêm de relatórios públicos das empresas,
-                  consultados na Comissão de Valores Mobiliários. As cotações
-                  vêm de uma fonte de dados do mercado. As datas mostram a que
-                  período cada valor se refere.
-                </p>
-                <p className="text-muted-foreground">
-                  A variação do preço não inclui dividendos e não representa o
-                  retorno total do investimento. Valores ausentes não são
-                  tratados como zero.
-                </p>
-              </section>
-              <section
-                aria-labelledby="annual-evidence-title"
-                className="space-y-3"
-              >
-                <h3 id="annual-evidence-title" className="font-medium">
-                  Resultados anuais
-                </h3>
-                <FundamentalsGrid periods={annual} type="DFP" />
-              </section>
-              <section
-                aria-labelledby="interim-evidence-title"
-                className="space-y-3"
-              >
-                <div>
-                  <h3 id="interim-evidence-title" className="font-medium">
-                    Atualizações durante o ano
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Mostra o total desde o começo do ano até a data indicada.
-                    Para comparar anos completos, use os resultados anuais.
-                  </p>
-                </div>
-                <FundamentalsGrid periods={interim} type="ITR" />
-              </section>
-              {discreteQuarters.length > 0 && (
-                <section
-                  aria-labelledby="quarterly-evidence-title"
-                  className="space-y-3"
-                >
-                  <div>
-                    <h3 id="quarterly-evidence-title" className="font-medium">
-                      Resultados de cada trimestre
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Cada valor considera somente o trimestre indicado. Os
-                      valores acumulados no ano aparecem na seção anterior.
-                    </p>
-                  </div>
-                  <FundamentalsGrid periods={discreteQuarters} type="ITR" />
-                </section>
-              )}
-            </CardContent>
-          </CollapsibleContent>
+                <RefreshCw className="size-4" aria-hidden="true" />
+                Tentar novamente
+              </Button>
+            )}
+          </CardContent>
         </Card>
-      </Collapsible>
+      ) : (
+        <>
+          <Card>
+            <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle>Cotação histórica</CardTitle>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`Variação do preço no período · ${selectedIntervalLabel}`}
+                        className={`mt-1 rounded-sm text-sm font-semibold tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${priceChangeTone}`}
+                      >
+                        {priceChange === null
+                          ? "Indisponível"
+                          : pricePercent.format(priceChange)}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="motion-reduce:animate-none">
+                      Variação do preço no período · {selectedIntervalLabel}.
+                      Não inclui dividendos.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              {intervals.length > 0 && (
+                <div
+                  className="flex flex-wrap gap-2 sm:justify-end"
+                  role="group"
+                  aria-label="Intervalo do histórico"
+                >
+                  {intervals.map((interval) => (
+                    <Button
+                      key={interval.days}
+                      type="button"
+                      size="sm"
+                      variant={interval.days === days ? "default" : "outline"}
+                      aria-pressed={interval.days === days}
+                      onClick={() => setDays(interval.days)}
+                    >
+                      {interval.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </CardHeader>
+            <CardContent>
+              <PriceHistoryChart
+                points={points}
+                status={
+                  historyRetryQuery.data?.historyStatus ??
+                  analysis.historyStatus ??
+                  "unavailable"
+                }
+                failure={historyFailure}
+                retrying={historyRetryQuery.isFetching}
+                retryError={historyRetryQuery.error instanceof Error}
+                retryAfterSeconds={historyRetryRemaining}
+                onRetry={retryHistoryManually}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="space-y-5 py-5">
+              <StockCriteriaSummary analysis={analysis} />
+              <div className="border-t pt-4">
+                <h3 className="mb-3 text-sm font-medium">
+                  O que os dados mostram
+                </h3>
+                <StockAnalysisReading periods={annual} />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                Como os números mudaram nos últimos cinco anos
+              </CardTitle>
+              <CardDescription>
+                Receita, lucro e patrimônio da empresa em cada ano disponível.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <FundamentalsEvolution periods={analysis.fundamentals} />
+            </CardContent>
+          </Card>
+          <Collapsible>
+            <Card>
+              <CardHeader className="pb-3">
+                <div>
+                  <h2 className="font-semibold leading-none tracking-tight">
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-auto justify-between gap-3 p-0 text-left hover:bg-transparent"
+                      >
+                        <span>Ver dados detalhados</span>
+                        <ChevronDown
+                          className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]_&]:rotate-180"
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                  </h2>
+                  <CardDescription className="mt-1">
+                    Resultados por período, origem dos dados e como os números
+                    são calculados.
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="space-y-6 pt-0">
+                  <section
+                    aria-labelledby="analysis-data-origin-title"
+                    className="space-y-2 rounded-lg bg-muted/40 p-4 text-sm"
+                  >
+                    <h3 id="analysis-data-origin-title" className="font-medium">
+                      De onde vêm estes dados
+                    </h3>
+                    <p className="text-muted-foreground">
+                      Os dados financeiros vêm de relatórios públicos das
+                      empresas, consultados na Comissão de Valores Mobiliários.
+                      As cotações vêm de uma fonte de dados do mercado. As datas
+                      mostram a que período cada valor se refere.
+                    </p>
+                    <p className="text-muted-foreground">
+                      A variação do preço não inclui dividendos e não representa
+                      o retorno total do investimento. Valores ausentes não são
+                      tratados como zero.
+                    </p>
+                  </section>
+                  <section
+                    aria-labelledby="annual-evidence-title"
+                    className="space-y-3"
+                  >
+                    <h3 id="annual-evidence-title" className="font-medium">
+                      Resultados anuais
+                    </h3>
+                    <FundamentalsGrid periods={annual} type="DFP" />
+                  </section>
+                  <section
+                    aria-labelledby="interim-evidence-title"
+                    className="space-y-3"
+                  >
+                    <div>
+                      <h3 id="interim-evidence-title" className="font-medium">
+                        Atualizações durante o ano
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Mostra o total desde o começo do ano até a data
+                        indicada. Para comparar anos completos, use os
+                        resultados anuais.
+                      </p>
+                    </div>
+                    <FundamentalsGrid periods={interim} type="ITR" />
+                  </section>
+                  {discreteQuarters.length > 0 && (
+                    <section
+                      aria-labelledby="quarterly-evidence-title"
+                      className="space-y-3"
+                    >
+                      <div>
+                        <h3
+                          id="quarterly-evidence-title"
+                          className="font-medium"
+                        >
+                          Resultados de cada trimestre
+                        </h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Cada valor considera somente o trimestre indicado. Os
+                          valores acumulados no ano aparecem na seção anterior.
+                        </p>
+                      </div>
+                      <FundamentalsGrid periods={discreteQuarters} type="ITR" />
+                    </section>
+                  )}
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        </>
+      )}
     </div>
   );
 }

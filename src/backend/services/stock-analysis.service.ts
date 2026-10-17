@@ -698,6 +698,49 @@ export class StockAnalysisService {
       > = screenerRepository,
   ) {}
 
+  async getMarketByTicker(rawTicker: unknown, requestId?: string) {
+    const parsed = tickerSchema.safeParse(rawTicker);
+    if (!parsed.success)
+      throw new ApplicationError(parsed.error.issues[0]!.message, 400);
+    const ticker = parsed.data;
+    const startedAt = Date.now();
+    const [quote, issuers] = await Promise.all([
+      this.marketProvider.getQuoteByTicker(ticker),
+      this.screener.getComparisonMetadata?.([ticker]) ?? Promise.resolve([]),
+    ]);
+    const matches = issuers.filter(
+      (issuer) =>
+        issuer.ticker === ticker && normalizeCnpj(issuer.cnpj).length === 14,
+    );
+    const cnpis = [
+      ...new Set(matches.map((issuer) => normalizeCnpj(issuer.cnpj))),
+    ];
+    if (
+      quote.ticker.toUpperCase() !== ticker ||
+      cnpis.length !== 1 ||
+      (quote.cnpj !== null && normalizeCnpj(quote.cnpj) !== cnpis[0])
+    )
+      throw new ApplicationError(
+        "Não foi possível confirmar o CNPJ do emissor para este ticker.",
+        422,
+      );
+    logger.info("stock_analysis_market_stage_timing", {
+      requestId,
+      ticker,
+      durationMs: Date.now() - startedAt,
+    });
+    return {
+      ticker,
+      cnpj: cnpis[0]!,
+      companyName: quote.companyName,
+      logoUrl: quote.logoUrl,
+      price: quote.price,
+      marketCap: quote.marketCap,
+      changePercent: null,
+      priceUpdatedAt: quote.observedAt?.toISOString() ?? null,
+    };
+  }
+
   async getByTicker(rawTicker: unknown, requestId?: string) {
     const parsed = tickerSchema.safeParse(rawTicker);
     if (!parsed.success)
@@ -995,6 +1038,9 @@ export class StockAnalysisService {
     MarketData & {
       fundamentals: FundamentalPeriod[];
       indicators: AnalysisIndicator[];
+      marketDataIdentityVerified: boolean;
+      fundamentalsIsStale: boolean;
+      fundamentalsFetchedAt: string | null;
     }
   > {
     const startedAt = Date.now();
@@ -1011,6 +1057,21 @@ export class StockAnalysisService {
       );
 
     const ticker = parsedTicker.data;
+    const quoteStartedAt = Date.now();
+    const quotePromise = Promise.resolve()
+      .then(() =>
+        this.screener.getValidatedAnalysisQuote
+          ? this.screener.getValidatedAnalysisQuote(ticker)
+          : null,
+      )
+      .catch((error) => {
+        logger.warn("stock_comparison_quote_unavailable", {
+          requestId,
+          ticker,
+          error,
+        });
+        return null;
+      });
     const cacheReadStartedAt = Date.now();
     const cached = await this.repository.listByTicker(ticker);
     const cacheReadMs = Date.now() - cacheReadStartedAt;
@@ -1035,6 +1096,10 @@ export class StockAnalysisService {
     });
     let refreshMs = 0;
     let periods: FundamentalPeriod[];
+    let fundamentalsIsStale = false;
+    let fundamentalsFetchedAt: string | null = cacheValid
+      ? cached[0]!.fetchedAt.toISOString()
+      : null;
     if (cacheValid) periods = normalizeCachedPeriods(cached);
     else {
       const refreshStartedAt = Date.now();
@@ -1044,16 +1109,57 @@ export class StockAnalysisService {
           expectedCnpj,
           requestId,
         );
+        if (periods.length === 0) {
+          const stale = validatedCachedFundamentals(cached, expectedCnpj);
+          if (stale) {
+            periods = stale.periods;
+            fundamentalsIsStale = true;
+            fundamentalsFetchedAt = stale.fetchedAt.toISOString();
+          }
+        }
+      } catch (error) {
+        const stale = validatedCachedFundamentals(cached, expectedCnpj);
+        if (!stale) throw error;
+        periods = stale.periods;
+        fundamentalsIsStale = true;
+        fundamentalsFetchedAt = stale.fetchedAt.toISOString();
+        logger.warn("stock_fundamentals_stale_cache_used", {
+          requestId,
+          ticker,
+          cnpj: expectedCnpj,
+          fetchedAt: stale.fetchedAt.toISOString(),
+          periods: periods.length,
+        });
       } finally {
         refreshMs = Date.now() - refreshStartedAt;
       }
     }
+    const validatedQuote = await quotePromise;
+    const marketDataIdentityVerified = validLastObservedQuote(
+      validatedQuote,
+      ticker,
+      expectedCnpj,
+      Date.now(),
+    );
+    const marketCap = marketDataIdentityVerified
+      ? Number(validatedQuote!.marketCap)
+      : null;
+    const marketPrice = marketDataIdentityVerified
+      ? Number(validatedQuote!.price)
+      : null;
+    const marketPriceDate = marketDataIdentityVerified
+      ? validatedQuote!.quoteObservedAt!.toISOString()
+      : null;
     logger.info("stock_issuer_fundamentals_stage_timing", {
       requestId,
       ticker,
       repositoryReadMs: cacheReadMs,
       fundamentalsCacheHit: cacheValid,
       refreshMs,
+      quoteMs: Date.now() - quoteStartedAt,
+      marketDataIdentityVerified,
+      fundamentalsIsStale,
+      fundamentalsFetchedAt,
       totalMs: Date.now() - startedAt,
     });
     const ltmPeriods = ltmFlowPeriods(periods);
@@ -1061,13 +1167,20 @@ export class StockAnalysisService {
       ticker,
       cnpj: expectedCnpj,
       companyName: null,
-      price: null,
-      marketCap: null,
+      price: marketPrice,
+      marketCap,
       changePercent: null,
-      priceUpdatedAt: null,
+      priceUpdatedAt: marketPriceDate,
       history: [],
       fundamentals: [...periods, ...ltmPeriods],
-      indicators: calculateAnalysisIndicators(periods),
+      indicators: calculateAnalysisIndicators(
+        periods,
+        marketCap,
+        marketPriceDate,
+      ),
+      marketDataIdentityVerified,
+      fundamentalsIsStale,
+      fundamentalsFetchedAt,
     };
   }
 

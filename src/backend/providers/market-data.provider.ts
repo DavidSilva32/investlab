@@ -33,6 +33,7 @@ export type MarketData = {
 export type MarketTicker = { ticker: string; name: string; logoUrl?: string };
 export type MarketQuote = {
   ticker: string;
+  cnpj: string | null;
   companyName: string | null;
   logoUrl?: string;
   price: number | null;

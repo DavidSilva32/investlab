@@ -695,7 +695,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       quarterlyPromise,
     ]);
     const annual = [currentAnnual, ...previousAnnual].flat();
-    const historicalItr = await Promise.all(
+    const historicalItrPromise = Promise.all(
       [currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4]
         .filter((year) => !hasYearEndEquity(annual, year))
         .map((year) =>
@@ -710,8 +710,11 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
           }),
         ),
     );
-    const previousQuarterly = needsPriorYearLtmRoeBalances(annual, quarterly)
-      ? await readDocumentOnce("ITR", currentYear - 1).catch((error) => {
+    const previousQuarterlyPromise = needsPriorYearLtmRoeBalances(
+      annual,
+      quarterly,
+    )
+      ? readDocumentOnce("ITR", currentYear - 1).catch((error) => {
           logger.warn("stock_fundamentals_cvm_prior_itr_unavailable", {
             ticker,
             cnpj: normalizedCnpj,
@@ -719,7 +722,11 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
           });
           return [];
         })
-      : [];
+      : Promise.resolve([] as FundamentalPeriod[]);
+    const [historicalItr, previousQuarterly] = await Promise.all([
+      historicalItrPromise,
+      previousQuarterlyPromise,
+    ]);
     const latestByPeriod = new Map<string, FundamentalPeriod>();
     for (const period of [
       ...annual,

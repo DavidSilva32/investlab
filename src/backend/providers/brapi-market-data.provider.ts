@@ -60,6 +60,7 @@ const quoteSchema = z.object({
           marketCap: z.number().nullable().optional(),
           regularMarketChangePercent: z.number().nullable().optional(),
           regularMarketTime: z.string().nullable().optional(),
+          cnpj: z.string().nullable().optional(),
         }),
       }),
     )
@@ -130,6 +131,21 @@ class InvalidMarketDataResponseError extends Error {}
 const requestTimeoutMs = 15_000;
 
 export class BrapiMarketDataProvider implements MarketDataProvider {
+  private readonly quoteRequests = new Map<string, Promise<unknown>>();
+
+  private getQuotePayload(symbol: string) {
+    const existing = this.quoteRequests.get(symbol);
+    if (existing) return existing;
+    const pending = this.request(
+      `/api/v2/stocks/quote?symbols=${symbol}`,
+      AbortSignal.timeout(requestTimeoutMs),
+    );
+    this.quoteRequests.set(symbol, pending);
+    void pending
+      .finally(() => this.quoteRequests.delete(symbol))
+      .catch(() => undefined);
+    return pending;
+  }
   constructor(
     private readonly fetcher: typeof fetch = fetch,
     private readonly apiToken = process.env.BRAPI_TOKEN,
@@ -418,10 +434,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
 
   async getQuoteByTicker(ticker: string): Promise<MarketQuote> {
     const symbol = encodeURIComponent(ticker);
-    const payload = await this.request(
-      `/api/v2/stocks/quote?symbols=${symbol}`,
-      AbortSignal.timeout(requestTimeoutMs),
-    );
+    const payload = await this.getQuotePayload(symbol);
     const quote = quoteSchema.parse(payload).results[0]!;
     const observedAt = quote.data.regularMarketTime
       ? new Date(quote.data.regularMarketTime)
@@ -429,6 +442,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
 
     return {
       ticker: quote.symbol,
+      cnpj: quote.data.cnpj?.replace(/\D/g, "") ?? null,
       ...optionalLogo(quote.symbol, quote),
       companyName: quote.data.longName ?? quote.data.shortName ?? null,
       price: quote.data.regularMarketPrice ?? null,
@@ -440,10 +454,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
   async getByTicker(ticker: string): Promise<MarketData> {
     const symbol = encodeURIComponent(ticker);
     const optionalRequests = new AbortController();
-    const quoteRequest = this.request(
-      `/api/v2/stocks/quote?symbols=${symbol}`,
-      AbortSignal.timeout(requestTimeoutMs),
-    );
+    const quoteRequest = this.getQuotePayload(symbol);
     const optionalResults = Promise.allSettled([
       this.request(
         `/api/v2/stocks/profile?symbols=${symbol}`,

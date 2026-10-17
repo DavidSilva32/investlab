@@ -17,6 +17,7 @@ const quote = (
   price: number | null = 10,
 ): MarketQuote => ({
   ticker,
+  cnpj: null,
   companyName: "Empresa",
   price,
   marketCap,

@@ -127,6 +127,9 @@ function analysis(
       indicator("pe", 8),
       indicator("pb", 1.2, { periodBasis: "point_in_time" }),
     ],
+    marketDataIdentityVerified: false,
+    fundamentalsIsStale: false,
+    fundamentalsFetchedAt: null,
     ...overrides,
   } as TestAnalysis;
 }
@@ -188,6 +191,118 @@ describe("StockComparisonService", () => {
     expect(JSON.stringify(result).toLowerCase()).not.toMatch(
       /ranking|score|recommendation/,
     );
+  });
+
+  it("reuses individual valuation indicators only for verified market identity", async () => {
+    const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
+    const { service } = makeService(records, (ticker) =>
+      analysis(
+        ticker,
+        records.find((record) => record.ticker === ticker)!.cnpj,
+        { marketDataIdentityVerified: true },
+      ),
+    );
+
+    const result = await service.compare({ tickers: ["PETR3", "VALE3"] });
+
+    expect(result.companies[0]?.valuation.pe).toMatchObject({
+      value: 8,
+      referenceDate: "2026-06-30",
+      marketDataDate: "2026-10-06T15:00:00Z",
+      unavailableReason: null,
+    });
+    expect(result.companies[0]?.valuation.pb.value).toBe(1.2);
+  });
+
+  it("marks P/E and P/VP unavailable when candidates use different CVM bases", async () => {
+    const records = [
+      metadata("PETR3", 1),
+      metadata("VALE3", 2),
+      metadata("ABEV3", 3),
+    ];
+    const { service } = makeService(records, (ticker) => {
+      const result = analysis(
+        ticker,
+        records.find((record) => record.ticker === ticker)!.cnpj,
+        { marketDataIdentityVerified: true },
+      );
+      if (ticker === "ABEV3")
+        return {
+          ...result,
+          indicators: result.indicators.map((item) =>
+            item.key === "pe" || item.key === "pb"
+              ? { ...item, value: null, unavailableReason: null }
+              : item,
+          ),
+        };
+      if (ticker !== "VALE3") return result;
+      return {
+        ...result,
+        indicators: result.indicators.map((item) =>
+          item.key === "pe"
+            ? {
+                ...item,
+                referenceDate: "2025-12-31",
+                sourceDocument: "DFP" as const,
+                periodBasis: "annual" as const,
+              }
+            : item.key === "pb"
+              ? { ...item, referenceDate: "2025-06-30" }
+              : item,
+        ),
+      };
+    });
+
+    const result = await service.compare({
+      tickers: ["PETR3", "VALE3", "ABEV3"],
+    });
+    for (const company of result.companies.slice(0, 2)) {
+      expect(company.valuation.pe).toMatchObject({
+        value: null,
+        unavailableReason:
+          "Os indicadores usam bases ou datas CVM diferentes; não são comparáveis.",
+      });
+      expect(company.valuation.pb).toMatchObject({
+        value: null,
+        unavailableReason:
+          "Os indicadores usam bases ou datas CVM diferentes; não são comparáveis.",
+      });
+    }
+    expect(result.companies[2]?.valuation.pe.unavailableReason).toBe(
+      "A fonte não disponibilizou a métrica.",
+    );
+  });
+
+  it("does not present a stale CVM cache as a current comparison value", async () => {
+    const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
+    const { service } = makeService(records, (ticker) => {
+      const result = analysis(
+        ticker,
+        records.find((record) => record.ticker === ticker)!.cnpj,
+        { fundamentalsIsStale: ticker === "PETR3" },
+      );
+      return ticker === "PETR3"
+        ? {
+            ...result,
+            indicators: result.indicators.filter(
+              (item) => item.key !== "pe" && item.key !== "pb",
+            ),
+          }
+        : result;
+    });
+
+    const result = await service.compare({ tickers: ["PETR3", "VALE3"] });
+
+    expect(result.companies[0]?.fundamentals.roe).toMatchObject({
+      value: null,
+      unavailableReason:
+        "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
+    });
+    expect(result.companies[0]?.valuation.pe).toMatchObject({
+      value: null,
+      unavailableReason:
+        "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
+    });
   });
 
   it("rejects invalid ticker selection shapes", async () => {

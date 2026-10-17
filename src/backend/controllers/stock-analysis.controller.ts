@@ -22,6 +22,19 @@ export class StockAnalysisController {
     return Response.json(analysis);
   }
 
+  async getMarket(ticker: string, requestId: string) {
+    const market = await stockAnalysisService.getMarketByTicker(
+      ticker,
+      requestId,
+    );
+    return Response.json(market, {
+      headers: {
+        "x-request-id": requestId,
+        "cache-control": "private, no-store",
+      },
+    });
+  }
+
   async getHistory(ticker: string, requestId: string) {
     const history = await stockAnalysisService.getHistoryByTicker(
       ticker,
