@@ -2,10 +2,12 @@
 
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -14,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function CredentialSetupForm({
   token,
@@ -26,6 +29,8 @@ export function CredentialSetupForm({
   const [pending, setPending] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmationVisible, setConfirmationVisible] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsError, setTermsError] = useState<string | null>(null);
   const title = mode === "invite" ? "Ative sua conta" : "Redefina sua senha";
   const endpoint =
     mode === "invite"
@@ -41,6 +46,11 @@ export function CredentialSetupForm({
       toast.error("As senhas não coincidem.");
       return;
     }
+    if (mode === "invite" && !termsAccepted) {
+      setTermsError("Aceite os Termos de Uso para ativar sua conta.");
+      return;
+    }
+    setTermsError(null);
     setPending(true);
     try {
       const response = await fetch(endpoint, {
@@ -50,7 +60,10 @@ export function CredentialSetupForm({
           token,
           password,
           ...(mode === "invite"
-            ? { name: String(formData.get("name") ?? "") }
+            ? {
+                name: String(formData.get("name") ?? ""),
+                acceptTerms: termsAccepted,
+              }
             : {}),
         }),
       });
@@ -77,7 +90,7 @@ export function CredentialSetupForm({
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-background p-4">
+    <main className="grid min-h-[calc(100dvh-16rem)] place-items-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{title}</CardTitle>
@@ -168,6 +181,58 @@ export function CredentialSetupForm({
                 </Button>
               </div>
             </div>
+            {mode === "invite" && (
+              <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="accept-terms"
+                    checked={termsAccepted}
+                    aria-invalid={termsError ? true : undefined}
+                    aria-describedby={termsError ? "terms-error" : undefined}
+                    onCheckedChange={(checked) => {
+                      const accepted = checked === true;
+                      setTermsAccepted(accepted);
+                      if (accepted) setTermsError(null);
+                    }}
+                    className="mt-0.5"
+                  />
+                  <Label
+                    htmlFor="accept-terms"
+                    className="cursor-pointer text-sm font-normal leading-6 text-foreground"
+                  >
+                    Os documentos ainda aguardam revisão jurídica. Li e aceito
+                    os{" "}
+                    <Link
+                      href="/termos-de-uso"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-primary underline underline-offset-4"
+                    >
+                      Termos de Uso
+                    </Link>
+                    . A{" "}
+                    <Link
+                      href="/privacidade"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-primary underline underline-offset-4"
+                    >
+                      Política de Privacidade
+                    </Link>{" "}
+                    explica como os dados são tratados.
+                  </Label>
+                </div>
+                {termsError && (
+                  <p
+                    id="terms-error"
+                    role="alert"
+                    className="text-sm text-destructive"
+                  >
+                    {termsError}
+                  </p>
+                )}
+              </div>
+            )}
             <Button type="submit" className="w-full" disabled={pending}>
               {pending ? "Salvando…" : "Salvar senha"}
             </Button>

@@ -8,5 +8,6 @@ describe("LoginLoading", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("Carregando acesso");
     expect(html).toContain("animate-pulse");
+    expect(html).toContain("min-h-[calc(100dvh-16rem)]");
   });
 });

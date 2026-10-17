@@ -21,6 +21,14 @@ describe("login form", () => {
     vi.mocked(toast.error).mockReset();
   });
 
+  it("uses the available public-layout height instead of another full viewport", () => {
+    const { container } = render(<LoginForm supportWhatsAppUrl={supportUrl} />);
+
+    expect(container.querySelector("main")?.className).toContain(
+      "min-h-[calc(100dvh-16rem)]",
+    );
+  });
+
   it("validates the e-mail format before requesting login", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

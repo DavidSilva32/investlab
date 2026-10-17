@@ -316,11 +316,39 @@ describe("AuthController", () => {
     expect(
       (await controller.activateInvite(request({ token: "short" }))).status,
     ).toBe(400);
+    expect(
+      (
+        await controller.activateInvite(
+          request({
+            token: "i".repeat(40),
+            name: "Invitee",
+            password: "A-long-password-123",
+            acceptTerms: false,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await controller.activateInvite(
+          request({
+            token: "i".repeat(40),
+            name: "Invitee",
+            password: "A-long-password-123",
+            acceptTerms: true,
+            userId: "forged-user",
+            termsVersion: "forged-version",
+            acceptedAt: "2020-01-01T00:00:00.000Z",
+          }),
+        )
+      ).status,
+    ).toBe(400);
     const success = await controller.activateInvite(
       request({
         token: "i".repeat(40),
         name: "  New User  ",
         password: "A-long-password-123",
+        acceptTerms: true,
       }),
     );
     expect(await success.json()).toEqual({ ok: true });
@@ -328,6 +356,7 @@ describe("AuthController", () => {
       "i".repeat(40),
       "New User",
       "A-long-password-123",
+      true,
     );
   });
 
@@ -342,6 +371,7 @@ describe("AuthController", () => {
             token: "i".repeat(40),
             name: "Invitee",
             password: "A-long-password-123",
+            acceptTerms: true,
           }),
         )
       ).status,
@@ -354,6 +384,7 @@ describe("AuthController", () => {
         token: "i".repeat(40),
         name: "Invitee",
         password: "A-long-password-123",
+        acceptTerms: true,
       }),
     );
     expect(response.status).toBe(500);

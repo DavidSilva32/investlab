@@ -6,6 +6,9 @@ import { logger } from "@/infrastructure/logging/logger";
 const publicPaths = new Set([
   "/entrar",
   "/entrar",
+  "/termos-de-uso",
+  "/privacidade",
+  "/cookies",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/session",

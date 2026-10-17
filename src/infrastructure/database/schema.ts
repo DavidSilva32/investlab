@@ -120,6 +120,23 @@ export const authInvitations = pgTable("auth_invitations", {
     .notNull()
     .references(() => authUsers.id),
 });
+export const authTermsAcceptances = pgTable(
+  "auth_terms_acceptances",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id),
+    termsVersion: varchar({ length: 40 }).notNull(),
+    acceptedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("auth_terms_acceptances_user_accepted_idx").on(
+      table.userId,
+      table.acceptedAt,
+    ),
+  ],
+);
 export const authPasswordResets = pgTable("auth_password_resets", {
   id: uuid().defaultRandom().primaryKey(),
   userId: text()

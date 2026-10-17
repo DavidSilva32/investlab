@@ -446,42 +446,91 @@ describe("AuthRepository", () => {
     },
   );
 
-  it("claims an unexpired invitation once and returns its bound email", async () => {
-    const query = createUpdateQuery([
-      { id: "invite-1", email: "person@example.com" },
-    ]);
-    database.update.mockReturnValue(query);
-
-    await expect(repository.claimInvitation("hashed-token")).resolves.toEqual({
-      id: "invite-1",
-      email: "person@example.com",
-    });
-    expect(query.set).toHaveBeenCalledWith({ usedAt: expect.any(Date) });
-    expect(query.where).toHaveBeenCalledOnce();
-  });
-
-  it("returns null when an invitation token cannot be claimed", async () => {
-    database.update.mockReturnValue(createUpdateQuery([]));
-
-    await expect(repository.claimInvitation("spent-token")).resolves.toBeNull();
-  });
-
-  it("releases a claimed invitation only while it remains usable", async () => {
-    const query = createUpdateQuery([{ id: "invite-1" }]);
-    database.update.mockReturnValue(query);
-
-    await expect(repository.releaseInvitationClaim("invite-1")).resolves.toBe(
-      true,
+  it("claims the invitation and inserts the Better Auth credential and terms event in one transaction", async () => {
+    const returning = vi
+      .fn()
+      .mockResolvedValue([{ email: "bound@example.com" }]);
+    const where = vi.fn().mockReturnValue({ returning });
+    const set = vi.fn().mockReturnValue({ where });
+    const insertValues: unknown[] = [];
+    const transaction = {
+      update: vi.fn().mockReturnValue({ set }),
+      insert: vi.fn(() => ({
+        values: vi.fn((value) => {
+          insertValues.push(value);
+          return Promise.resolve();
+        }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
     );
-    expect(query.set).toHaveBeenCalledWith({ usedAt: null });
+
+    await expect(
+      repository.activateInvitation({
+        tokenHash: "hashed-token",
+        name: "Invitee",
+        passwordHash: "better-auth-compatible-password-hash",
+        termsVersion: "2026-10-17",
+      }),
+    ).resolves.toBe(true);
+
+    expect(database.transaction).toHaveBeenCalledOnce();
+    expect(transaction.update).toHaveBeenCalledOnce();
+    expect(set).toHaveBeenCalledWith({ usedAt: expect.any(Date) });
+    expect(transaction.insert).toHaveBeenCalledTimes(3);
+    expect(insertValues[0]).toEqual(
+      expect.objectContaining({
+        name: "Invitee",
+        email: "bound@example.com",
+        emailVerified: false,
+        role: "USER",
+        accountStatus: "PENDING",
+      }),
+    );
+    expect(insertValues[1]).toEqual(
+      expect.objectContaining({
+        accountId: expect.any(String),
+        providerId: "credential",
+        password: "better-auth-compatible-password-hash",
+      }),
+    );
+    expect(insertValues[2]).toEqual(
+      expect.objectContaining({
+        userId: expect.any(String),
+        termsVersion: "2026-10-17",
+        acceptedAt: expect.any(Date),
+      }),
+    );
+    expect((insertValues[1] as { userId: string }).userId).toBe(
+      (insertValues[0] as { id: string }).id,
+    );
+    expect((insertValues[2] as { userId: string }).userId).toBe(
+      (insertValues[0] as { id: string }).id,
+    );
   });
 
-  it("returns false when an invitation claim cannot be released", async () => {
-    database.update.mockReturnValue(createUpdateQuery([]));
-
-    await expect(repository.releaseInvitationClaim("invite-1")).resolves.toBe(
-      false,
+  it("does not create account or acceptance records if the invite was already used", async () => {
+    const returning = vi.fn().mockResolvedValue([]);
+    const where = vi.fn().mockReturnValue({ returning });
+    const set = vi.fn().mockReturnValue({ where });
+    const transaction = {
+      update: vi.fn().mockReturnValue({ set }),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
     );
+
+    await expect(
+      repository.activateInvitation({
+        tokenHash: "spent-token",
+        name: "Invitee",
+        passwordHash: "hash",
+        termsVersion: "2026-10-17",
+      }),
+    ).resolves.toBe(false);
+    expect(transaction.insert).not.toHaveBeenCalled();
   });
 
   it("finds a user by email and returns null when none exists", async () => {

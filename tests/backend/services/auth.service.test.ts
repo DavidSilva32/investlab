@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => ({
     findUserByEmail: vi.fn(),
     createInvitation: vi.fn(),
     revokeInvitation: vi.fn(),
-    claimInvitation: vi.fn(),
-    releaseInvitationClaim: vi.fn(),
+    activateInvitation: vi.fn(),
+    claimInvitationExistsUnused: vi.fn(),
     createPasswordReset: vi.fn(),
     revokePasswordReset: vi.fn(),
     applyPasswordReset: vi.fn(),
@@ -40,6 +40,7 @@ vi.mock("@/infrastructure/auth/auth", () => ({
 }));
 import { authService } from "@/backend/services/auth.service";
 import { ApplicationError } from "@/backend/errors/application-error";
+import { CURRENT_TERMS_VERSION } from "@/lib/privacy-policy";
 
 describe("AuthService", () => {
   beforeEach(() => {
@@ -275,6 +276,7 @@ describe("AuthService", () => {
     await expect(
       authService.updateManagedUser({ id: "u1", actorId: "admin-1" }),
     ).rejects.toMatchObject({ statusCode: 400 });
+    const hashCallsBeforeInvalidToken = mocks.hashPassword.mock.calls.length;
     await expect(
       authService.updateManagedUser({
         id: "u1",
@@ -372,77 +374,83 @@ describe("AuthService", () => {
     expect(mocks.repository.createInvitation).not.toHaveBeenCalled();
   });
 
-  it("keeps invitation identity server-bound and marks a token spent before account creation", async () => {
-    mocks.repository.claimInvitation.mockResolvedValue({
-      id: "i1",
-      email: "bound@example.com",
-    });
-    mocks.signUpEmail.mockResolvedValue({
-      user: { id: "u1", email: "bound@example.com" },
-    });
+  it("activates only after accepting the current terms and delegates atomic account creation", async () => {
+    mocks.repository.claimInvitationExistsUnused.mockResolvedValue(true);
+    mocks.hashPassword.mockResolvedValue("credential-hash");
+    mocks.repository.activateInvitation.mockResolvedValue(true);
     await expect(
       authService.activateInvitation(
         "t".repeat(43),
         "Invitee",
         "A-long-safe-password-123",
+        true,
       ),
     ).resolves.toBeUndefined();
-    expect(mocks.repository.claimInvitation).toHaveBeenCalledWith(
+    expect(mocks.hashPassword).toHaveBeenCalledWith("A-long-safe-password-123");
+    expect(mocks.repository.activateInvitation).toHaveBeenCalledWith({
+      tokenHash: expect.any(String),
+      name: "Invitee",
+      passwordHash: "credential-hash",
+      termsVersion: CURRENT_TERMS_VERSION,
+    });
+    expect(mocks.repository.claimInvitationExistsUnused).toHaveBeenCalledWith(
       expect.any(String),
     );
-    expect(mocks.signUpEmail).toHaveBeenCalledWith({
-      body: {
-        name: "Invitee",
-        email: "bound@example.com",
-        password: "A-long-safe-password-123",
-      },
-    });
-    await expect(
-      authService.activateInvitation("short", "Invitee", "short"),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    mocks.repository.claimInvitation.mockResolvedValue(null);
+    expect(mocks.signUpEmail).not.toHaveBeenCalled();
     await expect(
       authService.activateInvitation(
         "t".repeat(43),
         "Invitee",
         "A-long-safe-password-123",
+        false,
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      authService.activateInvitation("short", "Invitee", "short", true),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    const hashCallsBeforeInvalidToken = mocks.hashPassword.mock.calls.length;
+    mocks.repository.claimInvitationExistsUnused.mockResolvedValue(false);
+    await expect(
+      authService.activateInvitation(
+        "t".repeat(43),
+        "Invitee",
+        "A-long-safe-password-123",
+        true,
+      ),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    expect(mocks.hashPassword).toHaveBeenCalledTimes(
+      hashCallsBeforeInvalidToken,
+    );
+    mocks.repository.claimInvitationExistsUnused.mockResolvedValue(true);
+    mocks.repository.activateInvitation.mockResolvedValue(false);
+    await expect(
+      authService.activateInvitation(
+        "t".repeat(43),
+        "Invitee",
+        "A-long-safe-password-123",
+        true,
       ),
     ).rejects.toBeInstanceOf(ApplicationError);
   });
 
-  it("releases a claimed invitation after a definite account-creation failure", async () => {
-    mocks.repository.claimInvitation.mockResolvedValue({
-      id: "i1",
-      email: "bound@example.com",
-    });
-    mocks.signUpEmail.mockRejectedValue(new Error("database unavailable"));
-    mocks.repository.findUserByEmail.mockResolvedValue(null);
+  it("hides transaction failures without exposing database details", async () => {
+    mocks.repository.claimInvitationExistsUnused.mockResolvedValue(true);
+    mocks.hashPassword.mockResolvedValue("credential-hash");
+    mocks.repository.activateInvitation.mockRejectedValue(
+      new Error("database unavailable"),
+    );
     await expect(
       authService.activateInvitation(
         "t".repeat(43),
         "Invitee",
         "A-long-safe-password-123",
+        true,
       ),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    expect(mocks.repository.releaseInvitationClaim).toHaveBeenCalledWith("i1");
-  });
-
-  it("keeps an invitation consumed when account creation committed before failing", async () => {
-    mocks.repository.claimInvitation.mockResolvedValue({
-      id: "i2",
-      email: "bound@example.com",
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message:
+        "Não foi possível ativar o convite. Solicite um novo link ao administrador.",
     });
-    mocks.signUpEmail.mockRejectedValue(new Error("response was interrupted"));
-    mocks.repository.findUserByEmail.mockResolvedValue({ id: "u1" });
-
-    await expect(
-      authService.activateInvitation(
-        "t".repeat(43),
-        "Invitee",
-        "A-long-safe-password-123",
-      ),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    expect(mocks.repository.releaseInvitationClaim).not.toHaveBeenCalled();
   });
 
   it("lists users and token-free invite/reset statuses", async () => {

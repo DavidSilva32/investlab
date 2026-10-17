@@ -27,6 +27,9 @@ describe("optimistic authentication proxy", () => {
     expect(
       proxy(new NextRequest("http://test/convite/some-token")).status,
     ).toBe(200);
+    for (const path of ["/termos-de-uso", "/privacidade", "/cookies"]) {
+      expect(proxy(new NextRequest(`http://test${path}`)).status).toBe(200);
+    }
     expect(
       proxy(
         new NextRequest("http://test/", {

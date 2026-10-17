@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -19,6 +19,17 @@ vi.mock("sonner", () => ({
   toast: { success: mocks.success, error: mocks.error },
 }));
 import { CredentialSetupForm } from "@/components/auth/credential-setup-form";
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
 
 afterEach(() => {
   cleanup();
@@ -70,6 +81,7 @@ describe("CredentialSetupForm", () => {
       screen.getByLabelText("Confirme a senha"),
       "A-secure-password-123",
     );
+    await user.click(screen.getByRole("checkbox", { name: /Li e aceito os/ }));
     await user.click(screen.getByRole("button", { name: "Salvar senha" }));
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/auth/invitations/activate",
@@ -78,10 +90,59 @@ describe("CredentialSetupForm", () => {
           token: "invitation-token",
           password: "A-secure-password-123",
           name: "Pessoa Convidada",
+          acceptTerms: true,
         }),
       }),
     );
     expect(mocks.push).toHaveBeenCalledWith("/entrar");
+  });
+
+  it("requires an explicit terms acceptance before sending invitation activation", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<CredentialSetupForm mode="invite" token="invitation-token" />);
+
+    await user.type(screen.getByLabelText("Nome"), "Pessoa Convidada");
+    await user.type(
+      screen.getByLabelText("Nova senha"),
+      "A-secure-password-123",
+    );
+    await user.type(
+      screen.getByLabelText("Confirme a senha"),
+      "A-secure-password-123",
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar senha" }));
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Aceite os Termos de Uso",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href"),
+    ).toBe("/termos-de-uso");
+    expect(
+      screen
+        .getByRole("link", { name: "Política de Privacidade" })
+        .getAttribute("href"),
+    ).toBe("/privacidade");
+    const acceptance = screen.getByRole("checkbox");
+    await user.click(acceptance);
+    expect(screen.queryByRole("alert")).toBeNull();
+    await user.click(acceptance);
+    expect((acceptance as HTMLButtonElement).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+  });
+
+  it("uses the height available between the shared public header and footer", () => {
+    const { container } = render(
+      <CredentialSetupForm mode="invite" token="invitation-token" />,
+    );
+
+    expect(container.querySelector("main")?.className).toContain(
+      "min-h-[calc(100dvh-16rem)]",
+    );
   });
 
   it("keeps a reset token private to the request and rejects mismatched confirmation", async () => {
@@ -156,6 +217,9 @@ describe("CredentialSetupForm", () => {
     const { container } = render(
       <CredentialSetupForm mode="invite" token="invitation-token" />,
     );
+    await userEvent
+      .setup()
+      .click(screen.getByRole("checkbox", { name: /Li e aceito os/ }));
     const inviteForm = container.querySelector("form");
     inviteForm?.querySelectorAll("input").forEach((input) => input.remove());
     fireEvent.submit(inviteForm!);
@@ -170,6 +234,7 @@ describe("CredentialSetupForm", () => {
           token: "invitation-token",
           password: "",
           name: "",
+          acceptTerms: true,
         }),
       }),
     );
