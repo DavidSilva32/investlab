@@ -49,6 +49,24 @@ afterEach(() => {
 });
 
 describe("UserProfileDialog", () => {
+  it("links the account menu to the privacy center", async () => {
+    const user = userEvent.setup();
+    render(
+      <UserProfileDialog
+        name="David"
+        email="david@example.com"
+        role="USER"
+        onNameUpdated={vi.fn()}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Abrir menu da conta" }),
+    );
+
+    const privacyLink = screen.getByRole("menuitem", { name: "Privacidade" });
+    expect(privacyLink.getAttribute("href")).toBe("/privacidade-conta");
+  });
+
   it("shows a separate assisted recovery path when the current password is forgotten", async () => {
     await renderProfile();
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, Eye, EyeOff, UserRound } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, ShieldCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, apiRequest } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -188,6 +188,12 @@ export function UserProfileDialog({
           <DropdownMenuItem onSelect={() => handleOpenChange(true)}>
             <UserRound aria-hidden="true" className="size-4" />
             Meu perfil
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/privacidade-conta">
+              <ShieldCheck aria-hidden="true" className="size-4" />
+              Privacidade
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

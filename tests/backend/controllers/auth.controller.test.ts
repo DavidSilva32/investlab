@@ -316,11 +316,39 @@ describe("AuthController", () => {
     expect(
       (await controller.activateInvite(request({ token: "short" }))).status,
     ).toBe(400);
+    expect(
+      (
+        await controller.activateInvite(
+          request({
+            token: "i".repeat(40),
+            name: "Invitee",
+            password: "A-long-password-123",
+            acceptTerms: false,
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await controller.activateInvite(
+          request({
+            token: "i".repeat(40),
+            name: "Invitee",
+            password: "A-long-password-123",
+            acceptTerms: true,
+            userId: "forged-user",
+            termsVersion: "forged-version",
+            acceptedAt: "2020-01-01T00:00:00.000Z",
+          }),
+        )
+      ).status,
+    ).toBe(400);
     const success = await controller.activateInvite(
       request({
         token: "i".repeat(40),
         name: "  New User  ",
         password: "A-long-password-123",
+        acceptTerms: true,
       }),
     );
     expect(await success.json()).toEqual({ ok: true });
@@ -328,6 +356,7 @@ describe("AuthController", () => {
       "i".repeat(40),
       "New User",
       "A-long-password-123",
+      true,
     );
   });
 
@@ -342,10 +371,26 @@ describe("AuthController", () => {
             token: "i".repeat(40),
             name: "Invitee",
             password: "A-long-password-123",
+            acceptTerms: true,
           }),
         )
       ).status,
     ).toBe(400);
+    mocks.service.activateInvitation.mockRejectedValueOnce(
+      new ApplicationError("Activation is pending approval.", 503),
+    );
+    const unavailable = await controller.activateInvite(
+      request({
+        token: "i".repeat(40),
+        name: "Invitee",
+        password: "A-long-password-123",
+        acceptTerms: true,
+      }),
+    );
+    expect(unavailable.status).toBe(503);
+    await expect(unavailable.json()).resolves.toEqual({
+      message: "Activation is pending approval.",
+    });
     mocks.service.activateInvitation.mockRejectedValueOnce(
       new Error("secret database detail"),
     );
@@ -354,6 +399,7 @@ describe("AuthController", () => {
         token: "i".repeat(40),
         name: "Invitee",
         password: "A-long-password-123",
+        acceptTerms: true,
       }),
     );
     expect(response.status).toBe(500);

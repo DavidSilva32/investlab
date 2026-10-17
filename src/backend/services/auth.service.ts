@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { authRepository } from "@/backend/repositories/auth.repository";
 import { ApplicationError } from "@/backend/errors/application-error";
+import { getApprovedTermsVersion } from "@/lib/privacy-policy";
 
 const tokenLifetimeMs = 1000 * 60 * 60 * 24;
 const digest = (token: string) =>
@@ -225,35 +226,57 @@ export class AuthService {
     }
   }
 
-  async activateInvitation(token: string, name: string, password: string) {
+  async activateInvitation(
+    token: string,
+    name: string,
+    password: string,
+    acceptTerms: boolean,
+  ) {
+    const termsVersion = getApprovedTermsVersion();
+    if (!termsVersion) {
+      throw new ApplicationError(
+        "A ativação de novas contas está temporariamente indisponível enquanto os Termos de Uso aguardam aprovação.",
+        503,
+      );
+    }
+    if (acceptTerms !== true) {
+      throw new ApplicationError(
+        "É necessário aceitar os Termos de Uso para ativar a conta.",
+        400,
+      );
+    }
     if (password.length < 12) {
       throw new ApplicationError(
         "A senha deve ter pelo menos 12 caracteres.",
         400,
       );
     }
-    const invitation = await authRepository.claimInvitation(digest(token));
-    if (!invitation) {
+    const tokenHash = digest(token);
+    if (!(await authRepository.claimInvitationExistsUnused(tokenHash))) {
       throw new ApplicationError(
         "Este convite é inválido, expirou ou já foi utilizado.",
         400,
       );
     }
+    const { auth } = await import("@/infrastructure/auth/auth");
+    const context = await auth.$context;
+    const passwordHash = await context.password.hash(password);
     try {
-      const { auth } = await import("@/infrastructure/auth/auth");
-      await auth.api.signUpEmail({
-        body: {
+      if (
+        !(await authRepository.activateInvitation({
+          tokenHash,
           name: name.trim(),
-          email: invitation.email,
-          password,
-        },
-      });
-    } catch {
-      // A failed sign-up may have committed before its response failed. Keep
-      // the invitation consumed if the account exists; otherwise allow retry.
-      if (!(await authRepository.findUserByEmail(invitation.email))) {
-        await authRepository.releaseInvitationClaim(invitation.id);
+          passwordHash,
+          termsVersion,
+        }))
+      ) {
+        throw new ApplicationError(
+          "Este convite é inválido, expirou ou já foi utilizado.",
+          400,
+        );
       }
+    } catch (error) {
+      if (error instanceof ApplicationError) throw error;
       throw new ApplicationError(
         "Não foi possível ativar o convite. Solicite um novo link ao administrador.",
         400,

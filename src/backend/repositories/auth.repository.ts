@@ -6,6 +6,7 @@ import {
   authPasswordResets,
   authRateLimits,
   authSessions,
+  authTermsAcceptances,
   authUsers,
   cdbRateConfigurations,
   emergencyReserveSettings,
@@ -276,35 +277,55 @@ export class AuthRepository {
     return Boolean(updated);
   }
 
-  async claimInvitation(tokenHash: string) {
-    const [claimed] = await getDatabaseClient()
-      .update(authInvitations)
-      .set({ usedAt: new Date() })
-      .where(
-        and(
-          eq(authInvitations.tokenHash, tokenHash),
-          isNull(authInvitations.usedAt),
-          isNull(authInvitations.revokedAt),
-          gt(authInvitations.expiresAt, new Date()),
-        ),
-      )
-      .returning({ id: authInvitations.id, email: authInvitations.email });
-    return claimed ?? null;
-  }
+  async activateInvitation(input: {
+    tokenHash: string;
+    name: string;
+    passwordHash: string;
+    termsVersion: string;
+  }) {
+    return getDatabaseClient().transaction(async (transaction) => {
+      const acceptedAt = new Date();
+      const [invitation] = await transaction
+        .update(authInvitations)
+        .set({ usedAt: acceptedAt })
+        .where(
+          and(
+            eq(authInvitations.tokenHash, input.tokenHash),
+            isNull(authInvitations.usedAt),
+            isNull(authInvitations.revokedAt),
+            gt(authInvitations.expiresAt, acceptedAt),
+          ),
+        )
+        .returning({ email: authInvitations.email });
+      if (!invitation) return false;
 
-  async releaseInvitationClaim(id: string) {
-    const [released] = await getDatabaseClient()
-      .update(authInvitations)
-      .set({ usedAt: null })
-      .where(
-        and(
-          eq(authInvitations.id, id),
-          isNull(authInvitations.revokedAt),
-          gt(authInvitations.expiresAt, new Date()),
-        ),
-      )
-      .returning({ id: authInvitations.id });
-    return Boolean(released);
+      const userId = randomUUID();
+      await transaction.insert(authUsers).values({
+        id: userId,
+        name: input.name,
+        email: invitation.email,
+        emailVerified: false,
+        role: "USER",
+        accountStatus: "PENDING",
+        createdAt: acceptedAt,
+        updatedAt: acceptedAt,
+      });
+      await transaction.insert(authAccounts).values({
+        id: randomUUID(),
+        accountId: userId,
+        providerId: "credential",
+        userId,
+        password: input.passwordHash,
+        createdAt: acceptedAt,
+        updatedAt: acceptedAt,
+      });
+      await transaction.insert(authTermsAcceptances).values({
+        userId,
+        termsVersion: input.termsVersion,
+        acceptedAt,
+      });
+      return true;
+    });
   }
 
   async findUserByEmail(email: string) {

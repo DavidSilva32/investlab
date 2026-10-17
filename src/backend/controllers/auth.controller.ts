@@ -43,11 +43,14 @@ function profileErrorResponse(error: unknown) {
 }
 
 const inviteSchema = z.object({ email: z.email() });
-const activateSchema = z.object({
-  token: z.string().min(32),
-  name: z.string().trim().min(1).max(120),
-  password: z.string().min(12).max(128),
-});
+const activateSchema = z
+  .object({
+    token: z.string().min(32),
+    name: z.string().trim().min(1).max(120),
+    password: z.string().min(12).max(128),
+    acceptTerms: z.literal(true),
+  })
+  .strict();
 const resetIssueSchema = z.object({ email: z.email() });
 const resetSchema = z.object({
   token: z.string().min(32),
@@ -209,8 +212,9 @@ export class AuthController {
         body.data.token,
         body.data.name,
         body.data.password,
+        body.data.acceptTerms,
       );
-      return Response.json({ ok: true });
+      return noStore(Response.json({ ok: true }));
     } catch (error) {
       return errorResponse(error);
     }

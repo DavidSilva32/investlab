@@ -4,7 +4,7 @@ export default function LoginLoading() {
     <main
       aria-busy="true"
       aria-live="polite"
-      className="grid min-h-screen place-items-center bg-muted/40 p-4"
+      className="grid min-h-[calc(100dvh-16rem)] place-items-center bg-muted/40 p-4"
     >
       <p className="sr-only">Carregando acesso</p>
       <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-lg shadow-primary/5">

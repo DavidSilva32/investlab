@@ -67,7 +67,7 @@ export function LoginForm({ supportWhatsAppUrl }: LoginFormProps) {
   }
 
   return (
-    <main className="relative isolate grid min-h-screen place-items-center overflow-hidden bg-background p-4">
+    <main className="relative isolate grid min-h-[calc(100dvh-16rem)] place-items-center overflow-hidden bg-background p-4">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 mx-auto h-[min(72vh,46rem)] w-[min(72vw,64rem)] rounded-full bg-brand/10 blur-3xl"

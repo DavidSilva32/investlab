@@ -23,10 +23,19 @@ describe("optimistic authentication proxy", () => {
   });
 
   it("allows public auth links and requests carrying a Better Auth session cookie", () => {
-    expect(proxy(new NextRequest("http://test/entrar")).status).toBe(200);
-    expect(
-      proxy(new NextRequest("http://test/convite/some-token")).status,
-    ).toBe(200);
+    for (const path of [
+      "/entrar",
+      "/login",
+      "/convite/some-token",
+      "/invite/some-token",
+      "/redefinir-senha/some-token",
+      "/reset-password/some-token",
+    ]) {
+      expect(proxy(new NextRequest(`http://test${path}`)).status).toBe(200);
+    }
+    for (const path of ["/termos-de-uso", "/privacidade", "/cookies"]) {
+      expect(proxy(new NextRequest(`http://test${path}`)).status).toBe(200);
+    }
     expect(
       proxy(
         new NextRequest("http://test/", {
@@ -36,7 +45,7 @@ describe("optimistic authentication proxy", () => {
     ).toBe(200);
   });
 
-  it("keeps arbitrary Better Auth signup endpoints private while invite activation stays public", () => {
+  it("keeps arbitrary signup endpoints private while gated invite activation stays publicly reachable", () => {
     expect(
       proxy(
         new NextRequest("http://test/api/auth/sign-up/email", {
