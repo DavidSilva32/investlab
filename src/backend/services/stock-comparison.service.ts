@@ -160,17 +160,32 @@ function metricBaseReason(candidate: Candidate) {
   return null;
 }
 
+type FinancialMetricSupport =
+  | {
+      flow: undefined;
+      indicator: AnalysisIndicator | undefined;
+      reason: string;
+    }
+  | {
+      flow: NonNullable<ReturnType<typeof getFlow>>;
+      indicator: AnalysisIndicator;
+      reason: null;
+    };
+
 function supportsFinancialMetric(
   candidate: Candidate,
   metric: "roe" | "netMargin",
   indicator: AnalysisIndicator | undefined,
-) {
+): FinancialMetricSupport {
+  const unsupported = (reason: string): FinancialMetricSupport => ({
+    flow: undefined,
+    indicator,
+    reason,
+  });
   if (candidate.analysis?.fundamentalsIsStale)
-    return {
-      flow: undefined,
-      reason:
-        "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
-    };
+    return unsupported(
+      "Demonstrativos CVM desatualizados; o indicador não foi apresentado como atual.",
+    );
   const flow = getFlow(candidate, indicator);
   if (
     !indicator ||
@@ -178,28 +193,23 @@ function supportsFinancialMetric(
     !Number.isFinite(indicator.value) ||
     !flow
   )
-    return {
-      flow: undefined,
-      reason:
-        indicator?.unavailableReason ??
+    return unsupported(
+      indicator?.unavailableReason ??
         "A fonte CVM não disponibilizou a métrica.",
-    };
+    );
   if (
     !flow.netIncomeConcept ||
     !flow.netIncomeAccount ||
     (metric === "roe" && (!flow.equityConcept || !flow.equityAccount))
   )
-    return {
-      flow: undefined,
-      reason:
-        "A origem e o conceito das contas CVM não permitem confirmar esta métrica.",
-    };
+    return unsupported(
+      "A origem e o conceito das contas CVM não permitem confirmar esta métrica.",
+    );
   if (metric === "netMargin" && !flow.revenueAccountLabel)
-    return {
-      flow: undefined,
-      reason: "A conta de receita do demonstrativo não está identificada.",
-    };
-  return { flow, reason: null };
+    return unsupported(
+      "A conta de receita do demonstrativo não está identificada.",
+    );
+  return { flow, indicator, reason: null };
 }
 
 function financialBaseReason(candidates: Candidate[]) {
@@ -358,13 +368,16 @@ function buildFundamentalCells(
   const evaluated = candidates.map((candidate) => {
     const sector = normalizeSector(candidate.metadata.sector);
     const classification = classifyCvmSector(candidate.metadata.sector);
-    const indicator = getIndicator(candidate, metric);
-    const supported = supportsFinancialMetric(candidate, metric, indicator);
+    const support = supportsFinancialMetric(
+      candidate,
+      metric,
+      getIndicator(candidate, metric),
+    );
     const baseReason = metricBaseReason(candidate);
     const contextualValues = {
-      referenceDate: indicator?.referenceDate ?? null,
-      periodBasis: indicator?.periodBasis ?? null,
-      sourceDocument: indicator?.sourceDocument ?? null,
+      referenceDate: support.indicator?.referenceDate ?? null,
+      periodBasis: support.indicator?.periodBasis ?? null,
+      sourceDocument: support.indicator?.sourceDocument ?? null,
     };
 
     if (baseReason)
@@ -388,19 +401,17 @@ function buildFundamentalCells(
         cell: unavailable("Margem bancária sem definição comparável aprovada."),
         pair: null,
       };
-    if (!indicator || indicator.value === null || !supported.flow)
+    if (!support.flow)
       return {
-        cell: unavailable(
-          supported.reason ?? "A fonte CVM não disponibilizou a métrica.",
-          contextualValues,
-        ),
+        cell: unavailable(support.reason, contextualValues),
         pair: null,
       };
 
+    const { flow, indicator } = support;
     const pair: FinancialPair = {
       candidate,
       indicator,
-      flow: supported.flow,
+      flow,
     };
     if (sector !== "BANCOS" && !accountSetMatches([pair], metric))
       return {

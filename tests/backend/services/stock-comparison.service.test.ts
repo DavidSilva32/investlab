@@ -291,6 +291,46 @@ describe("StockComparisonService", () => {
       });
     }
   });
+
+  it("marks valuations incomparable when their CVM bases differ on one market day", async () => {
+    const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
+    const { service } = makeService(records, (ticker) => {
+      const record = records.find((item) => item.ticker === ticker)!;
+      const base = analysis(ticker, record.cnpj, {
+        marketDataIdentityVerified: true,
+        marketCapIdentityVerified: true,
+      });
+      return {
+        ...base,
+        indicators: base.indicators.map((item) =>
+          item.key === "pe" || item.key === "pb"
+            ? {
+                ...item,
+                referenceDate:
+                  ticker === "VALE3" ? "2025-12-31" : item.referenceDate,
+                marketDataDate: "2026-10-06T15:00:00Z",
+                valuationSource: "validated_issuer_market_cap",
+                valuationMethod: "validated_method",
+              }
+            : item,
+        ),
+      };
+    });
+
+    const result = await service.compare({ tickers: ["PETR3", "VALE3"] });
+
+    for (const company of result.companies) {
+      expect(company.valuation.pe).toMatchObject({
+        value: 8,
+        unavailableReason: null,
+        comparisonStatus: "not_comparable",
+        comparisonReason: expect.stringContaining(
+          "bases ou datas CVM diferentes",
+        ),
+      });
+    }
+  });
+
   it("rejects valuation dates that are missing or malformed", async () => {
     const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
     const { service } = makeService(records, (ticker) => {
@@ -867,6 +907,40 @@ describe("StockComparisonService", () => {
     expect(semanticResult.companies[0]?.fundamentals.roe.comparisonStatus).toBe(
       "not_comparable",
     );
+  });
+
+  it("keeps valid net margins when peer revenue account semantics differ", async () => {
+    const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
+    const { service } = makeService(records, (ticker) => {
+      const base = analysis(
+        ticker,
+        records.find((record) => record.ticker === ticker)!.cnpj,
+      );
+      if (ticker !== "VALE3") return base;
+
+      return {
+        ...base,
+        fundamentals: base.fundamentals.map((period) => ({
+          ...period,
+          revenueAccountLabel: "Receita de prestação de serviços",
+        })),
+      };
+    });
+
+    const result = await service.compare({ tickers: ["PETR3", "VALE3"] });
+    const margins = result.companies.map(
+      (company) => company.fundamentals.netMargin,
+    );
+
+    expect(margins.map((margin) => margin.value)).toEqual([12, 12]);
+    expect(
+      margins.every(
+        (margin) =>
+          margin.unavailableReason === null &&
+          margin.comparisonStatus === "not_comparable" &&
+          margin.comparisonReason?.includes("origem semântica"),
+      ),
+    ).toBe(true);
   });
 
   it("allows zero as a valid metric value and distinguishes it from missing values", async () => {

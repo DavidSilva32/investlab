@@ -591,7 +591,7 @@ export function CompanyComparison({
                       {metricRows
                         .filter((row) => row.group === group)
                         .map((row) => {
-                          const firstCell = rows[0] ? row.get(rows[0]) : null;
+                          const firstCell = row.get(rows[0]!);
                           return (
                             <Fragment key={row.label}>
                               <tr className="border-t">
