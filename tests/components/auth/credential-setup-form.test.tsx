@@ -20,6 +20,12 @@ vi.mock("sonner", () => ({
 }));
 import { CredentialSetupForm } from "@/components/auth/credential-setup-form";
 
+function renderApprovedInviteForm(token = "invitation-token") {
+  return render(
+    <CredentialSetupForm mode="invite" token={token} termsApproved />,
+  );
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
@@ -67,11 +73,30 @@ describe("CredentialSetupForm", () => {
     expect((confirmation as HTMLInputElement).type).toBe("text");
   });
 
+  it("does not show an acceptance checkbox or activation form while terms are pending", () => {
+    render(<CredentialSetupForm mode="invite" token="invitation-token" />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Ativação temporariamente indisponível",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(/não utilizará seu convite/)).toBeTruthy();
+    expect(screen.getByText(/solicite um novo convite/)).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByLabelText("Nome")).toBeNull();
+    expect(screen.queryByLabelText("Nova senha")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Salvar senha" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href"),
+    ).toBe("/termos-de-uso");
+  });
+
   it("activates an invited account using the URL-bound token and the invited person’s chosen password", async () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    render(<CredentialSetupForm mode="invite" token="invitation-token" />);
+    renderApprovedInviteForm();
     await user.type(screen.getByLabelText("Nome"), "Pessoa Convidada");
     await user.type(
       screen.getByLabelText("Nova senha"),
@@ -101,7 +126,7 @@ describe("CredentialSetupForm", () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    render(<CredentialSetupForm mode="invite" token="invitation-token" />);
+    renderApprovedInviteForm();
 
     await user.type(screen.getByLabelText("Nome"), "Pessoa Convidada");
     await user.type(
@@ -137,7 +162,11 @@ describe("CredentialSetupForm", () => {
 
   it("uses the height available between the shared public header and footer", () => {
     const { container } = render(
-      <CredentialSetupForm mode="invite" token="invitation-token" />,
+      <CredentialSetupForm
+        mode="invite"
+        token="invitation-token"
+        termsApproved
+      />,
     );
 
     expect(container.querySelector("main")?.className).toContain(
@@ -215,7 +244,11 @@ describe("CredentialSetupForm", () => {
       .mockResolvedValueOnce(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     const { container } = render(
-      <CredentialSetupForm mode="invite" token="invitation-token" />,
+      <CredentialSetupForm
+        mode="invite"
+        token="invitation-token"
+        termsApproved
+      />,
     );
     await userEvent
       .setup()

@@ -533,6 +533,48 @@ describe("AuthRepository", () => {
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
+  it("propagates an acceptance insert failure so the invitation transaction can roll back", async () => {
+    const returning = vi
+      .fn()
+      .mockResolvedValue([{ email: "bound@example.com" }]);
+    const where = vi.fn().mockReturnValue({ returning });
+    const set = vi.fn().mockReturnValue({ where });
+    const rollback = vi.fn();
+    let insertCount = 0;
+    const transaction = {
+      update: vi.fn().mockReturnValue({ set }),
+      insert: vi.fn(() => ({
+        values: vi.fn(() => {
+          insertCount += 1;
+          return insertCount === 3
+            ? Promise.reject(new Error("acceptance insert failed"))
+            : Promise.resolve();
+        }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) => {
+      try {
+        return await callback(transaction);
+      } catch (error) {
+        rollback();
+        throw error;
+      }
+    });
+
+    await expect(
+      repository.activateInvitation({
+        tokenHash: "hashed-token",
+        name: "Invitee",
+        passwordHash: "password-hash",
+        termsVersion: "approved-2026-10-20.1",
+      }),
+    ).rejects.toThrow("acceptance insert failed");
+
+    expect(database.transaction).toHaveBeenCalledOnce();
+    expect(transaction.insert).toHaveBeenCalledTimes(3);
+    expect(rollback).toHaveBeenCalledOnce();
+  });
+
   it("finds a user by email and returns null when none exists", async () => {
     const limit = vi
       .fn()

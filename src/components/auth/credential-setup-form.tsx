@@ -21,9 +21,11 @@ import { Label } from "@/components/ui/label";
 export function CredentialSetupForm({
   token,
   mode,
+  termsApproved = false,
 }: {
   token: string;
   mode: "invite" | "reset";
+  termsApproved?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -36,6 +38,48 @@ export function CredentialSetupForm({
     mode === "invite"
       ? "/api/auth/invitations/activate"
       : "/api/auth/password-resets/consume";
+
+  if (mode === "invite" && !termsApproved) {
+    return (
+      <main className="grid min-h-[calc(100dvh-16rem)] place-items-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <h1 className="font-semibold leading-none tracking-tight">
+              Ativação temporariamente indisponível
+            </h1>
+            <CardDescription className="leading-6">
+              Novas contas poderão ser ativadas quando os Termos de Uso forem
+              aprovados. Esta página não utilizará seu convite. Quando a
+              ativação estiver liberada, solicite um novo convite ao
+              administrador.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <nav
+              aria-label="Documentos de privacidade"
+              className="flex flex-wrap gap-4 text-sm"
+            >
+              <Link
+                href="/termos-de-uso"
+                className="font-medium text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Termos de Uso
+              </Link>
+              <Link
+                href="/privacidade"
+                className="font-medium text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Política de Privacidade
+              </Link>
+            </nav>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="/entrar">Voltar ao acesso</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

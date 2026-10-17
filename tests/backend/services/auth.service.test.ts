@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   updateUser: vi.fn(),
   changePassword: vi.fn(),
   hashPassword: vi.fn(),
+  getApprovedTermsVersion: vi.fn(),
 }));
 
 vi.mock("@/backend/repositories/auth.repository", () => ({
@@ -38,9 +39,11 @@ vi.mock("@/infrastructure/auth/auth", () => ({
     $context: Promise.resolve({ password: { hash: mocks.hashPassword } }),
   },
 }));
+vi.mock("@/lib/privacy-policy", () => ({
+  getApprovedTermsVersion: mocks.getApprovedTermsVersion,
+}));
 import { authService } from "@/backend/services/auth.service";
 import { ApplicationError } from "@/backend/errors/application-error";
-import { CURRENT_TERMS_VERSION } from "@/lib/privacy-policy";
 
 describe("AuthService", () => {
   beforeEach(() => {
@@ -49,6 +52,7 @@ describe("AuthService", () => {
     mocks.updateUser.mockReset();
     mocks.changePassword.mockReset();
     mocks.hashPassword.mockReset();
+    mocks.getApprovedTermsVersion.mockReturnValue(null);
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -375,6 +379,7 @@ describe("AuthService", () => {
   });
 
   it("activates only after accepting the current terms and delegates atomic account creation", async () => {
+    mocks.getApprovedTermsVersion.mockReturnValue("terms-2026-10-20.1");
     mocks.repository.claimInvitationExistsUnused.mockResolvedValue(true);
     mocks.hashPassword.mockResolvedValue("credential-hash");
     mocks.repository.activateInvitation.mockResolvedValue(true);
@@ -391,7 +396,7 @@ describe("AuthService", () => {
       tokenHash: expect.any(String),
       name: "Invitee",
       passwordHash: "credential-hash",
-      termsVersion: CURRENT_TERMS_VERSION,
+      termsVersion: "terms-2026-10-20.1",
     });
     expect(mocks.repository.claimInvitationExistsUnused).toHaveBeenCalledWith(
       expect.any(String),
@@ -433,7 +438,28 @@ describe("AuthService", () => {
     ).rejects.toBeInstanceOf(ApplicationError);
   });
 
+  it("blocks invitation activation before validation or token work when terms are pending", async () => {
+    vi.stubEnv("INVESTLAB_APPROVED_TERMS_VERSION", "");
+
+    await expect(
+      authService.activateInvitation(
+        "t".repeat(43),
+        "Invitee",
+        "A-long-safe-password-123",
+        true,
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      message: expect.stringContaining("aguardam aprovação"),
+    });
+
+    expect(mocks.repository.claimInvitationExistsUnused).not.toHaveBeenCalled();
+    expect(mocks.hashPassword).not.toHaveBeenCalled();
+    expect(mocks.repository.activateInvitation).not.toHaveBeenCalled();
+  });
+
   it("hides transaction failures without exposing database details", async () => {
+    mocks.getApprovedTermsVersion.mockReturnValue("terms-2026-10-20.1");
     mocks.repository.claimInvitationExistsUnused.mockResolvedValue(true);
     mocks.hashPassword.mockResolvedValue("credential-hash");
     mocks.repository.activateInvitation.mockRejectedValue(

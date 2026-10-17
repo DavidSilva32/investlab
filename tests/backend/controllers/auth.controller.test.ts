@@ -377,6 +377,21 @@ describe("AuthController", () => {
       ).status,
     ).toBe(400);
     mocks.service.activateInvitation.mockRejectedValueOnce(
+      new ApplicationError("Activation is pending approval.", 503),
+    );
+    const unavailable = await controller.activateInvite(
+      request({
+        token: "i".repeat(40),
+        name: "Invitee",
+        password: "A-long-password-123",
+        acceptTerms: true,
+      }),
+    );
+    expect(unavailable.status).toBe(503);
+    await expect(unavailable.json()).resolves.toEqual({
+      message: "Activation is pending approval.",
+    });
+    mocks.service.activateInvitation.mockRejectedValueOnce(
       new Error("secret database detail"),
     );
     const response = await controller.activateInvite(

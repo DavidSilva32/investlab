@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const database = vi.hoisted(() => ({ select: vi.fn() }));
 vi.mock("@/infrastructure/database/client", () => ({
@@ -25,6 +26,9 @@ describe("PrivacyCenterRepository", () => {
     );
     expect(database.select).toHaveBeenCalledOnce();
     expect(where).toHaveBeenCalledOnce();
+    expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toContain(
+      "user-1",
+    );
     expect(orderBy).toHaveBeenCalledOnce();
   });
 });

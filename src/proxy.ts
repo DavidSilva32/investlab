@@ -5,7 +5,7 @@ import { logger } from "@/infrastructure/logging/logger";
 
 const publicPaths = new Set([
   "/entrar",
-  "/entrar",
+  "/login",
   "/termos-de-uso",
   "/privacidade",
   "/cookies",
@@ -22,9 +22,9 @@ function isPublicPath(pathname: string) {
   return (
     publicPaths.has(pathname) ||
     pathname.startsWith("/convite/") ||
-    pathname.startsWith("/convite/") ||
+    pathname.startsWith("/invite/") ||
     pathname.startsWith("/redefinir-senha/") ||
-    pathname.startsWith("/redefinir-senha/") ||
+    pathname.startsWith("/reset-password/") ||
     pathname === "/access-unavailable"
   );
 }

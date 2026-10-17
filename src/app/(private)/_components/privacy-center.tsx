@@ -21,7 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest } from "@/lib/api-client";
 
 type TermsAcceptancesResponse = {
-  currentTermsVersion: string;
+  currentTermsVersion: string | null;
   termsAcceptances: Array<{ termsVersion: string; acceptedAt: string }>;
 };
 

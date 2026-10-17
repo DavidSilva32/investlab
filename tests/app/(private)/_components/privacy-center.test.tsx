@@ -41,7 +41,7 @@ describe("PrivacyCenter", () => {
   it("shows the authenticated user's recorded acceptance and document links", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       Response.json({
-        currentTermsVersion: "rascunho-2026-10-17.1",
+        currentTermsVersion: null,
         termsAcceptances: [
           {
             termsVersion: "rascunho-2026-10-17.1",
