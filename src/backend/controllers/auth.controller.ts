@@ -6,6 +6,7 @@ import {
   requireRole,
 } from "@/infrastructure/auth/authorization";
 import { logger } from "@/infrastructure/logging/logger";
+import { ADMIN_SUPPORT_VIEW_COOKIE } from "@/backend/services/admin-support-view.service";
 
 function errorType(error: unknown) {
   return error instanceof Error ? error.name : "UnknownError";
@@ -78,6 +79,15 @@ const ownPasswordChangeSchema = z
   .refine((body) => body.newPassword === body.confirmPassword);
 
 export class AuthController {
+  async logout(_request: Request, response: Response) {
+    response.headers.append(
+      "Set-Cookie",
+      `${ADMIN_SUPPORT_VIEW_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
+    );
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
+
   async updateOwnProfile(request: Request) {
     try {
       await requireAuthenticatedUser(request.headers);

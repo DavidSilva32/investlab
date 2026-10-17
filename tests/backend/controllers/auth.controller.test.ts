@@ -70,6 +70,20 @@ describe("AuthController", () => {
     mocks.logger.error.mockReset();
   });
 
+  it("clears the support-view cookie securely on logout in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = await controller.logout(
+      request(),
+      Response.json({ loggedOut: true }),
+    );
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("set-cookie")).toContain(
+      "investlab-support-view=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure",
+    );
+    vi.unstubAllEnvs();
+  });
+
   it("validates and updates only the current profile name", async () => {
     mocks.service.updateOwnProfile.mockResolvedValue(
       Response.json({ ok: true }),

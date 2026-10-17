@@ -21,6 +21,8 @@ import { LogoutButton } from "@/components/logout-button";
 import { PortfolioChatAssistant } from "@/components/portfolio-chat-assistant";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserProfileDialog } from "@/components/user-profile-dialog";
+import { AdminSupportViewControl } from "@/components/admin-support-view-control";
+import { AdminSupportViewBanner } from "@/components/admin-support-view-banner";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -249,6 +251,7 @@ export function AppShell({
           </div>
           <div className="flex min-w-0 items-center gap-3">
             <ThemeToggle />
+            {user.role === "ADMIN" && <AdminSupportViewControl />}
             <UserProfileDialog
               name={user.name}
               email={user.email}
@@ -257,6 +260,7 @@ export function AppShell({
             />
           </div>
         </header>
+        {user.role === "ADMIN" && <AdminSupportViewBanner />}
         <main className="w-full p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
       <PortfolioChatAssistant />
