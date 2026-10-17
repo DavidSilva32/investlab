@@ -56,7 +56,6 @@ export function AdminSupportViewBanner() {
   }, [supportView, load, router]);
 
   async function endSupportView() {
-    if (busy) return;
     setBusy(true);
     try {
       const response = await fetch("/api/admin/support-view", {

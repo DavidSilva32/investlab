@@ -77,7 +77,22 @@ describe("AdminSupportViewController", () => {
     });
   });
 
+  it("returns the account list without setting a cookie when support mode is inactive", async () => {
+    const response = await controller.get(
+      request("/api/admin/support-view", "GET"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(await response.json()).toEqual({
+      targets: [target],
+      supportView: null,
+    });
+  });
+
   it("clears an expired cookie and returns no current view", async () => {
+    vi.stubEnv("NODE_ENV", "production");
     const response = await controller.get(
       request("/api/admin/support-view", "GET", undefined, {
         cookie: `investlab-support-view=${"b".repeat(43)}`,
@@ -88,6 +103,7 @@ describe("AdminSupportViewController", () => {
       supportView: null,
     });
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(response.headers.get("set-cookie")).toContain("Secure");
   });
 
   it("starts a same-origin session and sets only an HttpOnly token cookie", async () => {
@@ -148,6 +164,18 @@ describe("AdminSupportViewController", () => {
       ),
     );
     expect(missingOrigin.status).toBe(403);
+    const malformedOrigin = await controller.start(
+      request(
+        "/api/admin/support-view",
+        "POST",
+        { targetUserId: target.id },
+        {
+          ...sameOriginHeaders,
+          origin: "https://[invalid-host",
+        },
+      ),
+    );
+    expect(malformedOrigin.status).toBe(403);
     expect(
       (
         await controller.start(

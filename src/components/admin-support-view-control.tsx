@@ -68,8 +68,11 @@ export function AdminSupportViewControl() {
     return () => window.clearTimeout(timer);
   }, [data?.supportView, load, router]);
 
+  if (!data) return null;
+  const currentTarget = data.supportView?.target;
+
   async function selectTarget(targetUserId: string) {
-    if (!targetUserId || busy) return;
+    if (!targetUserId) return;
     setBusy(true);
     try {
       const response = await fetch("/api/admin/support-view", {
@@ -82,10 +85,13 @@ export function AdminSupportViewControl() {
         throw new Error(
           getApiMessage(body, "Não foi possível abrir esta conta."),
         );
-      setData((previous) =>
+      setData((previous: ControlData | undefined): ControlData | undefined =>
         previous
-          ? { ...previous, supportView: body.supportView as SupportView }
-          : previous,
+          ? {
+              targets: previous.targets,
+              supportView: body.supportView as SupportView,
+            }
+          : undefined,
       );
       window.dispatchEvent(
         new CustomEvent("admin-support-view-changed", {
@@ -105,9 +111,6 @@ export function AdminSupportViewControl() {
       setBusy(false);
     }
   }
-
-  if (!data) return null;
-  const currentTarget = data.supportView?.target;
 
   return (
     <>

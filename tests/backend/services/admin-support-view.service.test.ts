@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
 
 const mocks = vi.hoisted(() => ({
   repository: { listTargets: vi.fn(), getActiveTarget: vi.fn() },
@@ -23,10 +24,19 @@ describe("AdminSupportViewService", () => {
   const service = new AdminSupportViewService();
   const admin = { id: "admin-1", role: "ADMIN" as const };
   const target = { id: "customer-1", name: "Marcos", email: "m@example.com" };
+  const secret = "unit-test-secret-with-at-least-32-characters";
+
+  function signedPayload(payload: unknown) {
+    const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const signature = createHmac("sha256", secret)
+      .update(encoded)
+      .digest("base64url");
+    return `${encoded}.${signature}`;
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv("AUTH_SECRET", "unit-test-secret-with-at-least-32-characters");
+    vi.stubEnv("AUTH_SECRET", secret);
     mocks.requireRole.mockResolvedValue(admin);
     mocks.repository.getActiveTarget.mockResolvedValue({
       kind: "found",
@@ -52,6 +62,30 @@ describe("AdminSupportViewService", () => {
       ),
     ).toBe(true);
     expect(hasAdminSupportViewCookie(new Headers())).toBe(false);
+    expect(
+      readAdminSupportViewToken(
+        new Headers({ cookie: "other=ignored; investlab-support-view=bad" }),
+      ),
+    ).toBeNull();
+    const validToken = "a".repeat(43);
+    expect(
+      readAdminSupportViewToken(
+        new Headers({ cookie: `${ADMIN_SUPPORT_VIEW_COOKIE}=${validToken}` }),
+      ),
+    ).toBe(validToken);
+  });
+
+  it("lists current targets only for an authorized administrator", async () => {
+    const targets = [target];
+    mocks.repository.listTargets.mockResolvedValue({ kind: "listed", targets });
+    await expect(service.listTargets(new Headers())).resolves.toBe(targets);
+    expect(mocks.repository.listTargets).toHaveBeenCalledWith(admin.id);
+    mocks.repository.listTargets.mockResolvedValueOnce({
+      kind: "actor-not-authorized",
+    });
+    await expect(service.listTargets()).rejects.toMatchObject({
+      statusCode: 403,
+    });
   });
 
   it("issues an expiring signed cookie bound to the active admin and target", async () => {
@@ -99,6 +133,43 @@ describe("AdminSupportViewService", () => {
       kind: "actor-not-authorized",
     });
     await expect(service.getActive(fresh.token, admin.id)).resolves.toBeNull();
+  });
+
+  it("rejects malformed, unverifiable, and structurally invalid signed tokens", async () => {
+    await expect(service.getActive(null, admin.id)).resolves.toBeNull();
+    await expect(
+      service.getActive("missing-separator", admin.id),
+    ).resolves.toBeNull();
+    await expect(
+      service.getActive("one.two.three", admin.id),
+    ).resolves.toBeNull();
+
+    vi.stubEnv("AUTH_SECRET", "short");
+    await expect(
+      service.getActive("payload.signature", admin.id),
+    ).resolves.toBeNull();
+    vi.stubEnv("AUTH_SECRET", secret);
+
+    const invalidJson = Buffer.from("not-json").toString("base64url");
+    const invalidJsonToken = `${invalidJson}.${createHmac("sha256", secret)
+      .update(invalidJson)
+      .digest("base64url")}`;
+    await expect(
+      service.getActive(invalidJsonToken, admin.id),
+    ).resolves.toBeNull();
+
+    for (const payload of [
+      {
+        actorUserId: "admin-1",
+        targetUserId: "customer-1",
+        expiresAt: "later",
+      },
+      { actorUserId: "admin-1", targetUserId: 2, expiresAt: Date.now() + 1000 },
+    ]) {
+      await expect(
+        service.getActive(signedPayload(payload), admin.id),
+      ).resolves.toBeNull();
+    }
   });
 
   it("rejects inactive administrators or targets before issuing a cookie", async () => {

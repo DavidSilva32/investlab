@@ -190,6 +190,53 @@ describe("withApiRequestLogging", () => {
     expect(response.status).toBe(403);
   });
 
+  it("allows the authenticated admin to manage the support-view cookie and logout", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const control = withApiRequestLogging(
+      "GET",
+      "/api/admin/support-view",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+    const controlResponse = await control(
+      new Request("https://investlab.test/api/admin/support-view"),
+    );
+    expect(controlResponse.status).toBe(200);
+    expect(await controlResponse.json()).toEqual({ ownerId: "owner-1" });
+
+    const logout = withApiRequestLogging(
+      "POST",
+      "/api/auth/logout",
+      async (_request: Request) => Response.json({ loggedOut: true }),
+    );
+    const logoutResponse = await logout(
+      new Request("https://investlab.test/api/auth/logout", {
+        method: "POST",
+      }),
+    );
+    expect(logoutResponse.status).toBe(200);
+    expect(await logoutResponse.json()).toEqual({ loggedOut: true });
+  });
+
+  it("allows an explicitly read-only global screener endpoint without customer ownership", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/screener",
+      async (_request: Request) =>
+        Response.json({ ownerId: getDataOwnerId() }),
+    );
+
+    const response = await handler(
+      new Request("https://investlab.test/api/screener"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ownerId: null });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("uses only the active server-side target for scoped customer reads", async () => {
     support.token = "a".repeat(43);
     support.active = { targetUserId: "customer-1" };
@@ -314,6 +361,23 @@ describe("withApiRequestLogging", () => {
     );
     expect(response.status).toBe(403);
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("clears invalid support cookies when the administrator session is missing", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    support.token = "a".repeat(43);
+    authorization.user = null;
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/portfolio",
+      vi.fn(async (_request: Request) => Response.json({ private: true })),
+    );
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio"),
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(response.headers.get("set-cookie")).toContain("Secure");
   });
 
   it("permits audited read-only calculations against the customer data", async () => {

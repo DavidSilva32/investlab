@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -81,5 +87,104 @@ describe("AdminSupportViewBanner", () => {
     );
     render(<AdminSupportViewBanner />);
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  });
+
+  it("keeps the banner hidden when loading returns an unsuccessful response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ message: "Acesso negado." }),
+      }),
+    );
+    render(<AdminSupportViewBanner />);
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  });
+
+  it("refreshes the page when the signed support view expires", async () => {
+    const expiredView = {
+      ...activeView,
+      expiresAt: new Date(Date.now() - 1).toISOString(),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ targets: [target], supportView: expiredView }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ targets: [target], supportView: null }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AdminSupportViewBanner />);
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows an API error and keeps the support banner available", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ targets: [target], supportView: activeView }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          json: async () => ({ message: "Ação recusada." }),
+        }),
+    );
+    const user = userEvent.setup();
+    render(<AdminSupportViewBanner />);
+    await user.click(
+      await screen.findByRole("button", { name: "Encerrar visualização" }),
+    );
+    await waitFor(() =>
+      expect(mocks.error).toHaveBeenCalledWith("Ação recusada."),
+    );
+    expect(screen.getByRole("status")).toBeTruthy();
+  });
+
+  it("uses a safe fallback when the end request rejects with a non-error value", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ targets: [target], supportView: activeView }),
+        })
+        .mockRejectedValueOnce("offline"),
+    );
+    const user = userEvent.setup();
+    render(<AdminSupportViewBanner />);
+    await user.click(
+      await screen.findByRole("button", { name: "Encerrar visualização" }),
+    );
+    await waitFor(() =>
+      expect(mocks.error).toHaveBeenCalledWith(
+        "Não foi possível encerrar a visualização.",
+      ),
+    );
+  });
+
+  it("updates its banner when the shell broadcasts an active view", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ targets: [target], supportView: null }),
+      }),
+    );
+    render(<AdminSupportViewBanner />);
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    fireEvent(
+      window,
+      new CustomEvent("admin-support-view-changed", { detail: activeView }),
+    );
+    expect(await screen.findByText("Visualização de suporte")).toBeTruthy();
   });
 });
