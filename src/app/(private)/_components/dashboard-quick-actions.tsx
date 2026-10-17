@@ -26,6 +26,9 @@ export function DashboardQuickActions({
   onImportOpenChange,
   firstAccess = false,
   supportReadOnly = false,
+  supportChecking = false,
+  supportCheckError = false,
+  onRetrySupportCheck = () => {},
 }: {
   positions: PortfolioPosition[];
   objectivesOpen: boolean;
@@ -43,13 +46,25 @@ export function DashboardQuickActions({
   onImportOpenChange: (open: boolean) => void;
   firstAccess?: boolean;
   supportReadOnly?: boolean;
+  supportChecking?: boolean;
+  supportCheckError?: boolean;
+  onRetrySupportCheck?: () => void;
 }) {
+  const actionsEnabled =
+    !supportReadOnly && !supportChecking && !supportCheckError;
+  const readOnly = !actionsEnabled;
   return (
-    <Sheet open={importOpen} onOpenChange={onImportOpenChange}>
+    <Sheet
+      open={importOpen && actionsEnabled}
+      onOpenChange={onImportOpenChange}
+    >
       <>
         {firstAccess ? (
           <DashboardFirstAccess
-            readOnly={supportReadOnly}
+            readOnly={readOnly}
+            contextPending={supportChecking}
+            contextError={supportCheckError}
+            onRetryContext={onRetrySupportCheck}
             onImport={() => onImportOpenChange(true)}
             onCreateManual={() =>
               window.dispatchEvent(
@@ -68,36 +83,42 @@ export function DashboardQuickActions({
                   Ações rápidas
                 </h2>
                 <div className="grid gap-2 sm:grid-cols-3">
-                  <Button
-                    type="button"
-                    className="min-h-12 justify-start gap-2 sm:justify-center"
-                    onClick={() =>
-                      window.dispatchEvent(
-                        new Event("portfolio:manual-position:create"),
-                      )
-                    }
-                  >
-                    <Plus aria-hidden="true" className="size-4" />
-                    Adicionar posição
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-12 justify-start gap-2 sm:justify-center"
-                    onClick={() => onImportOpenChange(true)}
-                  >
-                    <Upload aria-hidden="true" className="size-4" />
-                    Importar e conciliar
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-12 justify-start gap-2 sm:justify-center"
-                    onClick={() => onObjectivesOpenChange(true)}
-                  >
-                    <Target aria-hidden="true" className="size-4" />
-                    Ver objetivos
-                  </Button>
+                  {actionsEnabled && (
+                    <>
+                      <Button
+                        type="button"
+                        className="min-h-12 justify-start gap-2 sm:justify-center"
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new Event("portfolio:manual-position:create"),
+                          )
+                        }
+                      >
+                        <Plus aria-hidden="true" className="size-4" />
+                        Adicionar posição
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-12 justify-start gap-2 sm:justify-center"
+                        onClick={() => onImportOpenChange(true)}
+                      >
+                        <Upload aria-hidden="true" className="size-4" />
+                        Importar e conciliar
+                      </Button>
+                    </>
+                  )}
+                  {actionsEnabled && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-12 justify-start gap-2 sm:justify-center"
+                      onClick={() => onObjectivesOpenChange(true)}
+                    >
+                      <Target aria-hidden="true" className="size-4" />
+                      Ver objetivos
+                    </Button>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   A conciliação com posições existentes aparece durante a
@@ -123,41 +144,44 @@ export function DashboardQuickActions({
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
             role="region"
           >
-            <PortfolioImport readOnly={supportReadOnly} />
+            <PortfolioImport readOnly={readOnly} />
           </div>
         </SheetContent>
-        {!firstAccess && (
-          <Sheet open={objectivesOpen} onOpenChange={onObjectivesOpenChange}>
-            <SheetContent
-              side="right"
-              className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden sm:max-w-3xl"
+        <Sheet
+          open={objectivesOpen && actionsEnabled}
+          onOpenChange={onObjectivesOpenChange}
+        >
+          <SheetContent
+            side="right"
+            className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden sm:max-w-3xl"
+          >
+            <SheetHeader className="mb-5 shrink-0 pr-8">
+              <SheetTitle>Objetivos e destinos</SheetTitle>
+              <SheetDescription>
+                Consulte e organize os objetivos da sua carteira.
+              </SheetDescription>
+            </SheetHeader>
+            <div
+              aria-label="Objetivos e destinos da carteira"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+              role="region"
             >
-              <SheetHeader className="mb-5 shrink-0 pr-8">
-                <SheetTitle>Objetivos e destinos</SheetTitle>
-                <SheetDescription>
-                  Consulte e organize os objetivos da sua carteira.
-                </SheetDescription>
-              </SheetHeader>
-              <div
-                aria-label="Objetivos e destinos da carteira"
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
-                role="region"
-              >
-                <PortfolioObjectives
-                  navigation={
-                    objectivesNavigation ?? {
-                      open: objectivesOpen,
-                      objectiveId: null,
-                      screen: null,
-                    }
+              <PortfolioObjectives
+                navigation={
+                  objectivesNavigation ?? {
+                    open: objectivesOpen,
+                    objectiveId: null,
+                    screen: null,
                   }
-                  onNavigationChange={onObjectivesNavigationChange}
-                />
-              </div>
-            </SheetContent>
-          </Sheet>
+                }
+                onNavigationChange={onObjectivesNavigationChange}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+        {actionsEnabled && (
+          <ManualPositionManager positions={positions} entryOnly />
         )}
-        <ManualPositionManager positions={positions} entryOnly />
       </>
     </Sheet>
   );

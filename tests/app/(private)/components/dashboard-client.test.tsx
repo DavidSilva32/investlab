@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   routerReplace: vi.fn(),
-  supportView: false as boolean | null,
+  supportView: false as boolean | null | "error",
 }));
 
 vi.mock("@/components/app-page-skeleton", () => ({
@@ -24,6 +30,12 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     onObjectivesOpenChange,
     onObjectivesNavigationChange,
     supportReadOnly,
+    supportChecking,
+    supportCheckError,
+    onRetrySupportCheck,
+    onImportOpenChange,
+    configuredObjectivesCount,
+    manualPositions,
   }: {
     destinationSummary?: { knownTotal: number };
     longTermMissingPositionCount?: number;
@@ -39,10 +51,28 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
       screen?: string | null,
     ) => void;
     supportReadOnly?: boolean;
+    supportChecking?: boolean;
+    supportCheckError?: boolean;
+    onRetrySupportCheck?: () => void;
+    onImportOpenChange?: (open: boolean) => void;
+    configuredObjectivesCount?: number;
+    manualPositions?: unknown[];
   }) => (
     <>
       <p>Resumo do dashboard</p>
       {supportReadOnly && <p>Dashboard em modo somente leitura</p>}
+      {supportChecking && <p>Contexto de suporte pendente</p>}
+      {supportCheckError && <p>Falha recuperável no contexto de suporte</p>}
+      {supportCheckError && (
+        <button type="button" onClick={onRetrySupportCheck}>
+          Tentar novamente o contexto
+        </button>
+      )}
+      {!supportReadOnly && !supportChecking && !supportCheckError && (
+        <button type="button">Adicionar posição</button>
+      )}
+      <p>Objetivos configurados: {configuredObjectivesCount ?? 0}</p>
+      <p>Posições visíveis: {manualPositions?.length ?? 0}</p>
       <button type="button" onClick={onOpenReserve}>
         Ver reserva
       </button>
@@ -59,6 +89,15 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
         <p>Objetivo aberto no painel: {objectivesNavigation.objectiveId}</p>
       )}
       {importOpen && <p>Importação lateral aberta</p>}
+      {!importOpen ? (
+        <button type="button" onClick={() => onImportOpenChange?.(true)}>
+          Abrir importação
+        </button>
+      ) : (
+        <button type="button" onClick={() => onImportOpenChange?.(false)}>
+          Fechar importação
+        </button>
+      )}
       {destinationSummary && (
         <p>Total por destinos: {destinationSummary.knownTotal}</p>
       )}
@@ -86,10 +125,10 @@ vi.mock("@/components/app-shell", () => ({
   useAdminSupportView: () => mocks.supportView,
 }));
 
-function renderDashboard() {
+function renderDashboard(openImportOnLoad = false) {
   return render(
     <QueryProvider>
-      <DashboardClient />
+      <DashboardClient openImportOnLoad={openImportOnLoad} />
     </QueryProvider>,
   );
 }
@@ -153,6 +192,114 @@ describe("DashboardClient", () => {
     ).toBeTruthy();
   });
 
+  it("fails closed while support status is unresolved and only opens deep-linked import for the account owner", async () => {
+    mocks.supportView = null;
+    const overviewWithPosition = {
+      ...overview,
+      positions: [
+        {
+          id: "position-1",
+          product: "CDB",
+          assetCode: null,
+          institution: null,
+          indexer: null,
+          issuedAt: null,
+          maturityAt: null,
+          quantity: "1",
+          totalValue: "100",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        jsonResponse(
+          url === "/api/portfolio" ? overviewWithPosition : objectivesOverview,
+        ),
+      ),
+    );
+
+    const dashboard = renderDashboard(true);
+    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
+    expect(screen.getByText("Contexto de suporte pendente")).toBeTruthy();
+    expect(screen.getByText("Posições visíveis: 1")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Adicionar posição" }),
+    ).toBeNull();
+    expect(screen.queryByText("Importação lateral aberta")).toBeNull();
+
+    mocks.supportView = true;
+    dashboard.rerender(
+      <QueryProvider>
+        <DashboardClient openImportOnLoad />
+      </QueryProvider>,
+    );
+    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
+    expect(screen.getByText("Dashboard em modo somente leitura")).toBeTruthy();
+    expect(screen.queryByText("Importação lateral aberta")).toBeNull();
+
+    mocks.supportView = false;
+    dashboard.rerender(
+      <QueryProvider>
+        <DashboardClient openImportOnLoad />
+      </QueryProvider>,
+    );
+    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
+    expect(screen.queryByText("Dashboard em modo somente leitura")).toBeNull();
+    expect(await screen.findByText("Importação lateral aberta")).toBeTruthy();
+  });
+
+  it("keeps dashboard data visible and actions gated after support status fails", async () => {
+    mocks.supportView = "error";
+    const overviewWithPosition = {
+      ...overview,
+      positions: [
+        {
+          id: "position-1",
+          product: "CDB",
+          assetCode: null,
+          institution: null,
+          indexer: null,
+          issuedAt: null,
+          maturityAt: null,
+          quantity: "1",
+          totalValue: "100",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        jsonResponse(
+          url === "/api/portfolio" ? overviewWithPosition : objectivesOverview,
+        ),
+      ),
+    );
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+
+    renderDashboard(true);
+
+    expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
+    expect(screen.getByText("Posições visíveis: 1")).toBeTruthy();
+    expect(
+      screen.getByText("Falha recuperável no contexto de suporte"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Adicionar posição" }),
+    ).toBeNull();
+    expect(screen.queryByText("Importação lateral aberta")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "admin-support-view-retry" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Tentar novamente o contexto" }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "admin-support-view-retry" }),
+    );
+  });
+
   it("counts only missing long-term objective positions for the dashboard", async () => {
     vi.stubGlobal(
       "fetch",
@@ -180,6 +327,7 @@ describe("DashboardClient", () => {
     expect(
       await screen.findByText("Posições de longo prazo ausentes: 2"),
     ).toBeTruthy();
+    expect(await screen.findByText("Objetivos configurados: 3")).toBeTruthy();
   });
 
   it("opens the reserve in the dashboard panel without changing routes", async () => {
@@ -239,6 +387,43 @@ describe("DashboardClient", () => {
     await waitFor(() =>
       expect(mocks.routerReplace).toHaveBeenCalledWith("/", { scroll: false }),
     );
+  });
+
+  it("keeps a dismissed deep-linked import closed after rerender", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
+      ),
+    );
+    const dashboard = renderDashboard(true);
+
+    expect(await screen.findByText("Importação lateral aberta")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Fechar importação" }));
+    expect(screen.queryByText("Importação lateral aberta")).toBeNull();
+
+    dashboard.rerender(
+      <QueryProvider>
+        <DashboardClient openImportOnLoad />
+      </QueryProvider>,
+    );
+    expect(screen.queryByText("Importação lateral aberta")).toBeNull();
+  });
+
+  it("opens and closes the import sheet from dashboard quick actions", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
+      ),
+    );
+    renderDashboard();
+    await screen.findByText("Resumo do dashboard");
+
+    fireEvent.click(screen.getByRole("button", { name: "Abrir importação" }));
+    expect(screen.getByText("Importação lateral aberta")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Fechar importação" }));
+    expect(screen.queryByText("Importação lateral aberta")).toBeNull();
   });
 
   it("keeps the portfolio available and retries only unavailable destinations", async () => {

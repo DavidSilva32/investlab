@@ -122,4 +122,72 @@ describe("DashboardQuickActions", () => {
       screen.getByRole("region", { name: "Objetivos e destinos da carteira" }),
     ).toBeTruthy();
   });
+
+  it("hides manual creation and import in the read-only dashboard even with positions", () => {
+    const onImportOpenChange = vi.fn();
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    render(
+      <DashboardQuickActions
+        positions={[
+          {
+            id: "position-1",
+            product: "CDB",
+            assetCode: null,
+            institution: null,
+            indexer: null,
+            issuedAt: null,
+            maturityAt: null,
+            quantity: "1",
+            totalValue: "100",
+          },
+        ]}
+        importOpen={false}
+        onImportOpenChange={onImportOpenChange}
+        objectivesOpen
+        onObjectivesOpenChange={vi.fn()}
+        supportReadOnly
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Adicionar posi/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Importar e conciliar" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ver objetivos" })).toBeNull();
+    expect(
+      screen.queryByRole("region", {
+        name: "Objetivos e destinos da carteira",
+      }),
+    ).toBeNull();
+    expect(onImportOpenChange).not.toHaveBeenCalled();
+    expect(dispatchSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "portfolio:manual-position:create" }),
+    );
+    window.dispatchEvent(new Event("portfolio:manual-position:create"));
+    expect(
+      screen.queryByRole("heading", { name: "Adicionar posição manual" }),
+    ).toBeNull();
+  });
+
+  it("keeps first-access actions blocked when the support retry callback is omitted", () => {
+    render(
+      <DashboardQuickActions
+        positions={[]}
+        importOpen={false}
+        onImportOpenChange={vi.fn()}
+        objectivesOpen={false}
+        onObjectivesOpenChange={vi.fn()}
+        firstAccess
+        supportCheckError
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(
+      screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cadastrar manualmente" }),
+    ).toBeNull();
+  });
 });

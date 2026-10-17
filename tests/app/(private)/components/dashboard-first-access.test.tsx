@@ -54,4 +54,73 @@ describe("DashboardFirstAccess", () => {
     expect(screen.getAllByText(/titular da conta/)).toHaveLength(3);
     expect(screen.queryByRole("link", { name: /Investidor da B3/ })).toBeNull();
   });
+
+  it("shows a neutral pending context without exposing any onboarding action", () => {
+    render(
+      <DashboardFirstAccess
+        onImport={vi.fn()}
+        onCreateManual={vi.fn()}
+        readOnly
+        contextPending
+      />,
+    );
+
+    expect(screen.getByText(/Verificando o acesso a esta conta/)).toBeTruthy();
+    expect(screen.queryByText(/somente leitura/i)).toBeNull();
+    expect(screen.queryByText(/titular da conta/i)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cadastrar manualmente" }),
+    ).toBeNull();
+    expect(screen.queryByRole("link", { name: /Investidor da B3/ })).toBeNull();
+  });
+
+  it("shows a recoverable error without releasing actions after support status fails", () => {
+    const onRetryContext = vi.fn();
+    render(
+      <DashboardFirstAccess
+        onImport={vi.fn()}
+        onCreateManual={vi.fn()}
+        readOnly
+        contextError
+        onRetryContext={onRetryContext}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "As ações permanecem bloqueadas",
+    );
+    expect(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cadastrar manualmente" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(onRetryContext).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the fallback retry safe when no retry callback is provided", () => {
+    render(
+      <DashboardFirstAccess
+        onImport={vi.fn()}
+        onCreateManual={vi.fn()}
+        readOnly
+        contextError
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(
+      screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cadastrar manualmente" }),
+    ).toBeNull();
+  });
 });

@@ -79,6 +79,88 @@ describe("PortfolioImport", () => {
     expect(screen.queryByRole("link", { name: /Investidor da B3/ })).toBeNull();
   });
 
+  it("opens the file picker from the import action and ignores an empty selection", () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, "click");
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar arquivos XLSX" }),
+    );
+    expect(inputClick).toHaveBeenCalledOnce();
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [] },
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("blocks file selection and every preview mutation in read-only support", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...positionPreview,
+        reconciliationCandidates: [
+          {
+            manualAssetKey: "manual:one",
+            importedAssetKey: "b3:one",
+            status: "probable",
+            manualUpdatedAt: "2026-10-01T12:00:00Z",
+            manualProduct: "Manual",
+            importedProduct: "B3",
+            manualAssetCode: null,
+            importedAssetCode: "CERT-1",
+            manualInstitution: null,
+            manualValue: null,
+            importedValue: "10",
+            institution: null,
+            reasons: ["missing_code"],
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    const { container, rerender } = render(<PortfolioImport readOnly />);
+    const fileInput = container.querySelector('input[type="file"]')!;
+
+    expect((fileInput as HTMLInputElement).disabled).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: "Importar arquivos XLSX" }),
+    ).toBeNull();
+    fireEvent.change(fileInput, {
+      target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+    expect(fetch).not.toHaveBeenCalled();
+
+    rerender(<PortfolioImport />);
+    fireEvent.change(fileInput, {
+      target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+    expect(await screen.findByText("ETF")).toBeTruthy();
+    rerender(<PortfolioImport readOnly />);
+
+    expect(
+      screen.queryByRole("button", { name: /Confirmar 1 arquivo/ }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancelar" })).toBeNull();
+    expect(
+      screen.queryByRole("textbox", { name: /^Data exibida na B3/ }),
+    ).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: /como a mesma posição de Manual/i })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", {
+          name: "Nenhuma posição da B3 corresponde a Manual",
+        })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
   it("previews every selected file automatically", async () => {
     const fetch = vi
       .fn()

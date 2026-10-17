@@ -21,6 +21,7 @@ export function DashboardSummary({
   destinationSummary,
   destinationPositions,
   longTermMissingPositionCount = 0,
+  configuredObjectivesCount = 0,
   destinationsLoading,
   destinationsUnavailable,
   onRetryDestinations,
@@ -32,6 +33,9 @@ export function DashboardSummary({
   importOpen = false,
   onImportOpenChange = () => {},
   supportReadOnly = false,
+  supportChecking = false,
+  supportCheckError = false,
+  onRetrySupportCheck = () => {},
 }: {
   positions: PortfolioInsightPosition[];
   manualPositions?: PortfolioPosition[];
@@ -40,6 +44,7 @@ export function DashboardSummary({
   destinationSummary?: DashboardDestinationSummary | null;
   destinationPositions?: DashboardDestinationPosition[];
   longTermMissingPositionCount?: number;
+  configuredObjectivesCount?: number;
   destinationsLoading?: boolean;
   destinationsUnavailable?: boolean;
   onRetryDestinations?: () => void;
@@ -58,8 +63,12 @@ export function DashboardSummary({
   importOpen?: boolean;
   onImportOpenChange?: (open: boolean) => void;
   supportReadOnly?: boolean;
+  supportChecking?: boolean;
+  supportCheckError?: boolean;
+  onRetrySupportCheck?: () => void;
 }) {
   const firstAccess = positions.length === 0;
+  const readOnly = supportReadOnly || supportChecking || supportCheckError;
 
   const quickActions = (
     <DashboardQuickActions
@@ -72,10 +81,56 @@ export function DashboardSummary({
       onImportOpenChange={onImportOpenChange}
       firstAccess={firstAccess}
       supportReadOnly={supportReadOnly}
+      supportChecking={supportChecking}
+      supportCheckError={supportCheckError}
+      onRetrySupportCheck={onRetrySupportCheck}
     />
   );
 
-  if (firstAccess) return <div>{quickActions}</div>;
+  const showDestinations =
+    !firstAccess || configuredObjectivesCount > 0 || destinationsUnavailable;
+  const showEmergencyReserve = firstAccess
+    ? Boolean(
+        emergencyReserve &&
+        (emergencyReserve.monthlyExpenses !== null ||
+          emergencyReserve.targetMonths !== null ||
+          emergencyReserve.selectedGroups > 0 ||
+          emergencyReserve.unvaluedGroups > 0 ||
+          (emergencyReserve.missingSelectionCount ?? 0) > 0),
+      )
+    : true;
+
+  if (firstAccess)
+    return (
+      <div className="space-y-4">
+        {quickActions}
+        {(showDestinations || showEmergencyReserve) && (
+          <div className="grid items-stretch gap-4 xl:grid-cols-2">
+            {showDestinations && (
+              <DashboardDestinationsOverview
+                summary={destinationSummary}
+                positions={destinationPositions}
+                longTermMissingPositionCount={longTermMissingPositionCount}
+                loading={destinationsLoading}
+                unavailable={destinationsUnavailable}
+                onRetry={onRetryDestinations}
+                onOpenObjectives={() => onObjectivesOpenChange(true)}
+                readOnly={readOnly}
+              />
+            )}
+            {showEmergencyReserve && (
+              <section aria-labelledby="dashboard-reserve-title">
+                <EmergencyReserveSummary
+                  calculation={emergencyReserve}
+                  onOpenReserve={onOpenReserve}
+                  readOnly={readOnly}
+                />
+              </section>
+            )}
+          </div>
+        )}
+      </div>
+    );
 
   return (
     <div className="space-y-4">
@@ -91,11 +146,13 @@ export function DashboardSummary({
           unavailable={destinationsUnavailable}
           onRetry={onRetryDestinations}
           onOpenObjectives={() => onObjectivesOpenChange(true)}
+          readOnly={readOnly}
         />
         <section aria-labelledby="dashboard-reserve-title">
           <EmergencyReserveSummary
             calculation={emergencyReserve}
             onOpenReserve={onOpenReserve}
+            readOnly={readOnly}
           />
         </section>
       </div>

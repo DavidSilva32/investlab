@@ -47,7 +47,7 @@ const ShellUserContext = createContext<{
   updateName: (name: string) => void;
 } | null>(null);
 
-const AdminSupportViewContext = createContext<boolean | null>(null);
+const AdminSupportViewContext = createContext<boolean | null | "error">(null);
 
 export function useAdminSupportView() {
   return useContext(AdminSupportViewContext);
@@ -207,9 +207,9 @@ export function AppShell({
     );
   }
   const { user, updateName } = userContext;
-  const [supportViewActive, setSupportViewActive] = useState<boolean | null>(
-    user.role === "ADMIN" ? null : false,
-  );
+  const [supportViewActive, setSupportViewActive] = useState<
+    boolean | null | "error"
+  >(user.role === "ADMIN" ? null : false);
 
   return (
     <div className="min-h-screen bg-background lg:flex">

@@ -22,7 +22,10 @@ vi.mock("sonner", () => ({
   toast: { success: mocks.success, error: mocks.error },
 }));
 
-import { AdminSupportViewBanner } from "@/components/admin-support-view-banner";
+import {
+  ADMIN_SUPPORT_VIEW_RETRY_EVENT,
+  AdminSupportViewBanner,
+} from "@/components/admin-support-view-banner";
 
 const target = {
   id: "customer-1",
@@ -87,7 +90,8 @@ describe("AdminSupportViewBanner", () => {
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
 
-  it("keeps the banner hidden when loading returns an unsuccessful response", async () => {
+  it("shows a retryable error when loading returns an unsuccessful response", async () => {
+    const onSupportViewChange = vi.fn();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -95,8 +99,61 @@ describe("AdminSupportViewBanner", () => {
         json: async () => ({ message: "Acesso negado." }),
       }),
     );
+    render(
+      <AdminSupportViewBanner onSupportViewChange={onSupportViewChange} />,
+    );
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeTruthy();
+    expect(onSupportViewChange).toHaveBeenCalledWith("error");
+  });
+
+  it("retries a failed support status request and reports the confirmed mode", async () => {
+    const onSupportViewChange = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ message: "Acesso negado." }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ supportView: activeView }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(
+      <AdminSupportViewBanner onSupportViewChange={onSupportViewChange} />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Tentar novamente" }),
+    );
+
+    expect(await screen.findByText("Visualização de suporte")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onSupportViewChange).toHaveBeenCalledWith("error");
+    expect(onSupportViewChange).toHaveBeenCalledWith(true);
+  });
+
+  it("retries support status when the dashboard dispatches the retry event", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ supportView: null }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
     render(<AdminSupportViewBanner />);
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    window.dispatchEvent(new Event(ADMIN_SUPPORT_VIEW_RETRY_EVENT));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
   it("refreshes the page when the signed support view expires", async () => {

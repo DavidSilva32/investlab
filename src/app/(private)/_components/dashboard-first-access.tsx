@@ -15,10 +15,16 @@ export function DashboardFirstAccess({
   onImport,
   onCreateManual,
   readOnly = false,
+  contextPending = false,
+  contextError = false,
+  onRetryContext = () => {},
 }: {
   onImport: () => void;
   onCreateManual: () => void;
   readOnly?: boolean;
+  contextPending?: boolean;
+  contextError?: boolean;
+  onRetryContext?: () => void;
 }) {
   return (
     <section aria-labelledby="dashboard-first-access-title">
@@ -56,11 +62,11 @@ export function DashboardFirstAccess({
                 </Link>
               )}
             </div>
-            {readOnly ? (
+            {readOnly && !contextPending && !contextError ? (
               <p className="text-sm font-medium text-muted-foreground">
                 Disponível para o titular da conta.
               </p>
-            ) : (
+            ) : !readOnly ? (
               <Button
                 type="button"
                 className="min-h-11 w-full justify-start gap-2 sm:w-auto"
@@ -69,7 +75,7 @@ export function DashboardFirstAccess({
                 <Upload aria-hidden="true" className="size-4" />
                 Importar arquivo da B3
               </Button>
-            )}
+            ) : null}
           </div>
           <div className="flex min-w-0 flex-col items-start gap-4 rounded-xl border bg-card p-4 sm:p-5">
             <div className="space-y-1">
@@ -78,11 +84,11 @@ export function DashboardFirstAccess({
                 Informe os dados de uma posição para incluí-la na carteira.
               </p>
             </div>
-            {readOnly ? (
+            {readOnly && !contextPending && !contextError ? (
               <p className="text-sm font-medium text-muted-foreground">
                 Disponível para o titular da conta.
               </p>
-            ) : (
+            ) : !readOnly ? (
               <Button
                 type="button"
                 variant="outline"
@@ -92,14 +98,37 @@ export function DashboardFirstAccess({
                 <Plus aria-hidden="true" className="size-4" />
                 Cadastrar manualmente
               </Button>
-            )}
+            ) : null}
           </div>
-          {readOnly && (
+          {contextError ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 text-sm sm:col-span-2"
+              role="alert"
+            >
+              <p className="text-muted-foreground">
+                Não foi possível confirmar o estado de suporte. As ações
+                permanecem bloqueadas até uma nova tentativa.
+              </p>
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto p-0"
+                onClick={onRetryContext}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          ) : contextPending ? (
+            <p className="text-sm text-muted-foreground sm:col-span-2">
+              Verificando o acesso a esta conta. As ações serão liberadas após a
+              confirmação.
+            </p>
+          ) : readOnly ? (
             <p className="text-sm text-muted-foreground sm:col-span-2">
               A visualização de suporte é somente leitura. Os cadastros devem
               ser feitos pelo titular da conta.
             </p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </section>

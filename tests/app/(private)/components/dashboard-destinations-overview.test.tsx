@@ -71,6 +71,15 @@ describe("DashboardDestinationsOverview", () => {
     expect(screen.getByRole("img").className).toContain("@lg:max-w-none");
     expect(screen.queryByRole("status")).toBeNull();
   });
+  it("keeps destination values visible while hiding the editable objectives entry in read-only mode", () => {
+    render(<DashboardDestinationsOverview summary={summary} readOnly />);
+
+    expect(
+      screen.getByRole("heading", { name: "Destinos da carteira" }),
+    ).toBeTruthy();
+    expect(screen.getByText("70%")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Objetivos" })).toBeNull();
+  });
   it("opens the long-term class breakdown and returns to destination values", () => {
     render(
       <DashboardDestinationsOverview

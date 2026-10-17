@@ -92,8 +92,56 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Sua carteira começa aqui");
     expect(html).toContain("Importar arquivo da B3");
     expect(html).toContain("Cadastrar manualmente");
-    expect(html).not.toContain("PatrimÃ´nio conhecido");
-    expect(html).not.toContain("AÃ§Ãµes rÃ¡pidas");
+    expect(html).not.toContain("Patrimônio conhecido");
+    expect(html).not.toContain("Ações rápidas");
+  });
+
+  it("keeps configured objectives and reserve details visible without positions", () => {
+    const onObjectivesOpenChange = vi.fn();
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={[]}
+        destinationSummary={destinations}
+        longTermMissingPositionCount={2}
+        configuredObjectivesCount={1}
+        emergencyReserve={reserve}
+      />,
+    );
+
+    expect(html).toContain("Sua carteira começa aqui");
+    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("Reserva de emergência");
+    expect(html).toContain("2 meses de despesas");
+    expect(html).not.toContain("Patrimônio conhecido");
+
+    render(
+      <DashboardSummary
+        positions={[]}
+        destinationSummary={destinations}
+        configuredObjectivesCount={1}
+        onObjectivesOpenChange={onObjectivesOpenChange}
+        emergencyReserve={reserve}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Objetivos" }));
+    expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("preserves configured read-only summaries without opening editable panels", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={[]}
+        destinationSummary={destinations}
+        configuredObjectivesCount={1}
+        emergencyReserve={reserve}
+        supportReadOnly
+      />,
+    );
+
+    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("Reserva de emergência");
+    expect(html).not.toContain(">Objetivos <");
+    expect(html).not.toContain("Ver reserva");
   });
 
   it("prioritizes current wealth and exposes the approved quick actions", () => {
@@ -264,5 +312,65 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Cadastrar manualmente");
     expect(html).not.toContain("Dados para revisar");
     expect(html).not.toContain("Fatos da carteira");
+  });
+
+  it("preserves each configured reserve signal when the portfolio has no positions", () => {
+    const configuredReserves = [
+      { ...reserve, monthlyExpenses: null, targetMonths: 3 },
+      {
+        ...reserve,
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedGroups: 1,
+      },
+      {
+        ...reserve,
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedGroups: 0,
+        unvaluedGroups: 1,
+      },
+      {
+        ...reserve,
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedGroups: 0,
+        unvaluedGroups: 0,
+        missingSelectionCount: 1,
+      },
+    ];
+
+    for (const configuredReserve of configuredReserves) {
+      const html = renderToStaticMarkup(
+        <DashboardSummary
+          positions={[]}
+          emergencyReserve={configuredReserve}
+        />,
+      );
+      expect(html).toContain("Reserva de emergência");
+    }
+
+    const unconfiguredReserve = {
+      ...reserve,
+      monthlyExpenses: null,
+      targetMonths: null,
+      selectedGroups: 0,
+      unvaluedGroups: 0,
+      missingSelectionCount: undefined,
+    };
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={[]}
+        emergencyReserve={unconfiguredReserve}
+      />,
+    );
+    expect(html).not.toContain("Reserva de emergência");
+  });
+
+  it("keeps the support retry fallback safe without a callback", () => {
+    render(<DashboardSummary positions={[]} supportCheckError />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(screen.getByText(/As ações permanecem bloqueadas/)).toBeTruthy();
   });
 });

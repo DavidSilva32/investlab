@@ -198,6 +198,7 @@ export function PortfolioImport({
   }
 
   async function previewFiles(files: File[]) {
+    if (files.length === 0) return;
     setLoading(true);
     setItems(files.map((file) => ({ file })));
     const results = await Promise.all(
@@ -358,11 +359,16 @@ export function PortfolioImport({
         ref={input}
         className="hidden"
         type="file"
+        disabled={readOnly}
         multiple
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         onChange={(event) => {
+          if (readOnly) {
+            event.target.value = "";
+            return;
+          }
           const files = Array.from(event.target.files ?? []);
-          if (files.length) void previewFiles(files);
+          void previewFiles(files);
           event.target.value = "";
         }}
       />
@@ -408,14 +414,16 @@ export function PortfolioImport({
               <ExternalLink aria-hidden="true" className="size-3.5" />
             </a>
           )}
-          <Button
-            className="w-full shrink-0 sm:w-auto"
-            disabled={loading}
-            onClick={() => input.current!.click()}
-          >
-            <Upload aria-hidden="true" className="size-4" />
-            Importar arquivos XLSX
-          </Button>
+          {!readOnly && (
+            <Button
+              className="w-full shrink-0 sm:w-auto"
+              disabled={loading}
+              onClick={() => input.current?.click()}
+            >
+              <Upload aria-hidden="true" className="size-4" />
+              Importar arquivos XLSX
+            </Button>
+          )}
         </div>
 
         {loading && (
@@ -441,13 +449,14 @@ export function PortfolioImport({
               <PreviewItem
                 key={`${item.file.name}-${item.file.lastModified}`}
                 item={item}
+                readOnly={readOnly}
                 onReferenceDateChange={updateReferenceDate}
                 onReconciliationChange={updateReconciliation}
               />
             ))}
           </div>
         )}
-        {items.some((item) => item.preview) && (
+        {!readOnly && items.some((item) => item.preview) && (
           <div className="flex flex-col justify-end gap-3 border-t pt-4 sm:flex-row">
             <Button
               className="w-full sm:w-auto"
@@ -480,10 +489,12 @@ export function PortfolioImport({
 
 function PreviewItem({
   item,
+  readOnly,
   onReferenceDateChange,
   onReconciliationChange,
 }: {
   item: Item;
+  readOnly: boolean;
   onReferenceDateChange: (file: File, referenceDate: string) => void;
   onReconciliationChange: (
     file: File,
@@ -509,6 +520,7 @@ function PreviewItem({
             item.preview.reconciliationCandidates ?? [],
           )}
           reconciliationDecisions={item.reconciliationDecisions ?? []}
+          readOnly={readOnly}
           onReconciliationChange={(group, selectedImportedAssetKey) =>
             onReconciliationChange(item.file, group, selectedImportedAssetKey)
           }
@@ -588,6 +600,7 @@ function PositionPreview({
   referenceDate,
   reconciliationGroups,
   reconciliationDecisions,
+  readOnly,
   onReconciliationChange,
   onReferenceDateChange,
 }: {
@@ -596,6 +609,7 @@ function PositionPreview({
   referenceDate: string;
   reconciliationGroups: ReconciliationGroup[];
   reconciliationDecisions: ReconciliationDecision[];
+  readOnly: boolean;
   onReconciliationChange: (
     group: ReconciliationGroup,
     selectedImportedAssetKey: string | null,
@@ -653,13 +667,19 @@ function PositionPreview({
           />
         </dl>
         <div className="grid gap-2 sm:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] sm:items-end">
-          <DatePickerField
-            id={`reference-date-${fileName}`}
-            label="Data exibida na B3 para estas posições"
-            value={referenceDate}
-            required
-            onChange={onReferenceDateChange}
-          />
+          {readOnly ? (
+            <p className="text-sm text-muted-foreground">
+              Data exibida na B3: {referenceDate || "não informada"}
+            </p>
+          ) : (
+            <DatePickerField
+              id={`reference-date-${fileName}`}
+              label="Data exibida na B3 para estas posições"
+              value={referenceDate}
+              required
+              onChange={onReferenceDateChange}
+            />
+          )}
           <p className="text-xs text-muted-foreground">
             Informe a data mostrada pela B3. Ela será usada para registrar os
             valores importados e para iniciar a estimativa dos CDBs no próximo
@@ -743,6 +763,7 @@ function PositionPreview({
                       aria-pressed={
                         selectedImportedAssetKey === candidate.importedAssetKey
                       }
+                      disabled={readOnly}
                       aria-label={
                         "Usar " +
                         candidate.importedProduct +
@@ -843,6 +864,7 @@ function PositionPreview({
                       aria-pressed={
                         resolved && selectedImportedAssetKey === null
                       }
+                      disabled={readOnly}
                       onClick={() => onReconciliationChange(group, null)}
                     >
                       <Split aria-hidden="true" className="size-4" />

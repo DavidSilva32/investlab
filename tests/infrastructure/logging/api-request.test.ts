@@ -224,8 +224,7 @@ describe("withApiRequestLogging", () => {
     const handler = withApiRequestLogging(
       "GET",
       "/api/screener",
-      async (_request: Request) =>
-        Response.json({ ownerId: getDataOwnerId() }),
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
     );
 
     const response = await handler(
@@ -265,6 +264,8 @@ describe("withApiRequestLogging", () => {
     ["GET", "/api/auth/session"],
     ["GET", "/api/cron/weekly-screener-sync/[task]"],
     ["POST", "/api/portfolio/operations"],
+    ["POST", "/api/imports/preview"],
+    ["POST", "/api/imports/confirm"],
     ["GET", "/api/portfolio/not-a-real-route"],
   ])("fails closed for %s %s during support mode", async (method, route) => {
     support.token = "a".repeat(43);
