@@ -44,6 +44,7 @@ export function DashboardDestinationsOverview({
   onOpenObjectives,
   positions = [],
   longTermMissingPositionCount = 0,
+  readOnly = false,
 }: {
   summary?: DashboardDestinationSummary | null;
   loading?: boolean;
@@ -52,6 +53,7 @@ export function DashboardDestinationsOverview({
   onOpenObjectives?: () => void;
   positions?: DashboardDestinationPosition[];
   longTermMissingPositionCount?: number;
+  readOnly?: boolean;
 }) {
   const [showLongTerm, setShowLongTerm] = useState(false);
   if (loading && !summary)
@@ -120,14 +122,16 @@ export function DashboardDestinationsOverview({
               ? "Investimento de longo prazo"
               : "Destinos da carteira"}
           </h2>
-          <Button
-            type="button"
-            variant="link"
-            onClick={onOpenObjectives}
-            className="h-auto min-h-9 w-auto gap-1 px-0 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            Objetivos <ArrowRight aria-hidden="true" className="size-3.5" />
-          </Button>
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="link"
+              onClick={onOpenObjectives}
+              className="h-auto min-h-9 w-auto gap-1 px-0 text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Objetivos <ArrowRight aria-hidden="true" className="size-3.5" />
+            </Button>
+          )}
         </div>
         {showLongTerm ? (
           <DashboardLongTermAllocation

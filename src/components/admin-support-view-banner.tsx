@@ -2,32 +2,49 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
+import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import { Button } from "@/components/ui/button";
 
+export const ADMIN_SUPPORT_VIEW_RETRY_EVENT = "admin-support-view-retry";
+
 type SupportTarget = { id: string; name: string; email: string };
 type SupportView = { target: SupportTarget; expiresAt: string };
 
-export function AdminSupportViewBanner() {
+export function AdminSupportViewBanner({
+  onSupportViewChange,
+}: {
+  onSupportViewChange?: (state: boolean | null | "error") => void;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [supportView, setSupportView] = useState<SupportView | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "error" | "loaded">(
+    "loading",
+  );
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    setLoadState("loading");
+    onSupportViewChange?.(null);
     try {
       const response = await fetch("/api/admin/support-view", {
         cache: "no-store",
       });
       const body = await response.json();
-      if (response.ok)
-        setSupportView((body.supportView as SupportView | null) ?? null);
+      if (!response.ok)
+        throw new Error("Não foi possível confirmar o estado de suporte.");
+      const nextView = (body.supportView as SupportView | null) ?? null;
+      setSupportView(nextView);
+      setLoadState("loaded");
+      onSupportViewChange?.(nextView !== null);
     } catch {
       setSupportView(null);
+      setLoadState("error");
+      onSupportViewChange?.("error");
     }
-  }, []);
+  }, [onSupportViewChange]);
 
   useEffect(() => {
     // Load the server-backed support context; state changes after the response arrives.
@@ -36,11 +53,17 @@ export function AdminSupportViewBanner() {
     const onChange = (event: Event) => {
       const detail = (event as CustomEvent<SupportView | null>).detail;
       setSupportView(detail);
+      setLoadState("loaded");
+      onSupportViewChange?.(detail !== null);
     };
+    const onRetry = () => void load();
     window.addEventListener("admin-support-view-changed", onChange);
-    return () =>
+    window.addEventListener(ADMIN_SUPPORT_VIEW_RETRY_EVENT, onRetry);
+    return () => {
       window.removeEventListener("admin-support-view-changed", onChange);
-  }, [load, pathname]);
+      window.removeEventListener(ADMIN_SUPPORT_VIEW_RETRY_EVENT, onRetry);
+    };
+  }, [load, onSupportViewChange, pathname]);
 
   useEffect(() => {
     if (!supportView) return;
@@ -67,6 +90,8 @@ export function AdminSupportViewBanner() {
           getApiMessage(body, "Não foi possível encerrar a visualização."),
         );
       setSupportView(null);
+      setLoadState("loaded");
+      onSupportViewChange?.(false);
       window.dispatchEvent(
         new CustomEvent("admin-support-view-changed", { detail: null }),
       );
@@ -82,6 +107,35 @@ export function AdminSupportViewBanner() {
       setBusy(false);
     }
   }
+
+  if (loadState === "error")
+    return (
+      <section
+        className="flex flex-col gap-3 border-b border-status-warning/30 bg-status-warning/10 px-4 py-3 text-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"
+        aria-label="Falha ao confirmar visualização de suporte"
+        role="alert"
+      >
+        <div className="flex min-w-0 items-start gap-2">
+          <AlertCircle
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-status-warning"
+          />
+          <p className="text-sm">
+            Não foi possível confirmar o estado da visualização de suporte. As
+            ações permanecem bloqueadas até uma nova tentativa.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void load()}
+          className="shrink-0"
+        >
+          Tentar novamente
+        </Button>
+      </section>
+    );
 
   if (!supportView) return null;
 

@@ -56,6 +56,13 @@ describe("EmergencyReserveSummary", () => {
     expect(onOpenReserve).toHaveBeenCalledOnce();
   });
 
+  it("keeps configured reserve information visible without an edit action in read-only mode", () => {
+    render(<EmergencyReserveSummary calculation={calculation} readOnly />);
+
+    expect(screen.getByText("6 meses")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ver reserva" })).toBeNull();
+  });
+
   it("keeps the reserve link safe when no dashboard panel action is provided", () => {
     render(<EmergencyReserveSummary calculation={calculation} />);
 

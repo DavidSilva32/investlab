@@ -86,6 +86,73 @@ const reserve = {
 describe("DashboardSummary", () => {
   afterEach(cleanup);
 
+  it("shows first-access guidance only when no positions are registered", () => {
+    const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
+
+    expect(html).toContain("Sua carteira começa aqui");
+    expect(html).toContain("Importar arquivo da B3");
+    expect(html).toContain("Cadastrar manualmente");
+    expect(html).not.toContain("Patrimônio conhecido");
+    expect(html).not.toContain("Ações rápidas");
+  });
+
+  it("keeps configured objectives and reserve details visible without positions", () => {
+    const onObjectivesOpenChange = vi.fn();
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={[]}
+        destinationSummary={destinations}
+        longTermMissingPositionCount={2}
+        configuredObjectivesCount={1}
+        emergencyReserve={reserve}
+      />,
+    );
+
+    expect(html).toContain("Sua carteira começa aqui");
+    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("Reserva de emergência");
+    expect(html).toContain("2 meses de despesas");
+    expect(html).not.toContain("Patrimônio conhecido");
+
+    render(
+      <DashboardSummary
+        positions={[]}
+        destinationSummary={destinations}
+        configuredObjectivesCount={1}
+        onObjectivesOpenChange={onObjectivesOpenChange}
+        emergencyReserve={reserve}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Objetivos" }));
+    expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("shows the destination loading state during first access", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary positions={[]} destinationsLoading />,
+    );
+
+    expect(html).toContain('aria-label="Carregando destinos da carteira"');
+    expect(html).toContain("Sua carteira começa aqui");
+  });
+
+  it("preserves configured read-only summaries without opening editable panels", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={[]}
+        destinationSummary={destinations}
+        configuredObjectivesCount={1}
+        emergencyReserve={reserve}
+        supportReadOnly
+      />,
+    );
+
+    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("Reserva de emergência");
+    expect(html).not.toContain(">Objetivos <");
+    expect(html).not.toContain("Ver reserva");
+  });
+
   it("prioritizes current wealth and exposes the approved quick actions", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
@@ -99,7 +166,7 @@ describe("DashboardSummary", () => {
     expect(html).toContain("2 de 2");
     expect(html).not.toContain("Data-base");
     expect(html).not.toContain("Dados de 01/09/2026");
-    expect(html).toContain("Ações rápidas");
+    expect(html).toContain("Importar e conciliar");
     expect(html).toContain("Adicionar posição");
     expect(html).not.toContain('href="/carteira#manual-positions"');
     expect(html).toContain("Importar e conciliar");
@@ -180,7 +247,7 @@ describe("DashboardSummary", () => {
     });
     fireEvent.click(importButton);
 
-    expect(importButton.getAttribute("aria-expanded")).toBe("false");
+    expect(importButton.getAttribute("aria-expanded")).toBeNull();
   });
 
   it("shows a concise review action only when positions have no current value", () => {
@@ -246,11 +313,80 @@ describe("DashboardSummary", () => {
     expect(html).toContain("Distribuição parcial · valores conhecidos.");
   });
 
-  it("does not fabricate facts or unvalued-position review when the portfolio has none", () => {
+  it("shows first-access guidance instead of portfolio facts when no positions exist", () => {
     const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
 
-    expect(html).toContain("Ainda sem valores conhecidos");
+    expect(html).toContain("Sua carteira começa aqui");
+    expect(html).toContain("Importar arquivo da B3");
+    expect(html).toContain("Cadastrar manualmente");
     expect(html).not.toContain("Dados para revisar");
     expect(html).not.toContain("Fatos da carteira");
+  });
+
+  it("preserves each configured reserve signal when the portfolio has no positions", () => {
+    const configuredReserves = [
+      { ...reserve, monthlyExpenses: null, targetMonths: 3 },
+      {
+        ...reserve,
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedGroups: 1,
+      },
+      {
+        ...reserve,
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedGroups: 0,
+        unvaluedGroups: 1,
+      },
+      {
+        ...reserve,
+        monthlyExpenses: null,
+        targetMonths: null,
+        selectedGroups: 0,
+        unvaluedGroups: 0,
+        missingSelectionCount: 1,
+      },
+    ];
+
+    for (const configuredReserve of configuredReserves) {
+      const html = renderToStaticMarkup(
+        <DashboardSummary
+          positions={[]}
+          emergencyReserve={configuredReserve}
+        />,
+      );
+      expect(html).toContain("Reserva de emergência");
+    }
+
+    const unconfiguredReserve = {
+      ...reserve,
+      monthlyExpenses: null,
+      targetMonths: null,
+      selectedGroups: 0,
+      unvaluedGroups: 0,
+      missingSelectionCount: undefined,
+    };
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={[]}
+        emergencyReserve={unconfiguredReserve}
+      />,
+    );
+    expect(html).not.toContain("Reserva de emergência");
+  });
+
+  it("keeps first-access actions blocked after support status fails", () => {
+    render(<DashboardSummary positions={[]} supportCheckError />);
+
+    expect(
+      screen.queryByRole("button", { name: "Tentar novamente" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cadastrar manualmente" }),
+    ).toBeNull();
   });
 });

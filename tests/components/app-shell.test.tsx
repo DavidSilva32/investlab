@@ -50,7 +50,11 @@ vi.mock("next/link", () => ({
 vi.mock("@/components/logout-button", () => ({
   LogoutButton: () => <button>Sair</button>,
 }));
-import { AppShell, ShellUserProvider } from "@/components/app-shell";
+import {
+  AppShell,
+  ShellUserProvider,
+  useAdminSupportView,
+} from "@/components/app-shell";
 import type { ShellUser } from "@/components/app-shell";
 import { BrandLogo } from "@/components/brand-logo";
 
@@ -71,12 +75,28 @@ function renderShell(user: ShellUser = regularUser) {
   );
 }
 
+function SupportModeProbe() {
+  return <p>Support mode: {String(useAdminSupportView())}</p>;
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
 
 describe("AppShell", () => {
+  it("shares inactive support mode with its page content for a regular user", () => {
+    render(
+      <ShellUserProvider user={regularUser}>
+        <AppShell title="Carteira">
+          <SupportModeProbe />
+        </AppShell>
+      </ShellUserProvider>,
+    );
+
+    expect(screen.getByText("Support mode: false")).toBeTruthy();
+  });
+
   it("renders the authenticated identity and active navigation without fetching the session", async () => {
     navigation.pathname = "/carteira";
     const fetchMock = vi.fn();

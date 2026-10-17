@@ -16,9 +16,11 @@ const months = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 export function EmergencyReserveSummary({
   calculation,
   onOpenReserve = () => {},
+  readOnly = false,
 }: {
   calculation?: EmergencyReserveCalculation;
   onOpenReserve?: () => void;
+  readOnly?: boolean;
 }) {
   const canCalculateCoverage =
     calculation?.monthlyExpenses !== null &&
@@ -45,14 +47,16 @@ export function EmergencyReserveSummary({
               Reserva de emergência
             </h2>
           </div>
-          <Button
-            type="button"
-            variant="link"
-            onClick={onOpenReserve}
-            className="min-h-10 gap-2 p-0 text-sm font-medium text-primary"
-          >
-            Ver reserva <ArrowRight aria-hidden="true" className="size-4" />
-          </Button>
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="link"
+              onClick={onOpenReserve}
+              className="min-h-10 gap-2 p-0 text-sm font-medium text-primary"
+            >
+              Ver reserva <ArrowRight aria-hidden="true" className="size-4" />
+            </Button>
+          )}
         </div>
 
         {canCalculateCoverage ? (

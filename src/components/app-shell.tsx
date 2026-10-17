@@ -47,6 +47,12 @@ const ShellUserContext = createContext<{
   updateName: (name: string) => void;
 } | null>(null);
 
+const AdminSupportViewContext = createContext<boolean | null | "error">(null);
+
+export function useAdminSupportView() {
+  return useContext(AdminSupportViewContext);
+}
+
 export function ShellUserProvider({
   user,
   children,
@@ -201,6 +207,9 @@ export function AppShell({
     );
   }
   const { user, updateName } = userContext;
+  const [supportViewActive, setSupportViewActive] = useState<
+    boolean | null | "error"
+  >(user.role === "ADMIN" ? null : false);
 
   return (
     <div className="min-h-screen bg-background lg:flex">
@@ -260,8 +269,12 @@ export function AppShell({
             />
           </div>
         </header>
-        {user.role === "ADMIN" && <AdminSupportViewBanner />}
-        <main className="w-full p-4 sm:p-6 lg:p-8">{children}</main>
+        {user.role === "ADMIN" && (
+          <AdminSupportViewBanner onSupportViewChange={setSupportViewActive} />
+        )}
+        <AdminSupportViewContext.Provider value={supportViewActive}>
+          <main className="w-full p-4 sm:p-6 lg:p-8">{children}</main>
+        </AdminSupportViewContext.Provider>
       </div>
       <PortfolioChatAssistant />
     </div>
