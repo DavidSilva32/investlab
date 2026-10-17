@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   PRIVACY_DOCUMENT_DATE,
-  PRIVACY_DOCUMENT_VERSION,
   PRIVACY_DOCUMENT_REVIEW_STATUS,
 } from "@/lib/privacy-policy";
 
@@ -24,15 +23,7 @@ export function LegalDocumentPage({
 }) {
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-      <Link
-        href="/entrar"
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <ArrowLeft aria-hidden="true" className="size-4" />
-        Voltar ao acesso
-      </Link>
-
-      <header className="mt-8 border-b border-border pb-7">
+      <header className="border-b border-border pb-7">
         <p className="flex items-center gap-2 text-sm font-medium text-primary">
           <FileText aria-hidden="true" className="size-4" />
           Documento do InvestLab
@@ -46,15 +37,15 @@ export function LegalDocumentPage({
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Versão técnica
+              Situação
             </p>
             <p className="mt-1 text-sm font-medium text-foreground">
-              {PRIVACY_DOCUMENT_VERSION}
+              Rascunho em revisão
             </p>
           </div>
           <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Preparado em
+              Atualizado em
             </p>
             <p className="mt-1 text-sm font-medium text-foreground">
               {PRIVACY_DOCUMENT_DATE}
@@ -66,11 +57,12 @@ export function LegalDocumentPage({
       <Card className="mt-6 border-status-warning/40 bg-status-warning/5">
         <CardContent className="p-4 sm:p-5">
           <p className="font-medium text-foreground">
-            Texto em preparação — revisão jurídica pendente
+            Documento em revisão — ainda não é uma versão definitiva
           </p>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            {PRIVACY_DOCUMENT_REVIEW_STATUS} As informações marcadas como
-            pendentes não foram presumidas nem substituídas por dados fictícios.
+            {PRIVACY_DOCUMENT_REVIEW_STATUS} Os pontos pendentes estão
+            identificados no texto e dependem de confirmação antes da aprovação
+            final.
           </p>
         </CardContent>
       </Card>

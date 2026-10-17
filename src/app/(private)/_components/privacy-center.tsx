@@ -56,8 +56,8 @@ export function PrivacyCenter() {
           Privacidade e dados
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-          Consulte os documentos do InvestLab e o histórico de aceite registrado
-          para sua conta.
+          Acesse os documentos do InvestLab e consulte o histórico de aceite da
+          sua conta.
         </p>
       </header>
 
@@ -69,24 +69,29 @@ export function PrivacyCenter() {
               Documentos
             </CardTitle>
             <CardDescription>
-              As versões publicadas estão em preparação e aguardam revisão
-              jurídica e confirmação institucional.
+              Os documentos estão em revisão. Os pontos que aguardam confirmação
+              permanecem identificados em cada página.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col items-start gap-3">
-            <Button asChild variant="outline">
-              <Link href="/termos-de-uso">Termos de Uso</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/privacidade">Política de Privacidade</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/cookies">Política de Cookies</Link>
-            </Button>
+          <CardContent className="space-y-4">
+            <nav
+              aria-label="Documentos de privacidade"
+              className="flex flex-wrap gap-2"
+            >
+              <Button asChild variant="outline">
+                <Link href="/termos-de-uso">Termos de Uso</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/privacidade">Política de Privacidade</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/cookies">Política de Cookies</Link>
+              </Button>
+            </nav>
             <p className="text-sm leading-6 text-muted-foreground">
-              O inventário atual do código não identificou cookies opcionais que
-              precisem de preferências. Por isso, não há um gerenciador de
-              consentimento nesta conta.
+              Até agora, não foram identificados cookies opcionais que exijam
+              uma escolha de consentimento. Essa avaliação ainda aguarda
+              confirmação da operação do serviço.
             </p>
           </CardContent>
         </Card>

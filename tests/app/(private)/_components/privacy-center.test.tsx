@@ -63,6 +63,19 @@ describe("PrivacyCenter", () => {
     expect(
       screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href"),
     ).toBe("/termos-de-uso");
+    expect(
+      screen
+        .getByRole("link", { name: "Política de Privacidade" })
+        .getAttribute("href"),
+    ).toBe("/privacidade");
+    expect(
+      screen
+        .getByRole("link", { name: "Política de Cookies" })
+        .getAttribute("href"),
+    ).toBe("/cookies");
+    expect(
+      screen.getByRole("navigation", { name: "Documentos de privacidade" }),
+    ).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/privacy/terms-acceptances");
   });
 

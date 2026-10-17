@@ -5,43 +5,43 @@ const sections: LegalDocumentSection[] = [
   {
     title: "1. Sobre o InvestLab",
     paragraphs: [
-      "O InvestLab é uma aplicação de acesso por convite para organizar informações de carteira, posições, movimentações, objetivos e dados de mercado. O serviço está em preparação para uso externo; estes termos são uma versão técnica em revisão jurídica.",
-      "A pessoa responsável pela operação, sua identificação jurídica, endereço e condições definitivas de vigência ainda precisam ser confirmados.",
+      "O InvestLab ajuda você a organizar informações da sua carteira, posições, movimentações, objetivos e dados de mercado. O acesso atual é feito por convite.",
+      "A identificação de quem opera o serviço, os dados de contato, as condições de vigência e outros pontos contratuais ainda aguardam confirmação e revisão jurídica. Este documento é um rascunho, não a versão definitiva dos Termos de Uso.",
     ],
   },
   {
-    title: "2. Conta e acesso",
+    title: "2. Sua conta e seu acesso",
     paragraphs: [
-      "O acesso atual é criado por convite. A pessoa usuária deve proteger suas credenciais, manter seus dados de acesso sob controle e avisar o canal de suporte que vier a ser oficialmente confirmado se suspeitar de acesso indevido.",
-      "Convites são destinados à pessoa indicada e podem expirar, ser revogados ou ser usados uma única vez, conforme o fluxo exibido no momento da ativação.",
+      "O acesso é criado por convite destinado à pessoa indicada. O convite pode expirar, ser revogado ou ser válido para um único uso, conforme as instruções apresentadas na ativação.",
+      "Mantenha seus dados de acesso protegidos. Se suspeitar que outra pessoa acessou sua conta, procure o administrador que enviou seu convite. O canal oficial de suporte ainda está pendente de confirmação.",
     ],
   },
   {
-    title: "3. Informações e arquivos enviados",
+    title: "3. Dados e arquivos que você envia",
     paragraphs: [
-      "A aplicação permite incluir posições e movimentações manualmente e importar arquivos compatíveis da B3 para processar e organizar os registros correspondentes. Antes de enviar um arquivo, confira se você pode utilizá-lo e se selecionou o documento correto.",
-      "Os resultados dependem dos dados disponíveis, da qualidade do arquivo e das fontes consultadas. Confira os dados importados antes de usá-los para tomar decisões.",
+      "Você pode registrar posições e movimentações e importar arquivos compatíveis da B3 para organizar os dados correspondentes. Antes de enviar um arquivo, confira se selecionou o documento correto e se pode utilizá-lo.",
+      "Os resultados dependem das informações disponíveis, da qualidade dos dados enviados e das fontes consultadas. Confira os registros importados e os dados apresentados antes de usá-los em suas decisões.",
     ],
   },
   {
-    title: "4. Natureza informativa das funcionalidades",
+    title: "4. Informações sobre investimentos",
     paragraphs: [
-      "As informações, cálculos e cenários do InvestLab servem para organização e acompanhamento. Eles não garantem resultados, não executam ordens e não substituem avaliação profissional apropriada à situação de cada pessoa.",
-      "A aplicação não deve ser entendida, com base nesta versão técnica, como serviço de consultoria, análise ou recomendação individualizada de investimentos. O enquadramento jurídico e regulatório das funcionalidades será confirmado antes da aprovação definitiva destes termos.",
+      "As informações, cálculos e cenários do InvestLab apoiam a organização e o acompanhamento da sua carteira. Eles não garantem resultados nem executam ordens. Considere sua situação e busque orientação profissional quando necessário.",
+      "O enquadramento das funcionalidades e as condições aplicáveis ao uso do serviço ainda precisam de revisão jurídica. Este rascunho não deve ser tratado como uma definição definitiva sobre a natureza regulatória do produto.",
     ],
   },
   {
-    title: "5. Disponibilidade e segurança",
+    title: "5. Disponibilidade e suporte",
     paragraphs: [
-      "O serviço pode ser atualizado, ficar indisponível ou apresentar dados incompletos, atrasados ou indisponíveis por causa de manutenção, conectividade ou fontes externas. Não há, nesta versão, um compromisso de disponibilidade ou prazo de suporte confirmado.",
-      "As medidas de segurança implementadas e os procedimentos operacionais de suporte, continuidade e incidentes serão detalhados após confirmação do responsável pela operação e revisão técnica e jurídica.",
+      "O serviço pode passar por manutenção ou ficar temporariamente indisponível. Informações de fontes externas também podem estar incompletas, indisponíveis ou desatualizadas. Não há, neste rascunho, um compromisso confirmado de disponibilidade ou prazo de suporte.",
+      "Os procedimentos de suporte, continuidade do serviço e tratamento de incidentes dependem de confirmação de quem opera o InvestLab.",
     ],
   },
   {
-    title: "6. Encerramento e disposições pendentes",
+    title: "6. Encerramento e pontos em aberto",
     paragraphs: [
-      "O procedimento para encerrar uma conta, tratar dados associados e cumprir eventuais obrigações de retenção ainda está em definição. Não há ferramenta de autoatendimento para exclusão integral de conta.",
-      "Identificação do controlador, endereço, foro, lei aplicável, canais de contato, vigência e condições finais permanecem pendentes de confirmação. Esta versão não representa aprovação jurídica nem substitui os termos definitivos.",
+      "O procedimento para encerrar uma conta e tratar os dados relacionados ainda está em definição. No momento, não há uma ferramenta de autoatendimento para excluir todos os dados da conta.",
+      "A identificação do responsável, os canais de contato, a vigência, a lei aplicável, o foro e as condições finais ainda aguardam confirmação. Este texto permanece em revisão jurídica e não é uma versão definitiva.",
     ],
   },
 ];
@@ -50,7 +50,7 @@ export default function TermsPage() {
   return (
     <LegalDocumentPage
       title="Termos de Uso"
-      introduction="Condições propostas para o acesso ao InvestLab. Este texto descreve o funcionamento observado no produto e identifica os pontos que ainda dependem de confirmação."
+      introduction="Este rascunho descreve as condições de uso que ainda estão em revisão. A identificação do responsável e outros pontos contratuais serão confirmados antes da aprovação final."
       sections={sections}
     />
   );

@@ -27,18 +27,23 @@ describe("public privacy documents", () => {
   it.each([
     ["Termos de Uso", TermsPage],
     ["Política de Privacidade", PrivacyPolicyPage],
-    ["Política de Cookies e armazenamento local", CookiePolicyPage],
-  ])("renders %s as a technical draft with revision status", (title, Page) => {
+    ["Política de Cookies", CookiePolicyPage],
+  ])("renders %s with an explicit draft status", (title, Page) => {
     render(<Page />);
 
     expect(screen.getByRole("heading", { name: title, level: 1 })).toBeTruthy();
     expect(
-      screen.getByText(/Texto em preparação — revisão jurídica pendente/),
+      screen.getByText(
+        /Documento em revisão — ainda não é uma versão definitiva/,
+      ),
     ).toBeTruthy();
-    expect(screen.getByText("rascunho-2026-10-17.1")).toBeTruthy();
+    expect(screen.getByText("Rascunho em revisão")).toBeTruthy();
+    expect(
+      screen.getByRole("navigation", { name: "Outros documentos" }),
+    ).toBeTruthy();
   });
 
-  it("shows accessible navigation to documents and account access", () => {
+  it("shows discreet accessible footer links and account access", () => {
     render(
       <PublicSiteLayout>
         <h1>Conteúdo</h1>
@@ -46,15 +51,35 @@ describe("public privacy documents", () => {
     );
 
     expect(
-      screen.getByRole("navigation", { name: "Documentos e acesso" }),
+      screen.getByRole("navigation", { name: "Acesso à conta" }),
     ).toBeTruthy();
     expect(
-      screen.getAllByRole("link", { name: "Privacidade" }).length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("navigation", { name: "Documentos do InvestLab" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Privacidade" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Cookies" })).toBeTruthy();
     expect(
       screen.getAllByRole("link", { name: "Entrar" }).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText(/A identidade do controlador/)).toBeTruthy();
+    expect(
+      screen.getByText(/documentos disponíveis ainda estão em revisão/),
+    ).toBeTruthy();
+  });
+
+  it("describes cookie behavior without technical jargon or consent controls", () => {
+    render(<CookiePolicyPage />);
+
+    const pageText = screen.getByRole("main").textContent ?? "";
+    expect(pageText).not.toMatch(/análise estática|runtime|Better Auth/i);
+    expect(pageText).toMatch(/não exibe um banner/);
+    expect(pageText).toMatch(
+      /permanecem no navegador até serem substituídas, removidas pelo InvestLab ou apagadas por você/,
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: /aceitar|rejeitar|preferências de cookies/i,
+      }),
+    ).toBeNull();
   });
 
   it("renders a legal page section without an optional bullet list", () => {

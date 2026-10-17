@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
 const documentLinks = [
   { href: "/termos-de-uso", label: "Termos de Uso" },
@@ -18,19 +18,7 @@ export function PublicSiteLayout({ children }: { children: React.ReactNode }) {
           >
             InvestLab
           </Link>
-          <nav
-            aria-label="Documentos e acesso"
-            className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm"
-          >
-            {documentLinks.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {item.label}
-              </Link>
-            ))}
+          <nav aria-label="Acesso à conta" className="text-sm">
             <Link
               href="/entrar"
               className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -48,26 +36,27 @@ export function PublicSiteLayout({ children }: { children: React.ReactNode }) {
           <div className="max-w-xl">
             <p className="flex items-center gap-2 text-sm font-medium text-foreground">
               <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
-              Transparência e cuidado com seus dados
+              Informações e privacidade
             </p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Os documentos estão em preparação. A identidade do controlador, os
-              canais de contato e outros dados operacionais aguardam
-              confirmação; a revisão jurídica ainda não foi concluída.
+              Os documentos disponíveis ainda estão em revisão e indicam os
+              pontos que dependem de confirmação.
             </p>
           </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <nav
+            aria-label="Documentos do InvestLab"
+            className="flex flex-wrap gap-x-5 gap-y-2 text-sm"
+          >
             {documentLinks.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="inline-flex items-center gap-1.5 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <FileText aria-hidden="true" className="size-3.5" />
                 {item.label}
               </Link>
             ))}
-          </div>
+          </nav>
         </div>
       </footer>
     </div>

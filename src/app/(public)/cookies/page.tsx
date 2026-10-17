@@ -3,39 +3,37 @@ import type { LegalDocumentSection } from "@/app/(public)/_components/legal-docu
 
 const sections: LegalDocumentSection[] = [
   {
-    title: "1. Resultado do inventário no código",
+    title: "1. Como o navegador mantém o acesso",
     paragraphs: [
-      "A análise estática identificou cookies funcionais de autenticação e suporte administrativo, além de armazenamento local do navegador usado por preferências do produto. Não foram encontrados scripts explícitos de analytics, publicidade ou rastreamento opcional no código pesquisado.",
-      "Essa análise não inspeciona configurações externas da hospedagem nem substitui uma verificação em runtime de todos os cookies, cabeçalhos e requisições. A auditoria de produção e a confirmação do proprietário continuam pendentes.",
+      "O InvestLab usa um cookie de sessão para manter sua conta conectada enquanto você utiliza o serviço. A sessão pode durar até sete dias e pode terminar antes quando você sair da conta ou quando ela expirar.",
+      "Em uma atividade de suporte autorizada, pode ser usado um cookie temporário por até 30 minutos. Ele apoia esse acesso de suporte e não é usado para publicidade.",
+      "Esses recursos são necessários para as funções solicitadas. Desativá-los pode impedir o acesso ou o suporte autorizado.",
     ],
   },
   {
-    title: "2. Cookies funcionais observados",
+    title: "2. Preferências guardadas no seu navegador",
     paragraphs: [
-      "O Better Auth utiliza um cookie de sessão próprio da aplicação para manter a autenticação. A biblioteca configura o atributo HttpOnly e SameSite=Lax; em produção, o cookie usa Secure. A duração padrão observada na configuração instalada é de até sete dias, sujeita a expiração antecipada da sessão. O nome inclui o prefixo Better Auth e pode variar entre desenvolvimento e produção.",
-      "O modo temporário de visualização de suporte administrativo usa o cookie `investlab-support-view`, HttpOnly e SameSite=Lax, Secure em produção, com duração de 30 minutos. Ele é usado apenas no fluxo de suporte autorizado por ADMIN.",
-      "Esses cookies são necessários às funções solicitadas de autenticação e suporte; não há opção de desligá-los sem afetar essas funções.",
+      "O navegador também pode guardar sua preferência de tema, critérios personalizados de análise e itens vistos recentemente. Essas informações ajudam a manter preferências e agilizar o uso; não são cookies e não são usadas para publicidade ou medição de anúncios.",
+      "Essas informações permanecem no navegador até serem substituídas, removidas pelo InvestLab ou apagadas por você nas configurações do navegador. Algumas preferências podem ser perdidas e precisarão ser definidas novamente.",
     ],
   },
   {
-    title: "3. Armazenamento local do navegador",
+    title: "3. Cookies opcionais e consentimento",
     paragraphs: [
-      "O produto usa `localStorage` para guardar a preferência de tema, critérios personalizados de análise e tickers recentes. Esses itens permanecem no navegador até serem substituídos, removidos pelo produto ou apagados nas configurações do navegador. Eles não são cookies e o código não os usa para publicidade ou analytics.",
-      "A chave e o comportamento efetivos do tema dependem da biblioteca de tema instalada e precisam ser conferidos na auditoria em runtime.",
+      "No momento, não foram identificadas tecnologias opcionais de publicidade ou medição que exijam uma escolha de consentimento. Por isso, o InvestLab não exibe um banner nem apresenta opções que não correspondam a recursos em uso.",
+      "Essa avaliação ainda depende de confirmação da operação do serviço. Se tecnologias opcionais forem identificadas ou adicionadas, este documento será revisto e as escolhas necessárias serão apresentadas antes do uso dessas tecnologias.",
     ],
   },
   {
-    title: "4. Cookies opcionais e preferências",
+    title: "4. Serviços externos",
     paragraphs: [
-      "No inventário estático atual não foram identificados cookies opcionais de analytics, publicidade ou rastreamento. Por isso, o InvestLab não apresenta banner nem oferece categorias fictícias de consentimento. A decisão será reavaliada se uma tecnologia opcional for adicionada ou identificada em runtime.",
-      "As imagens de logos solicitadas a `icons.brapi.dev` são requisições externas, não uma categoria de cookie identificada no código. O fornecedor pode receber dados técnicos da requisição; contratos, registros e retenção dependem de confirmação externa.",
+      "Algumas telas podem solicitar imagens de logotipos ao serviço icons.brapi.dev. Essa solicitação é diferente de um cookie; os dados técnicos recebidos pelo serviço e os prazos aplicáveis ainda precisam ser confirmados.",
     ],
   },
   {
-    title: "5. Revisões e contato",
+    title: "5. O que ainda está em confirmação",
     paragraphs: [
-      "Este inventário técnico foi preparado em 17 de outubro de 2026 com base no código do repositório. Nome de controlador, fornecedor contratual, região, prazos dos registros da plataforma e canal oficial para dúvidas sobre privacidade ainda precisam ser confirmados.",
-      "O texto permanece em preparação e revisão jurídica pendente. A observância das orientações da ANPD não representa, por si só, confirmação de conformidade integral com a legislação.",
+      "A lista completa de cookies e dados guardados no navegador, as configurações do serviço em produção, os responsáveis por cada operação e os prazos de retenção ainda aguardam confirmação. Este documento é um rascunho e será atualizado após essa conferência e revisão jurídica.",
     ],
   },
 ];
@@ -43,8 +41,8 @@ const sections: LegalDocumentSection[] = [
 export default function CookiePolicyPage() {
   return (
     <LegalDocumentPage
-      title="Política de Cookies e armazenamento local"
-      introduction="Inventário baseado no código atual. Diferencia cookies de autenticação, armazenamento do navegador e requisições externas, sem criar categorias opcionais que não foram identificadas."
+      title="Política de Cookies"
+      introduction="Este rascunho explica os recursos do navegador encontrados até agora e o que ainda precisa ser confirmado. Não foram identificadas tecnologias opcionais que exijam um banner de consentimento."
       sections={sections}
     />
   );
