@@ -33,8 +33,12 @@ type MetricCell = {
   sourceDocument: "DFP" | "ITR" | null;
   sourceSummary: string | null;
   marketDataDate: string | null;
+  valuationSource: string | null;
+  valuationMethod: string | null;
   accountProvenance: string | null;
   unavailableReason: string | null;
+  comparisonStatus: "comparable" | "not_comparable";
+  comparisonReason: string | null;
 };
 type ComparisonCompany = {
   ticker: string;
@@ -586,30 +590,56 @@ export function CompanyComparison({
                       </tr>
                       {metricRows
                         .filter((row) => row.group === group)
-                        .map((row) => (
-                          <tr key={row.label} className="border-t">
-                            <th
-                              scope="row"
-                              className="p-3 align-top font-medium"
-                            >
-                              {row.label}
-                            </th>
-                            {rows.map((company) => (
-                              <td key={company.cnpj} className="p-3 align-top">
-                                {renderCell(row.get(company), row.kind)}
-                                {(row.key === "roe" ||
-                                  row.key === "pe" ||
-                                  row.key === "pb") && (
-                                  <ComparisonCriterionStatus
-                                    company={company}
-                                    keyName={row.key}
-                                    preferences={criteriaPreferences}
-                                  />
+                        .map((row) => {
+                          const firstCell = rows[0] ? row.get(rows[0]) : null;
+                          return (
+                            <Fragment key={row.label}>
+                              <tr className="border-t">
+                                <th
+                                  scope="row"
+                                  className="p-3 align-top font-medium"
+                                >
+                                  {row.label}
+                                </th>
+                                {rows.map((company) => (
+                                  <td
+                                    key={company.cnpj}
+                                    className="p-3 align-top"
+                                  >
+                                    {renderCell(row.get(company), row.kind)}
+                                    {(row.key === "roe" ||
+                                      row.key === "pe" ||
+                                      row.key === "pb") && (
+                                      <ComparisonCriterionStatus
+                                        company={company}
+                                        keyName={row.key}
+                                        preferences={criteriaPreferences}
+                                      />
+                                    )}
+                                  </td>
+                                ))}
+                              </tr>
+                              {firstCell?.comparisonStatus ===
+                                "not_comparable" &&
+                                firstCell.comparisonReason && (
+                                  <tr>
+                                    <td
+                                      colSpan={rows.length + 1}
+                                      className="border-t bg-muted/20 px-3 py-2"
+                                    >
+                                      <p
+                                        role="note"
+                                        className="text-xs text-muted-foreground"
+                                      >
+                                        Sem comparação direta entre empresas:{" "}
+                                        {firstCell.comparisonReason}
+                                      </p>
+                                    </td>
+                                  </tr>
                                 )}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
+                            </Fragment>
+                          );
+                        })}
                     </Fragment>
                   ))}
                 </tbody>

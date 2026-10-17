@@ -246,7 +246,7 @@ describe("StockComparisonService", () => {
     expect(result.companies[0]?.valuation.pb.value).toBe(1.2);
   });
 
-  it("marks valuation unavailable when candidates have different market days", async () => {
+  it("retains individually valid valuation when candidates have different market days", async () => {
     const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
     const { service } = makeService(records, (ticker) =>
       analysis(
@@ -279,16 +279,18 @@ describe("StockComparisonService", () => {
 
     for (const company of result.companies) {
       expect(company.valuation.pe).toMatchObject({
-        value: null,
-        unavailableReason:
-          "Os indicadores usam datas de mercado diferentes; não são comparáveis.",
+        value: 8,
+        unavailableReason: null,
+        comparisonStatus: "not_comparable",
+        comparisonReason: expect.any(String),
       });
-      expect(company.valuation.pb.unavailableReason).toBe(
-        "Os indicadores usam datas de mercado diferentes; não são comparáveis.",
-      );
+      expect(company.valuation.pb).toMatchObject({
+        value: 1.2,
+        unavailableReason: null,
+        comparisonStatus: "not_comparable",
+      });
     }
   });
-
   it("rejects valuation dates that are missing or malformed", async () => {
     const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
     const { service } = makeService(records, (ticker) => {
@@ -354,7 +356,7 @@ describe("StockComparisonService", () => {
     }
   });
 
-  it("marks P/E and P/VP unavailable when candidates use different CVM bases", async () => {
+  it("retains individual P/E and P/VP when candidates use different CVM bases", async () => {
     const records = [
       metadata("PETR3", 1),
       metadata("VALE3", 2),
@@ -411,23 +413,25 @@ describe("StockComparisonService", () => {
     const result = await service.compare({
       tickers: ["PETR3", "VALE3", "ABEV3"],
     });
+
     for (const company of result.companies.slice(0, 2)) {
       expect(company.valuation.pe).toMatchObject({
-        value: null,
-        unavailableReason:
-          "Os indicadores usam bases ou datas CVM diferentes; não são comparáveis.",
+        value: 8,
+        unavailableReason: null,
+        comparisonStatus: "not_comparable",
+        comparisonReason: expect.any(String),
       });
       expect(company.valuation.pb).toMatchObject({
-        value: null,
-        unavailableReason:
-          "Os indicadores usam bases ou datas CVM diferentes; não são comparáveis.",
+        value: 1.2,
+        unavailableReason: null,
+        comparisonStatus: "not_comparable",
       });
     }
-    expect(result.companies[2]?.valuation.pe.unavailableReason).toBe(
-      "A fonte não disponibilizou a métrica.",
+    expect(result.companies[2]?.valuation.pe.value).toBeNull();
+    expect(result.companies[2]?.valuation.pe.comparisonStatus).toBe(
+      "not_comparable",
     );
   });
-
   it("does not present a stale CVM cache as a current comparison value", async () => {
     const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
     const { service } = makeService(records, (ticker) => {
@@ -594,7 +598,11 @@ describe("StockComparisonService", () => {
       value: null,
       unavailableReason: expect.stringContaining("CNPJ"),
     });
-    expect(result.companies[1]?.fundamentals.roe.value).toBeNull();
+    expect(result.companies[1]?.fundamentals.roe).toMatchObject({
+      value: 10,
+      comparisonStatus: "not_comparable",
+      comparisonReason: expect.any(String),
+    });
 
     const missingCnpj = makeService(records, (ticker) =>
       analysis(
@@ -730,13 +738,15 @@ describe("StockComparisonService", () => {
     const result = await service.compare({ tickers: ["PETR3", "VALE3"] });
 
     expect(
+      result.companies.map((company) => company.fundamentals.roe.value),
+    ).toEqual([10, 10]);
+    expect(
       result.companies.every(
-        (company) => company.fundamentals.roe.value === null,
+        (company) =>
+          company.fundamentals.roe.comparisonStatus === "not_comparable" &&
+          company.fundamentals.roe.comparisonReason !== null,
       ),
     ).toBe(true);
-    expect(result.companies[0]?.fundamentals.roe.unavailableReason).toContain(
-      "setores CVM diferentes",
-    );
   });
 
   it("normalizes accents and whitespace but does not substitute broad sector classifications", async () => {
@@ -782,7 +792,13 @@ describe("StockComparisonService", () => {
             indicator(
               "roe",
               10,
-              ticker === "VALE3" ? { referenceDate: "2025-12-31" } : {},
+              ticker === "VALE3"
+                ? {
+                    referenceDate: "2025-12-31",
+                    sourceDocument: "DFP",
+                    periodBasis: "annual",
+                  }
+                : {},
             ),
             indicator("netMargin", 12),
             indicator("pe", 8),
@@ -793,12 +809,12 @@ describe("StockComparisonService", () => {
     );
     const dateMismatch = await service.compare({ tickers: ["PETR3", "VALE3"] });
     expect(dateMismatch.companies[0]?.fundamentals.roe).toMatchObject({
-      value: null,
-      unavailableReason: expect.stringContaining(
-        "períodos ou datas-base incompatíveis",
-      ),
+      value: 10,
+      unavailableReason: null,
+      comparisonStatus: "not_comparable",
+      comparisonReason: expect.any(String),
     });
-
+    expect(dateMismatch.companies[1]?.fundamentals.roe.value).toBe(10);
     const codeVariation = makeService(records, (ticker) =>
       analysis(
         ticker,
@@ -846,7 +862,11 @@ describe("StockComparisonService", () => {
     const semanticResult = await semanticMismatch.service.compare({
       tickers: ["PETR3", "VALE3"],
     });
-    expect(semanticResult.companies[0]?.fundamentals.roe.value).toBeNull();
+    expect(semanticResult.companies[0]?.fundamentals.roe.value).toBe(10);
+    expect(semanticResult.companies[1]?.fundamentals.roe.value).toBeNull();
+    expect(semanticResult.companies[0]?.fundamentals.roe.comparisonStatus).toBe(
+      "not_comparable",
+    );
   });
 
   it("allows zero as a valid metric value and distinguishes it from missing values", async () => {
@@ -895,11 +915,12 @@ describe("StockComparisonService", () => {
     const result = await service.compare({ tickers: ["PETR3", "VALE3"] });
 
     expect(result.companies[0]?.fundamentals.roe).toMatchObject({
-      value: null,
-      unavailableReason: expect.stringContaining(
-        "períodos ou datas-base incompatíveis",
-      ),
+      value: 10,
+      unavailableReason: null,
+      comparisonStatus: "not_comparable",
+      comparisonReason: expect.any(String),
     });
+    expect(result.companies[1]?.fundamentals.roe.value).toBe(10);
   });
 
   it("fails closed when the LTM documents or account mapping cannot be reconciled", async () => {
@@ -1151,7 +1172,12 @@ describe("StockComparisonService", () => {
 
     const result = await service.compare({ tickers: ["PETR3", "VALE3"] });
 
-    expect(result.companies[0]?.fundamentals.roe.value).toBeNull();
+    expect(result.companies[0]?.fundamentals.roe).toMatchObject({
+      value: 10,
+      accountProvenance: expect.stringContaining("CVM consolidado"),
+      comparisonStatus: "not_comparable",
+      comparisonReason: expect.any(String),
+    });
     expect(result.companies[1]?.fundamentals.roe.unavailableReason).toBe(
       "CVM indisponível.",
     );
