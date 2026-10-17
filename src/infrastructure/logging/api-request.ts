@@ -3,6 +3,12 @@ import { getCurrentRequestId } from "@/infrastructure/logging/request-context";
 import { logger } from "@/infrastructure/logging/logger";
 import { getAuthenticatedUser } from "@/infrastructure/auth/authorization";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
+import {
+  ADMIN_SUPPORT_VIEW_COOKIE,
+  adminSupportViewService,
+  hasAdminSupportViewCookie,
+  readAdminSupportViewToken,
+} from "@/backend/services/admin-support-view.service";
 
 type ApiHandler<Arguments extends unknown[]> = (
   ...arguments_: Arguments
@@ -12,6 +18,70 @@ export function getApiRequestId(request?: Request) {
   const requestId = request?.headers.get("x-request-id");
   if (requestId && /^[a-zA-Z0-9._-]{1,128}$/.test(requestId)) return requestId;
   return getCurrentRequestId() ?? randomUUID();
+}
+
+function isOwnerScopedPrivateApi(route: string) {
+  return (
+    /^\/api\/(portfolio|imports|positions|emergency-reserve|cdb-rates)(\/|$)/.test(
+      route,
+    ) || route.startsWith("/api/analyses/portfolio-opportunities")
+  );
+}
+
+function isSupportControlApi(method: string, route: string) {
+  return (
+    route === "/api/admin/support-view" &&
+    ["GET", "POST", "DELETE"].includes(method)
+  );
+}
+
+function isSupportLogout(method: string, route: string) {
+  return method === "POST" && route === "/api/auth/logout";
+}
+
+const supportReadOnlyRoutes = new Set([
+  "GET /api/portfolio",
+  "GET /api/portfolio/monthly-review",
+  "GET /api/portfolio/operations",
+  "GET /api/portfolio/strategy",
+  "GET /api/portfolio/allocation",
+  "GET /api/portfolio/objectives",
+  "GET /api/positions/manual",
+  "GET /api/positions/reconciliation",
+  "GET /api/emergency-reserve",
+  "GET /api/analyses/portfolio-opportunities",
+  "GET /api/analyses/stocks/search",
+  "GET /api/analyses/stocks/[ticker]",
+  "GET /api/analyses/stocks/[ticker]/history",
+  "GET /api/screener",
+  "POST /api/analyses/companies/compare",
+  "POST /api/analyses/stocks/[ticker]/valuation",
+  "POST /api/emergency-reserve/suggestions",
+  "POST /api/portfolio/chat/query",
+  "POST /api/portfolio/contribution",
+  "POST /api/portfolio/objectives/allocation/preview",
+  "POST /api/portfolio/objectives/projection",
+  "POST /api/portfolio/objectives/suggestions",
+  "POST /api/portfolio/strategy/contribution",
+]);
+
+function isReadOnlySupportRequest(method: string, route: string) {
+  return supportReadOnlyRoutes.has(`${method} ${route}`);
+}
+
+function clearSupportCookie(response: Response) {
+  response.headers.append(
+    "Set-Cookie",
+    `${ADMIN_SUPPORT_VIEW_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
+  );
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+function supportError(message: string, status: number, clearCookie = false) {
+  const response = Response.json({ message }, { status });
+  response.headers.set("Cache-Control", "no-store");
+  return clearCookie ? clearSupportCookie(response) : response;
 }
 
 export function withApiRequestLogging<Arguments extends unknown[]>(
@@ -33,15 +103,45 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
       });
 
       try {
-        const privateApi =
-          /^\/api\/(portfolio|imports|positions|emergency-reserve|cdb-rates)(\/|$)/.test(
-            route,
-          ) || route.startsWith("/api/analyses/portfolio-opportunities");
+        const privateApi = isOwnerScopedPrivateApi(route);
         const adminRoute =
           route.startsWith("/api/admin/") ||
           route.startsWith("/api/settings/") ||
           route === "/api/screener/market/refresh";
+        const supportCookiePresent = hasAdminSupportViewCookie(
+          request?.headers,
+        );
+        const supportToken = readAdminSupportViewToken(request?.headers);
+        const supportControlApi = isSupportControlApi(method, route);
+        const supportLogout = isSupportLogout(method, route);
         let authenticatedUserId: string | null = null;
+        let supportTargetUserId: string | null = null;
+        let supportModeActive = false;
+
+        if (supportCookiePresent && !supportControlApi && !supportLogout) {
+          const user = await getAuthenticatedUser(request?.headers);
+          if (!user) return supportError("Não autenticado.", 401, true);
+          if (user.role !== "ADMIN")
+            return supportError("Acesso não autorizado.", 403, true);
+          const supportView = await adminSupportViewService.getActive(
+            supportToken,
+            user.id,
+          );
+          if (!supportView)
+            return supportError(
+              "O modo de suporte expirou ou não está mais disponível.",
+              403,
+              true,
+            );
+          if (adminRoute || !isReadOnlySupportRequest(method, route))
+            return supportError(
+              "Esta operação não está disponível durante a visualização de suporte.",
+              403,
+            );
+          supportModeActive = true;
+          if (privateApi) supportTargetUserId = supportView.targetUserId;
+        }
+
         if (privateApi || adminRoute) {
           const user = await getAuthenticatedUser(request?.headers);
           if (!user)
@@ -49,7 +149,7 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
               { message: "Não autenticado." },
               { status: 401 },
             );
-          authenticatedUserId = user.id;
+          authenticatedUserId = supportTargetUserId ?? user.id;
           if (adminRoute && user.role !== "ADMIN") {
             return Response.json(
               { message: "Acesso não autorizado." },
@@ -57,11 +157,14 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
             );
           }
         }
+
         const response = authenticatedUserId
           ? await runWithDataOwner(authenticatedUserId, () =>
               handler(...arguments_),
             )
           : await handler(...arguments_);
+        if (supportModeActive)
+          response.headers.set("Cache-Control", "no-store");
         response.headers.set("x-request-id", requestId);
         logger.info("api_request_completed", {
           method,

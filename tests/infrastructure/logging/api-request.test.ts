@@ -2,8 +2,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const authorization = vi.hoisted(() => ({
   user: { id: "owner-1", role: "ADMIN" } as { id: string; role: string } | null,
 }));
+const support = vi.hoisted(() => ({
+  token: null as string | null,
+  active: null as { targetUserId: string } | null,
+}));
 vi.mock("@/infrastructure/auth/authorization", () => ({
   getAuthenticatedUser: vi.fn(async () => authorization.user),
+}));
+vi.mock("@/backend/services/admin-support-view.service", () => ({
+  ADMIN_SUPPORT_VIEW_COOKIE: "investlab-support-view",
+  hasAdminSupportViewCookie: vi.fn(() => support.token !== null),
+  readAdminSupportViewToken: vi.fn(() => support.token),
+  adminSupportViewService: {
+    getActive: vi.fn(
+      async (_token: string | null, _actorId: string) => support.active,
+    ),
+  },
 }));
 import { getDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
@@ -14,6 +28,8 @@ import {
 describe("withApiRequestLogging", () => {
   afterEach(() => {
     authorization.user = { id: "owner-1", role: "ADMIN" };
+    support.token = null;
+    support.active = null;
     vi.restoreAllMocks();
   });
 
@@ -170,6 +186,183 @@ describe("withApiRequestLogging", () => {
       new Request("https://investlab.test/api/settings/screener/sync", {
         method: "POST",
       }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("uses only the active server-side target for scoped customer reads", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/portfolio",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+
+    const response = await handler(
+      new Request(
+        "https://investlab.test/api/portfolio?targetUserId=customer-2",
+        {
+          headers: { "x-investlab-target-user": "customer-3" },
+        },
+      ),
+    );
+
+    expect(await response.json()).toEqual({ ownerId: "customer-1" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it.each([
+    ["GET", "/api/admin/users"],
+    ["GET", "/api/settings/market-data"],
+    ["GET", "/api/auth/session"],
+    ["GET", "/api/cron/weekly-screener-sync/[task]"],
+    ["POST", "/api/portfolio/operations"],
+    ["GET", "/api/portfolio/not-a-real-route"],
+  ])("fails closed for %s %s during support mode", async (method, route) => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = withApiRequestLogging(
+      method,
+      route,
+      vi.fn(async (_request: Request) => Response.json({ leaked: true })),
+    );
+
+    const response = await handler(
+      new Request(`https://investlab.test${route}`, { method }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("blocks customer mutations and the scheduled sync during support mode", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = withApiRequestLogging(
+      "POST",
+      "/api/portfolio/operations",
+      async (_request: Request) => Response.json({ saved: true }),
+    );
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio/operations", {
+        method: "POST",
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      message:
+        "Esta operação não está disponível durante a visualização de suporte.",
+    });
+
+    const cron = withApiRequestLogging(
+      "GET",
+      "/api/cron/weekly-screener-sync/[task]",
+      async (_request: Request) => Response.json({ synced: true }),
+    );
+    expect(
+      (
+        await cron(
+          new Request(
+            "https://investlab.test/api/cron/weekly-screener-sync/market",
+          ),
+        )
+      ).status,
+    ).toBe(403);
+  });
+
+  it("scopes each allowlisted owner API to the selected customer", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const routes = [
+      "/api/portfolio",
+      "/api/portfolio/monthly-review",
+      "/api/portfolio/operations",
+      "/api/portfolio/strategy",
+      "/api/portfolio/allocation",
+      "/api/portfolio/objectives",
+      "/api/positions/manual",
+      "/api/positions/reconciliation",
+      "/api/emergency-reserve",
+      "/api/analyses/portfolio-opportunities",
+    ];
+
+    for (const route of routes) {
+      const handler = withApiRequestLogging(
+        "GET",
+        route,
+        async (_request: Request) =>
+          Response.json({ ownerId: getDataOwnerId() }),
+      );
+      const response = await handler(
+        new Request(`https://investlab.test${route}?targetUserId=attacker`),
+      );
+      expect(response.status, route).toBe(200);
+      expect(await response.json(), route).toEqual({ ownerId: "customer-1" });
+    }
+  });
+
+  it("rejects a malformed or copied support token bound to another actor", async () => {
+    support.token = "malformed.token";
+    support.active = null;
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/portfolio",
+      vi.fn(async (_request: Request) => Response.json({ private: true })),
+    );
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio"),
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("permits audited read-only calculations against the customer data", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = withApiRequestLogging(
+      "POST",
+      "/api/portfolio/contribution",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio/contribution", {
+        method: "POST",
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ownerId: "customer-1" });
+  });
+
+  it("fails closed when the server-side support context expired", async () => {
+    support.token = "a".repeat(43);
+    support.active = null;
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/portfolio",
+      vi.fn(async (_request: Request) => Response.json({ private: true })),
+    );
+
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio"),
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("does not activate support mode for a non-administrator", async () => {
+    authorization.user = { id: "user-1", role: "USER" };
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/portfolio",
+      vi.fn(async (_request: Request) => Response.json({ private: true })),
+    );
+
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio"),
     );
     expect(response.status).toBe(403);
   });
