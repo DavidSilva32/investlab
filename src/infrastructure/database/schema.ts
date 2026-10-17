@@ -168,10 +168,18 @@ export const positionItems = pgTable("position_items", {
   snapshotId: uuid()
     .notNull()
     .references(() => positionSnapshots.id),
+  sourceSheet: text().notNull().default(""),
+  sourceRow: integer().notNull().default(0),
+  instrumentKind: varchar({ length: 24 }).notNull().default("UNKNOWN"),
   product: text().notNull(),
   institution: text(),
+  account: text(),
   issuer: text(),
+  issuerCnpj: text(),
+  sourceType: text(),
   assetCode: text(),
+  originalAssetCode: text(),
+  isin: text(),
   indexer: text(),
   regimeType: text(),
   issuedAt: date(),
@@ -542,12 +550,14 @@ export const movementItems = pgTable(
     importId: uuid()
       .notNull()
       .references(() => imports.id),
+    sourceRow: integer().notNull().default(0),
     eventFingerprint: varchar({ length: 32 }).notNull(),
     direction: varchar({ length: 10 }).notNull(),
     occurredAt: date().notNull(),
     movementType: text().notNull(),
     product: text().notNull(),
     assetCode: text(),
+    originalAssetCode: text(),
     institution: text(),
     quantity: numeric({ precision: 24, scale: 8 }).notNull(),
     unitPrice: numeric({ precision: 24, scale: 8 }),
@@ -555,9 +565,70 @@ export const movementItems = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("movement_items_user_event_fingerprint_uidx").on(
+    index("movement_items_user_event_fingerprint_idx").on(
       table.userId,
       table.eventFingerprint,
+    ),
+  ],
+);
+export const tradingItems = pgTable(
+  "trading_items",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    importId: uuid()
+      .notNull()
+      .references(() => imports.id),
+    sourceRow: integer().notNull(),
+    identityFingerprint: varchar({ length: 64 }).notNull(),
+    side: varchar({ length: 4 }).$type<"BUY" | "SELL">().notNull(),
+    tradingDate: date().notNull(),
+    settlementDate: date(),
+    movementType: text().notNull(),
+    market: text(),
+    product: text().notNull(),
+    assetCode: text(),
+    originalAssetCode: text(),
+    institution: text(),
+    quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    unitPrice: numeric({ precision: 24, scale: 8 }),
+    grossValue: numeric({ precision: 24, scale: 8 }),
+    fees: numeric({ precision: 24, scale: 8 }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("trading_items_import_source_row_uidx").on(
+      table.importId,
+      table.sourceRow,
+    ),
+    index("trading_items_user_identity_idx").on(
+      table.userId,
+      table.identityFingerprint,
+    ),
+  ],
+);
+export const b3ReconciliationEvents = pgTable(
+  "b3_reconciliation_events",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    eventOrder: bigserial({ mode: "number" }).notNull(),
+    tradingItemId: uuid()
+      .notNull()
+      .references(() => tradingItems.id, { onDelete: "restrict" }),
+    movementItemId: uuid()
+      .notNull()
+      .references(() => movementItems.id, { onDelete: "restrict" }),
+    status: varchar({ length: 16 }).$type<"LINK" | "KEEP_SEPARATE">().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("b3_reconciliation_event_order_uidx").on(table.eventOrder),
+    index("b3_reconciliation_pair_history_idx").on(
+      table.userId,
+      table.tradingItemId,
+      table.movementItemId,
+      table.eventOrder,
     ),
   ],
 );

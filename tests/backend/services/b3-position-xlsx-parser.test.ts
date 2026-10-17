@@ -1,5 +1,16 @@
-﻿import * as XLSX from "xlsx";
-import { describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
+import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("xlsx", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("xlsx")>();
+  return {
+    ...actual,
+    read: vi.fn(actual.read),
+    __actualRead: actual.read,
+    SSF: actual.SSF,
+    utils: actual.utils,
+    write: actual.write,
+  };
+});
 
 import { ApplicationError } from "@/backend/errors/application-error";
 import { b3PositionXlsxParser } from "@/backend/services/b3-position-xlsx-parser";
@@ -15,6 +26,39 @@ function workbookBuffer(rows: unknown[][]) {
 }
 
 describe("B3PositionXlsxParser", () => {
+  const actualXlsxRead = (
+    XLSX as typeof XLSX & { __actualRead: typeof XLSX.read }
+  ).__actualRead;
+  afterEach(() => {
+    vi.mocked(XLSX.read).mockReset().mockImplementation(actualXlsxRead);
+  });
+
+  it("rejects workbooks without worksheets", () => {
+    vi.mocked(XLSX.read).mockReturnValue({
+      SheetNames: [],
+      Sheets: {},
+    } as XLSX.WorkBook);
+
+    expect(() => b3PositionXlsxParser.parse(Buffer.from("xlsx"))).toThrow(
+      ApplicationError,
+    );
+  });
+
+  it("skips a worksheet name missing from the workbook sheet map", () => {
+    const validSheet = XLSX.utils.aoa_to_sheet([
+      ["Produto", "Quantidade"],
+      ["Ativo", 1],
+    ]);
+    vi.mocked(XLSX.read).mockReturnValue({
+      SheetNames: ["Missing", "Posicoes"],
+      Sheets: { Posicoes: validSheet },
+    } as XLSX.WorkBook);
+
+    expect(b3PositionXlsxParser.parse(Buffer.from("xlsx"))).toEqual([
+      expect.objectContaining({ product: "Ativo", quantity: "1" }),
+    ]);
+  });
+
   it("parses B3 headers and preserves decimal quantities", () => {
     const positions = b3PositionXlsxParser.parse(
       workbookBuffer([
@@ -262,4 +306,105 @@ it("uses only the recognized position filename when CreatedDate is absent", () =
   expect(b3PositionXlsxParser.parseDocument(file)).not.toHaveProperty(
     "referenceDate",
   );
+});
+
+it("combines B3 position tabs and retains fractional ticker source identity", () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      [
+        "Produto",
+        "Instituição",
+        "Conta",
+        "Código de Negociação",
+        "Quantidade",
+        "Preço de Fechamento",
+        "Valor Atualizado",
+      ],
+      ["Ação exemplo", "Corretora", "Conta 1", "BBSE3F", 10, 20, 200],
+    ]),
+    "Ações",
+  );
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      [
+        "Produto",
+        "Instituição",
+        "Código de Negociação",
+        "Tipo",
+        "Quantidade",
+        "Preço de Fechamento",
+        "Valor Atualizado",
+      ],
+      [
+        "Fundo de investimento exemplo",
+        "Corretora",
+        "HGLG11",
+        "FII",
+        2,
+        100,
+        200,
+      ],
+    ]),
+    "Fundos de Investimento",
+  );
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ["Produto", "Emissor", "Quantidade", "Valor Atualizado MTM"],
+      ["CDB exemplo", "Banco", 5, 500],
+    ]),
+    "Renda Fixa",
+  );
+  const file = XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx",
+  }) as Buffer;
+
+  expect(b3PositionXlsxParser.parse(file)).toEqual([
+    expect.objectContaining({
+      sourceSheet: "Ações",
+      sourceRow: 2,
+      instrumentKind: "EQUITY",
+      account: "Conta 1",
+      assetCode: "BBSE3",
+      originalAssetCode: "BBSE3F",
+    }),
+    expect.objectContaining({
+      sourceSheet: "Fundos de Investimento",
+      instrumentKind: "FII",
+      assetCode: "HGLG11",
+      sourceType: "FII",
+    }),
+    expect.objectContaining({
+      sourceSheet: "Renda Fixa",
+      instrumentKind: "FIXED_INCOME",
+    }),
+  ]);
+});
+
+it("keeps generic investment fund rows distinct from FIIs without explicit source type", () => {
+  const [position] = b3PositionXlsxParser.parse(
+    workbookBuffer([
+      ["Produto", "Tipo", "Código de Negociação", "Quantidade"],
+      ["Fundo imobiliário exemplo", "Fundo", "HGLG11", 2],
+    ]),
+  );
+  expect(position).toMatchObject({
+    instrumentKind: "INVESTMENT_FUND",
+    sourceType: "Fundo",
+  });
+});
+
+it("reads the ISIN column label used by the B3 position workbook", () => {
+  const [position] = b3PositionXlsxParser.parse(
+    workbookBuffer([
+      ["Produto", "Quantidade", "Código ISIN / Distribuição"],
+      ["Ação exemplo", 10, "BR0000000000"],
+    ]),
+  );
+
+  expect(position.isin).toBe("BR0000000000");
 });

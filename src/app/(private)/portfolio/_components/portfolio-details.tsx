@@ -72,6 +72,16 @@ const dateValue = (value: string | null) =>
   value === null ? null : new Date(`${value}T00:00:00Z`).getTime();
 const formatDate = (value: string | null) =>
   value ? date.format(new Date(`${value}T00:00:00Z`)) : "";
+const instrumentKindLabel: Record<
+  NonNullable<PortfolioPosition["instrumentKind"]>,
+  string
+> = {
+  EQUITY: "Ação",
+  FII: "FII",
+  FIXED_INCOME: "Renda fixa",
+  INVESTMENT_FUND: "Fundo de investimento",
+  UNKNOWN: "Tipo não identificado",
+};
 const currentValueCents = (row: PortfolioPosition) => {
   const hasEstimate =
     row.estimatedValue !== null && row.estimatedValue !== undefined;
@@ -89,12 +99,23 @@ const positionColumns = (
     label: "Produto",
     width: "17%",
     value: (row) => row.product,
-    searchValue: (row) => [row.product, row.indexer].filter(Boolean).join(" "),
+    searchValue: (row) =>
+      [row.product, row.indexer, row.sourceType].filter(Boolean).join(" "),
     render: (row) => (
       <div className="flex items-center gap-2">
         <AssetLogo ticker={row.assetCode} name={row.product} size="sm" />
         <div className="min-w-0">
           <span className="font-medium">{row.product}</span>
+          {row.instrumentKind && (
+            <Badge variant="outline" className="ml-2 align-middle text-xs">
+              {instrumentKindLabel[row.instrumentKind]}
+            </Badge>
+          )}
+          {row.sourceType && (
+            <span className="block text-xs text-muted-foreground">
+              Tipo informado pela B3: {row.sourceType}
+            </span>
+          )}
           {row.indexer && (
             <span className="block text-xs text-muted-foreground">
               {row.indexer}
@@ -116,8 +137,20 @@ const positionColumns = (
     label: "Código",
     width: "10%",
     value: (row) => textValue(row.assetCode),
-    searchValue: (row) => row.assetCode,
-    render: (row) => row.assetCode ?? "—",
+    searchValue: (row) =>
+      [row.assetCode, row.originalAssetCode].filter(Boolean).join(" "),
+    render: (row) => (
+      <div className="space-y-0.5">
+        <span>{row.assetCode ?? row.originalAssetCode ?? "—"}</span>
+        {row.assetCode &&
+          row.originalAssetCode &&
+          row.originalAssetCode !== row.assetCode && (
+            <span className="block text-xs text-muted-foreground">
+              Código recebido: {row.originalAssetCode}
+            </span>
+          )}
+      </div>
+    ),
   },
   {
     id: "source",

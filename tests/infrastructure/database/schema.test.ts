@@ -77,9 +77,11 @@ describe("database schema", () => {
     );
     const movementFingerprintIndex = getTableConfig(movementItems).indexes.find(
       (index) =>
-        index.config.name === "movement_items_user_event_fingerprint_uidx",
+        index.config.name === "movement_items_user_event_fingerprint_idx",
     );
+    expect(movementFingerprintIndex).toBeDefined();
     expect(movementFingerprintIndex?.config.columns).toHaveLength(2);
+    expect(movementFingerprintIndex?.config.unique).toBe(false);
     expect(movementItems.eventFingerprint.notNull).toBe(true);
   });
 

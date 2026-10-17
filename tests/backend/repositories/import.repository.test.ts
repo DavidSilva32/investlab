@@ -69,6 +69,8 @@ import {
   positionItems,
   manualPortfolioPositions,
   movementItems,
+  tradingItems,
+  b3ReconciliationEvents,
 } from "@/infrastructure/database/schema";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import {
@@ -1051,7 +1053,9 @@ describe("import repository", () => {
             }),
           }),
         })
-        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [] }),
+        }),
       insert: vi.fn(),
     };
     transaction.insert
@@ -1106,7 +1110,9 @@ describe("import repository", () => {
         .mockReturnValueOnce({
           from: () => ({ where: async () => [existingPosition] }),
         })
-        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [] }),
+        }),
       insert: vi.fn(),
     };
     transaction.insert
@@ -1171,7 +1177,9 @@ describe("import repository", () => {
             ],
           }),
         })
-        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [] }),
+        }),
       insert: vi.fn(),
     };
     mocks.client.transaction.mockImplementation(
@@ -1505,8 +1513,7 @@ describe("import repository", () => {
     );
   });
   it("persists movement items without creating a position snapshot", async () => {
-    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-    const persistMovements = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const persistMovements = vi.fn().mockResolvedValue(undefined);
     const transaction = { ...emptyImportGuard(), insert: vi.fn() };
     transaction.insert
       .mockReturnValueOnce({
@@ -1524,12 +1531,14 @@ describe("import repository", () => {
         documentType: "B3_MOVEMENT_XLSX",
         movements: [
           {
+            sourceRow: 2,
             eventFingerprint: "a".repeat(32),
             direction: "CREDITO",
             occurredAt: "2026-09-11",
             movementType: "APLICAÃ‡ÃƒO",
             product: "CDB",
             assetCode: null,
+            originalAssetCode: null,
             institution: null,
             quantity: "1",
             unitPrice: "0.01",
@@ -1545,9 +1554,57 @@ describe("import repository", () => {
         direction: "CREDITO",
       }),
     ]);
-    expect(onConflictDoNothing).toHaveBeenCalledWith({
-      target: expect.anything(),
-    });
+  });
+
+  it("persists negotiation rows as source records without creating snapshots", async () => {
+    const persistedTrades = vi.fn().mockResolvedValue(undefined);
+    const transaction = { ...emptyImportGuard(), insert: vi.fn() };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "trade-import" }] }),
+      })
+      .mockReturnValueOnce({ values: persistedTrades });
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "trades.xlsx",
+        fileHash: "trade-hash",
+        documentType: "B3_TRADING_XLSX",
+        trades: [
+          {
+            side: "BUY",
+            tradingDate: "2026-10-14",
+            settlementDate: null,
+            movementType: "Compra",
+            market: null,
+            product: "ABCD3",
+            assetCode: "ABCD3",
+            originalAssetCode: "ABCD3F",
+            institution: null,
+            quantity: "2",
+            unitPrice: "10",
+            grossValue: "20",
+            fees: null,
+            sourceRow: 2,
+            identityFingerprint: "f".repeat(64),
+          },
+        ],
+      }),
+    ).resolves.toEqual({ importId: "trade-import" });
+
+    expect(transaction.insert).toHaveBeenCalledWith(tradingItems);
+    expect(persistedTrades).toHaveBeenCalledWith([
+      expect.objectContaining({
+        userId: "owner-1",
+        importId: "trade-import",
+        identityFingerprint: "f".repeat(64),
+        sourceRow: 2,
+      }),
+    ]);
+    expect(transaction.insert).not.toHaveBeenCalledWith(positionSnapshots);
   });
 
   it("preserves the original B3 row and inserts a divergent reimport row as a distinct source", async () => {
@@ -1566,7 +1623,7 @@ describe("import repository", () => {
           : {
               values: (rows: unknown[]) => {
                 insertedMovementRows.push(rows);
-                return { onConflictDoNothing: async () => undefined };
+                return undefined;
               },
             },
       ),
@@ -1575,11 +1632,13 @@ describe("import repository", () => {
       (callback: (tx: typeof transaction) => unknown) => callback(transaction),
     );
     const base = {
+      sourceRow: 2,
       direction: "CREDITO" as const,
       occurredAt: "2026-10-01",
       movementType: "Compra",
       product: "Empresa Exemplo - EXMP3",
       assetCode: "EXMP3",
+      originalAssetCode: "EXMP3",
       institution: "Corretora",
       quantity: "2",
       unitPrice: "10.25",
@@ -1603,6 +1662,12 @@ describe("import repository", () => {
       documentType: "B3_MOVEMENT_XLSX",
       movements: [changedMovement],
     });
+    await importRepository.create({
+      fileName: "overlap.xlsx",
+      fileHash: "c".repeat(64),
+      documentType: "B3_MOVEMENT_XLSX",
+      movements: [originalMovement],
+    });
 
     expect(insertedMovementRows).toEqual([
       [
@@ -1618,6 +1683,12 @@ describe("import repository", () => {
           unitPrice: "12.00",
           operationValue: "24.00",
           eventFingerprint: changedMovement.eventFingerprint,
+        }),
+      ],
+      [
+        expect.objectContaining({
+          importId: "movement-import-3",
+          eventFingerprint: originalMovement.eventFingerprint,
         }),
       ],
     ]);
@@ -1647,6 +1718,216 @@ describe("import repository", () => {
       expect.any(Object),
     );
   });
+  it("lists trading rows and reconciliation events and logs read failures", async () => {
+    mocks.client.select.mockReturnValue({
+      from: () => ({
+        where: () => ({ orderBy: async () => [{ id: "trade-1" }] }),
+      }),
+    });
+    await expect(importRepository.listTradingItems()).resolves.toEqual([
+      { id: "trade-1" },
+    ]);
+    mocks.client.select.mockImplementation(() => {
+      throw new Error("trading read failed");
+    });
+    await expect(
+      importRepository.listTradingItems("request-1"),
+    ).rejects.toThrow("trading read failed");
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_trading_items_query_failed",
+      expect.any(Object),
+    );
+    mocks.client.select.mockReturnValue({
+      from: () => ({
+        where: () => ({ orderBy: async () => [{ id: "event-1" }] }),
+      }),
+    });
+    await expect(
+      importRepository.listB3ReconciliationEvents(),
+    ).resolves.toEqual([{ id: "event-1" }]);
+    mocks.client.select.mockImplementation(() => {
+      throw new Error("event read failed");
+    });
+    await expect(
+      importRepository.listB3ReconciliationEvents("request-2"),
+    ).rejects.toThrow("event read failed");
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_b3_reconciliation_events_query_failed",
+      expect.any(Object),
+    );
+  });
+
+  it("persists reconciliation decisions for user-owned rows and rejects conflicting links", async () => {
+    const tradeId = "11111111-1111-4111-8111-111111111111";
+    const movementId = "22222222-2222-4222-8222-222222222222";
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: tradeId }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: movementId }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ orderBy: async () => [] }) }),
+        }),
+      insert: vi.fn().mockReturnValue({ values: insertValues }),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    await expect(
+      importRepository.saveB3ReconciliationDecisions([
+        { tradeId, movementId, action: "LINK" },
+      ]),
+    ).resolves.toBe(1);
+    expect(insertValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        userId: "owner-1",
+        tradingItemId: tradeId,
+        movementItemId: movementId,
+        status: "LINK",
+      }),
+    ]);
+
+    const conflictingTransaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: tradeId }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: movementId }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              orderBy: async () => [
+                {
+                  tradingItemId: "33333333-3333-4333-8333-333333333333",
+                  movementItemId: movementId,
+                  status: "LINK",
+                  eventOrder: 1,
+                },
+              ],
+            }),
+          }),
+        }),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof conflictingTransaction) => unknown) =>
+        callback(conflictingTransaction),
+    );
+    await expect(
+      importRepository.saveB3ReconciliationDecisions([
+        { tradeId, movementId, action: "LINK" },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(conflictingTransaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("records an empty reconciliation batch without inserting events", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ orderBy: async () => [] }) }),
+        }),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      importRepository.saveB3ReconciliationDecisions([]),
+    ).resolves.toBe(0);
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("does not reject an idempotent link for the same trade and movement", async () => {
+    const tradeId = "11111111-1111-4111-8111-111111111111";
+    const movementId = "22222222-2222-4222-8222-222222222222";
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: tradeId }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: movementId }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              orderBy: async () => [
+                {
+                  tradingItemId: tradeId,
+                  movementItemId: movementId,
+                  status: "LINK",
+                  eventOrder: 1,
+                },
+              ],
+            }),
+          }),
+        }),
+      insert: vi.fn().mockReturnValue({ values: insertValues }),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      importRepository.saveB3ReconciliationDecisions([
+        { tradeId, movementId, action: "LINK" },
+      ]),
+    ).resolves.toBe(1);
+    expect(insertValues).toHaveBeenCalledOnce();
+  });
+
+  it("rejects reconciliation decisions for rows owned by another user and logs database failures", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ orderBy: async () => [] }) }),
+        }),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
+    );
+    await expect(
+      importRepository.saveB3ReconciliationDecisions([
+        {
+          tradeId: "11111111-1111-4111-8111-111111111111",
+          movementId: "22222222-2222-4222-8222-222222222222",
+          action: "KEEP_SEPARATE",
+        },
+      ]),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    mocks.client.transaction.mockRejectedValue(new Error("write failed"));
+    await expect(
+      importRepository.saveB3ReconciliationDecisions([]),
+    ).rejects.toThrow("write failed");
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_b3_reconciliation_save_failed",
+      expect.any(Object),
+    );
+  });
   it("deletes movement imports and their items", async () => {
     const where = vi.fn().mockResolvedValue(undefined);
     const transaction = {
@@ -1657,6 +1938,9 @@ describe("import repository", () => {
         })
         .mockReturnValueOnce({
           from: () => ({ where: async () => [{ id: "movement-row" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => [] }) }),
         })
         .mockReturnValueOnce({
           from: () => ({ where: () => ({ limit: async () => [] }) }),
@@ -1703,6 +1987,36 @@ describe("import repository", () => {
     expect(transaction.delete).not.toHaveBeenCalled();
   });
 
+  it("preserves movement imports linked to a negotiation", async () => {
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "movement-import" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "movement-row" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => [] }) }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({ limit: async () => [{ id: "trade-link" }] }),
+          }),
+        }),
+      delete: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX", "request"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
   it("deletes a movement import with no movement rows", async () => {
     const transaction = {
       select: vi
@@ -1721,6 +2035,84 @@ describe("import repository", () => {
     );
     await expect(
       importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
+    ).resolves.toBe(1);
+    expect(transaction.select).toHaveBeenCalledTimes(2);
+  });
+
+  it("deletes negotiation source rows only when they have no reconciliation event", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "trade-import" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "trade-row" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => [] }) }),
+        }),
+      delete: vi.fn().mockReturnValue({ where }),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.deleteByDocumentType("B3_TRADING_XLSX", "request"),
+    ).resolves.toBe(1);
+
+    expect(transaction.delete).toHaveBeenCalledWith(tradingItems);
+    expect(transaction.delete).toHaveBeenCalledWith(imports);
+  });
+
+  it("preserves negotiation imports with reconciliation history", async () => {
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "trade-import" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "trade-row" }] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({ limit: async () => [{ id: "reconciliation" }] }),
+          }),
+        }),
+      delete: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.deleteByDocumentType("B3_TRADING_XLSX", "request"),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Remova o vínculo"),
+    });
+    expect(transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes a negotiation import that has no parsed source rows", async () => {
+    const transaction = {
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [{ id: "empty-trade-import" }] }),
+        })
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) }),
+      delete: vi.fn().mockReturnValue({ where: async () => undefined }),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.deleteByDocumentType("B3_TRADING_XLSX", "request"),
     ).resolves.toBe(1);
     expect(transaction.select).toHaveBeenCalledTimes(2);
   });

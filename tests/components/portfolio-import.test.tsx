@@ -51,6 +51,92 @@ const movementPreview = {
     },
   ],
 };
+const tradingPreview = {
+  documentType: "B3_TRADING_XLSX",
+  count: 2,
+  trades: [
+    {
+      side: "BUY",
+      tradingDate: "2026-10-14",
+      settlementDate: null,
+      movementType: "Compra",
+      market: "Vista",
+      product: "Ação ordinária",
+      assetCode: "ABCD3",
+      originalAssetCode: "ABCD3F",
+      institution: "Corretora A",
+      quantity: "10",
+      unitPrice: "12.5",
+      grossValue: "125",
+      fees: null,
+      sourceRow: 7,
+    },
+    {
+      side: "SELL",
+      tradingDate: "2026-10-15",
+      settlementDate: null,
+      movementType: "Venda",
+      market: "Fracionário",
+      product: "Ação ordinária",
+      assetCode: "ABCD3",
+      originalAssetCode: "ABCD3F",
+      institution: null,
+      quantity: "2",
+      unitPrice: null,
+      grossValue: null,
+      fees: null,
+      sourceRow: 8,
+    },
+  ],
+  history: {
+    complete: false,
+    reasons: ["Taxas e liquidação não informadas."],
+  },
+  duplicateCandidates: [
+    {
+      identityFingerprint: "must-not-render",
+      sourceRows: [7, 8],
+      existingCount: 1,
+      occurrenceCount: 3,
+      status: "ambiguous",
+    },
+  ],
+  reconciliation: {
+    candidates: [],
+    confirmed: [],
+    ambiguous: [],
+    unmatched: [],
+  },
+  batchReconciliationPending: true,
+};
+const reconciliationPair = {
+  tradeId: "private-trade-id",
+  movementId: "private-movement-id",
+  trade: {
+    sourceRow: 7,
+    date: "2026-10-14",
+    side: "BUY",
+    ticker: "ABCD3",
+    originalTicker: "ABCD3F",
+    product: "Ação ordinária",
+    institution: "Corretora A",
+    quantity: "10",
+    unitPrice: "12.5",
+    value: "125",
+  },
+  movement: {
+    sourceRow: 8,
+    date: "2026-10-14",
+    direction: "Crédito",
+    movementType: "Transferência - Liquidação",
+    ticker: "ABCD3",
+    product: "Ação ordinária",
+    institution: "Corretora A",
+    quantity: "10",
+    unitPrice: "12.5",
+    value: "125",
+  },
+};
 
 describe("PortfolioImport", () => {
   beforeEach(() => {
@@ -205,7 +291,7 @@ describe("PortfolioImport", () => {
     });
     expect(within(table).getAllByRole("row")).toHaveLength(3);
     expect(within(table).getByText("Compra")).toBeTruthy();
-    expect(within(table).getByText("—")).toBeTruthy();
+    expect(within(table).getAllByText("—").length).toBeGreaterThan(0);
   });
   it("shows complete position details and reconciles the recognized total", async () => {
     vi.stubGlobal(
@@ -708,6 +794,289 @@ describe("PortfolioImport", () => {
 
     expect(await screen.findByText(/vazio\.xlsx/)).toBeTruthy();
     expect(screen.getByText("0 de 0")).toBeTruthy();
+  });
+
+  it("previews trade fields, warns about ambiguous duplicates, and preserves partial history", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => tradingPreview,
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("negociacoes.xlsx")] },
+    });
+
+    expect(
+      await screen.findByRole("table", { name: "Prévia de negociações" }),
+    ).toBeTruthy();
+    const table = screen.getByRole("table", { name: "Prévia de negociações" });
+    expect(within(table).getAllByText("Compra")).toHaveLength(2);
+    expect(within(table).getAllByText("Venda")).toHaveLength(2);
+    expect(within(table).getAllByText(/Original: ABCD3F/)).toHaveLength(2);
+    expect(screen.getByText(/Histórico parcial/)).toBeTruthy();
+    expect(screen.getByText(/1 grupo\(s\) contém linhas/)).toBeTruthy();
+    expect(
+      screen.getByText(/Linhas 7, 8: 3 ocorrência\(s\), 1 já importada\(s\)/),
+    ).toBeTruthy();
+    expect(screen.queryByText("must-not-render")).toBeNull();
+    expect(
+      screen.getByText(/vínculo continuará pendente de revisão/),
+    ).toBeTruthy();
+  });
+
+  it("shows the post-import reconciliation summary without treating candidates as confirmed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => tradingPreview })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ message: "Negociações importadas." }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            candidates: [reconciliationPair],
+            confirmed: [],
+            ambiguous: [],
+            separated: [],
+            unmatched: [
+              {
+                tradeId: "unmatched-private-id",
+                trade: reconciliationPair.trade,
+                reason: "no match",
+              },
+            ],
+            duplicateCandidates: [],
+            movementDuplicateCandidates: [],
+            history: { complete: false, reasons: ["Histórico parcial."] },
+          }),
+        }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("negociacoes.xlsx")] },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Revisão entre negociações e movimentações",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(/1 revisão\(ões\) pendente\(s\)/)).toBeTruthy();
+    expect(screen.getByText(/0 vínculo\(s\) confirmado\(s\)/)).toBeTruthy();
+    expect(screen.getByText(/Confira os dados dos dois arquivos/)).toBeTruthy();
+    expect(screen.queryByText(/private-/)).toBeNull();
+  });
+
+  it("supports a complete reconciliation summary and retained duplicate groups", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => tradingPreview })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            candidates: [],
+            confirmed: [reconciliationPair],
+            ambiguous: [],
+            separated: [],
+            unmatched: [],
+            duplicateCandidates: [
+              {
+                occurrenceCount: 2,
+                sourceRows: [4, 9],
+                importCount: 2,
+                status: "ambiguous",
+              },
+            ],
+            movementDuplicateCandidates: [],
+            history: { complete: true, reasons: [] },
+          }),
+        }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("negociacoes.xlsx")] },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    expect(await screen.findByText(/1 grupo/)).toBeTruthy();
+    expect(screen.getByText(/Negociação: linhas 4, 9/)).toBeTruthy();
+    expect(screen.getByText(/1 vínculo\(s\) confirmado\(s\)/)).toBeTruthy();
+  });
+
+  it("keeps the import successful when the reconciliation summary cannot be loaded", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => tradingPreview })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+        .mockResolvedValueOnce({ ok: false, json: async () => ({}) }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("negociacoes.xlsx")] },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    expect(await screen.findByText(/arquivo foi salvo/)).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Negociações importadas" }),
+    ).toBeTruthy();
+  });
+
+  it("renders a negotiation preview with no duplicate candidates", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...tradingPreview,
+          duplicateCandidates: [],
+          batchReconciliationPending: false,
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("sem-duplicidades.xlsx")] },
+    });
+
+    expect(
+      await screen.findByRole("table", { name: "Prévia de negociações" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/Possíveis duplicidades para revisar/),
+    ).toBeNull();
+  });
+
+  it("keeps trading preview legible when market and normalized ticker are absent", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...tradingPreview,
+          count: 1,
+          trades: [
+            {
+              ...tradingPreview.trades[0],
+              market: null,
+              product: "Produto sem código normalizado",
+              assetCode: null,
+              originalAssetCode: null,
+            },
+          ],
+          duplicateCandidates: [],
+          batchReconciliationPending: false,
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("sem-codigo.xlsx")] },
+    });
+
+    const table = await screen.findByRole("table", {
+      name: "Prévia de negociações",
+    });
+    const row = screen
+      .getByText("Produto sem código normalizado")
+      .closest("tr");
+    expect(row).not.toBeNull();
+    const cells = within(row!).getAllByRole("cell");
+    expect(cells[2].textContent).toBe("—");
+    expect(cells[4].textContent).toBe("—");
+    expect(
+      within(table).getByText("Produto sem código normalizado"),
+    ).toBeTruthy();
+  });
+
+  it("shows instrument type, source sheet and original ticker in the position preview", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...positionPreview,
+          positions: [
+            {
+              ...positionPreview.positions[0],
+              instrumentKind: "INVESTMENT_FUND",
+              sourceType: "Cotas",
+              sourceSheet: "Fundo de Investimento",
+              assetCode: "FUND11",
+              originalAssetCode: "FUND11F",
+            },
+          ],
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("posicao.xlsx")] },
+    });
+
+    expect(await screen.findByText("Fundo de investimento")).toBeTruthy();
+    expect(screen.getByText("Cotas")).toBeTruthy();
+    expect(screen.getByText("Fundo de Investimento")).toBeTruthy();
+    expect(screen.getByText(/Original: FUND11F/)).toBeTruthy();
+    const table = screen.getByText("Cotas").closest("table");
+    expect(table).not.toBeNull();
+    expect(within(table!).getAllByRole("columnheader")).toHaveLength(11);
+    expect(
+      within(screen.getByText("Cotas").closest("tr")!).getAllByRole("cell"),
+    ).toHaveLength(11);
+    expect(
+      screen
+        .getByText("Total reconhecido no arquivo")
+        .closest("td")
+        ?.getAttribute("colspan"),
+    ).toBe("10");
+  });
+
+  it("preserves movement direction and explains that credits are not asset purchases", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...movementPreview,
+          movements: [
+            {
+              ...movementPreview.movements[0],
+              direction: "Crédito",
+              assetCode: "ABCD3",
+            },
+          ],
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("movimentos.xlsx")] },
+    });
+
+    expect(await screen.findByText("Crédito")).toBeTruthy();
+    expect(screen.getByText("ABCD3")).toBeTruthy();
+    expect(
+      screen.getByText(/não é tratado como compra ou venda de ativo/),
+    ).toBeTruthy();
   });
 });
 

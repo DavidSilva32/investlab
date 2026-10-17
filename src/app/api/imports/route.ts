@@ -8,6 +8,36 @@ import { logger } from "@/infrastructure/logging/logger";
 
 export const runtime = "nodejs";
 
+export const GET = withApiRequestLogging(
+  "GET",
+  "/api/imports",
+  async function GET(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      return await importController.reconciliationSummary(requestId);
+    } catch (error) {
+      const expected = error instanceof ApplicationError;
+      logger[expected ? "warn" : "error"](
+        expected
+          ? "b3_reconciliation_summary_rejected"
+          : "b3_reconciliation_summary_failed",
+        { requestId, error },
+      );
+      return Response.json(
+        {
+          message: expected
+            ? error.message
+            : "Não foi possível consultar as reconciliações.",
+        },
+        {
+          status: expected ? error.statusCode : 500,
+          headers: { "x-request-id": requestId },
+        },
+      );
+    }
+  },
+);
+
 export const DELETE = withApiRequestLogging(
   "DELETE",
   "/api/imports",

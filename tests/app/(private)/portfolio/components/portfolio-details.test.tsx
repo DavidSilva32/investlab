@@ -269,6 +269,37 @@ describe("portfolio detail components", () => {
     expect(html).toContain(">B3</div>");
     expect(html).not.toContain(">LEGACY</div>");
   });
+
+  it("shows the instrument kind and preserves the ticker supplied by B3", () => {
+    const html = renderToStaticMarkup(
+      <PositionDetails
+        positions={[
+          {
+            ...position,
+            id: "equity",
+            product: "Empresa",
+            assetCode: "ABCD3",
+            originalAssetCode: "ABCD3F",
+            instrumentKind: "EQUITY",
+            sourceType: "ON",
+          },
+          {
+            ...position,
+            id: "fii",
+            product: "Fundo imobiliário",
+            assetCode: "FUND11",
+            instrumentKind: "FII",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain(">Ação</div>");
+    expect(html).toContain(">FII</div>");
+    expect(html).toContain("Tipo informado pela B3: ON");
+    expect(html).toContain("Código recebido: ABCD3F");
+  });
+
   it("shows estimated and official value details on demand", () => {
     render(
       <PositionDetails

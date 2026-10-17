@@ -2,11 +2,13 @@
 import { ApplicationError } from "@/backend/errors/application-error";
 
 export type ParsedB3Movement = {
+  sourceRow: number;
   direction: "CREDITO" | "DEBITO";
   occurredAt: string;
   movementType: string;
   product: string;
   assetCode: string | null;
+  originalAssetCode: string | null;
   institution: string | null;
   quantity: string;
   unitPrice: string | null;
@@ -44,6 +46,8 @@ const date = (value: unknown) => {
 const text = (value: unknown) => String(value ?? "").trim() || null;
 export const extractAssetCode = (product: string) =>
   product.match(/(?:^|\s-\s)([A-Z]{2,}\d[A-Z0-9]*)\b/)?.[1] ?? null;
+export const normalizeB3AssetCode = (assetCode: string | null) =>
+  assetCode?.match(/^([A-Z]{4}\d{1,2})F$/)?.[1] ?? assetCode;
 
 export function parseB3MovementXlsx(file: Buffer): ParsedB3Movement[] {
   const workbook = XLSX.read(file, { type: "buffer", cellDates: false });
@@ -77,7 +81,7 @@ export function parseB3MovementXlsx(file: Buffer): ParsedB3Movement[] {
     );
   const column = (name: string) => headers.indexOf(name);
   const value = (row: unknown[], name: string) => row[column(name)];
-  const movements = rows.slice(headerRow + 1).flatMap((row) => {
+  const movements = rows.slice(headerRow + 1).flatMap((row, rowIndex) => {
     const product = text(value(row, "produto"));
     const quantity = decimal(value(row, "quantidade"));
     if (!product && !quantity) return [];
@@ -90,6 +94,7 @@ export function parseB3MovementXlsx(file: Buffer): ParsedB3Movement[] {
           : null;
     const occurredAt = date(value(row, "data"));
     const movementType = text(value(row, "movimentacao"));
+    const originalAssetCode = extractAssetCode(product ?? "");
     if (!direction || !occurredAt || !movementType || !product || !quantity)
       throw new ApplicationError(
         "Há uma movimentação sem dados obrigatórios válidos.",
@@ -97,11 +102,13 @@ export function parseB3MovementXlsx(file: Buffer): ParsedB3Movement[] {
       );
     return [
       {
+        sourceRow: headerRow + rowIndex + 2,
         direction,
         occurredAt,
         movementType,
         product,
-        assetCode: extractAssetCode(product),
+        assetCode: normalizeB3AssetCode(originalAssetCode),
+        originalAssetCode,
         institution: text(value(row, "instituicao")),
         quantity,
         unitPrice: decimal(value(row, "preco unitario")),

@@ -165,6 +165,28 @@ describe("parseB3MovementXlsx", () => {
     expect(extractAssetCode("Produto comum")).toBeNull();
   });
 
+  it("normalizes only the fractional ticker suffix and retains the original", () => {
+    const [movement] = parseB3MovementXlsx(
+      workbookBuffer([
+        headers,
+        [
+          "Credito",
+          "14/10/2026",
+          "Transferência - Liquidação",
+          "BBSE3F - Empresa",
+          "Corretora",
+          10,
+          20,
+          200,
+        ],
+      ]),
+    );
+    expect(movement).toMatchObject({
+      assetCode: "BBSE3",
+      originalAssetCode: "BBSE3F",
+    });
+  });
+
   it("rejects invalid layouts and incomplete records", () => {
     expect(() =>
       parseB3MovementXlsx(workbookBuffer([["Produto"], ["CDB"]])),

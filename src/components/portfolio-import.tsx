@@ -16,6 +16,10 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
+import {
+  TradingReconciliationReview,
+  type B3ReconciliationSummary,
+} from "@/components/trading-reconciliation-review";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +53,11 @@ type Position = {
   regimeType?: string | null;
   issuedAt?: string | null;
   maturityAt?: string | null;
+  instrumentKind?:
+    "EQUITY" | "FII" | "FIXED_INCOME" | "INVESTMENT_FUND" | "UNKNOWN";
+  sourceType?: string | null;
+  sourceSheet?: string;
+  originalAssetCode?: string | null;
 };
 type IdentityConflict = {
   assetKey: string;
@@ -77,6 +86,31 @@ type Movement = {
   product: string;
   quantity: string;
   operationValue: string | null;
+  direction?: string;
+  assetCode?: string | null;
+};
+type TradingRecord = {
+  side: "BUY" | "SELL";
+  tradingDate: string;
+  settlementDate: string | null;
+  movementType: string;
+  market: string | null;
+  product: string;
+  assetCode: string | null;
+  originalAssetCode: string | null;
+  institution: string | null;
+  quantity: string;
+  unitPrice: string | null;
+  grossValue: string | null;
+  fees: string | null;
+  sourceRow: number;
+};
+type DuplicateCandidate = {
+  identityFingerprint: string;
+  sourceRows: number[];
+  existingCount: number;
+  occurrenceCount: number;
+  status: "ambiguous";
 };
 export type ReconciliationCandidate = {
   manualAssetKey: string;
@@ -115,7 +149,25 @@ type Preview =
       identityConflicts?: IdentityConflict[];
       reconciliationCandidates?: ReconciliationCandidate[];
     }
-  | { documentType: "B3_MOVEMENT_XLSX"; movements: Movement[]; count: number };
+  | {
+      documentType: "B3_MOVEMENT_XLSX";
+      movements: Movement[];
+      count: number;
+    }
+  | {
+      documentType: "B3_TRADING_XLSX";
+      trades: TradingRecord[];
+      count: number;
+      history: { complete: boolean; reasons: string[] };
+      duplicateCandidates: DuplicateCandidate[];
+      reconciliation: {
+        candidates: unknown[];
+        confirmed: unknown[];
+        ambiguous: unknown[];
+        unmatched: unknown[];
+      };
+      batchReconciliationPending: boolean;
+    };
 type Item = {
   file: File;
   preview?: Preview;
@@ -173,6 +225,12 @@ export function PortfolioImport({
   const input = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
+  const [reconciliationSummary, setReconciliationSummary] =
+    useState<B3ReconciliationSummary | null>(null);
+  const [
+    reconciliationSummaryUnavailable,
+    setReconciliationSummaryUnavailable,
+  ] = useState(false);
 
   async function send(
     file: File,
@@ -285,6 +343,22 @@ export function PortfolioImport({
     if (successes.length > 0) {
       toast.success(successes.map((result) => result.message).join(" · "));
       window.dispatchEvent(new Event("portfolio:updated"));
+      if (
+        successes.some(
+          (result) => result.item.preview.documentType === "B3_TRADING_XLSX",
+        )
+      ) {
+        try {
+          const summaryResponse = await fetch("/api/imports");
+          if (!summaryResponse.ok) throw new Error("summary unavailable");
+          setReconciliationSummary(
+            (await summaryResponse.json()) as B3ReconciliationSummary,
+          );
+          setReconciliationSummaryUnavailable(false);
+        } catch {
+          setReconciliationSummaryUnavailable(true);
+        }
+      }
     }
     if (failures.length > 0)
       toast.error(failures.map((result) => result.notification).join(" · "));
@@ -456,6 +530,21 @@ export function PortfolioImport({
             ))}
           </div>
         )}
+        {reconciliationSummary && (
+          <TradingReconciliationReview
+            summary={reconciliationSummary}
+            onSummaryChange={setReconciliationSummary}
+          />
+        )}
+        {reconciliationSummaryUnavailable && (
+          <Alert aria-live="polite">
+            <AlertTitle>Negociações importadas</AlertTitle>
+            <AlertDescription>
+              O arquivo foi salvo, mas não foi possível atualizar o resumo de
+              conciliação. Os vínculos não foram confirmados automaticamente.
+            </AlertDescription>
+          </Alert>
+        )}
         {!readOnly && items.some((item) => item.preview) && (
           <div className="flex flex-col justify-end gap-3 border-t pt-4 sm:flex-row">
             <Button
@@ -531,6 +620,9 @@ function PreviewItem({
       </div>
     );
 
+  if (item.preview.documentType === "B3_TRADING_XLSX")
+    return <TradingPreview fileName={item.file.name} preview={item.preview} />;
+
   return (
     <Card className="motion-content-reveal overflow-hidden shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between gap-3 border-b bg-muted/20 p-4 sm:p-5">
@@ -545,6 +637,15 @@ function PreviewItem({
         </Badge>
       </CardHeader>
       <CardContent className="p-0">
+        {item.preview.movements.some((record) => record.direction) && (
+          <Alert className="m-4 mb-0">
+            <AlertTitle>Créditos e débitos da B3</AlertTitle>
+            <AlertDescription>
+              A direção do lançamento é preservada. Um crédito ou débito, por si
+              só, não é tratado como compra ou venda de ativo.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="max-h-64 overflow-auto">
           <Table aria-label="Prévia de movimentações" className="min-w-[48rem]">
             <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur">
@@ -555,7 +656,11 @@ function PreviewItem({
                 <TableHead scope="col" className="whitespace-nowrap">
                   Tipo de movimentação
                 </TableHead>
+                <TableHead scope="col" className="whitespace-nowrap">
+                  Direção
+                </TableHead>
                 <TableHead scope="col">Produto</TableHead>
+                <TableHead scope="col">Código</TableHead>
                 <TableHead scope="col" className="text-right">
                   Quantidade
                 </TableHead>
@@ -573,8 +678,14 @@ function PreviewItem({
                   <TableCell className="whitespace-nowrap">
                     {record.movementType}
                   </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {record.direction ?? "—"}
+                  </TableCell>
                   <TableCell className="min-w-48 font-medium">
                     {record.product}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {record.assetCode ?? "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {number.format(Number(record.quantity))}
@@ -583,6 +694,124 @@ function PreviewItem({
                     {record.operationValue
                       ? money.format(Number(record.operationValue))
                       : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TradingPreview({
+  fileName,
+  preview,
+}: {
+  fileName: string;
+  preview: Extract<Preview, { documentType: "B3_TRADING_XLSX" }>;
+}) {
+  const duplicateCount = preview.duplicateCandidates.length;
+
+  return (
+    <Card className="motion-content-reveal overflow-hidden shadow-sm">
+      <CardHeader className="gap-3 border-b bg-muted/20 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="truncate text-base">{fileName}</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Confira as operações identificadas antes de importar.
+            </p>
+          </div>
+          <Badge variant="secondary" className="w-fit shrink-0">
+            {preview.count} negociações
+          </Badge>
+        </div>
+        <Alert>
+          <AlertTitle>Histórico parcial</AlertTitle>
+          <AlertDescription>
+            Este arquivo não informa todas as taxas nem a data de liquidação e
+            não comprova o histórico completo. Esses dados não serão estimados.
+            Compras e vendas importadas ficam separadas dos snapshots de
+            posição.
+            {preview.batchReconciliationPending && (
+              <span className="mt-1 block">
+                A conciliação com movimentações será calculada após a importação
+                dos arquivos e qualquer vínculo continuará pendente de revisão.
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+        {duplicateCount > 0 && (
+          <Alert aria-live="polite">
+            <AlertTitle>Possíveis duplicidades para revisar</AlertTitle>
+            <AlertDescription>
+              {duplicateCount} grupo(s) contém linhas com os mesmos dados. As
+              ocorrências foram preservadas; nenhuma foi removida
+              automaticamente.
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {preview.duplicateCandidates.map((candidate, index) => (
+                  <li key={`${candidate.sourceRows.join("-")}-${index}`}>
+                    Linhas {candidate.sourceRows.join(", ")}:{" "}
+                    {candidate.occurrenceCount} ocorrência(s)
+                    {candidate.existingCount > 0 &&
+                      `, ${candidate.existingCount} já importada(s)`}
+                  </li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="max-h-80 overflow-auto">
+          <Table aria-label="Prévia de negociações" className="min-w-[72rem]">
+            <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur">
+              <TableRow>
+                <TableHead>Data</TableHead>
+                <TableHead>Operação</TableHead>
+                <TableHead>Mercado</TableHead>
+                <TableHead>Produto</TableHead>
+                <TableHead>Código</TableHead>
+                <TableHead>Instituição</TableHead>
+                <TableHead className="text-right">Quantidade</TableHead>
+                <TableHead className="text-right">Preço unitário</TableHead>
+                <TableHead className="text-right">Valor bruto</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {preview.trades.map((trade) => (
+                <TableRow key={`${trade.sourceRow}-${trade.tradingDate}`}>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {date.format(new Date(`${trade.tradingDate}T00:00:00Z`))}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {trade.side === "BUY" ? "Compra" : "Venda"}
+                    <span className="block text-xs text-muted-foreground">
+                      {trade.movementType}
+                    </span>
+                  </TableCell>
+                  <TableCell>{trade.market ?? "—"}</TableCell>
+                  <TableCell className="min-w-40">{trade.product}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {trade.assetCode ?? "—"}
+                    {trade.originalAssetCode &&
+                      trade.originalAssetCode !== trade.assetCode && (
+                        <span className="block font-sans text-muted-foreground">
+                          Original: {trade.originalAssetCode}
+                        </span>
+                      )}
+                  </TableCell>
+                  <TableCell>{trade.institution ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number.format(Number(trade.quantity))}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatMoney(trade.unitPrice)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
+                    {formatMoney(trade.grossValue)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -929,6 +1158,9 @@ function PositionPreview({
             <TableHeader>
               <TableRow>
                 <TableHead>Produto</TableHead>
+                <TableHead>Classe</TableHead>
+                <TableHead>Tipo na B3</TableHead>
+                <TableHead>Aba</TableHead>
                 <TableHead>Instituição</TableHead>
                 <TableHead>Código</TableHead>
                 <TableHead>Indexador</TableHead>
@@ -946,9 +1178,34 @@ function PositionPreview({
                   <TableCell className="min-w-48 font-medium">
                     {position.product}
                   </TableCell>
+                  <TableCell>
+                    {position.instrumentKind ? (
+                      <Badge variant="outline">
+                        {
+                          {
+                            EQUITY: "Ação",
+                            FII: "FII",
+                            FIXED_INCOME: "Renda fixa",
+                            INVESTMENT_FUND: "Fundo de investimento",
+                            UNKNOWN: "Não identificado",
+                          }[position.instrumentKind]
+                        }
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell>{position.sourceType ?? "—"}</TableCell>
+                  <TableCell>{position.sourceSheet ?? "—"}</TableCell>
                   <TableCell>{position.institution ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {position.assetCode ?? "—"}
+                    {position.originalAssetCode &&
+                      position.originalAssetCode !== position.assetCode && (
+                        <span className="block font-sans text-muted-foreground">
+                          Original: {position.originalAssetCode}
+                        </span>
+                      )}
                   </TableCell>
                   <TableCell>{position.indexer ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">
@@ -974,7 +1231,7 @@ function PositionPreview({
             </TableBody>
             <TableFooter>
               <TableRow>
-                <TableCell colSpan={7}>Total reconhecido no arquivo</TableCell>
+                <TableCell colSpan={10}>Total reconhecido no arquivo</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {money.format(totalValue)}
                 </TableCell>
