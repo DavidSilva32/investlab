@@ -607,7 +607,11 @@ describe("BrapiMarketDataProvider", () => {
       );
     await expect(
       new BrapiMarketDataProvider(unavailable).getByTicker("PETR4"),
-    ).resolves.toMatchObject({ history: [], historyStatus: "empty" });
+    ).resolves.toMatchObject({
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "provider_error" },
+    });
     expect(unavailable.mock.calls[2]?.[0]).toContain("range=5y");
     expect(unavailable.mock.calls[3]?.[0]).toContain("range=1y");
   });
@@ -881,7 +885,8 @@ describe("BrapiMarketDataProvider", () => {
       await expect(resultPromise).resolves.toMatchObject({
         price: 50,
         history: [{ date: "2026-01-01", close: 49 }],
-        historyStatus: "available",
+        historyStatus: "partial",
+        historyFailure: { reason: "timeout" },
       });
       expect(fetcher).toHaveBeenCalledTimes(4);
       expect(fetcher.mock.calls[2]?.[0]).toContain("range=5y");
@@ -890,6 +895,40 @@ describe("BrapiMarketDataProvider", () => {
     } finally {
       timeoutSpy.mockRestore();
     }
+  });
+
+  it("preserves one-year points as partial after a retryable five-year provider failure", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              data: {
+                historicalDataPrice: [
+                  { date: 1767225600, close: 49 },
+                  { date: 1767139200, close: 48 },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+      history: [
+        { date: "2025-12-31", close: 48 },
+        { date: "2026-01-01", close: 49 },
+      ],
+      historyStatus: "partial",
+      historyFailure: { reason: "provider_error" },
+    });
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain("range=5y");
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain("range=1y");
   });
 
   it("returns unavailable history after both attempts time out while retaining the quote", async () => {

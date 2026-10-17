@@ -260,34 +260,41 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     const signal = () =>
       AbortSignal.any([parentSignal, AbortSignal.timeout(requestTimeoutMs)]);
     try {
-      return await this.request(
-        `/api/v2/stocks/historical?symbols=${symbol}&range=5y&interval=1d`,
-        signal(),
-        cacheMode,
-      );
+      return {
+        payload: await this.request(
+          `/api/v2/stocks/historical?symbols=${symbol}&range=5y&interval=1d`,
+          signal(),
+          cacheMode,
+        ),
+      };
     } catch (error) {
       if (!(error instanceof RetryableMarketDataError) || parentSignal.aborted)
         throw error;
+      const fallbackFailure = this.historyFailure(error);
 
       logger.warn("stock_market_history_range_fallback", {
         provider: "brapi",
         ticker: decodeURIComponent(symbol),
         fromRange: "5y",
         toRange: "1y",
-        reason: error.reason,
+        reason: fallbackFailure.reason,
       });
 
-      return this.request(
-        `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
-        signal(),
-        cacheMode,
-      );
+      return {
+        payload: await this.request(
+          `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
+          signal(),
+          cacheMode,
+        ),
+        fallbackFailure,
+      };
     }
   }
 
   private normalizeHistory(
     ticker: string,
     payload: unknown,
+    fallbackFailure?: MarketHistoryFailure,
   ): MarketHistoryResult {
     const parsed = historySchema.safeParse(payload);
     if (!parsed.success)
@@ -351,15 +358,18 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         ticker,
         history,
         historyStatus:
-          omittedPoints > 0 || conflictingDates > 0 ? "partial" : "available",
+          fallbackFailure || omittedPoints > 0 || conflictingDates > 0
+            ? "partial"
+            : "available",
+        ...(fallbackFailure ? { historyFailure: fallbackFailure } : {}),
       };
-    if (points.length === 0)
+    if (points.length === 0 && !fallbackFailure)
       return { ticker, history: [], historyStatus: "empty" };
     return {
       ticker,
       history: [],
       historyStatus: "unavailable",
-      historyFailure: { reason: "invalid_response" },
+      historyFailure: fallbackFailure ?? { reason: "invalid_response" },
     };
   }
 
@@ -392,12 +402,16 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     const normalizedTicker = ticker.trim().toUpperCase();
     const controller = new AbortController();
     try {
-      const payload = await this.getHistoricalPrices(
+      const historicalResult = await this.getHistoricalPrices(
         encodeURIComponent(normalizedTicker),
         controller.signal,
         options.bypassCache ? "no-store" : "cache",
       );
-      return this.normalizeHistory(normalizedTicker, payload);
+      return this.normalizeHistory(
+        normalizedTicker,
+        historicalResult.payload,
+        historicalResult.fallbackFailure,
+      );
     } catch (error) {
       const failure = this.historyFailure(error);
       logger.warn("stock_market_history_unavailable", {
@@ -483,7 +497,11 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         : null;
     const historyResultData =
       historyResult.status === "fulfilled"
-        ? this.normalizeHistory(quote.symbol.toUpperCase(), historyResult.value)
+        ? this.normalizeHistory(
+            quote.symbol.toUpperCase(),
+            historyResult.value.payload,
+            historyResult.value.fallbackFailure,
+          )
         : {
             ticker: quote.symbol.toUpperCase(),
             history: [],

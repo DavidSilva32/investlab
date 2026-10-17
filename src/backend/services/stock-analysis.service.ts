@@ -6,6 +6,7 @@ import type { FundamentalPeriod } from "@/backend/providers/fundamentals.provide
 import type { FundamentalsProvider } from "@/backend/providers/fundamentals.provider";
 import type {
   MarketData,
+  MarketQuote,
   MarketDataProvider,
 } from "@/backend/providers/market-data.provider";
 import {
@@ -166,6 +167,27 @@ function validLastObservedQuote(
     snapshotAge >= 0 &&
     snapshotAge <= quoteFreshnessMs
   );
+}
+
+function validProviderQuote(
+  quote: MarketQuote | null,
+  ticker: string,
+  expectedCnpj: string,
+  now: number,
+) {
+  if (
+    !quote ||
+    quote.ticker.toUpperCase() !== ticker ||
+    (quote.cnpj !== null && normalizeCnpj(quote.cnpj) !== expectedCnpj) ||
+    quote.price === null ||
+    !Number.isFinite(quote.price) ||
+    quote.price <= 0 ||
+    !(quote.observedAt instanceof Date) ||
+    !Number.isFinite(quote.observedAt.getTime())
+  )
+    return false;
+  const age = now - quote.observedAt.getTime();
+  return age >= 0 && age <= quoteFreshnessMs;
 }
 
 function normalizeCachedPeriods(
@@ -1058,20 +1080,57 @@ export class StockAnalysisService {
 
     const ticker = parsedTicker.data;
     const quoteStartedAt = Date.now();
-    const quotePromise = Promise.resolve()
-      .then(() =>
-        this.screener.getValidatedAnalysisQuote
-          ? this.screener.getValidatedAnalysisQuote(ticker)
-          : null,
-      )
-      .catch((error) => {
-        logger.warn("stock_comparison_quote_unavailable", {
+    let marketDataSource: "screener_snapshot" | "brapi_quote" | null = null;
+    let marketDataFallbackAttempted = false;
+    const quotePromise = Promise.resolve().then(async () => {
+      let screenerQuote = null;
+      try {
+        screenerQuote = this.screener.getValidatedAnalysisQuote
+          ? await this.screener.getValidatedAnalysisQuote(ticker)
+          : null;
+      } catch (error) {
+        logger.warn("stock_comparison_quote_lookup_failed", {
           requestId,
           ticker,
+          source: "screener_snapshot",
+          error,
+        });
+      }
+      if (
+        validLastObservedQuote(screenerQuote, ticker, expectedCnpj, Date.now())
+      ) {
+        marketDataSource = "screener_snapshot";
+        return {
+          price: Number(screenerQuote!.price),
+          marketCap: Number(screenerQuote!.marketCap),
+          observedAt: screenerQuote!.quoteObservedAt!,
+        };
+      }
+
+      marketDataFallbackAttempted = true;
+      try {
+        const providerQuote =
+          await this.marketProvider.getQuoteByTicker(ticker);
+        if (
+          !validProviderQuote(providerQuote, ticker, expectedCnpj, Date.now())
+        )
+          return null;
+        marketDataSource = "brapi_quote";
+        return {
+          price: providerQuote.price!,
+          marketCap: null,
+          observedAt: providerQuote.observedAt!,
+        };
+      } catch (error) {
+        logger.warn("stock_comparison_quote_lookup_failed", {
+          requestId,
+          ticker,
+          source: "brapi_quote",
           error,
         });
         return null;
-      });
+      }
+    });
     const cacheReadStartedAt = Date.now();
     const cached = await this.repository.listByTicker(ticker);
     const cacheReadMs = Date.now() - cacheReadStartedAt;
@@ -1135,21 +1194,12 @@ export class StockAnalysisService {
       }
     }
     const validatedQuote = await quotePromise;
-    const marketDataIdentityVerified = validLastObservedQuote(
-      validatedQuote,
-      ticker,
-      expectedCnpj,
-      Date.now(),
-    );
-    const marketCap = marketDataIdentityVerified
-      ? Number(validatedQuote!.marketCap)
-      : null;
-    const marketPrice = marketDataIdentityVerified
-      ? Number(validatedQuote!.price)
-      : null;
-    const marketPriceDate = marketDataIdentityVerified
-      ? validatedQuote!.quoteObservedAt!.toISOString()
-      : null;
+    const marketDataIdentityVerified = validatedQuote !== null;
+    const marketCapIdentityVerified =
+      validatedQuote !== null && marketDataSource === "screener_snapshot";
+    const marketCap = validatedQuote?.marketCap ?? null;
+    const marketPrice = validatedQuote?.price ?? null;
+    const marketPriceDate = validatedQuote?.observedAt.toISOString() ?? null;
     logger.info("stock_issuer_fundamentals_stage_timing", {
       requestId,
       ticker,
@@ -1158,6 +1208,10 @@ export class StockAnalysisService {
       refreshMs,
       quoteMs: Date.now() - quoteStartedAt,
       marketDataIdentityVerified,
+      marketCapIdentityVerified,
+      marketDataSource,
+      marketDataFallbackAttempted,
+      marketDataFallbackAvailable: marketDataSource === "brapi_quote",
       fundamentalsIsStale,
       fundamentalsFetchedAt,
       totalMs: Date.now() - startedAt,

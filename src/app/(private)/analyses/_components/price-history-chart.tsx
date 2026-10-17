@@ -90,7 +90,7 @@ export function PriceHistoryChart({
             <p className="text-xs text-muted-foreground">
               {retryError
                 ? "Não foi possível atualizar agora. Tente novamente."
-                : status === "unavailable" && failure
+                : (status === "unavailable" || status === "partial") && failure
                   ? failureMessages[failure.reason]
                   : status === "empty"
                     ? "A fonte não retornou preços de fechamento neste intervalo."
@@ -185,9 +185,38 @@ export function PriceHistoryChart({
         </AreaChart>
       </ChartContainer>
       {status === "partial" && (
-        <p className="text-xs text-status-warning">
-          Algumas cotações incompletas foram ignoradas.
-        </p>
+        <div
+          className="flex flex-col gap-2 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 sm:flex-row sm:items-center sm:justify-between"
+          role={failure ? "status" : undefined}
+        >
+          <p className="text-xs text-status-warning">
+            {retryError
+              ? "Não foi possível atualizar agora. Tente novamente."
+              : failure
+                ? failureMessages[failure.reason]
+                : "Algumas cotações incompletas foram ignoradas."}
+          </p>
+          {failure && onRetry && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={retrying || retryAfterSeconds > 0}
+              onClick={onRetry}
+            >
+              <RefreshCw
+                className={`size-4 ${retrying ? "motion-safe:animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {retrying
+                ? "Atualizando…"
+                : retryAfterSeconds > 0
+                  ? `Aguarde ${retryAfterSeconds}s`
+                  : "Tentar novamente"}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );
