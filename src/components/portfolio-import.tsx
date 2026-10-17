@@ -146,6 +146,10 @@ type Preview =
       documentType: "B3_POSITION_XLSX";
       positions: Position[];
       count: number;
+      duplicateImportMessage?: string;
+      existingReferenceDate?: string | null;
+      referenceDateNeedsSelection?: boolean;
+      referenceDateConflict?: boolean;
       identityConflicts?: IdentityConflict[];
       reconciliationCandidates?: ReconciliationCandidate[];
     }
@@ -275,6 +279,10 @@ export function PortfolioImport({
                     (body as { positions?: Position[] }).positions ?? [],
                   count: (body as Partial<Preview>).count ?? 0,
                 },
+            referenceDate:
+              body.documentType === "B3_POSITION_XLSX"
+                ? (body.existingReferenceDate ?? undefined)
+                : undefined,
           };
         } catch (error) {
           return {
@@ -371,6 +379,11 @@ export function PortfolioImport({
   const hasMissingPositionReferenceDate = items.some(
     (item) =>
       item.preview?.documentType === "B3_POSITION_XLSX" && !item.referenceDate,
+  );
+  const hasReferenceDateConflict = items.some(
+    (item) =>
+      item.preview?.documentType === "B3_POSITION_XLSX" &&
+      Boolean(item.preview.referenceDateConflict),
   );
   const hasIdentityConflicts = items.some(
     (item) =>
@@ -571,6 +584,7 @@ export function PortfolioImport({
               disabled={
                 loading ||
                 hasMissingPositionReferenceDate ||
+                hasReferenceDateConflict ||
                 hasIdentityConflicts ||
                 hasUnresolvedReconciliation
               }
@@ -950,9 +964,14 @@ function PositionPreview({
           />
         </dl>
         <div className="grid gap-2 sm:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] sm:items-end">
-          {readOnly ? (
+          {readOnly ||
+          (preview.duplicateImportMessage &&
+            !preview.referenceDateNeedsSelection) ? (
             <p className="text-sm text-muted-foreground">
-              Data exibida na B3: {referenceDate || "não informada"}
+              Data exibida na B3:{" "}
+              {referenceDate
+                ? date.format(new Date(`${referenceDate}T00:00:00Z`))
+                : "não informada"}
             </p>
           ) : (
             <DatePickerField
@@ -969,6 +988,24 @@ function PositionPreview({
             dia CDI aplicável.
           </p>
         </div>
+        {preview.referenceDateNeedsSelection && !readOnly ? (
+          <Alert aria-live="polite">
+            <AlertTitle>Data ausente no snapshot legado</AlertTitle>
+            <AlertDescription>
+              Escolha a data exibida pela B3. Ela será registrada apenas porque
+              as datas do arquivo e do snapshot estão vazias.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {preview.referenceDateConflict ? (
+          <Alert variant="destructive" aria-live="polite">
+            <AlertTitle>Datas inconsistentes</AlertTitle>
+            <AlertDescription>
+              As datas do arquivo e do snapshot divergem. Atualize a prévia ou
+              peça suporte antes de reprocessar este arquivo.
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {reconciliationGroups.length > 0 && (
           <section
             aria-labelledby={`candidate-review-${fileName}`}
@@ -1193,6 +1230,14 @@ function PositionPreview({
                   </li>
                 ))}
               </ul>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {preview.duplicateImportMessage ? (
+          <Alert aria-live="polite">
+            <AlertTitle>Arquivo já importado</AlertTitle>
+            <AlertDescription>
+              {preview.duplicateImportMessage}
             </AlertDescription>
           </Alert>
         ) : null}

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, inArray, desc, eq, sql } from "drizzle-orm";
+import { and, asc, inArray, desc, eq, isNull, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -45,6 +45,7 @@ type ImportCreateInput =
       liquidityFacts?: Array<TreasurySelicLiquidityFact | null>;
       reconciliationDecisions?: ReconciliationDecision[];
       reconcileExistingImport?: boolean;
+      reprocessExistingImport?: boolean;
     } & Extract<ParsedB3Import, { documentType: "B3_POSITION_XLSX" }>)
   | {
       fileName: string;
@@ -58,6 +59,31 @@ type ImportCreateInput =
       documentType: "B3_TRADING_XLSX";
       trades: Array<ParsedB3Trade & { identityFingerprint: string }>;
     };
+type B3PositionImportInput = Extract<
+  ImportCreateInput,
+  { documentType: "B3_POSITION_XLSX" }
+>;
+
+function normalizedAnchor(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleUpperCase("pt-BR");
+}
+
+function normalizedQuantity(value: string) {
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match) return null;
+  const [, sign, integer, fraction = ""] = match;
+  const normalizedInteger = integer.replace(/^0+(?=\d)/, "");
+  const normalizedFraction = fraction.replace(/0+$/, "");
+  const isZero = /^0+$/.test(normalizedInteger) && normalizedFraction === "";
+  return `${sign === "-" && !isZero ? "-" : ""}${normalizedInteger}${normalizedFraction ? `.${normalizedFraction}` : ""}`;
+}
+
+const genericInstrumentKinds = new Set(["UNKNOWN", "INVESTMENT_FUND"]);
 export class ImportRepository {
   private async appendReconciliationDecisions(
     transaction: Parameters<
@@ -117,6 +143,34 @@ export class ImportRepository {
       });
       throw error;
     }
+  }
+
+  async getPositionImportReferenceDateByHash(fileHash: string) {
+    const userId = requireDataOwnerId();
+    const matches = await getDatabaseClient()
+      .select({
+        referenceDate: imports.referenceDate,
+        snapshotReferenceDate: positionSnapshots.referenceDate,
+        snapshotId: positionSnapshots.id,
+      })
+      .from(imports)
+      .leftJoin(positionSnapshots, eq(positionSnapshots.importId, imports.id))
+      .where(
+        and(
+          eq(imports.fileHash, fileHash),
+          eq(imports.documentType, "B3_POSITION_XLSX"),
+          eq(imports.userId, userId),
+        ),
+      )
+      .limit(2);
+    if (matches.length !== 1 || !matches[0]!.snapshotId)
+      return { referenceDate: null, needsSelection: false, conflict: true };
+    const { referenceDate, snapshotReferenceDate } = matches[0]!;
+    if (referenceDate === null && snapshotReferenceDate === null)
+      return { referenceDate: null, needsSelection: true, conflict: false };
+    if (referenceDate !== null && referenceDate === snapshotReferenceDate)
+      return { referenceDate, needsSelection: false, conflict: false };
+    return { referenceDate: null, needsSelection: false, conflict: true };
   }
 
   async updatePositionReferenceDate(
@@ -254,19 +308,295 @@ export class ImportRepository {
     );
   }
 
+  private async enrichExistingB3PositionImport(
+    transaction: Parameters<
+      Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
+    >[0],
+    input: B3PositionImportInput,
+    userId: string,
+  ) {
+    const [existingImport, ...ambiguousImports] = await transaction
+      .select({
+        id: imports.id,
+        referenceDate: imports.referenceDate,
+        estimationBaseDate: imports.estimationBaseDate,
+      })
+      .from(imports)
+      .where(
+        and(
+          eq(imports.fileHash, input.fileHash),
+          eq(imports.documentType, "B3_POSITION_XLSX"),
+          eq(imports.userId, userId),
+        ),
+      )
+      .for("update")
+      .limit(2);
+    if (ambiguousImports.length > 0)
+      throw new ApplicationError(
+        "Não foi possível enriquecer o arquivo: há importações idênticas ambíguas.",
+        409,
+      );
+    if (!existingImport)
+      throw new ApplicationError(
+        "Não foi possível localizar a importação idêntica.",
+        409,
+      );
+
+    const [snapshot, ...ambiguousSnapshots] = await transaction
+      .select({
+        id: positionSnapshots.id,
+        referenceDate: positionSnapshots.referenceDate,
+        estimationBaseDate: positionSnapshots.estimationBaseDate,
+      })
+      .from(positionSnapshots)
+      .where(
+        and(
+          eq(positionSnapshots.importId, existingImport.id),
+          eq(positionSnapshots.userId, userId),
+        ),
+      )
+      .for("update")
+      .limit(2);
+    if (
+      !snapshot ||
+      ambiguousSnapshots.length > 0 ||
+      (existingImport.referenceDate === null) !==
+        (snapshot.referenceDate === null) ||
+      (existingImport.referenceDate !== null &&
+        (existingImport.referenceDate !== snapshot.referenceDate ||
+          existingImport.referenceDate !== input.referenceDate))
+    )
+      throw new ApplicationError(
+        "A data do arquivo e do snapshot divergem ou não podem ser preenchidas com segurança.",
+        409,
+      );
+
+    const existingPositions = await transaction
+      .select()
+      .from(positionItems)
+      .where(
+        and(
+          eq(positionItems.snapshotId, snapshot.id),
+          eq(positionItems.userId, userId),
+        ),
+      )
+      .for("update");
+    const sourceKey = (sourceSheet: string, sourceRow: number) =>
+      JSON.stringify([sourceSheet.trim(), sourceRow]);
+    const existingBySource = new Map<
+      string,
+      (typeof existingPositions)[number]
+    >();
+    const legacyPositions: typeof existingPositions = [];
+    for (const position of existingPositions) {
+      if (!position.sourceSheet.trim() && position.sourceRow === 0) {
+        legacyPositions.push(position);
+        continue;
+      }
+      const key = sourceKey(position.sourceSheet, position.sourceRow);
+      if (
+        !position.sourceSheet.trim() ||
+        position.sourceRow <= 0 ||
+        existingBySource.has(key)
+      )
+        throw new ApplicationError(
+          "Não foi possível enriquecer o arquivo: as linhas de origem estão ausentes ou ambíguas.",
+          409,
+        );
+      existingBySource.set(key, position);
+    }
+    const incomingBySource = new Map<
+      string,
+      (typeof input.positions)[number]
+    >();
+    for (const position of input.positions) {
+      const key = sourceKey(position.sourceSheet, position.sourceRow);
+      if (
+        !position.sourceSheet.trim() ||
+        position.sourceRow <= 0 ||
+        incomingBySource.has(key)
+      )
+        throw new ApplicationError(
+          "Não foi possível enriquecer o arquivo: as linhas da prévia estão ausentes ou ambíguas.",
+          409,
+        );
+      incomingBySource.set(key, position);
+    }
+    if (existingPositions.length !== input.positions.length)
+      throw new ApplicationError(
+        "Não foi possível enriquecer o arquivo: a quantidade de linhas diverge do snapshot existente.",
+        409,
+      );
+
+    const matchesAnchor = (
+      current: (typeof existingPositions)[number],
+      incoming: (typeof input.positions)[number],
+    ) =>
+      normalizedAnchor(current.product) ===
+        normalizedAnchor(incoming.product) &&
+      normalizedQuantity(current.quantity) !== null &&
+      normalizedQuantity(current.quantity) ===
+        normalizedQuantity(incoming.quantity) &&
+      (
+        [
+          [current.assetCode, incoming.assetCode],
+          [current.isin, incoming.isin],
+          [current.issuerCnpj, incoming.issuerCnpj],
+        ] as const
+      ).every(
+        ([stored, parsed]) =>
+          !stored ||
+          !parsed ||
+          normalizedAnchor(stored) === normalizedAnchor(parsed),
+      );
+    const currentByIncoming = new Map<
+      string,
+      (typeof existingPositions)[number]
+    >();
+    const assignedIncomingKeys = new Set<string>();
+    for (const [key, current] of existingBySource) {
+      const incoming = incomingBySource.get(key);
+      if (!incoming || !matchesAnchor(current, incoming))
+        throw new ApplicationError(
+          "Não foi possível enriquecer o arquivo: a identidade ou quantidade de uma linha diverge.",
+          409,
+        );
+      currentByIncoming.set(key, current);
+      assignedIncomingKeys.add(key);
+    }
+    for (const current of legacyPositions) {
+      const candidates = [...incomingBySource.entries()].filter(
+        ([key, incoming]) =>
+          !assignedIncomingKeys.has(key) && matchesAnchor(current, incoming),
+      );
+      if (candidates.length !== 1)
+        throw new ApplicationError(
+          "Não foi possível enriquecer o snapshot antigo: a correspondência por produto, quantidade e códigos não é única.",
+          409,
+        );
+      const [incomingKey] = candidates[0]!;
+      currentByIncoming.set(incomingKey, current);
+      assignedIncomingKeys.add(incomingKey);
+    }
+
+    if (existingImport.referenceDate === null) {
+      if (
+        (existingImport.estimationBaseDate !== null &&
+          existingImport.estimationBaseDate !== input.referenceDate) ||
+        (snapshot.estimationBaseDate !== null &&
+          snapshot.estimationBaseDate !== input.referenceDate)
+      )
+        throw new ApplicationError(
+          "A data-base de estimativa existente diverge da data escolhida para o snapshot legado. Nenhuma data foi alterada.",
+          409,
+        );
+      const importUpdate: Partial<typeof imports.$inferInsert> = {
+        referenceDate: input.referenceDate,
+      };
+      if (existingImport.estimationBaseDate === null)
+        importUpdate.estimationBaseDate = input.referenceDate;
+      const updatedImport = await transaction
+        .update(imports)
+        .set(importUpdate)
+        .where(
+          and(
+            eq(imports.id, existingImport.id),
+            eq(imports.userId, userId),
+            isNull(imports.referenceDate),
+          ),
+        )
+        .returning({ id: imports.id });
+      const snapshotUpdate: Partial<typeof positionSnapshots.$inferInsert> = {
+        referenceDate: input.referenceDate,
+      };
+      if (snapshot.estimationBaseDate === null)
+        snapshotUpdate.estimationBaseDate = input.referenceDate;
+      const updatedSnapshot = await transaction
+        .update(positionSnapshots)
+        .set(snapshotUpdate)
+        .where(
+          and(
+            eq(positionSnapshots.id, snapshot.id),
+            eq(positionSnapshots.userId, userId),
+            isNull(positionSnapshots.referenceDate),
+          ),
+        )
+        .returning({ id: positionSnapshots.id });
+      if (updatedImport.length !== 1 || updatedSnapshot.length !== 1)
+        throw new ApplicationError(
+          "O snapshot mudou durante o enriquecimento. Atualize a prévia.",
+          409,
+        );
+    }
+
+    let enrichedPositionCount = 0;
+    for (const [key, incoming] of incomingBySource) {
+      const current = currentByIncoming.get(key)!;
+      const updates: Partial<typeof positionItems.$inferInsert> = {};
+      if (current.totalValue === null && incoming.totalValue !== null) {
+        updates.unitPrice = incoming.unitPrice;
+        updates.totalValue = incoming.totalValue;
+        updates.valuationSource = incoming.valuationSource;
+      }
+      if (
+        genericInstrumentKinds.has(current.instrumentKind) &&
+        !genericInstrumentKinds.has(incoming.instrumentKind)
+      )
+        updates.instrumentKind = incoming.instrumentKind;
+      if (Object.keys(updates).length === 0) continue;
+
+      const updated = await transaction
+        .update(positionItems)
+        .set(updates)
+        .where(
+          and(
+            eq(positionItems.id, current.id),
+            eq(positionItems.userId, userId),
+            eq(positionItems.snapshotId, snapshot.id),
+          ),
+        )
+        .returning({ id: positionItems.id });
+      if (updated.length !== 1)
+        throw new ApplicationError(
+          "O snapshot mudou durante o enriquecimento. Atualize a prévia.",
+          409,
+        );
+      enrichedPositionCount += 1;
+    }
+
+    return {
+      importId: existingImport.id,
+      snapshotId: snapshot.id,
+      enrichedPositionCount,
+      referenceDateUpdated: existingImport.referenceDate === null,
+    };
+  }
+
   async create(input: ImportCreateInput, requestId?: string) {
     const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
         if (input.documentType === "B3_POSITION_XLSX") {
+          if (
+            input.reprocessExistingImport &&
+            !input.reconciliationDecisions?.length &&
+            !input.reconcileExistingImport
+          ) {
+            return this.enrichExistingB3PositionImport(
+              transaction,
+              input,
+              userId,
+            );
+          }
           await transaction.execute(
             sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents}, ${portfolioAssetClassifications} IN SHARE ROW EXCLUSIVE MODE`,
           );
-          await this.lockAndValidateAssignedPositionIdentities(
-            transaction,
-            input.positions,
-            userId,
-          );
+          if (!input.reprocessExistingImport)
+            await this.lockAndValidateAssignedPositionIdentities(
+              transaction,
+              input.positions,
+              userId,
+            );
           const manual = await transaction
             .select()
             .from(manualPortfolioPositions)
@@ -422,59 +752,75 @@ export class ImportRepository {
           input.documentType === "B3_POSITION_XLSX" &&
           input.reconcileExistingImport
         ) {
-          const [existingImport] = await transaction
-            .select({ id: imports.id, referenceDate: imports.referenceDate })
-            .from(imports)
-            .where(
-              and(
-                eq(imports.fileHash, input.fileHash),
-                eq(imports.documentType, "B3_POSITION_XLSX"),
-                eq(imports.userId, userId),
-              ),
-            )
-            .limit(1);
-          if (
-            !existingImport ||
-            existingImport.referenceDate !== input.referenceDate
-          ) {
-            throw new ApplicationError(
-              "A data deve ser a mesma do arquivo já importado. O histórico existente não será alterado.",
-              409,
+          if (!input.reprocessExistingImport) {
+            const [existingImport] = await transaction
+              .select({ id: imports.id, referenceDate: imports.referenceDate })
+              .from(imports)
+              .where(
+                and(
+                  eq(imports.fileHash, input.fileHash),
+                  eq(imports.documentType, "B3_POSITION_XLSX"),
+                  eq(imports.userId, userId),
+                ),
+              )
+              .limit(1);
+            const [existingSnapshot] = await transaction
+              .select({
+                id: positionSnapshots.id,
+                referenceDate: positionSnapshots.referenceDate,
+              })
+              .from(positionSnapshots)
+              .where(
+                and(
+                  eq(positionSnapshots.importId, existingImport?.id ?? ""),
+                  eq(positionSnapshots.userId, userId),
+                ),
+              )
+              .limit(1);
+            if (
+              !existingImport ||
+              existingImport.referenceDate !== input.referenceDate ||
+              !existingSnapshot ||
+              existingSnapshot.referenceDate !== input.referenceDate ||
+              !input.reconciliationDecisions?.length
+            ) {
+              throw new ApplicationError(
+                "Atualize a prévia para conciliar o arquivo existente.",
+                409,
+              );
+            }
+            await this.appendReconciliationDecisions(
+              transaction,
+              input,
+              existingImport.id,
+              userId,
+              requestId,
             );
+            return {
+              importId: existingImport.id,
+              snapshotId: existingSnapshot.id,
+            };
           }
-          const [existingSnapshot] = await transaction
-            .select({
-              id: positionSnapshots.id,
-              referenceDate: positionSnapshots.referenceDate,
-            })
-            .from(positionSnapshots)
-            .where(
-              and(
-                eq(positionSnapshots.importId, existingImport.id),
-                eq(positionSnapshots.userId, userId),
-              ),
-            )
-            .limit(1);
-          if (
-            !existingSnapshot ||
-            existingSnapshot.referenceDate !== input.referenceDate ||
-            !input.reconciliationDecisions?.length
-          ) {
+          if (!input.reconciliationDecisions?.length) {
             throw new ApplicationError(
               "Atualize a prévia para conciliar o arquivo existente.",
               409,
             );
           }
+          const existing = await this.enrichExistingB3PositionImport(
+            transaction,
+            input,
+            userId,
+          );
           await this.appendReconciliationDecisions(
             transaction,
             input,
-            existingImport.id,
+            existing.importId,
             userId,
             requestId,
           );
           return {
-            importId: existingImport.id,
-            snapshotId: existingSnapshot.id,
+            ...existing,
           };
         }
         const [importRecord] = await transaction

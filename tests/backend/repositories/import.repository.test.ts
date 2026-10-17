@@ -104,6 +104,7 @@ const queryChain = (result: unknown) => {
   const query: Record<string, unknown> = {};
   query.where = () => query;
   query.orderBy = () => query;
+  query.for = () => query;
   query.limit = async () => result;
   query.then = (resolve: (value: unknown) => unknown) =>
     Promise.resolve(result).then(resolve);
@@ -239,6 +240,697 @@ describe("import repository", () => {
     imports: [{ id: "original-import", referenceDate: "2026-09-30" }],
     snapshots: [{ id: "original-snapshot", referenceDate: "2026-09-30" }],
   };
+  function enrichmentTransaction(
+    existingPositions: unknown[],
+    options: {
+      imports?: unknown[];
+      snapshots?: unknown[];
+      updateRows?: unknown[];
+      updateRowsByTable?: {
+        imports?: unknown[];
+        snapshots?: unknown[];
+        positions?: unknown[];
+      };
+    } = {},
+  ) {
+    const whereConditions: unknown[] = [];
+    const changes: unknown[] = [];
+    const updateTables: unknown[] = [];
+    const rowLocks = vi.fn();
+    const queryFor = (rows: unknown[]) => {
+      const query: Record<string, unknown> = {};
+      query.where = (...conditions: unknown[]) => {
+        whereConditions.push(...conditions);
+        return query;
+      };
+      query.for = rowLocks.mockImplementation(() => query);
+      query.limit = async (count: number) => rows.slice(0, count);
+      query.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(rows).then(resolve);
+      return query;
+    };
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn().mockImplementation(() => ({
+        from: (table: unknown) =>
+          queryFor(
+            table === imports
+              ? (options.imports ?? [
+                  {
+                    id: "original-import",
+                    referenceDate: "2026-09-30",
+                    estimationBaseDate: "2026-09-30",
+                  },
+                ])
+              : table === positionSnapshots
+                ? (options.snapshots ?? [
+                    {
+                      id: "original-snapshot",
+                      referenceDate: "2026-09-30",
+                      estimationBaseDate: "2026-09-30",
+                    },
+                  ])
+                : table === positionItems
+                  ? existingPositions
+                  : [],
+          ),
+      })),
+      update: vi.fn().mockImplementation((table: unknown) => {
+        updateTables.push(table);
+        return {
+          set: (value: unknown) => {
+            changes.push(value);
+            return {
+              where: () => ({
+                returning: async () =>
+                  options.updateRowsByTable?.[
+                    table === imports
+                      ? "imports"
+                      : table === positionSnapshots
+                        ? "snapshots"
+                        : "positions"
+                  ] ??
+                  options.updateRows ?? [{ id: "position-1" }],
+              }),
+            };
+          },
+        };
+      }),
+      insert: vi.fn().mockImplementation(() => ({
+        values: vi.fn().mockResolvedValue(undefined),
+      })),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction as never),
+    );
+    return { transaction, changes, updateTables, whereConditions, rowLocks };
+  }
+  const reprocessPosition = {
+    product: "XP MALLS FDO INV IMOB FII RESP LIM",
+    quantity: "2",
+    unitPrice: "160.00",
+    totalValue: "320.00",
+    valuationSource: "INFORMADO",
+    assetCode: "XPML11",
+    isin: null,
+    issuerCnpj: null,
+    instrumentKind: "FII",
+    sourceType: "Cotas",
+    sourceSheet: "Posição",
+    sourceRow: 7,
+  };
+  const reprocessExisting = {
+    id: "position-1",
+    userId: "owner-1",
+    snapshotId: "original-snapshot",
+    product: reprocessPosition.product,
+    quantity: "2.000000",
+    unitPrice: "150.00",
+    totalValue: null,
+    valuationSource: "FECHAMENTO",
+    closingUnitPrice: "150.00",
+    closingTotalValue: "300.00",
+    assetCode: "XPML11",
+    isin: null,
+    issuerCnpj: null,
+    instrumentKind: "UNKNOWN",
+    sourceType: "Cotas",
+    sourceSheet: "Posição",
+    sourceRow: 7,
+  };
+  it("enriches the exact owner's matching snapshot row without creating a new position", async () => {
+    const { transaction, changes, whereConditions, rowLocks } =
+      enrichmentTransaction([reprocessExisting]);
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        fileHash: "same-hash",
+        positions: [reprocessPosition] as never,
+        reprocessExistingImport: true,
+      }),
+    ).resolves.toEqual({
+      importId: "original-import",
+      snapshotId: "original-snapshot",
+      enrichedPositionCount: 1,
+      referenceDateUpdated: false,
+    });
+    expect(transaction.execute).not.toHaveBeenCalled();
+    expect(rowLocks).toHaveBeenCalledTimes(3);
+    expect(transaction.update).toHaveBeenCalledWith(positionItems);
+    expect(changes).toEqual([
+      {
+        unitPrice: "160.00",
+        totalValue: "320.00",
+        valuationSource: "INFORMADO",
+        instrumentKind: "FII",
+      },
+    ]);
+    expect(changes[0]).not.toHaveProperty("closingUnitPrice");
+    expect(changes[0]).not.toHaveProperty("closingTotalValue");
+    expect(transaction.insert).not.toHaveBeenCalled();
+    expect(
+      whereConditions.some((condition) =>
+        containsSqlParameter(condition, "owner-1"),
+      ),
+    ).toBe(true);
+  });
+
+  it("fills both null reference dates after identity checks and preserves the matching estimation base", async () => {
+    const { transaction, changes, updateTables } = enrichmentTransaction(
+      [reprocessExisting],
+      {
+        imports: [
+          {
+            id: "original-import",
+            referenceDate: null,
+            estimationBaseDate: "2026-09-30",
+          },
+        ],
+        snapshots: [
+          {
+            id: "original-snapshot",
+            referenceDate: null,
+            estimationBaseDate: null,
+          },
+        ],
+      },
+    );
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        referenceDate: "2026-09-30",
+        estimationBaseDate: "2026-09-30",
+        positions: [reprocessPosition] as never,
+        reprocessExistingImport: true,
+      }),
+    ).resolves.toMatchObject({
+      enrichedPositionCount: 1,
+      referenceDateUpdated: true,
+    });
+
+    expect(updateTables).toEqual([imports, positionSnapshots, positionItems]);
+    expect(changes.slice(0, 2)).toEqual([
+      { referenceDate: "2026-09-30" },
+      { referenceDate: "2026-09-30", estimationBaseDate: "2026-09-30" },
+    ]);
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("validates all position anchors before filling null legacy dates", async () => {
+    const { transaction } = enrichmentTransaction(
+      [{ ...reprocessExisting, product: "Different product" }],
+      {
+        imports: [
+          {
+            id: "original-import",
+            referenceDate: null,
+            estimationBaseDate: null,
+          },
+        ],
+        snapshots: [
+          {
+            id: "original-snapshot",
+            referenceDate: null,
+            estimationBaseDate: null,
+          },
+        ],
+      },
+    );
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [reprocessPosition] as never,
+        reprocessExistingImport: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  it("fills null estimation bases without replacing an existing base on the other record", async () => {
+    const { changes, updateTables } = enrichmentTransaction(
+      [reprocessExisting],
+      {
+        imports: [
+          {
+            id: "original-import",
+            referenceDate: null,
+            estimationBaseDate: null,
+          },
+        ],
+        snapshots: [
+          {
+            id: "original-snapshot",
+            referenceDate: null,
+            estimationBaseDate: "2026-09-30",
+          },
+        ],
+      },
+    );
+
+    await importRepository.create({
+      ...reconciliationInput,
+      referenceDate: "2026-09-30",
+      estimationBaseDate: "2026-09-30",
+      positions: [reprocessPosition] as never,
+      reprocessExistingImport: true,
+    });
+
+    expect(updateTables.slice(0, 2)).toEqual([imports, positionSnapshots]);
+    expect(changes.slice(0, 2)).toEqual([
+      { referenceDate: "2026-09-30", estimationBaseDate: "2026-09-30" },
+      { referenceDate: "2026-09-30" },
+    ]);
+  });
+
+  it("fills both null estimation bases with the explicitly selected B3 date", async () => {
+    const { changes } = enrichmentTransaction([reprocessExisting], {
+      imports: [
+        {
+          id: "original-import",
+          referenceDate: null,
+          estimationBaseDate: null,
+        },
+      ],
+      snapshots: [
+        {
+          id: "original-snapshot",
+          referenceDate: null,
+          estimationBaseDate: null,
+        },
+      ],
+    });
+
+    await importRepository.create({
+      ...reconciliationInput,
+      positions: [reprocessPosition] as never,
+      reprocessExistingImport: true,
+    });
+
+    expect(changes.slice(0, 2)).toEqual([
+      { referenceDate: "2026-09-30", estimationBaseDate: "2026-09-30" },
+      { referenceDate: "2026-09-30", estimationBaseDate: "2026-09-30" },
+    ]);
+  });
+
+  it.each([
+    {
+      imports: [
+        {
+          id: "original-import",
+          referenceDate: null,
+          estimationBaseDate: "2026-09-29",
+        },
+      ],
+      snapshots: [
+        {
+          id: "original-snapshot",
+          referenceDate: null,
+          estimationBaseDate: null,
+        },
+      ],
+    },
+    {
+      imports: [
+        {
+          id: "original-import",
+          referenceDate: null,
+          estimationBaseDate: null,
+        },
+      ],
+      snapshots: [
+        {
+          id: "original-snapshot",
+          referenceDate: null,
+          estimationBaseDate: "2026-09-29",
+        },
+      ],
+    },
+    {
+      imports: [
+        {
+          id: "original-import",
+          referenceDate: null,
+          estimationBaseDate: "2026-09-30",
+        },
+      ],
+      snapshots: [
+        {
+          id: "original-snapshot",
+          referenceDate: null,
+          estimationBaseDate: "2026-09-29",
+        },
+      ],
+    },
+  ])(
+    "rejects legacy estimation bases that conflict with the explicitly selected B3 date (%j)",
+    async ({ imports, snapshots }) => {
+      const { transaction } = enrichmentTransaction([reprocessExisting], {
+        imports,
+        snapshots,
+      });
+
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [reprocessPosition] as never,
+          reprocessExistingImport: true,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { imports: [], snapshots: [{ id: "original-snapshot" }] },
+    {
+      imports: [{ id: "original-import" }],
+      snapshots: [],
+    },
+  ])(
+    "rejects a null-date reprocess if either compare-and-set update misses (%j)",
+    async (updateRowsByTable) => {
+      const { transaction } = enrichmentTransaction([reprocessExisting], {
+        imports: [
+          {
+            id: "original-import",
+            referenceDate: null,
+            estimationBaseDate: null,
+          },
+        ],
+        snapshots: [
+          {
+            id: "original-snapshot",
+            referenceDate: null,
+            estimationBaseDate: null,
+          },
+        ],
+        updateRowsByTable,
+      });
+
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [reprocessPosition] as never,
+          reprocessExistingImport: true,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.update).toHaveBeenCalledTimes(2);
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("locks existing position rows and leaves populated values/classes unchanged on repeated confirmation", async () => {
+    const populated = {
+      ...reprocessExisting,
+      totalValue: "320.00",
+      valuationSource: "INFORMADO",
+      instrumentKind: "FII",
+    };
+    const { transaction, changes } = enrichmentTransaction([populated]);
+    const result = await importRepository.create({
+      ...reconciliationInput,
+      positions: [reprocessPosition] as never,
+      reprocessExistingImport: true,
+    });
+    expect(result).toMatchObject({ enrichedPositionCount: 0 });
+    expect(transaction.update).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+  });
+
+  it("matches a pre-0050 snapshot row with default source coordinates only by unique product and quantity anchors", async () => {
+    const legacy = {
+      ...reprocessExisting,
+      sourceSheet: "",
+      sourceRow: 0,
+    };
+    const { transaction, changes } = enrichmentTransaction([legacy]);
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [reprocessPosition] as never,
+        reprocessExistingImport: true,
+      }),
+    ).resolves.toMatchObject({ enrichedPositionCount: 1 });
+    expect(changes).toHaveLength(1);
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { storedQuantity: "002.000", incomingQuantity: "2" },
+    { storedQuantity: "-2.00", incomingQuantity: "-2" },
+    { storedQuantity: "-0.000", incomingQuantity: "0" },
+    { storedQuantity: "2.500", incomingQuantity: "2.5" },
+  ])(
+    "normalizes exact quantity anchors safely (%j)",
+    async ({ storedQuantity, incomingQuantity }) => {
+      const { transaction } = enrichmentTransaction([
+        {
+          ...reprocessExisting,
+          product: "  XP  MALLS FDO INV IMOB FII RESPONSÁVEL  ",
+          quantity: storedQuantity,
+          sourceSheet: "",
+          sourceRow: 0,
+        },
+      ]);
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [
+            {
+              ...reprocessPosition,
+              product: "xp malls fdo inv imob fii responsavel",
+              quantity: incomingQuantity,
+            },
+          ] as never,
+          reprocessExistingImport: true,
+        }),
+      ).resolves.toMatchObject({ enrichedPositionCount: 1 });
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects ambiguous pre-0050 source-less rows without writing", async () => {
+    const legacy = {
+      ...reprocessExisting,
+      sourceSheet: "",
+      sourceRow: 0,
+    };
+    const { transaction } = enrichmentTransaction([
+      legacy,
+      { ...legacy, id: "position-2" },
+    ]);
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [
+          reprocessPosition,
+          { ...reprocessPosition, sourceRow: 8 },
+        ] as never,
+        reprocessExistingImport: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.update).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("enriches a historical snapshot with decisions without validating it against latest assigned positions", async () => {
+    const importedAssetKey = getEmergencyReserveAssetKey(
+      reprocessPosition as never,
+    );
+    const manualAssetKey = "manual:historic";
+    const manualUpdatedAt = new Date("2026-09-01T00:00:00Z").toISOString();
+    mocks.forcedCandidates = [
+      { manualAssetKey, importedAssetKey, manualUpdatedAt },
+    ];
+    const { transaction, rowLocks } = enrichmentTransaction([
+      reprocessExisting,
+    ]);
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [reprocessPosition] as never,
+        reprocessExistingImport: true,
+        reconcileExistingImport: true,
+        reconciliationDecisions: [
+          {
+            manualAssetKey,
+            importedAssetKey,
+            action: "separate",
+            manualUpdatedAt,
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ enrichedPositionCount: 1 });
+    expect(rowLocks).toHaveBeenCalledTimes(3);
+    expect(transaction.insert).toHaveBeenCalledWith(
+      positionReconciliationEvents,
+    );
+  });
+
+  it.each([
+    { ...reprocessExisting, product: "Different product" },
+    { ...reprocessExisting, quantity: "3" },
+    { ...reprocessExisting, quantity: "two" },
+    { ...reprocessExisting, assetCode: "OTHER11" },
+  ])(
+    "rejects enrichment when immutable row anchors differ (%j)",
+    async (stored) => {
+      const { transaction } = enrichmentTransaction([stored]);
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [reprocessPosition] as never,
+          reprocessExistingImport: true,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.update).not.toHaveBeenCalled();
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ stored: [] }, { stored: [reprocessExisting, reprocessExisting] }])(
+    "rejects missing or ambiguous source rows without writing",
+    async ({ stored }) => {
+      const { transaction } = enrichmentTransaction(stored);
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [reprocessPosition] as never,
+          reprocessExistingImport: true,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.update).not.toHaveBeenCalled();
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { imports: [] },
+    {
+      imports: [
+        { id: "one", referenceDate: "2026-09-30" },
+        { id: "two", referenceDate: "2026-09-30" },
+      ],
+    },
+    {
+      imports: [{ id: "original-import", referenceDate: "2026-10-01" }],
+    },
+    {
+      imports: [{ id: "original-import", referenceDate: null }],
+      snapshots: [{ id: "original-snapshot", referenceDate: "2026-09-30" }],
+    },
+    {
+      imports: [{ id: "original-import", referenceDate: "2026-09-30" }],
+      snapshots: [{ id: "original-snapshot", referenceDate: null }],
+    },
+    {
+      imports: [{ id: "original-import", referenceDate: "2026-09-29" }],
+      snapshots: [{ id: "original-snapshot", referenceDate: "2026-09-30" }],
+    },
+  ])(
+    "rejects ambiguous or date-divergent import identity before writing (%j)",
+    async (options) => {
+      const { transaction } = enrichmentTransaction(
+        [reprocessExisting],
+        options,
+      );
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [reprocessPosition] as never,
+          reprocessExistingImport: true,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.update).not.toHaveBeenCalled();
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { snapshots: [] },
+    {
+      snapshots: [
+        { id: "snapshot-a", referenceDate: "2026-09-30" },
+        { id: "snapshot-b", referenceDate: "2026-09-30" },
+      ],
+    },
+    { snapshots: [{ id: "original-snapshot", referenceDate: "2026-10-01" }] },
+  ])(
+    "rejects a missing, ambiguous, or date-divergent snapshot before writing",
+    async ({ snapshots }) => {
+      const { transaction } = enrichmentTransaction([reprocessExisting], {
+        snapshots,
+      });
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: [reprocessPosition] as never,
+          reprocessExistingImport: true,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.update).not.toHaveBeenCalled();
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { sourceSheet: "", sourceRow: 0 },
+    { sourceSheet: "Posição", sourceRow: 7 },
+  ])(
+    "rejects invalid or duplicate incoming source coordinates before writing (%j)",
+    async (source) => {
+      const incoming = [
+        { ...reprocessPosition, sourceSheet: "Posição", sourceRow: 7 },
+        { ...reprocessPosition, ...source },
+      ];
+      const existing = [
+        { ...reprocessExisting, sourceRow: 7 },
+        { ...reprocessExisting, id: "position-2", sourceRow: 8 },
+      ];
+      const { transaction } = enrichmentTransaction(existing);
+      await expect(
+        importRepository.create({
+          ...reconciliationInput,
+          positions: incoming as never,
+          reprocessExistingImport: true,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(transaction.update).not.toHaveBeenCalled();
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an enrichment whose row update no longer returns the locked row", async () => {
+    const { transaction } = enrichmentTransaction([reprocessExisting], {
+      updateRows: [],
+    });
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [reprocessPosition] as never,
+        reprocessExistingImport: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.update).toHaveBeenCalledOnce();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an inconsistent request to reconcile an existing import without decisions", async () => {
+    const { transaction } = enrichmentTransaction([reprocessExisting]);
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [reprocessPosition] as never,
+        reprocessExistingImport: true,
+        reconcileExistingImport: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.update).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
   it("conciles an existing import by appending only audit events without rewriting historical values", async () => {
     const { transaction, audit } = reconciliationTransaction(
       undefined,
@@ -753,6 +1445,79 @@ describe("import repository", () => {
     expect(containsSqlParameter(where.mock.calls[0]?.[0], "owner-1")).toBe(
       true,
     );
+  });
+  it("returns owner-scoped date readiness only for a unique coherent snapshot", async () => {
+    const where = vi.fn().mockReturnValue({
+      limit: async () => [
+        {
+          snapshotId: "snapshot-1",
+          referenceDate: "2026-09-30",
+          snapshotReferenceDate: "2026-09-30",
+        },
+      ],
+    });
+    mocks.client.select.mockReturnValue({
+      from: () => ({ leftJoin: () => ({ where }) }),
+    });
+
+    await expect(
+      importRepository.getPositionImportReferenceDateByHash("same-hash"),
+    ).resolves.toEqual({
+      referenceDate: "2026-09-30",
+      needsSelection: false,
+      conflict: false,
+    });
+    expect(containsSqlParameter(where.mock.calls[0]?.[0], "owner-1")).toBe(
+      true,
+    );
+
+    where.mockReturnValue({
+      limit: async () => [
+        {
+          snapshotId: "snapshot-1",
+          referenceDate: "2026-09-30",
+          snapshotReferenceDate: "2026-09-30",
+        },
+        {
+          snapshotId: "snapshot-2",
+          referenceDate: "2026-10-01",
+          snapshotReferenceDate: "2026-10-01",
+        },
+      ],
+    });
+    await expect(
+      importRepository.getPositionImportReferenceDateByHash("ambiguous-hash"),
+    ).resolves.toMatchObject({ conflict: true });
+
+    where.mockReturnValue({
+      limit: async () => [
+        {
+          snapshotId: "snapshot-legacy",
+          referenceDate: null,
+          snapshotReferenceDate: null,
+        },
+      ],
+    });
+    await expect(
+      importRepository.getPositionImportReferenceDateByHash("legacy-hash"),
+    ).resolves.toEqual({
+      referenceDate: null,
+      needsSelection: true,
+      conflict: false,
+    });
+
+    where.mockReturnValue({
+      limit: async () => [
+        {
+          snapshotId: "snapshot-conflict",
+          referenceDate: null,
+          snapshotReferenceDate: "2026-09-30",
+        },
+      ],
+    });
+    await expect(
+      importRepository.getPositionImportReferenceDateByHash("conflict-hash"),
+    ).resolves.toMatchObject({ conflict: true });
   });
   it("updates one B3 reference date as both snapshot and estimation metadata", async () => {
     const changes: unknown[] = [];
