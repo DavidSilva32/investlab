@@ -1,9 +1,27 @@
-import { ApplicationError } from "@/backend/errors/application-error";
+﻿import { ApplicationError } from "@/backend/errors/application-error";
 
 import { importService } from "@/backend/services/import.service";
 import { logger } from "@/infrastructure/logging/logger";
 
 export class ImportController {
+  async reconciliationSummary(requestId: string) {
+    return Response.json(await importService.reconciliationSummary(requestId));
+  }
+
+  async saveReconciliationDecisions(request: Request, requestId: string) {
+    let decisions: unknown;
+    try {
+      decisions = await request.json();
+    } catch {
+      throw new ApplicationError("Decisões de conciliação inválidas.", 400);
+    }
+    const summary = await importService.saveReconciliationDecisions(
+      decisions,
+      requestId,
+    );
+    return Response.json({ ...summary, message: "Reconciliação atualizada." });
+  }
+
   private async readFile(request: Request) {
     const formData = await request.formData();
     const file = formData.get("file");
@@ -33,7 +51,9 @@ export class ImportController {
     const count =
       preview.documentType === "B3_POSITION_XLSX"
         ? preview.positions.length
-        : preview.movements.length;
+        : preview.documentType === "B3_MOVEMENT_XLSX"
+          ? preview.movements.length
+          : preview.trades.length;
     logger.info("b3_import_format_recognized", {
       requestId,
       documentType: preview.documentType,
@@ -76,7 +96,9 @@ export class ImportController {
     const count =
       preview.documentType === "B3_POSITION_XLSX"
         ? preview.positions.length
-        : preview.movements.length;
+        : preview.documentType === "B3_MOVEMENT_XLSX"
+          ? preview.movements.length
+          : preview.trades.length;
     return Response.json(
       {
         importId: result.importId,
@@ -86,7 +108,9 @@ export class ImportController {
           ? "Data exibida na B3 atualizada para as posições já importadas."
           : preview.documentType === "B3_POSITION_XLSX"
             ? `${count} posição(ões) importada(s) com sucesso.`
-            : `${count} movimentação(ões) importada(s) com sucesso.`,
+            : preview.documentType === "B3_MOVEMENT_XLSX"
+              ? `${count} movimentação(ões) importada(s) com sucesso.`
+              : `${count} negociação(ões) importada(s) com sucesso.`,
       },
       { status: 201 },
     );

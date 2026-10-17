@@ -5,11 +5,13 @@ import {
 } from "@/backend/services/b3-movement-fingerprint";
 
 const movement = {
+  sourceRow: 2,
   direction: "CREDITO" as const,
   occurredAt: "2026-09-11",
   movementType: " Aplicação ",
   product: " CDB - Banco Inter ",
   assetCode: null,
+  originalAssetCode: null,
   institution: null,
   quantity: "001.2300",
   unitPrice: "0.0100",

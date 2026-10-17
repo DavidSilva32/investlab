@@ -14,6 +14,10 @@ export type PortfolioPosition = {
   source?: string;
   product: string;
   assetCode: string | null;
+  originalAssetCode?: string | null;
+  instrumentKind?:
+    "EQUITY" | "FII" | "FIXED_INCOME" | "INVESTMENT_FUND" | "UNKNOWN" | null;
+  sourceType?: string | null;
   institution: string | null;
   indexer: string | null;
   valuationSource?: "MTM" | "CURVA" | "FECHAMENTO" | "INFORMADO" | null;

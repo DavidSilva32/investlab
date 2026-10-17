@@ -11,6 +11,8 @@ import {
   positionReferenceDateSchema,
 } from "@/backend/schemas/import.schema";
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
+import { createB3TradeIdentityFingerprint } from "@/backend/services/b3-trading-fingerprint";
+import { buildB3ReconciliationSummary } from "@/backend/services/b3-reconciliation-summary";
 import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
 import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
 import { ApplicationError } from "@/backend/errors/application-error";
@@ -24,6 +26,7 @@ import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 const documentTypes = new Set<B3DocumentType>([
   "B3_POSITION_XLSX",
   "B3_MOVEMENT_XLSX",
+  "B3_TRADING_XLSX",
 ]);
 const identityFields = [
   ["product", "produto"],
@@ -49,11 +52,112 @@ const normalized = (value: string | null | undefined) =>
   value?.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR") ?? "";
 
 export class ImportService {
+  async reconciliationSummary(requestId: string) {
+    const [trades, movements, events] = await Promise.all([
+      importRepository.listTradingItems(requestId),
+      importRepository.listMovements(requestId),
+      importRepository.listB3ReconciliationEvents(requestId),
+    ]);
+    return buildB3ReconciliationSummary(trades, movements, events);
+  }
+
+  async saveReconciliationDecisions(input: unknown, requestId: string) {
+    const schema = z
+      .object({
+        decisions: z
+          .array(
+            z
+              .object({
+                tradeId: z.string().uuid(),
+                movementId: z.string().uuid(),
+                action: z.enum(["LINK", "KEEP_SEPARATE"]),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(1000),
+      })
+      .strict();
+    const parsed = schema.safeParse(input);
+    if (!parsed.success)
+      throw new ApplicationError("Revise as decisões de conciliação.", 400);
+    const keys = new Set(
+      parsed.data.decisions.map(({ tradeId, movementId }) =>
+        JSON.stringify([tradeId, movementId]),
+      ),
+    );
+    if (keys.size !== parsed.data.decisions.length)
+      throw new ApplicationError("Há decisões repetidas na conciliação.", 400);
+    const links = parsed.data.decisions.filter(
+      ({ action }) => action === "LINK",
+    );
+    if (
+      new Set(links.map(({ tradeId }) => tradeId)).size !== links.length ||
+      new Set(links.map(({ movementId }) => movementId)).size !== links.length
+    )
+      throw new ApplicationError(
+        "Cada negociação e movimentação pode ter apenas um vínculo.",
+        409,
+      );
+    const summary = await this.reconciliationSummary(requestId);
+    const validPairs = new Set([
+      ...summary.candidates.map(({ tradeId, movementId }) =>
+        JSON.stringify([tradeId, movementId]),
+      ),
+      ...summary.ambiguous.flatMap(({ tradeId, movementIds }) =>
+        movementIds.map((movementId) => JSON.stringify([tradeId, movementId])),
+      ),
+      ...summary.confirmed.map(({ tradeId, movementId }) =>
+        JSON.stringify([tradeId, movementId]),
+      ),
+    ]);
+    if (
+      parsed.data.decisions.some(
+        ({ tradeId, movementId }) =>
+          !validPairs.has(JSON.stringify([tradeId, movementId])),
+      )
+    )
+      throw new ApplicationError(
+        "A correspondência não está mais disponível. Atualize a reconciliação.",
+        409,
+      );
+    await importRepository.saveB3ReconciliationDecisions(
+      parsed.data.decisions,
+      requestId,
+    );
+    return this.reconciliationSummary(requestId);
+  }
+
   preview(file: { name: string; size: number; type: string; buffer: Buffer }) {
     importFileSchema.parse(file);
+    const parsed = parseB3Xlsx(file.buffer);
     return {
       hash: createHash("sha256").update(file.buffer).digest("hex"),
-      ...parseB3Xlsx(file.buffer),
+      ...parsed,
+      ...(parsed.documentType === "B3_TRADING_XLSX"
+        ? {
+            history: {
+              complete: false,
+              reasons: [
+                "O arquivo cobre apenas as negociações exportadas e não confirma o histórico completo de operações.",
+                "Data de liquidação, taxas e eventos fora deste documento não foram informados.",
+              ],
+            },
+            duplicateCandidates: this.findDuplicateGroups(
+              parsed.trades.map((trade) => ({
+                ...trade,
+                identityFingerprint: createB3TradeIdentityFingerprint(trade),
+              })),
+            ),
+            reconciliation: {
+              candidates: [],
+              confirmed: [],
+              ambiguous: [],
+              unmatched: [],
+            },
+            batchReconciliationPending: true,
+          }
+        : {}),
     };
   }
   async previewWithIdentityConflicts(
@@ -61,6 +165,19 @@ export class ImportService {
     requestId: string,
   ) {
     const preview = this.preview(file);
+    if (preview.documentType === "B3_TRADING_XLSX") {
+      const existingTrades = await importRepository.listTradingItems(requestId);
+      return {
+        ...preview,
+        duplicateCandidates: this.findDuplicateGroups(
+          preview.trades.map((trade) => ({
+            ...trade,
+            identityFingerprint: createB3TradeIdentityFingerprint(trade),
+          })),
+          existingTrades,
+        ),
+      };
+    }
     if (preview.documentType !== "B3_POSITION_XLSX") return preview;
     const [manualPositions, reconciliationEvents] = await Promise.all([
       manualPortfolioPositionRepository.list(requestId),
@@ -85,6 +202,45 @@ export class ImportService {
         409,
       );
   }
+
+  private findDuplicateGroups(
+    trades: Array<{ identityFingerprint: string; sourceRow: number }>,
+    existingTrades: Array<{
+      identityFingerprint: string;
+      sourceRow: number;
+      id?: string;
+    }> = [],
+  ) {
+    const groups = new Map<
+      string,
+      { incomingRows: number[]; existingIds: string[]; count: number }
+    >();
+    trades.forEach((trade) => {
+      const group = groups.get(trade.identityFingerprint) ?? {
+        incomingRows: [],
+        existingIds: [],
+        count: 0,
+      };
+      group.incomingRows.push(trade.sourceRow);
+      group.count += 1;
+      groups.set(trade.identityFingerprint, group);
+    });
+    for (const existing of existingTrades) {
+      const group = groups.get(existing.identityFingerprint);
+      if (!group) continue;
+      if (existing.id) group.existingIds.push(existing.id);
+      group.count += 1;
+    }
+    return [...groups.entries()]
+      .filter(([, group]) => group.count > 1)
+      .map(([identityFingerprint, group]) => ({
+        identityFingerprint,
+        sourceRows: group.incomingRows,
+        existingCount: group.existingIds.length,
+        occurrenceCount: group.count,
+        status: "ambiguous" as const,
+      }));
+  }
   async confirm(
     file: { name: string; size: number; type: string; buffer: Buffer },
     requestId: string,
@@ -108,7 +264,7 @@ export class ImportService {
       throw new ApplicationError("Revise as decisões de conciliação.", 400);
     const preview = this.preview(file);
     if (
-      preview.documentType === "B3_MOVEMENT_XLSX" &&
+      preview.documentType !== "B3_POSITION_XLSX" &&
       parsedDecisions.data.length
     ) {
       throw new ApplicationError(
@@ -149,11 +305,19 @@ export class ImportService {
             ...preview,
             movements: preview.movements.map(prepareB3MovementForPersistence),
           }
-        : {
-            ...this.buildPositionImportData(preview, referenceDate),
-            reconciliationDecisions: parsedDecisions.data,
-            reconcileExistingImport,
-          };
+        : preview.documentType === "B3_TRADING_XLSX"
+          ? {
+              ...preview,
+              trades: preview.trades.map((trade) => ({
+                ...trade,
+                identityFingerprint: createB3TradeIdentityFingerprint(trade),
+              })),
+            }
+          : {
+              ...this.buildPositionImportData(preview, referenceDate),
+              reconciliationDecisions: parsedDecisions.data,
+              reconcileExistingImport,
+            };
     const result = await importRepository.create(
       { fileName: file.name, fileHash: preview.hash, ...importData },
       requestId,

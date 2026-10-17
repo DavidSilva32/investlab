@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
+  reconciliationSummary: vi.fn(),
   logger: {
     warn: vi.fn(),
     error: vi.fn(),
@@ -14,11 +15,14 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/backend/controllers/import.controller", () => ({
-  importController: { delete: mocks.delete },
+  importController: {
+    delete: mocks.delete,
+    reconciliationSummary: mocks.reconciliationSummary,
+  },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
-import { DELETE } from "@/app/api/imports/route";
+import { DELETE, GET } from "@/app/api/imports/route";
 import { ApplicationError } from "@/backend/errors/application-error";
 
 describe("imports deletion route", () => {
@@ -65,5 +69,42 @@ describe("imports deletion route", () => {
       message: "Não foi possível excluir os dados.",
     });
     expect(mocks.logger.error).toHaveBeenCalled();
+  });
+});
+
+describe("imports reconciliation summary route", () => {
+  it("returns the persisted reconciliation summary", async () => {
+    mocks.reconciliationSummary.mockResolvedValue(
+      Response.json({
+        candidates: [],
+        confirmed: [],
+        ambiguous: [],
+        separated: [],
+      }),
+    );
+    const response = await GET(new Request("http://test/api/imports"));
+    await expect(response.json()).resolves.toEqual({
+      candidates: [],
+      confirmed: [],
+      ambiguous: [],
+      separated: [],
+    });
+    expect(mocks.reconciliationSummary).toHaveBeenCalledWith(
+      expect.any(String),
+    );
+  });
+
+  it("returns expected and unexpected summary errors", async () => {
+    mocks.reconciliationSummary.mockRejectedValueOnce(
+      new ApplicationError("Não autorizado.", 403),
+    );
+    const expected = await GET(new Request("http://test/api/imports"));
+    expect(expected.status).toBe(403);
+    mocks.reconciliationSummary.mockRejectedValueOnce(new Error("secret"));
+    const failed = await GET(new Request("http://test/api/imports"));
+    expect(failed.status).toBe(500);
+    await expect(failed.json()).resolves.toEqual({
+      message: "Não foi possível consultar as reconciliações.",
+    });
   });
 });

@@ -7,6 +7,8 @@ import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   imports,
   movementItems,
+  tradingItems,
+  b3ReconciliationEvents,
   portfolioOperationReconciliationEvents,
   positionItems,
   positionSnapshots,
@@ -20,6 +22,7 @@ import {
 } from "@/infrastructure/database/schema";
 import type { TreasurySelicLiquidityFact } from "@/backend/types/treasury-selic-liquidity";
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
+import type { ParsedB3Trade } from "@/backend/services/b3-trading-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
 import type { MonthlyPortfolioSnapshot } from "@/backend/services/monthly-portfolio-review";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
@@ -47,6 +50,12 @@ type ImportCreateInput =
       fileHash: string;
       documentType: "B3_MOVEMENT_XLSX";
       movements: PersistedB3Movement[];
+    }
+  | {
+      fileName: string;
+      fileHash: string;
+      documentType: "B3_TRADING_XLSX";
+      trades: Array<ParsedB3Trade & { identityFingerprint: string }>;
     };
 export class ImportRepository {
   private async appendReconciliationDecisions(
@@ -485,18 +494,23 @@ export class ImportRepository {
           })
           .returning();
         if (input.documentType === "B3_MOVEMENT_XLSX") {
-          await transaction
-            .insert(movementItems)
-            .values(
-              input.movements.map((movement) => ({
-                userId,
-                importId: importRecord.id,
-                ...movement,
-              })),
-            )
-            .onConflictDoNothing({
-              target: [movementItems.userId, movementItems.eventFingerprint],
-            });
+          await transaction.insert(movementItems).values(
+            input.movements.map((movement) => ({
+              userId,
+              importId: importRecord.id,
+              ...movement,
+            })),
+          );
+          return { importId: importRecord.id };
+        }
+        if (input.documentType === "B3_TRADING_XLSX") {
+          await transaction.insert(tradingItems).values(
+            input.trades.map((trade) => ({
+              userId,
+              importId: importRecord.id,
+              ...trade,
+            })),
+          );
           return { importId: importRecord.id };
         }
         const [snapshot] = await transaction
@@ -615,6 +629,24 @@ export class ImportRepository {
                 "Este arquivo contém movimentações ligadas ou já conciliadas. Preserve o arquivo importado para manter a origem e o histórico da conciliação.",
                 409,
               );
+            const b3Reconciliations = await transaction
+              .select({ id: b3ReconciliationEvents.id })
+              .from(b3ReconciliationEvents)
+              .where(
+                and(
+                  eq(b3ReconciliationEvents.userId, userId),
+                  inArray(
+                    b3ReconciliationEvents.movementItemId,
+                    sourceMovements.map(({ id }) => id),
+                  ),
+                ),
+              )
+              .limit(1);
+            if (b3Reconciliations.length)
+              throw new ApplicationError(
+                "Este arquivo contém movimentações vinculadas à negociação. Remova o vínculo antes de excluir a origem.",
+                409,
+              );
           }
           await transaction
             .delete(movementItems)
@@ -622,6 +654,44 @@ export class ImportRepository {
               and(
                 eq(movementItems.userId, userId),
                 inArray(movementItems.importId, importIds),
+              ),
+            );
+        } else if (documentType === "B3_TRADING_XLSX") {
+          const sourceTrades = await transaction
+            .select({ id: tradingItems.id })
+            .from(tradingItems)
+            .where(
+              and(
+                eq(tradingItems.userId, userId),
+                inArray(tradingItems.importId, importIds),
+              ),
+            );
+          if (sourceTrades.length) {
+            const reconciliations = await transaction
+              .select({ id: b3ReconciliationEvents.id })
+              .from(b3ReconciliationEvents)
+              .where(
+                and(
+                  eq(b3ReconciliationEvents.userId, userId),
+                  inArray(
+                    b3ReconciliationEvents.tradingItemId,
+                    sourceTrades.map(({ id }) => id),
+                  ),
+                ),
+              )
+              .limit(1);
+            if (reconciliations.length)
+              throw new ApplicationError(
+                "Este arquivo contém negociações vinculadas a movimentações. Remova o vínculo antes de excluir a origem.",
+                409,
+              );
+          }
+          await transaction
+            .delete(tradingItems)
+            .where(
+              and(
+                eq(tradingItems.userId, userId),
+                inArray(tradingItems.importId, importIds),
               ),
             );
         } else {
@@ -982,6 +1052,128 @@ export class ImportRepository {
         .orderBy(desc(movementItems.occurredAt), desc(movementItems.createdAt));
     } catch (error) {
       logger.error("database_movements_query_failed", { requestId, error });
+      throw error;
+    }
+  }
+
+  async listTradingItems(requestId?: string) {
+    const userId = requireDataOwnerId();
+    try {
+      return await getDatabaseClient()
+        .select()
+        .from(tradingItems)
+        .where(eq(tradingItems.userId, userId))
+        .orderBy(asc(tradingItems.tradingDate), asc(tradingItems.createdAt));
+    } catch (error) {
+      logger.error("database_trading_items_query_failed", { requestId, error });
+      throw error;
+    }
+  }
+
+  async listB3ReconciliationEvents(requestId?: string) {
+    const userId = requireDataOwnerId();
+    try {
+      return await getDatabaseClient()
+        .select()
+        .from(b3ReconciliationEvents)
+        .where(eq(b3ReconciliationEvents.userId, userId))
+        .orderBy(asc(b3ReconciliationEvents.eventOrder));
+    } catch (error) {
+      logger.error("database_b3_reconciliation_events_query_failed", {
+        requestId,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  async saveB3ReconciliationDecisions(
+    decisions: Array<{
+      tradeId: string;
+      movementId: string;
+      action: "LINK" | "KEEP_SEPARATE";
+    }>,
+    requestId?: string,
+  ) {
+    const userId = requireDataOwnerId();
+    try {
+      return await getDatabaseClient().transaction(async (transaction) => {
+        await transaction.execute(
+          sql`LOCK TABLE ${b3ReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
+        );
+        const [trades, movements, events] = await Promise.all([
+          transaction
+            .select({ id: tradingItems.id })
+            .from(tradingItems)
+            .where(eq(tradingItems.userId, userId)),
+          transaction
+            .select({ id: movementItems.id })
+            .from(movementItems)
+            .where(eq(movementItems.userId, userId)),
+          transaction
+            .select()
+            .from(b3ReconciliationEvents)
+            .where(eq(b3ReconciliationEvents.userId, userId))
+            .orderBy(asc(b3ReconciliationEvents.eventOrder)),
+        ]);
+        const tradeIds = new Set(trades.map(({ id }) => id));
+        const movementIds = new Set(movements.map(({ id }) => id));
+        if (
+          decisions.some(
+            (decision) =>
+              !tradeIds.has(decision.tradeId) ||
+              !movementIds.has(decision.movementId),
+          )
+        )
+          throw new ApplicationError(
+            "Atualize a reconciliação: uma das linhas não está mais disponível.",
+            409,
+          );
+        const latestByPair = new Map<string, (typeof events)[number]>();
+        for (const event of events) {
+          latestByPair.set(
+            JSON.stringify([event.tradingItemId, event.movementItemId]),
+            event,
+          );
+        }
+        const activeLinks = [...latestByPair.values()].filter(
+          ({ status }) => status === "LINK",
+        );
+        if (
+          decisions.some(
+            (decision) =>
+              decision.action === "LINK" &&
+              activeLinks.some(
+                (link) =>
+                  (link.tradingItemId === decision.tradeId &&
+                    link.movementItemId !== decision.movementId) ||
+                  (link.movementItemId === decision.movementId &&
+                    link.tradingItemId !== decision.tradeId),
+              ),
+          )
+        )
+          throw new ApplicationError(
+            "Uma linha já está vinculada a outro registro. Revise a conciliação antes de confirmar.",
+            409,
+          );
+        if (decisions.length) {
+          await transaction.insert(b3ReconciliationEvents).values(
+            decisions.map((decision) => ({
+              userId,
+              tradingItemId: decision.tradeId,
+              movementItemId: decision.movementId,
+              status: decision.action,
+            })),
+          );
+        }
+        return decisions.length;
+      });
+    } catch (error) {
+      if (error instanceof ApplicationError) throw error;
+      logger.error("database_b3_reconciliation_save_failed", {
+        requestId,
+        error,
+      });
       throw error;
     }
   }

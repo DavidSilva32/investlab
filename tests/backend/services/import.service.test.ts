@@ -6,6 +6,10 @@ const repository = vi.hoisted(() => ({
   existsByHash: vi.fn(),
   updatePositionReferenceDate: vi.fn(),
   listLatestPositions: vi.fn(),
+  listTradingItems: vi.fn(),
+  listMovements: vi.fn(),
+  listB3ReconciliationEvents: vi.fn(),
+  saveB3ReconciliationDecisions: vi.fn(),
   create: vi.fn(),
   deleteByDocumentType: vi.fn(),
   deleteLatestPosition: vi.fn(),
@@ -30,6 +34,7 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
 
 import { ApplicationError } from "@/backend/errors/application-error";
 import { importService } from "@/backend/services/import.service";
+import { createB3TradeIdentityFingerprint } from "@/backend/services/b3-trading-fingerprint";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 
 beforeEach(() => {
@@ -37,6 +42,9 @@ beforeEach(() => {
   manual.list.mockResolvedValue([]);
   reconciliation.listEvents.mockResolvedValue([]);
   repository.listLatestPositions.mockResolvedValue([]);
+  repository.listTradingItems.mockResolvedValue([]);
+  repository.listMovements.mockResolvedValue([]);
+  repository.listB3ReconciliationEvents.mockResolvedValue([]);
   objectives.list.mockResolvedValue({ objectives: [], assignments: [] });
 });
 
@@ -68,6 +76,145 @@ describe("ImportService", () => {
     expect(importService.preview(file)).toMatchObject({
       documentType: "B3_MOVEMENT_XLSX",
       movements: [{ product: "CDB" }],
+    });
+  });
+
+  it("marks trade history incomplete and preserves duplicate source occurrences", () => {
+    parser.mockReturnValue({
+      documentType: "B3_TRADING_XLSX",
+      trades: [
+        {
+          side: "BUY",
+          tradingDate: "2026-10-14",
+          settlementDate: null,
+          movementType: "Compra",
+          market: "Vista",
+          product: "BBSE3F",
+          assetCode: "BBSE3",
+          originalAssetCode: "BBSE3F",
+          institution: "Corretora",
+          quantity: "1",
+          unitPrice: "20",
+          grossValue: "20",
+          fees: null,
+          sourceRow: 2,
+        },
+        {
+          side: "BUY",
+          tradingDate: "2026-10-14",
+          settlementDate: null,
+          movementType: "Compra",
+          market: "Vista",
+          product: "BBSE3F",
+          assetCode: "BBSE3",
+          originalAssetCode: "BBSE3F",
+          institution: "Corretora",
+          quantity: "1",
+          unitPrice: "20",
+          grossValue: "20",
+          fees: null,
+          sourceRow: 3,
+        },
+      ],
+    });
+    const preview = importService.preview(file);
+    expect(preview).toMatchObject({
+      documentType: "B3_TRADING_XLSX",
+      history: { complete: false },
+      duplicateCandidates: [
+        {
+          sourceRows: [2, 3],
+          existingCount: 0,
+          occurrenceCount: 2,
+          status: "ambiguous",
+        },
+      ],
+      batchReconciliationPending: true,
+    });
+  });
+
+  it("includes existing negotiation occurrences in duplicate review counts", async () => {
+    const parsedTrade = {
+      side: "BUY" as const,
+      tradingDate: "2026-10-14",
+      settlementDate: null,
+      movementType: "Compra",
+      market: null,
+      product: "ABCD3",
+      assetCode: "ABCD3",
+      originalAssetCode: "ABCD3F",
+      institution: null,
+      quantity: "1",
+      unitPrice: "20",
+      grossValue: "20",
+      fees: null,
+      sourceRow: 2,
+    };
+    parser.mockReturnValue({
+      documentType: "B3_TRADING_XLSX",
+      trades: [parsedTrade],
+    });
+    const fingerprint = createB3TradeIdentityFingerprint(parsedTrade);
+    repository.listTradingItems.mockResolvedValue([
+      {
+        id: "existing-trade",
+        identityFingerprint: fingerprint,
+      },
+      {
+        identityFingerprint: fingerprint,
+      },
+      {
+        id: "different-trade",
+        identityFingerprint: "a-different-identity",
+      },
+    ]);
+
+    const preview = await importService.previewWithIdentityConflicts(
+      file,
+      "request-trading-duplicates",
+    );
+
+    expect(preview).toMatchObject({
+      duplicateCandidates: [
+        { sourceRows: [2], existingCount: 1, occurrenceCount: 3 },
+      ],
+    });
+  });
+
+  it("exposes reconciliation after movement and trading imports are persisted", async () => {
+    repository.listTradingItems.mockResolvedValue([
+      {
+        id: "trade-1",
+        importId: "import-1",
+        sourceRow: 2,
+        identityFingerprint: "fingerprint-1",
+        side: "BUY",
+        tradingDate: "2026-10-14",
+        assetCode: "BBSE3",
+        institution: "Corretora",
+        quantity: "1",
+        grossValue: "20",
+      },
+    ]);
+    repository.listMovements.mockResolvedValue([
+      {
+        id: "movement-1",
+        direction: "CREDITO",
+        occurredAt: "2026-10-14",
+        movementType: "Transferência - Liquidação",
+        assetCode: "BBSE3",
+        institution: "Corretora",
+        quantity: "1",
+        operationValue: "20",
+      },
+    ]);
+    const summary = await importService.reconciliationSummary("request-1");
+    expect(summary).toMatchObject({
+      candidates: [
+        { tradeId: "trade-1", movementId: "movement-1", status: "candidate" },
+      ],
+      confirmed: [],
+      history: { complete: false },
     });
   });
 
@@ -153,6 +300,184 @@ describe("ImportService persistence", () => {
       "request-1",
     );
   });
+
+  it("confirms trades as source records with stable identity fingerprints", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_TRADING_XLSX",
+      trades: [
+        {
+          side: "BUY",
+          tradingDate: "2026-10-14",
+          settlementDate: null,
+          movementType: "Compra",
+          market: "Vista",
+          product: "BBSE3F",
+          assetCode: "BBSE3",
+          originalAssetCode: "BBSE3F",
+          institution: "Corretora",
+          quantity: "1",
+          unitPrice: "20",
+          grossValue: "20",
+          fees: null,
+          sourceRow: 2,
+        },
+      ],
+    });
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockResolvedValue({ importId: "import-trade" });
+
+    await importService.confirm(persistenceFile, "request-trade");
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentType: "B3_TRADING_XLSX",
+        trades: [
+          expect.objectContaining({
+            sourceRow: 2,
+            originalAssetCode: "BBSE3F",
+            identityFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+          }),
+        ],
+      }),
+      "request-trade",
+    );
+  });
+
+  it("requires current candidate pairs before persisting reconciliation choices", async () => {
+    repository.listTradingItems.mockResolvedValue([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        importId: "import-1",
+        sourceRow: 2,
+        identityFingerprint: "fingerprint-1",
+        side: "BUY",
+        tradingDate: "2026-10-14",
+        assetCode: "BBSE3",
+        institution: "Corretora",
+        quantity: "1",
+        grossValue: "20",
+      },
+    ]);
+    repository.listMovements.mockResolvedValue([
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        direction: "CREDITO",
+        occurredAt: "2026-10-14",
+        movementType: "Transferência - Liquidação",
+        assetCode: "BBSE3",
+        institution: "Corretora",
+        quantity: "1",
+        operationValue: "20",
+      },
+    ]);
+    repository.saveB3ReconciliationDecisions.mockResolvedValue(1);
+
+    await expect(
+      importService.saveReconciliationDecisions(
+        {
+          decisions: [
+            {
+              tradeId: "11111111-1111-4111-8111-111111111111",
+              movementId: "22222222-2222-4222-8222-222222222222",
+              action: "LINK",
+            },
+          ],
+        },
+        "request-link",
+      ),
+    ).resolves.toMatchObject({ confirmed: [] });
+    expect(repository.saveB3ReconciliationDecisions).toHaveBeenCalledWith(
+      [
+        {
+          tradeId: "11111111-1111-4111-8111-111111111111",
+          movementId: "22222222-2222-4222-8222-222222222222",
+          action: "LINK",
+        },
+      ],
+      "request-link",
+    );
+    await expect(
+      importService.saveReconciliationDecisions(
+        { decisions: [] },
+        "request-empty",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it.each(["ambiguous", "confirmed"] as const)(
+    "accepts a current pair from the %s reconciliation group",
+    async (group) => {
+      const currentTradeId = "11111111-1111-4111-8111-111111111111";
+      const currentMovementId = "22222222-2222-4222-8222-222222222222";
+      const otherMovementId = "44444444-4444-4444-8444-444444444444";
+      repository.listTradingItems.mockResolvedValue([
+        {
+          id: currentTradeId,
+          importId: "import-1",
+          sourceRow: 2,
+          identityFingerprint: "trade-fingerprint",
+          side: "BUY",
+          tradingDate: "2026-10-14",
+          assetCode: "ABCD3",
+          institution: "Corretora",
+          quantity: "1",
+          grossValue: "20",
+        },
+      ]);
+      repository.listMovements.mockResolvedValue([
+        {
+          id: currentMovementId,
+          direction: "CREDITO",
+          occurredAt: "2026-10-14",
+          movementType: "Transferência - Liquidação",
+          assetCode: "ABCD3",
+          institution: "Corretora",
+          quantity: "1",
+          operationValue: "20",
+        },
+        ...(group === "ambiguous"
+          ? [
+              {
+                id: otherMovementId,
+                direction: "CREDITO",
+                occurredAt: "2026-10-14",
+                movementType: "Transferência - Liquidação",
+                assetCode: "ABCD3",
+                institution: "Corretora",
+                quantity: "1",
+                operationValue: "20",
+              },
+            ]
+          : []),
+      ]);
+      if (group === "confirmed")
+        repository.listB3ReconciliationEvents.mockResolvedValue([
+          {
+            tradingItemId: currentTradeId,
+            movementItemId: currentMovementId,
+            status: "LINK",
+            eventOrder: 1,
+          },
+        ]);
+      repository.saveB3ReconciliationDecisions.mockResolvedValue(1);
+
+      await expect(
+        importService.saveReconciliationDecisions(
+          {
+            decisions: [
+              {
+                tradeId: currentTradeId,
+                movementId: currentMovementId,
+                action: "LINK",
+              },
+            ],
+          },
+          `request-${group}`,
+        ),
+      ).resolves.toBeDefined();
+      expect(repository.saveB3ReconciliationDecisions).toHaveBeenCalledOnce();
+    },
+  );
 
   it("blocks confirmation when an assigned B3 identity disappears and reports field differences", async () => {
     const previous = {
@@ -474,6 +799,79 @@ describe("ImportService persistence", () => {
 });
 
 describe("reconciliation import decisions", () => {
+  const tradeId = "11111111-1111-4111-8111-111111111111";
+  const otherTradeId = "33333333-3333-4333-8333-333333333333";
+  const movementId = "22222222-2222-4222-8222-222222222222";
+  const otherMovementId = "44444444-4444-4444-8444-444444444444";
+  const link = (trade: string, movement: string) => ({
+    tradeId: trade,
+    movementId: movement,
+    action: "LINK" as const,
+  });
+
+  it.each([
+    {
+      decisions: [link(tradeId, movementId), link(tradeId, movementId)],
+      statusCode: 400,
+    },
+    {
+      decisions: [link(tradeId, movementId), link(tradeId, otherMovementId)],
+      statusCode: 409,
+    },
+    {
+      decisions: [link(tradeId, movementId), link(otherTradeId, movementId)],
+      statusCode: 409,
+    },
+  ])(
+    "rejects duplicated or one-to-many LINK decisions before persistence (%j)",
+    async ({ decisions, statusCode }) => {
+      await expect(
+        importService.saveReconciliationDecisions(
+          { decisions },
+          "request-invalid",
+        ),
+      ).rejects.toMatchObject({ statusCode });
+      expect(repository.saveB3ReconciliationDecisions).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an old pair that disappeared from the latest summary", async () => {
+    repository.listTradingItems.mockResolvedValue([
+      {
+        id: tradeId,
+        importId: "import",
+        sourceRow: 2,
+        identityFingerprint: "trade",
+        side: "BUY",
+        tradingDate: "2026-10-14",
+        assetCode: "ABCD3",
+        institution: "Corretora",
+        quantity: "1",
+        grossValue: "20",
+      },
+    ]);
+    repository.listMovements.mockResolvedValue([
+      {
+        id: movementId,
+        direction: "CREDITO",
+        occurredAt: "2026-10-14",
+        movementType: "Transferência - Liquidação",
+        assetCode: "WXYZ4",
+        institution: "Corretora",
+        quantity: "1",
+        operationValue: "20",
+      },
+    ]);
+
+    await expect(
+      importService.saveReconciliationDecisions(
+        { decisions: [link(tradeId, movementId)] },
+        "request-stale",
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(repository.saveB3ReconciliationDecisions).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed decisions and reconciliation on movement files", async () => {
     await expect(
       importService.confirm(persistenceFile, "request", "2026-10-31", [{}]),
