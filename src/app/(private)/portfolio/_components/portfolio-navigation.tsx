@@ -1,6 +1,25 @@
-import Link from "next/link";
+"use client";
 
-import { ArrowLeftRight, ChartNoAxesCombined, WalletCards } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
+
+import {
+  ArrowLeftRight,
+  ChartNoAxesCombined,
+  Upload,
+  WalletCards,
+} from "lucide-react";
+import { useAdminSupportView } from "@/components/app-shell";
+import { PortfolioImport } from "@/components/portfolio-import";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTrigger,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 export type PortfolioView = "overview" | "positions" | "movements";
 
@@ -9,30 +28,74 @@ export function PortfolioNavigation({
 }: {
   activeView: PortfolioView;
 }) {
+  const supportView = useAdminSupportView();
+  const [importOpen, setImportOpen] = useState(false);
+  const canImport = supportView === false;
+
   return (
-    <nav
-      className="mb-6 flex gap-1 overflow-x-auto border-b"
-      aria-label="Visões da carteira"
-    >
-      <PortfolioLink href="/carteira" active={activeView === "overview"}>
-        <ChartNoAxesCombined aria-hidden="true" className="size-4" />
-        Visão geral
-      </PortfolioLink>
-      <PortfolioLink
-        href="/carteira?view=positions"
-        active={activeView === "positions"}
+    <div className="mb-6 flex flex-col gap-2 border-b sm:flex-row sm:items-center sm:justify-between">
+      <nav
+        className="flex min-w-0 gap-1 overflow-x-auto sm:flex-1"
+        aria-label="Visões da carteira"
       >
-        <WalletCards aria-hidden="true" className="size-4" />
-        Posições
-      </PortfolioLink>
-      <PortfolioLink
-        href="/carteira?view=movements"
-        active={activeView === "movements"}
+        <PortfolioLink href="/carteira" active={activeView === "overview"}>
+          <ChartNoAxesCombined aria-hidden="true" className="size-4" />
+          Visão geral
+        </PortfolioLink>
+        <PortfolioLink
+          href="/carteira?view=positions"
+          active={activeView === "positions"}
+        >
+          <WalletCards aria-hidden="true" className="size-4" />
+          Posições
+        </PortfolioLink>
+        <PortfolioLink
+          href="/carteira?view=movements"
+          active={activeView === "movements"}
+        >
+          <ArrowLeftRight aria-hidden="true" className="size-4" />
+          Movimentações
+        </PortfolioLink>
+      </nav>
+      <Sheet
+        open={importOpen && canImport}
+        onOpenChange={(open) => {
+          if (canImport) setImportOpen(open);
+        }}
       >
-        <ArrowLeftRight aria-hidden="true" className="size-4" />
-        Movimentações
-      </PortfolioLink>
-    </nav>
+        {canImport && (
+          <SheetTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 shrink-0 self-start sm:self-auto"
+            >
+              <Upload aria-hidden="true" className="size-4" />
+              Importar dados
+            </Button>
+          </SheetTrigger>
+        )}
+        <SheetContent
+          side="right"
+          className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden p-4 sm:max-w-6xl sm:p-6"
+        >
+          <SheetHeader className="mb-5 shrink-0 pr-8">
+            <SheetTitle>Importar e conciliar</SheetTitle>
+            <SheetDescription>
+              Revise os dados do arquivo e escolha como tratar cada
+              correspondência antes de confirmar.
+            </SheetDescription>
+          </SheetHeader>
+          <div
+            aria-label="Importação e conciliação"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+            role="region"
+          >
+            <PortfolioImport readOnly={!canImport} />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
   );
 }
 

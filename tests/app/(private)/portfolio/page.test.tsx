@@ -30,6 +30,8 @@ describe("PortfolioPage navigation", () => {
     const html = renderToStaticMarkup(element);
 
     expect(html).toContain("navigation:overview");
+    expect(html).not.toContain("Uma leitura objetiva da sua carteira");
+    expect(html).not.toContain("/?openImport=1");
     expect(html).toContain("&quot;initialObjectivesOpen&quot;:true");
     expect(html).toContain("&quot;initialObjectiveId&quot;:&quot;reserve");
     expect(html).toContain(
