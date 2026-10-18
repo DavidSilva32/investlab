@@ -196,6 +196,103 @@ describe("ImportController", () => {
     });
   });
 
+  it("returns an explicit no-new-position response when an identical file is reprocessed", async () => {
+    service.confirm.mockResolvedValue({
+      preview,
+      result: {
+        importId: "import-1",
+        snapshotId: "snapshot-1",
+        enrichedPositionCount: 2,
+      },
+      duplicate: true,
+      reprocessedExistingImport: true,
+    });
+
+    const response = await importController.confirm(
+      requestWithFile(),
+      "request-1",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      enrichedPositionCount: 2,
+      message:
+        "2 posição(ões) existente(s) enriquecida(s). Nenhuma nova posição foi criada.",
+    });
+  });
+
+  it("reports an idempotent no-op when reprocessing enriches zero positions", async () => {
+    service.confirm.mockResolvedValue({
+      preview,
+      result: { importId: "import-1", enrichedPositionCount: 0 },
+      duplicate: true,
+      reprocessedExistingImport: true,
+    });
+
+    const response = await importController.confirm(
+      requestWithFile(),
+      "request-noop",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      enrichedPositionCount: 0,
+      message:
+        "Arquivo idêntico revisado. Não havia campos ausentes para enriquecer e nenhuma nova posição foi criada.",
+    });
+  });
+
+  it("reports a newly registered legacy date even when no position was enriched", async () => {
+    service.confirm.mockResolvedValue({
+      preview,
+      result: {
+        importId: "import-1",
+        enrichedPositionCount: 0,
+        referenceDateUpdated: true,
+      },
+      duplicate: true,
+      referenceDateUpdated: true,
+      reprocessedExistingImport: true,
+    });
+
+    const response = await importController.confirm(
+      requestWithFile(),
+      "request-legacy-date",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      enrichedPositionCount: 0,
+      message:
+        "Data exibida na B3 registrada no snapshot legado. Nenhuma posição precisou de enriquecimento.",
+    });
+  });
+
+  it("reports both a newly registered legacy date and enriched positions", async () => {
+    service.confirm.mockResolvedValue({
+      preview,
+      result: {
+        importId: "import-1",
+        enrichedPositionCount: 2,
+        referenceDateUpdated: true,
+      },
+      duplicate: true,
+      referenceDateUpdated: true,
+      reprocessedExistingImport: true,
+    });
+
+    const response = await importController.confirm(
+      requestWithFile(),
+      "request-legacy-date-enriched",
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      enrichedPositionCount: 2,
+      message:
+        "Data exibida na B3 registrada e 2 posição(ões) existente(s) enriquecida(s). Nenhuma nova posição foi criada.",
+    });
+  });
+
   it("rejects requests without a file and counts movement records", async () => {
     await expect(
       importController.preview(

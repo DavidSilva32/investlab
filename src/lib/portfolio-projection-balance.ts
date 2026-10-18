@@ -1,5 +1,10 @@
 import type { ObjectivePosition } from "@/app/(private)/portfolio/_components/portfolio-objective-assignment";
 import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
+import {
+  centsToNumber,
+  decimalToCents,
+  sumMoneyCents,
+} from "@/lib/portfolio-money";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 export type DatedProjectionBalance = {
@@ -127,13 +132,40 @@ export function resolveObjectiveProjectionBalance(
   const assignedPositions = positions.filter((position) =>
     objective.assignedAssetKeys.includes(position.assetKey),
   );
-  return completeDatedBalance(
+  if (assignedPositions.length === 0) return null;
+
+  const completeBalance = completeDatedBalance(
     assignedPositions,
     objective.currentValue,
     objective.missingPositionCount,
     objective.unvaluedPositionCount,
     "objective",
   );
+  if (completeBalance) return completeBalance;
+
+  const knownAmount = centsToNumber(
+    sumMoneyCents(
+      assignedPositions.map((position) => {
+        const knownCents = position.knownValueCents ?? position.valueCents;
+        return knownCents && /^-?\d+$/.test(knownCents)
+          ? BigInt(knownCents)
+          : decimalToCents(position.value);
+      }),
+    ),
+  );
+  if (
+    knownAmount === null ||
+    !Number.isFinite(knownAmount) ||
+    !(knownAmount > 0)
+  )
+    return null;
+
+  return {
+    amount: knownAmount,
+    referenceDate: null,
+    source: "objective",
+    completeness: "partial",
+  };
 }
 
 function isValidDate(referenceDate: string) {

@@ -116,6 +116,20 @@ describe("strategy asset class metadata", () => {
   it("classifies positions using the strategy's shared asset groups", () => {
     expect(
       getStrategyAssetClassId({
+        product: "Patria Log - FDO INV IMOB - Responsabilidade Ltda.",
+        assetClass: "Renda variavel",
+        geography: "Brasil",
+      }),
+    ).toBe("fiis");
+    expect(
+      getStrategyAssetClassId({
+        product: "Patria Log - FDO INV IMOB - Responsabilidade Ltda.",
+        assetClass: null,
+        geography: "Brasil",
+      }),
+    ).toBeNull();
+    expect(
+      getStrategyAssetClassId({
         product: "CDB",
         assetClass: "Renda fixa",
         geography: "Brasil",

@@ -9,14 +9,14 @@ import { PortfolioDistributionCharts } from "./portfolio-distribution-charts";
 import { PortfolioDiagnostics } from "./portfolio-diagnostics";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
+import type { InstrumentKind } from "@/lib/instrument-kind";
 export type PortfolioPosition = {
   id: string;
   source?: string;
   product: string;
   assetCode: string | null;
   originalAssetCode?: string | null;
-  instrumentKind?:
-    "EQUITY" | "FII" | "FIXED_INCOME" | "INVESTMENT_FUND" | "UNKNOWN" | null;
+  instrumentKind?: InstrumentKind | null;
   sourceType?: string | null;
   institution: string | null;
   indexer: string | null;

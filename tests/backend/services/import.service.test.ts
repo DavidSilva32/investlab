@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const parser = vi.hoisted(() => vi.fn());
 const repository = vi.hoisted(() => ({
   existsByHash: vi.fn(),
+  getPositionImportReferenceDateByHash: vi.fn(),
   updatePositionReferenceDate: vi.fn(),
   listLatestPositions: vi.fn(),
   listTradingItems: vi.fn(),
@@ -45,6 +46,11 @@ beforeEach(() => {
   repository.listTradingItems.mockResolvedValue([]);
   repository.listMovements.mockResolvedValue([]);
   repository.listB3ReconciliationEvents.mockResolvedValue([]);
+  repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+    referenceDate: null,
+    needsSelection: false,
+    conflict: false,
+  });
   objectives.list.mockResolvedValue({ objectives: [], assignments: [] });
 });
 
@@ -200,7 +206,7 @@ describe("ImportService", () => {
       {
         id: "movement-1",
         direction: "CREDITO",
-        occurredAt: "2026-10-14",
+        occurredAt: "2026-10-16",
         movementType: "Transferência - Liquidação",
         assetCode: "BBSE3",
         institution: "Corretora",
@@ -229,6 +235,86 @@ describe("ImportService", () => {
     ).resolves.toMatchObject({ documentType: "B3_MOVEMENT_XLSX" });
     expect(repository.listLatestPositions).not.toHaveBeenCalled();
     expect(objectives.list).not.toHaveBeenCalled();
+  });
+
+  it("previews a position file with no same-hash import and no persisted date", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [],
+    });
+    repository.existsByHash.mockResolvedValue(false);
+    repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+      referenceDate: null,
+      needsSelection: false,
+      conflict: false,
+    });
+
+    const preview = await importService.previewWithIdentityConflicts(
+      file,
+      "request-position-preview",
+    );
+
+    expect(preview).toMatchObject({
+      documentType: "B3_POSITION_XLSX",
+      reconciliationCandidates: [],
+      identityConflicts: [],
+    });
+    expect(preview).not.toHaveProperty("duplicateImportMessage");
+    expect(
+      repository.getPositionImportReferenceDateByHash,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("explains when an identical position file can enrich its existing snapshot", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [],
+    });
+    repository.existsByHash.mockResolvedValue(true);
+    repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+      referenceDate: "2026-09-30",
+      needsSelection: false,
+      conflict: false,
+    });
+
+    const preview = await importService.previewWithIdentityConflicts(
+      file,
+      "request-position-preview",
+    );
+
+    expect(preview).toMatchObject({
+      duplicateImportMessage: expect.stringContaining(
+        "Este arquivo idêntico já foi importado",
+      ),
+      existingReferenceDate: "2026-09-30",
+    });
+    expect(
+      repository.getPositionImportReferenceDateByHash,
+    ).toHaveBeenCalledWith(preview.hash);
+  });
+
+  it("asks for the B3 date when a legacy duplicate has no persisted dates", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [],
+    });
+    repository.existsByHash.mockResolvedValue(true);
+    repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+      referenceDate: null,
+      needsSelection: true,
+      conflict: false,
+    });
+
+    const preview = await importService.previewWithIdentityConflicts(
+      file,
+      "request-position-preview",
+    );
+
+    expect(preview).toMatchObject({
+      existingReferenceDate: null,
+      referenceDateNeedsSelection: true,
+      referenceDateConflict: false,
+    });
   });
 
   it("rejects duplicate confirmation", () => {
@@ -262,6 +348,11 @@ describe("ImportService persistence", () => {
   it("rejects identical files even with a new date without rewriting historical references", async () => {
     parser.mockReturnValue({ documentType: "B3_POSITION_XLSX", positions: [] });
     repository.existsByHash.mockResolvedValue(true);
+    repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+      referenceDate: "2026-09-30",
+      needsSelection: false,
+      conflict: false,
+    });
     await expect(
       importService.confirm(persistenceFile, "same-file", "2026-10-31"),
     ).rejects.toMatchObject({ statusCode: 409 });
@@ -299,6 +390,96 @@ describe("ImportService persistence", () => {
       "B3_POSITION_XLSX",
       "request-1",
     );
+  });
+
+  it("reuses the persisted B3 reference date when confirming an identical file without a new date", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [],
+      estimationBaseDate: "2026-09-16",
+    });
+    repository.existsByHash.mockResolvedValue(true);
+    repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+      referenceDate: "2026-09-30",
+      needsSelection: false,
+      conflict: false,
+    });
+    repository.create.mockResolvedValue({
+      importId: "original-import",
+      snapshotId: "original-snapshot",
+      enrichedPositionCount: 0,
+    });
+
+    await expect(
+      importService.confirm(persistenceFile, "request-duplicate"),
+    ).resolves.toMatchObject({
+      duplicate: true,
+      reprocessedExistingImport: true,
+      result: { enrichedPositionCount: 0 },
+    });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceDate: "2026-09-30",
+        reprocessExistingImport: true,
+      }),
+      "request-duplicate",
+    );
+  });
+
+  it("requires a selected B3 date for a null-dated duplicate and persists it through enrichment", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [],
+      estimationBaseDate: "2026-09-16",
+    });
+    repository.existsByHash.mockResolvedValue(true);
+    repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+      referenceDate: null,
+      needsSelection: true,
+      conflict: false,
+    });
+    repository.create.mockResolvedValue({
+      importId: "original-import",
+      snapshotId: "original-snapshot",
+      enrichedPositionCount: 0,
+      referenceDateUpdated: true,
+    });
+
+    await expect(
+      importService.confirm(persistenceFile, "request-duplicate"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repository.create).not.toHaveBeenCalled();
+
+    await expect(
+      importService.confirm(persistenceFile, "request-duplicate", "2026-09-30"),
+    ).resolves.toMatchObject({
+      duplicate: true,
+      reprocessedExistingImport: true,
+      referenceDateUpdated: true,
+    });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceDate: "2026-09-30",
+        estimationBaseDate: "2026-09-30",
+        reprocessExistingImport: true,
+      }),
+      "request-duplicate",
+    );
+  });
+
+  it("rejects a legacy duplicate whose persisted dates conflict", async () => {
+    parser.mockReturnValue({ documentType: "B3_POSITION_XLSX", positions: [] });
+    repository.existsByHash.mockResolvedValue(true);
+    repository.getPositionImportReferenceDateByHash.mockResolvedValue({
+      referenceDate: null,
+      needsSelection: false,
+      conflict: true,
+    });
+
+    await expect(
+      importService.confirm(persistenceFile, "request-duplicate", "2026-09-30"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(repository.create).not.toHaveBeenCalled();
   });
 
   it("confirms trades as source records with stable identity fingerprints", async () => {
@@ -362,7 +543,7 @@ describe("ImportService persistence", () => {
       {
         id: "22222222-2222-4222-8222-222222222222",
         direction: "CREDITO",
-        occurredAt: "2026-10-14",
+        occurredAt: "2026-10-16",
         movementType: "Transferência - Liquidação",
         assetCode: "BBSE3",
         institution: "Corretora",
@@ -428,7 +609,7 @@ describe("ImportService persistence", () => {
         {
           id: currentMovementId,
           direction: "CREDITO",
-          occurredAt: "2026-10-14",
+          occurredAt: "2026-10-16",
           movementType: "Transferência - Liquidação",
           assetCode: "ABCD3",
           institution: "Corretora",
@@ -440,7 +621,7 @@ describe("ImportService persistence", () => {
               {
                 id: otherMovementId,
                 direction: "CREDITO",
-                occurredAt: "2026-10-14",
+                occurredAt: "2026-10-16",
                 movementType: "Transferência - Liquidação",
                 assetCode: "ABCD3",
                 institution: "Corretora",
@@ -533,7 +714,7 @@ describe("ImportService persistence", () => {
       statusCode: 409,
       message: expect.stringContaining("Viagem"),
     });
-    expect(repository.existsByHash).toHaveBeenCalledTimes(1);
+    expect(repository.existsByHash).toHaveBeenCalledTimes(2);
     expect(repository.create).not.toHaveBeenCalled();
   });
 
@@ -854,7 +1035,7 @@ describe("reconciliation import decisions", () => {
       {
         id: movementId,
         direction: "CREDITO",
-        occurredAt: "2026-10-14",
+        occurredAt: "2026-10-16",
         movementType: "Transferência - Liquidação",
         assetCode: "WXYZ4",
         institution: "Corretora",

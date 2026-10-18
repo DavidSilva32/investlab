@@ -273,6 +273,99 @@ describe("PortfolioImport", () => {
     );
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+  it("shows the persisted date and enrichment explanation for an identical position file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...positionPreview,
+          duplicateImportMessage:
+            "Este arquivo idêntico já foi importado. Ao confirmar, o InvestLab verificará campos ausentes e não criará novas posições.",
+          existingReferenceDate: "2026-09-30",
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [spreadsheet("posicoes-iguais.xlsx")] },
+    });
+
+    expect(await screen.findByText("Arquivo já importado")).toBeTruthy();
+    expect(screen.getByText(/Data exibida na B3: 30\/09\/2026/)).toBeTruthy();
+    expect(
+      screen.queryByRole("textbox", { name: /^Data exibida na B3/ }),
+    ).toBeNull();
+  });
+  it("lets a user choose the B3 date for a duplicate legacy snapshot with both dates missing", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ...positionPreview,
+          duplicateImportMessage:
+            "Este arquivo idêntico já foi importado. Ao confirmar, os campos ausentes serão enriquecidos.",
+          existingReferenceDate: null,
+          referenceDateNeedsSelection: true,
+          referenceDateConflict: false,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Data registrada no snapshot legado." }),
+      });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("posicoes-legadas.xlsx")] },
+    });
+
+    expect(
+      await screen.findByText("Data ausente no snapshot legado"),
+    ).toBeTruthy();
+    const confirmButton = await screen.findByRole("button", {
+      name: /Confirmar 1 arquivo/,
+    });
+    expect(confirmButton).toHaveProperty("disabled", true);
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /^Data exibida na B3/ }),
+      { target: { value: "30/09/2026" } },
+    );
+    expect(confirmButton).toHaveProperty("disabled", false);
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    const confirmBody = fetch.mock.calls[1]?.[1]?.body as FormData;
+    expect(confirmBody.get("referenceDate")).toBe("2026-09-30");
+  });
+  it("blocks confirmation when the duplicate's import and snapshot dates conflict", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ...positionPreview,
+          duplicateImportMessage: "Este arquivo idêntico já foi importado.",
+          existingReferenceDate: null,
+          referenceDateNeedsSelection: false,
+          referenceDateConflict: true,
+        }),
+      }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("posicoes-com-datas-divergentes.xlsx")] },
+    });
+
+    expect(await screen.findByText("Datas inconsistentes")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
+    ).toHaveProperty("disabled", true);
+  });
   it("renders movement previews with the shared table component", async () => {
     vi.stubGlobal(
       "fetch",
@@ -411,6 +504,8 @@ describe("PortfolioImport", () => {
       "Arquivo importado com sucesso.",
     );
     expect(screen.queryByText("ETF")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Import");
+    expect(screen.queryByText(/prévia aparecer/i)).toBeNull();
     window.removeEventListener("portfolio:updated", portfolioUpdated);
   });
 
@@ -816,14 +911,18 @@ describe("PortfolioImport", () => {
     expect(within(table).getAllByText("Compra")).toHaveLength(2);
     expect(within(table).getAllByText("Venda")).toHaveLength(2);
     expect(within(table).getAllByText(/Original: ABCD3F/)).toHaveLength(2);
-    expect(screen.getByText(/Histórico parcial/)).toBeTruthy();
-    expect(screen.getByText(/1 grupo\(s\) contém linhas/)).toBeTruthy();
+    expect(screen.getByText(/Hist.*parcial/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Detalhes do hist/ }));
     expect(
-      screen.getByText(/Linhas 7, 8: 3 ocorrência\(s\), 1 já importada\(s\)/),
+      screen.getByText(/1 grupo.*linhas possivelmente repetidas/),
     ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Ver linhas para revisar/ }),
+    );
+    expect(screen.getByText(/Linhas 7, 8: 3 ocorr.*1 j.*import/)).toBeTruthy();
     expect(screen.queryByText("must-not-render")).toBeNull();
     expect(
-      screen.getByText(/vínculo continuará pendente de revisão/),
+      screen.getByText(/v.*culo continuar.*pendente de revis.*o/),
     ).toBeTruthy();
   });
 

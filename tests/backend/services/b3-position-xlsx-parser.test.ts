@@ -385,7 +385,7 @@ it("combines B3 position tabs and retains fractional ticker source identity", ()
   ]);
 });
 
-it("keeps generic investment fund rows distinct from FIIs without explicit source type", () => {
+it("uses explicit real estate fund product evidence even without an FII source type", () => {
   const [position] = b3PositionXlsxParser.parse(
     workbookBuffer([
       ["Produto", "Tipo", "Código de Negociação", "Quantidade"],
@@ -393,8 +393,80 @@ it("keeps generic investment fund rows distinct from FIIs without explicit sourc
     ]),
   );
   expect(position).toMatchObject({
-    instrumentKind: "INVESTMENT_FUND",
+    instrumentKind: "FII",
     sourceType: "Fundo",
+  });
+});
+
+it("uses explicit product and B3 source evidence for instrument kinds", () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ["Produto", "Tipo", "Código de Negociação", "Quantidade"],
+      [
+        "XP Malls Fundo de Investimento Imobiliário - FII",
+        "Cotas",
+        "XPML11",
+        2,
+      ],
+      [
+        "Pátria Log - FDO INV IMOB - Responsabilidade Ltda.",
+        "Cotas",
+        "HGLG11",
+        2,
+      ],
+      ["ITAU UNIBANCO HOLDING S.A.", "PN", "ITUB4", 7],
+      ["BB SEGURIDADE PARTICIPACOES S.A.", "ON", "BBSE3", 8],
+      ["CDB - Banco Exemplo", "CDB", "CDB123", 1],
+      ["Vanguard S&P 500 ETF", "Cotas", "VOO", 1],
+      ["Fundo de investimento em infraestrutura", "Cotas", "FUNDX", 1],
+    ]),
+    "Fundos de Investimento",
+  );
+  const file = XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx",
+  }) as Buffer;
+  const positions = b3PositionXlsxParser.parse(file);
+
+  expect(
+    positions.map(({ assetCode, instrumentKind, sourceType }) => [
+      assetCode,
+      instrumentKind,
+      sourceType,
+    ]),
+  ).toEqual([
+    ["XPML11", "FII", "Cotas"],
+    ["HGLG11", "FII", "Cotas"],
+    ["ITUB4", "EQUITY", "PN"],
+    ["BBSE3", "EQUITY", "ON"],
+    ["CDB123", "FIXED_INCOME", "CDB"],
+    ["VOO", "ETF", "Cotas"],
+    ["FUNDX", "INVESTMENT_FUND", "Cotas"],
+  ]);
+});
+
+it("selects an available total without combining it with another valuation source", () => {
+  const [position] = b3PositionXlsxParser.parse(
+    workbookBuffer([
+      [
+        "Produto",
+        "Quantidade",
+        "Preco Atualizado FECHAMENTO",
+        "Valor Atualizado FECHAMENTO",
+        "Valor Atual",
+      ],
+      ["XP Malls FII", "2", "105,99", "", "211,98"],
+    ]),
+  );
+
+  expect(position).toMatchObject({
+    unitPrice: null,
+    totalValue: "211.98",
+    valuationSource: "INFORMADO",
+    closingUnitPrice: "105.99",
+    closingTotalValue: null,
   });
 });
 

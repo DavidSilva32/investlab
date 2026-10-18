@@ -59,7 +59,7 @@ export function getStrategyAssetClassId(position: {
 
   const productDescription = `${product} ${subClass}`;
   if (
-    /\b(fii|fiis|fundo imobiliario|fundos imobiliarios)\b/.test(
+    /\b(fii|fiis|fundo imobiliario|fundos imobiliarios|fdo\s+inv\s+imob|fdo\s+imob)\b/.test(
       productDescription,
     ) &&
     ["fundos", "renda variavel"].includes(assetClass)

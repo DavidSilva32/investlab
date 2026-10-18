@@ -16,6 +16,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
+import type { InstrumentKind } from "@/lib/instrument-kind";
 import {
   TradingReconciliationReview,
   type B3ReconciliationSummary,
@@ -53,8 +54,7 @@ type Position = {
   regimeType?: string | null;
   issuedAt?: string | null;
   maturityAt?: string | null;
-  instrumentKind?:
-    "EQUITY" | "FII" | "FIXED_INCOME" | "INVESTMENT_FUND" | "UNKNOWN";
+  instrumentKind?: InstrumentKind;
   sourceType?: string | null;
   sourceSheet?: string;
   originalAssetCode?: string | null;
@@ -146,6 +146,10 @@ type Preview =
       documentType: "B3_POSITION_XLSX";
       positions: Position[];
       count: number;
+      duplicateImportMessage?: string;
+      existingReferenceDate?: string | null;
+      referenceDateNeedsSelection?: boolean;
+      referenceDateConflict?: boolean;
       identityConflicts?: IdentityConflict[];
       reconciliationCandidates?: ReconciliationCandidate[];
     }
@@ -225,6 +229,7 @@ export function PortfolioImport({
   const input = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
+  const [importCompleted, setImportCompleted] = useState(false);
   const [reconciliationSummary, setReconciliationSummary] =
     useState<B3ReconciliationSummary | null>(null);
   const [
@@ -257,6 +262,7 @@ export function PortfolioImport({
 
   async function previewFiles(files: File[]) {
     if (files.length === 0) return;
+    setImportCompleted(false);
     setLoading(true);
     setItems(files.map((file) => ({ file })));
     const results = await Promise.all(
@@ -273,6 +279,10 @@ export function PortfolioImport({
                     (body as { positions?: Position[] }).positions ?? [],
                   count: (body as Partial<Preview>).count ?? 0,
                 },
+            referenceDate:
+              body.documentType === "B3_POSITION_XLSX"
+                ? (body.existingReferenceDate ?? undefined)
+                : undefined,
           };
         } catch (error) {
           return {
@@ -341,6 +351,7 @@ export function PortfolioImport({
         result.status === "failure",
     );
     if (successes.length > 0) {
+      setImportCompleted(true);
       toast.success(successes.map((result) => result.message).join(" · "));
       window.dispatchEvent(new Event("portfolio:updated"));
       if (
@@ -368,6 +379,11 @@ export function PortfolioImport({
   const hasMissingPositionReferenceDate = items.some(
     (item) =>
       item.preview?.documentType === "B3_POSITION_XLSX" && !item.referenceDate,
+  );
+  const hasReferenceDateConflict = items.some(
+    (item) =>
+      item.preview?.documentType === "B3_POSITION_XLSX" &&
+      Boolean(item.preview.referenceDateConflict),
   );
   const hasIdentityConflicts = items.some(
     (item) =>
@@ -505,7 +521,15 @@ export function PortfolioImport({
             Lendo arquivos...
           </p>
         )}
-        {items.length === 0 && !loading ? (
+        {items.length === 0 && !loading && importCompleted ? (
+          <p
+            role="status"
+            className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm"
+          >
+            Importação concluída. Os registros permanecem disponíveis na
+            carteira e no resumo de conciliação.
+          </p>
+        ) : items.length === 0 && !loading ? (
           <div className="flex min-h-36 flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center">
             <FileSpreadsheet
               aria-hidden="true"
@@ -560,6 +584,7 @@ export function PortfolioImport({
               disabled={
                 loading ||
                 hasMissingPositionReferenceDate ||
+                hasReferenceDateConflict ||
                 hasIdentityConflicts ||
                 hasUnresolvedReconciliation
               }
@@ -646,9 +671,9 @@ function PreviewItem({
             </AlertDescription>
           </Alert>
         )}
-        <div className="max-h-64 overflow-auto">
+        <div className="overflow-x-auto">
           <Table aria-label="Prévia de movimentações" className="min-w-[48rem]">
-            <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur">
+            <TableHeader className="bg-muted/90">
               <TableRow>
                 <TableHead scope="col" className="whitespace-nowrap">
                   Data
@@ -713,6 +738,8 @@ function TradingPreview({
   preview: Extract<Preview, { documentType: "B3_TRADING_XLSX" }>;
 }) {
   const duplicateCount = preview.duplicateCandidates.length;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
 
   return (
     <Card className="motion-content-reveal overflow-hidden shadow-sm">
@@ -728,46 +755,87 @@ function TradingPreview({
             {preview.count} negociações
           </Badge>
         </div>
-        <Alert>
+        <Alert className="py-3">
           <AlertTitle>Histórico parcial</AlertTitle>
           <AlertDescription>
-            Este arquivo não informa todas as taxas nem a data de liquidação e
-            não comprova o histórico completo. Esses dados não serão estimados.
-            Compras e vendas importadas ficam separadas dos snapshots de
-            posição.
-            {preview.batchReconciliationPending && (
-              <span className="mt-1 block">
-                A conciliação com movimentações será calculada após a importação
-                dos arquivos e qualquer vínculo continuará pendente de revisão.
-              </span>
-            )}
+            A importação não comprova o histórico completo nem estima dados
+            ausentes.
+            <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 h-8 px-2"
+                >
+                  Detalhes do histórico
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`size-4 transition-transform ${historyOpen ? "rotate-180" : ""}`}
+                  />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-1 space-y-1">
+                <p>
+                  Este arquivo não informa todas as taxas nem a data de
+                  liquidação. Compras e vendas continuam separadas dos snapshots
+                  de posição.
+                </p>
+                {preview.batchReconciliationPending && (
+                  <p>
+                    A conciliação com movimentações será calculada após a
+                    importação; qualquer vínculo continuará pendente de revisão.
+                  </p>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
           </AlertDescription>
         </Alert>
         {duplicateCount > 0 && (
-          <Alert aria-live="polite">
+          <Alert>
             <AlertTitle>Possíveis duplicidades para revisar</AlertTitle>
             <AlertDescription>
-              {duplicateCount} grupo(s) contém linhas com os mesmos dados. As
-              ocorrências foram preservadas; nenhuma foi removida
-              automaticamente.
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {preview.duplicateCandidates.map((candidate, index) => (
-                  <li key={`${candidate.sourceRows.join("-")}-${index}`}>
-                    Linhas {candidate.sourceRows.join(", ")}:{" "}
-                    {candidate.occurrenceCount} ocorrência(s)
-                    {candidate.existingCount > 0 &&
-                      `, ${candidate.existingCount} já importada(s)`}
-                  </li>
-                ))}
-              </ul>
+              {duplicateCount} grupo(s) com linhas possivelmente repetidas;
+              todas as ocorrências foram preservadas.
+              <Collapsible
+                open={duplicatesOpen}
+                onOpenChange={setDuplicatesOpen}
+              >
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-8 px-2"
+                  >
+                    Ver linhas para revisar
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={`size-4 transition-transform ${duplicatesOpen ? "rotate-180" : ""}`}
+                    />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <ul className="mt-1 list-disc space-y-1 pl-5">
+                    {preview.duplicateCandidates.map((candidate, index) => (
+                      <li key={`${candidate.sourceRows.join("-")}-${index}`}>
+                        Linhas {candidate.sourceRows.join(", ")}:{" "}
+                        {candidate.occurrenceCount} ocorrências
+                        {candidate.existingCount > 0 &&
+                          `, ${candidate.existingCount} já importadas`}
+                      </li>
+                    ))}
+                  </ul>
+                </CollapsibleContent>
+              </Collapsible>
             </AlertDescription>
           </Alert>
         )}
       </CardHeader>
       <CardContent className="p-0">
-        <div className="max-h-80 overflow-auto">
+        <div className="overflow-x-auto">
           <Table aria-label="Prévia de negociações" className="min-w-[72rem]">
-            <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur">
+            <TableHeader className="bg-muted/90">
               <TableRow>
                 <TableHead>Data</TableHead>
                 <TableHead>Operação</TableHead>
@@ -896,9 +964,14 @@ function PositionPreview({
           />
         </dl>
         <div className="grid gap-2 sm:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] sm:items-end">
-          {readOnly ? (
+          {readOnly ||
+          (preview.duplicateImportMessage &&
+            !preview.referenceDateNeedsSelection) ? (
             <p className="text-sm text-muted-foreground">
-              Data exibida na B3: {referenceDate || "não informada"}
+              Data exibida na B3:{" "}
+              {referenceDate
+                ? date.format(new Date(`${referenceDate}T00:00:00Z`))
+                : "não informada"}
             </p>
           ) : (
             <DatePickerField
@@ -915,6 +988,24 @@ function PositionPreview({
             dia CDI aplicável.
           </p>
         </div>
+        {preview.referenceDateNeedsSelection && !readOnly ? (
+          <Alert aria-live="polite">
+            <AlertTitle>Data ausente no snapshot legado</AlertTitle>
+            <AlertDescription>
+              Escolha a data exibida pela B3. Ela será registrada apenas porque
+              as datas do arquivo e do snapshot estão vazias.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {preview.referenceDateConflict ? (
+          <Alert variant="destructive" aria-live="polite">
+            <AlertTitle>Datas inconsistentes</AlertTitle>
+            <AlertDescription>
+              As datas do arquivo e do snapshot divergem. Atualize a prévia ou
+              peça suporte antes de reprocessar este arquivo.
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {reconciliationGroups.length > 0 && (
           <section
             aria-labelledby={`candidate-review-${fileName}`}
@@ -1142,6 +1233,14 @@ function PositionPreview({
             </AlertDescription>
           </Alert>
         ) : null}
+        {preview.duplicateImportMessage ? (
+          <Alert aria-live="polite">
+            <AlertTitle>Arquivo já importado</AlertTitle>
+            <AlertDescription>
+              {preview.duplicateImportMessage}
+            </AlertDescription>
+          </Alert>
+        ) : null}
       </CardHeader>
       <CardContent className="p-0">
         {valuedPositions.length !== preview.count && (
@@ -1185,6 +1284,7 @@ function PositionPreview({
                           {
                             EQUITY: "Ação",
                             FII: "FII",
+                            ETF: "ETF",
                             FIXED_INCOME: "Renda fixa",
                             INVESTMENT_FUND: "Fundo de investimento",
                             UNKNOWN: "Não identificado",

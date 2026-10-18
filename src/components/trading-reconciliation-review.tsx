@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
+import { formatCurrencyCents } from "@/lib/portfolio-money";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -38,6 +39,8 @@ export type ReconciliationPair = {
   movementId: string;
   trade: ReconciliationTrade;
   movement: ReconciliationMovement;
+  valueDifferenceCents?: string | null;
+  valueComparison?: "equal" | "different" | "unavailable";
 };
 
 export type B3ReconciliationSummary = {
@@ -277,7 +280,26 @@ export function TradingReconciliationReview({
                             }))
                           }
                         >
-                          Vincular a: {pairLabel(pair)}
+                          <span className="block">
+                            Vincular a: {pairLabel(pair)}
+                          </span>
+                          {pair.valueComparison === "different" &&
+                            pair.valueDifferenceCents !== null &&
+                            pair.valueDifferenceCents !== undefined && (
+                              <span className="mt-1 block text-xs text-destructive">
+                                Valores diferem em{" "}
+                                {formatCurrencyCents(
+                                  BigInt(pair.valueDifferenceCents) < 0n
+                                    ? -BigInt(pair.valueDifferenceCents)
+                                    : BigInt(pair.valueDifferenceCents),
+                                )}
+                              </span>
+                            )}
+                          {pair.valueComparison === "unavailable" && (
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              Valores não comparáveis
+                            </span>
+                          )}
                         </Button>
                       ))}
                       <Button

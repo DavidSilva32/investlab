@@ -164,7 +164,7 @@ describe("PortfolioObjectivesRepository", () => {
     const select = vi
       .fn()
       .mockReturnValueOnce({
-        from: () => ({ where: async () => [{ assetKey: "manual-1" }] }),
+        from: () => ({ where: async () => [{ assetKey: "manual:manual-1" }] }),
       })
       .mockReturnValueOnce({
         from: () => ({
@@ -202,13 +202,230 @@ describe("PortfolioObjectivesRepository", () => {
     expect(select).toHaveBeenCalledTimes(3);
   });
 
+  it("accepts a deleted manual alias only while its owner-scoped link targets a current imported position", async () => {
+    const importedPosition = {
+      product: "CDB",
+      assetCode: "BANK-1",
+      institution: "Banco",
+      issuer: null,
+      indexer: "CDI",
+      regimeType: null,
+      issuedAt: null,
+      maturityAt: null,
+    };
+    const importedKey = (
+      await import("@/lib/emergency-reserve-asset-key")
+    ).getEmergencyReserveAssetKey(importedPosition);
+    const manualKey = "manual:manual-1";
+    const activeLink = {
+      id: "link-1",
+      userId: "user-1",
+      manualAssetKey: manualKey,
+      importedAssetKey: importedKey,
+      status: "LINK" as const,
+      effectiveFrom: "2026-10-17",
+      recordedAt: new Date("2026-10-17T12:00:00.000Z"),
+      requestId: "request-1",
+      importId: null,
+    };
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "snapshot-1" }] }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: async () => [importedPosition] }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: async () => [activeLink] }),
+      });
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedAssetKeys: (
+        transaction: unknown,
+        assetKeys: string[],
+      ) => Promise<void>;
+    };
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedAssetKeys: (
+          transaction: unknown,
+          assetKeys: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedAssetKeys",
+    ).mockRestore();
+
+    await expect(
+      repository.assertOwnedAssetKeys({ select }, [manualKey]),
+    ).resolves.toBeUndefined();
+    expect(select).toHaveBeenCalledTimes(4);
+  });
+
+  it("rejects a deleted manual alias when its active link no longer targets a current imported position", async () => {
+    const manualKey = "manual:manual-1";
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: async () => [{ id: "snapshot-1" }] }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: async () => [
+            {
+              id: "link-1",
+              userId: "user-1",
+              manualAssetKey: manualKey,
+              importedAssetKey: "v1:stale-imported-key",
+              status: "LINK" as const,
+              effectiveFrom: "2026-10-17",
+              recordedAt: new Date("2026-10-17T12:00:00.000Z"),
+              requestId: "request-1",
+              importId: null,
+            },
+          ],
+        }),
+      });
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedAssetKeys: (
+        transaction: unknown,
+        assetKeys: string[],
+      ) => Promise<void>;
+    };
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedAssetKeys: (
+          transaction: unknown,
+          assetKeys: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedAssetKeys",
+    ).mockRestore();
+
+    await expect(
+      repository.assertOwnedAssetKeys({ select }, [manualKey]),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("validates imported keys against the latest B3 reference date, even when snapshot creation order differs", async () => {
+    const referenceDateSnapshotPosition = {
+      product: "CDB por data de referência",
+      assetCode: "REF-DATE-1",
+      institution: "Banco A",
+      issuer: null,
+      indexer: "CDI",
+      regimeType: null,
+      issuedAt: null,
+      maturityAt: null,
+    };
+    const newerCreatedSnapshotPosition = {
+      ...referenceDateSnapshotPosition,
+      product: "CDB criado depois",
+      assetCode: "CREATED-1",
+    };
+    const referenceDateKey = (
+      await import("@/lib/emergency-reserve-asset-key")
+    ).getEmergencyReserveAssetKey(referenceDateSnapshotPosition);
+    const snapshots = [
+      {
+        id: "created-later",
+        referenceDate: "2026-09-30",
+        createdAt: new Date("2026-10-16T00:00:00Z"),
+      },
+      {
+        id: "reference-date-later",
+        referenceDate: "2026-10-15",
+        createdAt: new Date("2026-10-01T00:00:00Z"),
+      },
+    ];
+    let selectedSnapshotId: string | undefined;
+    let selectCall = 0;
+    let orderArguments: unknown[] = [];
+    const select = vi.fn(() => {
+      selectCall += 1;
+      if (selectCall === 1)
+        return {
+          from: () => ({
+            where: () => ({
+              orderBy: (...orders: unknown[]) => {
+                orderArguments = orders;
+                const byReferenceDate = sqlChunksText(
+                  (orders[0] as { queryChunks: unknown[] }).queryChunks,
+                ).includes("DESC NULLS LAST");
+                return {
+                  limit: async () => {
+                    selectedSnapshotId = byReferenceDate
+                      ? "reference-date-later"
+                      : "created-later";
+                    return [
+                      snapshots.find(
+                        (snapshot) => snapshot.id === selectedSnapshotId,
+                      ),
+                    ];
+                  },
+                };
+              },
+            }),
+          }),
+        };
+      return {
+        from: () => ({
+          where: async () =>
+            selectedSnapshotId === "reference-date-later"
+              ? [referenceDateSnapshotPosition]
+              : [newerCreatedSnapshotPosition],
+        }),
+      };
+    });
+    const repository = new PortfolioObjectivesRepository() as unknown as {
+      assertOwnedAssetKeys: (
+        transaction: unknown,
+        assetKeys: string[],
+      ) => Promise<void>;
+    };
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        assertOwnedAssetKeys: (
+          transaction: unknown,
+          assetKeys: string[],
+        ) => Promise<void>;
+      },
+      "assertOwnedAssetKeys",
+    ).mockRestore();
+
+    await expect(
+      repository.assertOwnedAssetKeys({ select }, [referenceDateKey]),
+    ).resolves.toBeUndefined();
+    expect(orderArguments).toHaveLength(3);
+    expect(
+      sqlChunksText(
+        (orderArguments[0] as { queryChunks: unknown[] }).queryChunks,
+      ),
+    ).toContain("DESC NULLS LAST");
+  });
+
   it.each([
     {
       name: "manual position belongs to another user",
       keys: ["manual:foreign"],
-      select: vi.fn(() => ({
-        from: () => ({ where: async () => [] }),
-      })),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({ from: () => ({ where: async () => [] }) })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({ orderBy: () => ({ limit: async () => [] }) }),
+          }),
+        }),
     },
     {
       name: "imported position has no current snapshot",
@@ -220,6 +437,24 @@ describe("PortfolioObjectivesRepository", () => {
           }),
         }),
       })),
+    },
+    {
+      name: "imported key is absent from the selected snapshot",
+      keys: ["v1:missing"],
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "snapshot-current" }],
+              }),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [] }),
+        }),
     },
   ])("rejects an unavailable asset when $name", async ({ keys, select }) => {
     const repository = new PortfolioObjectivesRepository() as unknown as {

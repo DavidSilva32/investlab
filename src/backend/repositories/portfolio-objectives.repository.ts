@@ -14,6 +14,8 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import { todayInSaoPaulo } from "@/lib/valuation-date";
+import { activeReconciliationLinks } from "@/backend/services/position-reconciliation";
 import {
   portfolioObjectivePositions,
   portfolioObjectiveBalanceReferences,
@@ -22,6 +24,7 @@ import {
   positionSnapshots,
   positionItems,
   manualPortfolioPositions,
+  positionReconciliationEvents,
   cdbRateConfigurations,
   cdiDailyRates,
 } from "@/infrastructure/database/schema";
@@ -188,30 +191,33 @@ export class PortfolioObjectivesRepository {
     );
     if (!uniqueKeys.length) return;
     const userId = requireDataOwnerId();
-    const manualIds = uniqueKeys
-      .filter((key) => key.startsWith("manual:"))
-      .map((key) => key.slice("manual:".length));
-    const ownedManual = manualIds.length
+    const manualKeys = uniqueKeys.filter((key) => key.startsWith("manual:"));
+    const ownedManual = manualKeys.length
       ? await transaction
           .select({ assetKey: manualPortfolioPositions.assetKey })
           .from(manualPortfolioPositions)
           .where(
             and(
-              inArray(manualPortfolioPositions.assetKey, manualIds),
+              inArray(manualPortfolioPositions.assetKey, manualKeys),
               eq(manualPortfolioPositions.userId, userId),
             ),
           )
       : [];
-    const validKeys = new Set(
-      ownedManual.map((position) => `manual:${position.assetKey}`),
-    );
+    const validKeys = new Set(ownedManual.map((position) => position.assetKey));
     const importedKeys = uniqueKeys.filter((key) => key.startsWith("v1:"));
-    if (importedKeys.length) {
+    const unresolvedManualKeys = manualKeys.filter(
+      (key) => !validKeys.has(key),
+    );
+    if (importedKeys.length || unresolvedManualKeys.length) {
       const [snapshot] = await transaction
         .select()
         .from(positionSnapshots)
         .where(eq(positionSnapshots.userId, userId))
-        .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
+        .orderBy(
+          sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
+          desc(positionSnapshots.createdAt),
+          desc(positionSnapshots.id),
+        )
         .limit(1);
       if (snapshot) {
         const imported = await transaction
@@ -223,8 +229,33 @@ export class PortfolioObjectivesRepository {
               eq(positionItems.userId, userId),
             ),
           );
-        for (const position of imported)
+        const currentImportedKeys = new Set<string>();
+        for (const position of imported) {
+          const importedAssetKey = getEmergencyReserveAssetKey(position);
+          currentImportedKeys.add(importedAssetKey);
           validKeys.add(getEmergencyReserveAssetKey(position));
+        }
+        if (unresolvedManualKeys.length) {
+          const events = await transaction
+            .select()
+            .from(positionReconciliationEvents)
+            .where(
+              and(
+                inArray(
+                  positionReconciliationEvents.manualAssetKey,
+                  unresolvedManualKeys,
+                ),
+                eq(positionReconciliationEvents.userId, userId),
+              ),
+            );
+          for (const link of activeReconciliationLinks(
+            events,
+            todayInSaoPaulo(),
+          )) {
+            if (currentImportedKeys.has(link.importedAssetKey))
+              validKeys.add(link.manualAssetKey);
+          }
+        }
       }
     }
     if (uniqueKeys.some((key) => !validKeys.has(key))) {
@@ -276,7 +307,11 @@ export class PortfolioObjectivesRepository {
       .select()
       .from(positionSnapshots)
       .where(eq(positionSnapshots.userId, userId))
-      .orderBy(desc(positionSnapshots.createdAt), desc(positionSnapshots.id))
+      .orderBy(
+        sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
+        desc(positionSnapshots.createdAt),
+        desc(positionSnapshots.id),
+      )
       .limit(1);
     const importedRows = snapshot
       ? await transaction

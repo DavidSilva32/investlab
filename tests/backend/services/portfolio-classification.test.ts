@@ -65,6 +65,15 @@ describe("portfolio asset classification", () => {
         .assetClass,
     ).toBe("Renda variável");
   });
+  it("classifies B3 abbreviated real estate funds using their instrument kind", () => {
+    expect(
+      inferPortfolioAssetClassification({
+        ...asset,
+        product: "Pátria Log - FDO INV IMOB - Responsabilidade Ltda.",
+        instrumentKind: "FII",
+      }).assetClass,
+    ).toBe("Renda variável");
+  });
 
   it("uses an explicit recognized indexer but does not guess its geography", () => {
     expect(

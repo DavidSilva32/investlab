@@ -498,7 +498,7 @@ describe("PortfolioObjectiveProjection", () => {
     expect(container.querySelector(".recharts-reference-line")).toBeNull();
   });
 
-  it("asks for a starting balance instead of treating missing data as zero", () => {
+  it("asks for a starting balance for an incomplete objective without suggesting a different source", () => {
     render(
       <PortfolioObjectiveProjection
         objective={objective}
@@ -506,7 +506,10 @@ describe("PortfolioObjectiveProjection", () => {
       />,
     );
 
-    expect(screen.getByText(/incompleto/)).toBeTruthy();
+    expect(
+      screen.getByText("Informe um saldo inicial para simular este objetivo."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Escolha Patrimônio total/)).toBeNull();
     expect(
       (screen.getByLabelText("Saldo inicial") as HTMLInputElement).value,
     ).toBe("");
@@ -515,7 +518,18 @@ describe("PortfolioObjectiveProjection", () => {
     ).toBeNull();
   });
 
-  it("uses the known wealth as initial balance and explains when it is partial", () => {
+  it("asks for a starting balance when the selected portfolio total is incomplete", () => {
+    render(
+      <PortfolioObjectiveProjection objective={null} startingBalance={null} />,
+    );
+
+    expect(
+      screen.getByText("Informe um saldo inicial para simular a carteira."),
+    ).toBeTruthy();
+  });
+
+  it("uses a partial portfolio balance without an alarm and explains it on demand", async () => {
+    const user = userEvent.setup();
     render(
       <PortfolioObjectiveProjection
         objective={null}
@@ -528,12 +542,45 @@ describe("PortfolioObjectiveProjection", () => {
       />,
     );
 
+    expect(screen.getByText(/Saldo inicial da simulação/)).toBeTruthy();
     expect(
       (screen.getByLabelText("Saldo inicial") as HTMLInputElement).value,
     ).toBe("63.171,81");
-    expect(screen.getByText(/Patrimônio conhecido \(parcial\)/)).toBeTruthy();
+    expect(screen.queryByText(/parcial/i)).toBeNull();
+    expect(screen.queryByText(/Posições sem valor confirmado/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Sobre o cálculo" }));
     expect(
-      screen.getByText(/saldo parcial.*posições sem valor.*data-base única/i),
+      screen.getByText(
+        /Posições sem valor confirmado ou com datas diferentes podem não estar refletidas/i,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows a calm objective balance and keeps partial data details under the calculation disclosure", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioObjectiveProjection
+        objective={objective}
+        startingBalance={{
+          amount: 900,
+          referenceDate: null,
+          source: "objective",
+          completeness: "partial",
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/Saldo inicial da simulação/)).toBeTruthy();
+    expect(screen.queryByText(/parcial/i)).toBeNull();
+    expect(screen.queryByText(/Posições sem valor confirmado/)).toBeNull();
+    expect(
+      (screen.getByLabelText("Saldo inicial") as HTMLInputElement).value,
+    ).toBe("900,00");
+    await user.click(screen.getByRole("button", { name: "Sobre o cálculo" }));
+    expect(
+      screen.getByText(
+        /Posições sem valor confirmado ou com datas diferentes podem não estar refletidas/i,
+      ),
     ).toBeTruthy();
   });
 

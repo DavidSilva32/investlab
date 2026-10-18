@@ -78,6 +78,7 @@ const instrumentKindLabel: Record<
 > = {
   EQUITY: "Ação",
   FII: "FII",
+  ETF: "ETF",
   FIXED_INCOME: "Renda fixa",
   INVESTMENT_FUND: "Fundo de investimento",
   UNKNOWN: "Tipo não identificado",
@@ -102,15 +103,12 @@ const positionColumns = (
     searchValue: (row) =>
       [row.product, row.indexer, row.sourceType].filter(Boolean).join(" "),
     render: (row) => (
-      <div className="flex items-center gap-2">
-        <AssetLogo ticker={row.assetCode} name={row.product} size="sm" />
+      <div className="flex items-center gap-2 sm:gap-3">
+        <span className="shrink-0 scale-90 sm:scale-100">
+          <AssetLogo ticker={row.assetCode} name={row.product} size="lg" />
+        </span>
         <div className="min-w-0">
           <span className="font-medium">{row.product}</span>
-          {row.instrumentKind && (
-            <Badge variant="outline" className="ml-2 align-middle text-xs">
-              {instrumentKindLabel[row.instrumentKind]}
-            </Badge>
-          )}
           {row.sourceType && (
             <span className="block text-xs text-muted-foreground">
               Tipo informado pela B3: {row.sourceType}
@@ -130,6 +128,21 @@ const positionColumns = (
             )}
         </div>
       </div>
+    ),
+  },
+  {
+    id: "instrumentKind",
+    label: "Tipo",
+    width: "9%",
+    value: (row) => row.instrumentKind ?? "UNKNOWN",
+    searchValue: (row) => row.instrumentKind ?? "UNKNOWN",
+    filterOptions: Object.entries(instrumentKindLabel).map(
+      ([value, label]) => ({ value, label }),
+    ),
+    render: (row) => (
+      <Badge variant="outline">
+        {instrumentKindLabel[row.instrumentKind ?? "UNKNOWN"]}
+      </Badge>
     ),
   },
   {

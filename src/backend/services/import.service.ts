@@ -179,6 +179,15 @@ export class ImportService {
       };
     }
     if (preview.documentType !== "B3_POSITION_XLSX") return preview;
+    const duplicateImport = await importRepository.existsByHash(
+      preview.hash,
+      requestId,
+    );
+    const duplicateReference = duplicateImport
+      ? await importRepository.getPositionImportReferenceDateByHash(
+          preview.hash,
+        )
+      : null;
     const [manualPositions, reconciliationEvents] = await Promise.all([
       manualPortfolioPositionRepository.list(requestId),
       positionReconciliationRepository.listEvents(requestId),
@@ -193,6 +202,15 @@ export class ImportService {
         preview.positions,
         requestId,
       ),
+      ...(duplicateImport
+        ? {
+            duplicateImportMessage:
+              "Este arquivo idêntico já foi importado. Ao confirmar, o InvestLab verificará campos ausentes e não criará novas posições.",
+            existingReferenceDate: duplicateReference!.referenceDate,
+            referenceDateNeedsSelection: duplicateReference!.needsSelection,
+            referenceDateConflict: duplicateReference!.conflict,
+          }
+        : {}),
     };
   }
   assertCanBeConfirmed(isDuplicate: boolean) {
@@ -276,12 +294,49 @@ export class ImportService {
       preview.hash,
       requestId,
     );
+    const reprocessExistingImport =
+      duplicate && preview.documentType === "B3_POSITION_XLSX";
+    const existingReference = reprocessExistingImport
+      ? await importRepository.getPositionImportReferenceDateByHash(
+          preview.hash,
+        )
+      : null;
+    if (reprocessExistingImport && existingReference?.conflict)
+      throw new ApplicationError(
+        "As datas do arquivo e do snapshot não são coerentes. A importação não será alterada.",
+        409,
+      );
+    if (
+      reprocessExistingImport &&
+      existingReference?.needsSelection &&
+      !referenceDate
+    )
+      throw new ApplicationError(
+        "Selecione a data exibida pela B3 para preencher a data ausente deste snapshot legado.",
+        400,
+      );
+    const existingReferenceDate = existingReference?.referenceDate ?? null;
+    if (
+      reprocessExistingImport &&
+      referenceDate &&
+      existingReferenceDate &&
+      referenceDate !== existingReferenceDate
+    )
+      throw new ApplicationError(
+        "A data deve ser a mesma do arquivo já importado. O snapshot existente não será alterado.",
+        409,
+      );
+    const effectiveReferenceDate =
+      reprocessExistingImport && !referenceDate
+        ? existingReferenceDate
+        : referenceDate;
     const reconcileExistingImport =
-      duplicate &&
+      reprocessExistingImport && parsedDecisions.data.length > 0;
+    this.assertCanBeConfirmed(duplicate && !reprocessExistingImport);
+    if (
       preview.documentType === "B3_POSITION_XLSX" &&
-      parsedDecisions.data.length > 0;
-    this.assertCanBeConfirmed(duplicate && !reconcileExistingImport);
-    if (preview.documentType === "B3_POSITION_XLSX") {
+      !reprocessExistingImport
+    ) {
       const conflicts = await this.findAssignedPositionsMissingFromImport(
         preview.positions,
         requestId,
@@ -314,15 +369,25 @@ export class ImportService {
               })),
             }
           : {
-              ...this.buildPositionImportData(preview, referenceDate),
+              ...this.buildPositionImportData(preview, effectiveReferenceDate),
               reconciliationDecisions: parsedDecisions.data,
               reconcileExistingImport,
+              reprocessExistingImport,
             };
     const result = await importRepository.create(
       { fileName: file.name, fileHash: preview.hash, ...importData },
       requestId,
     );
-    return { preview, result, duplicate, referenceDateUpdated: false };
+    return {
+      preview,
+      result,
+      duplicate,
+      referenceDateUpdated:
+        reprocessExistingImport &&
+        "referenceDateUpdated" in result &&
+        result.referenceDateUpdated,
+      reprocessedExistingImport: reprocessExistingImport,
+    };
   }
 
   private buildPositionImportData(
