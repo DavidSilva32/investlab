@@ -385,10 +385,12 @@ export function PortfolioObjectiveProjection({
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
               {startingBalance.source === "objective"
-                ? "Valor deste objetivo"
+                ? startingBalance.completeness === "complete"
+                  ? "Valor deste objetivo"
+                  : "Saldo inicial da simulação"
                 : startingBalance.completeness === "complete"
                   ? "Patrimônio conhecido"
-                  : "Patrimônio conhecido (parcial)"}
+                  : "Saldo inicial da simulação"}
               : {formatCurrency(startingBalance.amount)}
               {startingBalance.referenceDate &&
                 ` · dados de ${dateLabel(startingBalance.referenceDate)}`}
@@ -398,13 +400,6 @@ export function PortfolioObjectiveProjection({
                 <p className="text-xs text-muted-foreground">
                   O cenário considera o patrimônio conhecido da carteira, sem
                   alterar sua distribuição na plataforma.
-                </p>
-              )}
-            {startingBalance.source === "portfolio" &&
-              startingBalance.completeness === "partial" && (
-                <p className="text-xs text-status-warning">
-                  Saldo parcial: soma valores conhecidos; há posições sem valor
-                  ou sem data-base única.
                 </p>
               )}
           </div>
@@ -428,8 +423,8 @@ export function PortfolioObjectiveProjection({
         ) : (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
             {objective
-              ? "Saldo deste objetivo incompleto. Escolha Patrimônio total ou informe um saldo inicial."
-              : "Patrimônio total incompleto. Informe um saldo inicial para simular."}
+              ? "Informe um saldo inicial para simular este objetivo."
+              : "Informe um saldo inicial para simular a carteira."}
           </p>
         )}
 
@@ -662,6 +657,14 @@ export function PortfolioObjectiveProjection({
               2016–2025; é uma referência histórica, não uma previsão. O cálculo
               não considera impostos nem taxas.
             </p>
+            {startingBalance?.completeness === "partial" && (
+              <p>
+                Para este cenário, o saldo inicial soma os valores disponíveis
+                para o patrimônio ou objetivo selecionado. Posições sem valor
+                confirmado ou com datas diferentes podem não estar refletidas no
+                total. Ajuste o saldo inicial acima se necessário.
+              </p>
+            )}
           </CollapsibleContent>
         </Collapsible>
 

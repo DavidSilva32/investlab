@@ -103,8 +103,10 @@ const positionColumns = (
     searchValue: (row) =>
       [row.product, row.indexer, row.sourceType].filter(Boolean).join(" "),
     render: (row) => (
-      <div className="flex items-center gap-2">
-        <AssetLogo ticker={row.assetCode} name={row.product} size="sm" />
+      <div className="flex items-center gap-2 sm:gap-3">
+        <span className="shrink-0 scale-90 sm:scale-100">
+          <AssetLogo ticker={row.assetCode} name={row.product} size="lg" />
+        </span>
         <div className="min-w-0">
           <span className="font-medium">{row.product}</span>
           {row.sourceType && (

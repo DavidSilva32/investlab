@@ -17,6 +17,8 @@ const position = (
   assetClass: "fixed_income",
   positionCount: 1,
   value: 1200,
+  valueCents: "120000",
+  knownValueCents: "120000",
   referenceDate: "2026-10-01",
   unvaluedPositions: 0,
   objectiveId: null,
@@ -69,6 +71,111 @@ describe("portfolio projection balance sources", () => {
     });
   });
 
+  it("resolves equity and FII objective balances without fixed-income dates", () => {
+    const equity = {
+      ...position({ assetKey: "equity", product: "ITUB4", value: 2400 }),
+      assetClass: "brazilian_equities",
+      issuedAt: null,
+      maturityAt: null,
+    };
+    const fii = {
+      ...position({ assetKey: "fii", product: "HGLG11", value: 1600 }),
+      assetClass: "fiis",
+      issuedAt: null,
+      maturityAt: null,
+    };
+
+    expect(
+      resolveObjectiveProjectionBalance(
+        objective({ currentValue: 4000, assignedAssetKeys: ["equity", "fii"] }),
+        [equity, fii],
+      ),
+    ).toEqual({
+      amount: 4000,
+      referenceDate: "2026-10-01",
+      source: "objective",
+      completeness: "complete",
+    });
+  });
+
+  it.each([
+    {
+      name: "a missing value",
+      row: position({
+        assetKey: "equity",
+        value: null,
+        valueCents: null,
+        knownValueCents: "60000",
+      }),
+    },
+    {
+      name: "a missing common date",
+      row: position({ assetKey: "fii", referenceDate: null }),
+    },
+  ])("uses an explicitly partial equity/FII balance with $name", ({ row }) => {
+    expect(
+      resolveObjectiveProjectionBalance(
+        objective({
+          currentValue: row.value === null ? null : 1200,
+          unvaluedPositionCount: row.value === null ? 1 : 0,
+          assignedAssetKeys: [row.assetKey],
+        }),
+        [{ ...row, assetClass: "brazilian_equities" }],
+      ),
+    ).toEqual({
+      amount: row.knownValueCents === "60000" ? 600 : 1200,
+      referenceDate: null,
+      source: "objective",
+      completeness: "partial",
+    });
+  });
+
+  it.each([0, Number.NaN])(
+    "does not treat an objective with no valid known value (%s) as zero",
+    (knownValue) => {
+      expect(
+        resolveObjectiveProjectionBalance(objective(), [
+          position({
+            value: null,
+            valueCents: null,
+            knownValueCents: String(knownValue),
+          }),
+        ]),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    {
+      name: "missing canonical cents",
+      valueCents: undefined,
+      knownValueCents: undefined,
+    },
+    {
+      name: "invalid canonical cents",
+      valueCents: undefined,
+      knownValueCents: "invalid",
+    },
+  ])(
+    "uses the available decimal value with $name",
+    ({ valueCents, knownValueCents }) => {
+      expect(
+        resolveObjectiveProjectionBalance(objective(), [
+          position({
+            referenceDate: null,
+            valueCents,
+            knownValueCents,
+          }),
+        ]),
+      ).toMatchObject({
+        amount: 1200,
+        referenceDate: null,
+        source: "objective",
+        completeness: "partial",
+      });
+    },
+  );
+
   it("keeps the known total available while marking mixed dates or missing assignments as partial", () => {
     expect(
       resolvePortfolioProjectionBalance(
@@ -105,21 +212,32 @@ describe("portfolio projection balance sources", () => {
     });
   });
 
-  it("rejects an invalid date for an objective balance", () => {
+  it("uses a partial objective balance when its effective date is invalid", () => {
     expect(
       resolveObjectiveProjectionBalance(objective(), [
         position({ referenceDate: "2026-02-30" }),
       ]),
-    ).toBeNull();
+    ).toMatchObject({
+      amount: 1200,
+      referenceDate: null,
+      completeness: "partial",
+    });
   });
 
-  it("rejects objective balances whose positions use different dates", () => {
+  it("uses a partial objective balance when positions use different dates", () => {
     expect(
-      resolveObjectiveProjectionBalance(objective(), [
-        position(),
-        position({ referenceDate: "2026-10-02" }),
-      ]),
-    ).toBeNull();
+      resolveObjectiveProjectionBalance(
+        objective({ assignedAssetKeys: ["asset-a", "asset-b"] }),
+        [
+          position(),
+          position({ assetKey: "asset-b", referenceDate: "2026-10-02" }),
+        ],
+      ),
+    ).toMatchObject({
+      amount: 2400,
+      referenceDate: null,
+      completeness: "partial",
+    });
   });
 
   it("treats missing position values as incomplete instead of adding zero", () => {
@@ -181,7 +299,12 @@ describe("portfolio projection balance sources", () => {
         objective({ missingPositionCount: 1 }),
         [position(), position({ assetKey: "other" })],
       ),
-    ).toBeNull();
+    ).toMatchObject({
+      amount: 1200,
+      referenceDate: null,
+      source: "objective",
+      completeness: "partial",
+    });
 
     expect(
       resolveObjectiveProjectionBalance(objective(), [position()]),

@@ -253,6 +253,21 @@ describe("portfolio detail components", () => {
     expect(html).not.toContain("icons/PETR3.svg");
   });
 
+  it("gives product logos more room while preserving a shrinkable product cell", () => {
+    const { container } = render(
+      <PositionDetails
+        positions={[{ ...position, product: "ITUB4", assetCode: "ITUB4" }]}
+      />,
+    );
+    const logo = screen.getByRole("img", { name: "Identidade de ITUB4" });
+    const productCell = container.querySelector(".flex.items-center.gap-2");
+
+    expect(logo.getAttribute("style")).toContain("width: 40px");
+    expect(productCell?.className).toContain("sm:gap-3");
+    expect(logo.parentElement?.className).toContain("scale-90 sm:scale-100");
+    expect(productCell?.querySelector(".min-w-0")).toBeTruthy();
+  });
+
   it("shows explicit Manual and B3 origin badges and leaves unknown origins unclassified", () => {
     const html = renderToStaticMarkup(
       <PositionDetails
