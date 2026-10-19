@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
+import { CookieConsentPreferencesButton } from "@/components/cookie-consent-preferences-button";
 
 const documentLinks = [
   { href: "/termos-de-uso", label: "Termos de Uso" },
@@ -62,6 +63,7 @@ export function PublicSiteLayout({
                 {item.label}
               </Link>
             ))}
+            <CookieConsentPreferencesButton variant="link" />
           </nav>
         </div>
       </footer>

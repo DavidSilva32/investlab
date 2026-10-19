@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { Cookie, Settings2 } from "lucide-react";
+import { Cookie } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { readCookieConsent, saveCookieConsent } from "@/lib/cookie-consent";
+import {
+  COOKIE_CONSENT_OPEN_EVENT,
+  readCookieConsent,
+  saveCookieConsent,
+} from "@/lib/cookie-consent";
 import type { CookieConsentChoice } from "@/lib/cookie-consent";
 
 const consentChangeEvent = "investlab-cookie-consent-change";
@@ -39,6 +43,13 @@ export function CookieConsentManager() {
   const [writeError, setWriteError] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
+  useEffect(() => {
+    const openPreferences = () => setIsOpen(true);
+    window.addEventListener(COOKIE_CONSENT_OPEN_EVENT, openPreferences);
+    return () =>
+      window.removeEventListener(COOKIE_CONSENT_OPEN_EVENT, openPreferences);
+  }, []);
+
   if (consentSnapshot === "loading") return null;
 
   const choice: CookieConsentChoice | null =
@@ -60,79 +71,63 @@ export function CookieConsentManager() {
 
   const showBanner = choice === null || isOpen;
 
-  return (
-    <>
-      {showBanner ? (
-        <section
-          aria-describedby="cookie-consent-description"
-          aria-label="Preferências de cookies"
-          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-5xl rounded-2xl border border-border bg-card p-4 text-card-foreground shadow-2xl sm:inset-x-6 sm:bottom-6 sm:p-6"
-          role="region"
-        >
-          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <div className="flex min-w-0 gap-3">
-              <Cookie
-                aria-hidden="true"
-                className="mt-0.5 size-5 shrink-0 text-primary"
-              />
-              <div className="min-w-0">
-                <h2 className="font-semibold">Sua escolha sobre cookies</h2>
-                <p
-                  className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground"
-                  id="cookie-consent-description"
-                >
-                  Usamos cookies necessários para manter sua conta conectada.
-                  Eles ficam ativos para o funcionamento do InvestLab. No
-                  momento, não identificamos cookies opcionais em uso. Você pode
-                  aceitar ou rejeitar cookies opcionais e mudar sua escolha
-                  depois.
-                </p>
-                <Link
-                  className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  href="/cookies"
-                >
-                  Leia a Política de Cookies
-                </Link>
-                {storageError && (
-                  <p className="mt-2 text-sm text-destructive" role="alert">
-                    Não foi possível salvar sua escolha neste navegador. Tente
-                    novamente.
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:justify-end">
-              <Button
-                className="min-h-11"
-                onClick={() => saveChoice("rejected")}
-                type="button"
-                variant="outline"
-              >
-                Rejeitar opcionais
-              </Button>
-              <Button
-                className="min-h-11"
-                onClick={() => saveChoice("accepted")}
-                type="button"
-              >
-                Aceitar opcionais
-              </Button>
-            </div>
+  return showBanner ? (
+    <section
+      aria-describedby="cookie-consent-description"
+      aria-label="Preferências de cookies"
+      className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-5xl rounded-2xl border border-border bg-card p-4 text-card-foreground shadow-2xl sm:inset-x-6 sm:bottom-6 sm:p-6"
+      role="region"
+    >
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 gap-3">
+          <Cookie
+            aria-hidden="true"
+            className="mt-0.5 size-5 shrink-0 text-primary"
+          />
+          <div className="min-w-0">
+            <h2 className="font-semibold">Sua escolha sobre cookies</h2>
+            <p
+              className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground"
+              id="cookie-consent-description"
+            >
+              Os cookies necessários para manter sua conta conectada ficam
+              ativos para o funcionamento do InvestLab. No momento, não
+              identificamos cookies opcionais em uso. Escolha aceitar cookies ou
+              rejeitar os opcionais. Você poderá rever essa escolha pelo rodapé
+              ou na Central de Privacidade.
+            </p>
+            <Link
+              className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href="/cookies"
+            >
+              Leia a Política de Cookies
+            </Link>
+            {storageError && (
+              <p className="mt-2 text-sm text-destructive" role="alert">
+                Não foi possível salvar sua escolha neste navegador. Tente
+                novamente.
+              </p>
+            )}
           </div>
-        </section>
-      ) : (
-        <Button
-          aria-label="Abrir preferências de cookies"
-          className="fixed bottom-4 right-4 z-40 shadow-lg"
-          onClick={() => setIsOpen(true)}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <Settings2 aria-hidden="true" />
-          Preferências de cookies
-        </Button>
-      )}
-    </>
-  );
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button
+            className="min-h-11"
+            onClick={() => saveChoice("rejected")}
+            type="button"
+            variant="outline"
+          >
+            Rejeitar
+          </Button>
+          <Button
+            className="min-h-11"
+            onClick={() => saveChoice("accepted")}
+            type="button"
+          >
+            Aceitar cookies
+          </Button>
+        </div>
+      </div>
+    </section>
+  ) : null;
 }

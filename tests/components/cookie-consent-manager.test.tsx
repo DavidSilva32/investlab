@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  COOKIE_CONSENT_OPEN_EVENT,
   COOKIE_CONSENT_STORAGE_KEY,
   readCookieConsent,
 } from "@/lib/cookie-consent";
@@ -39,51 +40,46 @@ describe("CookieConsentManager", () => {
     expect(
       screen.getByRole("link", { name: /Leia a Pol\u00edtica de Cookies/ }),
     ).toHaveProperty("href", expect.stringMatching(/\/cookies$/));
+    expect(
+      screen.getByRole("button", { name: "Aceitar cookies" }),
+    ).toBeTruthy();
 
-    await user.click(
-      screen.getByRole("button", { name: "Rejeitar opcionais" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Rejeitar" }));
 
     expect(readCookieConsent(localStorage)).toBe("rejected");
     expect(
       screen.queryByRole("region", { name: /Prefer\u00eancias de cookies/ }),
     ).toBeNull();
     expect(
-      screen.getByRole("button", {
-        name: /Abrir prefer\u00eancias de cookies/,
-      }),
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: /prefer\u00eancias de cookies/i }),
+    ).toBeNull();
   });
 
-  it("remembers acceptance and lets the user reopen and change the choice", async () => {
+  it("remembers acceptance without a floating control and supports contextual changes", async () => {
     const user = userEvent.setup();
     const firstRender = render(<CookieConsentManager />);
     await screen.findByRole("region", { name: /Prefer\u00eancias de cookies/ });
-    await user.click(screen.getByRole("button", { name: "Aceitar opcionais" }));
+    await user.click(screen.getByRole("button", { name: "Aceitar cookies" }));
     expect(readCookieConsent(localStorage)).toBe("accepted");
     firstRender.unmount();
 
     render(<CookieConsentManager />);
-    await waitFor(() => {
+    await waitFor(() =>
       expect(
-        screen.getByRole("button", {
-          name: /Abrir prefer\u00eancias de cookies/,
-        }),
-      ).toBeTruthy();
-    });
+        screen.queryByRole("region", { name: /Prefer\u00eancias de cookies/ }),
+      ).toBeNull(),
+    );
     expect(
-      screen.queryByRole("region", { name: /Prefer\u00eancias de cookies/ }),
+      screen.queryByRole("button", { name: /prefer\u00eancias de cookies/i }),
     ).toBeNull();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: /Abrir prefer\u00eancias de cookies/,
-      }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Rejeitar opcionais" }),
-    );
+    window.dispatchEvent(new Event(COOKIE_CONSENT_OPEN_EVENT));
+    await screen.findByRole("region", { name: /Prefer\u00eancias de cookies/ });
+    await user.click(screen.getByRole("button", { name: "Rejeitar" }));
     expect(readCookieConsent(localStorage)).toBe("rejected");
+    expect(
+      screen.queryByRole("button", { name: /prefer\u00eancias de cookies/i }),
+    ).toBeNull();
   });
 
   it("shows the banner again for an older policy version", async () => {
@@ -110,7 +106,7 @@ describe("CookieConsentManager", () => {
     render(<CookieConsentManager />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Aceitar opcionais" }),
+      await screen.findByRole("button", { name: "Aceitar cookies" }),
     );
 
     expect(screen.getByRole("alert").textContent).toMatch(
@@ -134,9 +130,7 @@ describe("CookieConsentManager", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
     getItemSpy.mockRestore();
 
-    await user.click(
-      screen.getByRole("button", { name: "Rejeitar opcionais" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Rejeitar" }));
 
     expect(readCookieConsent(localStorage)).toBe("rejected");
     expect(

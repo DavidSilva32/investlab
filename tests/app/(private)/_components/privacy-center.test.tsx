@@ -19,6 +19,7 @@ vi.mock("next/link", () => ({
 import { PrivacyCenter } from "@/app/(private)/_components/privacy-center";
 import PrivacyCenterPage from "@/app/(private)/privacidade-conta/page";
 import * as apiClient from "@/lib/api-client";
+import { COOKIE_CONSENT_OPEN_EVENT } from "@/lib/cookie-consent";
 
 function renderPrivacyCenter() {
   const queryClient = new QueryClient({
@@ -38,6 +39,30 @@ afterEach(() => {
 });
 
 describe("PrivacyCenter", () => {
+  it("offers a contextual action to review the cookie choice", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ currentTermsVersion: null, termsAcceptances: [] }),
+        ),
+    );
+    const user = userEvent.setup();
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    renderPrivacyCenter();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Rever preferências de cookies",
+      }),
+    );
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: COOKIE_CONSENT_OPEN_EVENT }),
+    );
+  });
+
   it("shows the authenticated user's recorded acceptance and document links", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       Response.json({

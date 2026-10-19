@@ -27,18 +27,18 @@ test("cookie preferences remain accessible after an accept or reject choice", as
 
   const banner = page.getByRole("region", { name: "Preferências de cookies" });
   await expect(banner).toBeVisible();
-  await page.getByRole("button", { name: "Rejeitar opcionais" }).click();
+  await page.getByRole("button", { name: "Rejeitar" }).click();
   await expect(banner).toBeHidden();
 
   await page
-    .getByRole("button", { name: "Abrir preferências de cookies" })
+    .getByRole("button", { name: "Rever preferências de cookies" })
     .click();
   await expect(banner).toBeVisible();
-  await page.getByRole("button", { name: "Aceitar opcionais" }).click();
+  await page.getByRole("button", { name: "Aceitar cookies" }).click();
   await expect(banner).toBeHidden();
 
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Abrir preferências de cookies" }),
-  ).toBeVisible();
+    page.getByRole("region", { name: "Preferências de cookies" }),
+  ).toBeHidden();
 });

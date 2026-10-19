@@ -96,7 +96,7 @@ describe("public privacy documents", () => {
 
     const pageText = screen.getByRole("main").textContent ?? "";
     expect(pageText).not.toMatch(/análise estática|runtime|Better Auth/i);
-    expect(pageText).toMatch(/aceitar ou rejeitar cookies opcionais/);
+    expect(pageText).toMatch(/aceitar cookies ou rejeitar os opcionais/);
     expect(pageText).toMatch(/necessários.*permanecem ativos/i);
     expect(pageText).toMatch(
       /não foram identificadas tecnologias opcionais em uso/i,

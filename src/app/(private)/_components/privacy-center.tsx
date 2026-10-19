@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CookieConsentPreferencesButton } from "@/components/cookie-consent-preferences-button";
 import {
   Card,
   CardContent,
@@ -90,9 +91,9 @@ export function PrivacyCenter() {
             </nav>
             <p className="text-sm leading-6 text-muted-foreground">
               Até agora, não foram identificados cookies opcionais em uso. Você
-              pode rever sua escolha pelo botão Preferências de cookies no canto
-              inferior da tela.
+              pode rever sua escolha por esta opção, quando quiser.
             </p>
+            <CookieConsentPreferencesButton />
           </CardContent>
         </Card>
 

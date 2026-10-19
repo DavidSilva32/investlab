@@ -20,8 +20,8 @@ const sections: LegalDocumentSection[] = [
   {
     title: "3. Cookies opcionais e consentimento",
     paragraphs: [
-      "O InvestLab apresenta um aviso para você aceitar ou rejeitar cookies opcionais. Os cookies necessários para manter sua conta conectada permanecem ativos para o funcionamento do serviço, independentemente dessa escolha.",
-      "No momento, não foram identificadas tecnologias opcionais em uso. Assim, aceitar ou rejeitar opcionais não ativa nem desativa recursos opcionais atualmente. A escolha fica salva neste navegador e pode ser alterada em Preferências de cookies.",
+      "O InvestLab apresenta um aviso para você aceitar cookies ou rejeitar os opcionais. Os cookies necessários para manter sua conta conectada permanecem ativos para o funcionamento do serviço, independentemente dessa escolha.",
+      "No momento, não foram identificadas tecnologias opcionais em uso. Assim, aceitar cookies ou rejeitar os opcionais não ativa nem desativa recursos opcionais atualmente. A escolha fica salva neste navegador e pode ser revista pela opção no rodapé ou na Central de Privacidade.",
       "Essa avaliação ainda depende de confirmação da operação do serviço. Se tecnologias opcionais forem identificadas ou adicionadas, este documento será revisto e elas só serão ativadas após a escolha afirmativa correspondente.",
     ],
   },

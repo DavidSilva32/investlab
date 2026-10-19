@@ -1,6 +1,7 @@
 import { COOKIE_POLICY_VERSION } from "@/lib/privacy-policy";
 
 export const COOKIE_CONSENT_STORAGE_KEY = "investlab-cookie-consent";
+export const COOKIE_CONSENT_OPEN_EVENT = "investlab-cookie-consent-open";
 
 export type CookieConsentChoice = "accepted" | "rejected";
 
