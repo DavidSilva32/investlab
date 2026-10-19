@@ -34,7 +34,8 @@ describe("PortfolioPage", () => {
         </QueryClientWrapper>
       </ShellUserProvider>,
     );
-    expect(html).toContain("atualizada pela API");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-live="polite"');
     expect(html).toContain("Carregando carteira");
     expect(html).toContain(label);
     expect(html).not.toContain("importRepository");
