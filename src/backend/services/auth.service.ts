@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { authRepository } from "@/backend/repositories/auth.repository";
 import { ApplicationError } from "@/backend/errors/application-error";
-import { getApprovedTermsVersion } from "@/lib/privacy-policy";
+import { getCurrentTermsVersion } from "@/lib/privacy-policy";
 
 const tokenLifetimeMs = 1000 * 60 * 60 * 24;
 const digest = (token: string) =>
@@ -231,18 +231,19 @@ export class AuthService {
     name: string,
     password: string,
     acceptTerms: boolean,
+    acceptedTermsVersion: string,
   ) {
-    const termsVersion = getApprovedTermsVersion();
-    if (!termsVersion) {
-      throw new ApplicationError(
-        "A ativação de novas contas está temporariamente indisponível enquanto os Termos de Uso aguardam aprovação.",
-        503,
-      );
-    }
+    const termsVersion = getCurrentTermsVersion();
     if (acceptTerms !== true) {
       throw new ApplicationError(
         "É necessário aceitar os Termos de Uso para ativar a conta.",
         400,
+      );
+    }
+    if (acceptedTermsVersion !== termsVersion) {
+      throw new ApplicationError(
+        "A versão dos Termos mudou. Atualize a página e leia a versão vigente.",
+        409,
       );
     }
     if (password.length < 12) {

@@ -22,7 +22,11 @@ import { CredentialSetupForm } from "@/components/auth/credential-setup-form";
 
 function renderApprovedInviteForm(token = "invitation-token") {
   return render(
-    <CredentialSetupForm mode="invite" token={token} termsApproved />,
+    <CredentialSetupForm
+      mode="invite"
+      token={token}
+      termsVersion="termos-2026-10-19.1"
+    />,
   );
 }
 
@@ -73,7 +77,7 @@ describe("CredentialSetupForm", () => {
     expect((confirmation as HTMLInputElement).type).toBe("text");
   });
 
-  it("does not show an acceptance checkbox or activation form while terms are pending", () => {
+  it("fails safely when the current terms version could not be loaded", () => {
     render(<CredentialSetupForm mode="invite" token="invitation-token" />);
 
     expect(
@@ -81,8 +85,9 @@ describe("CredentialSetupForm", () => {
         name: "Ativação temporariamente indisponível",
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/não utilizará seu convite/)).toBeTruthy();
-    expect(screen.getByText(/solicite um novo convite/)).toBeTruthy();
+    expect(
+      screen.getByText(/Não foi possível carregar a versão vigente/),
+    ).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByLabelText("Nome")).toBeNull();
     expect(screen.queryByLabelText("Nova senha")).toBeNull();
@@ -97,6 +102,9 @@ describe("CredentialSetupForm", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     renderApprovedInviteForm();
+    expect(
+      screen.getByText("7. Atualizações e encerramento do acesso"),
+    ).toBeTruthy();
     await user.type(screen.getByLabelText("Nome"), "Pessoa Convidada");
     await user.type(
       screen.getByLabelText("Nova senha"),
@@ -116,6 +124,7 @@ describe("CredentialSetupForm", () => {
           password: "A-secure-password-123",
           name: "Pessoa Convidada",
           acceptTerms: true,
+          termsVersion: "termos-2026-10-19.1",
         }),
       }),
     );
@@ -144,7 +153,9 @@ describe("CredentialSetupForm", () => {
     );
     expect(fetchMock).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: "Abrir os Termos em uma página completa" })
+        .getAttribute("href"),
     ).toBe("/termos-de-uso");
     expect(
       screen
@@ -165,7 +176,7 @@ describe("CredentialSetupForm", () => {
       <CredentialSetupForm
         mode="invite"
         token="invitation-token"
-        termsApproved
+        termsVersion="termos-2026-10-19.1"
       />,
     );
 
@@ -247,7 +258,7 @@ describe("CredentialSetupForm", () => {
       <CredentialSetupForm
         mode="invite"
         token="invitation-token"
-        termsApproved
+        termsVersion="termos-2026-10-19.1"
       />,
     );
     await userEvent
@@ -268,6 +279,7 @@ describe("CredentialSetupForm", () => {
           password: "",
           name: "",
           acceptTerms: true,
+          termsVersion: "termos-2026-10-19.1",
         }),
       }),
     );

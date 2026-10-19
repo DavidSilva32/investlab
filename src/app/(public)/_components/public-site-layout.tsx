@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
 import { CookieConsentPreferencesButton } from "@/components/cookie-consent-preferences-button";
+import { CURRENT_TERMS_VERSION } from "@/lib/privacy-policy";
 
 const documentLinks = [
   { href: "/termos-de-uso", label: "Termos de Uso" },
   { href: "/privacidade", label: "Privacidade" },
   { href: "/cookies", label: "Cookies" },
+  { href: "/mcp", label: "MCP" },
 ];
 
 export function PublicSiteLayout({
@@ -20,14 +22,14 @@ export function PublicSiteLayout({
       <header className="border-b border-border bg-card/70">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <Link
-            href="/entrar"
+            href="/"
             className="text-lg font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             InvestLab
           </Link>
           <nav aria-label="Acesso à conta" className="text-sm">
             <Link
-              href={authenticated ? "/" : "/entrar"}
+              href={authenticated ? "/dashboard" : "/entrar"}
               className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {authenticated ? "Voltar ao painel" : "Entrar"}
@@ -46,8 +48,9 @@ export function PublicSiteLayout({
               Informações e privacidade
             </p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Os documentos disponíveis ainda estão em revisão e indicam os
-              pontos que dependem de confirmação.
+              Os Termos de Uso estão na versão vigente do produto (
+              {CURRENT_TERMS_VERSION}). As políticas de Privacidade e Cookies
+              indicam seus pontos em confirmação.
             </p>
           </div>
           <nav

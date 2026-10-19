@@ -1,5 +1,5 @@
 import { CredentialSetupForm } from "@/components/auth/credential-setup-form";
-import { getApprovedTermsVersion } from "@/lib/privacy-policy";
+import { getCurrentTermsVersion } from "@/lib/privacy-policy";
 
 export default async function InvitePage({
   params,
@@ -11,7 +11,7 @@ export default async function InvitePage({
     <CredentialSetupForm
       mode="invite"
       token={token}
-      termsApproved={getApprovedTermsVersion() !== null}
+      termsVersion={getCurrentTermsVersion()}
     />
   );
 }

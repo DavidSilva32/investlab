@@ -1,8 +1,12 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { jwt } from "better-auth/plugins";
+import { toNextJsHandler } from "better-auth/next-js";
+import { mcp } from "@better-auth/mcp";
 import * as schema from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { getAuthSecret } from "@/infrastructure/auth/auth-configuration";
+import { mcpResource } from "@/infrastructure/mcp/mcp-configuration";
 
 export const auth = betterAuth({
   database: drizzleAdapter(getDatabaseClient(), {
@@ -19,6 +23,14 @@ export const auth = betterAuth({
       account: schema.authAccounts,
       verification: schema.authVerifications,
       rateLimit: schema.authRateLimits,
+      oauthClient: schema.oauthClients,
+      oauthAccessToken: schema.oauthAccessTokens,
+      oauthRefreshToken: schema.oauthRefreshTokens,
+      oauthConsent: schema.oauthConsents,
+      oauthClientAssertion: schema.oauthClientAssertions,
+      oauthResource: schema.oauthResources,
+      oauthClientResource: schema.oauthClientResources,
+      jwks: schema.authJwks,
     },
   }),
   secret: getAuthSecret(),
@@ -89,6 +101,40 @@ export const auth = betterAuth({
       },
     },
   },
+  plugins: [
+    jwt(),
+    mcp({
+      loginPage: "/entrar",
+      consentPage: "/mcp/consent",
+      resource: mcpResource,
+      scopes: [
+        "openid",
+        "profile",
+        "email",
+        "offline_access",
+        "mcp:read",
+        "mcp:admin:read",
+      ],
+      resources: [
+        {
+          identifier: mcpResource,
+          name: "InvestLab MCP",
+          allowedScopes: ["mcp:read", "mcp:admin:read"],
+        },
+      ],
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+      clientRegistrationDefaultScopes: ["openid", "mcp:read"],
+      clientRegistrationAllowedScopes: [
+        "profile",
+        "email",
+        "offline_access",
+        "mcp:admin:read",
+      ],
+    }),
+  ],
 });
+
+export const authHandler = toNextJsHandler(auth.handler);
 
 export type AuthUser = typeof auth.$Infer.Session.user;

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest } from "@/lib/api-client";
+import { CURRENT_TERMS_VERSION } from "@/lib/privacy-policy";
 
 type TermsAcceptancesResponse = {
   currentTermsVersion: string | null;
@@ -70,8 +71,9 @@ export function PrivacyCenter() {
               Documentos
             </CardTitle>
             <CardDescription>
-              Os documentos estão em revisão. Os pontos que aguardam confirmação
-              permanecem identificados em cada página.
+              A versão vigente dos Termos é {CURRENT_TERMS_VERSION}. As
+              políticas de Privacidade e Cookies mostram seu status em cada
+              página.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -105,6 +107,11 @@ export function PrivacyCenter() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {acceptancesQuery.data?.currentTermsVersion && (
+              <p className="mb-4 text-sm text-muted-foreground">
+                Versão vigente: {acceptancesQuery.data.currentTermsVersion}
+              </p>
+            )}
             {acceptancesQuery.isPending ? (
               <div
                 aria-label="Carregando histórico de aceite"

@@ -108,6 +108,158 @@ export const authRateLimits = pgTable(
   },
   (table) => [index("auth_rate_limits_last_request_idx").on(table.lastRequest)],
 );
+export const authJwks = pgTable("jwks", {
+  id: text().primaryKey(),
+  publicKey: text().notNull(),
+  privateKey: text().notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull(),
+  expiresAt: timestamp({ withTimezone: true }),
+  alg: text(),
+  crv: text(),
+});
+
+export const oauthClients = pgTable("oauthClient", {
+  id: text().primaryKey(),
+  clientId: text().notNull().unique(),
+  clientSecret: text(),
+  clientDiscoveryId: text(),
+  disabled: boolean().default(false),
+  skipConsent: boolean(),
+  enableEndSession: boolean(),
+  subjectType: text(),
+  scopes: text().array(),
+  clientCredentialsScopes: text().array().default([]),
+  userId: text().references(() => authUsers.id),
+  createdAt: timestamp({ withTimezone: true }),
+  updatedAt: timestamp({ withTimezone: true }),
+  name: text(),
+  uri: text(),
+  icon: text(),
+  contacts: text().array(),
+  tos: text(),
+  policy: text(),
+  softwareId: text(),
+  softwareVersion: text(),
+  softwareStatement: text(),
+  redirectUris: text().array().notNull(),
+  postLogoutRedirectUris: text().array(),
+  backchannelLogoutUri: text(),
+  backchannelLogoutSessionRequired: boolean(),
+  tokenEndpointAuthMethod: text(),
+  applicationType: text(),
+  jwks: text(),
+  jwksUri: text(),
+  grantTypes: text().array(),
+  responseTypes: text().array(),
+  requirePKCE: boolean(),
+  dpopBoundAccessTokens: boolean().default(false),
+  referenceId: text(),
+  metadata: jsonb(),
+});
+
+export const oauthResources = pgTable("oauthResource", {
+  id: text().primaryKey(),
+  identifier: text().notNull().unique(),
+  name: text().notNull(),
+  accessTokenTtl: integer(),
+  refreshTokenTtl: integer(),
+  signingAlgorithm: text(),
+  signingKeyId: text(),
+  allowedScopes: text().array(),
+  customClaims: jsonb(),
+  dpopBoundAccessTokensRequired: boolean().default(false),
+  disabled: boolean().default(false),
+  createdAt: timestamp({ withTimezone: true }),
+  updatedAt: timestamp({ withTimezone: true }),
+  policyVersion: integer().default(1),
+  metadata: jsonb(),
+});
+
+export const oauthClientResources = pgTable(
+  "oauthClientResource",
+  {
+    id: text().primaryKey(),
+    clientId: text()
+      .notNull()
+      .references(() => oauthClients.clientId, { onDelete: "cascade" }),
+    resourceId: text()
+      .notNull()
+      .references(() => oauthResources.identifier, { onDelete: "cascade" }),
+    metadata: jsonb(),
+    createdAt: timestamp({ withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("oauthClientResource_client_resource_uidx").on(
+      table.clientId,
+      table.resourceId,
+    ),
+  ],
+);
+
+export const oauthRefreshTokens = pgTable("oauthRefreshToken", {
+  id: text().primaryKey(),
+  token: text().notNull().unique(),
+  clientId: text()
+    .notNull()
+    .references(() => oauthClients.clientId),
+  sessionId: text().references(() => authSessions.id, { onDelete: "set null" }),
+  userId: text()
+    .notNull()
+    .references(() => authUsers.id),
+  referenceId: text(),
+  authorizationCodeId: text(),
+  resources: text().array(),
+  requestedUserInfoClaims: text().array(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull(),
+  revoked: timestamp({ withTimezone: true }),
+  rotatedAt: timestamp({ withTimezone: true }),
+  rotationReplayResponse: text(),
+  rotationReplayExpiresAt: timestamp({ withTimezone: true }),
+  authTime: timestamp({ withTimezone: true }),
+  confirmation: jsonb(),
+  scopes: text().array().notNull(),
+});
+
+export const oauthAccessTokens = pgTable("oauthAccessToken", {
+  id: text().primaryKey(),
+  token: text().unique(),
+  clientId: text()
+    .notNull()
+    .references(() => oauthClients.clientId),
+  sessionId: text().references(() => authSessions.id, { onDelete: "set null" }),
+  userId: text().references(() => authUsers.id),
+  referenceId: text(),
+  authorizationCodeId: text(),
+  resources: text().array(),
+  requestedUserInfoClaims: text().array(),
+  refreshId: text().references(() => oauthRefreshTokens.id),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull(),
+  revoked: timestamp({ withTimezone: true }),
+  confirmation: jsonb(),
+  scopes: text().array().notNull(),
+});
+
+export const oauthConsents = pgTable("oauthConsent", {
+  id: text().primaryKey(),
+  clientId: text()
+    .notNull()
+    .references(() => oauthClients.clientId),
+  userId: text().references(() => authUsers.id),
+  referenceId: text(),
+  resources: text().array(),
+  requestedUserInfoClaims: text().array(),
+  scopes: text().array().notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull(),
+  updatedAt: timestamp({ withTimezone: true }).notNull(),
+});
+
+export const oauthClientAssertions = pgTable("oauthClientAssertion", {
+  id: text().primaryKey(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+});
+
 export const authInvitations = pgTable("auth_invitations", {
   id: uuid().defaultRandom().primaryKey(),
   email: text().notNull(),

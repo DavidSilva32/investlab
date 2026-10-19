@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -15,6 +15,8 @@ vi.mock("next/link", () => ({
 }));
 
 import { LegalDocumentPage } from "@/app/(public)/_components/legal-document-page";
+
+afterEach(cleanup);
 
 describe("LegalDocumentPage", () => {
   it("presents a standalone draft with accessible links to the other documents", () => {
@@ -37,11 +39,8 @@ describe("LegalDocumentPage", () => {
         level: 1,
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Documento em revisão — ainda não é uma versão definitiva",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Rascunho em revisão")).toBeTruthy();
+    expect(screen.queryByText("Documento em revisão")).toBeNull();
     expect(
       screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href"),
     ).toBe("/termos-de-uso");
@@ -53,5 +52,59 @@ describe("LegalDocumentPage", () => {
     expect(
       screen.getByRole("navigation", { name: "Outros documentos" }),
     ).toBeTruthy();
+  });
+
+  it("supports a current product status without a draft warning", () => {
+    render(
+      <LegalDocumentPage
+        title="Termos de Uso"
+        introduction="Condições de uso."
+        sections={[{ title: "Acesso", paragraphs: ["Acesso por convite."] }]}
+        statusLabel="Versão vigente do produto · termos-2026-10-19.1"
+      />,
+    );
+
+    expect(
+      screen.getByText("Versão vigente do produto · termos-2026-10-19.1"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Documento em revisão")).toBeNull();
+  });
+
+  it("shows review context only when a document needs it", () => {
+    render(
+      <LegalDocumentPage
+        title="Política de Privacidade"
+        introduction="Informações sobre dados."
+        sections={[{ title: "Dados", paragraphs: ["Conteúdo."] }]}
+        reviewNotice="Alguns detalhes ainda aguardam confirmação."
+      />,
+    );
+
+    expect(screen.getByText("Documento em revisão")).toBeTruthy();
+    expect(
+      screen.getByText(/Alguns detalhes ainda aguardam confirmação/),
+    ).toBeTruthy();
+  });
+
+  it("renders the optional section bullet list", () => {
+    render(
+      <LegalDocumentPage
+        title="Política de Cookies"
+        introduction="Preferências de cookies."
+        sections={[
+          {
+            title: "Suas opções",
+            paragraphs: ["Você controla os cookies opcionais."],
+            bullets: [
+              "Aceitar cookies opcionais",
+              "Rejeitar cookies opcionais",
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Aceitar cookies opcionais").tagName).toBe("LI");
+    expect(screen.getByText("Rejeitar cookies opcionais").tagName).toBe("LI");
   });
 });

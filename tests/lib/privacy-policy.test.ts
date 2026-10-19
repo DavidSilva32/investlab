@@ -1,34 +1,19 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  DRAFT_TERMS_VERSION,
-  getApprovedTermsVersion,
-  validateApprovedTermsVersion,
+  COOKIE_POLICY_VERSION,
+  CURRENT_TERMS_VERSION,
+  getCurrentTermsVersion,
+  PRIVACY_DOCUMENT_DATE,
 } from "@/lib/privacy-policy";
 
-afterEach(() => vi.unstubAllEnvs());
-
-describe("getApprovedTermsVersion", () => {
-  it.each([
-    null,
-    "",
-    "   ",
-    DRAFT_TERMS_VERSION,
-    "invalid/version",
-    "v".repeat(41),
-  ])("does not enable an unapproved value %s from the environment", (value) => {
-    vi.stubEnv("INVESTLAB_APPROVED_TERMS_VERSION", String(value));
-    expect(getApprovedTermsVersion()).toBeNull();
-    expect(validateApprovedTermsVersion(value)).toBeNull();
+describe("current legal-document versions", () => {
+  it("exposes a stable, identifiable product Terms version", () => {
+    expect(CURRENT_TERMS_VERSION).toMatch(/^termos-\d{4}-\d{2}-\d{2}\.\d+$/);
+    expect(getCurrentTermsVersion()).toBe(CURRENT_TERMS_VERSION);
+    expect(PRIVACY_DOCUMENT_DATE).toBe("19 de outubro de 2026");
   });
 
-  it("accepts only a valid, separately approved version", () => {
-    expect(validateApprovedTermsVersion(" terms-2026-10-20.1 ")).toBe(
-      "terms-2026-10-20.1",
-    );
-  });
-
-  it("keeps activation blocked until an approved version is committed with the documents", () => {
-    vi.stubEnv("INVESTLAB_APPROVED_TERMS_VERSION", "terms-2026-10-20.1");
-    expect(getApprovedTermsVersion()).toBeNull();
+  it("keeps the cookie document version separate from Terms acceptance", () => {
+    expect(COOKIE_POLICY_VERSION).not.toBe(CURRENT_TERMS_VERSION);
   });
 });

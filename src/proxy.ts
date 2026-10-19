@@ -4,11 +4,13 @@ import { getApiRequestId } from "@/infrastructure/logging/api-request";
 import { logger } from "@/infrastructure/logging/logger";
 
 const publicPaths = new Set([
+  "/",
   "/entrar",
   "/login",
   "/termos-de-uso",
   "/privacidade",
   "/cookies",
+  "/mcp/consent",
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/session",
@@ -21,6 +23,11 @@ const publicPaths = new Set([
 function isPublicPath(pathname: string) {
   return (
     publicPaths.has(pathname) ||
+    pathname.startsWith("/api/auth/oauth2/") ||
+    pathname.startsWith("/api/auth/.well-known/") ||
+    pathname === "/api/auth/jwks" ||
+    pathname.startsWith("/.well-known/oauth-") ||
+    pathname === "/api/mcp" ||
     pathname.startsWith("/convite/") ||
     pathname.startsWith("/invite/") ||
     pathname.startsWith("/redefinir-senha/") ||

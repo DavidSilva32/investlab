@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   updateUser: vi.fn(),
   changePassword: vi.fn(),
   hashPassword: vi.fn(),
-  getApprovedTermsVersion: vi.fn(),
+  getCurrentTermsVersion: vi.fn(),
 }));
 
 vi.mock("@/backend/repositories/auth.repository", () => ({
@@ -40,7 +40,7 @@ vi.mock("@/infrastructure/auth/auth", () => ({
   },
 }));
 vi.mock("@/lib/privacy-policy", () => ({
-  getApprovedTermsVersion: mocks.getApprovedTermsVersion,
+  getCurrentTermsVersion: mocks.getCurrentTermsVersion,
 }));
 import { authService } from "@/backend/services/auth.service";
 import { ApplicationError } from "@/backend/errors/application-error";
@@ -52,7 +52,7 @@ describe("AuthService", () => {
     mocks.updateUser.mockReset();
     mocks.changePassword.mockReset();
     mocks.hashPassword.mockReset();
-    mocks.getApprovedTermsVersion.mockReturnValue(null);
+    mocks.getCurrentTermsVersion.mockReturnValue("terms-2026-10-19.1");
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -354,6 +354,17 @@ describe("AuthService", () => {
     expect(result.url).toMatch(/^\/convite\/[\w-]{40,}$/);
   });
 
+  it("allows invitation issuance independently of Terms activation or acceptance", async () => {
+    mocks.getCurrentTermsVersion.mockReturnValue("");
+    mocks.repository.findUserByEmail.mockResolvedValue(null);
+    mocks.repository.createInvitation.mockResolvedValue({ id: "invite-2" });
+
+    await expect(
+      authService.createInvitation("new-person@example.com", "admin-1"),
+    ).resolves.toMatchObject({ url: expect.stringMatching(/^\/convite\//) });
+    expect(mocks.repository.createInvitation).toHaveBeenCalledOnce();
+  });
+
   it("rejects duplicate account invitations and revokes only pending invitations", async () => {
     mocks.repository.findUserByEmail.mockResolvedValue({ id: "u1" });
     await expect(
@@ -379,7 +390,7 @@ describe("AuthService", () => {
   });
 
   it("activates only after accepting the current terms and delegates atomic account creation", async () => {
-    mocks.getApprovedTermsVersion.mockReturnValue("terms-2026-10-20.1");
+    mocks.getCurrentTermsVersion.mockReturnValue("terms-2026-10-19.1");
     mocks.repository.claimInvitationExistsUnused.mockResolvedValue(true);
     mocks.hashPassword.mockResolvedValue("credential-hash");
     mocks.repository.activateInvitation.mockResolvedValue(true);
@@ -389,6 +400,7 @@ describe("AuthService", () => {
         "Invitee",
         "A-long-safe-password-123",
         true,
+        "terms-2026-10-19.1",
       ),
     ).resolves.toBeUndefined();
     expect(mocks.hashPassword).toHaveBeenCalledWith("A-long-safe-password-123");
@@ -396,7 +408,7 @@ describe("AuthService", () => {
       tokenHash: expect.any(String),
       name: "Invitee",
       passwordHash: "credential-hash",
-      termsVersion: "terms-2026-10-20.1",
+      termsVersion: "terms-2026-10-19.1",
     });
     expect(mocks.repository.claimInvitationExistsUnused).toHaveBeenCalledWith(
       expect.any(String),
@@ -408,10 +420,17 @@ describe("AuthService", () => {
         "Invitee",
         "A-long-safe-password-123",
         false,
+        "terms-2026-10-19.1",
       ),
     ).rejects.toMatchObject({ statusCode: 400 });
     await expect(
-      authService.activateInvitation("short", "Invitee", "short", true),
+      authService.activateInvitation(
+        "short",
+        "Invitee",
+        "short",
+        true,
+        "terms-2026-10-19.1",
+      ),
     ).rejects.toBeInstanceOf(ApplicationError);
     const hashCallsBeforeInvalidToken = mocks.hashPassword.mock.calls.length;
     mocks.repository.claimInvitationExistsUnused.mockResolvedValue(false);
@@ -421,6 +440,7 @@ describe("AuthService", () => {
         "Invitee",
         "A-long-safe-password-123",
         true,
+        "terms-2026-10-19.1",
       ),
     ).rejects.toBeInstanceOf(ApplicationError);
     expect(mocks.hashPassword).toHaveBeenCalledTimes(
@@ -434,23 +454,23 @@ describe("AuthService", () => {
         "Invitee",
         "A-long-safe-password-123",
         true,
+        "terms-2026-10-19.1",
       ),
     ).rejects.toBeInstanceOf(ApplicationError);
   });
 
-  it("blocks invitation activation before validation or token work when terms are pending", async () => {
-    vi.stubEnv("INVESTLAB_APPROVED_TERMS_VERSION", "");
-
+  it("rejects an invitation acceptance for a different terms version", async () => {
     await expect(
       authService.activateInvitation(
         "t".repeat(43),
         "Invitee",
         "A-long-safe-password-123",
         true,
+        "old-terms-version",
       ),
     ).rejects.toMatchObject({
-      statusCode: 503,
-      message: expect.stringContaining("aguardam aprovação"),
+      statusCode: 409,
+      message: expect.stringContaining("A versão dos Termos mudou"),
     });
 
     expect(mocks.repository.claimInvitationExistsUnused).not.toHaveBeenCalled();
@@ -459,7 +479,7 @@ describe("AuthService", () => {
   });
 
   it("hides transaction failures without exposing database details", async () => {
-    mocks.getApprovedTermsVersion.mockReturnValue("terms-2026-10-20.1");
+    mocks.getCurrentTermsVersion.mockReturnValue("terms-2026-10-19.1");
     mocks.repository.claimInvitationExistsUnused.mockResolvedValue(true);
     mocks.hashPassword.mockResolvedValue("credential-hash");
     mocks.repository.activateInvitation.mockRejectedValue(
@@ -471,6 +491,7 @@ describe("AuthService", () => {
         "Invitee",
         "A-long-safe-password-123",
         true,
+        "terms-2026-10-19.1",
       ),
     ).rejects.toMatchObject({
       statusCode: 400,

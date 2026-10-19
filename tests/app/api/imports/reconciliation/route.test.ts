@@ -1,3 +1,7 @@
+vi.mock("@/backend/services/privacy-center.service", () => ({
+  privacyCenterService: { hasAcceptedCurrentTerms: vi.fn(async () => true) },
+}));
+
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/infrastructure/auth/authorization", () => ({

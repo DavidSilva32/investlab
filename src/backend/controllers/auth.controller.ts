@@ -49,6 +49,7 @@ const activateSchema = z
     name: z.string().trim().min(1).max(120),
     password: z.string().min(12).max(128),
     acceptTerms: z.literal(true),
+    termsVersion: z.string().min(1).max(40),
   })
   .strict();
 const resetIssueSchema = z.object({ email: z.email() });
@@ -213,6 +214,7 @@ export class AuthController {
         body.data.name,
         body.data.password,
         body.data.acceptTerms,
+        body.data.termsVersion,
       );
       return noStore(Response.json({ ok: true }));
     } catch (error) {

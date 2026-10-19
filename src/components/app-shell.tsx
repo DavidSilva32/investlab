@@ -75,7 +75,7 @@ export function ShellUserProvider({
 }
 
 const navigation = [
-  { href: "/", label: "Dashboard", Icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
   { href: "/carteira", label: "Carteira", Icon: WalletCards },
   { href: "/planejamento", label: "Planejamento", Icon: Calculator },
   { href: "/estrategia", label: "Estratégia", Icon: Compass },

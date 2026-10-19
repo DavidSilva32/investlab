@@ -6,6 +6,9 @@ const support = vi.hoisted(() => ({
   token: null as string | null,
   active: null as { targetUserId: string } | null,
 }));
+const terms = vi.hoisted(() => ({
+  hasAcceptedCurrentTerms: vi.fn(async () => true),
+}));
 vi.mock("@/infrastructure/auth/authorization", () => ({
   getAuthenticatedUser: vi.fn(async () => authorization.user),
 }));
@@ -19,6 +22,9 @@ vi.mock("@/backend/services/admin-support-view.service", () => ({
     ),
   },
 }));
+vi.mock("@/backend/services/privacy-center.service", () => ({
+  privacyCenterService: terms,
+}));
 import { getDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   getApiRequestId,
@@ -30,6 +36,7 @@ describe("withApiRequestLogging", () => {
     authorization.user = { id: "owner-1", role: "ADMIN" };
     support.token = null;
     support.active = null;
+    terms.hasAcceptedCurrentTerms.mockReset().mockResolvedValue(true);
     vi.restoreAllMocks();
   });
 
@@ -68,6 +75,25 @@ describe("withApiRequestLogging", () => {
         }),
       ]),
     );
+  });
+
+  it("blocks private APIs until the authenticated user accepts current Terms", async () => {
+    terms.hasAcceptedCurrentTerms.mockResolvedValueOnce(false);
+    const endpoint = vi.fn(async (_request: Request) =>
+      Response.json({ private: true }),
+    );
+    const handler = withApiRequestLogging("GET", "/api/portfolio", endpoint);
+
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio"),
+    );
+
+    expect(response.status).toBe(428);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "TERMS_ACCEPTANCE_REQUIRED",
+    });
+    expect(endpoint).not.toHaveBeenCalled();
+    expect(terms.hasAcceptedCurrentTerms).toHaveBeenCalledWith("owner-1");
   });
 
   it("replaces malformed request IDs and passes the generated ID downstream", async () => {

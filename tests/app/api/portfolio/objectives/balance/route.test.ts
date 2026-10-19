@@ -1,3 +1,7 @@
+vi.mock("@/backend/services/privacy-center.service", () => ({
+  privacyCenterService: { hasAcceptedCurrentTerms: vi.fn(async () => true) },
+}));
+
 vi.mock("@/infrastructure/auth/authorization", () => ({
   getAuthenticatedUser: vi.fn(async () => ({ id: "owner-1", role: "ADMIN" })),
   isLegacyPortfolioOwner: vi.fn(async () => true),

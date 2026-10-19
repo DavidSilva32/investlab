@@ -349,6 +349,7 @@ describe("AuthController", () => {
         name: "  New User  ",
         password: "A-long-password-123",
         acceptTerms: true,
+        termsVersion: "termos-2026-10-19.1",
       }),
     );
     expect(await success.json()).toEqual({ ok: true });
@@ -357,6 +358,7 @@ describe("AuthController", () => {
       "New User",
       "A-long-password-123",
       true,
+      "termos-2026-10-19.1",
     );
   });
 
@@ -372,12 +374,13 @@ describe("AuthController", () => {
             name: "Invitee",
             password: "A-long-password-123",
             acceptTerms: true,
+            termsVersion: "termos-2026-10-19.1",
           }),
         )
       ).status,
     ).toBe(400);
     mocks.service.activateInvitation.mockRejectedValueOnce(
-      new ApplicationError("Activation is pending approval.", 503),
+      new ApplicationError("Terms version conflict.", 409),
     );
     const unavailable = await controller.activateInvite(
       request({
@@ -385,11 +388,12 @@ describe("AuthController", () => {
         name: "Invitee",
         password: "A-long-password-123",
         acceptTerms: true,
+        termsVersion: "termos-2026-10-19.1",
       }),
     );
-    expect(unavailable.status).toBe(503);
+    expect(unavailable.status).toBe(409);
     await expect(unavailable.json()).resolves.toEqual({
-      message: "Activation is pending approval.",
+      message: "Terms version conflict.",
     });
     mocks.service.activateInvitation.mockRejectedValueOnce(
       new Error("secret database detail"),
@@ -400,6 +404,7 @@ describe("AuthController", () => {
         name: "Invitee",
         password: "A-long-password-123",
         acceptTerms: true,
+        termsVersion: "termos-2026-10-19.1",
       }),
     );
     expect(response.status).toBe(500);

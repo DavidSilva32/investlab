@@ -124,7 +124,7 @@ describe("login form", () => {
       screen.getByRole("button", { name: "Entrar" }).closest("form")!,
     );
 
-    await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
     render(
       <QueryClientWrapper>
         <LogoutButton />
@@ -180,7 +180,7 @@ describe("login form", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
     completeRequest?.(Response.json({ ok: true }));
-    await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
   });
 
   it("preserves password visibility and offers verified WhatsApp support", async () => {

@@ -147,4 +147,34 @@ describe("Better Auth configuration", () => {
       lastLoginAt: { input: false },
     });
   });
+
+  it("defaults MCP clients to own-account reads and keeps elevated scopes opt-in", async () => {
+    vi.stubEnv("AUTH_SECRET", "a-secure-auth-secret-with-at-least-32-chars");
+    await loadAuth();
+    const options = mocks.authOptions as {
+      plugins: Array<{
+        id: string;
+        options?: {
+          scopes?: string[];
+          clientRegistrationDefaultScopes?: string[];
+          clientRegistrationAllowedScopes?: string[];
+        };
+      }>;
+    };
+    const oauthProvider = options.plugins.find(
+      ({ id }) => id === "oauth-provider",
+    );
+
+    expect(oauthProvider?.options?.clientRegistrationDefaultScopes).toEqual([
+      "openid",
+      "mcp:read",
+    ]);
+    expect(oauthProvider?.options?.clientRegistrationAllowedScopes).toEqual(
+      expect.arrayContaining(["mcp:admin:read"]),
+    );
+    expect(
+      oauthProvider?.options?.clientRegistrationAllowedScopes,
+    ).not.toContain("mcp:write");
+    expect(oauthProvider?.options?.scopes).not.toContain("mcp:write");
+  });
 });

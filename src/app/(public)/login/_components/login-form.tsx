@@ -58,7 +58,7 @@ export function LoginForm({ supportWhatsAppUrl }: LoginFormProps) {
         toast.error(getApiMessage(body, "Não foi possível concluir o login."));
         return;
       }
-      router.push("/");
+      router.push("/dashboard");
     } catch {
       toast.error("Não foi possível concluir o login.");
     } finally {

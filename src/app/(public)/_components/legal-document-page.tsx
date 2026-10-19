@@ -5,23 +5,24 @@ import {
   PRIVACY_DOCUMENT_DATE,
   PRIVACY_DOCUMENT_REVIEW_STATUS,
 } from "@/lib/privacy-policy";
+import type { LegalDocumentSection } from "@/lib/terms-of-use";
 
-export type LegalDocumentSection = {
-  title: string;
-  paragraphs: string[];
-  bullets?: string[];
-};
+export type { LegalDocumentSection } from "@/lib/terms-of-use";
 
 export function LegalDocumentPage({
   title,
   introduction,
   sections,
   updatedAt = PRIVACY_DOCUMENT_DATE,
+  statusLabel = "Rascunho em revisão",
+  reviewNotice,
 }: {
   title: string;
   introduction: string;
   sections: LegalDocumentSection[];
   updatedAt?: string;
+  statusLabel?: string;
+  reviewNotice?: string;
 }) {
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
@@ -42,7 +43,7 @@ export function LegalDocumentPage({
               Situação
             </p>
             <p className="mt-1 text-sm font-medium text-foreground">
-              Rascunho em revisão
+              {statusLabel}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
@@ -56,18 +57,16 @@ export function LegalDocumentPage({
         </div>
       </header>
 
-      <Card className="mt-6 border-status-warning/40 bg-status-warning/5">
-        <CardContent className="p-4 sm:p-5">
-          <p className="font-medium text-foreground">
-            Documento em revisão — ainda não é uma versão definitiva
-          </p>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            {PRIVACY_DOCUMENT_REVIEW_STATUS} Os pontos pendentes estão
-            identificados no texto e dependem de confirmação antes da aprovação
-            final.
-          </p>
-        </CardContent>
-      </Card>
+      {reviewNotice && (
+        <Card className="mt-6 border-status-warning/40 bg-status-warning/5">
+          <CardContent className="p-4 sm:p-5">
+            <p className="font-medium text-foreground">Documento em revisão</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {reviewNotice} {PRIVACY_DOCUMENT_REVIEW_STATUS}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="mt-8 space-y-8">
         {sections.map((section, index) => (

@@ -37,7 +37,7 @@ export function DashboardClient({
   const [deepLinkDismissed, setDeepLinkDismissed] = useState(false);
   useEffect(() => {
     if (openImportOnLoad && supportView === false)
-      router.replace("/", { scroll: false });
+      router.replace("/dashboard", { scroll: false });
   }, [openImportOnLoad, router, supportView]);
   const effectiveImportOpen =
     supportView === false &&

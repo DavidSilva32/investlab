@@ -17,6 +17,8 @@ import {
   manualPortfolioPositionSnapshots,
   stockOpportunityManualInputs,
   authUsers,
+  oauthAccessTokens,
+  oauthClients,
 } from "@/infrastructure/database/schema";
 
 describe("database schema", () => {
@@ -125,6 +127,11 @@ describe("database schema", () => {
       "stock_opportunity_manual_ticker_idx",
     ]);
     expect(config.columns.map((column) => column.name)).toContain("inputKey");
+  });
+
+  it("stores MCP OAuth authorization tables", () => {
+    expect(getTableName(oauthClients)).toBe("oauthClient");
+    expect(getTableName(oauthAccessTokens)).toBe("oauthAccessToken");
   });
 
   it("stores append-only manual portfolio observations by asset and timestamp", () => {

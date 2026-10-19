@@ -17,15 +17,16 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TERMS_OF_USE_SECTIONS } from "@/lib/terms-of-use";
 
 export function CredentialSetupForm({
   token,
   mode,
-  termsApproved = false,
+  termsVersion,
 }: {
   token: string;
   mode: "invite" | "reset";
-  termsApproved?: boolean;
+  termsVersion?: string;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -39,7 +40,7 @@ export function CredentialSetupForm({
       ? "/api/auth/invitations/activate"
       : "/api/auth/password-resets/consume";
 
-  if (mode === "invite" && !termsApproved) {
+  if (mode === "invite" && !termsVersion) {
     return (
       <main className="grid min-h-[calc(100dvh-16rem)] place-items-center bg-background p-4">
         <Card className="w-full max-w-md">
@@ -48,10 +49,9 @@ export function CredentialSetupForm({
               Ativação temporariamente indisponível
             </h1>
             <CardDescription className="leading-6">
-              Novas contas poderão ser ativadas quando os Termos de Uso forem
-              aprovados. Esta página não utilizará seu convite. Quando a
-              ativação estiver liberada, solicite um novo convite ao
-              administrador.
+              Não foi possível carregar a versão vigente dos Termos de Uso.
+              Atualize a página. Se o problema continuar, peça ajuda ao
+              administrador que enviou seu convite.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -107,6 +107,7 @@ export function CredentialSetupForm({
             ? {
                 name: String(formData.get("name") ?? ""),
                 acceptTerms: termsAccepted,
+                termsVersion,
               }
             : {}),
         }),
@@ -226,7 +227,39 @@ export function CredentialSetupForm({
               </div>
             </div>
             {mode === "invite" && (
-              <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
+              <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    Termos de Uso · versão {termsVersion}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Leia o documento completo. O aceite desta versão será
+                    registrado junto à criação da sua conta.
+                  </p>
+                </div>
+                <div
+                  aria-label="Termos de Uso completos"
+                  className="max-h-64 space-y-4 overflow-y-auto rounded-md border border-border bg-background p-3"
+                >
+                  {TERMS_OF_USE_SECTIONS.map((section) => (
+                    <section key={section.title}>
+                      <h2 className="text-sm font-semibold">{section.title}</h2>
+                      <div className="mt-1 space-y-2 text-sm leading-6 text-muted-foreground">
+                        {section.paragraphs.map((paragraph) => (
+                          <p key={paragraph}>{paragraph}</p>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                  <Link
+                    href="/termos-de-uso"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm font-medium text-primary underline underline-offset-4"
+                  >
+                    Abrir os Termos em uma página completa
+                  </Link>
+                </div>
                 <div className="flex items-start gap-3">
                   <Checkbox
                     id="accept-terms"
@@ -244,17 +277,7 @@ export function CredentialSetupForm({
                     htmlFor="accept-terms"
                     className="cursor-pointer text-sm font-normal leading-6 text-foreground"
                   >
-                    Os documentos ainda aguardam revisão jurídica. Li e aceito
-                    os{" "}
-                    <Link
-                      href="/termos-de-uso"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium text-primary underline underline-offset-4"
-                    >
-                      Termos de Uso
-                    </Link>
-                    . A{" "}
+                    Li e aceito os Termos de Uso da versão {termsVersion}. A{" "}
                     <Link
                       href="/privacidade"
                       target="_blank"

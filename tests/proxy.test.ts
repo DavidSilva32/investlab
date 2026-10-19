@@ -13,9 +13,10 @@ describe("optimistic authentication proxy", () => {
     expect(matcherPathPattern.test("api/portfolio/objectives")).toBe(true);
   });
 
-  it("redirects navigation and rejects APIs when the session cookie is absent", () => {
+  it("serves the anonymous landing, redirects private navigation, and rejects APIs without a session", () => {
+    expect(proxy(new NextRequest("http://test/")).status).toBe(200);
     expect(
-      proxy(new NextRequest("http://test/")).headers.get("location"),
+      proxy(new NextRequest("http://test/carteira")).headers.get("location"),
     ).toContain("/entrar");
     const response = proxy(new NextRequest("http://test/api/screener"));
     expect(response.status).toBe(401);
@@ -24,6 +25,7 @@ describe("optimistic authentication proxy", () => {
 
   it("allows public auth links and requests carrying a Better Auth session cookie", () => {
     for (const path of [
+      "/",
       "/entrar",
       "/login",
       "/convite/some-token",
@@ -33,7 +35,17 @@ describe("optimistic authentication proxy", () => {
     ]) {
       expect(proxy(new NextRequest(`http://test${path}`)).status).toBe(200);
     }
-    for (const path of ["/termos-de-uso", "/privacidade", "/cookies"]) {
+    for (const path of [
+      "/termos-de-uso",
+      "/privacidade",
+      "/cookies",
+      "/mcp/consent",
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-protected-resource/api/mcp",
+      "/api/auth/oauth2/authorize",
+      "/api/auth/.well-known/oauth-authorization-server",
+      "/api/mcp",
+    ]) {
       expect(proxy(new NextRequest(`http://test${path}`)).status).toBe(200);
     }
     expect(

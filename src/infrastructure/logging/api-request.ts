@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getCurrentRequestId } from "@/infrastructure/logging/request-context";
 import { logger } from "@/infrastructure/logging/logger";
 import { getAuthenticatedUser } from "@/infrastructure/auth/authorization";
+import { privacyCenterService } from "@/backend/services/privacy-center.service";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 import {
   ADMIN_SUPPORT_VIEW_COOKIE,
@@ -25,6 +26,12 @@ function isOwnerScopedPrivateApi(route: string) {
     /^\/api\/(portfolio|imports|positions|emergency-reserve|cdb-rates)(\/|$)/.test(
       route,
     ) || route.startsWith("/api/analyses/portfolio-opportunities")
+  );
+}
+
+function requiresCurrentTermsAcceptance(route: string) {
+  return (
+    route === "/api/auth/profile" || route.startsWith("/api/auth/profile/")
   );
 }
 
@@ -104,6 +111,8 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
 
       try {
         const privateApi = isOwnerScopedPrivateApi(route);
+        const protectedApi =
+          privateApi || requiresCurrentTermsAcceptance(route);
         const adminRoute =
           route.startsWith("/api/admin/") ||
           route.startsWith("/api/settings/") ||
@@ -142,20 +151,32 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
           if (privateApi) supportTargetUserId = supportView.targetUserId;
         }
 
-        if (privateApi || adminRoute) {
+        if (protectedApi || adminRoute) {
           const user = await getAuthenticatedUser(request?.headers);
           if (!user)
             return Response.json(
               { message: "Não autenticado." },
               { status: 401 },
             );
-          authenticatedUserId = supportTargetUserId ?? user.id;
+          if (!(await privacyCenterService.hasAcceptedCurrentTerms(user.id))) {
+            return Response.json(
+              {
+                code: "TERMS_ACCEPTANCE_REQUIRED",
+                message: "Aceite os Termos de Uso vigentes para continuar.",
+              },
+              {
+                status: 428,
+                headers: { "Cache-Control": "no-store" },
+              },
+            );
+          }
           if (adminRoute && user.role !== "ADMIN") {
             return Response.json(
               { message: "Acesso não autorizado." },
               { status: 403 },
             );
           }
+          authenticatedUserId = supportTargetUserId ?? user.id;
         }
 
         const response = authenticatedUserId

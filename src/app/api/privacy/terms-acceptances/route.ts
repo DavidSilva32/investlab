@@ -6,3 +6,9 @@ export const GET = withApiRequestLogging(
   "/api/privacy/terms-acceptances",
   (request: Request) => privacyCenterController.getTermsAcceptances(request),
 );
+
+export const POST = withApiRequestLogging(
+  "POST",
+  "/api/privacy/terms-acceptances",
+  (request: Request) => privacyCenterController.acceptCurrentTerms(request),
+);
