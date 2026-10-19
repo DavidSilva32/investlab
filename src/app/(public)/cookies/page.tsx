@@ -20,8 +20,9 @@ const sections: LegalDocumentSection[] = [
   {
     title: "3. Cookies opcionais e consentimento",
     paragraphs: [
-      "No momento, não foram identificadas tecnologias opcionais de publicidade ou medição que exijam uma escolha de consentimento. Por isso, o InvestLab não exibe um banner nem apresenta opções que não correspondam a recursos em uso.",
-      "Essa avaliação ainda depende de confirmação da operação do serviço. Se tecnologias opcionais forem identificadas ou adicionadas, este documento será revisto e as escolhas necessárias serão apresentadas antes do uso dessas tecnologias.",
+      "O InvestLab apresenta um aviso para você aceitar ou rejeitar cookies opcionais. Os cookies necessários para manter sua conta conectada permanecem ativos para o funcionamento do serviço, independentemente dessa escolha.",
+      "No momento, não foram identificadas tecnologias opcionais em uso. Assim, aceitar ou rejeitar opcionais não ativa nem desativa recursos opcionais atualmente. A escolha fica salva neste navegador e pode ser alterada em Preferências de cookies.",
+      "Essa avaliação ainda depende de confirmação da operação do serviço. Se tecnologias opcionais forem identificadas ou adicionadas, este documento será revisto e elas só serão ativadas após a escolha afirmativa correspondente.",
     ],
   },
   {
@@ -42,8 +43,9 @@ export default function CookiePolicyPage() {
   return (
     <LegalDocumentPage
       title="Política de Cookies"
-      introduction="Este rascunho explica os recursos do navegador encontrados até agora e o que ainda precisa ser confirmado. Não foram identificadas tecnologias opcionais que exijam um banner de consentimento."
+      introduction="Este rascunho explica os recursos do navegador encontrados até agora e o que ainda precisa ser confirmado. O aviso de cookies permite aceitar ou rejeitar opções adicionais; os cookies necessários permanecem ativos."
       sections={sections}
+      updatedAt="19 de outubro de 2026"
     />
   );
 }

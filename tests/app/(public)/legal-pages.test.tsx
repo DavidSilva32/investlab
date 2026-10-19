@@ -2,6 +2,16 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const authenticatedUser = vi.hoisted(() => ({
+  get: vi.fn(),
+  headers: vi.fn(async () => new Headers()),
+}));
+
+vi.mock("next/headers", () => ({ headers: authenticatedUser.headers }));
+vi.mock("@/infrastructure/auth/authorization", () => ({
+  getAuthenticatedUser: authenticatedUser.get,
+}));
+
 vi.mock("next/link", () => ({
   default: ({
     href,
@@ -66,20 +76,34 @@ describe("public privacy documents", () => {
     ).toBeTruthy();
   });
 
-  it("describes cookie behavior without technical jargon or consent controls", () => {
+  it("offers the dashboard to an authenticated visitor", () => {
+    render(
+      <PublicSiteLayout authenticated>
+        <h1>Documento</h1>
+      </PublicSiteLayout>,
+    );
+
+    expect(
+      screen
+        .getByRole("link", { name: "Voltar ao painel" })
+        .getAttribute("href"),
+    ).toBe("/");
+    expect(screen.queryByRole("link", { name: "Entrar" })).toBeNull();
+  });
+
+  it("explains optional cookie choices separately from necessary cookies", () => {
     render(<CookiePolicyPage />);
 
     const pageText = screen.getByRole("main").textContent ?? "";
     expect(pageText).not.toMatch(/análise estática|runtime|Better Auth/i);
-    expect(pageText).toMatch(/não exibe um banner/);
+    expect(pageText).toMatch(/aceitar ou rejeitar cookies opcionais/);
+    expect(pageText).toMatch(/necessários.*permanecem ativos/i);
+    expect(pageText).toMatch(
+      /não foram identificadas tecnologias opcionais em uso/i,
+    );
     expect(pageText).toMatch(
       /permanecem no navegador até serem substituídas, removidas pelo InvestLab ou apagadas por você/,
     );
-    expect(
-      screen.queryByRole("button", {
-        name: /aceitar|rejeitar|preferências de cookies/i,
-      }),
-    ).toBeNull();
   });
 
   it("renders a legal page section without an optional bullet list", () => {
@@ -111,10 +135,31 @@ describe("public privacy documents", () => {
     expect(screen.getByRole("listitem").textContent).toContain("Item");
   });
 
-  it("renders the shared public layout route wrapper", () => {
-    render(<PublicLayout>Documento público</PublicLayout>);
+  it("renders the shared public layout route wrapper for an anonymous visitor", async () => {
+    authenticatedUser.get.mockResolvedValueOnce(null);
+    render(await PublicLayout({ children: "Documento público" }));
 
     expect(screen.getByText("Documento público")).toBeTruthy();
     expect(screen.getByRole("contentinfo")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Entrar" })).toBeTruthy();
+  });
+
+  it("keeps public documents available when session lookup fails", async () => {
+    authenticatedUser.get.mockRejectedValueOnce(
+      new Error("session unavailable"),
+    );
+    render(await PublicLayout({ children: "Documento público" }));
+
+    expect(screen.getByText("Documento público")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Entrar" })).toBeTruthy();
+  });
+
+  it("renders a return-to-dashboard link when the public layout has a session", async () => {
+    authenticatedUser.get.mockResolvedValueOnce({ id: "user-1" });
+    render(await PublicLayout({ children: "Documento autenticado" }));
+
+    expect(screen.getByText("Documento autenticado")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Voltar ao painel" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Entrar" })).toBeNull();
   });
 });

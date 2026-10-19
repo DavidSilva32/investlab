@@ -7,7 +7,13 @@ const documentLinks = [
   { href: "/cookies", label: "Cookies" },
 ];
 
-export function PublicSiteLayout({ children }: { children: React.ReactNode }) {
+export function PublicSiteLayout({
+  children,
+  authenticated = false,
+}: {
+  children: React.ReactNode;
+  authenticated?: boolean;
+}) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b border-border bg-card/70">
@@ -20,10 +26,10 @@ export function PublicSiteLayout({ children }: { children: React.ReactNode }) {
           </Link>
           <nav aria-label="Acesso à conta" className="text-sm">
             <Link
-              href="/entrar"
+              href={authenticated ? "/" : "/entrar"}
               className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              Entrar
+              {authenticated ? "Voltar ao painel" : "Entrar"}
             </Link>
           </nav>
         </div>

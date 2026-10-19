@@ -1,4 +1,5 @@
 export const DRAFT_TERMS_VERSION = "rascunho-2026-10-17.1";
+export const COOKIE_POLICY_VERSION = "rascunho-2026-10-19.1";
 // This remains null until the public Terms are approved and updated in the same change.
 export const APPROVED_TERMS_VERSION: string | null = null;
 export const PRIVACY_DOCUMENT_DATE = "17 de outubro de 2026";

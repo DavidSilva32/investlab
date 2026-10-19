@@ -16,10 +16,12 @@ export function LegalDocumentPage({
   title,
   introduction,
   sections,
+  updatedAt = PRIVACY_DOCUMENT_DATE,
 }: {
   title: string;
   introduction: string;
   sections: LegalDocumentSection[];
+  updatedAt?: string;
 }) {
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
@@ -48,7 +50,7 @@ export function LegalDocumentPage({
               Atualizado em
             </p>
             <p className="mt-1 text-sm font-medium text-foreground">
-              {PRIVACY_DOCUMENT_DATE}
+              {updatedAt}
             </p>
           </div>
         </div>

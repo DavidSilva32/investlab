@@ -89,9 +89,9 @@ export function PrivacyCenter() {
               </Button>
             </nav>
             <p className="text-sm leading-6 text-muted-foreground">
-              Até agora, não foram identificados cookies opcionais que exijam
-              uma escolha de consentimento. Essa avaliação ainda aguarda
-              confirmação da operação do serviço.
+              Até agora, não foram identificados cookies opcionais em uso. Você
+              pode rever sua escolha pelo botão Preferências de cookies no canto
+              inferior da tela.
             </p>
           </CardContent>
         </Card>

@@ -1,5 +1,6 @@
 ﻿import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { CookieConsentManager } from "@/components/cookie-consent-manager";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/query-provider";
 import { application } from "@/lib/application";
@@ -24,6 +25,7 @@ export default function RootLayout({
         >
           <QueryProvider>
             {children}
+            <CookieConsentManager />
             <Toaster />
           </QueryProvider>
         </ThemeProvider>

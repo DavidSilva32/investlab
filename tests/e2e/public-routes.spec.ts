@@ -19,3 +19,26 @@ test("public login and legal pages remain reachable without a session", async ({
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   }
 });
+
+test("cookie preferences remain accessible after an accept or reject choice", async ({
+  page,
+}) => {
+  await page.goto("/cookies");
+
+  const banner = page.getByRole("region", { name: "Preferências de cookies" });
+  await expect(banner).toBeVisible();
+  await page.getByRole("button", { name: "Rejeitar opcionais" }).click();
+  await expect(banner).toBeHidden();
+
+  await page
+    .getByRole("button", { name: "Abrir preferências de cookies" })
+    .click();
+  await expect(banner).toBeVisible();
+  await page.getByRole("button", { name: "Aceitar opcionais" }).click();
+  await expect(banner).toBeHidden();
+
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Abrir preferências de cookies" }),
+  ).toBeVisible();
+});
