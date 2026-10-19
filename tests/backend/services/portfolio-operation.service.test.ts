@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const repository = vi.hoisted(() => ({
   list: vi.fn(),
+  listRecentForMcp: vi.fn(),
   create: vi.fn(),
   reconcile: vi.fn(),
 }));
@@ -38,6 +39,26 @@ const movement = {
 beforeEach(() => vi.clearAllMocks());
 
 describe("PortfolioOperationService", () => {
+  it("delegates the bounded MCP read without changing the full UI listing", async () => {
+    const result = {
+      operations: [],
+      movements: [],
+      reconciliationEvents: [],
+      hasMore: {
+        operations: false,
+        movements: false,
+        reconciliationEvents: false,
+      },
+    };
+    repository.listRecentForMcp.mockResolvedValue(result);
+
+    await expect(
+      portfolioOperationService.listRecentForMcp("mcp-req"),
+    ).resolves.toBe(result);
+    expect(repository.listRecentForMcp).toHaveBeenCalledWith("mcp-req");
+    expect(repository.list).not.toHaveBeenCalled();
+  });
+
   it("lists operations, B3 sources, candidates and active links", async () => {
     repository.list.mockResolvedValue({
       operations: [operation],

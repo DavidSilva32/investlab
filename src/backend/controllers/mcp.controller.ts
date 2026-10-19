@@ -23,7 +23,13 @@ export class McpController {
     const requestId = randomUUID();
     const handler = createMcpHandler(
       () => {
-        const server = new McpServer({ name: "InvestLab", version: "1.0.0" });
+        const server = new McpServer(
+          { name: "InvestLab", version: "1.0.0" },
+          {
+            instructions:
+              "Use the connected account's domain-specific read tools and combine them when a question spans portfolio, objectives, operations, allocation, strategy, reserve, monthly review, B3 market quotes, or objective simulations. Clearly label simulations as hypothetical, and quotes with their observation timestamp; never describe observed balance changes as investment returns. Administrative tools require explicit admin scope and a specific targetUserId.",
+          },
+        );
         mcpPortfolioReadToolsController.register(
           server,
           principal.userId,

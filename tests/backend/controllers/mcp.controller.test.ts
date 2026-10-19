@@ -19,6 +19,11 @@ vi.mock("@/backend/services/mcp-portfolio-tools.service", () => ({
   mcpPortfolioToolsService: {
     getMyPortfolio: vi.fn(),
     listMyManualPositions: vi.fn(),
+    getMyEmergencyReserve: vi.fn(),
+    getMyObjectives: vi.fn(),
+    getMyLongTermStrategy: vi.fn(),
+    getMyPortfolioAllocation: vi.fn(),
+    getMyMonthlyPortfolioReview: vi.fn(),
   },
 }));
 
@@ -62,7 +67,18 @@ describe("McpController tool exposure", () => {
   it("exposes only own-account read tools", async () => {
     await handle("openid mcp:read");
 
-    expect(toolNames).toEqual(["get_my_portfolio", "list_my_manual_positions"]);
+    expect(toolNames).toEqual([
+      "get_my_portfolio",
+      "list_my_manual_positions",
+      "get_my_emergency_reserve",
+      "get_my_objectives",
+      "get_my_long_term_strategy",
+      "get_my_portfolio_allocation",
+      "get_my_monthly_portfolio_review",
+      "get_my_operations_and_reconciliation",
+      "simulate_objective_projection",
+      "get_b3_market_quotes",
+    ]);
   });
 
   it("keeps administrative tools separate from ordinary and read-only connections", async () => {
@@ -74,6 +90,7 @@ describe("McpController tool exposure", () => {
     expect(toolNames).toContain("admin_list_users");
     expect(toolNames).toContain("admin_search_users");
     expect(toolNames).toContain("admin_get_user_portfolio");
+    expect(toolNames).toContain("admin_get_user_financial_snapshot");
 
     toolNames = [];
     await handle("openid mcp:read", "ADMIN");
@@ -83,7 +100,18 @@ describe("McpController tool exposure", () => {
 
   it("accepts string-array and scp fallback claims while ignoring invalid scope values", async () => {
     await handle(["mcp:read", 5], "USER");
-    expect(toolNames).toEqual(["get_my_portfolio", "list_my_manual_positions"]);
+    expect(toolNames).toEqual([
+      "get_my_portfolio",
+      "list_my_manual_positions",
+      "get_my_emergency_reserve",
+      "get_my_objectives",
+      "get_my_long_term_strategy",
+      "get_my_portfolio_allocation",
+      "get_my_monthly_portfolio_review",
+      "get_my_operations_and_reconciliation",
+      "simulate_objective_projection",
+      "get_b3_market_quotes",
+    ]);
 
     toolNames = [];
     await handle(null, "ADMIN", "mcp:read mcp:admin:read");

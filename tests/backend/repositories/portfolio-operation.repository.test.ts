@@ -80,6 +80,70 @@ describe("PortfolioOperationRepository", () => {
     });
   });
 
+  it("reads at most 50 recent rows per MCP category with bounded SQL limits and owner scoping", async () => {
+    const limits: number[] = [];
+    const filters: unknown[] = [];
+    const orderings: unknown[][] = [];
+    const rowsFor = (table: unknown) =>
+      Array.from({ length: 51 }, (_, index) => ({
+        id: `${String(table)}-${index}`,
+        eventOrder: index,
+      }));
+    mocks.client.select.mockImplementation(() => {
+      const builder: Record<string, unknown> = {};
+      let table: unknown;
+      builder.from = (selectedTable: unknown) => {
+        table = selectedTable;
+        return builder;
+      };
+      builder.where = (filter: unknown) => {
+        filters.push(filter);
+        return builder;
+      };
+      builder.orderBy = (...ordering: unknown[]) => {
+        orderings.push(ordering);
+        return builder;
+      };
+      builder.limit = (limit: number) => {
+        limits.push(limit);
+        return Promise.resolve(rowsFor(table));
+      };
+      return builder;
+    });
+
+    const result = await new PortfolioOperationRepository().listRecentForMcp(
+      "mcp-recent",
+    );
+
+    expect(limits).toEqual([51, 51, 51]);
+    expect(orderings).toHaveLength(3);
+    expect(orderings.map((ordering) => ordering.length)).toEqual([3, 3, 2]);
+    expect(filters).toHaveLength(3);
+    expect(
+      filters.every((filter) => {
+        if (!filter || typeof filter !== "object" || !("queryChunks" in filter))
+          return false;
+        const queryChunks = (filter as { queryChunks: unknown[] }).queryChunks;
+        return queryChunks.some(
+          (chunk) =>
+            chunk !== null &&
+            chunk !== undefined &&
+            typeof chunk === "object" &&
+            "value" in chunk &&
+            chunk.value === "owner-1",
+        );
+      }),
+    ).toBe(true);
+    expect(result.operations).toHaveLength(50);
+    expect(result.movements).toHaveLength(50);
+    expect(result.reconciliationEvents).toHaveLength(50);
+    expect(result.hasMore).toEqual({
+      operations: true,
+      movements: true,
+      reconciliationEvents: true,
+    });
+  });
+
   it("logs query and insert errors", async () => {
     const repository = new PortfolioOperationRepository();
     mocks.client.select.mockImplementation(() => {

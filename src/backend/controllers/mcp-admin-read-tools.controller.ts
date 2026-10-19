@@ -85,6 +85,59 @@ export class McpAdminReadToolsController {
         }
       },
     );
+    server.registerTool(
+      "admin_get_user_operations",
+      {
+        description:
+          "Consulta a janela limitada de operações, movimentações e eventos recentes de conciliação de uma conta identificada explicitamente por targetUserId. Requer mcp:admin:read e revalida o perfil administrativo; não retorna candidatos nem altera dados.",
+        inputSchema: z.object({
+          targetUserId: z.string().trim().min(1).max(255),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ targetUserId }) => {
+        try {
+          const result = await mcpAdminReadService.getUserOperations(
+            claims.sub,
+            claims.scope,
+            targetUserId,
+            requestId,
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        } catch (error) {
+          return toolError(error);
+        }
+      },
+    );
+    server.registerTool(
+      "admin_get_user_financial_snapshot",
+      {
+        description:
+          "Consulta um resumo financeiro de uma conta específica: carteira, objetivos, estratégia de longo prazo, alocação, reserva e revisão mensal. Exige targetUserId explícito e a permissão administrativa de leitura.",
+        inputSchema: z.object({
+          targetUserId: z.string().trim().min(1).max(255),
+          period: z
+            .string()
+            .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+            .optional(),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ targetUserId, period }) => {
+        try {
+          const result = await mcpAdminReadService.getUserFinancialSnapshot(
+            claims.sub,
+            claims.scope,
+            targetUserId,
+            period,
+            requestId,
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        } catch (error) {
+          return toolError(error);
+        }
+      },
+    );
   }
 }
 

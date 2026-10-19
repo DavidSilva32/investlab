@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Menu,
   Settings,
+  Sparkles,
   UserRoundCog,
   WalletCards,
 } from "lucide-react";
@@ -81,7 +82,14 @@ const navigation = [
   { href: "/estrategia", label: "Estratégia", Icon: Compass },
   { href: "/aprender", label: "Aprender", Icon: BookOpen },
   { href: "/analises", label: "Análises", Icon: BarChart3 },
+  { href: "/mcp", label: "Conectar IA", Icon: Sparkles },
   { href: "/configuracoes", label: "Configurações", Icon: Settings },
+];
+
+const adminNavigation = [
+  { href: "/admin/usuarios", label: "Usuários" },
+  { href: "/apresentacao", label: "Página de apresentação" },
+  { href: "/demonstracao", label: "Demonstração" },
 ];
 
 function Brand() {
@@ -109,7 +117,11 @@ function Navigation({
   const visibleNavigation = isAdmin
     ? navigation
     : navigation.filter((item) => item.href !== "/configuracoes");
-  const [adminOpen, setAdminOpen] = useState(pathname.startsWith("/admin"));
+  const isAdministrationRoute =
+    pathname.startsWith("/admin") ||
+    pathname === "/apresentacao" ||
+    pathname === "/demonstracao";
+  const [adminOpen, setAdminOpen] = useState(isAdministrationRoute);
 
   return (
     <nav className="flex flex-col gap-1.5" aria-label="Navegação principal">
@@ -140,7 +152,7 @@ function Navigation({
       })}
       {isAdmin && (
         <Collapsible
-          open={adminOpen || pathname.startsWith("/admin")}
+          open={adminOpen || isAdministrationRoute}
           onOpenChange={setAdminOpen}
           className="mt-1"
         >
@@ -157,34 +169,32 @@ function Navigation({
               </span>
               <ChevronDown
                 aria-hidden="true"
-                className={`size-4 transition-transform ${adminOpen || pathname.startsWith("/admin") ? "rotate-180" : ""}`}
+                className={`size-4 transition-transform ${adminOpen || isAdministrationRoute ? "rotate-180" : ""}`}
               />
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-1 space-y-1 pl-4">
-            {closeOnSelect ? (
-              <SheetClose asChild>
+            {adminNavigation.map(({ href, label }) => {
+              const active =
+                pathname === href || pathname.startsWith(`${href}/`);
+              const link = (
                 <Link
-                  href="/admin/usuarios"
-                  aria-current={
-                    pathname.startsWith("/admin/usuarios") ? "page" : undefined
-                  }
-                  className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${pathname.startsWith("/admin/usuarios") ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
+                  key={href}
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${active ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
                 >
-                  Usuários
+                  {label}
                 </Link>
-              </SheetClose>
-            ) : (
-              <Link
-                href="/admin/usuarios"
-                aria-current={
-                  pathname.startsWith("/admin/usuarios") ? "page" : undefined
-                }
-                className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${pathname.startsWith("/admin/usuarios") ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
-              >
-                Usuários
-              </Link>
-            )}
+              );
+              return closeOnSelect ? (
+                <SheetClose key={href} asChild>
+                  {link}
+                </SheetClose>
+              ) : (
+                link
+              );
+            })}
           </CollapsibleContent>
         </Collapsible>
       )}

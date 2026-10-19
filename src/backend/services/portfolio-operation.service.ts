@@ -12,6 +12,10 @@ import {
 } from "@/backend/schemas/portfolio-operation.schema";
 
 export class PortfolioOperationService {
+  async listRecentForMcp(requestId?: string) {
+    return portfolioOperationRepository.listRecentForMcp(requestId);
+  }
+
   async list(requestId?: string) {
     const { operations, movements, events } =
       await portfolioOperationRepository.list(requestId);

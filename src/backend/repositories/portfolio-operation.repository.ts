@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -19,6 +19,90 @@ const normalizeNumeric = (value: string | null) => {
 };
 
 export class PortfolioOperationRepository {
+  async listRecentForMcp(requestId?: string) {
+    const userId = requireDataOwnerId();
+    const limit = 50;
+    try {
+      const db = getDatabaseClient();
+      const [operations, movements, reconciliationEvents] = await Promise.all([
+        db
+          .select({
+            id: manualPortfolioOperations.id,
+            side: manualPortfolioOperations.side,
+            effectiveDate: manualPortfolioOperations.effectiveDate,
+            product: manualPortfolioOperations.product,
+            assetCode: manualPortfolioOperations.assetCode,
+            quantity: manualPortfolioOperations.quantity,
+            unitPrice: manualPortfolioOperations.unitPrice,
+            currency: manualPortfolioOperations.currency,
+            fees: manualPortfolioOperations.fees,
+            createdAt: manualPortfolioOperations.createdAt,
+          })
+          .from(manualPortfolioOperations)
+          .where(eq(manualPortfolioOperations.userId, userId))
+          .orderBy(
+            desc(manualPortfolioOperations.effectiveDate),
+            desc(manualPortfolioOperations.createdAt),
+            desc(manualPortfolioOperations.id),
+          )
+          .limit(limit + 1),
+        db
+          .select({
+            id: movementItems.id,
+            occurredAt: movementItems.occurredAt,
+            product: movementItems.product,
+            assetCode: movementItems.assetCode,
+            quantity: movementItems.quantity,
+            unitPrice: movementItems.unitPrice,
+            operationValue: movementItems.operationValue,
+            direction: movementItems.direction,
+            movementType: movementItems.movementType,
+            createdAt: movementItems.createdAt,
+          })
+          .from(movementItems)
+          .where(eq(movementItems.userId, userId))
+          .orderBy(
+            desc(movementItems.occurredAt),
+            desc(movementItems.createdAt),
+            desc(movementItems.id),
+          )
+          .limit(limit + 1),
+        db
+          .select({
+            id: portfolioOperationReconciliationEvents.id,
+            operationId: portfolioOperationReconciliationEvents.operationId,
+            movementId: portfolioOperationReconciliationEvents.movementId,
+            status: portfolioOperationReconciliationEvents.status,
+            eventOrder: portfolioOperationReconciliationEvents.eventOrder,
+            recordedAt: portfolioOperationReconciliationEvents.recordedAt,
+          })
+          .from(portfolioOperationReconciliationEvents)
+          .where(eq(portfolioOperationReconciliationEvents.userId, userId))
+          .orderBy(
+            desc(portfolioOperationReconciliationEvents.eventOrder),
+            desc(portfolioOperationReconciliationEvents.id),
+          )
+          .limit(limit + 1),
+      ]);
+      return {
+        operations: operations.slice(0, limit),
+        movements: movements.slice(0, limit),
+        reconciliationEvents: reconciliationEvents.slice(0, limit),
+        hasMore: {
+          operations: operations.length > limit,
+          movements: movements.length > limit,
+          reconciliationEvents: reconciliationEvents.length > limit,
+        },
+      };
+    } catch (error) {
+      logger.error("database_portfolio_operations_recent_query_failed", {
+        requestId,
+        error,
+      });
+      throw error;
+    }
+  }
+
   async list(requestId?: string) {
     const userId = requireDataOwnerId();
     try {

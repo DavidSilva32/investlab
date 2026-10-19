@@ -33,6 +33,26 @@ describe("McpDocumentation", () => {
     expect(
       within(ownAccount!).getByText("list_my_manual_positions"),
     ).toBeTruthy();
+    expect(
+      within(ownAccount!).getByText("get_my_emergency_reserve"),
+    ).toBeTruthy();
+    expect(within(ownAccount!).getByText("get_my_objectives")).toBeTruthy();
+    expect(
+      within(ownAccount!).getByText("get_my_long_term_strategy"),
+    ).toBeTruthy();
+    expect(
+      within(ownAccount!).getByText("get_my_portfolio_allocation"),
+    ).toBeTruthy();
+    expect(
+      within(ownAccount!).getByText("get_my_monthly_portfolio_review"),
+    ).toBeTruthy();
+    expect(
+      within(ownAccount!).getByText("get_my_operations_and_reconciliation"),
+    ).toBeTruthy();
+    expect(
+      within(ownAccount!).getByText("simulate_objective_projection"),
+    ).toBeTruthy();
+    expect(within(ownAccount!).getByText("get_b3_market_quotes")).toBeTruthy();
 
     const adminRead = screen.getByRole("heading", {
       name: "Leitura administrativa opcional",
@@ -42,6 +62,12 @@ describe("McpDocumentation", () => {
     expect(within(adminRead!).getByText("admin_search_users")).toBeTruthy();
     expect(
       within(adminRead!).getByText("admin_get_user_portfolio"),
+    ).toBeTruthy();
+    expect(
+      within(adminRead!).getByText("admin_get_user_operations"),
+    ).toBeTruthy();
+    expect(
+      within(adminRead!).getByText("admin_get_user_financial_snapshot"),
     ).toBeTruthy();
     expect(within(adminRead!).getByText(/perfil ADMIN/)).toBeTruthy();
     expect(
@@ -68,21 +94,38 @@ describe("McpDocumentation", () => {
     expect(
       within(adminRead!).getByText(/conta selecionada na busca anterior/),
     ).toBeTruthy();
+    expect(
+      within(adminRead!).getByText(/operações recentes da conta selecionada/),
+    ).toBeTruthy();
+    expect(
+      within(adminRead!).getByText(
+        /Eventos recentes não representam necessariamente vínculos atuais/,
+      ),
+    ).toBeTruthy();
   });
 
   it("states read-only limits, endpoint, HTTPS and tunnel options, and unverified ChatGPT connection", () => {
     render(<McpDocumentation />);
 
     expect(screen.getByText(/Somente leitura/)).toBeTruthy();
-    expect(screen.getByText(/não cadastra, altera nem exclui/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /não cadastra, altera, confirma conciliações nem exclui/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /sem histórico, fundamentos, screener ou preços em tempo real/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/simulação de objetivos usa apenas as premissas/),
+    ).toBeTruthy();
     expect(screen.getByText("https://investlab.example/api/mcp")).toBeTruthy();
     expect(
-      screen.getByText(/Em produção, o endpoint precisa estar publicado/),
+      screen.getByText(/Em produção, use o endpoint HTTPS público abaixo/),
     ).toBeTruthy();
     expect(screen.getAllByText(/Secure MCP Tunnel/).length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/não substitui o endpoint HTTPS público/),
-    ).toBeTruthy();
     expect(
       screen.getByText(/ainda não foi validada em uma conexão real/),
     ).toBeTruthy();
@@ -122,6 +165,13 @@ describe("McpDocumentation", () => {
       within(orderedSteps).getByText("Teste em uma conversa nova"),
     ).toBeTruthy();
     expect(screen.getByText(/digite @ no campo de mensagem/)).toBeTruthy();
+    expect(screen.getByAltText("Ícone oficial do ChatGPT")).toBeTruthy();
+    expect(
+      screen.getByText(/deixe o ChatGPT descobrir os metadados/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Copiar URL do servidor" }),
+    ).toBeTruthy();
     expect(
       screen
         .getByRole("link", { name: /Adicionar um servidor MCP personalizado/ })

@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   listUsers: vi.fn(),
   searchUsers: vi.fn(),
   getUserPortfolio: vi.fn(),
+  getUserOperations: vi.fn(),
+  getUserFinancialSnapshot: vi.fn(),
 }));
 
 vi.mock("@/backend/services/mcp-admin-read.service", () => ({
@@ -12,6 +14,8 @@ vi.mock("@/backend/services/mcp-admin-read.service", () => ({
     listUsers: mocks.listUsers,
     searchUsers: mocks.searchUsers,
     getUserPortfolio: mocks.getUserPortfolio,
+    getUserOperations: mocks.getUserOperations,
+    getUserFinancialSnapshot: mocks.getUserFinancialSnapshot,
   },
 }));
 
@@ -52,6 +56,8 @@ describe("McpAdminReadToolsController", () => {
       "admin_list_users",
       "admin_search_users",
       "admin_get_user_portfolio",
+      "admin_get_user_operations",
+      "admin_get_user_financial_snapshot",
     ]);
   });
 
@@ -71,6 +77,40 @@ describe("McpAdminReadToolsController", () => {
       ["mcp:admin:read"],
       "target-1",
       "req-2",
+    );
+  });
+
+  it("passes an explicit target id to the admin operations tool", async () => {
+    mocks.getUserOperations.mockResolvedValue({
+      target: { id: "target-1" },
+      operations: { returnedCounts: { operations: 0 } },
+    });
+    controller.register(
+      { registerTool: mocks.registerTool } as never,
+      { sub: "admin-1", scope: ["mcp:admin:read"] },
+      "req-operations",
+    );
+
+    await expect(
+      tools.get("admin_get_user_operations")?.({
+        targetUserId: "target-1",
+      }),
+    ).resolves.toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            target: { id: "target-1" },
+            operations: { returnedCounts: { operations: 0 } },
+          }),
+        },
+      ],
+    });
+    expect(mocks.getUserOperations).toHaveBeenCalledWith(
+      "admin-1",
+      ["mcp:admin:read"],
+      "target-1",
+      "req-operations",
     );
   });
 
@@ -104,6 +144,26 @@ describe("McpAdminReadToolsController", () => {
       schemas
         .get("admin_get_user_portfolio")
         ?.inputSchema.parse({ targetUserId: " " }),
+    ).toThrow();
+    expect(() =>
+      schemas
+        .get("admin_get_user_operations")
+        ?.inputSchema.parse({ targetUserId: " " }),
+    ).toThrow();
+    expect(
+      schemas
+        .get("admin_get_user_operations")
+        ?.inputSchema.parse({ targetUserId: "target-1" }),
+    ).toEqual({ targetUserId: "target-1" });
+    expect(
+      schemas
+        .get("admin_get_user_financial_snapshot")
+        ?.inputSchema.parse({ targetUserId: "target-1", period: "2026-10" }),
+    ).toEqual({ targetUserId: "target-1", period: "2026-10" });
+    expect(() =>
+      schemas
+        .get("admin_get_user_financial_snapshot")
+        ?.inputSchema.parse({ targetUserId: "target-1", period: "2026-13" }),
     ).toThrow();
   });
 
@@ -157,10 +217,42 @@ describe("McpAdminReadToolsController", () => {
     );
   });
 
+  it("passes explicit target and optional period to the snapshot service", async () => {
+    mocks.getUserFinancialSnapshot.mockResolvedValue({ target: { id: "u1" } });
+    controller.register(
+      { registerTool: mocks.registerTool } as never,
+      { sub: "admin-1", scope: ["mcp:admin:read"] },
+      "req-snapshot",
+    );
+
+    await expect(
+      tools.get("admin_get_user_financial_snapshot")?.({
+        targetUserId: "u1",
+        period: "2026-09",
+      }),
+    ).resolves.toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ target: { id: "u1" } }),
+        },
+      ],
+    });
+    expect(mocks.getUserFinancialSnapshot).toHaveBeenCalledWith(
+      "admin-1",
+      ["mcp:admin:read"],
+      "u1",
+      "2026-09",
+      "req-snapshot",
+    );
+  });
+
   it.each([
     ["admin_list_users", "listUsers"],
     ["admin_search_users", "searchUsers"],
     ["admin_get_user_portfolio", "getUserPortfolio"],
+    ["admin_get_user_operations", "getUserOperations"],
+    ["admin_get_user_financial_snapshot", "getUserFinancialSnapshot"],
   ] as const)(
     "maps %s failures to safe MCP errors",
     async (toolName, serviceMethod) => {

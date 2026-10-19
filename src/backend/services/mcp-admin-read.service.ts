@@ -3,6 +3,7 @@ import { mcpAdminReadRepository } from "@/backend/repositories/mcp-admin-read.re
 import { mcpAuthenticationService } from "@/backend/services/mcp-authentication.service";
 import { mcpPortfolioToolsService } from "@/backend/services/mcp-portfolio-tools.service";
 import { logger } from "@/infrastructure/logging/logger";
+import { isValidValuationDate } from "@/lib/valuation-date";
 
 const adminReadScope = "mcp:admin:read";
 const maximumPageSize = 50;
@@ -108,6 +109,91 @@ export class McpAdminReadService {
         target.id,
         requestId,
       ),
+    };
+  }
+
+  async getUserOperations(
+    actorUserId: string,
+    scopes: string[],
+    targetUserId: string,
+    requestId: string,
+  ) {
+    const actor = await this.requireAdminRead(actorUserId, scopes);
+    if (!targetUserId.trim()) {
+      throw new ApplicationError("Informe a conta que deseja consultar.", 400);
+    }
+    const target = await mcpAdminReadRepository.findUser(targetUserId);
+    if (!target) {
+      throw new ApplicationError("A conta informada não existe.", 404);
+    }
+    logger.info("mcp_admin_user_operations_read", {
+      actorUserId: actor.userId,
+      targetUserId,
+      requestId,
+    });
+    return {
+      target: { id: target.id, name: target.name },
+      operations: await mcpPortfolioToolsService.getMyOperations(
+        target.id,
+        requestId,
+      ),
+    };
+  }
+
+  async getUserFinancialSnapshot(
+    actorUserId: string,
+    scopes: string[],
+    targetUserId: string,
+    period: string | undefined,
+    requestId: string,
+  ) {
+    const actor = await this.requireAdminRead(actorUserId, scopes);
+    if (!targetUserId.trim()) {
+      throw new ApplicationError("Informe a conta que deseja consultar.", 400);
+    }
+    if (period !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+      throw new ApplicationError("Informe um mês válido para consultar.", 400);
+    }
+    const target = await mcpAdminReadRepository.findUser(targetUserId);
+    if (!target) {
+      throw new ApplicationError("A conta informada não existe.", 404);
+    }
+    if (period !== undefined && !isValidValuationDate(`${period}-01`)) {
+      throw new ApplicationError("Informe um mês válido para consultar.", 400);
+    }
+    logger.info("mcp_admin_user_financial_snapshot_read", {
+      actorUserId: actor.userId,
+      targetUserId,
+      requestId,
+      ...(period ? { period } : {}),
+    });
+    const [
+      portfolio,
+      objectives,
+      longTermStrategy,
+      allocation,
+      emergencyReserve,
+      monthlyReview,
+    ] = await Promise.all([
+      mcpPortfolioToolsService.getMyPortfolio(target.id, requestId),
+      mcpPortfolioToolsService.getMyObjectives(target.id, requestId),
+      mcpPortfolioToolsService.getMyLongTermStrategy(target.id, requestId),
+      mcpPortfolioToolsService.getMyPortfolioAllocation(target.id, requestId),
+      mcpPortfolioToolsService.getMyEmergencyReserve(target.id, requestId),
+      mcpPortfolioToolsService.getMyMonthlyPortfolioReview(
+        target.id,
+        period,
+        requestId,
+      ),
+    ]);
+    return {
+      target: { id: target.id, name: target.name },
+      portfolio,
+      objectives,
+      longTermStrategy,
+      allocation,
+      emergencyReserve,
+      monthlyReview,
     };
   }
 }

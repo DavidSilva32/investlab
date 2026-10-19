@@ -6,6 +6,12 @@ const mocks = vi.hoisted(() => ({
   searchUsers: vi.fn(),
   findUser: vi.fn(),
   getMyPortfolio: vi.fn(),
+  getMyOperations: vi.fn(),
+  getMyObjectives: vi.fn(),
+  getMyLongTermStrategy: vi.fn(),
+  getMyPortfolioAllocation: vi.fn(),
+  getMyEmergencyReserve: vi.fn(),
+  getMyMonthlyPortfolioReview: vi.fn(),
   info: vi.fn(),
 }));
 
@@ -20,7 +26,15 @@ vi.mock("@/backend/repositories/mcp-admin-read.repository", () => ({
   },
 }));
 vi.mock("@/backend/services/mcp-portfolio-tools.service", () => ({
-  mcpPortfolioToolsService: { getMyPortfolio: mocks.getMyPortfolio },
+  mcpPortfolioToolsService: {
+    getMyPortfolio: mocks.getMyPortfolio,
+    getMyOperations: mocks.getMyOperations,
+    getMyObjectives: mocks.getMyObjectives,
+    getMyLongTermStrategy: mocks.getMyLongTermStrategy,
+    getMyPortfolioAllocation: mocks.getMyPortfolioAllocation,
+    getMyEmergencyReserve: mocks.getMyEmergencyReserve,
+    getMyMonthlyPortfolioReview: mocks.getMyMonthlyPortfolioReview,
+  },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
   logger: { info: mocks.info },
@@ -51,6 +65,11 @@ describe("McpAdminReadService", () => {
       status: "ACTIVE",
     });
     mocks.getMyPortfolio.mockResolvedValue({ positions: [] });
+    mocks.getMyObjectives.mockResolvedValue({ objectives: [] });
+    mocks.getMyLongTermStrategy.mockResolvedValue({ strategy: null });
+    mocks.getMyPortfolioAllocation.mockResolvedValue({ classDistribution: [] });
+    mocks.getMyEmergencyReserve.mockResolvedValue({ status: "not_configured" });
+    mocks.getMyMonthlyPortfolioReview.mockResolvedValue({ status: "empty" });
   });
 
   it("requires separate admin scope and rechecks role on each search", async () => {
@@ -179,6 +198,161 @@ describe("McpAdminReadService", () => {
         "req-missing",
       ),
     ).rejects.toMatchObject({ statusCode: 404 });
+    expect(mocks.getMyPortfolio).not.toHaveBeenCalled();
+  });
+
+  it("requires admin scope, rechecks the role, and reads bounded operations only for an explicit existing target", async () => {
+    await expect(
+      service.getUserOperations("admin-1", ["mcp:read"], "target-1", "r1"),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(mocks.resolvePrincipal).not.toHaveBeenCalled();
+
+    mocks.resolvePrincipal.mockResolvedValueOnce({
+      userId: "admin-1",
+      role: "USER",
+    });
+    await expect(
+      service.getUserOperations(
+        "admin-1",
+        ["mcp:admin:read"],
+        "target-1",
+        "r2",
+      ),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(mocks.getMyOperations).not.toHaveBeenCalled();
+
+    await expect(
+      service.getUserOperations("admin-1", ["mcp:admin:read"], " ", "r3"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    mocks.findUser.mockResolvedValueOnce(null);
+    await expect(
+      service.getUserOperations("admin-1", ["mcp:admin:read"], "missing", "r4"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(mocks.getMyOperations).not.toHaveBeenCalled();
+
+    const operationWindow = {
+      operations: [],
+      movements: [],
+      recentReconciliationEvents: [],
+      hasMore: { operations: false },
+    };
+    mocks.getMyOperations.mockResolvedValue(operationWindow);
+    await expect(
+      service.getUserOperations(
+        "admin-1",
+        ["mcp:admin:read"],
+        "target-1",
+        "r5",
+      ),
+    ).resolves.toEqual({
+      target: { id: "target-1", name: "Alvo" },
+      operations: operationWindow,
+    });
+    expect(mocks.findUser).toHaveBeenLastCalledWith("target-1");
+    expect(mocks.getMyOperations).toHaveBeenCalledWith("target-1", "r5");
+    expect(mocks.info).toHaveBeenCalledWith("mcp_admin_user_operations_read", {
+      actorUserId: "admin-1",
+      targetUserId: "target-1",
+      requestId: "r5",
+    });
+  });
+
+  it("requires admin scope and an explicit existing target for financial snapshots", async () => {
+    await expect(
+      service.getUserFinancialSnapshot(
+        "admin-1",
+        ["mcp:read"],
+        "target-1",
+        undefined,
+        "req-scope",
+      ),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    await expect(
+      service.getUserFinancialSnapshot(
+        "admin-1",
+        ["mcp:admin:read"],
+        " ",
+        undefined,
+        "req-empty",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    mocks.findUser.mockResolvedValueOnce(null);
+    await expect(
+      service.getUserFinancialSnapshot(
+        "admin-1",
+        ["mcp:admin:read"],
+        "missing",
+        undefined,
+        "req-missing",
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(mocks.getMyObjectives).not.toHaveBeenCalled();
+  });
+
+  it("combines domain reads only for the explicit target under the admin scope", async () => {
+    const result = await service.getUserFinancialSnapshot(
+      "admin-1",
+      ["mcp:admin:read"],
+      "target-1",
+      "2026-09",
+      "req-snapshot",
+    );
+
+    expect(result).toEqual({
+      target: { id: "target-1", name: "Alvo" },
+      portfolio: { positions: [] },
+      objectives: { objectives: [] },
+      longTermStrategy: { strategy: null },
+      allocation: { classDistribution: [] },
+      emergencyReserve: { status: "not_configured" },
+      monthlyReview: { status: "empty" },
+    });
+    expect(mocks.getMyPortfolio).toHaveBeenCalledWith(
+      "target-1",
+      "req-snapshot",
+    );
+    expect(mocks.getMyObjectives).toHaveBeenCalledWith(
+      "target-1",
+      "req-snapshot",
+    );
+    expect(mocks.getMyLongTermStrategy).toHaveBeenCalledWith(
+      "target-1",
+      "req-snapshot",
+    );
+    expect(mocks.getMyPortfolioAllocation).toHaveBeenCalledWith(
+      "target-1",
+      "req-snapshot",
+    );
+    expect(mocks.getMyEmergencyReserve).toHaveBeenCalledWith(
+      "target-1",
+      "req-snapshot",
+    );
+    expect(mocks.getMyMonthlyPortfolioReview).toHaveBeenCalledWith(
+      "target-1",
+      "2026-09",
+      "req-snapshot",
+    );
+    expect(mocks.info).toHaveBeenCalledWith(
+      "mcp_admin_user_financial_snapshot_read",
+      {
+        actorUserId: "admin-1",
+        targetUserId: "target-1",
+        requestId: "req-snapshot",
+        period: "2026-09",
+      },
+    );
+  });
+
+  it("rejects malformed months for administrative financial snapshots", async () => {
+    await expect(
+      service.getUserFinancialSnapshot(
+        "admin-1",
+        ["mcp:admin:read"],
+        "target-1",
+        "2026-13",
+        "req-period",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
     expect(mocks.getMyPortfolio).not.toHaveBeenCalled();
   });
 });

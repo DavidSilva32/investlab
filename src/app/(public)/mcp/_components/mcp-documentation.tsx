@@ -1,12 +1,21 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowUpRight,
   BookOpenCheck,
+  Bot,
+  CalendarDays,
+  ChartNoAxesCombined,
+  CircleArrowRight,
   LockKeyhole,
+  PiggyBank,
   ShieldCheck,
+  Target,
+  WalletCards,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { mcpResource } from "@/infrastructure/mcp/mcp-configuration";
+import { McpConnectionValues } from "@/app/(public)/mcp/_components/mcp-connection-values";
 
 const chatGptSetupSteps = [
   {
@@ -51,6 +60,57 @@ const ownReadTools = [
     description: "Lista as posições manuais da conta conectada.",
     example: "Exemplo: “Liste minhas posições manuais.”",
   },
+  {
+    name: "get_my_emergency_reserve",
+    description:
+      "Consulta o resumo da reserva configurada, com valor conhecido, despesas mensais, meta e cobertura.",
+    example: "Exemplo: “Quantos meses da minha reserva eu tenho hoje?”",
+  },
+  {
+    name: "get_my_objectives",
+    description:
+      "Resume metas, valores conhecidos, posições destinadas e itens sem destino.",
+    example: "Exemplo: “Quanto já destinei para meus objetivos?”",
+  },
+  {
+    name: "get_my_long_term_strategy",
+    description:
+      "Consulta patrimônio, composição e estado da estratégia de longo prazo.",
+    example: "Exemplo: “Qual composição defini para longo prazo?”",
+  },
+  {
+    name: "get_my_portfolio_allocation",
+    description:
+      "Mostra distribuição por classe, concentrações e metas de alocação.",
+    example: "Exemplo: “Como está distribuída minha carteira?”",
+  },
+  {
+    name: "get_my_monthly_portfolio_review",
+    description:
+      "Consulta o fechamento mensal disponível mais recente ou um período informado.",
+    example:
+      "Exemplo: “O que mudou na minha carteira em 2026-09?” A variação patrimonial não é rentabilidade.",
+  },
+  {
+    name: "get_my_operations_and_reconciliation",
+    description:
+      "Consulta uma janela das operações manuais, movimentações B3 e eventos de conciliação mais recentes. Retorna até 50 por categoria e sinaliza truncamento. Os eventos não indicam necessariamente o estado atual dos vínculos e não são calculadas sugestões de conciliação.",
+    example:
+      "Exemplo: “Quais foram minhas operações e movimentações mais recentes?”",
+  },
+  {
+    name: "simulate_objective_projection",
+    description:
+      "Simula saldo futuro ou aporte mensal necessário usando premissas fornecidas na conversa. Não consulta a carteira; é uma hipótese, não previsão nem recomendação financeira.",
+    example:
+      "Exemplo: “Quanto devo aportar para chegar a R$ 100 mil em 8 anos, com R$ 5 mil iniciais, retorno anual de 6% e inflação anual de 4%?”",
+  },
+  {
+    name: "get_b3_market_quotes",
+    description:
+      "Consulta nome, preço e horário observado de até 10 ativos B3. Não retorna histórico ou fundamentos e não representa preço em tempo real.",
+    example: "Exemplo: “Qual é a cotação atual de PETR4 e VALE3?”",
+  },
 ];
 
 const adminReadTools = [
@@ -72,6 +132,20 @@ const adminReadTools = [
       "Consulta a carteira e movimentações de uma conta por vez; exige o identificador targetUserId informado explicitamente.",
     example:
       "Exemplo: “Consulte a carteira da conta selecionada na busca anterior.”",
+  },
+  {
+    name: "admin_get_user_operations",
+    description:
+      "Consulta a janela recente de operações, movimentações e eventos de conciliação de uma conta por vez; exige targetUserId explícito, mostra até 50 itens por categoria e informa hasMore. Eventos recentes não representam necessariamente vínculos atuais; a ferramenta não calcula candidatos nem inclui paginação do histórico anterior.",
+    example:
+      "Exemplo: “Consulte as operações recentes da conta selecionada na busca.”",
+  },
+  {
+    name: "admin_get_user_financial_snapshot",
+    description:
+      "Combina carteira, objetivos, estratégia, alocação, reserva e revisão mensal de uma conta identificada por targetUserId.",
+    example:
+      "Exemplo: “Consulte o resumo financeiro do usuário selecionado na busca.”",
   },
 ];
 
@@ -118,10 +192,63 @@ export function McpDocumentation() {
         </h1>
         <p className="mt-4 text-base leading-7 text-muted-foreground">
           O MCP conecta um cliente compatível ao InvestLab para consultar dados
-          autorizados da carteira. Cada conexão usa OAuth para identificar a
-          conta e as permissões concedidas.
+          autorizados da carteira, planejamento, operações e cotações. Cada
+          conexão usa OAuth para identificar a conta e as permissões concedidas.
         </p>
       </header>
+
+      <section
+        aria-label="Como uma pergunta vira uma consulta"
+        className="mt-8 overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+      >
+        <div className="grid gap-5 p-5 sm:p-7 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <Bot aria-hidden="true" className="size-5" />
+            </span>
+            <div>
+              <p className="font-semibold text-foreground">Você pergunta</p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                “Como está minha carteira e minha reserva?”
+              </p>
+            </div>
+          </div>
+          <CircleArrowRight
+            aria-hidden="true"
+            className="hidden size-5 text-muted-foreground md:block"
+          />
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <BookOpenCheck aria-hidden="true" className="size-5" />
+            </span>
+            <div>
+              <p className="font-semibold text-foreground">
+                A IA escolhe as leituras
+              </p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                Pode combinar mais de uma ferramenta para responder.
+              </p>
+            </div>
+          </div>
+          <CircleArrowRight
+            aria-hidden="true"
+            className="hidden size-5 text-muted-foreground md:block"
+          />
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <ShieldCheck aria-hidden="true" className="size-5" />
+            </span>
+            <div>
+              <p className="font-semibold text-foreground">
+                InvestLab valida o acesso
+              </p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                Cada leitura respeita sua conta e as permissões concedidas.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section
         aria-labelledby="mcp-capabilities"
@@ -166,12 +293,103 @@ export function McpDocumentation() {
               Somente uma conta com perfil ADMIN pode solicitar o escopo
               adicional de leitura administrativa. Esse acesso é opcional no
               OAuth e permite localizar contas e consultar, quando selecionada,
-              a carteira de um usuário. Não fica disponível para usuários
-              comuns.
+              a carteira, as operações recentes ou o resumo financeiro de um
+              usuário. As leituras de outra conta exigem seleção explícita e não
+              ficam disponíveis para usuários comuns.
             </p>
             <ToolList tools={adminReadTools} />
           </CardContent>
         </Card>
+      </section>
+
+      <section aria-labelledby="mcp-question-examples" className="mt-10">
+        <div className="max-w-3xl">
+          <p className="text-sm font-semibold text-primary">
+            Fale do seu jeito
+          </p>
+          <h2
+            id="mcp-question-examples"
+            className="mt-2 text-2xl font-semibold tracking-tight text-foreground"
+          >
+            Perguntas que você pode fazer
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Não precisa conhecer os nomes técnicos das ferramentas. O ChatGPT
+            identifica as leituras necessárias e pode combiná-las.
+          </p>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            {
+              Icon: WalletCards,
+              question: "O que tenho na minha carteira?",
+              tools: "Carteira e movimentações",
+            },
+            {
+              Icon: Target,
+              question: "Como estão meus objetivos?",
+              tools: "Metas, valores e posições destinadas",
+            },
+            {
+              Icon: PiggyBank,
+              question: "Como está minha reserva?",
+              tools: "Meta e meses de cobertura",
+            },
+            {
+              Icon: ChartNoAxesCombined,
+              question: "Quanto já destinei para meus objetivos?",
+              tools: "Metas e valores conhecidos",
+            },
+            {
+              Icon: ChartNoAxesCombined,
+              question: "Como está minha alocação?",
+              tools: "Distribuição e metas cadastradas",
+            },
+            {
+              Icon: Target,
+              question: "Qual estratégia defini para longo prazo?",
+              tools: "Composição e estado atual",
+            },
+            {
+              Icon: CalendarDays,
+              question: "O que mudou no último mês?",
+              tools: "Revisão mensal, com limites explicados",
+            },
+            {
+              Icon: CalendarDays,
+              question: "Quais foram minhas movimentações mais recentes?",
+              tools: "Operações e eventos recentes de conciliação",
+            },
+            {
+              Icon: Target,
+              question: "Quanto preciso aportar para atingir minha meta?",
+              tools: "Simulação com as premissas que você informar",
+            },
+            {
+              Icon: ChartNoAxesCombined,
+              question: "Qual a cotação de PETR4 e VALE3?",
+              tools: "Consulta limitada de ativos B3",
+            },
+            {
+              Icon: BookOpenCheck,
+              question: "Quais dados você usou?",
+              tools: "Peça fonte, período e limitações",
+            },
+          ].map(({ Icon, question, tools }) => (
+            <div
+              key={question}
+              className="flex gap-3 rounded-xl border border-border bg-card p-4"
+            >
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                <Icon aria-hidden="true" className="size-4" />
+              </span>
+              <div>
+                <p className="font-medium text-foreground">“{question}”</p>
+                <p className="mt-1 text-sm text-muted-foreground">{tools}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section aria-labelledby="mcp-current-limits" className="mt-5">
@@ -189,19 +407,18 @@ export function McpDocumentation() {
           <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
             <p>
               <strong className="text-foreground">Somente leitura.</strong> Esta
-              versão não cadastra, altera nem exclui posições ou outros dados.
+              versão não cadastra, altera, confirma conciliações nem exclui
+              dados. A simulação de objetivos usa apenas as premissas que você
+              informar; não é previsão nem recomendação financeira. Para ativos
+              B3, há uma consulta limitada de cotações (até 10 tickers), sem
+              histórico, fundamentos, screener ou preços em tempo real.
             </p>
             <p>
-              Em produção, o endpoint precisa estar publicado e acessível por
-              HTTPS público. Para desenvolvimento local e testes, o ChatGPT
-              também oferece o Secure MCP Tunnel quando estiver disponível para
-              a conta. O túnel permite alcançar um servidor local ou privado;
-              ele não substitui o endpoint HTTPS público para publicar um
-              plugin. O endereço configurado pelo servidor é:
+              Em produção, use o endpoint HTTPS público abaixo. Para testes
+              locais, o Secure MCP Tunnel só é necessário quando o servidor não
+              está publicado.
             </p>
-            <p className="break-all rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground sm:text-sm">
-              {mcpResource}
-            </p>
+            <McpConnectionValues endpoint={mcpResource} />
             {!isPublicHttps && (
               <p role="status" className="font-medium text-foreground">
                 Este ambiente está configurado com HTTP local. Esse endereço não
@@ -233,17 +450,38 @@ export function McpDocumentation() {
 
       <section aria-labelledby="chatgpt-setup" className="mt-10">
         <div className="max-w-3xl">
-          <p className="text-sm font-semibold text-primary">Configuração</p>
-          <h2
-            id="chatgpt-setup"
-            className="mt-2 text-2xl font-semibold tracking-tight text-foreground"
-          >
-            Conectar ao ChatGPT
-          </h2>
+          <div className="flex items-center gap-3">
+            <Image
+              src="/chatgpt-icon.svg"
+              alt="Ícone oficial do ChatGPT"
+              width={36}
+              height={36}
+              className="size-9"
+              unoptimized
+            />
+            <div>
+              <p className="text-sm font-semibold text-primary">Configuração</p>
+              <h2
+                id="chatgpt-setup"
+                className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
+              >
+                Conectar ao ChatGPT
+              </h2>
+            </div>
+          </div>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             A disponibilidade dos controles pode variar entre contas e
             workspaces. Se a opção não aparecer, confira as permissões do
             workspace e os recursos habilitados na sua conta.
+          </p>
+          <p className="mt-4 text-sm leading-6 text-muted-foreground">
+            Na tela <strong>Add custom MCP server</strong>, preencha{" "}
+            <strong>Name</strong>, <strong>Description</strong> e{" "}
+            <strong>Server URL</strong> com os valores acima. Em{" "}
+            <strong>Authentication</strong>, escolha <strong>OAuth</strong>. Use
+            “Choose icon” para enviar o PNG opcional. Não é necessário preencher
+            credenciais OAuth manualmente: deixe o ChatGPT descobrir os
+            metadados do servidor e prossiga com a autorização do InvestLab.
           </p>
         </div>
         <ol className="mt-6 space-y-4">
@@ -287,6 +525,15 @@ export function McpDocumentation() {
             className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             conectar e testar seu plugin
+          </Link>{" "}
+          · Ícone oficial do ChatGPT fornecido pela{" "}
+          <Link
+            href="https://openai.com/brand/"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            OpenAI
           </Link>
           .
         </p>
