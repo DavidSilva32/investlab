@@ -10,12 +10,9 @@ const metadataRoutes = new Map([
   ],
 ]);
 
-async function forwardMetadata(
-  request: Request,
-  metadata: string[] | undefined,
-) {
-  const key = metadata?.join("/");
-  const targetPath = key ? metadataRoutes.get(key) : undefined;
+async function forwardMetadata(request: Request, metadata: string[]) {
+  const key = metadata.join("/");
+  const targetPath = metadataRoutes.get(key);
   if (!targetPath) return new Response(null, { status: 404 });
 
   const targetUrl = new URL(request.url);
