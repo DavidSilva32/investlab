@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/link", () => ({
@@ -13,6 +19,15 @@ vi.mock("next/link", () => ({
     </a>
   ),
 }));
+vi.mock("next/image", () => ({
+  default: ({
+    alt,
+    unoptimized: _unoptimized,
+    ...props
+  }: React.ImgHTMLAttributes<HTMLImageElement> & { unoptimized?: boolean }) => (
+    <img alt={alt} {...props} />
+  ),
+}));
 vi.mock("@/infrastructure/mcp/mcp-configuration", () => ({
   mcpResource: "https://investlab.example/api/mcp",
 }));
@@ -21,161 +36,147 @@ import { McpDocumentation } from "@/app/(public)/mcp/_components/mcp-documentati
 
 afterEach(cleanup);
 
+function selectTab(name: RegExp) {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }), {
+    button: 0,
+    ctrlKey: false,
+  });
+}
+
 describe("McpDocumentation", () => {
-  it("documents user-scoped read tools and an optional admin-only read scope", () => {
+  it("presents a navigable overview and the copyable MCP endpoint", () => {
     render(<McpDocumentation />);
 
-    const ownAccount = screen.getByRole("heading", {
-      name: "Leitura da sua conta",
-    }).parentElement?.parentElement;
-    expect(ownAccount).toBeTruthy();
-    expect(within(ownAccount!).getByText("get_my_portfolio")).toBeTruthy();
     expect(
-      within(ownAccount!).getByText("list_my_manual_positions"),
+      screen.getByRole("heading", { name: "MCP do InvestLab" }),
     ).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Visão geral/ })).toBeTruthy();
     expect(
-      within(ownAccount!).getByText("get_my_emergency_reserve"),
+      screen.getByRole("tab", { name: /Conectar ao ChatGPT/ }),
     ).toBeTruthy();
-    expect(within(ownAccount!).getByText("get_my_objectives")).toBeTruthy();
-    expect(
-      within(ownAccount!).getByText("get_my_long_term_strategy"),
-    ).toBeTruthy();
-    expect(
-      within(ownAccount!).getByText("get_my_portfolio_allocation"),
-    ).toBeTruthy();
-    expect(
-      within(ownAccount!).getByText("get_my_monthly_portfolio_review"),
-    ).toBeTruthy();
-    expect(
-      within(ownAccount!).getByText("get_my_operations_and_reconciliation"),
-    ).toBeTruthy();
-    expect(
-      within(ownAccount!).getByText("simulate_objective_projection"),
-    ).toBeTruthy();
-    expect(within(ownAccount!).getByText("get_b3_market_quotes")).toBeTruthy();
-
-    const adminRead = screen.getByRole("heading", {
-      name: "Leitura administrativa opcional",
-    }).parentElement?.parentElement;
-    expect(adminRead).toBeTruthy();
-    expect(within(adminRead!).getByText("admin_list_users")).toBeTruthy();
-    expect(within(adminRead!).getByText("admin_search_users")).toBeTruthy();
-    expect(
-      within(adminRead!).getByText("admin_get_user_portfolio"),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText("admin_get_user_operations"),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText("admin_get_user_financial_snapshot"),
-    ).toBeTruthy();
-    expect(within(adminRead!).getByText(/perfil ADMIN/)).toBeTruthy();
-    expect(
-      within(ownAccount!).getByText(/Consulte minha carteira e movimentações/),
-    ).toBeTruthy();
-    expect(
-      within(ownAccount!).getByText(/Liste minhas posições manuais/),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText(/no máximo 50 contas por página/),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText(/Liste as contas da página 1/),
-    ).toBeTruthy();
-    expect(within(adminRead!).getByText(/de 2 a 120 caracteres/)).toBeTruthy();
-    expect(
-      within(adminRead!).getByText(/Busque a conta de ana@exemplo.com/),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText(
-        /identificador targetUserId informado explicitamente/,
-      ),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText(/conta selecionada na busca anterior/),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText(/operações recentes da conta selecionada/),
-    ).toBeTruthy();
-    expect(
-      within(adminRead!).getByText(
-        /Eventos recentes não representam necessariamente vínculos atuais/,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Carteira/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Administração/ })).toBeTruthy();
+    expect(screen.getByText("https://investlab.example/api/mcp")).toBeTruthy();
+    expect(screen.getByText(/não são APIs REST independentes/)).toBeTruthy();
   });
 
-  it("states read-only limits, endpoint, HTTPS and tunnel options, and unverified ChatGPT connection", () => {
+  it("shows the ChatGPT setup steps and official instructions", () => {
+    render(<McpDocumentation />);
+    selectTab(/Conectar ao ChatGPT/);
+
+    const setupPanel = screen.getByRole("tabpanel");
+    const orderedSteps = within(setupPanel).getByRole("list");
+    for (const step of [
+      "Abra a área de conectores",
+      "Adicione o InvestLab",
+      "Informe os dados do servidor",
+      "Escolha OAuth e autorize",
+      "Confirme as ferramentas",
+      "Faça uma consulta",
+    ]) {
+      expect(within(orderedSteps).getByText(step)).toBeTruthy();
+    }
+    expect(
+      within(setupPanel).getByText(/cliente deve descobrir os metadados/),
+    ).toBeTruthy();
+    expect(
+      within(setupPanel)
+        .getByRole("link", { name: /Guia oficial de servidor MCP/ })
+        .getAttribute("href"),
+    ).toBe("https://developers.openai.com/api/docs/guides/custom-mcp-server");
+  });
+
+  it("documents input and return contracts for each tool group", () => {
     render(<McpDocumentation />);
 
-    expect(screen.getByText(/Somente leitura/)).toBeTruthy();
+    const expectations = [
+      {
+        tab: "Carteira",
+        tools: [
+          "get_my_portfolio",
+          "list_my_manual_positions",
+          "get_my_portfolio_allocation",
+        ],
+      },
+      {
+        tab: "Planejamento",
+        tools: [
+          "get_my_emergency_reserve",
+          "get_my_objectives",
+          "get_my_long_term_strategy",
+          "simulate_objective_projection",
+        ],
+      },
+      {
+        tab: "Acompanhamento",
+        tools: [
+          "get_my_monthly_portfolio_review",
+          "get_my_operations_and_reconciliation",
+        ],
+      },
+      { tab: "Simulação e mercado", tools: ["get_b3_market_quotes"] },
+      {
+        tab: "Administração",
+        tools: [
+          "admin_list_users",
+          "admin_search_users",
+          "admin_get_user_portfolio",
+          "admin_get_user_operations",
+          "admin_get_user_financial_snapshot",
+        ],
+      },
+    ];
+
+    for (const group of expectations) {
+      selectTab(new RegExp(group.tab));
+      const panel = screen.getByRole("tabpanel");
+      for (const toolName of group.tools) {
+        expect(
+          within(panel).getByRole("heading", { name: toolName }),
+        ).toBeTruthy();
+      }
+      expect(within(panel).getAllByText("Entrada").length).toBe(
+        group.tools.length,
+      );
+      expect(within(panel).getAllByText("Retorno e limites").length).toBe(
+        group.tools.length,
+      );
+    }
+
+    selectTab(/Acompanhamento/);
+    expect(screen.getByText(/formato AAAA-MM/)).toBeTruthy();
+    selectTab(/Simulação e mercado/);
+    expect(screen.getByText(/de 1 a 10 códigos B3/)).toBeTruthy();
+    selectTab(/Administração/);
+    expect(screen.getAllByText(/mcp:admin:read/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/perfil ADMIN/).length).toBeGreaterThan(0);
+  });
+
+  it("explains access scopes, read-only limits, and unverified live connectivity", () => {
+    render(<McpDocumentation />);
+    selectTab(/Acesso e limites/);
+
+    const panel = screen.getByRole("tabpanel");
     expect(
-      screen.getByText(
-        /não cadastra, altera, confirma conciliações nem exclui/,
+      within(panel).getByRole("heading", { name: "mcp:read" }),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByRole("heading", { name: "mcp:admin:read" }),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        /Não há ferramentas para gravar ou excluir dados/,
       ),
     ).toBeTruthy();
     expect(
-      screen.getByText(
-        /sem histórico, fundamentos, screener ou preços em tempo real/,
-      ),
+      within(panel).getByText(/conexão real com o ChatGPT ainda depende/),
     ).toBeTruthy();
     expect(
-      screen.getByText(/simulação de objetivos usa apenas as premissas/),
-    ).toBeTruthy();
-    expect(screen.getByText("https://investlab.example/api/mcp")).toBeTruthy();
-    expect(
-      screen.getByText(/Em produção, use o endpoint HTTPS público abaixo/),
-    ).toBeTruthy();
-    expect(screen.getAllByText(/Secure MCP Tunnel/).length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/ainda não foi validada em uma conexão real/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/não há garantia universal para Plus/),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByRole("link", {
-          name: "página de disponibilidade de MCP no ChatGPT",
-        })
+      within(panel)
+        .getByRole("link", { name: "suporte do ChatGPT" })
         .getAttribute("href"),
     ).toBe(
       "https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt",
     );
-  });
-
-  it("gives the ChatGPT web setup sequence and links official instructions", () => {
-    render(<McpDocumentation />);
-
-    const setupSection = screen
-      .getByRole("heading", { name: "Conectar ao ChatGPT" })
-      .closest("section");
-    const orderedSteps = within(setupSection!).getByRole("list");
-    expect(within(orderedSteps).getByText("Abra Plugins")).toBeTruthy();
-    expect(
-      within(orderedSteps).getByText(/Add custom MCP server/),
-    ).toBeTruthy();
-    expect(
-      within(orderedSteps).getByText("Informe o endpoint MCP"),
-    ).toBeTruthy();
-    expect(within(orderedSteps).getByText("Conecte com OAuth")).toBeTruthy();
-    expect(
-      within(orderedSteps).getByText("Revise ferramentas e permissões"),
-    ).toBeTruthy();
-    expect(
-      within(orderedSteps).getByText("Teste em uma conversa nova"),
-    ).toBeTruthy();
-    expect(screen.getByText(/digite @ no campo de mensagem/)).toBeTruthy();
-    expect(screen.getByAltText("Ícone oficial do ChatGPT")).toBeTruthy();
-    expect(
-      screen.getByText(/deixe o ChatGPT descobrir os metadados/),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Copiar URL do servidor" }),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByRole("link", { name: /Adicionar um servidor MCP personalizado/ })
-        .getAttribute("href"),
-    ).toBe("https://developers.openai.com/api/docs/guides/custom-mcp-server");
   });
 });

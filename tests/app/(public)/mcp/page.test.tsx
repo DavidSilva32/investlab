@@ -26,7 +26,7 @@ describe("McpPage", () => {
       screen.getByRole("heading", { name: "MCP do InvestLab" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Conectar ao ChatGPT" }),
+      screen.getByRole("tab", { name: "Conectar ao ChatGPT" }),
     ).toBeTruthy();
   });
 });
