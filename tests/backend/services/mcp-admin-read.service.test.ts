@@ -343,6 +343,31 @@ describe("McpAdminReadService", () => {
     );
   });
 
+  it("reads a financial snapshot without an optional month", async () => {
+    const result = await service.getUserFinancialSnapshot(
+      "admin-1",
+      ["mcp:admin:read"],
+      "target-1",
+      undefined,
+      "req-snapshot-latest",
+    );
+
+    expect(result.target).toEqual({ id: "target-1", name: "Alvo" });
+    expect(mocks.getMyMonthlyPortfolioReview).toHaveBeenCalledWith(
+      "target-1",
+      undefined,
+      "req-snapshot-latest",
+    );
+    expect(mocks.info).toHaveBeenCalledWith(
+      "mcp_admin_user_financial_snapshot_read",
+      {
+        actorUserId: "admin-1",
+        targetUserId: "target-1",
+        requestId: "req-snapshot-latest",
+      },
+    );
+  });
+
   it("rejects malformed months for administrative financial snapshots", async () => {
     await expect(
       service.getUserFinancialSnapshot(
