@@ -167,6 +167,16 @@ describe("NextContributionStockOpportunities", () => {
       ),
     ).toBeTruthy();
     expect(
+      screen.getByText(
+        /Graham depende de LPA e VPA por ação informados manualmente/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Revisar dados e referências" })
+        .getAttribute("href"),
+    ).toBe("/analises");
+    expect(
       screen
         .getByRole("link", { name: "Abrir análise de ABEV3" })
         .getAttribute("href"),

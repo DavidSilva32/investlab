@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "@/infrastructure/logging/logger";
 
 const responseSchema = z
   .object({
@@ -83,10 +84,29 @@ export class BrapiDividendsProvider {
           ? { Authorization: `Bearer ${this.apiToken}` }
           : {},
       });
-      if (!response.ok)
+      if (!response.ok) {
+        logger.warn("stock_dividend_provider_request_failed", {
+          provider: "brapi",
+          operation: "dividends",
+          ticker: ticker.toUpperCase(),
+          status: response.status,
+        });
+        if (response.status === 401 || response.status === 403)
+          return unavailable(
+            "A BRAPI não autorizou a consulta. Verifique o token e o plano configurados no serviço.",
+          );
+        if (response.status === 429)
+          return unavailable(
+            "A BRAPI limitou temporariamente a consulta. Tente novamente mais tarde.",
+          );
+        if (response.status >= 500)
+          return unavailable(
+            "A BRAPI está temporariamente indisponível. Tente novamente mais tarde.",
+          );
         return unavailable(
           "A consulta à BRAPI falhou; use uma fonte verificável ou tente mais tarde.",
         );
+      }
       const parsed = responseSchema.safeParse(await response.json());
       if (!parsed.success)
         return unavailable(

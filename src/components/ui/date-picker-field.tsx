@@ -19,6 +19,7 @@ type DatePickerFieldProps = {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  describedBy?: string;
   required?: boolean;
   errorMessage?: string | null;
 };
@@ -59,6 +60,7 @@ export function DatePickerField({
   label,
   value,
   onChange,
+  describedBy,
   required = false,
   errorMessage = null,
 }: DatePickerFieldProps) {
@@ -109,6 +111,9 @@ export function DatePickerField({
   const invalidInput = inputValue.trim() !== "" && !selectedDate;
   const displayedError =
     errorMessage || (formatError && invalidInput ? invalidDateMessage : null);
+  const descriptionIds = [describedBy, displayedError ? id + "-error" : null]
+    .filter((descriptionId): descriptionId is string => Boolean(descriptionId))
+    .join(" ");
 
   return (
     <div className="min-w-0 space-y-2">
@@ -126,7 +131,7 @@ export function DatePickerField({
           autoComplete="off"
           required={required}
           aria-invalid={Boolean(displayedError)}
-          aria-describedby={displayedError ? id + "-error" : undefined}
+          aria-describedby={descriptionIds || undefined}
         />
         <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
           <PopoverTrigger asChild>

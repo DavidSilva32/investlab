@@ -56,12 +56,15 @@ describe("DatePickerField", () => {
         label="Data-base"
         value="2026-09-20"
         onChange={vi.fn()}
+        describedBy="date-guidance"
         errorMessage="A data-base não pode ser futura."
       />,
     );
     const input = screen.getByLabelText("Data-base");
     expect(input.getAttribute("aria-invalid")).toBe("true");
-    expect(input.getAttribute("aria-describedby")).toBe("date-error");
+    expect(input.getAttribute("aria-describedby")).toBe(
+      "date-guidance date-error",
+    );
     expect(screen.getByRole("alert").textContent).toBe(
       "A data-base não pode ser futura.",
     );

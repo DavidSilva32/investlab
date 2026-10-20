@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrapiDividendsProvider } from "@/backend/providers/brapi-dividends.provider";
+import { logger } from "@/infrastructure/logging/logger";
 
 function successfulResponse(body: unknown) {
   return { ok: true, json: async () => body } as Response;
@@ -134,5 +135,53 @@ describe("BrapiDividendsProvider", () => {
       value: null,
       unavailableReason: expect.stringContaining("Não foi possível"),
     });
+  });
+
+  it("classifies HTTP failures and logs only safe provider context", async () => {
+    const warning = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+    const cases = [
+      {
+        status: 401,
+        message: "não autorizou a consulta",
+      },
+      {
+        status: 403,
+        message: "não autorizou a consulta",
+      },
+      {
+        status: 429,
+        message: "limitou temporariamente",
+      },
+      {
+        status: 503,
+        message: "temporariamente indisponível",
+      },
+      {
+        status: 404,
+        message: "consulta à BRAPI falhou",
+      },
+    ];
+
+    for (const { status, message } of cases) {
+      const provider = new BrapiDividendsProvider(
+        vi.fn().mockResolvedValue({ ok: false, status }),
+        "sensitive-token",
+        now,
+      );
+      const result = await provider.getLastTwelveMonths("petr4");
+      expect(result.unavailableReason).toContain(message);
+      expect(result.unavailableReason).not.toContain("sensitive-token");
+      expect(warning).toHaveBeenLastCalledWith(
+        "stock_dividend_provider_request_failed",
+        {
+          provider: "brapi",
+          operation: "dividends",
+          ticker: "PETR4",
+          status,
+        },
+      );
+    }
   });
 });
