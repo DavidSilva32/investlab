@@ -6,6 +6,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
+vi.mock("next/image", () => ({
+  default: ({
+    unoptimized: _unoptimized,
+    alt,
+    src,
+  }: React.ImgHTMLAttributes<HTMLImageElement> & { unoptimized?: boolean }) => (
+    <span aria-label={alt} data-src={src} role="img" />
+  ),
+}));
 
 import { McpConnectionValues } from "@/app/(public)/mcp/_components/mcp-connection-values";
 import { toast } from "sonner";
@@ -16,27 +25,36 @@ afterEach(() => {
 });
 
 describe("McpConnectionValues", () => {
-  it("shows the values to enter and the downloadable branded PNG", () => {
+  it("shows localized connection values and a visible branded icon download", () => {
     render(
       <McpConnectionValues endpoint="https://investlab.example/api/mcp" />,
     );
 
     expect(screen.getByText("InvestLab")).toBeTruthy();
+    expect(screen.getByText("Nome do servidor (Name)")).toBeTruthy();
+    expect(screen.getByText("Descrição (Description)")).toBeTruthy();
+    expect(screen.getByText("Endereço do servidor (Server URL)")).toBeTruthy();
+    expect(screen.getByText("Autenticação (Authentication)")).toBeTruthy();
     expect(
       screen.getByText(
         "Consulta somente leitura de carteira, operações, objetivos, estratégia, simulações e cotações B3 no InvestLab.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("https://investlab.example/api/mcp")).toBeTruthy();
-    expect(screen.getByText("OAuth")).toBeTruthy();
+    expect(screen.getByText("OAuth · descoberta automática")).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: /Baixar ícone PNG/ })
+        .getByRole("img", { name: "Logo do InvestLab" })
+        .getAttribute("data-src"),
+    ).toBe("/investlab-logo.png");
+    expect(
+      screen
+        .getByRole("link", { name: /Baixar logo do InvestLab/ })
         .getAttribute("href"),
     ).toBe("/investlab-logo.png");
     expect(
       screen
-        .getByRole("link", { name: /Baixar ícone PNG/ })
+        .getByRole("link", { name: /Baixar logo do InvestLab/ })
         .getAttribute("download"),
     ).toBe("investlab-logo.png");
   });
@@ -52,25 +70,25 @@ describe("McpConnectionValues", () => {
       <McpConnectionValues endpoint="https://investlab.example/api/mcp" />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Copiar Name" }));
+    await user.click(
+      screen.getByRole("button", { name: "Copiar nome do servidor" }),
+    );
     expect(writeText).toHaveBeenCalledWith("InvestLab");
-    expect(toast.success).toHaveBeenCalledWith("Name copiado.");
+    expect(toast.success).toHaveBeenCalledWith("Nome do servidor copiado.");
 
     writeText.mockRejectedValueOnce(new Error("clipboard unavailable"));
-    await user.click(
-      screen.getByRole("button", { name: "Copiar Description" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Copiar descrição" }));
     expect(toast.error).toHaveBeenCalledWith(
       "Não foi possível copiar. Selecione e copie o valor.",
     );
 
     writeText.mockResolvedValueOnce(undefined);
     await user.click(
-      screen.getByRole("button", { name: "Copiar URL do servidor" }),
+      screen.getByRole("button", { name: "Copiar endereço do servidor" }),
     );
     expect(writeText).toHaveBeenLastCalledWith(
       "https://investlab.example/api/mcp",
     );
-    expect(toast.success).toHaveBeenCalledWith("URL do servidor copiado.");
+    expect(toast.success).toHaveBeenCalledWith("Endereço do servidor copiado.");
   });
 });
