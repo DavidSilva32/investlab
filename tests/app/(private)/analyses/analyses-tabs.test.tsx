@@ -77,26 +77,57 @@ const opportunity = {
   },
 };
 
-function response() {
+const stockPosition = {
+  id: "stock-petr4",
+  product: "Petrobras PN",
+  assetCode: "PETR4",
+  institution: "Corretora",
+  totalValue: "360.00",
+  classification: {
+    assetClass: "Renda variável",
+    subClass: "Ação",
+    geography: "Brasil",
+  },
+  classificationSource: "manual" as const,
+};
+
+function response(body: unknown) {
   return {
     ok: true,
-    json: async () => ({
-      opportunities: [opportunity],
-      settings: { bazinTargetYield: 6 },
-    }),
+    json: async () => body,
   };
+}
+
+function mockPortfolioFetch(
+  opportunities: unknown = {
+    opportunities: [opportunity],
+    settings: { bazinTargetYield: 6 },
+  },
+  positions: (typeof stockPosition)[] = [stockPosition],
+) {
+  const fetchMock = vi.fn((input: RequestInfo | URL) =>
+    Promise.resolve(
+      response(
+        String(input) === "/api/portfolio/allocation"
+          ? { positions }
+          : opportunities,
+      ),
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 describe("AnalysesTabs", () => {
   it("starts on the portfolio tab and keeps the individual analysis available", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response()));
+    mockPortfolioFetch();
     render(<AnalysesTabs />);
     expect(
       screen
         .getByRole("tab", { name: "Minha carteira" })
         .getAttribute("aria-selected"),
     ).toBe("true");
-    expect(await screen.findByText("PETR4")).toBeTruthy();
+    expect(await screen.findByText(/PETR4/)).toBeTruthy();
     await userEvent.click(
       screen.getByRole("tab", { name: "Análise individual" }),
     );
@@ -107,7 +138,7 @@ describe("AnalysesTabs", () => {
     ).toBe("true");
     expect(screen.getByText("Análise individual sem ticker")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "Minha carteira" }));
-    expect(screen.getByText("PETR4")).toBeTruthy();
+    expect(screen.getByText(/PETR4/)).toBeTruthy();
   });
 
   it("keeps the three analysis tabs and seeds comparison with the consulted ticker", async () => {
@@ -123,18 +154,10 @@ describe("AnalysesTabs", () => {
   });
 
   it("keeps the imported-portfolio empty state hidden on individual analysis", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ opportunities: [] }),
-      }),
-    );
+    mockPortfolioFetch({ opportunities: [] }, []);
     render(<AnalysesTabs />);
 
-    const emptyState = await screen.findByText(
-      "Nenhuma ação importada encontrada",
-    );
+    const emptyState = await screen.findByText("Sua carteira está vazia");
     const portfolioPanel = emptyState.closest('[role="tabpanel"]');
     expect(portfolioPanel?.getAttribute("data-state")).toBe("active");
 
@@ -147,8 +170,7 @@ describe("AnalysesTabs", () => {
   });
 
   it("defers the portfolio request until its tab is first opened", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response());
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = mockPortfolioFetch();
     render(<AnalysesTabs initialTicker="PETR4" />);
     expect(
       screen
@@ -158,16 +180,19 @@ describe("AnalysesTabs", () => {
     expect(screen.getByText("Análise individual PETR4")).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("tab", { name: "Minha carteira" }));
-    expect(await screen.findByText("PETR4")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/PETR4/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("preserves unsaved value and Bazin yield drafts when switching tabs", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response()));
+    mockPortfolioFetch();
     render(<AnalysesTabs />);
     const bazinYield = await screen.findByLabelText("Percentual anual");
     await userEvent.clear(bazinYield);
     await userEvent.type(bazinYield, "7.5");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver análise da ação" }),
+    );
     await userEvent.click(
       screen.getByRole("button", {
         name: "Inserir dados para calcular Graham e Bazin",
