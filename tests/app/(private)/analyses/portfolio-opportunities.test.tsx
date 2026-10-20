@@ -82,19 +82,48 @@ const opportunity = {
   },
 };
 
+const confirmedStockPosition = {
+  id: "stock-petr4",
+  assetCode: "PETR4",
+  product: "Petrobras PN",
+  institution: "Corretora",
+  totalValue: "360.00",
+  classification: {
+    assetClass: "Renda variável",
+    subClass: "Ação",
+    geography: "Brasil",
+  },
+  classificationSource: "manual" as const,
+};
+
 function response(body: unknown, ok = true) {
   return Promise.resolve({ ok, json: async () => body });
 }
 
-beforeEach(() => {
+function stubFetch(
+  requestMock: (input: RequestInfo | URL, init?: RequestInit) => unknown,
+  allocationResponder: () => unknown = () =>
+    response({ positions: [confirmedStockPosition] }),
+) {
   vi.stubGlobal(
     "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/portfolio/allocation")
+        return allocationResponder();
+      return requestMock(input, init);
+    }),
+  );
+}
+
+beforeEach(() => {
+  stubFetch(
     vi.fn().mockResolvedValue(
       response({
         opportunities: [opportunity],
         settings: { bazinTargetYield: 6 },
       }),
     ),
+    () => response({ positions: [confirmedStockPosition] }),
   );
 });
 afterEach(() => {
@@ -105,6 +134,349 @@ afterEach(() => {
 });
 
 describe("PortfolioOpportunities", () => {
+  it("keeps portfolio values visible when the opportunities request fails", async () => {
+    const position = {
+      id: "cash",
+      product: "CDB liquidez diária",
+      institution: "Banco",
+      totalValue: "1250.00",
+      classification: {
+        assetClass: "Renda fixa",
+        subClass: "CDB",
+        geography: "Brasil",
+      },
+      classificationSource: "manual",
+    };
+    stubFetch(
+      vi
+        .fn()
+        .mockResolvedValue(response({ message: "Falha na análise." }, false)),
+      () => response({ positions: [position] }),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    expect(await screen.findByText("CDB liquidez diária")).toBeTruthy();
+    expect(screen.getAllByText("R$ 1.250,00")).toHaveLength(3);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Falha na análise.",
+    );
+  });
+
+  it("suspends methods when the allocation request fails", async () => {
+    stubFetch(
+      vi.fn().mockResolvedValue(
+        response({
+          opportunities: [opportunity],
+          settings: { bazinTargetYield: 6 },
+        }),
+      ),
+      () => response({ message: "Falha nos valores." }, false),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    expect(await screen.findByText("PETR4 · Petrobras PN")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Falha nos valores.",
+    );
+    expect(screen.getByText("Referências suspensas")).toBeTruthy();
+    expect(
+      screen.getByText(/não foi possível confirmar a classe/i),
+    ).toBeTruthy();
+    expect(screen.queryByText("Número de Graham")).toBeNull();
+    expect(screen.queryByText("Preço-teto de Bazin")).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: "Inserir dados para calcular Graham e Bazin",
+      }),
+    ).toBeNull();
+  });
+
+  it("does not show methods for ETF, FII, or BDR tickers in allocation fallback", async () => {
+    const unsupportedOpportunities = [
+      { ...opportunity, ticker: "IVVB11", name: "ETF internacional" },
+      { ...opportunity, ticker: "HGLG11", name: "FII de exemplo" },
+      { ...opportunity, ticker: "AAPL34", name: "BDR de exemplo" },
+    ];
+    stubFetch(
+      vi.fn().mockResolvedValue(
+        response({
+          opportunities: unsupportedOpportunities,
+          settings: { bazinTargetYield: 6 },
+        }),
+      ),
+      () => response({ message: "Falha nos valores." }, false),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    expect(await screen.findByText(/ETF internacional/)).toBeTruthy();
+    expect(screen.getByText(/FII de exemplo/)).toBeTruthy();
+    expect(screen.getByText(/BDR de exemplo/)).toBeTruthy();
+    expect(screen.getAllByText("Referências suspensas")).toHaveLength(1);
+    expect(screen.queryByText("Número de Graham")).toBeNull();
+    expect(screen.queryByText("Preço-teto de Bazin")).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: "Inserir dados para calcular Graham e Bazin",
+      }),
+    ).toBeNull();
+  });
+
+  it("suspends references when allocation succeeds without a matching position", async () => {
+    stubFetch(
+      vi.fn().mockResolvedValue(
+        response({
+          opportunities: [opportunity],
+          settings: { bazinTargetYield: 6 },
+        }),
+      ),
+      () =>
+        response({
+          positions: [
+            { ...confirmedStockPosition, id: "unkeyed", assetCode: null },
+          ],
+        }),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    expect(await screen.findByText("Referências suspensas")).toBeTruthy();
+    expect(screen.getByText(/PETR4 · Petrobras PN/)).toBeTruthy();
+    expect(screen.queryByText("Número de Graham")).toBeNull();
+    expect(screen.queryByText("Preço-teto de Bazin")).toBeNull();
+    expect(screen.queryByLabelText("Percentual anual")).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: "Inserir dados para calcular Graham e Bazin",
+      }),
+    ).toBeNull();
+  });
+
+  it("links tickers after trimming incidental spaces", async () => {
+    const spacedPosition = {
+      ...confirmedStockPosition,
+      assetCode: " PETR4 ",
+    };
+    const spacedOpportunity = { ...opportunity, ticker: " PETR4 " };
+    stubFetch(
+      vi.fn().mockResolvedValue(
+        response({
+          opportunities: [spacedOpportunity],
+          settings: { bazinTargetYield: 6 },
+        }),
+      ),
+      () => response({ positions: [spacedPosition] }),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    const positionRow = (
+      await screen.findByText(/PETR4 · Petrobras PN/)
+    ).closest("li");
+    expect(positionRow).toBeTruthy();
+    await userEvent.click(
+      within(positionRow!).getByRole("button", { name: "Ver análise da ação" }),
+    );
+    expect(within(positionRow!).getByText("Número de Graham")).toBeTruthy();
+  });
+
+  it("shows a stock analysis inside its matching position and none for other asset classes", async () => {
+    const stock = {
+      id: "stock-petr4",
+      assetCode: "PETR4",
+      product: "Petrobras PN",
+      institution: "Corretora",
+      totalValue: "360.00",
+      classification: {
+        assetClass: "Renda variável",
+        subClass: "Ação",
+        geography: "Brasil",
+      },
+      classificationSource: "manual" as const,
+    };
+    const cash = {
+      id: "fixed-income",
+      assetCode: null,
+      product: "CDB liquidez diária",
+      institution: "Banco",
+      totalValue: "1250.00",
+      classification: {
+        assetClass: "Renda fixa",
+        subClass: "CDB",
+        geography: "Brasil",
+      },
+      classificationSource: "manual" as const,
+    };
+    const sameTickerPositions = [
+      {
+        id: "etf-same-code",
+        assetCode: "PETR4",
+        product: "ETF internacional",
+        institution: "Corretora",
+        totalValue: "50.00",
+        classification: {
+          assetClass: "Renda variável",
+          subClass: "ETF",
+          geography: "Global",
+        },
+        classificationSource: "manual" as const,
+      },
+      {
+        id: "fii-same-code",
+        assetCode: "PETR4",
+        product: "FII de exemplo",
+        institution: "Corretora",
+        totalValue: "60.00",
+        classification: {
+          assetClass: "Fundos",
+          subClass: "FII",
+          geography: "Brasil",
+        },
+        classificationSource: "manual" as const,
+      },
+      {
+        id: "bdr-same-code",
+        assetCode: "PETR4",
+        product: "BDR de exemplo",
+        institution: "Corretora",
+        totalValue: "70.00",
+        classification: {
+          assetClass: "Renda variável",
+          subClass: "BDR",
+          geography: "Brasil",
+        },
+        classificationSource: "manual" as const,
+      },
+    ];
+    stubFetch(
+      vi.fn().mockResolvedValue(
+        response({
+          opportunities: [opportunity],
+          settings: { bazinTargetYield: 6 },
+        }),
+      ),
+      () => response({ positions: [stock, cash, ...sameTickerPositions] }),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    const stockRow = (await screen.findByText("PETR4 · Petrobras PN")).closest(
+      "li",
+    );
+    expect(stockRow).toBeTruthy();
+    expect(
+      within(stockRow!).getByRole("button", { name: "Ver análise da ação" }),
+    ).toBeTruthy();
+    expect(
+      within(
+        screen.getByText("CDB liquidez diária").closest("li")!,
+      ).queryByRole("button", { name: "Ver análise da ação" }),
+    ).toBeNull();
+    expect(screen.queryByText("Análises disponíveis")).toBeNull();
+    expect(
+      screen.getAllByRole("button", { name: "Ver análise da ação" }),
+    ).toHaveLength(1);
+    for (const product of [
+      "ETF internacional",
+      "FII de exemplo",
+      "BDR de exemplo",
+    ]) {
+      const productRow = screen
+        .getAllByRole("listitem")
+        .find((item) => item.textContent?.includes(product));
+      expect(productRow).toBeTruthy();
+      expect(
+        within(productRow!).queryByRole("button", {
+          name: "Ver análise da ação",
+        }),
+      ).toBeNull();
+    }
+
+    await userEvent.click(
+      within(stockRow!).getByRole("button", { name: "Ver análise da ação" }),
+    );
+
+    expect(within(stockRow!).getByText("Número de Graham")).toBeTruthy();
+    expect(within(stockRow!).getByText("Preço-teto de Bazin")).toBeTruthy();
+  });
+
+  it("rejects an invalid allocation payload and retries only that request", async () => {
+    let allocationAttempts = 0;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
+      );
+    stubFetch(fetchMock, () => {
+      allocationAttempts += 1;
+      return allocationAttempts === 1
+        ? response({})
+        : response({ positions: [] });
+    });
+
+    render(<PortfolioOpportunities />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível carregar os valores da carteira.",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /tentar novamente/i }),
+    );
+    expect(await screen.findByText("Sua carteira está vazia")).toBeTruthy();
+    expect(allocationAttempts).toBe(2);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("shows a positions loading state when only allocation is pending", async () => {
+    stubFetch(
+      vi
+        .fn()
+        .mockResolvedValue(
+          response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
+        ),
+      () => new Promise(() => undefined),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    expect(
+      await screen.findByText("Carregando posições da carteira"),
+    ).toBeTruthy();
+  });
+
+  it("explains when no listed position qualifies for the equity references", async () => {
+    const position = {
+      id: "cash",
+      product: "CDB liquidez diária",
+      institution: "Banco",
+      totalValue: "1250.00",
+      classification: {
+        assetClass: "Renda fixa",
+        subClass: "CDB",
+        geography: "Brasil",
+      },
+      classificationSource: "manual",
+    };
+    stubFetch(
+      vi
+        .fn()
+        .mockResolvedValue(
+          response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
+        ),
+      () => response({ positions: [position] }),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    expect(
+      await screen.findByText(
+        "Nenhuma ação brasileira elegível para essas referências foi confirmada.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("reloads portfolio opportunities after a financial portfolio update", async () => {
     const fetchMock = vi
       .fn()
@@ -117,19 +489,15 @@ describe("PortfolioOpportunities", () => {
       .mockResolvedValueOnce(
         response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
       );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock, () => response({ positions: [] }));
     render(<PortfolioOpportunities />);
 
-    expect(
-      await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" }),
-    ).toBeTruthy();
+    expect(await screen.findByText("PETR4 · Petrobras PN")).toBeTruthy();
     await act(async () => {
       window.dispatchEvent(new Event("portfolio:updated"));
     });
 
-    expect(
-      await screen.findByText("Nenhuma ação importada encontrada"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Sua carteira está vazia")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -151,7 +519,7 @@ describe("PortfolioOpportunities", () => {
         response({ message: "Não foi possível consultar agora." }, false),
       )
       .mockResolvedValueOnce(response({ settings: { bazinTargetYield: 6 } }));
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock, () => response({ positions: [] }));
     render(<PortfolioOpportunities />);
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Não foi possível consultar agora.",
@@ -159,26 +527,20 @@ describe("PortfolioOpportunities", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /tentar novamente/i }),
     );
-    expect(
-      await screen.findByText("Nenhuma ação importada encontrada"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Sua carteira está vazia")).toBeTruthy();
   });
 
   it("explains empty holdings", async () => {
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi
         .fn()
         .mockResolvedValue(
           response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
         ),
+      () => response({ positions: [] }),
     );
     render(<PortfolioOpportunities />);
-    expect(
-      await screen.findByText(
-        /confirmadas pela classificação da fonte e presentes nas posições importadas/i,
-      ),
-    ).toBeTruthy();
+    expect(await screen.findByText(/Sua carteira está vazia/i)).toBeTruthy();
   });
 
   it("distinguishes failed classification lookups from an empty imported portfolio", async () => {
@@ -195,18 +557,18 @@ describe("PortfolioOpportunities", () => {
       .mockResolvedValueOnce(
         response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
       );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock, () => response({ positions: [] }));
     render(<PortfolioOpportunities />);
     expect(
-      await screen.findByText("Não foi possível confirmar a classe dos ativos"),
+      await screen.findByText(/Não foi possível analisar as ações agora/i),
     ).toBeTruthy();
-    expect(screen.getByText(/a carteira pode conter ações/i)).toBeTruthy();
+    expect(
+      screen.getByText(/os demais ativos continuam listados/i),
+    ).toBeTruthy();
     await userEvent.click(
       screen.getByRole("button", { name: /tentar novamente/i }),
     );
-    expect(
-      await screen.findByText("Nenhuma ação importada encontrada"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Sua carteira está vazia")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -224,18 +586,14 @@ describe("PortfolioOpportunities", () => {
       .mockResolvedValueOnce(
         response({ opportunities: [], settings: { bazinTargetYield: 6 } }),
       );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock, () => response({ positions: [] }));
     render(<PortfolioOpportunities />);
-    expect(
-      await screen.findByText("Nenhuma ação elegível foi confirmada"),
-    ).toBeTruthy();
-    expect(screen.getByText(/não está sendo tratada como vazia/i)).toBeTruthy();
+    expect(await screen.findByText("Sua carteira está vazia")).toBeTruthy();
+    expect(screen.getByText(/ativos continuam listados/i)).toBeTruthy();
     await userEvent.click(
       screen.getByRole("button", { name: /tentar novamente/i }),
     );
-    expect(
-      await screen.findByText("Nenhuma ação importada encontrada"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Sua carteira está vazia")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -256,10 +614,10 @@ describe("PortfolioOpportunities", () => {
           settings: { bazinTargetYield: 6 },
         }),
       );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     expect((await screen.findByRole("status")).textContent).toContain(
-      "Não foi possível confirmar a classe de 1 ativo(s).",
+      "Não foi possível confirmar a classe de 1 ativo(s) para a análise de ações.",
     );
     await userEvent.click(
       within(screen.getByRole("status")).getByRole("button", {
@@ -270,7 +628,7 @@ describe("PortfolioOpportunities", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("renders quotes, both references, source periods, dividend limitation and accessible help", async () => {
+  it("renders quotes and references without the detailed CVM and BRAPI dump", async () => {
     render(<PortfolioOpportunities />);
     const card = await screen.findByRole("img", {
       name: "Identidade de Petrobras PN",
@@ -278,6 +636,9 @@ describe("PortfolioOpportunities", () => {
     expect(card).toBeTruthy();
     expect(card.querySelector("img")?.getAttribute("src")).toBe(
       "https://icons.brapi.dev/icons/PETR4.svg",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver análise da ação" }),
     );
     expect(screen.getByText("Número de Graham")).toBeTruthy();
     expect(screen.getByText("Preço-teto de Bazin")).toBeTruthy();
@@ -287,16 +648,11 @@ describe("PortfolioOpportunities", () => {
     expect(
       screen.getAllByText("abaixo da referência", { exact: false }).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText(/Fundamentos: 1 período disponível/i)).toBeTruthy();
+    expect(screen.queryByText(/Fundamentos:/i)).toBeNull();
+    expect(screen.queryByText(/CVM|BRAPI/i)).toBeNull();
     expect(
-      screen.getByText(/Proventos em 12 meses:.*cobertura não confirmada/i),
-    ).toBeTruthy();
-    expect(screen.queryByText(/não confirmou a completude/i)).toBeNull();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Ver fontes e limitações" }),
-    );
-    expect(screen.getByText(/DFP 31 de dez. de 2025/i)).toBeTruthy();
-    expect(screen.getByText(/não confirmou a completude/i)).toBeTruthy();
+      screen.queryByRole("button", { name: "Ver fontes e limitações" }),
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: "Sobre a taxa inicial do Bazin" }),
     ).toBeTruthy();
@@ -319,9 +675,8 @@ describe("PortfolioOpportunities", () => {
     ).toBeTruthy();
   });
 
-  it("summarizes multiple financial periods and reveals their sources on demand", async () => {
-    vi.stubGlobal(
-      "fetch",
+  it("keeps the current market quote date visible", async () => {
+    stubFetch(
       vi.fn().mockResolvedValue(
         response({
           opportunities: [
@@ -340,16 +695,12 @@ describe("PortfolioOpportunities", () => {
     render(<PortfolioOpportunities />);
 
     await screen.findByRole("img", { name: "Identidade de Petrobras PN" });
-    const summary = screen.getByText(/Fundamentos:/i);
-    expect(summary.textContent).toContain("2 períodos disponíveis");
-    expect(summary.textContent).toContain("base mais recente em");
-    expect(screen.queryByText(/Demonstrativos CVM:/i)).toBeNull();
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver fontes e limitações" }),
+      screen.getByRole("button", { name: "Ver análise da ação" }),
     );
-    expect(
-      screen.getByText(/DFP 31 de dez. de 2025 · ITR 30 de jun. de 2025/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/cotação R\$ 30,00/)).toBeTruthy();
+    expect(screen.getByText(/2026-10-01/)).toBeTruthy();
+    expect(screen.queryByText(/DFP|ITR|BRAPI|CVM/)).toBeNull();
   });
 
   it("renders missing and invalid dates, unavailable methods and divergent references", async () => {
@@ -406,36 +757,45 @@ describe("PortfolioOpportunities", () => {
         },
       },
     };
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi.fn().mockResolvedValue(
         response({
           opportunities: [incompleteOpportunity, noComparisonOpportunity],
         }),
       ),
+      () =>
+        response({
+          positions: [
+            confirmedStockPosition,
+            {
+              ...confirmedStockPosition,
+              id: "stock-vale3",
+              assetCode: "VALE3",
+              product: "Vale ON",
+            },
+          ],
+        }),
     );
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
+    for (const trigger of screen.getAllByRole("button", {
+      name: "Ver análise da ação",
+    })) {
+      await userEvent.click(trigger);
+    }
     expect(screen.getByText("Na referência calculada")).toBeTruthy();
     expect(screen.getByText(/acima da referência/i)).toBeTruthy();
     expect(screen.getByText(/ficam em lados diferentes/i)).toBeTruthy();
     expect(
       screen.getAllByText(/posição importada em Data não informada/i),
     ).toHaveLength(2);
-    expect(screen.getAllByText("Indisponível")).toHaveLength(2);
-    expect(screen.getAllByText("Comparação indisponível")).toHaveLength(2);
+    expect(screen.getAllByText("Indisponível")).toHaveLength(3);
+    expect(screen.queryAllByText("Comparação indisponível")).toHaveLength(0);
     expect(screen.getByText("Bazin indisponível.")).toBeTruthy();
     expect(screen.getByText("Bazin sem dados suficientes.")).toBeTruthy();
-    expect(screen.getAllByText(/Proventos em 12 meses:/i)).toHaveLength(2);
-    expect(screen.getAllByText(/Fundamentos: indisponíveis/i)).toHaveLength(2);
-
-    const sourceButtons = screen.getAllByRole("button", {
-      name: "Ver fontes e limitações",
-    });
-    await userEvent.click(sourceButtons[0]!);
-    await userEvent.click(sourceButtons[1]!);
-    expect(screen.getAllByText(/janela de 12 meses/i)).toHaveLength(2);
-    expect(screen.getAllByText(/sem eventos utilizáveis/i)).toHaveLength(2);
+    expect(screen.queryByText(/Proventos em 12 meses:/i)).toBeNull();
+    expect(screen.queryByText(/Fundamentos:/i)).toBeNull();
+    expect(screen.queryByText(/DFP|ITR|BRAPI|CVM/)).toBeNull();
 
     await userEvent.click(
       screen.getAllByRole("button", {
@@ -445,7 +805,7 @@ describe("PortfolioOpportunities", () => {
     expect(
       (document.getElementById("PETR4-graham_eps-as-of") as HTMLInputElement)
         .value,
-    ).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
+    ).toBe("");
     expect(screen.getAllByPlaceholderText("Origem do dado")).toHaveLength(3);
     await userEvent.click(
       screen.getAllByRole("button", {
@@ -477,7 +837,7 @@ describe("PortfolioOpportunities", () => {
           settings: { bazinTargetYield: 7.5 },
         }),
       );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     const rate = await screen.findByLabelText("Percentual anual");
     await userEvent.clear(rate);
@@ -501,7 +861,7 @@ describe("PortfolioOpportunities", () => {
         }),
       )
       .mockResolvedValueOnce(response({ message: "Taxa rejeitada." }, false));
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     const rate = await screen.findByLabelText("Percentual anual");
     await userEvent.clear(rate);
@@ -520,7 +880,7 @@ describe("PortfolioOpportunities", () => {
         settings: { bazinTargetYield: 6 },
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -559,7 +919,7 @@ describe("PortfolioOpportunities", () => {
         settings: { bazinTargetYield: 6 },
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     const rate = await screen.findByLabelText("Percentual anual");
     await userEvent.clear(rate);
@@ -579,9 +939,12 @@ describe("PortfolioOpportunities", () => {
         }),
       )
       .mockRejectedValueOnce(new Error("private transport detail"));
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver análise da ação" }),
+    );
     await userEvent.click(
       screen.getByRole("button", {
         name: "Inserir dados para calcular Graham e Bazin",
@@ -589,17 +952,7 @@ describe("PortfolioOpportunities", () => {
     );
     expect(
       screen.getByText(
-        "Os valores por ação precisam ser informados por você com origem e data. Para Graham, informe LPA e VPA da mesma data-base. Para Bazin, informe os proventos em dinheiro pagos por ação nos últimos 12 meses.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "No histórico de proventos de Relações com Investidores, some dividendos e JCP em dinheiro pagos por ação nos 12 meses anteriores à data informada. Não use o total creditado na sua conta.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Transcreva o VPA por ação publicado pela empresa na mesma data-base do LPA. Não use o patrimônio total nem divida valores sem conferir a quantidade e a classe das ações.",
+        "Informe valor por ação, origem e data: LPA e VPA para Graham; proventos em 12 meses para Bazin.",
       ),
     ).toBeTruthy();
     expect(
@@ -635,9 +988,12 @@ describe("PortfolioOpportunities", () => {
         settings: { bazinTargetYield: 6 },
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver análise da ação" }),
+    );
     await userEvent.click(
       screen.getByRole("button", {
         name: "Inserir dados para calcular Graham e Bazin",
@@ -679,9 +1035,12 @@ describe("PortfolioOpportunities", () => {
         }),
       )
       .mockResolvedValueOnce(response({ message: "Valor rejeitado." }, false));
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver análise da ação" }),
+    );
     await userEvent.click(
       screen.getByRole("button", {
         name: "Inserir dados para calcular Graham e Bazin",
@@ -709,8 +1068,7 @@ describe("PortfolioOpportunities", () => {
   });
 
   it("uses safe fallbacks when mutation rejections are not Error instances", async () => {
-    vi.stubGlobal(
-      "fetch",
+    stubFetch(
       vi.fn().mockResolvedValue(
         response({
           opportunities: [opportunity],
@@ -720,6 +1078,9 @@ describe("PortfolioOpportunities", () => {
     );
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver análise da ação" }),
+    );
     const request = vi.spyOn(apiClient, "apiRequest");
     request.mockRejectedValueOnce("private manual rejection");
 
@@ -763,9 +1124,12 @@ describe("PortfolioOpportunities", () => {
           settings: { bazinTargetYield: 6 },
         }),
       );
-    vi.stubGlobal("fetch", fetchMock);
+    stubFetch(fetchMock);
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver análise da ação" }),
+    );
     await userEvent.click(
       screen.getByRole("button", {
         name: "Inserir dados para calcular Graham e Bazin",

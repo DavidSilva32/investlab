@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Proposta compacta para visualizar referências de análise por ativo."
+    />
+    <title>InvestLab — análise da carteira</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --background: #f6f8fb;
+        --surface: #fff;
+        --foreground: #101828;
+        --muted: #536174;
+        --subtle: #738095;
+        --border: #dce2e9;
+        --primary: #0875db;
+        --primary-soft: #e8f2ff;
+        --warning: #9a5709;
+        --warning-soft: #fff7e9;
+        --positive: #16844a;
+        --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 5px 18px rgb(16 24 40 / 4%);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: var(--foreground);
+        background: var(--background);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-width: 320px;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      button,
+      summary {
+        cursor: pointer;
+      }
+      a {
+        color: var(--primary);
+      }
+      :focus-visible {
+        outline: 3px solid #7bb8f3;
+        outline-offset: 3px;
+      }
+
+      .topbar {
+        height: 62px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .topbar-inner,
+      main {
+        width: min(1160px, calc(100% - 48px));
+        margin: 0 auto;
+      }
+      .topbar-inner {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 750;
+        letter-spacing: -0.03em;
+      }
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        background: var(--primary-soft);
+        color: var(--primary);
+        font-weight: 800;
+      }
+      .account {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      main {
+        padding: 25px 0 48px;
+      }
+      .eyebrow {
+        margin: 0 0 5px;
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(25px, 3vw, 32px);
+        letter-spacing: -0.04em;
+      }
+      .intro {
+        margin: 7px 0 20px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .tabs {
+        display: flex;
+        gap: 3px;
+        width: fit-content;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: #eef1f5;
+      }
+      .tab {
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 14px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .tab[aria-selected="true"] {
+        background: var(--surface);
+        color: var(--foreground);
+        box-shadow: var(--shadow);
+      }
+
+      .portfolio-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin: 22px 0 10px;
+      }
+      h2 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.02em;
+      }
+      .portfolio-head p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .yield-setting {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .yield-setting strong {
+        color: var(--foreground);
+        font-size: 14px;
+      }
+      .rate-editor {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 18px;
+        margin: 0 0 12px;
+        padding: 14px 16px;
+        border: 1px solid #cfe0f6;
+        border-radius: 11px;
+        background: #f8fbff;
+      }
+      .rate-editor[hidden] {
+        display: none;
+      }
+      .rate-editor-copy strong {
+        display: block;
+        font-size: 12px;
+      }
+      .rate-editor-copy p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .rate-form {
+        display: flex;
+        align-items: end;
+        gap: 8px;
+      }
+      .rate-field label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+      .rate-input-wrap {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .rate-input-wrap input {
+        width: 74px;
+        height: 34px;
+        border: 1px solid #cbd5e1;
+        border-radius: 7px;
+        background: var(--surface);
+        padding: 0 8px;
+        color: var(--foreground);
+      }
+      .rate-input-wrap span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .rate-status {
+        min-width: 1px;
+        color: var(--positive);
+        font-size: 10px;
+      }
+      .text-button {
+        border: 0;
+        padding: 4px;
+        background: transparent;
+        color: var(--primary);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .list-card {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .list-caption {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 16px;
+        border-bottom: 1px solid var(--border);
+        background: #fbfcfe;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 650;
+      }
+      .asset {
+        border-bottom: 1px solid var(--border);
+      }
+      .asset:last-child {
+        border-bottom: 0;
+      }
+      .asset-summary {
+        display: grid;
+        grid-template-columns:
+          minmax(175px, 1.15fr) minmax(140px, 0.8fr)
+          minmax(150px, 0.9fr) 25px;
+        align-items: center;
+        gap: 14px;
+        min-height: 64px;
+        padding: 10px 16px;
+        list-style: none;
+        transition: background-color 140ms ease;
+      }
+      .asset-summary::-webkit-details-marker {
+        display: none;
+      }
+      .asset-summary:hover {
+        background: #f8fbff;
+      }
+      .asset-identity {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .ticker-mark {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        flex: 0 0 34px;
+        place-items: center;
+        border: 1px solid #e5c92c;
+        border-radius: 9px;
+        background: #ffed22;
+        color: #1261b8;
+        font-size: 10px;
+        font-weight: 850;
+      }
+      .ticker-name {
+        min-width: 0;
+      }
+      .ticker-name strong {
+        display: block;
+        font-size: 14px;
+      }
+      .ticker-name span {
+        display: block;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .asset-cell small {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--subtle);
+        font-size: 10px;
+      }
+      .asset-cell strong {
+        font-size: 12px;
+        font-weight: 650;
+      }
+      .state {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--warning);
+        font-size: 11px;
+        font-weight: 650;
+      }
+      .state-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #d88a18;
+      }
+      .chevron {
+        width: 9px;
+        height: 9px;
+        justify-self: end;
+        border-right: 1.5px solid #667085;
+        border-bottom: 1.5px solid #667085;
+        transform: rotate(45deg) translateY(-2px);
+        transition: transform 160ms ease;
+      }
+      .asset[open] > .asset-summary .chevron {
+        transform: rotate(225deg) translate(-1px, -1px);
+      }
+      .asset-detail {
+        padding: 0 16px 17px 60px;
+        animation: reveal 180ms ease-out;
+      }
+      @keyframes reveal {
+        from {
+          opacity: 0.4;
+          transform: translateY(-3px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .status-box {
+        display: flex;
+        align-items: start;
+        gap: 10px;
+        padding: 11px 13px;
+        border: 1px solid #f0dfbf;
+        border-radius: 10px;
+        background: var(--warning-soft);
+      }
+      .status-icon {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        flex: 0 0 20px;
+        place-items: center;
+        border-radius: 50%;
+        background: #ffebc8;
+        color: var(--warning);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .status-box strong {
+        display: block;
+        font-size: 12px;
+      }
+      .status-box p {
+        margin: 3px 0 0;
+        color: #654b28;
+        font-size: 11px;
+        line-height: 1.45;
+      }
+      .method-list {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 20px;
+        margin-top: 8px;
+      }
+      .method-card {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 20px;
+        padding: 0;
+      }
+      .method-name {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 650;
+      }
+      .help {
+        position: relative;
+      }
+      .help summary {
+        width: 19px;
+        height: 19px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #aab5c3;
+        border-radius: 50%;
+        color: #475467;
+        font-size: 11px;
+        font-weight: 700;
+        list-style: none;
+      }
+      .help summary::-webkit-details-marker {
+        display: none;
+      }
+      .help summary:hover,
+      .help[open] summary {
+        border-color: var(--primary);
+        color: var(--primary);
+        background: var(--primary-soft);
+      }
+      .help-popover {
+        position: absolute;
+        z-index: 2;
+        top: 27px;
+        right: -8px;
+        width: min(280px, 80vw);
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        box-shadow: 0 10px 25px rgb(16 24 40 / 14%);
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .help-popover strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--foreground);
+      }
+      .manual-entry {
+        margin-top: 10px;
+        border: 1px solid #cfe0f6;
+        border-radius: 10px;
+        background: #f8fbff;
+      }
+      .manual-entry > summary {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 13px;
+        color: #193b61;
+        font-size: 12px;
+        font-weight: 700;
+        list-style: none;
+      }
+      .manual-entry > summary::-webkit-details-marker {
+        display: none;
+      }
+      .manual-entry > summary::after {
+        content: "+";
+        color: var(--primary);
+        font-size: 17px;
+        font-weight: 400;
+        line-height: 12px;
+      }
+      .manual-entry[open] > summary::after {
+        content: "−";
+      }
+      .entry-content {
+        padding: 0 13px 13px;
+      }
+      .entry-intro {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .entry-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 9px;
+      }
+      .input-record {
+        min-width: 0;
+        margin: 0;
+        padding: 9px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+      .input-record legend {
+        padding: 0 3px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+      .record-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .record-actions .primary-button {
+        min-height: 28px;
+        padding: 0 9px;
+        font-size: 10px;
+      }
+      .record-status {
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.3;
+      }
+      .record-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .record-meta input {
+        height: 32px;
+        font-size: 10px;
+      }
+      .field label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+      .field input {
+        width: 100%;
+        height: 36px;
+        border: 1px solid #cbd5e1;
+        border-radius: 7px;
+        background: var(--surface);
+        padding: 0 9px;
+        color: var(--foreground);
+        font-size: 12px;
+      }
+      .field input::placeholder {
+        color: #8793a2;
+      }
+      .field small {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.35;
+      }
+      .entry-bottom {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+      .primary-button {
+        min-height: 34px;
+        border: 0;
+        border-radius: 7px;
+        padding: 0 12px;
+        background: var(--primary);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .primary-button:hover {
+        background: #075fb1;
+      }
+      .compact-note {
+        margin-top: 12px;
+        padding: 9px 12px;
+        border: 1px dashed #c7d0dc;
+        border-radius: 10px;
+        background: #fbfcfe;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .footer-note {
+        margin: 9px 0 0;
+        color: var(--subtle);
+        font-size: 10px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 720px) {
+        .topbar-inner,
+        main {
+          width: min(100% - 28px, 620px);
+        }
+        main {
+          padding-top: 20px;
+        }
+        .account {
+          display: none;
+        }
+        .tabs {
+          display: grid;
+          width: 100%;
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .tab {
+          padding: 9px 4px;
+          font-size: 11px;
+        }
+        .portfolio-head {
+          align-items: start;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .rate-editor {
+          align-items: stretch;
+          flex-direction: column;
+        }
+        .rate-form {
+          align-items: end;
+          flex-wrap: wrap;
+        }
+        .list-caption {
+          padding: 9px 12px;
+        }
+        .asset-summary {
+          grid-template-columns: minmax(0, 1fr) auto 18px;
+          gap: 8px;
+          min-height: 62px;
+          padding: 9px 12px;
+        }
+        .asset-summary .position-cell {
+          display: none;
+        }
+        .asset-summary .asset-cell small {
+          display: none;
+        }
+        .asset-summary .asset-cell strong {
+          font-size: 11px;
+        }
+        .ticker-name span {
+          max-width: 190px;
+        }
+        .asset-detail {
+          padding: 0 12px 13px;
+        }
+        .method-list {
+          flex-wrap: wrap;
+          gap: 8px 14px;
+        }
+        .entry-grid {
+          grid-template-columns: 1fr;
+        }
+        .record-meta {
+          grid-template-columns: 1fr;
+        }
+        .entry-bottom {
+          justify-content: stretch;
+        }
+        .primary-button {
+          width: 100%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">I</span> InvestLab
+        </div>
+        <span class="account">Prévia visual — sem conexão com a conta</span>
+      </div>
+    </header>
+    <main>
+      <p class="eyebrow">Análises</p>
+      <h1>Análise da carteira</h1>
+      <p class="intro">Abra um ativo para ver o próximo passo.</p>
+
+      <div class="tabs" role="tablist" aria-label="Tipo de análise">
+        <button class="tab" role="tab" aria-selected="true">
+          Minha carteira
+        </button>
+        <button class="tab" role="tab" aria-selected="false">
+          Análise individual
+        </button>
+        <button class="tab" role="tab" aria-selected="false">
+          Comparar empresas
+        </button>
+      </div>
+
+      <section class="portfolio-head" aria-labelledby="portfolio-title">
+        <div>
+          <h2 id="portfolio-title">Ativos analisados</h2>
+          <p>6+ ações: abra uma linha para ver o próximo passo.</p>
+        </div>
+        <div class="yield-setting">
+          <span>Taxa global Bazin</span
+          ><strong id="bazin-rate-value">6%</strong>
+          <a class="text-button" href="#taxa" aria-controls="taxa">Ajustar</a>
+        </div>
+      </section>
+
+      <section
+        class="rate-editor"
+        id="taxa"
+        aria-labelledby="rate-editor-title"
+        hidden
+      >
+        <div class="rate-editor-copy">
+          <strong id="rate-editor-title">Taxa global Bazin</strong>
+          <p>Aplica-se aos ativos elegíveis.</p>
+        </div>
+        <form class="rate-form" id="rate-form">
+          <div class="rate-field">
+            <label for="bazin-rate">Taxa anual</label>
+            <div class="rate-input-wrap">
+              <input
+                id="bazin-rate"
+                name="rate"
+                type="number"
+                min="0"
+                step="0.1"
+                value="6"
+                inputmode="decimal"
+              /><span>%</span>
+            </div>
+          </div>
+          <button class="primary-button" type="submit">Salvar taxa</button>
+          <span
+            class="rate-status"
+            id="rate-status"
+            role="status"
+            aria-live="polite"
+          ></span>
+        </form>
+      </section>
+
+      <section class="list-card" aria-label="Lista compacta de ativos">
+        <div class="list-caption">
+          <span>EXEMPLO VISUAL · 6 AÇÕES</span><span>REFERÊNCIAS</span>
+        </div>
+        <details class="asset" open>
+          <summary class="asset-summary">
+            <span class="asset-identity">
+              <span class="ticker-mark" aria-hidden="true">BB</span>
+              <span class="ticker-name"
+                ><strong>BBSE3</strong
+                ><span>BB Seguridade Participações S.A.</span></span
+              >
+            </span>
+            <span class="asset-cell position-cell"
+              ><small>Posição</small><strong>8 ações</strong></span
+            >
+            <span class="asset-cell"
+              ><small>Graham e Bazin</small
+              ><span class="state"
+                ><span class="state-dot"></span>Dados pendentes</span
+              ></span
+            >
+            <span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="asset-detail">
+            <div class="status-box">
+              <span class="status-icon" aria-hidden="true">!</span>
+              <div>
+                <strong>Próximo passo: informar dados por ação</strong>
+                <p>Inclua LPA, VPA e proventos com origem e data.</p>
+              </div>
+            </div>
+            <div class="method-list">
+              <div class="method-card">
+                <span class="method-name">Graham</span>
+                <details class="help">
+                  <summary
+                    aria-label="O que é a referência de Graham?"
+                    aria-expanded="false"
+                  >
+                    ?
+                  </summary>
+                  <div class="help-popover" role="note">
+                    <strong>Preço de referência</strong>Combina LPA e VPA para
+                    estimar um preço; compare com a cotação. Não é avaliação
+                    completa nem recomendação.
+                  </div>
+                </details>
+              </div>
+              <div class="method-card">
+                <span class="method-name">Bazin</span>
+                <details class="help">
+                  <summary
+                    aria-label="O que é a referência de Bazin?"
+                    aria-expanded="false"
+                  >
+                    ?
+                  </summary>
+                  <div class="help-popover" role="note">
+                    <strong>Limite matemático</strong>Preço em que dividendos e
+                    JCP por ação pagos nos últimos 12 meses equivaleriam à taxa
+                    anual escolhida (ex.: 6% a.a.). Pagamentos podem mudar.
+                  </div>
+                </details>
+              </div>
+            </div>
+            <details class="manual-entry">
+              <summary>Informar dados</summary>
+              <div class="entry-content">
+                <p class="entry-intro">
+                  Cada valor tem fonte e data. LPA e VPA: mesma data.
+                </p>
+                <div class="entry-grid">
+                  <fieldset class="input-record">
+                    <legend>Lucro por ação (LPA)</legend>
+                    <form class="manual-value-form" data-input-key="lpa">
+                      <div class="field">
+                        <label for="lpa-value">Valor</label>
+                        <input
+                          id="lpa-value"
+                          name="value"
+                          inputmode="decimal"
+                          placeholder="R$ por ação"
+                        />
+                      </div>
+                      <div class="record-meta">
+                        <div class="field">
+                          <label for="lpa-source">Fonte deste valor</label>
+                          <input
+                            id="lpa-source"
+                            name="source"
+                            placeholder="Origem"
+                          />
+                        </div>
+                        <div class="field">
+                          <label for="lpa-as-of">Data deste valor</label>
+                          <input id="lpa-as-of" name="asOf" type="date" />
+                        </div>
+                      </div>
+                      <div class="record-actions">
+                        <button class="primary-button" type="submit">
+                          Salvar
+                        </button>
+                        <span
+                          class="record-status"
+                          role="status"
+                          aria-live="polite"
+                        ></span>
+                      </div>
+                    </form>
+                  </fieldset>
+                  <fieldset class="input-record">
+                    <legend>Valor patrimonial por ação (VPA)</legend>
+                    <form class="manual-value-form" data-input-key="vpa">
+                      <div class="field">
+                        <label for="vpa-value">Valor</label>
+                        <input
+                          id="vpa-value"
+                          name="value"
+                          inputmode="decimal"
+                          placeholder="R$ por ação"
+                        />
+                      </div>
+                      <div class="record-meta">
+                        <div class="field">
+                          <label for="vpa-source">Fonte deste valor</label>
+                          <input
+                            id="vpa-source"
+                            name="source"
+                            placeholder="Origem"
+                          />
+                        </div>
+                        <div class="field">
+                          <label for="vpa-as-of">Data deste valor</label>
+                          <input id="vpa-as-of" name="asOf" type="date" />
+                        </div>
+                      </div>
+                      <div class="record-actions">
+                        <button class="primary-button" type="submit">
+                          Salvar
+                        </button>
+                        <span
+                          class="record-status"
+                          role="status"
+                          aria-live="polite"
+                        ></span>
+                      </div>
+                    </form>
+                  </fieldset>
+                  <fieldset class="input-record">
+                    <legend>Dividendos e JCP por ação</legend>
+                    <form
+                      class="manual-value-form"
+                      data-input-key="dividend-per-share"
+                    >
+                      <div class="field">
+                        <label for="proventos-value">Total em 12 meses</label>
+                        <input
+                          id="proventos-value"
+                          name="value"
+                          inputmode="decimal"
+                          placeholder="R$ por ação"
+                        />
+                      </div>
+                      <div class="record-meta">
+                        <div class="field">
+                          <label for="proventos-source"
+                            >Fonte deste valor</label
+                          >
+                          <input
+                            id="proventos-source"
+                            name="source"
+                            placeholder="Origem"
+                          />
+                        </div>
+                        <div class="field">
+                          <label for="proventos-as-of">Data deste valor</label>
+                          <input id="proventos-as-of" name="asOf" type="date" />
+                        </div>
+                      </div>
+                      <div class="record-actions">
+                        <button class="primary-button" type="submit">
+                          Salvar
+                        </button>
+                        <span
+                          class="record-status"
+                          role="status"
+                          aria-live="polite"
+                        ></span>
+                      </div>
+                    </form>
+                  </fieldset>
+                </div>
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <details class="asset">
+          <summary class="asset-summary">
+            <span class="asset-identity"
+              ><span class="ticker-mark" aria-hidden="true">02</span
+              ><span class="ticker-name"
+                ><strong>Outro ativo</strong
+                ><span>Exemplo de linha compacta</span></span
+              ></span
+            ><span class="asset-cell position-cell"
+              ><small>Posição</small><strong>—</strong></span
+            ><span class="asset-cell"
+              ><small>Referências</small
+              ><span class="state"
+                ><span class="state-dot"></span>Abrir para consultar</span
+              ></span
+            ><span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="asset-detail">
+            <p class="entry-intro">Exemplo visual, sem dados ou cálculo.</p>
+          </div>
+        </details>
+        <details class="asset">
+          <summary class="asset-summary">
+            <span class="asset-identity"
+              ><span class="ticker-mark" aria-hidden="true">03</span
+              ><span class="ticker-name"
+                ><strong>Outro ativo</strong
+                ><span>Exemplo de linha compacta</span></span
+              ></span
+            ><span class="asset-cell position-cell"
+              ><small>Posição</small><strong>—</strong></span
+            ><span class="asset-cell"
+              ><small>Referências</small
+              ><span class="state"
+                ><span class="state-dot"></span>Abrir para consultar</span
+              ></span
+            ><span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="asset-detail">
+            <p class="entry-intro">Exemplo visual, sem dados ou cálculo.</p>
+          </div>
+        </details>
+        <details class="asset">
+          <summary class="asset-summary">
+            <span class="asset-identity"
+              ><span class="ticker-mark" aria-hidden="true">04</span
+              ><span class="ticker-name"
+                ><strong>Outro ativo</strong
+                ><span>Exemplo de linha compacta</span></span
+              ></span
+            ><span class="asset-cell position-cell"
+              ><small>Posição</small><strong>—</strong></span
+            ><span class="asset-cell"
+              ><small>Referências</small
+              ><span class="state"
+                ><span class="state-dot"></span>Abrir para consultar</span
+              ></span
+            ><span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="asset-detail">
+            <p class="entry-intro">Exemplo visual, sem dados ou cálculo.</p>
+          </div>
+        </details>
+        <details class="asset">
+          <summary class="asset-summary">
+            <span class="asset-identity"
+              ><span class="ticker-mark" aria-hidden="true">05</span
+              ><span class="ticker-name"
+                ><strong>Outro ativo</strong
+                ><span>Exemplo de linha compacta</span></span
+              ></span
+            ><span class="asset-cell position-cell"
+              ><small>Posição</small><strong>—</strong></span
+            ><span class="asset-cell"
+              ><small>Referências</small
+              ><span class="state"
+                ><span class="state-dot"></span>Abrir para consultar</span
+              ></span
+            ><span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="asset-detail">
+            <p class="entry-intro">Exemplo visual, sem dados ou cálculo.</p>
+          </div>
+        </details>
+        <details class="asset">
+          <summary class="asset-summary">
+            <span class="asset-identity"
+              ><span class="ticker-mark" aria-hidden="true">06</span
+              ><span class="ticker-name"
+                ><strong>Outro ativo</strong
+                ><span>Exemplo de linha compacta</span></span
+              ></span
+            ><span class="asset-cell position-cell"
+              ><small>Posição</small><strong>—</strong></span
+            ><span class="asset-cell"
+              ><small>Referências</small
+              ><span class="state"
+                ><span class="state-dot"></span>Abrir para consultar</span
+              ></span
+            ><span class="chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="asset-detail">
+            <p class="entry-intro">Exemplo visual, sem dados ou cálculo.</p>
+          </div>
+        </details>
+      </section>
+
+      <p class="compact-note">
+        ETFs internacionais e Fundos imobiliários (FIIs) ainda não têm cálculo
+        nesta tela.
+      </p>
+      <p class="footer-note">
+        Prévia sem conexão: BBSE3 reflete a captura; as demais linhas são
+        exemplos.
+      </p>
+    </main>
+    <script>
+      const rateEditor = document.querySelector("#taxa");
+      const rateInput = document.querySelector("#bazin-rate");
+      const rateValue = document.querySelector("#bazin-rate-value");
+      const rateStatus = document.querySelector("#rate-status");
+
+      document
+        .querySelector('a[href="#taxa"]')
+        .addEventListener("click", () => {
+          rateEditor.hidden = false;
+          window.requestAnimationFrame(() => rateInput.focus());
+        });
+
+      document
+        .querySelector("#rate-form")
+        .addEventListener("submit", (event) => {
+          event.preventDefault();
+          if (!rateInput.value || Number(rateInput.value) < 0) {
+            rateInput.focus();
+            return;
+          }
+          rateValue.textContent = `${Number(rateInput.value).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+          rateStatus.textContent = "Taxa atualizada nesta prévia.";
+        });
+
+      document.querySelectorAll(".manual-value-form").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const inputKey = form.dataset.inputKey;
+          const value = form.querySelector('[name="value"]');
+          const source = form.querySelector('[name="source"]');
+          const asOf = form.querySelector('[name="asOf"]');
+          const status = form.querySelector('[role="status"]');
+
+          if (!value.value.trim()) {
+            value.focus();
+            status.textContent = "Informe o valor.";
+            return;
+          }
+
+          if (!source.value.trim() || !asOf.value) {
+            const missingField = source.value.trim() ? asOf : source;
+            missingField.focus();
+            status.textContent = "Informe fonte e data.";
+            return;
+          }
+
+          const otherKey = inputKey === "lpa" ? "vpa" : "lpa";
+          const otherForm = document.querySelector(
+            `.manual-value-form[data-input-key="${otherKey}"]`,
+          );
+          const otherValue = otherForm
+            .querySelector('[name="value"]')
+            .value.trim();
+          const otherDate = otherForm.querySelector('[name="asOf"]').value;
+          const datesDiffer =
+            ["lpa", "vpa"].includes(inputKey) &&
+            otherValue &&
+            otherDate &&
+            otherDate !== asOf.value;
+
+          status.textContent = datesDiffer
+            ? "Salvo; datas diferentes não permitem Graham."
+            : "Salvo nesta prévia.";
+        });
+      });
+
+      document.querySelectorAll(".help").forEach((help) => {
+        const trigger = help.querySelector("summary");
+        help.addEventListener("pointerenter", () => {
+          help.open = true;
+        });
+        help.addEventListener("pointerleave", () => {
+          if (!help.matches(":focus-within")) help.open = false;
+        });
+        help.addEventListener("focusout", () => {
+          if (!help.matches(":hover")) help.open = false;
+        });
+        help.addEventListener("toggle", () => {
+          trigger.setAttribute("aria-expanded", String(help.open));
+        });
+      });
+    </script>
+  </body>
+</html>
