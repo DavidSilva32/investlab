@@ -41,7 +41,7 @@ describe("public home route", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Organize seus investimentos em um só lugar.",
+        name: "Mais clareza para cuidar do seu patrimônio inteiro.",
       }),
     ).toBeTruthy();
   });
