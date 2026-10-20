@@ -42,7 +42,7 @@ function indicator(
     unavailableReason:
       value === null
         ? key === "pe" || key === "pb"
-          ? "Indisponível: a metodologia atual não comprova a capitalização consolidada entre classes ativas e eventos societários; o snapshot de preço não basta."
+          ? "Falta confirmar quantas ações de cada classe estão em circulação e alinhar esse total à data da cotação."
           : `Indisponível: ${key}.`
         : null,
     referenceDate: "2026-06-30",
@@ -664,7 +664,7 @@ describe("StockComparisonService", () => {
         id: record.ticker,
         ticker: record.ticker,
         cnpj: record.cnpj,
-        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
         fetchedAt: now,
         revenue: "1000",
         revenueVersion: "2",

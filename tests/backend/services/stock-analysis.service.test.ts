@@ -178,7 +178,7 @@ describe("StockAnalysisService", () => {
       valuationMethod: null,
       marketDataDate: null,
       unavailableReason: expect.stringContaining(
-        "capitalização consolidada entre classes ativas",
+        "quantas ações de cada classe estão em circulação",
       ),
     });
     expect(getValidatedAnalysisQuote).not.toHaveBeenCalled();
@@ -361,7 +361,7 @@ describe("StockAnalysisService", () => {
           valuationSource: null,
           valuationMethod: null,
           unavailableReason: expect.stringContaining(
-            "capitalização consolidada entre classes ativas",
+            "quantas ações de cada classe estão em circulação",
           ),
         }),
         expect.objectContaining({
@@ -560,7 +560,7 @@ it("explains unavailable ratios when cap evidence or positive equity is missing"
     unavailableReason: null,
   });
   expect(unavailable.find(({ key }) => key === "pe")?.unavailableReason).toBe(
-    "Indisponível: a metodologia atual não comprova a capitalização consolidada entre classes ativas e eventos societários; o snapshot de preço não basta.",
+    "Falta confirmar quantas ações de cada classe estão em circulação e alinhar esse total à data da cotação.",
   );
 
   const withCapEvidence = calculateAnalysisIndicators(
@@ -1992,7 +1992,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
     });
     const service = new StockAnalysisService(
       {
@@ -2037,7 +2037,7 @@ describe("StockAnalysisService cache and failures", () => {
       valuationMethod: null,
       marketDataDate: null,
       unavailableReason: expect.stringContaining(
-        "capitalização consolidada entre classes ativas",
+        "quantas ações de cada classe estão em circulação",
       ),
     });
   });
@@ -2046,7 +2046,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
     });
     const marketProvider = {
       getByTicker: vi.fn(),
@@ -2087,7 +2087,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
     });
     const marketProvider = {
       getByTicker: vi.fn(),
@@ -2134,7 +2134,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date("2026-10-17T14:30:00.000Z");
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
     });
     const service = new StockAnalysisService(
       {
@@ -2172,7 +2172,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("keeps current fundamentals available when the fallback quote request fails", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
     });
     const service = new StockAnalysisService(
       {
@@ -2209,7 +2209,7 @@ describe("StockAnalysisService cache and failures", () => {
     async (_label, fields) => {
       const cached = expiredCachePeriod({
         fetchedAt: new Date(),
-        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
       });
       const service = new StockAnalysisService(
         {
@@ -2250,7 +2250,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("loads cached fundamentals when the optional quote repository method is absent", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
     });
     const service = new StockAnalysisService(
       {
@@ -2375,7 +2375,7 @@ describe("StockAnalysisService cache and failures", () => {
       listByTicker: vi.fn().mockResolvedValue([
         expiredCachePeriod({
           fetchedAt: new Date(),
-          sourceVersion: String(new Date().getUTCFullYear()),
+          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
         }),
       ]),
       save: vi.fn(),
@@ -2393,7 +2393,7 @@ describe("StockAnalysisService cache and failures", () => {
     expect(repository.save).toHaveBeenCalledWith(
       "PETR4",
       "33000167000101",
-      `${new Date().getUTCFullYear()}-cvm-v4`,
+      `${new Date().getUTCFullYear()}-cvm-v5`,
       expect.any(Array),
     );
   });
@@ -2415,7 +2415,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -3054,7 +3054,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -3096,6 +3096,62 @@ describe("StockAnalysisService cache and failures", () => {
     expect(marketProvider.getByTicker).not.toHaveBeenCalled();
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
     expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an issuer cache from the previous CVM normalization revision", async () => {
+    const year = new Date().getUTCFullYear();
+    const cachedPeriod = expiredCachePeriod({
+      fetchedAt: new Date(),
+      sourceVersion: `${year}-cvm-v4`,
+    });
+    const refreshedPeriod = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: "2026-03-20",
+      exerciseOrder: "last" as const,
+      periodBasis: "annual" as const,
+      periodType: "annual" as const,
+      sourceDocument: "DFP" as const,
+      revenue: "200",
+      netIncome: "20",
+      equity: "100",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    };
+    const marketProvider = {
+      getByTicker: vi.fn().mockRejectedValue(new Error("market unavailable")),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([refreshedPeriod]),
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
+      save: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+    );
+
+    const result = await service.getFundamentalsByIssuer(
+      "PETR4",
+      "33000167000101",
+    );
+
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
+    expect(repository.save).toHaveBeenCalledWith(
+      "PETR4",
+      "33000167000101",
+      `${year}-cvm-v5`,
+      [refreshedPeriod],
+    );
+    expect(result.fundamentals[0]?.netIncome).toBe("20");
   });
 
   it("refreshes a fresh cache when its CNPJ differs from the expected issuer", async () => {

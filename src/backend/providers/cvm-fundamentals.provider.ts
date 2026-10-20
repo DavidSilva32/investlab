@@ -11,6 +11,7 @@ const requiredAccounts = new Set([
   "3.01",
   "3.09",
   "3.11",
+  "3.13",
   "2.03",
   "2.07",
   "2.08",
@@ -599,7 +600,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       }) => {
         const netIncome = selectedAccount(
           accounts,
-          ["3.09", "3.11"],
+          ["3.09", "3.11", "3.13"],
           consolidatedNetIncomeLabels,
         );
         const equity = selectedAccount(
