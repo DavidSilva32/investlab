@@ -28,13 +28,11 @@ vi.mock("next/image", () => ({
     <img alt={alt} {...props} />
   ),
 }));
-vi.mock("@/infrastructure/mcp/mcp-configuration", () => ({
-  mcpResource: "https://investlab.example/api/mcp",
-}));
-
 import { McpDocumentation } from "@/app/(public)/mcp/_components/mcp-documentation";
 
 afterEach(cleanup);
+
+const publicMcpEndpoint = "https://investlab-amber.vercel.app/api/mcp";
 
 function selectTab(name: RegExp) {
   fireEvent.mouseDown(screen.getByRole("tab", { name }), {
@@ -44,8 +42,8 @@ function selectTab(name: RegExp) {
 }
 
 describe("McpDocumentation", () => {
-  it("presents a navigable overview and the copyable MCP endpoint", () => {
-    render(<McpDocumentation />);
+  it("explains MCP simply and presents the copyable public endpoint", () => {
+    render(<McpDocumentation endpoint={publicMcpEndpoint} />);
 
     expect(
       screen.getByRole("heading", { name: "MCP do InvestLab" }),
@@ -56,12 +54,31 @@ describe("McpDocumentation", () => {
     ).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Carteira/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Administração/ })).toBeTruthy();
-    expect(screen.getByText("https://investlab.example/api/mcp")).toBeTruthy();
-    expect(screen.getByText(/não são APIs REST independentes/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "O que é MCP?" })).toBeTruthy();
+    expect(
+      screen.getByText(/É uma ponte para o ChatGPT consultar informações/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("list", { name: "Como funciona a conexão MCP" }),
+    ).toBeTruthy();
+    expect(screen.getByText(publicMcpEndpoint)).toBeTruthy();
+    expect(
+      screen.getByText(/Esta URL aponta para a implantação pública/),
+    ).toBeTruthy();
+  });
+
+  it("opens the ChatGPT setup guide from the primary action", () => {
+    render(<McpDocumentation endpoint={publicMcpEndpoint} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Ver passo a passo/ }));
+
+    expect(
+      screen.getByRole("heading", { name: "Conectar ao ChatGPT" }),
+    ).toBeTruthy();
   });
 
   it("shows the ChatGPT setup steps and official instructions", () => {
-    render(<McpDocumentation />);
+    render(<McpDocumentation endpoint={publicMcpEndpoint} />);
     selectTab(/Conectar ao ChatGPT/);
 
     const setupPanel = screen.getByRole("tabpanel");
@@ -87,7 +104,7 @@ describe("McpDocumentation", () => {
   });
 
   it("documents input and return contracts for each tool group", () => {
-    render(<McpDocumentation />);
+    render(<McpDocumentation endpoint={publicMcpEndpoint} />);
 
     const expectations = [
       {
@@ -153,7 +170,7 @@ describe("McpDocumentation", () => {
   });
 
   it("explains access scopes, read-only limits, and unverified live connectivity", () => {
-    render(<McpDocumentation />);
+    render(<McpDocumentation endpoint={publicMcpEndpoint} />);
     selectTab(/Acesso e limites/);
 
     const panel = screen.getByRole("tabpanel");
