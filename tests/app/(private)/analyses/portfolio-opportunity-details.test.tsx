@@ -63,7 +63,7 @@ describe("PortfolioOpportunityDetails", () => {
           "PETR4:graham_eps": {
             value: "4",
             source: "Relatório anual",
-            asOf: "2025-12-31",
+            asOf: "",
           },
         }}
         saving={null}
@@ -149,6 +149,161 @@ describe("PortfolioOpportunityDetails", () => {
     expect(saveButton.disabled).toBe(true);
   });
 
+  it("opens manual fields directly when completing missing data", () => {
+    render(
+      <PortfolioOpportunityDetails
+        opportunity={{
+          ...opportunity,
+          methods: {
+            graham: {
+              value: null,
+              differencePercent: null,
+              asOf: null,
+              source: null,
+              unavailableReason: "Falta o LPA.",
+            },
+            bazin: {
+              value: null,
+              differencePercent: null,
+              asOf: null,
+              source: null,
+              unavailableReason: "Faltam proventos.",
+            },
+          },
+        }}
+        openInputsInitially
+        drafts={{
+          "PETR4:graham_eps": {
+            value: "4.25",
+            source: "Relações com investidores",
+            asOf: "2025-06-30",
+          },
+        }}
+        saving={null}
+        onUpdateDraft={vi.fn()}
+        onSaveInput={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", {
+        name: "Inserir dados para calcular Graham e Bazin",
+      }),
+    ).toBeNull();
+    expect(screen.queryByText("Número de Graham")).toBeNull();
+    expect(screen.queryByText("Preço-teto de Bazin")).toBeNull();
+    expect(screen.queryByText("Indisponível")).toBeNull();
+    expect(
+      (
+        screen.getByRole("spinbutton", {
+          name: "Lucro por ação (LPA), valor",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("4.25");
+    expect(
+      screen.getByText(/Origem manual: Relações com investidores/),
+    ).toBeTruthy();
+    expect(screen.getByText(/2025-06-30/)).toBeTruthy();
+    expect(
+      screen.getByLabelText("Valor patrimonial por ação (VPA), valor"),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText("Proventos por ação em 12 meses, origem"),
+    ).toBeTruthy();
+  });
+
+  it("preserves calculated method and opens only the missing method input", () => {
+    render(
+      <PortfolioOpportunityDetails
+        opportunity={{
+          ...opportunity,
+          methods: {
+            ...opportunity.methods,
+            bazin: {
+              value: null,
+              differencePercent: null,
+              asOf: null,
+              source: null,
+              unavailableReason: "Faltam proventos.",
+            },
+          },
+        }}
+        openInputsInitially
+        drafts={{}}
+        saving={null}
+        onUpdateDraft={vi.fn()}
+        onSaveInput={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Número de Graham")).toBeTruthy();
+    expect(screen.getByText("R$ 42,00")).toBeTruthy();
+    expect(screen.queryByText("Preço-teto de Bazin")).toBeNull();
+    expect(screen.queryByText("Indisponível")).toBeNull();
+    expect(screen.queryByLabelText("Lucro por ação (LPA), valor")).toBeNull();
+    expect(
+      screen.queryByLabelText("Valor patrimonial por ação (VPA), valor"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText("Proventos por ação em 12 meses, valor"),
+    ).toBeTruthy();
+  });
+
+  it("shows a zero difference and a supplied limitation for a calculated reference", () => {
+    render(
+      <PortfolioOpportunityDetails
+        opportunity={{
+          ...opportunity,
+          positionDate: "data-inválida",
+          methods: {
+            ...opportunity.methods,
+            graham: {
+              ...opportunity.methods.graham,
+              differencePercent: 0,
+              unavailableReason: "Confira a referência informada.",
+            },
+            bazin: {
+              ...opportunity.methods.bazin,
+              differencePercent: 0,
+            },
+          },
+        }}
+        drafts={{}}
+        saving={null}
+        onUpdateDraft={vi.fn()}
+        onSaveInput={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText("Na referência calculada")).toHaveLength(2);
+    expect(screen.getByText("Confira a referência informada.")).toBeTruthy();
+    expect(
+      screen.getByText(/posição importada em Data não informada/),
+    ).toBeTruthy();
+  });
+
+  it("labels a calculated reference without a date", () => {
+    render(
+      <PortfolioOpportunityDetails
+        opportunity={{
+          ...opportunity,
+          methods: {
+            ...opportunity.methods,
+            graham: { ...opportunity.methods.graham, asOf: null },
+          },
+        }}
+        drafts={{}}
+        saving={null}
+        onUpdateDraft={vi.fn()}
+        onSaveInput={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Relatório anual · Data não informada/),
+    ).toBeTruthy();
+  });
+
   it("keeps missing references and inputs understandable", async () => {
     render(
       <PortfolioOpportunityDetails
@@ -158,7 +313,7 @@ describe("PortfolioOpportunityDetails", () => {
           logoUrl: null,
           price: null,
           priceAsOf: null,
-          positionDate: null,
+          positionDate: "data-inválida",
           fundamentalsAsOf: null,
           financialPeriods: [],
           automaticDividend: null,

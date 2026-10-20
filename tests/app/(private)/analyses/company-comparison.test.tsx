@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render as renderBase, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBase,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompanyComparison } from "@/app/(private)/analyses/_components/company-comparison";
 import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
@@ -41,6 +49,7 @@ vi.mock("@/app/(private)/analyses/_components/analysis-stock-search", () => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   window.localStorage.clear();
 });
 
@@ -95,6 +104,281 @@ function jsonResponse(body: unknown, ok = true) {
 }
 
 describe("CompanyComparison", () => {
+  it("polls refresh status and recalculates once every selected company is complete", async () => {
+    vi.useFakeTimers();
+    const makeCompany = (ticker: string, status: "running" | "completed") => ({
+      ...company(
+        ticker,
+        ticker === "PETR3" ? "33000167000101" : "33000167000102",
+      ),
+      fundamentalsRefresh: {
+        status,
+        retryAfter: null,
+        errorCode: null,
+      },
+    });
+    const pending = {
+      sector: "Petróleo e Gás",
+      sectorMetadataAsOf: null,
+      companies: [
+        makeCompany("PETR3", "running"),
+        makeCompany("VALE3", "running"),
+      ],
+    };
+    const completed = {
+      ...pending,
+      companies: [
+        makeCompany("PETR3", "completed"),
+        makeCompany("VALE3", "completed"),
+      ],
+    };
+    const pendingStatus = {
+      companies: [
+        {
+          ticker: pending.companies[0]!.ticker,
+          fundamentalsRefresh: pending.companies[0]!.fundamentalsRefresh,
+        },
+      ],
+    };
+    const completedStatus = {
+      companies: completed.companies.map(({ ticker, fundamentalsRefresh }) => ({
+        ticker,
+        fundamentalsRefresh,
+      })),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(pending))
+      .mockResolvedValueOnce(jsonResponse(pendingStatus))
+      .mockResolvedValueOnce(jsonResponse(completedStatus))
+      .mockResolvedValueOnce(jsonResponse(completed));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CompanyComparison initialTicker="PETR3" />);
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(
+        /Atualizando dados financeiros da CVM para PETR3, VALE3/,
+      ),
+    ).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/analyses/companies/compare?tickers=PETR3%2CVALE3",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_999);
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "POST" });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/analyses/companies/compare?tickers=PETR3%2CVALE3",
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      "/api/analyses/companies/compare?tickers=PETR3%2CVALE3",
+    );
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: "POST" });
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: "POST" });
+  });
+
+  it("keeps failed refreshes visible and allows an explicit retry", async () => {
+    const failed = {
+      ...company("PETR3", "33000167000101"),
+      fundamentalsRefresh: {
+        status: "failed" as const,
+        retryAfter: null,
+        errorCode: "provider_error",
+      },
+    };
+    const response = {
+      sector: "Petróleo e Gás",
+      sectorMetadataAsOf: null,
+      companies: [failed, company("VALE3", "33000167000102")],
+    };
+    const pending = {
+      ...response,
+      companies: [
+        {
+          ...company("PETR3", "33000167000101"),
+          fundamentalsRefresh: {
+            status: "running" as const,
+            retryAfter: null,
+            errorCode: null,
+          },
+        },
+        company("VALE3", "33000167000102"),
+      ],
+    };
+    const responseStatus = {
+      companies: [
+        {
+          ticker: "PETR3",
+          fundamentalsRefresh: {
+            status: "failed" as const,
+            retryAfter: null,
+            errorCode: "provider_error",
+          },
+        },
+        {
+          ticker: "VALE3",
+          fundamentalsRefresh: {
+            status: "idle" as const,
+            retryAfter: null,
+            errorCode: null,
+          },
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(pending))
+      .mockResolvedValueOnce(jsonResponse(responseStatus))
+      .mockResolvedValueOnce(jsonResponse(response));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CompanyComparison initialTicker="PETR3" />);
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+    expect(
+      await screen.findByText(
+        /Não foi possível atualizar os fundamentos de PETR3/,
+        {},
+        { timeout: 5_000 },
+      ),
+    ).toBeTruthy();
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/analyses/companies/compare?tickers=PETR3%2CVALE3",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads status after a completed comparison is invalidated", async () => {
+    const response = {
+      sector: "Petróleo e Gás",
+      sectorMetadataAsOf: null,
+      companies: [
+        company("PETR3", "33000167000101"),
+        company("VALE3", "33000167000102"),
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(response))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          companies: response.companies.map(({ ticker }) => ({
+            ticker,
+            fundamentalsRefresh: {
+              status: "completed",
+              retryAfter: null,
+              errorCode: null,
+            },
+          })),
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(response));
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderBase(
+      <QueryClientProvider client={queryClient}>
+        <CompanyComparison initialTicker="PETR3" />
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    await user.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    queryClient.setQueryData(
+      ["analyses", "comparison", "PETR3", "VALE3"],
+      null as never,
+    );
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["analyses", "comparison", "PETR3", "VALE3"],
+      });
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/analyses/companies/compare?tickers=PETR3%2CVALE3",
+    );
+    expect(fetchMock.mock.calls[1]?.[1]).toBeUndefined();
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "POST" });
+    queryClient.clear();
+  });
+
+  it("honors a server retry-after deadline before enabling comparison retry", async () => {
+    vi.useFakeTimers();
+    const response = {
+      sector: "Petróleo e Gás",
+      sectorMetadataAsOf: null,
+      companies: [
+        {
+          ...company("PETR3", "33000167000101"),
+          fundamentalsRefresh: {
+            status: "failed" as const,
+            retryAfter: "2099-01-01T00:00:00.000Z",
+            errorCode: "provider_error",
+          },
+        },
+        company("VALE3", "33000167000102"),
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(response));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CompanyComparison initialTicker="PETR3" />);
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar VALE3" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Comparar selecionadas" }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const retry = screen.getByRole("button", {
+      name: /Tente novamente em \d+s/,
+    });
+    expect(retry).toHaveProperty("disabled", true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(
+      screen.getByRole("button", { name: /Tente novamente em \d+s/ }),
+    ).toHaveProperty("disabled", true);
+  });
+
   it("seeds a consulted ticker and compares in selection order with individual links", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

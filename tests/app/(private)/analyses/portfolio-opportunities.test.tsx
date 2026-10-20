@@ -156,7 +156,10 @@ describe("PortfolioOpportunities", () => {
 
     render(<PortfolioOpportunities />);
 
-    expect(await screen.findByText("CDB liquidez diária")).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: /Renda fixa/ }),
+    ).toBeTruthy();
+    expect(screen.queryByText("CDB liquidez diária")).toBeNull();
     expect(screen.getAllByText("R$ 1.250,00")).toHaveLength(3);
     expect(screen.getByRole("alert").textContent).toContain(
       "Falha na análise.",
@@ -277,7 +280,9 @@ describe("PortfolioOpportunities", () => {
     ).closest("li");
     expect(positionRow).toBeTruthy();
     await userEvent.click(
-      within(positionRow!).getByRole("button", { name: "Ver análise da ação" }),
+      within(positionRow!).getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     expect(within(positionRow!).getByText("Número de Graham")).toBeTruthy();
   });
@@ -367,35 +372,29 @@ describe("PortfolioOpportunities", () => {
     );
     expect(stockRow).toBeTruthy();
     expect(
-      within(stockRow!).getByRole("button", { name: "Ver análise da ação" }),
+      within(stockRow!).getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     ).toBeTruthy();
     expect(
       within(
-        screen.getByText("CDB liquidez diária").closest("li")!,
-      ).queryByRole("button", { name: "Ver análise da ação" }),
+        screen.getByRole("button", { name: /Renda fixa/ }).closest("div")!,
+      ).queryByRole("button", { name: /Ver análise da ação|Completar dados/ }),
     ).toBeNull();
     expect(screen.queryByText("Análises disponíveis")).toBeNull();
     expect(
-      screen.getAllByRole("button", { name: "Ver análise da ação" }),
+      screen.getAllByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     ).toHaveLength(1);
-    for (const product of [
-      "ETF internacional",
-      "FII de exemplo",
-      "BDR de exemplo",
-    ]) {
-      const productRow = screen
-        .getAllByRole("listitem")
-        .find((item) => item.textContent?.includes(product));
-      expect(productRow).toBeTruthy();
-      expect(
-        within(productRow!).queryByRole("button", {
-          name: "Ver análise da ação",
-        }),
-      ).toBeNull();
-    }
+    expect(screen.queryByText("ETF internacional")).toBeNull();
+    expect(screen.queryByText("FII de exemplo")).toBeNull();
+    expect(screen.queryByText("BDR de exemplo")).toBeNull();
 
     await userEvent.click(
-      within(stockRow!).getByRole("button", { name: "Ver análise da ação" }),
+      within(stockRow!).getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
 
     expect(within(stockRow!).getByText("Número de Graham")).toBeTruthy();
@@ -442,8 +441,45 @@ describe("PortfolioOpportunities", () => {
     render(<PortfolioOpportunities />);
 
     expect(
-      await screen.findByText("Carregando posições da carteira"),
+      await screen.findByLabelText("Carregando análise da carteira"),
     ).toBeTruthy();
+  });
+
+  it("keeps the loading state while opportunities are pending after allocation resolves", async () => {
+    let resolveOpportunities!: (
+      value: Awaited<ReturnType<typeof response>>,
+    ) => void;
+    let allocationResolved = false;
+    const pendingOpportunities = new Promise<
+      Awaited<ReturnType<typeof response>>
+    >((resolve) => {
+      resolveOpportunities = resolve;
+    });
+    stubFetch(
+      () => pendingOpportunities,
+      () =>
+        response({ positions: [] }).then((value) => {
+          allocationResolved = true;
+          return value;
+        }),
+    );
+
+    render(<PortfolioOpportunities />);
+
+    await waitFor(() => expect(allocationResolved).toBe(true));
+    expect(screen.getByLabelText(/Carregando/)).toBeTruthy();
+    expect(screen.queryByText("Sua carteira está vazia")).toBeNull();
+
+    await act(async () => {
+      resolveOpportunities(
+        await response({
+          opportunities: [],
+          settings: { bazinTargetYield: 6 },
+        }),
+      );
+    });
+
+    expect(await screen.findByText("Sua carteira está vazia")).toBeTruthy();
   });
 
   it("explains when no listed position qualifies for the equity references", async () => {
@@ -638,7 +674,9 @@ describe("PortfolioOpportunities", () => {
       "https://icons.brapi.dev/icons/PETR4.svg",
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
+      screen.getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     expect(screen.getByText("Número de Graham")).toBeTruthy();
     expect(screen.getByText("Preço-teto de Bazin")).toBeTruthy();
@@ -696,7 +734,9 @@ describe("PortfolioOpportunities", () => {
 
     await screen.findByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
+      screen.getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     expect(screen.getByText(/cotação R\$ 30,00/)).toBeTruthy();
     expect(screen.getByText(/2026-10-01/)).toBeTruthy();
@@ -727,7 +767,7 @@ describe("PortfolioOpportunities", () => {
           unavailableReason: "Graham sem comparação.",
         },
         bazin: {
-          value: null,
+          value: 20,
           differencePercent: -5,
           asOf: "invalid-date",
           source: null,
@@ -778,40 +818,35 @@ describe("PortfolioOpportunities", () => {
     );
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
-    for (const trigger of screen.getAllByRole("button", {
-      name: "Ver análise da ação",
-    })) {
-      await userEvent.click(trigger);
-    }
+    const triggers = screen.getAllByRole("button", {
+      name: /Ver análise da ação|Completar dados/,
+    });
+    await userEvent.click(triggers[0]!);
     expect(screen.getByText("Na referência calculada")).toBeTruthy();
     expect(screen.getByText(/acima da referência/i)).toBeTruthy();
     expect(screen.getByText(/ficam em lados diferentes/i)).toBeTruthy();
     expect(
       screen.getAllByText(/posição importada em Data não informada/i),
-    ).toHaveLength(2);
-    expect(screen.getAllByText("Indisponível")).toHaveLength(3);
+    ).toHaveLength(1);
+    expect(screen.queryByText("Indisponível")).toBeNull();
     expect(screen.queryAllByText("Comparação indisponível")).toHaveLength(0);
-    expect(screen.getByText("Bazin indisponível.")).toBeTruthy();
-    expect(screen.getByText("Bazin sem dados suficientes.")).toBeTruthy();
     expect(screen.queryByText(/Proventos em 12 meses:/i)).toBeNull();
     expect(screen.queryByText(/Fundamentos:/i)).toBeNull();
     expect(screen.queryByText(/DFP|ITR|BRAPI|CVM/)).toBeNull();
 
-    await userEvent.click(
-      screen.getAllByRole("button", {
-        name: "Inserir dados para calcular Graham e Bazin",
-      })[0]!,
-    );
+    const completionButton = screen.getByRole("button", {
+      name: "Completar dados",
+    });
+    const valeRow = completionButton.closest("li");
+    expect(valeRow).toBeTruthy();
+    await userEvent.click(completionButton);
+    expect(within(valeRow!).queryByText("Número de Graham")).toBeNull();
     expect(
-      (document.getElementById("PETR4-graham_eps-as-of") as HTMLInputElement)
-        .value,
-    ).toBe("");
+      within(valeRow!).getByRole("spinbutton", {
+        name: "Lucro por ação (LPA), valor",
+      }),
+    ).toBeTruthy();
     expect(screen.getAllByPlaceholderText("Origem do dado")).toHaveLength(3);
-    await userEvent.click(
-      screen.getAllByRole("button", {
-        name: "Inserir dados para calcular Graham e Bazin",
-      })[1]!,
-    );
     fireEvent.change(document.getElementById("VALE3-graham_eps-value")!, {
       target: { value: "9" },
     });
@@ -943,7 +978,9 @@ describe("PortfolioOpportunities", () => {
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
+      screen.getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     await userEvent.click(
       screen.getByRole("button", {
@@ -992,7 +1029,9 @@ describe("PortfolioOpportunities", () => {
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
+      screen.getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     await userEvent.click(
       screen.getByRole("button", {
@@ -1039,7 +1078,9 @@ describe("PortfolioOpportunities", () => {
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
+      screen.getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     await userEvent.click(
       screen.getByRole("button", {
@@ -1079,7 +1120,9 @@ describe("PortfolioOpportunities", () => {
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
+      screen.getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     const request = vi.spyOn(apiClient, "apiRequest");
     request.mockRejectedValueOnce("private manual rejection");
@@ -1128,7 +1171,9 @@ describe("PortfolioOpportunities", () => {
     render(<PortfolioOpportunities />);
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
+      screen.getByRole("button", {
+        name: /Ver análise da ação|Completar dados/,
+      }),
     );
     await userEvent.click(
       screen.getByRole("button", {

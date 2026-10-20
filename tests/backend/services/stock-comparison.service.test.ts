@@ -159,6 +159,11 @@ function makeService(
     getFundamentalsByIssuer: vi.fn(async (ticker: string) =>
       getAnalysis(ticker),
     ),
+    getFundamentalsRefreshState: vi.fn(async () => ({
+      status: "running" as const,
+      retryAfter: null,
+      errorCode: null,
+    })),
   };
   return {
     service: new StockComparisonService(repository, stockAnalysis),
@@ -168,6 +173,66 @@ function makeService(
 }
 
 describe("StockComparisonService", () => {
+  it("loads comparison refresh status without reading fundamentals or quotes", async () => {
+    const records = [metadata("PETR3", 1), metadata("VALE3", 2)];
+    const { service, stockAnalysis } = makeService(records);
+
+    const result = await service.getRefreshStatus({
+      tickers: ["PETR3", "VALE3"],
+    });
+
+    expect(result.companies).toEqual([
+      {
+        ticker: "PETR3",
+        fundamentalsRefresh: {
+          status: "running",
+          retryAfter: null,
+          errorCode: null,
+        },
+      },
+      {
+        ticker: "VALE3",
+        fundamentalsRefresh: {
+          status: "running",
+          retryAfter: null,
+          errorCode: null,
+        },
+      },
+    ]);
+    expect(stockAnalysis.getFundamentalsByIssuer).not.toHaveBeenCalled();
+    expect(stockAnalysis.getFundamentalsRefreshState).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects invalid refresh status requests", async () => {
+    const { service } = makeService([]);
+
+    await expect(
+      service.getRefreshStatus({ tickers: ["bad"] }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it("rejects refresh status when CVM identity is ambiguous", async () => {
+    const { service } = makeService([
+      metadata("PETR3", 1),
+      metadata("PETR3", 2),
+      metadata("VALE3", 3),
+    ]);
+
+    await expect(
+      service.getRefreshStatus({ tickers: ["PETR3", "VALE3"] }),
+    ).rejects.toMatchObject({ statusCode: 422 });
+  });
+
+  it("rejects refresh status when an issuer has no matching CVM identity", async () => {
+    const { service } = makeService([metadata("PETR3", 1)]);
+
+    await expect(
+      service.getRefreshStatus({ tickers: ["PETR3", "VALE3"] }),
+    ).rejects.toMatchObject({ statusCode: 422 });
+  });
+
   it("compares same-sector nonfinancial fundamentals in selection order and keeps valuation separate", async () => {
     const records = [metadata("PETR3", 1), metadata("PETR4", 2)];
     const { service } = makeService(records);

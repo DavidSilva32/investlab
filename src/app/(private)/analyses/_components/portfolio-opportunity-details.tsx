@@ -184,12 +184,14 @@ function Reference({
 
 export function PortfolioOpportunityDetails({
   opportunity,
+  openInputsInitially = false,
   drafts,
   saving,
   onUpdateDraft,
   onSaveInput,
 }: {
   opportunity: PortfolioOpportunity;
+  openInputsInitially?: boolean;
   drafts: Readonly<Record<string, OpportunityDraft>>;
   saving: string | null;
   onUpdateDraft: (
@@ -199,7 +201,7 @@ export function PortfolioOpportunityDetails({
   ) => void;
   onSaveInput: (key: OpportunityInputKey) => void;
 }) {
-  const [inputsOpen, setInputsOpen] = useState(false);
+  const [inputsOpen, setInputsOpen] = useState(openInputsInitially);
   const ticker = opportunity.ticker;
   const grahamDifference = opportunity.methods.graham.differencePercent;
   const bazinDifference = opportunity.methods.bazin.differencePercent;
@@ -207,6 +209,103 @@ export function PortfolioOpportunityDetails({
     grahamDifference !== null &&
     bazinDifference !== null &&
     Math.sign(grahamDifference) !== Math.sign(bazinDifference);
+  const manualFields = openInputsInitially
+    ? fields.filter((field) =>
+        field.key === "bazin_dividend_per_share"
+          ? opportunity.methods.bazin.value === null
+          : opportunity.methods.graham.value === null,
+      )
+    : fields;
+  const manualInputFields = (
+    <div className="grid gap-3 pt-2 lg:grid-cols-2">
+      <p className="text-xs text-muted-foreground lg:col-span-2">
+        Informe valor por ação, origem e data: LPA e VPA para Graham; proventos
+        em 12 meses para Bazin.
+      </p>
+      {manualFields.map((field) => {
+        const guidanceId = `${ticker}-${field.key}-guidance`;
+        const guidance =
+          field.key === "graham_eps"
+            ? "Transcreva o LPA publicado pela empresa na mesma data-base do VPA."
+            : field.key === "graham_book_value_per_share"
+              ? "Transcreva o VPA por ação publicado pela empresa na mesma data-base do LPA. Não use o patrimônio total nem divida valores sem conferir a quantidade e a classe das ações."
+              : "No histórico de proventos de Relações com Investidores, some dividendos e JCP em dinheiro pagos por ação nos 12 meses anteriores à data informada. Não use o total creditado na sua conta.";
+        const draft = drafts[getOpportunityDraftKey(ticker, field.key)] ?? {
+          value: "",
+          source: "",
+          asOf: "",
+        };
+        const isSaving = saving === getOpportunityDraftKey(ticker, field.key);
+        return (
+          <form
+            key={field.key}
+            className="space-y-2 rounded-md bg-muted/30 p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSaveInput(field.key);
+            }}
+          >
+            <label
+              htmlFor={`${ticker}-${field.key}-value`}
+              className="text-sm font-medium"
+            >
+              {field.label}
+            </label>
+            <p className="text-xs text-muted-foreground">{field.hint}</p>
+            <p id={guidanceId} className="text-xs text-muted-foreground">
+              {guidance}
+            </p>
+            <Input
+              id={`${ticker}-${field.key}-value`}
+              aria-label={`${field.label}, valor`}
+              aria-describedby={guidanceId}
+              type="number"
+              min="0"
+              step="any"
+              required
+              value={draft.value}
+              onChange={(event) =>
+                onUpdateDraft(field.key, "value", event.target.value)
+              }
+              placeholder="Valor"
+            />
+            <DatePickerField
+              id={`${ticker}-${field.key}-as-of`}
+              label={`${field.label}, data de referência`}
+              value={draft.asOf}
+              describedBy={guidanceId}
+              required
+              onChange={(value) => onUpdateDraft(field.key, "asOf", value)}
+            />
+            <div className="flex gap-2">
+              <Input
+                aria-label={`${field.label}, origem`}
+                aria-describedby={guidanceId}
+                placeholder="Origem do dado"
+                minLength={2}
+                maxLength={160}
+                required
+                value={draft.source}
+                onChange={(event) =>
+                  onUpdateDraft(field.key, "source", event.target.value)
+                }
+              />
+              <Button type="submit" size="sm" disabled={isSaving}>
+                <Save className="mr-2 size-4" aria-hidden="true" />
+                {isSaving ? "Salvando" : "Salvar"}
+              </Button>
+            </div>
+            {draft.source && (
+              <p className="text-xs text-muted-foreground">
+                Origem manual: {draft.source} ·{" "}
+                {draft.asOf || "data não informada"}.
+              </p>
+            )}
+          </form>
+        );
+      })}
+    </div>
+  );
   return (
     <Card className="border-0 shadow-none">
       <CardContent className="space-y-3 p-0">
@@ -229,135 +328,61 @@ export function PortfolioOpportunityDetails({
           · {opportunity.priceAsOf?.slice(0, 10) ?? "data não informada"} ·
           posição importada em {formatDate(opportunity.positionDate)}
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Reference
-            title="Número de Graham"
-            value={opportunity.methods.graham.value}
-            difference={opportunity.methods.graham.differencePercent}
-            unavailable={opportunity.methods.graham.unavailableReason}
-            source={opportunity.methods.graham.source}
-            asOf={opportunity.methods.graham.asOf}
-            explanation="Usa LPA e VPA para estimar uma referência de valor. A fórmula é a raiz quadrada de 22,5 × LPA × VPA. Precisa de valores positivos da mesma data-base e não determina uma decisão."
-          />
-          <Reference
-            title="Preço-teto de Bazin"
-            value={opportunity.methods.bazin.value}
-            difference={opportunity.methods.bazin.differencePercent}
-            unavailable={opportunity.methods.bazin.unavailableReason}
-            source={opportunity.methods.bazin.source}
-            asOf={opportunity.methods.bazin.asOf}
-            explanation="Divide proventos anuais por ação pela taxa-alvo. O resultado depende dos dados informados e não confirma que os proventos sejam recorrentes."
-          />
-        </div>
-        {referencesDiverge && (
-          <p className="text-xs text-muted-foreground">
-            As referências ficam em lados diferentes da cotação atual.
-          </p>
+        {(!inputsOpen || openInputsInitially) && (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(!openInputsInitially ||
+                opportunity.methods.graham.value !== null) && (
+                <Reference
+                  title="Número de Graham"
+                  value={opportunity.methods.graham.value}
+                  difference={opportunity.methods.graham.differencePercent}
+                  unavailable={opportunity.methods.graham.unavailableReason}
+                  source={opportunity.methods.graham.source}
+                  asOf={opportunity.methods.graham.asOf}
+                  explanation="Usa LPA e VPA para estimar uma referência de valor. A fórmula é a raiz quadrada de 22,5 × LPA × VPA. Precisa de valores positivos da mesma data-base e não determina uma decisão."
+                />
+              )}
+              {(!openInputsInitially ||
+                opportunity.methods.bazin.value !== null) && (
+                <Reference
+                  title="Preço-teto de Bazin"
+                  value={opportunity.methods.bazin.value}
+                  difference={opportunity.methods.bazin.differencePercent}
+                  unavailable={opportunity.methods.bazin.unavailableReason}
+                  source={opportunity.methods.bazin.source}
+                  asOf={opportunity.methods.bazin.asOf}
+                  explanation="Divide proventos anuais por ação pela taxa-alvo. O resultado depende dos dados informados e não confirma que os proventos sejam recorrentes."
+                />
+              )}
+            </div>
+            {referencesDiverge && (
+              <p className="text-xs text-muted-foreground">
+                As referências ficam em lados diferentes da cotação atual.
+              </p>
+            )}
+          </>
         )}
-        <Collapsible open={inputsOpen} onOpenChange={setInputsOpen}>
-          <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-auto w-full justify-between px-1 py-2 text-left text-sm"
-            >
-              Inserir dados para calcular Graham e Bazin
-              <ChevronDown
-                className="size-4 transition-transform [[data-state=open]_&]:rotate-180"
-                aria-hidden="true"
-              />
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="grid gap-3 pt-2 lg:grid-cols-2">
-            <p className="text-xs text-muted-foreground lg:col-span-2">
-              Informe valor por ação, origem e data: LPA e VPA para Graham;
-              proventos em 12 meses para Bazin.
-            </p>
-            {fields.map((field) => {
-              const guidanceId = `${ticker}-${field.key}-guidance`;
-              const guidance =
-                field.key === "graham_eps"
-                  ? "Transcreva o LPA publicado pela empresa na mesma data-base do VPA."
-                  : field.key === "graham_book_value_per_share"
-                    ? "Transcreva o VPA por ação publicado pela empresa na mesma data-base do LPA. Não use o patrimônio total nem divida valores sem conferir a quantidade e a classe das ações."
-                    : "No histórico de proventos de Relações com Investidores, some dividendos e JCP em dinheiro pagos por ação nos 12 meses anteriores à data informada. Não use o total creditado na sua conta.";
-              const draft = drafts[
-                getOpportunityDraftKey(ticker, field.key)
-              ] ?? { value: "", source: "", asOf: "" };
-              const isSaving =
-                saving === getOpportunityDraftKey(ticker, field.key);
-              return (
-                <form
-                  key={field.key}
-                  className="space-y-2 rounded-md bg-muted/30 p-3"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    onSaveInput(field.key);
-                  }}
-                >
-                  <label
-                    htmlFor={`${ticker}-${field.key}-value`}
-                    className="text-sm font-medium"
-                  >
-                    {field.label}
-                  </label>
-                  <p className="text-xs text-muted-foreground">{field.hint}</p>
-                  <p id={guidanceId} className="text-xs text-muted-foreground">
-                    {guidance}
-                  </p>
-                  <Input
-                    id={`${ticker}-${field.key}-value`}
-                    aria-label={`${field.label}, valor`}
-                    aria-describedby={guidanceId}
-                    type="number"
-                    min="0"
-                    step="any"
-                    required
-                    value={draft.value}
-                    onChange={(event) =>
-                      onUpdateDraft(field.key, "value", event.target.value)
-                    }
-                    placeholder="Valor"
-                  />
-                  <DatePickerField
-                    id={`${ticker}-${field.key}-as-of`}
-                    label={`${field.label}, data de referência`}
-                    value={draft.asOf}
-                    describedBy={guidanceId}
-                    required
-                    onChange={(value) =>
-                      onUpdateDraft(field.key, "asOf", value)
-                    }
-                  />
-                  <div className="flex gap-2">
-                    <Input
-                      aria-label={`${field.label}, origem`}
-                      aria-describedby={guidanceId}
-                      placeholder="Origem do dado"
-                      minLength={2}
-                      maxLength={160}
-                      required
-                      value={draft.source}
-                      onChange={(event) =>
-                        onUpdateDraft(field.key, "source", event.target.value)
-                      }
-                    />
-                    <Button type="submit" size="sm" disabled={isSaving}>
-                      <Save className="mr-2 size-4" aria-hidden="true" />
-                      {isSaving ? "Salvando" : "Salvar"}
-                    </Button>
-                  </div>
-                  {draft.source && (
-                    <p className="text-xs text-muted-foreground">
-                      Origem manual: {draft.source} ·{" "}
-                      {draft.asOf || "data não informada"}.
-                    </p>
-                  )}
-                </form>
-              );
-            })}
-          </CollapsibleContent>
-        </Collapsible>
+        {openInputsInitially ? (
+          manualInputFields
+        ) : (
+          <Collapsible open={inputsOpen} onOpenChange={setInputsOpen}>
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-between px-1 py-2 text-left text-sm"
+              >
+                Inserir dados para calcular Graham e Bazin
+                <ChevronDown
+                  className="size-4 transition-transform [[data-state=open]_&]:rotate-180"
+                  aria-hidden="true"
+                />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>{manualInputFields}</CollapsibleContent>
+          </Collapsible>
+        )}
         <Button asChild type="button" variant="outline" size="sm">
           <Link href={`/analises?ticker=${encodeURIComponent(ticker)}`}>
             <Search className="mr-2 size-4" aria-hidden="true" /> Ver critérios

@@ -47,5 +47,18 @@ export class StockAnalysisController {
       },
     });
   }
+
+  async requestFundamentalsRefresh(ticker: string, requestId: string) {
+    const market = await stockAnalysisService.getMarketByTicker(
+      ticker,
+      requestId,
+    );
+    const result = await stockAnalysisService.requestFundamentalsRefresh(
+      market.ticker,
+      market.cnpj,
+      requestId,
+    );
+    return { state: result.state, run: result.run };
+  }
 }
 export const stockAnalysisController = new StockAnalysisController();

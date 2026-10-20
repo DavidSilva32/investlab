@@ -1,6 +1,7 @@
 import { Unzip, UnzipInflate } from "fflate";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { logger } from "@/infrastructure/logging/logger";
+import { getCurrentRequestId } from "@/infrastructure/logging/request-context";
 import type {
   FundamentalPeriod,
   FundamentalsProvider,
@@ -345,9 +346,45 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
 
   private async resolveIssuer(cnpj: string, ticker: string) {
     const startedAt = Date.now();
+    const requestId = getCurrentRequestId();
+    logger.info("stock_fundamentals_cvm_issuer_started", {
+      requestId,
+      ticker,
+      cnpjAvailable: cnpj.length === 14,
+    });
+    try {
+      return await this.resolveIssuerFromCvm(
+        cnpj,
+        ticker,
+        startedAt,
+        requestId,
+      );
+    } catch (error) {
+      logger.warn("stock_fundamentals_cvm_issuer_failed", {
+        requestId,
+        ticker,
+        durationMs: Date.now() - startedAt,
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      throw error;
+    }
+  }
+
+  private async resolveIssuerFromCvm(
+    cnpj: string,
+    ticker: string,
+    startedAt: number,
+    requestId: string | undefined,
+  ) {
     const response = await this.fetcher(
       `${cvmBaseUrl}/CAD/DADOS/cad_cia_aberta.csv`,
     );
+    logger.info("stock_fundamentals_cvm_issuer_response_received", {
+      requestId,
+      ticker,
+      httpStatus: response.status,
+      timeToHeadersMs: Date.now() - startedAt,
+    });
     if (!response.ok)
       throw new Error(`CVM CAD request failed: ${response.status}`);
     let header: string[] | null = null;
@@ -372,6 +409,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         404,
       );
     logger.info("stock_fundamentals_cvm_issuer_resolved", {
+      requestId,
       ticker,
       cnpj,
       cvmCode: resolvedIssuer.code,
@@ -388,15 +426,57 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     cvmCode: string,
     ticker: string,
   ): Promise<FundamentalPeriod[]> {
-    const url = `${cvmBaseUrl}/DOC/${document}/DADOS/${document.toLowerCase()}_cia_aberta_${year}.zip`;
     const startedAt = Date.now();
+    const requestId = getCurrentRequestId();
+    try {
+      return await this.readCvmDocument(
+        document,
+        year,
+        cnpj,
+        cvmCode,
+        ticker,
+        startedAt,
+        requestId,
+      );
+    } catch (error) {
+      logger.warn("stock_fundamentals_cvm_document_failed", {
+        requestId,
+        ticker,
+        document,
+        year,
+        durationMs: Date.now() - startedAt,
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      throw error;
+    }
+  }
+
+  private async readCvmDocument(
+    document: "DFP" | "ITR",
+    year: number,
+    cnpj: string,
+    cvmCode: string,
+    ticker: string,
+    startedAt: number,
+    requestId: string | undefined,
+  ): Promise<FundamentalPeriod[]> {
+    const url = `${cvmBaseUrl}/DOC/${document}/DADOS/${document.toLowerCase()}_cia_aberta_${year}.zip`;
     logger.info("stock_fundamentals_cvm_document_started", {
+      requestId,
       ticker,
       document,
       year,
     });
     const response = await this.fetcher(url);
     const timeToHeadersMs = Date.now() - startedAt;
+    logger.info("stock_fundamentals_cvm_document_response_received", {
+      requestId,
+      ticker,
+      document,
+      year,
+      httpStatus: response.status,
+      timeToHeadersMs,
+    });
     if (!response.ok)
       throw new Error(`CVM ${document} request failed: ${response.status}`);
     if (!response.body) throw new Error(`CVM ${document} response has no body`);
@@ -563,6 +643,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       }
     });
     logger.info("stock_fundamentals_cvm_document_completed", {
+      requestId,
       ticker,
       document,
       year,
@@ -647,6 +728,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
   }
 
   async getByTicker({ ticker, cnpj }: { ticker: string; cnpj: string | null }) {
+    const requestId = getCurrentRequestId();
     if (!cnpj)
       throw new ApplicationError(
         "Não foi possível associar o ativo a uma companhia registrada na CVM.",
@@ -683,6 +765,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     const quarterlyPromise = readDocumentOnce("ITR", currentYear).catch(
       (error) => {
         logger.warn("stock_fundamentals_cvm_itr_unavailable", {
+          requestId,
           ticker,
           cnpj: normalizedCnpj,
           error,
@@ -702,6 +785,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         .map((year) =>
           readDocumentOnce("ITR", year).catch((error) => {
             logger.warn("stock_fundamentals_cvm_historical_itr_unavailable", {
+              requestId,
               ticker,
               cnpj: normalizedCnpj,
               year,
@@ -717,6 +801,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
     )
       ? readDocumentOnce("ITR", currentYear - 1).catch((error) => {
           logger.warn("stock_fundamentals_cvm_prior_itr_unavailable", {
+            requestId,
             ticker,
             cnpj: normalizedCnpj,
             error,
@@ -760,6 +845,7 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
         404,
       );
     logger.info("stock_fundamentals_cvm_normalized", {
+      requestId,
       ticker,
       cnpj: normalizedCnpj,
       cvmCode: issuer.code,

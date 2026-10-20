@@ -144,7 +144,7 @@ export function PortfolioOpportunities({
     Number.isFinite(configuredTargetYield)
       ? String(configuredTargetYield)
       : "6");
-  const loading = opportunitiesQuery.isPending && allocationQuery.isPending;
+  const loading = opportunitiesQuery.isPending || allocationQuery.isPending;
   const opportunitiesError =
     !opportunitiesQuery.data && opportunitiesQuery.error instanceof Error
       ? opportunitiesQuery.error.message
@@ -267,9 +267,12 @@ export function PortfolioOpportunities({
   }
 
   function renderOpportunity(item: PortfolioOpportunity) {
+    const needsInput =
+      item.methods.graham.value === null || item.methods.bazin.value === null;
     return (
       <PortfolioOpportunityDetails
         opportunity={item}
+        openInputsInitially={needsInput}
         drafts={drafts}
         saving={saving}
         onUpdateDraft={(key, field: OpportunityDraftField, value) =>
@@ -297,6 +300,15 @@ export function PortfolioOpportunities({
         (item) =>
           [normalizeTicker(item.ticker), renderOpportunity(item)] as const,
       ),
+  );
+  const tickersNeedingInput = new Set(
+    opportunities
+      .filter(
+        (item) =>
+          item.methods.graham.value === null ||
+          item.methods.bazin.value === null,
+      )
+      .map((item) => normalizeTicker(item.ticker)),
   );
   const fallbackOpportunities = opportunities.filter(
     (item) => !supportedPositionTickers.has(normalizeTicker(item.ticker)),
@@ -342,6 +354,7 @@ export function PortfolioOpportunities({
           <PortfolioPositions
             positions={positions}
             analysesByTicker={analysesByTicker}
+            tickersNeedingInput={tickersNeedingInput}
           />
         </>
       )}
@@ -354,12 +367,6 @@ export function PortfolioOpportunities({
             </CardDescription>
           </CardHeader>
         </Card>
-      )}
-      {!positionsLoaded && !allocationError && (
-        <div role="status" className="space-y-2">
-          <Skeleton className="h-28" />
-          <p className="sr-only">Carregando posições da carteira</p>
-        </div>
       )}
       {classificationStatus !== "resolved" && (
         <div

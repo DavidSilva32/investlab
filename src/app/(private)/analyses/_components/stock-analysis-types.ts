@@ -70,6 +70,11 @@ export type StockAnalysis = {
   priceIsStale?: boolean;
   fundamentalsIsStale?: boolean;
   fundamentalsFetchedAt?: string | null;
+  fundamentalsRefresh?: {
+    status: "idle" | "running" | "completed" | "failed";
+    retryAfter: string | null;
+    errorCode: string | null;
+  };
   history: Array<{ date: string; close: number }>;
   historyStatus?: "available" | "partial" | "empty" | "unavailable";
   historyFailure?: {

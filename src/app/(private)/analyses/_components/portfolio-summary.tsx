@@ -32,6 +32,7 @@ type SummaryGroup = {
   valueCents: bigint;
   knownValueCount: number;
   color: string;
+  percentage: number | null;
 };
 
 export function getPortfolioSummary(positions: PortfolioPosition[]) {
@@ -44,6 +45,7 @@ export function getPortfolioSummary(positions: PortfolioPosition[]) {
       valueCents: 0n,
       knownValueCount: 0,
       color: getStrategyAssetClassColor(assetClass.id),
+      percentage: null,
     });
   }
 
@@ -63,14 +65,17 @@ export function getPortfolioSummary(positions: PortfolioPosition[]) {
       subClass: position.classification.subClass,
       geography: position.classification.geography,
     });
-    const groupId = id ?? "unclassified";
+    const broadClass = position.classification.assetClass?.trim();
+    const groupId =
+      id ?? (broadClass ? `category:${broadClass}` : "unclassified");
     const group = groups.get(groupId) ?? {
       id: groupId,
-      label: "Classe não identificada",
+      label: broadClass || "Classe não identificada",
       count: 0,
       valueCents: 0n,
       knownValueCount: 0,
       color: neutralAssetClassColor,
+      percentage: null,
     };
     group.count += 1;
     if (money.cents === null) unvaluedCount += 1;
@@ -81,6 +86,16 @@ export function getPortfolioSummary(positions: PortfolioPosition[]) {
       knownValueCount += 1;
     }
     groups.set(groupId, group);
+  }
+
+  for (const group of groups.values()) {
+    group.percentage =
+      knownValueCents > 0n && group.knownValueCount > 0
+        ? Number(
+            (group.valueCents * 10000n + knownValueCents / 2n) /
+              knownValueCents,
+          ) / 100
+        : null;
   }
 
   return {
@@ -103,18 +118,12 @@ export function PortfolioSummary({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Sua carteira</CardTitle>
+        <CardTitle className="text-base">Patrimônio acompanhado</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg bg-muted/40 p-3">
-            <p className="text-xs text-muted-foreground">Posições</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums">
-              {summary.count}
-            </p>
-          </div>
-          <div className="rounded-lg bg-muted/40 p-3">
-            <p className="text-xs text-muted-foreground">Valores conhecidos</p>
+            <p className="text-xs text-muted-foreground">Valor conhecido</p>
             <p className="mt-1 text-lg font-semibold tabular-nums">
               {hasKnownValue
                 ? formatCurrencyCents(summary.knownValueCents)
@@ -122,15 +131,21 @@ export function PortfolioSummary({
             </p>
           </div>
           <div className="rounded-lg bg-muted/40 p-3">
-            <p className="text-xs text-muted-foreground">Sem valor atual</p>
+            <p className="text-xs text-muted-foreground">Posições</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums">
+              {summary.count}
+            </p>
+          </div>
+          <div className="rounded-lg bg-muted/40 p-3">
+            <p className="text-xs text-muted-foreground">Sem valor informado</p>
             <p className="mt-1 text-lg font-semibold tabular-nums">
               {summary.unvaluedCount}
             </p>
           </div>
         </div>
         <ul
-          aria-label="Valores conhecidos por classe"
-          className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+          aria-label="Distribuição do valor conhecido por classe"
+          className="space-y-3"
         >
           {summary.groups.map((group) => {
             const Icon =
@@ -138,36 +153,59 @@ export function PortfolioSummary({
                 ? classIcons[group.id as keyof typeof classIcons]
                 : Landmark;
             return (
-              <li
-                key={group.id}
-                className="flex min-w-0 items-center justify-between gap-3 rounded-md border px-3 py-2"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <Icon
-                    className="size-4 shrink-0"
-                    style={{ color: group.color }}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate text-sm">{group.label}</span>
-                </span>
-                <span className="shrink-0 text-right">
-                  <span className="block text-sm font-medium tabular-nums">
+              <li key={group.id} className="space-y-1.5">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Icon
+                      className="size-4 shrink-0"
+                      style={{ color: group.color }}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate text-sm">{group.label}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {group.count} {group.count === 1 ? "posição" : "posições"}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right text-sm font-medium tabular-nums">
                     {group.knownValueCount === 0
                       ? "—"
                       : formatCurrencyCents(group.valueCents)}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      {group.percentage === null
+                        ? "participação —"
+                        : `${group.percentage.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}
+                    </span>
                   </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {group.count} {group.count === 1 ? "posição" : "posições"}
-                  </span>
-                </span>
+                </div>
+                {group.percentage !== null &&
+                  Number.isFinite(group.percentage) &&
+                  group.percentage >= 0 &&
+                  group.percentage <= 100 && (
+                    <div
+                      role="meter"
+                      aria-label={`Participação de ${group.label} no valor conhecido`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={group.percentage}
+                      className="h-1.5 overflow-hidden rounded-full bg-muted"
+                    >
+                      <span
+                        className="block h-full rounded-full"
+                        style={{
+                          width: `${group.percentage}%`,
+                          backgroundColor: group.color,
+                        }}
+                      />
+                    </div>
+                  )}
               </li>
             );
           })}
         </ul>
         {summary.unvaluedCount > 0 && (
           <p className="text-xs text-muted-foreground">
-            O total inclui apenas valores conhecidos; posições sem valor não são
-            somadas como zero.
+            O total considera apenas valores conhecidos; posições sem valor
+            informado ficam fora da soma.
           </p>
         )}
       </CardContent>
