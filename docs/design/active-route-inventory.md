@@ -1,6 +1,6 @@
 # Rotas e fluxos ativos
 
-Atualizado na issue #180 em 13/10/2026. A navegação de `AppShell` define as áreas principais. `proxy.ts` exige sessão autenticada para as páginas e APIs, exceto `/login` e `/api/auth/login`; portanto, “acessível” significa acessível dentro de uma sessão. As referências novas deste fluxo são somente para telas grandes; responsividade permanece requisito do código, sem imagens mobile ou tentativas de abrir navegador/Playwright.
+Atualizado na issue #180 em 13/10/2026. A navegação de `AppShell` define as áreas principais. `proxy.ts` deixa páginas de apresentação e demonstração abertas a visitantes; páginas e APIs privadas exigem sessão autenticada, com exceções documentadas no próprio proxy. As referências novas deste fluxo são somente para telas grandes; responsividade permanece requisito do código, sem imagens mobile ou tentativas de abrir navegador/Playwright.
 
 ## Áreas acessíveis pela navegação
 
@@ -17,9 +17,12 @@ Atualizado na issue #180 em 13/10/2026. A navegação de `AppShell` define as á
 
 ## Rota pública fora da navegação
 
-| Rota     | Experiência ativa                                                                                                   | Referência visual                                                                                                                                                                    |
-| -------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/login` | Formulário público de e-mail e senha, exibição/ocultação de senha, validação de e-mail e envio com estado pendente. | `references/login/login-page-proposal.png`; proposta desktop gerada por IA focada no cartão, sem especificar o fundo da página. Estados de validação e envio não aparecem na imagem. |
+| Rota            | Experiência ativa                                                                                                     | Referência visual                                                                                                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/apresentacao` | Landing page pública com proposta de valor, prévia ilustrativa da carteira, fluxo do produto e acesso à demonstração. | Implementação da issue #219 em revisão; nenhuma referência aprovada. Comparação visual real não realizada. |
+| `/demonstracao` | Experiência interativa com abas Posições, Objetivos e Estratégia; conteúdo local, fictício e sem chamadas à API.      | Gráficos e componentes do produto usam valores de exemplo explicitamente identificados. Implementação da issue #219 em revisão; comparação visual real não realizada. |
+| `/mcp`          | Documentação pública de conexão MCP, ferramentas somente leitura e configuração do ChatGPT.                           | Documentação da issue #220 em revisão; comparação visual real não realizada. |
+| `/entrar`       | Formulário público de e-mail e senha, exibição/ocultação de senha, validação de e-mail e envio com estado pendente.   | `references/login/login-page-proposal.png`; proposta desktop gerada por IA focada no cartão, sem especificar o fundo da página. Estados de validação e envio não aparecem na imagem. |
 
 ## Fallback para rotas inexistentes
 

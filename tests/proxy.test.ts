@@ -26,6 +26,8 @@ describe("optimistic authentication proxy", () => {
   it("allows public auth links and requests carrying a Better Auth session cookie", () => {
     for (const path of [
       "/",
+      "/apresentacao",
+      "/demonstracao",
       "/entrar",
       "/login",
       "/convite/some-token",

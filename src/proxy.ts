@@ -5,6 +5,8 @@ import { logger } from "@/infrastructure/logging/logger";
 
 const publicPaths = new Set([
   "/",
+  "/apresentacao",
+  "/demonstracao",
   "/entrar",
   "/login",
   "/termos-de-uso",
