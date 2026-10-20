@@ -3,7 +3,6 @@ import { mcpAdminReadRepository } from "@/backend/repositories/mcp-admin-read.re
 import { mcpAuthenticationService } from "@/backend/services/mcp-authentication.service";
 import { mcpPortfolioToolsService } from "@/backend/services/mcp-portfolio-tools.service";
 import { logger } from "@/infrastructure/logging/logger";
-import { isValidValuationDate } from "@/lib/valuation-date";
 
 const adminReadScope = "mcp:admin:read";
 const maximumPageSize = 50;
@@ -157,9 +156,6 @@ export class McpAdminReadService {
     const target = await mcpAdminReadRepository.findUser(targetUserId);
     if (!target) {
       throw new ApplicationError("A conta informada não existe.", 404);
-    }
-    if (period !== undefined && !isValidValuationDate(`${period}-01`)) {
-      throw new ApplicationError("Informe um mês válido para consultar.", 400);
     }
     logger.info("mcp_admin_user_financial_snapshot_read", {
       actorUserId: actor.userId,

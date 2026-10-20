@@ -51,7 +51,13 @@ describe("MCP POST route", () => {
     mocks.claims = { sub: "user-1", scope: "mcp:read" };
   });
 
-  it("requires OAuth read scope and the canonical protected resource", () => {
+  it("requires OAuth read scope and the canonical protected resource", async () => {
+    await POST(
+      new Request("https://investlab.example/api/mcp", {
+        method: "POST",
+        body: JSON.stringify({ method: "tools/list" }),
+      }),
+    );
     expect(mocks.options).toMatchObject({
       resource: "http://localhost:3000/api/mcp",
       requiredScopes: ["mcp:read"],

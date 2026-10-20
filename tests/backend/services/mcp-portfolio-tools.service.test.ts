@@ -379,6 +379,55 @@ describe("McpPortfolioToolsService read tools", () => {
     });
   });
 
+  it("creates request IDs when optional MCP read context is omitted", async () => {
+    mocks.listRecentOperations.mockResolvedValue({
+      operations: [],
+      movements: [],
+      reconciliationEvents: [],
+      hasMore: {
+        operations: false,
+        movements: false,
+        reconciliationEvents: false,
+      },
+    });
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [],
+      destinationSummary: {},
+      unassignedKnownValue: 0,
+      unassignedPositionCount: 0,
+      unassignedUnvaluedPositionCount: 0,
+    });
+    mocks.getLongTermStrategyOverview.mockResolvedValue({ strategy: null });
+    mocks.getAllocationOverview.mockResolvedValue({
+      positions: [],
+      classDistribution: [],
+      concentrations: {},
+    });
+    mocks.getAllocationTargets.mockResolvedValue({});
+    mocks.getMonthlyReview.mockResolvedValue({
+      selectedPeriod: null,
+      availablePeriods: [],
+      status: "empty",
+    });
+
+    await service.getMyOperations("owner-ops-no-request-id");
+    await service.getMyObjectives("owner-objectives-no-request-id");
+    await service.getMyLongTermStrategy("owner-strategy-no-request-id");
+    await service.getMyPortfolioAllocation("owner-allocation-no-request-id");
+    await service.getMyMonthlyPortfolioReview("owner-review-no-request-id");
+
+    for (const requestId of [
+      mocks.listRecentOperations.mock.calls[0][0],
+      mocks.getObjectivesOverview.mock.calls[0][0],
+      mocks.getLongTermStrategyOverview.mock.calls[0][0],
+      mocks.getAllocationOverview.mock.calls[0][0],
+      mocks.getAllocationTargets.mock.calls[0][0],
+      mocks.getMonthlyReview.mock.calls[0][1],
+    ]) {
+      expect(requestId).toMatch(/^[\da-f-]{36}$/i);
+    }
+  });
+
   it("calculates a hypothetical objective projection without returning monthly detail", async () => {
     const input = {
       mode: "project_balance" as const,

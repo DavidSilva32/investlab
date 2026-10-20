@@ -2,7 +2,6 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { McpConsentForm } from "@/app/(public)/mcp/consent/mcp-consent-form";
-import { auth } from "@/infrastructure/auth/auth";
 import { getAuthSecret } from "@/infrastructure/auth/auth-configuration";
 
 type ConsentPageProps = {
@@ -26,6 +25,7 @@ export default async function McpConsentPage({
     notFound();
   }
 
+  const { auth } = await import("@/infrastructure/auth/auth");
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     redirect(
