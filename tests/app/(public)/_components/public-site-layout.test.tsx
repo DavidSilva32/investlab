@@ -37,9 +37,7 @@ describe("PublicSiteLayout", () => {
       screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href"),
     ).toBe("/termos-de-uso");
     expect(
-      screen
-        .getByRole("link", { name: "Conheça o InvestLab" })
-        .getAttribute("href"),
+      screen.getByRole("link", { name: "Landing page" }).getAttribute("href"),
     ).toBe("/apresentacao");
     expect(screen.getByRole("link", { name: "Privacidade" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Cookies" })).toBeTruthy();

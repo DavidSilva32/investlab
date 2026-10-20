@@ -23,17 +23,17 @@ describe("public presentation route", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Mais clareza para cuidar do seu patrimônio inteiro.",
+        name: "Entenda o que você tem. Cuide do que importa.",
       }),
     ).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: /Conhecer a demonstração/ })
-        .getAttribute("href"),
-    ).toBe("/demonstracao");
+        .getAllByRole("link", { name: /Explorar a demonstração/ })
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/demonstracao", "/demonstracao"]);
     expect(
       screen
-        .getByRole("link", { name: /Acessar minha conta/ })
+        .getByRole("link", { name: /Entre na sua conta/ })
         .getAttribute("href"),
     ).toBe("/entrar");
   });

@@ -1,0 +1,1459 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>InvestLab — proposta de landing page</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: oklch(0.985 0.003 255);
+        --fg: oklch(0.22 0.012 255);
+        --card: white;
+        --muted: oklch(0.955 0.004 255);
+        --muted-fg: oklch(0.49 0.012 255);
+        --border: oklch(0.9 0.006 255);
+        --brand: oklch(0.53 0.17 255);
+        --soft: oklch(0.94 0.035 255);
+        --fixed: oklch(0.58 0.17 55);
+        --equities: oklch(0.53 0.17 255);
+        --intl: oklch(0.55 0.18 305);
+        --fiis: oklch(0.5 0.16 150);
+        --unassigned: oklch(0.57 0.02 160);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+        scroll-behavior: smooth;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-width: 320px;
+        background: var(--bg);
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      .wrap {
+        width: min(1180px, calc(100% - 48px));
+        margin: auto;
+      }
+      .top {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        border-bottom: 1px solid var(--border);
+        background: #fffffff2;
+        backdrop-filter: blur(14px);
+      }
+      .topin {
+        min-height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 18px;
+        font-weight: 750;
+        letter-spacing: -0.04em;
+      }
+      .brand img {
+        width: 34px;
+        height: 34px;
+        object-fit: contain;
+      }
+      .nav {
+        display: flex;
+        gap: 26px;
+        color: var(--muted-fg);
+        font-size: 13px;
+      }
+      .nav a:hover,
+      .login:hover {
+        color: var(--brand);
+      }
+      .login {
+        margin-left: auto;
+        color: var(--muted-fg);
+        font-size: 12px;
+        font-weight: 650;
+      }
+      .btn {
+        display: inline-flex;
+        min-height: 49px;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border-radius: 11px;
+        padding: 0 20px;
+        background: var(--brand);
+        box-shadow: 0 8px 22px #2459b52e;
+        color: white;
+        font-size: 14px;
+        font-weight: 700;
+        transition:
+          transform 0.16s ease,
+          box-shadow 0.16s ease;
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 28px #2459b540;
+      }
+      .btn:focus-visible,
+      a:focus-visible,
+      button:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid var(--brand);
+        outline-offset: 3px;
+      }
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 75px 0;
+        background:
+          radial-gradient(ellipse at 86% 20%, #356acc18, transparent 37%),
+          linear-gradient(180deg, white, var(--bg));
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        align-items: center;
+        gap: 55px;
+      }
+      .eyebrow {
+        color: var(--brand);
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .eyebrow:before {
+        display: inline-block;
+        width: 20px;
+        height: 2px;
+        margin: 0 9px 3px 0;
+        background: currentColor;
+        content: "";
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        margin: 18px 0;
+        font-size: clamp(42px, 5vw, 64px);
+        font-weight: 760;
+        letter-spacing: -0.065em;
+        line-height: 1.04;
+      }
+      h1 span {
+        color: var(--brand);
+      }
+      .hero-copy > p {
+        max-width: 540px;
+        margin-bottom: 24px;
+        color: var(--muted-fg);
+        font-size: 17px;
+        line-height: 1.7;
+      }
+      .note {
+        margin: 13px 0 0;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 15px;
+        margin: 20px 0 0;
+        padding: 0;
+        color: var(--muted-fg);
+        font-size: 11px;
+        list-style: none;
+      }
+      .chips li:before {
+        content: "•";
+        margin-right: 7px;
+        color: var(--brand);
+        font-size: 16px;
+      }
+      .window {
+        overflow: hidden;
+        border: 1px solid #ccd5e2;
+        border-radius: 18px;
+        background: white;
+        box-shadow: 0 28px 70px #18345c20;
+        animation: rise 0.6s ease both;
+      }
+      .window-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--border);
+        padding: 14px 18px;
+      }
+      .window-head .brand {
+        font-size: 13px;
+      }
+      .window-head .brand img {
+        width: 26px;
+        height: 26px;
+      }
+      .tag {
+        border: 1px solid #356acc38;
+        border-radius: 99px;
+        padding: 6px 9px;
+        background: var(--soft);
+        color: var(--brand);
+        font-size: 9px;
+        font-weight: 730;
+      }
+      .window-body {
+        display: grid;
+        grid-template-columns: 135px 1fr;
+        min-height: 320px;
+      }
+      .side {
+        border-right: 1px solid var(--border);
+        padding: 16px 9px;
+        background: #f5f7fa;
+      }
+      .side-title {
+        margin: 0 7px 12px;
+        color: var(--muted-fg);
+        font-size: 9px;
+        text-transform: uppercase;
+      }
+      .side-item {
+        border-radius: 7px;
+        margin: 3px 0;
+        padding: 9px 7px;
+        color: var(--muted-fg);
+        font-size: 10px;
+      }
+      .side-item.active {
+        background: white;
+        color: var(--brand);
+        font-weight: 700;
+      }
+      .screen {
+        padding: 20px;
+      }
+      .screen-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .kicker {
+        margin: 0 0 4px;
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .screen-title {
+        margin: 0;
+        font-size: 17px;
+      }
+      .amount {
+        margin-top: 20px;
+        font-size: 29px;
+        font-weight: 760;
+        letter-spacing: -0.05em;
+      }
+      .caption {
+        margin: 3px 0;
+        color: var(--muted-fg);
+        font-size: 10px;
+      }
+      .bar {
+        display: flex;
+        height: 9px;
+        overflow: hidden;
+        border-radius: 99px;
+        margin-top: 15px;
+      }
+      .bar i:nth-child(1) {
+        width: 40%;
+        background: var(--fixed);
+      }
+      .bar i:nth-child(2) {
+        width: 30%;
+        background: var(--intl);
+      }
+      .bar i:nth-child(3) {
+        width: 20%;
+        background: var(--fiis);
+      }
+      .bar i:nth-child(4) {
+        width: 10%;
+        background: var(--unassigned);
+      }
+      .legend {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .legend span {
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .legend b {
+        float: right;
+        color: var(--fg);
+      }
+      .screen-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 9px;
+        margin-top: 17px;
+      }
+      .screen-card {
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 10px;
+      }
+      .screen-card small {
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .screen-card b {
+        display: block;
+        margin-top: 4px;
+        font-size: 13px;
+      }
+      .section {
+        padding: 84px 0;
+      }
+      .white {
+        background: white;
+      }
+      .section-head {
+        max-width: 700px;
+        margin: 0 auto 32px;
+        text-align: center;
+      }
+      .section-head h2 {
+        margin: 12px 0;
+        font-size: clamp(29px, 4vw, 43px);
+        letter-spacing: -0.055em;
+        line-height: 1.12;
+      }
+      .section-head p {
+        color: var(--muted-fg);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+      .demo {
+        max-width: 1000px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        margin: auto;
+        background: var(--bg);
+        box-shadow: 0 20px 55px #18345c12;
+      }
+      .demo-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        border-bottom: 1px solid var(--border);
+        padding: 17px 20px;
+        background: white;
+      }
+      .demo-head h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .demo-head p {
+        margin: 4px 0 0;
+        color: var(--muted-fg);
+        font-size: 10px;
+      }
+      .switch {
+        display: flex;
+        gap: 3px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 3px;
+        background: var(--muted);
+      }
+      .switch button {
+        border: 0;
+        border-radius: 7px;
+        padding: 9px 12px;
+        background: transparent;
+        color: var(--muted-fg);
+        cursor: pointer;
+        font-size: 10px;
+      }
+      .switch button[aria-pressed="true"] {
+        background: white;
+        color: var(--fg);
+        box-shadow: 0 1px 3px #172b4d24;
+      }
+      .panel {
+        min-height: 235px;
+        padding: 23px;
+      }
+      .panel[hidden] {
+        display: none;
+      }
+      .panel h3 {
+        margin: 0 0 5px;
+        font-size: 16px;
+      }
+      .sub {
+        margin: 0;
+        color: var(--muted-fg);
+        font-size: 11px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 0.85fr 1.15fr;
+        gap: 14px;
+        margin-top: 18px;
+      }
+      .balance,
+      .position,
+      .goal,
+      .strategy-note,
+      .strategy-list div {
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: white;
+      }
+      .balance {
+        padding: 15px;
+      }
+      .balance b {
+        display: block;
+        margin-top: 6px;
+        font-size: 23px;
+      }
+      .balance small {
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .positions,
+      .goals {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .position {
+        padding: 12px;
+      }
+      .position span {
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .position strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 11px;
+      }
+      .goals {
+        margin-top: 18px;
+        gap: 10px;
+      }
+      .goal {
+        padding: 15px;
+      }
+      .goal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .goal-head em {
+        color: var(--brand);
+        font-size: 9px;
+        font-style: normal;
+      }
+      .goal-value {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 15px;
+        color: var(--muted-fg);
+        font-size: 10px;
+      }
+      .goal-value b {
+        color: var(--fg);
+        font-size: 14px;
+      }
+      .progress {
+        height: 7px;
+        border-radius: 99px;
+        margin-top: 10px;
+        background: var(--muted);
+      }
+      .progress i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--brand);
+      }
+      .strategy {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 16px;
+        align-items: center;
+        margin-top: 17px;
+      }
+      .strategy-note {
+        padding: 16px;
+        background: var(--soft);
+      }
+      .strategy-note p {
+        margin: 7px 0 0;
+        color: var(--muted-fg);
+        font-size: 10px;
+        line-height: 1.6;
+      }
+      .strategy-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+      }
+      .strategy-list div {
+        padding: 10px;
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .strategy-list b {
+        float: right;
+        color: var(--fg);
+      }
+      .disclaimer {
+        border-top: 1px solid var(--border);
+        padding: 11px 20px;
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .center {
+        text-align: center;
+        margin-top: 23px;
+      }
+      .benefits {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+      .benefit {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 19px;
+        background: white;
+        transition:
+          transform 0.16s ease,
+          box-shadow 0.16s ease;
+      }
+      .benefit:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 28px #18345c14;
+      }
+      .benefit small {
+        color: var(--brand);
+        font-size: 9px;
+        font-weight: 750;
+        letter-spacing: 0.08em;
+      }
+      .benefit h3 {
+        margin: 18px 0 7px;
+        font-size: 15px;
+      }
+      .benefit p {
+        margin: 0;
+        color: var(--muted-fg);
+        font-size: 11px;
+        line-height: 1.65;
+      }
+      .beginner {
+        background: oklch(0.21 0.03 255);
+        color: white;
+      }
+      .beginner-grid {
+        display: grid;
+        grid-template-columns: 0.86fr 1.14fr;
+        align-items: center;
+        gap: 48px;
+      }
+      .beginner .eyebrow {
+        color: oklch(0.78 0.12 255);
+      }
+      .beginner h2 {
+        margin: 12px 0;
+        font-size: clamp(29px, 4vw, 42px);
+        letter-spacing: -0.05em;
+        line-height: 1.12;
+      }
+      .beginner-copy {
+        color: oklch(0.82 0.01 255);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+      .learn-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .learn-tile {
+        position: relative;
+        min-height: 125px;
+        overflow: hidden;
+        border: 1px solid #ffffff30;
+        border-radius: 12px;
+      }
+      .learn-tile img {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0.44;
+      }
+      .learn-tile:after {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(0deg, #111a2bf2, #111a2b20);
+        content: "";
+      }
+      .learn-tile b {
+        position: absolute;
+        z-index: 1;
+        right: 11px;
+        bottom: 11px;
+        left: 11px;
+        font-size: 11px;
+      }
+      .learn-note {
+        grid-column: 1/-1;
+        color: oklch(0.82 0.01 255);
+        font-size: 9px;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+      .step {
+        border-top: 2px solid #356acc55;
+        padding: 17px 12px 0 0;
+      }
+      .step b {
+        display: inline-grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--soft);
+        color: var(--brand);
+        font-size: 11px;
+      }
+      .step h3 {
+        margin: 12px 0 5px;
+        font-size: 15px;
+      }
+      .step p {
+        max-width: 280px;
+        color: var(--muted-fg);
+        font-size: 11px;
+        line-height: 1.65;
+      }
+      .trust {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        margin-top: 36px;
+        background: var(--border);
+      }
+      .trust div {
+        padding: 14px;
+        background: var(--bg);
+        text-align: center;
+      }
+      .trust strong,
+      .trust span {
+        display: block;
+      }
+      .trust strong {
+        font-size: 11px;
+      }
+      .trust span {
+        margin-top: 4px;
+        color: var(--muted-fg);
+        font-size: 9px;
+      }
+      .faq {
+        display: grid;
+        max-width: 780px;
+        gap: 8px;
+        margin: auto;
+      }
+      details {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 15px 17px;
+        background: white;
+      }
+      summary {
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      details p {
+        margin: 9px 0 0;
+        color: var(--muted-fg);
+        font-size: 11px;
+        line-height: 1.65;
+      }
+      .cta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 26px;
+        border: 1px solid #356acc42;
+        border-radius: 18px;
+        padding: 32px 37px;
+        background:
+          radial-gradient(ellipse at 100% 10%, #356acc17, transparent 44%),
+          var(--soft);
+      }
+      .cta h2 {
+        margin: 8px 0;
+        font-size: clamp(25px, 3.4vw, 36px);
+        letter-spacing: -0.05em;
+      }
+      .cta p {
+        max-width: 570px;
+        margin: 0;
+        color: var(--muted-fg);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 21px 0;
+        color: var(--muted-fg);
+        font-size: 10px;
+      }
+      .footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .footer-links {
+        display: flex;
+        gap: 16px;
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @media (max-width: 920px) {
+        .hero-grid {
+          grid-template-columns: 1fr;
+          gap: 34px;
+        }
+        .window {
+          max-width: 760px;
+        }
+        .benefits {
+          grid-template-columns: 1fr 1fr;
+        }
+        .beginner-grid {
+          grid-template-columns: 1fr;
+          gap: 25px;
+        }
+      }
+      @media (max-width: 650px) {
+        .wrap {
+          width: calc(100% - 30px);
+        }
+        .topin {
+          min-height: 62px;
+          gap: 9px;
+        }
+        .brand {
+          font-size: 15px;
+        }
+        .brand img {
+          width: 28px;
+          height: 28px;
+        }
+        .nav {
+          display: none;
+        }
+        .login {
+          font-size: 10px;
+        }
+        .hero {
+          padding: 47px 0;
+        }
+        .hero-grid {
+          gap: 28px;
+        }
+        h1 {
+          font-size: clamp(38px, 11vw, 52px);
+        }
+        .hero-copy > p {
+          font-size: 14px;
+        }
+        .hero .btn {
+          width: 100%;
+        }
+        .window-body {
+          grid-template-columns: 1fr;
+        }
+        .side {
+          display: none;
+        }
+        .screen {
+          padding: 14px;
+        }
+        .amount {
+          font-size: 26px;
+        }
+        .screen-cards {
+          gap: 7px;
+        }
+        .screen-card {
+          padding: 8px;
+        }
+        .screen-card b {
+          font-size: 11px;
+        }
+        .section {
+          padding: 61px 0;
+        }
+        .section-head {
+          text-align: left;
+          margin-bottom: 24px;
+        }
+        .section-head p {
+          font-size: 13px;
+        }
+        .demo-head {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 13px;
+        }
+        .switch {
+          width: 100%;
+        }
+        .switch button {
+          flex: 1;
+          padding-inline: 5px;
+          font-size: 9px;
+        }
+        .panel {
+          padding: 14px;
+        }
+        .layout,
+        .strategy {
+          grid-template-columns: 1fr;
+          gap: 9px;
+        }
+        .positions {
+          gap: 6px;
+        }
+        .position {
+          padding: 9px;
+        }
+        .position strong {
+          font-size: 10px;
+        }
+        .goals,
+        .benefits {
+          grid-template-columns: 1fr;
+        }
+        .benefit {
+          padding: 17px;
+        }
+        .benefit h3 {
+          margin-top: 13px;
+        }
+        .learn-tile {
+          min-height: 100px;
+        }
+        .steps {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        .trust {
+          grid-template-columns: 1fr;
+        }
+        .trust div {
+          text-align: left;
+        }
+        .cta {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 21px;
+        }
+        .cta .btn {
+          width: 100%;
+        }
+        .footer {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+      :root {
+        --background: oklch(0.985 0.003 255);
+        --foreground: oklch(0.22 0.012 255);
+        --card: oklch(1 0 0);
+        --muted: oklch(0.955 0.004 255);
+        --muted-foreground: oklch(0.49 0.012 255);
+        --border: oklch(0.9 0.006 255);
+        --brand: oklch(0.53 0.17 255);
+        --primary: var(--brand);
+        --asset-class-fixed-income: oklch(0.58 0.17 55);
+        --asset-class-brazilian-equities: oklch(0.53 0.17 255);
+        --asset-class-international-etfs: oklch(0.55 0.18 305);
+        --asset-class-fiis: oklch(0.5 0.16 150);
+        --destination-unassigned: oklch(0.57 0.02 160);
+        --bg: var(--background);
+        --fg: var(--foreground);
+        --muted-fg: var(--muted-foreground);
+        --fixed: var(--asset-class-fixed-income);
+        --equities: var(--asset-class-brazilian-equities);
+        --intl: var(--asset-class-international-etfs);
+        --fiis: var(--asset-class-fiis);
+      }
+      .window-body {
+        grid-template-columns: 1fr;
+      }
+      .screen-title {
+        font-size: 19px;
+      }
+      .caption,
+      .legend span,
+      .screen-card small {
+        font-size: 11px;
+      }
+      .tag {
+        font-size: 10px;
+      }
+      .kicker {
+        font-size: 10px;
+      }
+      .sub {
+        font-size: 12px;
+      }
+      .position span {
+        font-size: 10px;
+      }
+      .strategy-note p {
+        font-size: 11px;
+      }
+      @media (max-width: 650px) {
+        .nav {
+          display: flex;
+          gap: 7px;
+        }
+        .nav a:not(:last-child) {
+          display: none;
+        }
+        .nav a:last-child {
+          font-size: 10px;
+        }
+        .login {
+          font-size: 10px;
+        }
+        .topin {
+          gap: 7px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap topin">
+        <a class="brand" href="#top" aria-label="InvestLab, início"
+          ><img src="../../../../public/investlab-logo.png" alt="" /><span
+            >InvestLab</span
+          ></a
+        >
+        <nav class="nav" aria-label="Navegação principal">
+          <a href="#produto">O produto</a
+          ><a href="#comecar">Para quem está começando</a
+          ><a href="/demonstracao">Demonstração</a>
+        </nav>
+        <a class="login" href="/entrar">Já tenho acesso</a>
+      </div>
+    </header>
+    <main id="top">
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <span class="eyebrow">Sua vida financeira em perspectiva</span>
+            <h1>Entenda o que você tem. <span>Cuide do que importa.</span></h1>
+            <p>
+              Organize seus investimentos, acompanhe seus objetivos e veja como
+              a estratégia que você escolheu aparece na carteira — em uma visão
+              mais fácil de entender.
+            </p>
+            <a class="btn" href="/demonstracao"
+              >Explorar a demonstração <span aria-hidden="true">→</span></a
+            >
+            <p class="note">
+              Sem cadastro para conhecer. A demonstração usa um cenário
+              fictício.
+            </p>
+            <ul class="chips" aria-label="O que você verá">
+              <li>Carteira e posições</li>
+              <li>Objetivos pessoais</li>
+              <li>Estratégia definida por você</li>
+            </ul>
+          </div>
+          <div class="window" aria-label="Prévia ilustrativa do InvestLab">
+            <div class="window-head">
+              <div class="brand">
+                <img
+                  src="../../../../public/investlab-logo.png"
+                  alt=""
+                />InvestLab <span aria-hidden="true">/</span> Carteira
+              </div>
+              <span class="tag">CENÁRIO FICTÍCIO</span>
+            </div>
+            <div class="window-body">
+              <div class="screen">
+                <div class="screen-top">
+                  <div>
+                    <p class="kicker">Valor conhecido neste cenário fictício</p>
+                    <h2 class="screen-title">Carteira de exemplo</h2>
+                  </div>
+                  <span class="tag">Exemplo</span>
+                </div>
+                <div class="amount">R&#36; 46.000,00</div>
+                <p class="caption">
+                  Valor conhecido neste cenário demonstrativo
+                </p>
+                <div class="bar" aria-hidden="true">
+                  <i></i><i></i><i></i><i></i>
+                </div>
+                <div class="legend" aria-label="Distribuição fictícia">
+                  <span>Renda fixa <b>40%</b></span
+                  ><span>ETFs internacionais <b>30%</b></span
+                  ><span>Fundos imobiliários (FIIs) <b>20%</b></span
+                  ><span>Sem destino <b>10%</b></span>
+                </div>
+                <div class="screen-cards">
+                  <div class="screen-card">
+                    <small>Objetivos acompanhados</small><b>2 objetivos</b>
+                  </div>
+                  <div class="screen-card">
+                    <small>Estratégia</small><b>Escolhida por você</b>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section white" id="produto">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Veja por dentro</span>
+            <h2>Não fique só na promessa. Explore as partes do produto.</h2>
+            <p>
+              Alterne entre posições, objetivos e estratégia na demonstração. Os
+              números e nomes são fictícios; a experiência é interativa.
+            </p>
+          </div>
+          <div class="demo">
+            <div class="demo-head">
+              <div>
+                <h3>Uma prévia do InvestLab</h3>
+                <p>Escolha uma área para ver o que ela ajuda a organizar</p>
+              </div>
+              <div
+                class="switch"
+                role="group"
+                aria-label="Áreas da demonstração"
+              >
+                <button type="button" data-view="positions" aria-pressed="true">
+                  Posições</button
+                ><button
+                  type="button"
+                  data-view="objectives"
+                  aria-pressed="false"
+                >
+                  Objetivos</button
+                ><button
+                  type="button"
+                  data-view="strategy"
+                  aria-pressed="false"
+                >
+                  Estratégia
+                </button>
+              </div>
+            </div>
+            <section
+              class="panel"
+              data-panel="positions"
+              aria-label="Prévia de posições"
+            >
+              <h3>Veja o que compõe sua carteira</h3>
+              <p class="sub">
+                Valores conhecidos e posições de exemplo, organizados no mesmo
+                lugar.
+              </p>
+              <div class="layout">
+                <div class="balance">
+                  <small>Valor conhecido no exemplo</small
+                  ><b>R&#36; 46.000,00</b
+                  ><small>Distribuição fictícia por categoria</small>
+                  <div class="bar"><i></i><i></i><i></i><i></i></div>
+                  <div class="legend">
+                    <span>Renda fixa <b>40%</b></span
+                    ><span>ETFs internacionais <b>30%</b></span
+                    ><span>Fundos imobiliários (FIIs) <b>20%</b></span
+                    ><span>Sem destino <b>10%</b></span>
+                  </div>
+                </div>
+                <div class="positions">
+                  <div class="position">
+                    <span>Renda fixa · Banco Aurora</span
+                    ><strong>CDB de exemplo</strong>
+                  </div>
+                  <div class="position">
+                    <span>ETFs internacionais · Corretora Horizonte</span
+                    ><strong>ETF de exemplo</strong>
+                  </div>
+                  <div class="position">
+                    <span>Fundos imobiliários · Corretora Horizonte</span
+                    ><strong>Fundo imobiliário de exemplo</strong>
+                  </div>
+                  <div class="position">
+                    <span>Sem destino · Banco Aurora</span
+                    ><strong>Saldo de exemplo</strong>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section
+              class="panel"
+              data-panel="objectives"
+              aria-label="Prévia de objetivos"
+              hidden
+            >
+              <h3>Veja o que você está construindo</h3>
+              <p class="sub">
+                Acompanhe os valores que você associou a cada objetivo.
+              </p>
+              <div class="goals">
+                <div class="goal">
+                  <div class="goal-head">
+                    <span>Reserva de exemplo</span><em>70% do valor-alvo</em>
+                  </div>
+                  <div class="goal-value">
+                    <b>R&#36; 12.600,00</b><span>de R&#36; 18.000,00</span>
+                  </div>
+                  <div class="progress"><i style="width: 70%"></i></div>
+                </div>
+                <div class="goal">
+                  <div class="goal-head">
+                    <span>Objetivo pessoal de exemplo</span
+                    ><em>50% do valor-alvo</em>
+                  </div>
+                  <div class="goal-value">
+                    <b>R&#36; 7.500,00</b><span>de R&#36; 15.000,00</span>
+                  </div>
+                  <div class="progress"><i style="width: 50%"></i></div>
+                </div>
+              </div>
+            </section>
+            <section
+              class="panel"
+              data-panel="strategy"
+              aria-label="Prévia de estratégia"
+              hidden
+            >
+              <h3>Compare com a estratégia que você definiu</h3>
+              <p class="sub">
+                A composição é sua. O InvestLab mostra os percentuais
+                registrados, sem sugerir uma carteira.
+              </p>
+              <div class="strategy">
+                <div class="strategy-note">
+                  <b>Uma referência escolhida por você</b>
+                  <p>
+                    Os percentuais são apenas o cenário fictício da
+                    demonstração. Não representam uma recomendação.
+                  </p>
+                </div>
+                <div class="strategy-list">
+                  <div>Renda fixa <b>35%</b></div>
+                  <div>Ações e BDRs <b>25%</b></div>
+                  <div>ETFs internacionais <b>25%</b></div>
+                  <div>Fundos imobiliários (FIIs) <b>15%</b></div>
+                </div>
+              </div>
+            </section>
+            <div class="disclaimer">
+              Dados, pessoas, instituições e percentuais são fictícios. Não são
+              recomendação nem previsão de resultado.
+            </div>
+          </div>
+          <div class="center">
+            <a class="btn" href="/demonstracao"
+              >Abrir a demonstração interativa
+              <span aria-hidden="true">→</span></a
+            >
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">O que muda no dia a dia</span>
+            <h2>Mais contexto para cuidar do seu dinheiro com calma.</h2>
+            <p>
+              A ideia não é colocar mais indicadores na sua frente. É conectar
+              informações que ajudam você a entender sua situação.
+            </p>
+          </div>
+          <div class="benefits">
+            <article class="benefit">
+              <small>01 / ORGANIZE</small>
+              <h3>Encontre suas posições</h3>
+              <p>
+                Reúna ativos, valores conhecidos e instituições em uma visão de
+                carteira.
+              </p>
+            </article>
+            <article class="benefit">
+              <small>02 / PRIORIZE</small>
+              <h3>Dê espaço aos seus objetivos</h3>
+              <p>
+                Acompanhe a reserva e os objetivos pessoais que você cadastrou.
+              </p>
+            </article>
+            <article class="benefit">
+              <small>03 / COMPARE</small>
+              <h3>Veja seu plano junto do cenário atual</h3>
+              <p>
+                Compare a estratégia que você escolheu com a distribuição
+                conhecida da carteira.
+              </p>
+            </article>
+            <article class="benefit">
+              <small>04 / ENTENDA</small>
+              <h3>Consulte conteúdo por classe</h3>
+              <p>
+                Encontre vídeos sobre renda fixa, ações e BDRs, ETFs
+                internacionais e FIIs.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section beginner" id="comecar">
+        <div class="wrap beginner-grid">
+          <div>
+            <span class="eyebrow">Também para quem está começando</span>
+            <h2>
+              Você não precisa virar especialista para dar o primeiro passo.
+            </h2>
+            <p class="beginner-copy">
+              Comece entendendo o que já tem e o que quer acompanhar. O
+              InvestLab organiza dados e objetivos; os conteúdos ajudam você a
+              conhecer as classes de investimento no seu ritmo.
+            </p>
+          </div>
+          <div class="learn-grid" aria-label="Conteúdos educativos disponíveis">
+            <div class="learn-tile">
+              <img
+                src="../../../../public/images/asset-classes/fixed-income-office.webp"
+                alt=""
+              /><b>Renda fixa</b>
+            </div>
+            <div class="learn-tile">
+              <img
+                src="../../../../public/images/asset-classes/brazilian-equities.webp"
+                alt=""
+              /><b>Ações e BDRs</b>
+            </div>
+            <div class="learn-tile">
+              <img
+                src="../../../../public/images/asset-classes/international-etfs.webp"
+                alt=""
+              /><b>ETFs internacionais</b>
+            </div>
+            <div class="learn-tile">
+              <img
+                src="../../../../public/images/asset-classes/fiis.webp"
+                alt=""
+              /><b>Fundos imobiliários (FIIs)</b>
+            </div>
+            <div class="learn-note">
+              Conteúdos em vídeo dentro da plataforma, depois de entrar na sua
+              conta.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section white">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Comece sem complicação</span>
+            <h2>Veja como funciona antes de decidir qualquer coisa.</h2>
+            <p>
+              Conheça a experiência sem criar uma conta ou conectar seus dados.
+            </p>
+          </div>
+          <div class="steps">
+            <article class="step">
+              <b>1</b>
+              <h3>Explore um exemplo</h3>
+              <p>Alterne entre posições, objetivos e estratégia.</p>
+            </article>
+            <article class="step">
+              <b>2</b>
+              <h3>Veja se faz sentido</h3>
+              <p>
+                Entenda o que a plataforma organiza e como apresenta os dados
+                disponíveis.
+              </p>
+            </article>
+            <article class="step">
+              <b>3</b>
+              <h3>Acesse com convite</h3>
+              <p>
+                O acesso a uma conta pessoal continua sendo disponibilizado por
+                convite.
+              </p>
+            </article>
+          </div>
+          <div class="trust">
+            <div>
+              <strong>Sem conta</strong><span>A demonstração é pública</span>
+            </div>
+            <div>
+              <strong>Dados fictícios</strong
+              ><span>Nenhuma carteira real é consultada</span>
+            </div>
+            <div>
+              <strong>Você decide</strong
+              ><span>Explore sem receber uma recomendação</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="duvidas">
+        <div class="wrap">
+          <div class="section-head">
+            <span class="eyebrow">Perguntas frequentes</span>
+            <h2>Antes de explorar</h2>
+          </div>
+          <div class="faq">
+            <details>
+              <summary>A demonstração usa dados da minha conta?</summary>
+              <p>
+                Não. Ela usa um cenário fictício e não consulta nem altera uma
+                carteira real.
+              </p>
+            </details>
+            <details>
+              <summary>Posso criar uma conta gratuita agora?</summary>
+              <p>
+                O cadastro público ainda não está disponível. No momento, o
+                acesso a uma conta pessoal é feito por convite.
+              </p>
+            </details>
+            <details>
+              <summary>O InvestLab escolhe investimentos por mim?</summary>
+              <p>
+                Não. Você registra sua estratégia; o InvestLab organiza as
+                informações disponíveis para ajudar a entendê-las. As decisões
+                continuam suas.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="final">
+        <div class="wrap cta">
+          <div>
+            <span class="eyebrow">Dê uma olhada por dentro</span>
+            <h2>Seu próximo passo pode ser só conhecer.</h2>
+            <p>
+              Explore a demonstração com dados fictícios. Ela apresenta as áreas
+              principais sem exigir cadastro.
+            </p>
+          </div>
+          <a class="btn" href="/demonstracao"
+            >Explorar a demonstração <span aria-hidden="true">→</span></a
+          >
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap footer">
+        <a class="brand" href="#top"
+          ><img src="../../../../public/investlab-logo.png" alt="" /><span
+            >InvestLab</span
+          ></a
+        ><span>Demonstração fictícia · Acesso pessoal por convite</span>
+        <div class="footer-links">
+          <a href="/mcp">MCP</a><a href="/entrar">Já tenho acesso</a>
+        </div>
+      </div>
+    </footer>
+    <script>
+      const buttons = [...document.querySelectorAll("[data-view]")],
+        panels = [...document.querySelectorAll("[data-panel]")];
+      for (const button of buttons)
+        button.addEventListener("click", () => {
+          for (const item of buttons)
+            item.setAttribute("aria-pressed", String(item === button));
+          for (const panel of panels)
+            panel.hidden = panel.dataset.panel !== button.dataset.view;
+        });
+    </script>
+  </body>
+</html>
