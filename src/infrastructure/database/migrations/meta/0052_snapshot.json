@@ -95,12 +95,8 @@
           "name": "auth_accounts_userId_auth_users_id_fk",
           "tableFrom": "auth_accounts",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -172,12 +168,8 @@
           "name": "auth_invitations_createdByUserId_auth_users_id_fk",
           "tableFrom": "auth_invitations",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "createdByUserId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["createdByUserId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -187,9 +179,7 @@
         "auth_invitations_tokenHash_unique": {
           "name": "auth_invitations_tokenHash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "tokenHash"
-          ]
+          "columns": ["tokenHash"]
         }
       },
       "policies": {},
@@ -312,12 +302,8 @@
           "name": "auth_password_resets_userId_auth_users_id_fk",
           "tableFrom": "auth_password_resets",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -325,12 +311,8 @@
           "name": "auth_password_resets_createdByUserId_auth_users_id_fk",
           "tableFrom": "auth_password_resets",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "createdByUserId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["createdByUserId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -340,9 +322,7 @@
         "auth_password_resets_tokenHash_unique": {
           "name": "auth_password_resets_tokenHash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "tokenHash"
-          ]
+          "columns": ["tokenHash"]
         }
       },
       "policies": {},
@@ -401,9 +381,7 @@
         "auth_rate_limits_key_unique": {
           "name": "auth_rate_limits_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "key"
-          ]
+          "columns": ["key"]
         }
       },
       "policies": {},
@@ -471,12 +449,8 @@
           "name": "auth_sessions_userId_auth_users_id_fk",
           "tableFrom": "auth_sessions",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -486,9 +460,7 @@
         "auth_sessions_token_unique": {
           "name": "auth_sessions_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -554,12 +526,8 @@
           "name": "auth_terms_acceptances_userId_auth_users_id_fk",
           "tableFrom": "auth_terms_acceptances",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -828,12 +796,8 @@
           "name": "b3_reconciliation_events_userId_auth_users_id_fk",
           "tableFrom": "b3_reconciliation_events",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -841,12 +805,8 @@
           "name": "b3_reconciliation_events_tradingItemId_trading_items_id_fk",
           "tableFrom": "b3_reconciliation_events",
           "tableTo": "trading_items",
-          "columnsFrom": [
-            "tradingItemId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["tradingItemId"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -854,12 +814,8 @@
           "name": "b3_reconciliation_events_movementItemId_movement_items_id_fk",
           "tableFrom": "b3_reconciliation_events",
           "tableTo": "movement_items",
-          "columnsFrom": [
-            "movementItemId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["movementItemId"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -942,12 +898,8 @@
           "name": "cdb_rate_configurations_userId_auth_users_id_fk",
           "tableFrom": "cdb_rate_configurations",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1188,12 +1140,8 @@
           "name": "cvm_share_capital_facts_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "cvm_share_capital_facts",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1201,12 +1149,8 @@
           "name": "cvm_share_capital_facts_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "cvm_share_capital_facts",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1368,12 +1312,8 @@
           "name": "cvm_share_class_reconciliations_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "cvm_share_class_reconciliations",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1381,12 +1321,8 @@
           "name": "cvm_share_class_reconciliations_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "cvm_share_class_reconciliations",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1461,12 +1397,8 @@
           "name": "emergency_reserve_settings_userId_auth_users_id_fk",
           "tableFrom": "emergency_reserve_settings",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1575,12 +1507,8 @@
           "name": "imports_userId_auth_users_id_fk",
           "tableFrom": "imports",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1758,12 +1686,8 @@
           "name": "manual_portfolio_adjustment_events_userId_auth_users_id_fk",
           "tableFrom": "manual_portfolio_adjustment_events",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1908,12 +1832,8 @@
           "name": "manual_portfolio_operations_userId_auth_users_id_fk",
           "tableFrom": "manual_portfolio_operations",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2059,12 +1979,8 @@
           "name": "manual_portfolio_position_snapshots_userId_auth_users_id_fk",
           "tableFrom": "manual_portfolio_position_snapshots",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2213,12 +2129,8 @@
           "name": "manual_portfolio_positions_userId_auth_users_id_fk",
           "tableFrom": "manual_portfolio_positions",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2361,12 +2273,8 @@
           "name": "movement_items_userId_auth_users_id_fk",
           "tableFrom": "movement_items",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2374,12 +2282,8 @@
           "name": "movement_items_importId_imports_id_fk",
           "tableFrom": "movement_items",
           "tableTo": "imports",
-          "columnsFrom": [
-            "importId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["importId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2491,12 +2395,8 @@
           "name": "oauthAccessToken_clientId_oauthClient_clientId_fk",
           "tableFrom": "oauthAccessToken",
           "tableTo": "oauthClient",
-          "columnsFrom": [
-            "clientId"
-          ],
-          "columnsTo": [
-            "clientId"
-          ],
+          "columnsFrom": ["clientId"],
+          "columnsTo": ["clientId"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2504,12 +2404,8 @@
           "name": "oauthAccessToken_sessionId_auth_sessions_id_fk",
           "tableFrom": "oauthAccessToken",
           "tableTo": "auth_sessions",
-          "columnsFrom": [
-            "sessionId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sessionId"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -2517,12 +2413,8 @@
           "name": "oauthAccessToken_userId_auth_users_id_fk",
           "tableFrom": "oauthAccessToken",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2530,12 +2422,8 @@
           "name": "oauthAccessToken_refreshId_oauthRefreshToken_id_fk",
           "tableFrom": "oauthAccessToken",
           "tableTo": "oauthRefreshToken",
-          "columnsFrom": [
-            "refreshId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["refreshId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2545,9 +2433,7 @@
         "oauthAccessToken_token_unique": {
           "name": "oauthAccessToken_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -2642,12 +2528,8 @@
           "name": "oauthClientResource_clientId_oauthClient_clientId_fk",
           "tableFrom": "oauthClientResource",
           "tableTo": "oauthClient",
-          "columnsFrom": [
-            "clientId"
-          ],
-          "columnsTo": [
-            "clientId"
-          ],
+          "columnsFrom": ["clientId"],
+          "columnsTo": ["clientId"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2655,12 +2537,8 @@
           "name": "oauthClientResource_resourceId_oauthResource_identifier_fk",
           "tableFrom": "oauthClientResource",
           "tableTo": "oauthResource",
-          "columnsFrom": [
-            "resourceId"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["resourceId"],
+          "columnsTo": ["identifier"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2901,12 +2779,8 @@
           "name": "oauthClient_userId_auth_users_id_fk",
           "tableFrom": "oauthClient",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2916,9 +2790,7 @@
         "oauthClient_clientId_unique": {
           "name": "oauthClient_clientId_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "clientId"
-          ]
+          "columns": ["clientId"]
         }
       },
       "policies": {},
@@ -2990,12 +2862,8 @@
           "name": "oauthConsent_clientId_oauthClient_clientId_fk",
           "tableFrom": "oauthConsent",
           "tableTo": "oauthClient",
-          "columnsFrom": [
-            "clientId"
-          ],
-          "columnsTo": [
-            "clientId"
-          ],
+          "columnsFrom": ["clientId"],
+          "columnsTo": ["clientId"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3003,12 +2871,8 @@
           "name": "oauthConsent_userId_auth_users_id_fk",
           "tableFrom": "oauthConsent",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3138,12 +3002,8 @@
           "name": "oauthRefreshToken_clientId_oauthClient_clientId_fk",
           "tableFrom": "oauthRefreshToken",
           "tableTo": "oauthClient",
-          "columnsFrom": [
-            "clientId"
-          ],
-          "columnsTo": [
-            "clientId"
-          ],
+          "columnsFrom": ["clientId"],
+          "columnsTo": ["clientId"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3151,12 +3011,8 @@
           "name": "oauthRefreshToken_sessionId_auth_sessions_id_fk",
           "tableFrom": "oauthRefreshToken",
           "tableTo": "auth_sessions",
-          "columnsFrom": [
-            "sessionId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sessionId"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -3164,12 +3020,8 @@
           "name": "oauthRefreshToken_userId_auth_users_id_fk",
           "tableFrom": "oauthRefreshToken",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3179,9 +3031,7 @@
         "oauthRefreshToken_token_unique": {
           "name": "oauthRefreshToken_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -3293,9 +3143,7 @@
         "oauthResource_identifier_unique": {
           "name": "oauthResource_identifier_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "identifier"
-          ]
+          "columns": ["identifier"]
         }
       },
       "policies": {},
@@ -3379,12 +3227,8 @@
           "name": "personal_investment_strategy_userId_auth_users_id_fk",
           "tableFrom": "personal_investment_strategy",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3454,12 +3298,8 @@
           "name": "portfolio_allocation_targets_userId_auth_users_id_fk",
           "tableFrom": "portfolio_allocation_targets",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3547,12 +3387,8 @@
           "name": "portfolio_asset_classifications_userId_auth_users_id_fk",
           "tableFrom": "portfolio_asset_classifications",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3661,12 +3497,8 @@
           "name": "portfolio_objective_balance_references_userId_auth_users_id_fk",
           "tableFrom": "portfolio_objective_balance_references",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3674,12 +3506,8 @@
           "name": "portfolio_objective_balance_references_batchId_portfolio_objective_reference_batches_id_fk",
           "tableFrom": "portfolio_objective_balance_references",
           "tableTo": "portfolio_objective_reference_batches",
-          "columnsFrom": [
-            "batchId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["batchId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3687,12 +3515,8 @@
           "name": "portfolio_objective_balance_references_objectiveId_portfolio_objectives_id_fk",
           "tableFrom": "portfolio_objective_balance_references",
           "tableTo": "portfolio_objectives",
-          "columnsFrom": [
-            "objectiveId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["objectiveId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3788,12 +3612,8 @@
           "name": "portfolio_objective_positions_userId_auth_users_id_fk",
           "tableFrom": "portfolio_objective_positions",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3801,12 +3621,8 @@
           "name": "portfolio_objective_positions_objectiveId_portfolio_objectives_id_fk",
           "tableFrom": "portfolio_objective_positions",
           "tableTo": "portfolio_objectives",
-          "columnsFrom": [
-            "objectiveId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["objectiveId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3854,12 +3670,8 @@
           "name": "portfolio_objective_reference_batches_userId_auth_users_id_fk",
           "tableFrom": "portfolio_objective_reference_batches",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3961,12 +3773,8 @@
           "name": "portfolio_objectives_userId_auth_users_id_fk",
           "tableFrom": "portfolio_objectives",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4096,12 +3904,8 @@
           "name": "portfolio_operation_reconciliation_events_userId_auth_users_id_fk",
           "tableFrom": "portfolio_operation_reconciliation_events",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4109,12 +3913,8 @@
           "name": "portfolio_operation_reconciliation_events_operationId_manual_portfolio_operations_id_fk",
           "tableFrom": "portfolio_operation_reconciliation_events",
           "tableTo": "manual_portfolio_operations",
-          "columnsFrom": [
-            "operationId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operationId"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -4122,12 +3922,8 @@
           "name": "portfolio_operation_reconciliation_events_movementId_movement_items_id_fk",
           "tableFrom": "portfolio_operation_reconciliation_events",
           "tableTo": "movement_items",
-          "columnsFrom": [
-            "movementId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["movementId"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -4358,12 +4154,8 @@
           "name": "position_items_userId_auth_users_id_fk",
           "tableFrom": "position_items",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4371,12 +4163,8 @@
           "name": "position_items_snapshotId_position_snapshots_id_fk",
           "tableFrom": "position_items",
           "tableTo": "position_snapshots",
-          "columnsFrom": [
-            "snapshotId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshotId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4476,12 +4264,8 @@
           "name": "position_reconciliation_events_userId_auth_users_id_fk",
           "tableFrom": "position_reconciliation_events",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4546,12 +4330,8 @@
           "name": "position_snapshots_userId_auth_users_id_fk",
           "tableFrom": "position_snapshots",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4559,12 +4339,8 @@
           "name": "position_snapshots_importId_imports_id_fk",
           "tableFrom": "position_snapshots",
           "tableTo": "imports",
-          "columnsFrom": [
-            "importId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["importId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4574,9 +4350,7 @@
         "position_snapshots_importId_unique": {
           "name": "position_snapshots_importId_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "importId"
-          ]
+          "columns": ["importId"]
         }
       },
       "policies": {},
@@ -4734,12 +4508,8 @@
           "name": "screener_financial_facts_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "screener_financial_facts",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4747,12 +4517,8 @@
           "name": "screener_financial_facts_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "screener_financial_facts",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4843,9 +4609,7 @@
         "screener_ingestion_runs_runKey_unique": {
           "name": "screener_ingestion_runs_runKey_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "runKey"
-          ]
+          "columns": ["runKey"]
         }
       },
       "policies": {},
@@ -4895,9 +4659,7 @@
         "screener_issuers_cvmCode_unique": {
           "name": "screener_issuers_cvmCode_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "cvmCode"
-          ]
+          "columns": ["cvmCode"]
         }
       },
       "policies": {},
@@ -5064,12 +4826,8 @@
           "name": "screener_market_snapshot_quotes_snapshotId_screener_market_snapshots_id_fk",
           "tableFrom": "screener_market_snapshot_quotes",
           "tableTo": "screener_market_snapshots",
-          "columnsFrom": [
-            "snapshotId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshotId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5175,12 +4933,8 @@
           "name": "screener_market_snapshots_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "screener_market_snapshots",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5188,12 +4942,8 @@
           "name": "screener_market_snapshots_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "screener_market_snapshots",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -5201,12 +4951,8 @@
           "name": "screener_market_snapshots_marketRefreshRunId_screener_market_refresh_runs_id_fk",
           "tableFrom": "screener_market_snapshots",
           "tableTo": "screener_market_refresh_runs",
-          "columnsFrom": [
-            "marketRefreshRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["marketRefreshRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -5293,12 +5039,8 @@
           "name": "screener_securities_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "screener_securities",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5688,12 +5430,8 @@
           "name": "stock_opportunity_analysis_settings_userId_auth_users_id_fk",
           "tableFrom": "stock_opportunity_analysis_settings",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5808,12 +5546,8 @@
           "name": "stock_opportunity_manual_inputs_userId_auth_users_id_fk",
           "tableFrom": "stock_opportunity_manual_inputs",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5994,12 +5728,8 @@
           "name": "trading_items_userId_auth_users_id_fk",
           "tableFrom": "trading_items",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6007,12 +5737,8 @@
           "name": "trading_items_importId_imports_id_fk",
           "tableFrom": "trading_items",
           "tableTo": "imports",
-          "columnsFrom": [
-            "importId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["importId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -6091,9 +5817,7 @@
         "treasury_liquidity_rules_version_unique": {
           "name": "treasury_liquidity_rules_version_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "version"
-          ]
+          "columns": ["version"]
         }
       },
       "policies": {},
@@ -6252,12 +5976,8 @@
           "name": "treasury_position_liquidity_facts_userId_auth_users_id_fk",
           "tableFrom": "treasury_position_liquidity_facts",
           "tableTo": "auth_users",
-          "columnsFrom": [
-            "userId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["userId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6265,12 +5985,8 @@
           "name": "treasury_position_liquidity_facts_positionItemId_position_items_id_fk",
           "tableFrom": "treasury_position_liquidity_facts",
           "tableTo": "position_items",
-          "columnsFrom": [
-            "positionItemId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["positionItemId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6278,12 +5994,8 @@
           "name": "treasury_position_liquidity_facts_snapshotId_position_snapshots_id_fk",
           "tableFrom": "treasury_position_liquidity_facts",
           "tableTo": "position_snapshots",
-          "columnsFrom": [
-            "snapshotId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshotId"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6291,12 +6003,8 @@
           "name": "treasury_position_liquidity_facts_ruleVersion_treasury_liquidity_rules_version_fk",
           "tableFrom": "treasury_position_liquidity_facts",
           "tableTo": "treasury_liquidity_rules",
-          "columnsFrom": [
-            "ruleVersion"
-          ],
-          "columnsTo": [
-            "version"
-          ],
+          "columnsFrom": ["ruleVersion"],
+          "columnsTo": ["version"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -6542,12 +6250,8 @@
           "name": "valuation_accounting_facts_issuerCnpj_screener_issuers_cnpj_fk",
           "tableFrom": "valuation_accounting_facts",
           "tableTo": "screener_issuers",
-          "columnsFrom": [
-            "issuerCnpj"
-          ],
-          "columnsTo": [
-            "cnpj"
-          ],
+          "columnsFrom": ["issuerCnpj"],
+          "columnsTo": ["cnpj"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6555,12 +6259,8 @@
           "name": "valuation_accounting_facts_ingestionRunId_screener_ingestion_runs_id_fk",
           "tableFrom": "valuation_accounting_facts",
           "tableTo": "screener_ingestion_runs",
-          "columnsFrom": [
-            "ingestionRunId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["ingestionRunId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -6570,9 +6270,7 @@
         "valuation_accounting_facts_factKey_unique": {
           "name": "valuation_accounting_facts_factKey_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "factKey"
-          ]
+          "columns": ["factKey"]
         }
       },
       "policies": {},
