@@ -3,16 +3,18 @@ import { auth } from "@/infrastructure/auth/auth";
 export const runtime = "nodejs";
 
 const metadataRoutes = new Map([
-  ["oauth-protected-resource", "/.well-known/oauth-protected-resource/api/mcp"],
   [
-    "oauth-authorization-server",
+    "oauth-protected-resource/api/mcp",
+    "/.well-known/oauth-protected-resource/api/mcp",
+  ],
+  [
+    "oauth-authorization-server/api/auth",
     "/.well-known/oauth-authorization-server/api/auth",
   ],
 ]);
 
 async function forwardMetadata(request: Request, metadata: string[]) {
-  const key = metadata.join("/");
-  const targetPath = metadataRoutes.get(key);
+  const targetPath = metadataRoutes.get(metadata.join("/"));
   if (!targetPath) return new Response(null, { status: 404 });
 
   const targetUrl = new URL(request.url);

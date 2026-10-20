@@ -45,8 +45,6 @@ describe("optimistic authentication proxy", () => {
       "/api/auth/oauth2/authorize",
       "/api/auth/.well-known/oauth-authorization-server",
       "/api/mcp",
-      "/api/mcp/.well-known/oauth-protected-resource",
-      "/api/mcp/.well-known/oauth-authorization-server",
     ]) {
       expect(proxy(new NextRequest(`http://test${path}`)).status).toBe(200);
     }

@@ -8,7 +8,7 @@ vi.mock("@/infrastructure/auth/auth", () => ({
   auth: { handler: mocks.handler },
 }));
 
-import { GET, HEAD } from "@/app/api/mcp/.well-known/[...metadata]/route";
+import { GET, HEAD } from "@/app/.well-known/[...metadata]/route";
 
 describe("MCP OAuth metadata aliases", () => {
   beforeEach(() => {
@@ -18,17 +18,17 @@ describe("MCP OAuth metadata aliases", () => {
 
   it.each([
     [
-      "oauth-protected-resource",
+      "oauth-protected-resource/api/mcp",
       "/.well-known/oauth-protected-resource/api/mcp",
     ],
     [
-      "oauth-authorization-server",
+      "oauth-authorization-server/api/auth",
       "/.well-known/oauth-authorization-server/api/auth",
     ],
   ])("forwards %s to Better Auth discovery", async (metadata, expectedPath) => {
     const response = await GET(
-      new Request(`https://investlab.example/api/mcp/.well-known/${metadata}`),
-      { params: Promise.resolve({ metadata: [metadata] }) },
+      new Request(`https://investlab.example/.well-known/${metadata}`),
+      { params: Promise.resolve({ metadata: metadata.split("/") }) },
     );
 
     expect(response.status).toBe(200);
@@ -43,10 +43,14 @@ describe("MCP OAuth metadata aliases", () => {
   it("supports HEAD metadata discovery", async () => {
     const response = await HEAD(
       new Request(
-        "https://investlab.example/api/mcp/.well-known/oauth-protected-resource",
+        "https://investlab.example/.well-known/oauth-protected-resource/api/mcp",
         { method: "HEAD" },
       ),
-      { params: Promise.resolve({ metadata: ["oauth-protected-resource"] }) },
+      {
+        params: Promise.resolve({
+          metadata: ["oauth-protected-resource", "api", "mcp"],
+        }),
+      },
     );
 
     expect(response.status).toBe(200);
@@ -55,7 +59,7 @@ describe("MCP OAuth metadata aliases", () => {
 
   it("does not forward unknown discovery paths", async () => {
     const response = await GET(
-      new Request("https://investlab.example/api/mcp/.well-known/other"),
+      new Request("https://investlab.example/.well-known/other"),
       { params: Promise.resolve({ metadata: ["other"] }) },
     );
 

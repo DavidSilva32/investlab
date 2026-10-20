@@ -345,4 +345,39 @@ describe("McpPortfolioReadToolsController", () => {
       content: [{ text: "Não foi possível concluir a operação no InvestLab." }],
     });
   });
+
+  it("maps failures from every remaining read tool to safe MCP errors", async () => {
+    controller.register(
+      { registerTool: mocks.registerTool } as never,
+      "owner-5",
+      "req-8",
+    );
+
+    const failingTools = [
+      ["get_my_objectives", mocks.getMyObjectives],
+      ["get_my_long_term_strategy", mocks.getMyLongTermStrategy],
+      ["get_my_portfolio_allocation", mocks.getMyPortfolioAllocation],
+      ["get_my_operations_and_reconciliation", mocks.getMyOperations],
+      ["simulate_objective_projection", mocks.simulateMyObjectiveProjection],
+      ["get_b3_market_quotes", mocks.getMarketQuotes],
+    ] as const;
+
+    for (const [toolName, serviceMethod] of failingTools) {
+      serviceMethod.mockRejectedValue(new Error("private database detail"));
+      const input =
+        toolName === "get_b3_market_quotes"
+          ? { tickers: ["ABCD3"] }
+          : toolName === "simulate_objective_projection"
+            ? { mode: "project_balance" }
+            : undefined;
+      await expect(
+        tools.get(toolName)?.(input as never),
+      ).resolves.toMatchObject({
+        isError: true,
+        content: [
+          { text: "Não foi possível concluir a operação no InvestLab." },
+        ],
+      });
+    }
+  });
 });

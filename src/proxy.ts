@@ -28,8 +28,6 @@ function isPublicPath(pathname: string) {
     pathname === "/api/auth/jwks" ||
     pathname.startsWith("/.well-known/oauth-") ||
     pathname === "/api/mcp" ||
-    pathname === "/api/mcp/.well-known/oauth-protected-resource" ||
-    pathname === "/api/mcp/.well-known/oauth-authorization-server" ||
     pathname.startsWith("/convite/") ||
     pathname.startsWith("/invite/") ||
     pathname.startsWith("/redefinir-senha/") ||
