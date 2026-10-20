@@ -1,6 +1,5 @@
 import { createInsufficientScopeError } from "better-auth/oauth2";
 import { requireMcpAuth } from "@better-auth/mcp";
-import { auth } from "@/infrastructure/auth/auth";
 import { mcpController } from "@/backend/controllers/mcp.controller";
 import { mcpResource } from "@/infrastructure/mcp/mcp-configuration";
 
@@ -47,8 +46,12 @@ async function handleAuthenticatedRequest(
   return mcpController.handle(request, claims);
 }
 
-export const POST = requireMcpAuth(auth, handleAuthenticatedRequest, {
-  resource: mcpResource,
-  requiredScopes: ["mcp:read"],
-  challengeScopes: ["mcp:read"],
-});
+export async function POST(request: Request) {
+  const { auth } = await import("@/infrastructure/auth/auth");
+  const handleRequest = requireMcpAuth(auth, handleAuthenticatedRequest, {
+    resource: mcpResource,
+    requiredScopes: ["mcp:read"],
+    challengeScopes: ["mcp:read"],
+  });
+  return handleRequest(request);
+}

@@ -15,20 +15,30 @@ vi.mock("@/infrastructure/auth/auth", () => ({
 import { DELETE, GET, PATCH, POST, PUT } from "@/app/api/auth/[...all]/route";
 
 describe("Better Auth catch-all route", () => {
-  it("forwards OAuth and other auth requests through the Better Auth handler", async () => {
+  it("forwards each auth method to the Better Auth handler", async () => {
     const request = new Request(
       "https://investlab.example/api/auth/oauth2/token",
     );
     const response = new Response(null, { status: 204 });
-    mocks.POST.mockResolvedValue(response);
-
-    await expect(POST(request)).resolves.toBe(response);
-    expect(mocks.POST).toHaveBeenCalledWith(request);
-    expect([GET, PATCH, PUT, DELETE]).toEqual([
+    for (const method of [
       mocks.GET,
+      mocks.POST,
       mocks.PATCH,
       mocks.PUT,
       mocks.DELETE,
-    ]);
+    ]) {
+      method.mockResolvedValue(response);
+    }
+
+    for (const [route, method] of [
+      [GET, mocks.GET],
+      [POST, mocks.POST],
+      [PATCH, mocks.PATCH],
+      [PUT, mocks.PUT],
+      [DELETE, mocks.DELETE],
+    ] as const) {
+      await expect(route(request)).resolves.toBe(response);
+      expect(method).toHaveBeenCalledWith(request);
+    }
   });
 });

@@ -49,6 +49,10 @@ describe("optimistic authentication proxy", () => {
       expect(proxy(new NextRequest(`http://test${path}`)).status).toBe(200);
     }
     expect(
+      proxy(new NextRequest("http://test/api/mcp/.well-known/unrecognized"))
+        .status,
+    ).toBe(401);
+    expect(
       proxy(
         new NextRequest("http://test/", {
           headers: { cookie: "better-auth.session_token=opaque" },

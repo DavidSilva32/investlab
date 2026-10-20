@@ -144,6 +144,21 @@ describe("PortfolioOperationRepository", () => {
     });
   });
 
+  it("logs and rethrows failures from the recent MCP query", async () => {
+    const failure = new Error("recent query failed");
+    mocks.client.select.mockImplementation(() => {
+      throw failure;
+    });
+
+    await expect(
+      new PortfolioOperationRepository().listRecentForMcp("mcp-recent-failure"),
+    ).rejects.toBe(failure);
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_portfolio_operations_recent_query_failed",
+      { requestId: "mcp-recent-failure", error: failure },
+    );
+  });
+
   it("logs query and insert errors", async () => {
     const repository = new PortfolioOperationRepository();
     mocks.client.select.mockImplementation(() => {
