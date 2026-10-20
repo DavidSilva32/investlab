@@ -24,32 +24,17 @@ const connectionSteps = [
   {
     title: "Abra a área de conectores",
     description:
-      "No ChatGPT, abra as configurações de conectores ou a área de criação de um servidor MCP personalizado. O nome do menu pode variar por conta e workspace.",
+      "Nas configurações do ChatGPT, procure a opção para adicionar um servidor MCP personalizado. Os nomes dos menus podem variar conforme sua conta ou espaço de trabalho.",
   },
   {
-    title: "Adicione o InvestLab",
+    title: "Copie os dados do InvestLab",
     description:
-      "Escolha a opção para adicionar um servidor MCP personalizado e informe um nome para identificar esta conexão.",
-  },
-  {
-    title: "Informe os dados do servidor",
-    description:
-      "Copie o endereço HTTPS e os demais valores apresentados nesta página para os campos correspondentes do ChatGPT.",
+      "Use os botões Copiar abaixo e cole cada informação no campo com o mesmo nome. A imagem do InvestLab é opcional.",
   },
   {
     title: "Escolha OAuth e autorize",
     description:
-      "Deixe o ChatGPT descobrir os metadados OAuth. Entre na conta InvestLab e revise as permissões antes de aprovar.",
-  },
-  {
-    title: "Confirme as ferramentas",
-    description:
-      "Confira as ferramentas que o cliente descobriu. A leitura administrativa é adicional, opcional e disponível somente para contas ADMIN.",
-  },
-  {
-    title: "Faça uma consulta",
-    description:
-      "Abra uma conversa nova, selecione a conexão InvestLab e peça uma leitura que esteja descrita no catálogo abaixo.",
+      "Deixe as opções avançadas no modo automático. Entre no InvestLab, revise as permissões de leitura e autorize. Depois, selecione InvestLab em uma conversa nova e faça uma pergunta sobre algo do catálogo abaixo.",
   },
 ];
 
@@ -243,7 +228,15 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
           onClick={() => setActiveTab("connect")}
           className="min-h-11 shrink-0 gap-2"
         >
-          Ver passo a passo{" "}
+          <Image
+            src="/chatgpt-icon.svg"
+            alt=""
+            width={18}
+            height={18}
+            className="size-[18px] rounded-full bg-white p-0.5"
+            unoptimized
+          />
+          Conectar ao ChatGPT{" "}
           <ChevronRight aria-hidden="true" className="size-4" />
         </Button>
       </header>
@@ -270,8 +263,16 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
               </TabsTrigger>
               <TabsTrigger
                 value="connect"
-                className="min-h-10 justify-start px-3 text-left data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                className="min-h-10 justify-start gap-2 px-3 text-left data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none"
               >
+                <Image
+                  src="/chatgpt-icon.svg"
+                  alt=""
+                  width={16}
+                  height={16}
+                  className="size-4 rounded-full bg-white p-0.5"
+                  unoptimized
+                />
                 Conectar ao ChatGPT
               </TabsTrigger>
               <div
@@ -349,7 +350,18 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                     className="relative flex min-h-36 gap-4 rounded-xl border border-border/70 bg-card p-4 transition-colors hover:border-primary/35 sm:p-5"
                   >
                     <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                      <Icon aria-hidden="true" className="size-5" />
+                      {title === "O ChatGPT consulta" ? (
+                        <Image
+                          src="/chatgpt-icon.svg"
+                          alt=""
+                          width={20}
+                          height={20}
+                          className="size-5 rounded-full bg-white p-0.5"
+                          unoptimized
+                        />
+                      ) : (
+                        <Icon aria-hidden="true" className="size-5" />
+                      )}
                     </span>
                     <div>
                       <span className="text-xs font-semibold uppercase tracking-wide text-primary">
@@ -372,21 +384,11 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                 ))}
               </ol>
 
-              <section aria-labelledby="mcp-endpoint-title">
-                <h2 id="mcp-endpoint-title" className="text-lg font-semibold">
-                  Endereço do servidor
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Use o HTTPS público ao conectar o ChatGPT.
-                </p>
-                <div className="mt-4 rounded-xl border border-border bg-card p-4 sm:p-5">
-                  <McpConnectionValues endpoint={endpoint} />
-                  <p className="mt-4 text-sm font-medium text-foreground">
-                    Esta URL aponta para a implantação pública. Para testar uma
-                    instância local no ChatGPT, selecione a opção Tunnel.
-                  </p>
-                </div>
-              </section>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Quando a conexão estiver pronta, selecione InvestLab em uma
+                conversa nova. Você também pode conferir as permissões e os
+                limites no menu ao lado.
+              </p>
             </TabsContent>
 
             <TabsContent value="connect" className="mt-0 space-y-6">
@@ -413,11 +415,11 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                 opção de servidor MCP personalizado não aparecer, confira se o
                 recurso está habilitado no seu ChatGPT.
               </p>
-              <ol className="space-y-4">
+              <ol className="grid gap-3 md:grid-cols-3">
                 {connectionSteps.map((step, index) => (
                   <li
                     key={step.title}
-                    className="flex gap-4 rounded-xl border border-border bg-card p-4 sm:p-5"
+                    className="flex gap-3 rounded-xl border border-border bg-card p-4 sm:flex-col sm:p-5"
                   >
                     <span
                       aria-hidden="true"
@@ -436,18 +438,39 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                   </li>
                 ))}
               </ol>
-              <p className="text-sm leading-6 text-muted-foreground">
-                No formulário de servidor personalizado, escolha autenticação
-                OAuth. Não preencha credenciais manualmente: o cliente deve
-                descobrir os metadados e abrir a autorização do InvestLab.
-              </p>
+              <section
+                aria-labelledby="mcp-chatgpt-fields-title"
+                className="rounded-2xl border border-border bg-card p-4 sm:p-6"
+              >
+                <header className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-primary">
+                      Informações para preencher
+                    </p>
+                    <h3
+                      id="mcp-chatgpt-fields-title"
+                      className="mt-1 text-lg font-semibold text-foreground"
+                    >
+                      Copie cada item para o ChatGPT
+                    </h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Você só precisa fazer isso uma vez.
+                  </p>
+                </header>
+                <McpConnectionValues endpoint={endpoint} />
+                <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                  Este endereço é da implantação pública. Para testar uma
+                  instância local no ChatGPT, selecione a opção Tunnel.
+                </p>
+              </section>
               <Link
                 href="https://developers.openai.com/api/docs/guides/custom-mcp-server"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                Guia oficial de servidor MCP personalizado
+                Abrir o guia oficial do ChatGPT para servidores MCP
                 <ArrowUpRight aria-hidden="true" className="size-4" />
               </Link>
             </TabsContent>
@@ -577,8 +600,8 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                       Não há ferramentas para gravar ou excluir dados. A
                       simulação usa somente premissas informadas. As cotações B3
                       são limitadas a 10 ativos e não incluem histórico,
-                      fundamentos ou preço em tempo real. A conexão real com o
-                      ChatGPT ainda depende da validação após publicação.
+                      fundamentos ou preço em tempo real. Ainda não há guias de
+                      conexão validados para outros assistentes de IA.
                     </p>
                   </div>
                 </div>

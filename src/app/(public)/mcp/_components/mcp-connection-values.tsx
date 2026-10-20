@@ -1,26 +1,35 @@
 "use client";
 
 import { Copy, Download } from "lucide-react";
+import Image from "next/image";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 const fields = [
   {
-    label: "Name",
+    label: "Nome do servidor (Name)",
+    feedbackLabel: "Nome do servidor",
     value: "InvestLab",
   },
   {
-    label: "Description",
+    label: "Descrição (Description)",
+    feedbackLabel: "Descrição",
     value:
       "Consulta somente leitura de carteira, operações, objetivos, estratégia, simulações e cotações B3 no InvestLab.",
   },
 ] as const;
 
-function CopyValueButton({ label, value }: { label: string; value: string }) {
+function CopyValueButton({
+  feedbackLabel,
+  value,
+}: {
+  feedbackLabel: string;
+  value: string;
+}) {
   async function copyValue() {
     try {
       await navigator.clipboard.writeText(value);
-      toast.success(`${label} copiado.`);
+      toast.success(`${feedbackLabel} copiado.`);
     } catch {
       toast.error("Não foi possível copiar. Selecione e copie o valor.");
     }
@@ -32,7 +41,7 @@ function CopyValueButton({ label, value }: { label: string; value: string }) {
       variant="outline"
       size="sm"
       onClick={copyValue}
-      aria-label={`Copiar ${label}`}
+      aria-label={`Copiar ${feedbackLabel.toLocaleLowerCase("pt-BR")}`}
       className="shrink-0"
     >
       <Copy aria-hidden="true" className="size-4" />
@@ -44,9 +53,9 @@ function CopyValueButton({ label, value }: { label: string; value: string }) {
 export function McpConnectionValues({ endpoint }: { endpoint: string }) {
   return (
     <div className="space-y-3">
-      {fields.map(({ label, value }) => (
+      {fields.map(({ label, feedbackLabel, value }) => (
         <div
-          key={label}
+          key={feedbackLabel}
           className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3"
         >
           <div className="min-w-0">
@@ -57,42 +66,70 @@ export function McpConnectionValues({ endpoint }: { endpoint: string }) {
               {value}
             </p>
           </div>
-          <CopyValueButton label={label} value={value} />
+          <CopyValueButton feedbackLabel={feedbackLabel} value={value} />
         </div>
       ))}
       <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Server URL
+            Endereço do servidor (Server URL)
           </p>
           <p className="mt-1 break-all font-mono text-sm text-foreground">
             {endpoint}
           </p>
         </div>
-        <CopyValueButton label="URL do servidor" value={endpoint} />
+        <CopyValueButton
+          feedbackLabel="Endereço do servidor"
+          value={endpoint}
+        />
       </div>
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-xl border border-border bg-background p-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Autenticação (Authentication)
+        </p>
+        <p className="mt-1 text-sm font-medium text-foreground">
+          OAuth · descoberta automática
+        </p>
+      </div>
+      <div className="grid gap-4 rounded-xl border border-primary/15 bg-primary/5 p-4 sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center sm:p-5">
+        <span className="grid size-16 place-items-center rounded-2xl border border-border bg-background p-2">
+          <Image
+            src="/investlab-logo.png"
+            alt="Logo do InvestLab"
+            width={48}
+            height={48}
+            unoptimized
+          />
+        </span>
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Authentication
+            Ícone do servidor · opcional
           </p>
-          <p className="mt-1 text-sm font-medium text-foreground">OAuth</p>
+          <p className="mt-1 font-semibold text-foreground">
+            Reconheça o InvestLab na sua lista
+          </p>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            O servidor publica a configuração OAuth. Deixe os campos avançados
-            no modo descoberto automaticamente.
+            Baixe a imagem e envie pelo botão “Choose icon” no ChatGPT. É
+            opcional; a conexão funciona sem ela.
           </p>
         </div>
         <Button variant="outline" size="sm" asChild className="shrink-0">
           <a href="/investlab-logo.png" download="investlab-logo.png">
             <Download aria-hidden="true" className="size-4" />
-            Baixar ícone PNG
+            Baixar logo do InvestLab
           </a>
         </Button>
       </div>
-      <p className="text-xs leading-5 text-muted-foreground">
-        Este é o mesmo símbolo do InvestLab usado na navegação lateral. O PNG é
-        opcional e tem menos de 10 KB; envie-o pelo botão “Choose icon”.
-      </p>
+      <div className="rounded-xl border border-border bg-muted/40 p-4">
+        <p className="font-semibold text-foreground">
+          Escolha a autenticação OAuth
+        </p>
+        <p className="mt-1 text-sm leading-5 text-muted-foreground">
+          O ChatGPT encontra as configurações automaticamente. Deixe as opções
+          avançadas no modo automático; você entrará no InvestLab para revisar e
+          autorizar o acesso.
+        </p>
+      </div>
     </div>
   );
 }
