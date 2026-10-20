@@ -90,17 +90,32 @@ type OpportunitiesPayload = {
   classificationLookupFailures?: number;
 };
 
-const definitions: Array<{ key: InputKey; label: string; unit: string }> = [
-  { key: "graham_eps", label: "Lucro por ação (LPA)", unit: "R$/ação" },
+const definitions: Array<{
+  key: InputKey;
+  label: string;
+  unit: string;
+  guidance: string;
+}> = [
+  {
+    key: "graham_eps",
+    label: "Lucro por ação (LPA)",
+    unit: "R$/ação",
+    guidance:
+      "Transcreva o LPA por ação do relatório de resultados publicado pela empresa. Informe a fonte e a data-base; o cálculo também exige o VPA dessa mesma data.",
+  },
   {
     key: "graham_book_value_per_share",
     label: "Valor patrimonial por ação (VPA)",
     unit: "R$/ação",
+    guidance:
+      "Transcreva o VPA por ação publicado pela empresa na mesma data-base do LPA. Não use o patrimônio total nem divida valores sem conferir a quantidade e a classe das ações.",
   },
   {
     key: "bazin_dividend_per_share",
     label: "Dividendos anuais por ação",
     unit: "R$/ação",
+    guidance:
+      "No histórico de proventos de Relações com Investidores, some dividendos e JCP em dinheiro pagos por ação nos 12 meses anteriores à data informada. Não use o total creditado na sua conta.",
   },
 ];
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -622,7 +637,7 @@ export function PortfolioOpportunities({
                 <MethodCard
                   title="Número de Graham"
                   method={item.methods.graham}
-                  formula="Fórmula usada: raiz quadrada de 22,5 × LPA × VPA. Requer lucro e patrimônio positivos por ação."
+                  formula="Fórmula usada: raiz quadrada de 22,5 × LPA × VPA. Requer lucro e patrimônio positivos por ação, informados manualmente com a mesma data-base."
                 />
                 <MethodCard
                   title="Preço-teto de Bazin"
@@ -630,34 +645,70 @@ export function PortfolioOpportunities({
                   formula="Fórmula usada: dividendos anuais por ação ÷ taxa-alvo anual informada. O valor anual é preenchido manualmente e não confirma que os proventos sejam recorrentes; trate o resultado como cenário, não como critério de compra."
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Dados financeiros automáticos:{" "}
-                {item.financialPeriods.length
-                  ? item.financialPeriods
-                      .map(
-                        ({ sourceDocument, referenceDate }) =>
-                          `${sourceDocument} ${formatDate(referenceDate)}`,
-                      )
-                      .join(" · ")
-                  : `indisponíveis${item.fundamentalsAsOf ? ` · base ${formatDate(item.fundamentalsAsOf)}` : ""}`}
-                . Os totais publicados pela CVM não substituem LPA, VPA ou
-                dividendos por ação sem conciliação confiável do número de
-                ações.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Proventos BRAPI · janela de 12 meses (
-                {formatDate(item.automaticDividend?.windowStart ?? null)} a{" "}
-                {formatDate(item.automaticDividend?.windowEnd ?? null)}):{" "}
-                {item.automaticDividend?.value === null ||
-                item.automaticDividend?.value === undefined
-                  ? "sem eventos utilizáveis"
-                  : `${currency.format(item.automaticDividend.value)} por ação observados`}
-                . {item.automaticDividend?.observedPayments ?? 0} pagamentos.{" "}
-                {item.automaticDividend?.unavailableReason ??
-                  "A fonte não retornou eventos para o período."}{" "}
-                O valor automático não entra no cálculo Bazin sem evidência de
-                janela completa.
-              </p>
+              <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                <p>
+                  Fundamentos:{" "}
+                  {item.financialPeriods.length
+                    ? `${item.financialPeriods.length} período${item.financialPeriods.length === 1 ? "" : "s"} disponíve${item.financialPeriods.length === 1 ? "l" : "is"}; base mais recente em ${formatDate(item.fundamentalsAsOf)}`
+                    : `indisponíveis${item.fundamentalsAsOf ? ` · base ${formatDate(item.fundamentalsAsOf)}` : ""}`}
+                </p>
+                <p>
+                  Proventos em 12 meses:{" "}
+                  {item.automaticDividend?.value === null ||
+                  item.automaticDividend?.value === undefined
+                    ? "cobertura não confirmada"
+                    : `${currency.format(item.automaticDividend.value)} por ação observados; cobertura não confirmada`}
+                </p>
+              </div>
+              <Collapsible>
+                <div className="border-t pt-2">
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      className="h-auto w-full justify-between px-1 py-2 text-left text-sm"
+                    >
+                      <span>Ver fontes e limitações</span>
+                      <ChevronDown
+                        className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]_&]:rotate-180"
+                        aria-hidden="true"
+                      />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-2 px-1 pb-2 text-xs leading-relaxed text-muted-foreground">
+                    <p>
+                      Demonstrativos CVM:{" "}
+                      {item.financialPeriods.length
+                        ? item.financialPeriods
+                            .map(
+                              ({ sourceDocument, referenceDate }) =>
+                                `${sourceDocument} ${formatDate(referenceDate)}`,
+                            )
+                            .join(" · ")
+                        : "indisponíveis"}
+                      . Totais publicados pela CVM não substituem LPA, VPA ou
+                      dividendos por ação sem conciliação confiável do número de
+                      ações.
+                    </p>
+                    <p>
+                      Proventos BRAPI, janela de 12 meses ({" "}
+                      {formatDate(item.automaticDividend?.windowStart ?? null)}{" "}
+                      a {formatDate(item.automaticDividend?.windowEnd ?? null)}
+                      ):{" "}
+                      {item.automaticDividend?.value === null ||
+                      item.automaticDividend?.value === undefined
+                        ? "sem eventos utilizáveis"
+                        : `${currency.format(item.automaticDividend.value)} por ação observados`}
+                      . {item.automaticDividend?.observedPayments ?? 0}{" "}
+                      pagamentos.{" "}
+                      {item.automaticDividend?.unavailableReason ??
+                        "A fonte não retornou eventos para o período."}{" "}
+                      O valor automático não entra no cálculo Bazin sem
+                      evidência de janela completa.
+                    </p>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
               <Collapsible>
                 <div className="border-t pt-3">
                   <CollapsibleTrigger asChild>
@@ -666,14 +717,24 @@ export function PortfolioOpportunities({
                       type="button"
                       className="h-auto w-full justify-between px-1 py-2 text-left"
                     >
-                      <span>Informar ou atualizar dados manuais</span>
+                      <span>Inserir dados para calcular Graham e Bazin</span>
                       <ChevronDown
                         className="size-4 shrink-0 transition-transform duration-200 [[data-state=open]_&]:rotate-180"
                         aria-hidden="true"
                       />
                     </Button>
                   </CollapsibleTrigger>
+                  <p className="px-1 text-xs text-muted-foreground">
+                    Os cálculos precisam de valores por ação informados
+                    manualmente, com origem e data.
+                  </p>
                   <CollapsibleContent className="pt-2">
+                    <p className="mb-3 text-sm text-muted-foreground">
+                      Os valores por ação precisam ser informados por você com
+                      origem e data. Para Graham, informe LPA e VPA da mesma
+                      data-base. Para Bazin, informe os proventos em dinheiro
+                      pagos por ação nos últimos 12 meses.
+                    </p>
                     <div className="grid gap-3 lg:grid-cols-2">
                       {definitions.map((definition) => {
                         const key = getDraftKey(item.ticker, definition.key);
@@ -701,6 +762,12 @@ export function PortfolioOpportunities({
                                 ({definition.unit})
                               </span>
                             </label>
+                            <p
+                              id={`${item.ticker}-${definition.key}-guidance`}
+                              className="text-xs leading-relaxed text-muted-foreground"
+                            >
+                              {definition.guidance}
+                            </p>
                             <div className="grid grid-cols-2 gap-2">
                               <Input
                                 id={`${item.ticker}-${definition.key}-value`}
@@ -708,6 +775,7 @@ export function PortfolioOpportunities({
                                 step="any"
                                 min="0"
                                 required
+                                aria-describedby={`${item.ticker}-${definition.key}-guidance`}
                                 aria-label={`${definition.label}, valor`}
                                 value={draft.value}
                                 onChange={(event) =>
@@ -724,6 +792,7 @@ export function PortfolioOpportunities({
                                 id={`${item.ticker}-${definition.key}-as-of`}
                                 label={`${definition.label}, data de referência`}
                                 value={draft.asOf}
+                                describedBy={`${item.ticker}-${definition.key}-guidance`}
                                 required
                                 onChange={(value) =>
                                   updateDraft(
@@ -741,6 +810,7 @@ export function PortfolioOpportunities({
                                 minLength={2}
                                 maxLength={160}
                                 aria-label={`${definition.label}, origem`}
+                                aria-describedby={`${item.ticker}-${definition.key}-guidance`}
                                 value={draft.source}
                                 onChange={(event) =>
                                   updateDraft(

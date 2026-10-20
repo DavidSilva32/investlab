@@ -531,6 +531,18 @@ export function NextContributionStockOpportunities() {
                 );
               })}
             </ul>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Graham depende de LPA e VPA por ação informados manualmente. A
+              cobertura automática de proventos para Bazin não é confirmada;
+              informe manualmente os valores por ação.{" "}
+              <Link
+                className="font-medium text-primary underline-offset-4 hover:underline"
+                href="/analises"
+              >
+                Revisar dados e referências
+              </Link>
+              .
+            </p>
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               Indicadores de qualidade e referências de preço são leituras
               distintas. Dados ausentes ou antigos permanecem sem sinal.

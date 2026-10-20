@@ -287,6 +287,15 @@ describe("PortfolioOpportunities", () => {
     expect(
       screen.getAllByText("abaixo da referência", { exact: false }).length,
     ).toBeGreaterThan(0);
+    expect(screen.getByText(/Fundamentos: 1 período disponível/i)).toBeTruthy();
+    expect(
+      screen.getByText(/Proventos em 12 meses:.*cobertura não confirmada/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/não confirmou a completude/i)).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver fontes e limitações" }),
+    );
+    expect(screen.getByText(/DFP 31 de dez. de 2025/i)).toBeTruthy();
     expect(screen.getByText(/não confirmou a completude/i)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Sobre a taxa inicial do Bazin" }),
@@ -307,6 +316,39 @@ describe("PortfolioOpportunities", () => {
       within(
         screen.getByText("Taxa-alvo global do Bazin").parentElement!,
       ).getByRole("button", { name: "Sobre a taxa inicial do Bazin" }),
+    ).toBeTruthy();
+  });
+
+  it("summarizes multiple financial periods and reveals their sources on demand", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          opportunities: [
+            {
+              ...opportunity,
+              financialPeriods: [
+                { referenceDate: "2025-12-31", sourceDocument: "DFP" },
+                { referenceDate: "2025-06-30", sourceDocument: "ITR" },
+              ],
+            },
+          ],
+          settings: { bazinTargetYield: 6 },
+        }),
+      ),
+    );
+    render(<PortfolioOpportunities />);
+
+    await screen.findByRole("img", { name: "Identidade de Petrobras PN" });
+    const summary = screen.getByText(/Fundamentos:/i);
+    expect(summary.textContent).toContain("2 períodos disponíveis");
+    expect(summary.textContent).toContain("base mais recente em");
+    expect(screen.queryByText(/Demonstrativos CVM:/i)).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ver fontes e limitações" }),
+    );
+    expect(
+      screen.getByText(/DFP 31 de dez. de 2025 · ITR 30 de jun. de 2025/i),
     ).toBeTruthy();
   });
 
@@ -384,15 +426,20 @@ describe("PortfolioOpportunities", () => {
     expect(screen.getAllByText("Comparação indisponível")).toHaveLength(2);
     expect(screen.getByText("Bazin indisponível.")).toBeTruthy();
     expect(screen.getByText("Bazin sem dados suficientes.")).toBeTruthy();
+    expect(screen.getAllByText(/Proventos em 12 meses:/i)).toHaveLength(2);
+    expect(screen.getAllByText(/Fundamentos: indisponíveis/i)).toHaveLength(2);
+
+    const sourceButtons = screen.getAllByRole("button", {
+      name: "Ver fontes e limitações",
+    });
+    await userEvent.click(sourceButtons[0]!);
+    await userEvent.click(sourceButtons[1]!);
     expect(screen.getAllByText(/janela de 12 meses/i)).toHaveLength(2);
     expect(screen.getAllByText(/sem eventos utilizáveis/i)).toHaveLength(2);
-    expect(
-      screen.getAllByText(/Dados financeiros automáticos: indisponíveis/i),
-    ).toHaveLength(2);
 
     await userEvent.click(
       screen.getAllByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       })[0]!,
     );
     expect(
@@ -402,7 +449,7 @@ describe("PortfolioOpportunities", () => {
     expect(screen.getAllByPlaceholderText("Origem do dado")).toHaveLength(3);
     await userEvent.click(
       screen.getAllByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       })[1]!,
     );
     fireEvent.change(document.getElementById("VALE3-graham_eps-value")!, {
@@ -537,11 +584,41 @@ describe("PortfolioOpportunities", () => {
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       }),
     );
+    expect(
+      screen.getByText(
+        "Os valores por ação precisam ser informados por você com origem e data. Para Graham, informe LPA e VPA da mesma data-base. Para Bazin, informe os proventos em dinheiro pagos por ação nos últimos 12 meses.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "No histórico de proventos de Relações com Investidores, some dividendos e JCP em dinheiro pagos por ação nos 12 meses anteriores à data informada. Não use o total creditado na sua conta.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Transcreva o VPA por ação publicado pela empresa na mesma data-base do LPA. Não use o patrimônio total nem divida valores sem conferir a quantidade e a classe das ações.",
+      ),
+    ).toBeTruthy();
+    expect(
+      document
+        .getElementById("PETR4-graham_eps-value")
+        ?.getAttribute("aria-describedby"),
+    ).toBe("PETR4-graham_eps-guidance");
     const value = document.getElementById("PETR4-graham_eps-value")!;
     const form = value.closest("form")!;
+    expect(
+      within(form)
+        .getByPlaceholderText("Origem do dado")
+        .getAttribute("aria-describedby"),
+    ).toBe("PETR4-graham_eps-guidance");
+    expect(
+      within(form)
+        .getByLabelText("Lucro por ação (LPA), data de referência")
+        .getAttribute("aria-describedby"),
+    ).toBe("PETR4-graham_eps-guidance");
     await userEvent.click(within(form).getByRole("button", { name: "Salvar" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
@@ -563,7 +640,7 @@ describe("PortfolioOpportunities", () => {
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       }),
     );
     const value = document.getElementById("PETR4-graham_eps-value")!;
@@ -607,7 +684,7 @@ describe("PortfolioOpportunities", () => {
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       }),
     );
     const value = document.getElementById("PETR4-graham_eps-value")!;
@@ -648,7 +725,7 @@ describe("PortfolioOpportunities", () => {
 
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       }),
     );
     const value = document.getElementById("PETR4-graham_eps-value")!;
@@ -691,7 +768,7 @@ describe("PortfolioOpportunities", () => {
     await screen.findAllByRole("img", { name: "Identidade de Petrobras PN" });
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       }),
     );
     const value = document.getElementById("PETR4-graham_eps-value")!;

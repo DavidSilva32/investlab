@@ -170,7 +170,7 @@ describe("AnalysesTabs", () => {
     await userEvent.type(bazinYield, "7.5");
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Informar ou atualizar dados manuais",
+        name: "Inserir dados para calcular Graham e Bazin",
       }),
     );
     const eps = document.getElementById("PETR4-graham_eps-value")!;
