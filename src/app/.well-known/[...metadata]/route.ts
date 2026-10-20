@@ -1,5 +1,3 @@
-import { auth } from "@/infrastructure/auth/auth";
-
 export const runtime = "nodejs";
 
 const metadataRoutes = new Map([
@@ -19,6 +17,7 @@ async function forwardMetadata(request: Request, metadata: string[]) {
 
   const targetUrl = new URL(request.url);
   targetUrl.pathname = targetPath;
+  const { auth } = await import("@/infrastructure/auth/auth");
   return auth.handler(
     new Request(targetUrl, {
       method: request.method,
