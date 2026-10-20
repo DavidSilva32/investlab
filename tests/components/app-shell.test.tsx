@@ -174,7 +174,7 @@ describe("AppShell", () => {
       screen.getAllByRole("link", { name: "Usuários" }).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole("link", { name: "Página de apresentação" }).length,
+      screen.getAllByRole("link", { name: "Landing page" }).length,
     ).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("link", { name: "Demonstração" }).length,

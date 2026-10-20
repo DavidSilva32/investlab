@@ -16,31 +16,50 @@ vi.mock("next/link", () => ({
 
 import DemoPage from "@/app/(public)/demonstracao/page";
 
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  value: class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback(
+        [
+          {
+            target,
+            contentRect: { width: 500, height: 220 },
+          } as ResizeObserverEntry,
+        ],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve() {}
+    disconnect() {}
+  },
+});
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
 
-describe("fictional portfolio demonstration", () => {
-  it("renders static sample data, identifies it as fictional, and offers account access", () => {
+describe("fictional portfolio demonstration page", () => {
+  it("introduces the interactive product preview and offers account access", () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     render(<DemoPage />);
 
     expect(
-      screen.getByRole("heading", { name: "Uma carteira de exemplo" }),
+      screen.getByRole("heading", {
+        name: "Sua carteira, objetivos e estratégia em contexto.",
+      }),
     ).toBeTruthy();
-    expect(screen.getByText(/Dados totalmente fictícios/)).toBeTruthy();
-    expect(screen.getByText("CDB de exemplo")).toBeTruthy();
-    expect(screen.getByText("ETF de exemplo")).toBeTruthy();
-    expect(screen.getByText(/Renda fixa · Banco Aurora/)).toBeTruthy();
-    expect(
-      screen.getByText(/Fundos imobiliários \(FIIs\) · Corretora Horizonte/),
-    ).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Posições/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Objetivos/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Estratégia/ })).toBeTruthy();
+    expect(screen.getByText(/cenário é totalmente fictício/)).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
     expect(
       screen
-        .getByRole("link", { name: /Entrar na plataforma/ })
+        .getByRole("link", { name: /Acessar a plataforma/ })
         .getAttribute("href"),
     ).toBe("/entrar");
   });

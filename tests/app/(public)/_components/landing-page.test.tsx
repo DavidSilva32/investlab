@@ -24,17 +24,17 @@ describe("LandingPage", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "Organize seus investimentos em um só lugar.",
+        name: /Mais clareza para cuidar do seu patrimônio inteiro/,
       }),
     ).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: /Explorar demonstração/ })
+        .getByRole("link", { name: /Conhecer a demonstração/ })
         .getAttribute("href"),
     ).toBe("/demonstracao");
     expect(
       screen
-        .getByRole("link", { name: "Entrar na plataforma" })
+        .getByRole("link", { name: /Acessar minha conta/ })
         .getAttribute("href"),
     ).toBe("/entrar");
     expect(

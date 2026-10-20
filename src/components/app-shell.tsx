@@ -88,7 +88,7 @@ const navigation = [
 
 const adminNavigation = [
   { href: "/admin/usuarios", label: "Usuários" },
-  { href: "/apresentacao", label: "Página de apresentação" },
+  { href: "/apresentacao", label: "Landing page" },
   { href: "/demonstracao", label: "Demonstração" },
 ];
 
