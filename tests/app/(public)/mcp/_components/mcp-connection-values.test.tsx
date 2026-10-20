@@ -63,5 +63,14 @@ describe("McpConnectionValues", () => {
     expect(toast.error).toHaveBeenCalledWith(
       "Não foi possível copiar. Selecione e copie o valor.",
     );
+
+    writeText.mockResolvedValueOnce(undefined);
+    await user.click(
+      screen.getByRole("button", { name: "Copiar URL do servidor" }),
+    );
+    expect(writeText).toHaveBeenLastCalledWith(
+      "https://investlab.example/api/mcp",
+    );
+    expect(toast.success).toHaveBeenCalledWith("URL do servidor copiado.");
   });
 });

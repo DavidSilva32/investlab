@@ -62,7 +62,7 @@ describe("MCP OAuth metadata aliases", () => {
   it.each([
     [
       GET_RESOURCE,
-      "https://investlab.example/api/auth/.well-known/oauth-protected-resource/api/mcp",
+      "https://investlab.example/.well-known/oauth-protected-resource/api/mcp",
     ],
     [
       GET_AUTHORIZATION_SERVER,

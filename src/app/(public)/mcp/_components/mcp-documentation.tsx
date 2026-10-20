@@ -2,19 +2,22 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import {
+  ArrowRight,
   ArrowUpRight,
   BookOpenCheck,
   ChartNoAxesCombined,
   ChevronRight,
   CircleHelp,
   LockKeyhole,
+  MessageSquareText,
   ShieldCheck,
   WalletCards,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { mcpResource } from "@/infrastructure/mcp/mcp-configuration";
 import { McpConnectionValues } from "@/app/(public)/mcp/_components/mcp-connection-values";
 
 const connectionSteps = [
@@ -215,10 +218,9 @@ const toolGroups = [
   },
 ];
 
-const resourceUrl = new URL(mcpResource);
-const isPublicHttps = resourceUrl.protocol === "https:";
+export function McpDocumentation({ endpoint }: { endpoint: string }) {
+  const [activeTab, setActiveTab] = useState("overview");
 
-export function McpDocumentation() {
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
       <header className="mb-8 flex flex-col gap-5 border-b border-border pb-7 sm:flex-row sm:items-end sm:justify-between">
@@ -231,22 +233,26 @@ export function McpDocumentation() {
             MCP do InvestLab
           </h1>
           <p className="mt-3 text-base leading-7 text-muted-foreground">
-            Conecte um cliente compatível para consultar, com autorização,
-            carteira, planejamento e informações de mercado disponíveis. O MCP
-            oferece ferramentas que o cliente pode combinar; não são APIs REST
-            independentes para cada operação.
+            Conecte o ChatGPT ao InvestLab para consultar sua carteira e seu
+            planejamento com a sua autorização. MCP é a ponte que permite essa
+            consulta.
           </p>
         </div>
-        <Link
-          href="/entrar"
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        <Button
+          type="button"
+          onClick={() => setActiveTab("connect")}
+          className="min-h-11 shrink-0 gap-2"
         >
-          Conectar ao InvestLab{" "}
+          Ver passo a passo{" "}
           <ChevronRight aria-hidden="true" className="size-4" />
-        </Link>
+        </Button>
       </header>
 
-      <Tabs defaultValue="overview" orientation="vertical">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        orientation="vertical"
+      >
         <div className="grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
           <aside className="lg:sticky lg:top-6 lg:self-start">
             <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -297,59 +303,74 @@ export function McpDocumentation() {
 
           <div className="min-w-0">
             <TabsContent value="overview" className="mt-0 space-y-6">
-              <section aria-labelledby="mcp-overview-title">
-                <p className="text-sm font-semibold text-primary">
-                  Comece aqui
-                </p>
+              <section
+                aria-labelledby="mcp-overview-title"
+                className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-7"
+              >
+                <p className="text-sm font-semibold text-primary">Em resumo</p>
                 <h2
                   id="mcp-overview-title"
                   className="mt-2 text-2xl font-semibold tracking-tight text-foreground"
                 >
-                  Uma conexão com permissões claras
+                  O que é MCP?
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                  Depois de autorizar, o cliente pode consultar os dados
-                  disponíveis para a conta conectada. Cada chamada é verificada
-                  pelo InvestLab e respeita o escopo aprovado.
+                  É uma ponte para o ChatGPT consultar informações do InvestLab
+                  depois que você autoriza a conexão. O acesso é somente para
+                  leitura.
                 </p>
               </section>
 
-              <div className="grid gap-4 md:grid-cols-3">
+              <ol
+                aria-label="Como funciona a conexão MCP"
+                className="grid gap-3 md:grid-cols-3"
+              >
                 {[
                   {
-                    icon: WalletCards,
-                    title: "Sua conta",
-                    description:
-                      "Leituras básicas ficam limitadas à conta autenticada no OAuth.",
-                  },
-                  {
-                    icon: BookOpenCheck,
-                    title: "Ferramentas MCP",
-                    description:
-                      "O cliente escolhe uma ou combina leituras para responder à pergunta.",
+                    icon: MessageSquareText,
+                    title: "Você pergunta",
+                    description: "Faça uma pergunta no ChatGPT.",
                   },
                   {
                     icon: ShieldCheck,
-                    title: "Somente leitura",
+                    title: "Você autoriza",
                     description:
-                      "Esta integração não cadastra, altera, confirma ou exclui dados.",
+                      "Você entra na sua conta e aprova o acesso de leitura.",
                   },
-                ].map(({ icon: Icon, title, description }) => (
-                  <Card key={title} className="border-border/70">
-                    <CardContent className="p-5">
-                      <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
-                        <Icon aria-hidden="true" className="size-5" />
+                  {
+                    icon: WalletCards,
+                    title: "O ChatGPT consulta",
+                    description:
+                      "O InvestLab retorna os dados disponíveis para responder.",
+                  },
+                ].map(({ icon: Icon, title, description }, index) => (
+                  <li
+                    key={title}
+                    className="relative flex min-h-36 gap-4 rounded-xl border border-border/70 bg-card p-4 transition-colors hover:border-primary/35 sm:p-5"
+                  >
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                      <Icon aria-hidden="true" className="size-5" />
+                    </span>
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-primary">
+                        Etapa {index + 1}
                       </span>
-                      <h3 className="mt-4 font-semibold text-foreground">
+                      <h3 className="mt-1 font-semibold text-foreground">
                         {title}
                       </h3>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      <p className="mt-1 text-sm leading-5 text-muted-foreground">
                         {description}
                       </p>
-                    </CardContent>
-                  </Card>
+                    </div>
+                    {index < 2 && (
+                      <ArrowRight
+                        aria-hidden="true"
+                        className="absolute -right-3 top-1/2 z-10 hidden size-5 -translate-y-1/2 rounded-full bg-background p-0.5 text-primary md:block"
+                      />
+                    )}
+                  </li>
                 ))}
-              </div>
+              </ol>
 
               <section aria-labelledby="mcp-endpoint-title">
                 <h2 id="mcp-endpoint-title" className="text-lg font-semibold">
@@ -359,16 +380,11 @@ export function McpDocumentation() {
                   Use o HTTPS público ao conectar o ChatGPT.
                 </p>
                 <div className="mt-4 rounded-xl border border-border bg-card p-4 sm:p-5">
-                  <McpConnectionValues endpoint={mcpResource} />
-                  {!isPublicHttps && (
-                    <p
-                      role="status"
-                      className="mt-4 text-sm font-medium text-foreground"
-                    >
-                      Este ambiente usa HTTP local. Para conexão pela internet,
-                      use o endpoint HTTPS público da implantação.
-                    </p>
-                  )}
+                  <McpConnectionValues endpoint={endpoint} />
+                  <p className="mt-4 text-sm font-medium text-foreground">
+                    Esta URL aponta para a implantação pública. Para testar uma
+                    instância local no ChatGPT, selecione a opção Tunnel.
+                  </p>
                 </div>
               </section>
             </TabsContent>

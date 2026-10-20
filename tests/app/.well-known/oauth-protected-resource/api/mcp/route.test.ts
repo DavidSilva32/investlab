@@ -15,7 +15,7 @@ describe("MCP protected resource discovery alias", () => {
     const response = new Response("{}", { status: 200 });
     mocks.handler.mockImplementation(async (forwarded: Request) => {
       expect(new URL(forwarded.url).pathname).toBe(
-        "/api/auth/.well-known/oauth-protected-resource/api/mcp",
+        "/.well-known/oauth-protected-resource/api/mcp",
       );
       return response;
     });
