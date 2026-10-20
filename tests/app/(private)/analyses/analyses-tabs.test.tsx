@@ -191,12 +191,7 @@ describe("AnalysesTabs", () => {
     await userEvent.clear(bazinYield);
     await userEvent.type(bazinYield, "7.5");
     await userEvent.click(
-      screen.getByRole("button", { name: "Ver análise da ação" }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", {
-        name: "Inserir dados para calcular Graham e Bazin",
-      }),
+      await screen.findByRole("button", { name: "Completar dados" }),
     );
     const eps = document.getElementById("PETR4-graham_eps-value")!;
     await userEvent.type(eps, "8");

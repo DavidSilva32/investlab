@@ -22,14 +22,13 @@ const positions: PortfolioPosition[] = [
   },
   {
     id: "equity",
-    product: "PETR4",
-    assetCode: "PETR4",
+    product: "Ativo variável",
     institution: "Corretora",
     totalValue: "50.00",
     classification: {
       assetClass: "Renda variável",
-      subClass: "Ação",
-      geography: "Brasil",
+      subClass: null,
+      geography: null,
     },
     classificationSource: "manual",
   },
@@ -50,7 +49,7 @@ const positions: PortfolioPosition[] = [
 afterEach(cleanup);
 
 describe("PortfolioSummary", () => {
-  it("sums known amounts only and groups identified and unknown classes", () => {
+  it("sums known amounts and preserves broad categories without misclassifying them", () => {
     const summary = getPortfolioSummary(positions);
 
     expect(summary.count).toBe(3);
@@ -58,22 +57,32 @@ describe("PortfolioSummary", () => {
     expect(summary.unvaluedCount).toBe(1);
     expect(summary.groups.map(({ id, count }) => [id, count])).toEqual([
       ["fixed_income", 1],
-      ["brazilian_equities", 1],
+      ["category:Renda variável", 1],
       ["unclassified", 1],
+    ]);
+    expect(
+      summary.groups.map(({ id, percentage }) => [id, percentage]),
+    ).toEqual([
+      ["fixed_income", 75],
+      ["category:Renda variável", 25],
+      ["unclassified", null],
     ]);
   });
 
   it("shows a simple summary and explains missing values", () => {
     render(<PortfolioSummary positions={positions} />);
 
-    expect(screen.getByText("Sua carteira")).toBeTruthy();
+    expect(screen.getByText("Patrimônio acompanhado")).toBeTruthy();
     expect(screen.getByText("R$ 200,00")).toBeTruthy();
-    expect(screen.getByText("Ações e BDRs")).toBeTruthy();
+    expect(screen.getByText("Renda variável")).toBeTruthy();
+    expect(screen.queryByText("Ações e BDRs")).toBeNull();
     expect(screen.getByText("Renda fixa")).toBeTruthy();
     expect(screen.getByText("Classe não identificada")).toBeTruthy();
+    expect(screen.getByText("75%")).toBeTruthy();
+    expect(screen.getByText("25%")).toBeTruthy();
     expect(
       screen.getByText(
-        /valores conhecidos; posições sem valor não são somadas como zero/i,
+        /considera apenas valores conhecidos; posições sem valor informado ficam fora da soma/i,
       ),
     ).toBeTruthy();
   });
@@ -82,7 +91,7 @@ describe("PortfolioSummary", () => {
     render(<PortfolioSummary positions={[positions[2]!]} />);
 
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
-    expect(screen.getByText("Sem valor atual")).toBeTruthy();
+    expect(screen.getByText("Sem valor informado")).toBeTruthy();
   });
 
   it("prefers valid canonical cents and marks multiple positions in a class", () => {
@@ -146,5 +155,24 @@ describe("PortfolioSummary", () => {
       knownValueCount: 1,
     });
     expect(screen.getAllByText("R$ 0,00")).toHaveLength(2);
+    expect(screen.queryByRole("meter")).toBeNull();
+  });
+
+  it("does not render meters when the known portfolio total is zero", () => {
+    render(
+      <PortfolioSummary
+        positions={[
+          { ...positions[0]!, totalValue: "0.00" },
+          {
+            ...positions[1]!,
+            id: "equity-zero",
+            totalValue: "0.00",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("meter")).toBeNull();
+    expect(screen.getAllByText("participação —")).toHaveLength(2);
   });
 });

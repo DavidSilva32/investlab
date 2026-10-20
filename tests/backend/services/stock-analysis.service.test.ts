@@ -68,6 +68,432 @@ describe("StockAnalysisService ticker search", () => {
   });
 });
 
+describe("StockAnalysisService fundamentals refresh leases", () => {
+  const issuerCnpj = "33000167000101";
+  const ticker = "PETR4";
+  const reportedPeriod = {
+    referenceDate: "2025-12-31",
+    periodStart: "2025-01-01",
+    periodEnd: "2025-12-31",
+    filingReferenceDate: "2026-03-01",
+    exerciseOrder: "last" as const,
+    periodBasis: "annual" as const,
+    revenueVersion: "1",
+    revenueAccountLabel: "Receita",
+    netIncomeVersion: "1",
+    netIncomeAccount: "3.11",
+    netIncomeConcept: "consolidated_net_income" as const,
+    equityVersion: "1",
+    equityAccount: "2.03",
+    equityConcept: "consolidated_equity" as const,
+    periodType: "annual" as const,
+    sourceDocument: "DFP" as const,
+    revenue: "100",
+    netIncome: "10",
+    equity: "50",
+    assets: null,
+    liabilities: null,
+    cash: null,
+    debt: null,
+  };
+
+  it("claims a lease and persists provider results through the fenced completion", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn().mockResolvedValue(true),
+      failRefresh: vi.fn(),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([reportedPeriod]),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      fundamentalsProvider,
+      repository,
+    );
+
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+      "request-refresh",
+    );
+    expect(refresh).toMatchObject({
+      claimed: true,
+      state: { status: "running" },
+    });
+    expect(repository.getRefresh).not.toHaveBeenCalled();
+    await refresh.run?.();
+
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledWith({
+      ticker,
+      cnpj: issuerCnpj,
+    });
+    expect(repository.completeRefresh).toHaveBeenCalledWith(
+      ticker,
+      issuerCnpj,
+      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      "lease-token",
+      [reportedPeriod],
+    );
+    expect(repository.failRefresh).not.toHaveBeenCalled();
+  });
+
+  it("does not report persisted periods when the lease fence rejects completion", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn().mockResolvedValue(false),
+      failRefresh: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([reportedPeriod]) },
+      repository,
+    );
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+    );
+
+    await refresh.run?.();
+
+    expect(repository.completeRefresh).toHaveBeenCalledOnce();
+    expect(repository.failRefresh).not.toHaveBeenCalled();
+  });
+
+  it("does not start a second provider call when a lease already exists", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue(null),
+      completeRefresh: vi.fn(),
+      failRefresh: vi.fn(),
+    };
+    const fundamentalsProvider = { getByTicker: vi.fn() };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      fundamentalsProvider,
+      repository,
+    );
+
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+    );
+    expect(refresh).toMatchObject({
+      claimed: false,
+      state: { status: "running" },
+    });
+    expect(refresh.run).toBeNull();
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
+  });
+
+  it("does not read refresh state after claiming a lease", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockRejectedValue(new Error("database read failed")),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn(),
+      failRefresh: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      repository,
+    );
+
+    await expect(
+      service.requestFundamentalsRefresh(ticker, issuerCnpj),
+    ).resolves.toMatchObject({
+      claimed: true,
+      state: { status: "running" },
+      run: expect.any(Function),
+    });
+    expect(repository.getRefresh).not.toHaveBeenCalled();
+  });
+
+  it("records safe provider failure and leaves cache persistence untouched", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn(),
+      failRefresh: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      {
+        getByTicker: vi
+          .fn()
+          .mockRejectedValue(new Error("private provider detail")),
+      },
+      repository,
+    );
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+    );
+    await refresh.run?.();
+
+    expect(repository.failRefresh).toHaveBeenCalledWith(
+      ticker,
+      issuerCnpj,
+      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      "lease-token",
+      "PROVIDER_ERROR",
+    );
+    expect(repository.completeRefresh).not.toHaveBeenCalled();
+  });
+
+  it("records expected provider rejection without exposing provider details", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn(),
+      failRefresh: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      {
+        getByTicker: vi
+          .fn()
+          .mockRejectedValue(
+            new ApplicationError("Provider detail must stay private.", 502),
+          ),
+      },
+      repository,
+    );
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+    );
+
+    await refresh.run?.();
+
+    expect(repository.failRefresh).toHaveBeenCalledWith(
+      ticker,
+      issuerCnpj,
+      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      "lease-token",
+      "PROVIDER_REJECTED",
+    );
+  });
+
+  it("contains failure-recording errors inside the background refresh", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn(),
+      failRefresh: vi.fn().mockRejectedValue(new Error("database offline")),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      {
+        getByTicker: vi.fn().mockRejectedValue(new Error("provider offline")),
+      },
+      repository,
+    );
+
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+    );
+
+    await expect(refresh.run?.()).resolves.toBeUndefined();
+    expect(repository.failRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("contains non-Error provider and persistence rejections", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn(),
+      failRefresh: vi.fn().mockRejectedValue("database offline"),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockRejectedValue("provider offline") },
+      repository,
+    );
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+    );
+
+    await expect(refresh.run?.()).resolves.toBeUndefined();
+  });
+
+  it("marks an empty provider response as a retryable no-data failure", async () => {
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([]),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+      claimRefresh: vi.fn().mockResolvedValue("lease-token"),
+      completeRefresh: vi.fn(),
+      failRefresh: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      repository,
+    );
+    const refresh = await service.requestFundamentalsRefresh(
+      ticker,
+      issuerCnpj,
+    );
+    await refresh.run?.();
+
+    expect(repository.failRefresh).toHaveBeenCalledWith(
+      ticker,
+      issuerCnpj,
+      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      "lease-token",
+      "NO_VALID_DATA",
+    );
+    expect(repository.completeRefresh).not.toHaveBeenCalled();
+  });
+
+  it("fails safely when the repository cannot coordinate refresh leases", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn(), save: vi.fn() },
+    );
+
+    await expect(
+      service.requestFundamentalsRefresh(ticker, issuerCnpj),
+    ).rejects.toMatchObject({ statusCode: 503 });
+    await expect(
+      service.requestFundamentalsRefresh("bad", issuerCnpj),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("reads a refresh status only after validating ticker and issuer", async () => {
+    const repository = {
+      listByTicker: vi.fn(),
+      save: vi.fn(),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "completed",
+        retryAfter: null,
+        errorCode: null,
+      }),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      repository,
+    );
+
+    await expect(
+      service.getFundamentalsRefreshState(ticker, issuerCnpj),
+    ).resolves.toEqual({
+      status: "completed",
+      retryAfter: null,
+      errorCode: null,
+    });
+    await expect(
+      service.getFundamentalsRefreshState("bad", issuerCnpj),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      service.getFundamentalsRefreshState(ticker, "bad-cnpj"),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    await expect(
+      service.getFundamentalsRefreshState(ticker, null),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    expect(repository.getRefresh).toHaveBeenCalledOnce();
+  });
+});
+
 describe("StockAnalysisService isolated history refresh", () => {
   it("normalizes the ticker and bypasses the provider cache", async () => {
     const historyResult = {
@@ -220,7 +646,7 @@ describe("StockAnalysisService", () => {
     expect(repository.listByTicker).toHaveBeenCalledWith("PETR4");
   });
 
-  it("preserves reported annual and interim periods while appending a derived LTM", async () => {
+  it("preserves cached reported annual and interim periods while appending a derived LTM", async () => {
     const marketProvider = {
       searchTickers: vi.fn().mockResolvedValue([]),
       getQuoteByTicker: vi.fn(),
@@ -297,8 +723,16 @@ describe("StockAnalysisService", () => {
       equityConcept: "consolidated_equity",
       revenueAccountLabel: "Receita operacional consolidada",
     };
+    const fetchedAt = new Date();
     const repository = {
-      listByTicker: vi.fn().mockResolvedValue([]),
+      listByTicker: vi.fn().mockResolvedValue(
+        [annual, currentYtd, comparativeYtd].map((period) => ({
+          ...period,
+          cnpj: "33000167000101",
+          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+          fetchedAt,
+        })),
+      ),
       save: vi.fn(),
     };
     const fundamentalsProvider = {
@@ -317,28 +751,30 @@ describe("StockAnalysisService", () => {
     const derivedLtm = result.fundamentals[3];
 
     expect(result.fundamentals).toHaveLength(4);
-    expect(result.fundamentals.slice(0, 3)).toEqual([
-      expect.objectContaining({
-        referenceDate: annual.referenceDate,
-        periodBasis: "annual",
-        revenue: "200",
-        netIncome: "40",
-      }),
-      expect.objectContaining({
-        referenceDate: currentYtd.referenceDate,
-        periodBasis: "year_to_date",
-        revenue: "120",
-        netIncome: "24",
-        equity: "90",
-      }),
-      expect.objectContaining({
-        referenceDate: comparativeYtd.referenceDate,
-        exerciseOrder: "previous",
-        periodBasis: "year_to_date",
-        revenue: "80",
-        netIncome: "16",
-      }),
-    ]);
+    expect(result.fundamentals.slice(0, 3)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: annual.referenceDate,
+          periodBasis: "annual",
+          revenue: "200",
+          netIncome: "40",
+        }),
+        expect.objectContaining({
+          referenceDate: currentYtd.referenceDate,
+          periodBasis: "year_to_date",
+          revenue: "120",
+          netIncome: "24",
+          equity: "90",
+        }),
+        expect.objectContaining({
+          referenceDate: comparativeYtd.referenceDate,
+          exerciseOrder: "previous",
+          periodBasis: "year_to_date",
+          revenue: "80",
+          netIncome: "16",
+        }),
+      ]),
+    );
     expect(derivedLtm).toMatchObject({
       referenceDate: "2026-06-30",
       periodStart: "2025-07-01",
@@ -2272,7 +2708,7 @@ describe("StockAnalysisService cache and failures", () => {
     expect(result.fundamentals).toHaveLength(1);
   });
 
-  it("does not hide a refresh failure when no validated stale cache exists", async () => {
+  it("returns a pending empty result when there is no cached CVM data", async () => {
     const service = new StockAnalysisService(
       {
         getByTicker: vi.fn(),
@@ -2285,10 +2721,9 @@ describe("StockAnalysisService cache and failures", () => {
     );
     await expect(
       service.getFundamentalsByIssuer("PETR4", "33000167000101"),
-    ).rejects.toMatchObject({
-      statusCode: 502,
-      message:
-        "Não foi possível consultar os demonstrativos oficiais da CVM agora.",
+    ).resolves.toMatchObject({
+      fundamentals: [],
+      fundamentalsRefresh: { status: "idle" },
     });
   });
 
@@ -2344,7 +2779,7 @@ describe("StockAnalysisService cache and failures", () => {
     await expect(service.getByTicker("PETR4")).rejects.toBe(failure);
   });
 
-  it("refreshes a recent cache entry with an old normalization revision", async () => {
+  it("returns a recent prior-revision cache as stale while refresh is queued separately", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue(market),
       getQuoteByTicker: vi.fn(),
@@ -2387,15 +2822,34 @@ describe("StockAnalysisService cache and failures", () => {
       rejectedScreenerLookups(),
     );
 
-    await service.getByTicker("PETR4");
+    const result = await service.getByTicker("PETR4");
+    expect(result.fundamentalsIsStale).toBe(true);
+    expect(result.fundamentals).toHaveLength(1);
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
+  });
 
-    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
-    expect(repository.save).toHaveBeenCalledWith(
-      "PETR4",
-      "33000167000101",
-      `${new Date().getUTCFullYear()}-cvm-v5`,
-      expect.any(Array),
+  it("serves a fresh cache with complete issuer provenance as current", async () => {
+    const cached = expiredCachePeriod({
+      fetchedAt: new Date(),
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+    });
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn().mockResolvedValue(market),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      rejectedScreenerLookups(),
     );
+
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      fundamentalsIsStale: false,
+      fundamentalsFetchedAt: cached.fetchedAt.toISOString(),
+      fundamentals: [expect.objectContaining({ referenceDate: "2025-12-31" })],
+    });
   });
 
   it("uses a recent fundamentals cache", async () => {
@@ -2667,7 +3121,7 @@ describe("StockAnalysisService cache and failures", () => {
       },
     ],
   ])(
-    "rejects an expired cache with incomplete %s provenance",
+    "does not serve an expired cache with incomplete %s provenance",
     async (_field, change) => {
       const service = new StockAnalysisService(
         {
@@ -2685,8 +3139,9 @@ describe("StockAnalysisService cache and failures", () => {
         { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
       );
 
-      await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
-        statusCode: 502,
+      await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+        fundamentals: [],
+        fundamentalsIsStale: false,
       });
     },
   );
@@ -2706,8 +3161,9 @@ describe("StockAnalysisService cache and failures", () => {
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
-    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
-      statusCode: 502,
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      fundamentals: [],
+      fundamentalsIsStale: false,
     });
   });
 
@@ -2754,8 +3210,9 @@ describe("StockAnalysisService cache and failures", () => {
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
-    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
-      statusCode: 502,
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      fundamentals: [],
+      fundamentalsIsStale: false,
     });
   });
 
@@ -2977,7 +3434,7 @@ describe("StockAnalysisService cache and failures", () => {
   });
 
   it.each(["source version", "period provenance", "retrieval timestamp"])(
-    "rejects an expired cache with inconsistent %s",
+    "does not serve an expired cache with inconsistent %s",
     async (inconsistentField) => {
       const fetchedAt = new Date(Date.now() - 1000 * 60 * 60 * 25);
       const latest = {
@@ -3037,8 +3494,9 @@ describe("StockAnalysisService cache and failures", () => {
         { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
       );
 
-      await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
-        statusCode: 502,
+      await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+        fundamentals: [],
+        fundamentalsIsStale: false,
       });
     },
   );
@@ -3098,36 +3556,19 @@ describe("StockAnalysisService cache and failures", () => {
     expect(repository.save).not.toHaveBeenCalled();
   });
 
-  it("refreshes an issuer cache from the previous CVM normalization revision", async () => {
+  it("serves an issuer cache from a previous CVM revision as stale", async () => {
     const year = new Date().getUTCFullYear();
     const cachedPeriod = expiredCachePeriod({
       fetchedAt: new Date(),
       sourceVersion: `${year}-cvm-v4`,
     });
-    const refreshedPeriod = {
-      referenceDate: "2025-12-31",
-      periodStart: "2025-01-01",
-      periodEnd: "2025-12-31",
-      filingReferenceDate: "2026-03-20",
-      exerciseOrder: "last" as const,
-      periodBasis: "annual" as const,
-      periodType: "annual" as const,
-      sourceDocument: "DFP" as const,
-      revenue: "200",
-      netIncome: "20",
-      equity: "100",
-      assets: null,
-      liabilities: null,
-      cash: null,
-      debt: null,
-    };
     const marketProvider = {
       getByTicker: vi.fn().mockRejectedValue(new Error("market unavailable")),
       getQuoteByTicker: vi.fn(),
       searchTickers: vi.fn(),
     };
     const fundamentalsProvider = {
-      getByTicker: vi.fn().mockResolvedValue([refreshedPeriod]),
+      getByTicker: vi.fn(),
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
@@ -3144,17 +3585,13 @@ describe("StockAnalysisService cache and failures", () => {
       "33000167000101",
     );
 
-    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
-    expect(repository.save).toHaveBeenCalledWith(
-      "PETR4",
-      "33000167000101",
-      `${year}-cvm-v5`,
-      [refreshedPeriod],
-    );
-    expect(result.fundamentals[0]?.netIncome).toBe("20");
+    expect(result.fundamentalsIsStale).toBe(true);
+    expect(result.fundamentals[0]?.netIncome).toBe("10");
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
   });
 
-  it("refreshes a fresh cache when its CNPJ differs from the expected issuer", async () => {
+  it("does not serve a cache when its CNPJ differs from the expected issuer", async () => {
     const cachedPeriod = {
       referenceDate: "2025-12-31",
       periodStart: "2025-01-01",
@@ -3214,21 +3651,14 @@ describe("StockAnalysisService cache and failures", () => {
       "33000167000101",
     );
 
-    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledWith({
-      ticker: "PETR4",
-      cnpj: "33000167000101",
-    });
-    expect(repository.save).toHaveBeenCalledWith(
-      "PETR4",
-      "33000167000101",
-      expect.any(String),
-      [refreshed],
-    );
-    expect(result.fundamentals[0]?.netIncome).toBe("20");
+    expect(result.fundamentals).toEqual([]);
+    expect(result.fundamentalsIsStale).toBe(false);
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
     expect(marketProvider.getByTicker).not.toHaveBeenCalled();
   });
 
-  it("refreshes stale issuer cache and rejects invalid issuer identity", async () => {
+  it("serves only validated stale issuer cache and rejects invalid identity", async () => {
     const stalePeriod = {
       referenceDate: "2025-12-31",
       periodStart: "2025-01-01",
@@ -3264,9 +3694,13 @@ describe("StockAnalysisService cache and failures", () => {
       repository,
     );
 
-    await service.getFundamentalsByIssuer("PETR4", "33000167000101");
-    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
-    expect(repository.save).toHaveBeenCalledOnce();
+    const result = await service.getFundamentalsByIssuer(
+      "PETR4",
+      "33000167000101",
+    );
+    expect(result.fundamentals).toEqual([]);
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
     await expect(
       service.getFundamentalsByIssuer("PETR4", "invalid"),
     ).rejects.toMatchObject({ statusCode: 422 });
@@ -3296,14 +3730,14 @@ describe("StockAnalysisService cache and failures", () => {
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
-    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
-      statusCode: 422,
-      message: "Não foi possível associar o ativo à CVM.",
-    });
-    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledWith({
-      ticker: "PETR4",
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
       cnpj: null,
+      fundamentals: [],
     });
+    await expect(
+      service.requestFundamentalsRefresh("PETR4", null),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
     expect(repository.save).not.toHaveBeenCalled();
   });
 
@@ -3357,11 +3791,7 @@ describe("StockAnalysisService cache and failures", () => {
     });
     expect(screener.getComparisonMetadata).toHaveBeenCalledTimes(2);
     expect(screener.getComparisonMetadata).toHaveBeenCalledWith(["PETR4"]);
-    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledTimes(2);
-    expect(fundamentalsProvider.getByTicker).toHaveBeenNthCalledWith(1, {
-      ticker: "PETR4",
-      cnpj: "33000167000101",
-    });
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
   });
 
   it("treats a uniquely matched CVM unit as a confirmed equity instrument", async () => {
@@ -3462,7 +3892,7 @@ describe("StockAnalysisService cache and failures", () => {
     });
   });
 
-  it("wraps unexpected fundamentals refresh errors for the route boundary", async () => {
+  it("keeps unexpected refresh failures out of the blocking analysis response", async () => {
     const marketProvider = {
       getByTicker: vi.fn().mockResolvedValue(market),
       getQuoteByTicker: vi.fn(),
@@ -3478,20 +3908,16 @@ describe("StockAnalysisService cache and failures", () => {
       rejectedScreenerLookups(),
     );
 
-    await expect(service.getByTicker("PETR4")).rejects.toMatchObject({
-      statusCode: 502,
-      message:
-        "Não foi possível consultar os demonstrativos oficiais da CVM agora.",
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      fundamentals: [],
+      fundamentalsRefresh: { status: "idle" },
     });
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
   });
 
-  it("shares concurrent fundamentals cache misses and persists the refresh once", async () => {
-    let releaseProvider!: (periods: never[]) => void;
-    const providerGate = new Promise<never[]>((resolve) => {
-      releaseProvider = resolve;
-    });
+  it("keeps concurrent cold analysis reads fast and defers refresh to the lease endpoint", async () => {
     const fundamentalsProvider = {
-      getByTicker: vi.fn(() => providerGate),
+      getByTicker: vi.fn(),
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
@@ -3516,19 +3942,22 @@ describe("StockAnalysisService cache and failures", () => {
     await vi.waitFor(() =>
       expect(repository.listByTicker).toHaveBeenCalledTimes(2),
     );
-    await vi.waitFor(() =>
-      expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce(),
-    );
-    await Promise.resolve();
-    releaseProvider([]);
-
     const results = await Promise.all([first, second]);
     expect(results.map((result) => result.cnpj)).toEqual([
       "33000167000101",
       "33000167000101",
     ]);
-    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledOnce();
-    expect(repository.save).toHaveBeenCalledOnce();
+    expect(
+      results.map(({ fundamentals, fundamentalsRefresh }) => [
+        fundamentals.length,
+        fundamentalsRefresh?.status,
+      ]),
+    ).toEqual([
+      [0, "idle"],
+      [0, "idle"],
+    ]);
+    expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
   });
 });
 

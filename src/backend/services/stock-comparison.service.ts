@@ -615,9 +615,56 @@ export class StockComparisonService {
     > = screenerRepository,
     private readonly analysisService: Pick<
       typeof stockAnalysisService,
-      "getFundamentalsByIssuer"
+      "getFundamentalsByIssuer" | "getFundamentalsRefreshState"
     > = stockAnalysisService,
   ) {}
+
+  async getRefreshStatus(rawRequest: unknown, requestId?: string) {
+    const parsed = comparisonRequestSchema.safeParse(rawRequest);
+    if (!parsed.success)
+      throw new ApplicationError(
+        "Selecione de 2 a 5 tickers diferentes para consultar o andamento.",
+        400,
+      );
+
+    const tickers = parsed.data.tickers;
+    const metadataRows =
+      await this.marketRepository.getComparisonMetadata(tickers);
+    const rowsByTicker = new Map<string, Metadata[]>();
+    for (const row of metadataRows) {
+      const rows = rowsByTicker.get(row.ticker) ?? [];
+      rows.push(row);
+      rowsByTicker.set(row.ticker, rows);
+    }
+    const companies = await Promise.all(
+      tickers.map(async (ticker) => {
+        const matches = rowsByTicker.get(ticker) ?? [];
+        if (
+          matches.length !== 1 ||
+          normalizeCnpj(matches[0]?.cnpj).length !== 14
+        )
+          throw new ApplicationError(
+            `Não foi possível confirmar o vínculo CVM de ${ticker}.`,
+            422,
+          );
+        const metadata = matches[0]!;
+        return {
+          ticker,
+          fundamentalsRefresh:
+            await this.analysisService.getFundamentalsRefreshState(
+              ticker,
+              metadata.cnpj,
+            ),
+        };
+      }),
+    );
+    logger.info("stock_comparison_refresh_status_loaded", {
+      requestId,
+      selectedTickerCount: tickers.length,
+      statusCount: companies.length,
+    });
+    return { companies };
+  }
 
   async compare(rawRequest: unknown, requestId?: string) {
     const startedAt = Date.now();
@@ -720,6 +767,11 @@ export class StockComparisonService {
       ...row,
       fundamentals: { roe: roe[index]!, netMargin: netMargin[index]! },
       valuation: { pe: pe[index]!, pb: pb[index]! },
+      fundamentalsRefresh: candidates[index]?.analysis?.fundamentalsRefresh ?? {
+        status: "idle" as const,
+        retryAfter: null,
+        errorCode: null,
+      },
     }));
     logger.info("stock_comparison_stage_timing", {
       requestId,

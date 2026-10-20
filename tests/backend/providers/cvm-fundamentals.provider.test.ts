@@ -3,6 +3,8 @@ import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { CvmFundamentalsProvider } from "@/backend/providers/cvm-fundamentals.provider";
 import type { FundamentalPeriod } from "@/backend/providers/fundamentals.provider";
+import { logger } from "@/infrastructure/logging/logger";
+import { runWithLogContext } from "@/infrastructure/logging/request-context";
 
 vi.mock("@/infrastructure/logging/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -93,7 +95,140 @@ function issuerCsv(rows: string[]) {
 }
 
 describe("CvmFundamentalsProvider", () => {
+  it("logs and rethrows non-Error issuer failures as unknown errors", async () => {
+    vi.mocked(logger.warn).mockClear();
+    const rejection = { reason: "issuer transport failed" };
+    const fetcher = vi.fn().mockRejectedValue(rejection);
+
+    await expect(
+      runWithLogContext({ requestId: "issuer-unknown-error" }, () =>
+        new CvmFundamentalsProvider(fetcher).getByTicker({
+          ticker: "PETR4",
+          cnpj,
+        }),
+      ),
+    ).rejects.toBe(rejection);
+
+    expect(vi.mocked(logger.warn).mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          "stock_fundamentals_cvm_issuer_failed",
+          expect.objectContaining({
+            requestId: "issuer-unknown-error",
+            errorType: "UnknownError",
+            durationMs: expect.any(Number),
+          }),
+        ],
+      ]),
+    );
+  });
+
+  it("logs and rethrows non-Error document failures as unknown errors", async () => {
+    vi.mocked(logger.warn).mockClear();
+    const rejection = "document stream failed";
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;Petrobras;ATIVO"])),
+      )
+      .mockRejectedValueOnce(rejection);
+
+    await expect(
+      runWithLogContext({ requestId: "document-unknown-error" }, () =>
+        new CvmFundamentalsProvider(fetcher).getByTicker({
+          ticker: "PETR4",
+          cnpj,
+        }),
+      ),
+    ).rejects.toBe(rejection);
+
+    expect(vi.mocked(logger.warn).mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          "stock_fundamentals_cvm_document_failed",
+          expect.objectContaining({
+            requestId: "document-unknown-error",
+            document: "DFP",
+            errorType: "UnknownError",
+            durationMs: expect.any(Number),
+          }),
+        ],
+      ]),
+    );
+  });
+
+  it("correlates issuer and document timing events with the request ID", async () => {
+    vi.mocked(logger.info).mockClear();
+    vi.mocked(logger.warn).mockClear();
+    const currentYear = new Date().getUTCFullYear();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(issuerCsv(["33.000.167/0001-01;9512;Petrobras;ATIVO"])),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+
+    await expect(
+      runWithLogContext({ requestId: "cvm-request-123" }, () =>
+        new CvmFundamentalsProvider(fetcher).getByTicker({
+          ticker: "PETR4",
+          cnpj,
+        }),
+      ),
+    ).rejects.toThrow("CVM DFP request failed: 503");
+
+    const events = vi
+      .mocked(logger.info)
+      .mock.calls.map(([event, context]) => [event, context]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        [
+          "stock_fundamentals_cvm_issuer_started",
+          expect.objectContaining({ requestId: "cvm-request-123" }),
+        ],
+        [
+          "stock_fundamentals_cvm_issuer_response_received",
+          expect.objectContaining({
+            requestId: "cvm-request-123",
+            httpStatus: 200,
+            timeToHeadersMs: expect.any(Number),
+          }),
+        ],
+        [
+          "stock_fundamentals_cvm_document_started",
+          expect.objectContaining({
+            requestId: "cvm-request-123",
+            year: currentYear - 1,
+          }),
+        ],
+        [
+          "stock_fundamentals_cvm_document_response_received",
+          expect.objectContaining({
+            requestId: "cvm-request-123",
+            httpStatus: 503,
+            timeToHeadersMs: expect.any(Number),
+          }),
+        ],
+      ]),
+    );
+    expect(vi.mocked(logger.warn).mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          "stock_fundamentals_cvm_document_failed",
+          expect.objectContaining({
+            requestId: "cvm-request-123",
+            document: "DFP",
+            year: currentYear - 1,
+            durationMs: expect.any(Number),
+            errorType: "Error",
+          }),
+        ],
+      ]),
+    );
+  });
+
   it("maps BB Seguridade consolidated net income from account 3.13", async () => {
+    vi.mocked(logger.info).mockClear();
     const currentYear = new Date().getUTCFullYear();
     const reportingYear = currentYear - 1;
     const bbseCnpj = "17344597000194";
@@ -137,10 +272,14 @@ describe("CvmFundamentalsProvider", () => {
       return new Response(null, { status: 404 });
     });
 
-    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
-      ticker: "BBSE3",
-      cnpj: bbseCnpj,
-    });
+    const periods = await runWithLogContext(
+      { requestId: "cvm-success-request" },
+      () =>
+        new CvmFundamentalsProvider(fetcher).getByTicker({
+          ticker: "BBSE3",
+          cnpj: bbseCnpj,
+        }),
+    );
 
     expect(periods).toEqual(
       expect.arrayContaining([
@@ -150,6 +289,35 @@ describe("CvmFundamentalsProvider", () => {
           netIncomeAccount: "3.13",
           netIncomeConcept: "consolidated_net_income",
         }),
+      ]),
+    );
+    const completedEvents = vi
+      .mocked(logger.info)
+      .mock.calls.filter(
+        ([event]) => event === "stock_fundamentals_cvm_document_completed",
+      );
+    expect(completedEvents.length).toBeGreaterThan(0);
+    expect(completedEvents).toEqual(
+      expect.arrayContaining([
+        [
+          "stock_fundamentals_cvm_document_completed",
+          expect.objectContaining({
+            requestId: "cvm-success-request",
+            httpStatus: 200,
+            timeToHeadersMs: expect.any(Number),
+            streamWaitMs: expect.any(Number),
+            unzipProcessingMs: expect.any(Number),
+            durationMs: expect.any(Number),
+          }),
+        ],
+      ]),
+    );
+    expect(vi.mocked(logger.info).mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          "stock_fundamentals_cvm_normalized",
+          expect.objectContaining({ requestId: "cvm-success-request" }),
+        ],
       ]),
     );
   });

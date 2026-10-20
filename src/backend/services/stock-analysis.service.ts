@@ -733,19 +733,26 @@ export type AnalysisIndicator = {
   valuationMethod?: string | null;
 };
 
-export class StockAnalysisService {
-  private readonly fundamentalsRefreshes = new Map<
-    string,
-    Promise<FundamentalPeriod[]>
-  >();
+export type FundamentalsRefreshState = {
+  status: "idle" | "running" | "completed" | "failed";
+  retryAfter: string | null;
+  errorCode: string | null;
+};
 
+export class StockAnalysisService {
   constructor(
     private readonly marketProvider: MarketDataProvider = new BrapiMarketDataProvider(),
     private readonly fundamentalsProvider: FundamentalsProvider = new CvmFundamentalsProvider(),
     private readonly repository: Pick<
       StockFundamentalsRepository,
       "listByTicker" | "save"
-    > = stockFundamentalsRepository,
+    > &
+      Partial<
+        Pick<
+          StockFundamentalsRepository,
+          "getRefresh" | "claimRefresh" | "completeRefresh" | "failRefresh"
+        >
+      > = stockFundamentalsRepository,
     private readonly screener: Pick<
       ScreenerRepository,
       "getValidatedAnalysisQuote"
@@ -1015,58 +1022,24 @@ export class StockAnalysisService {
       cnpjAvailable: Boolean(market.cnpj),
       repositoryReadMs: cacheReadMs,
     });
-    let fundamentalsIsStale = false;
-    let fundamentalsFetchedAt: string | null = cacheValid
-      ? cached[0]!.fetchedAt.toISOString()
-      : null;
-    let fundamentalsRefreshMs = 0;
-    let periods: FundamentalPeriod[];
-    if (cacheValid) periods = normalizeCachedPeriods(cached);
-    else {
-      const refreshStartedAt = Date.now();
-      try {
-        const fetchedAt = new Date();
-        const refreshed = await this.refreshFundamentals(
-          market.ticker,
-          market.cnpj,
-          requestId,
-        );
-        fundamentalsRefreshMs = Date.now() - refreshStartedAt;
-        fundamentalsFetchedAt = fetchedAt.toISOString();
-        const validatedCache = refreshed.length
-          ? null
-          : validatedCachedFundamentals(cached, normalizeCnpj(market.cnpj));
-        if (validatedCache) {
-          periods = validatedCache.periods;
-          fundamentalsFetchedAt = validatedCache.fetchedAt.toISOString();
-          fundamentalsIsStale = true;
-          logger.warn("stock_fundamentals_stale_cache_used", {
-            requestId,
-            ticker: market.ticker,
-            cnpj: normalizeCnpj(market.cnpj),
-            fetchedAt: fundamentalsFetchedAt,
-            periods: periods.length,
-          });
-        } else periods = refreshed;
-      } catch (error) {
-        fundamentalsRefreshMs = Date.now() - refreshStartedAt;
-        const validatedCache = validatedCachedFundamentals(
-          cached,
-          normalizeCnpj(market.cnpj),
-        );
-        if (!validatedCache) throw error;
-        periods = validatedCache.periods;
-        fundamentalsFetchedAt = validatedCache.fetchedAt.toISOString();
-        fundamentalsIsStale = true;
-        logger.warn("stock_fundamentals_stale_cache_used", {
-          requestId,
-          ticker: market.ticker,
-          cnpj: normalizeCnpj(market.cnpj),
-          fetchedAt: fundamentalsFetchedAt,
-          periods: periods.length,
-        });
-      }
-    }
+    const validatedCache = validatedCachedFundamentals(
+      cached,
+      normalizeCnpj(market.cnpj),
+    );
+    const fundamentalsIsStale = Boolean(
+      validatedCache &&
+      (!cacheValid ||
+        Date.now() - validatedCache.fetchedAt.getTime() >= cacheDurationMs),
+    );
+    const fundamentalsFetchedAt =
+      validatedCache?.fetchedAt.toISOString() ?? null;
+    const periods = cacheValid
+      ? normalizeCachedPeriods(cached)
+      : (validatedCache?.periods ?? []);
+    const fundamentalsRefresh = await this.getRefreshState(
+      market.ticker,
+      normalizeCnpj(market.cnpj),
+    );
 
     const normalizationStartedAt = Date.now();
     const ltmPeriods = ltmFlowPeriods(periods);
@@ -1083,7 +1056,7 @@ export class StockAnalysisService {
       quoteFallbackMs,
       cacheReadMs,
       fundamentalsCacheHit: cacheValid,
-      fundamentalsRefreshMs,
+      fundamentalsRefreshMs: 0,
       normalizationMs,
       normalizedPeriods: periods.length + ltmPeriods.length,
       marketCapIdentityVerified: false,
@@ -1106,6 +1079,7 @@ export class StockAnalysisService {
       priceIsStale,
       fundamentalsIsStale,
       fundamentalsFetchedAt,
+      fundamentalsRefresh,
       fundamentals: [...periods, ...ltmPeriods],
       indicators,
     };
@@ -1149,6 +1123,7 @@ export class StockAnalysisService {
       marketCapIdentityVerified: boolean;
       fundamentalsIsStale: boolean;
       fundamentalsFetchedAt: string | null;
+      fundamentalsRefresh?: FundamentalsRefreshState;
     }
   > {
     const startedAt = Date.now();
@@ -1229,46 +1204,16 @@ export class StockAnalysisService {
       cacheIdentityMatches,
       repositoryReadMs: cacheReadMs,
     });
-    let refreshMs = 0;
-    let periods: FundamentalPeriod[];
-    let fundamentalsIsStale = false;
-    let fundamentalsFetchedAt: string | null = cacheValid
-      ? cached[0]!.fetchedAt.toISOString()
-      : null;
-    if (cacheValid) periods = normalizeCachedPeriods(cached);
-    else {
-      const refreshStartedAt = Date.now();
-      try {
-        periods = await this.refreshFundamentals(
-          ticker,
-          expectedCnpj,
-          requestId,
-        );
-        if (periods.length === 0) {
-          const stale = validatedCachedFundamentals(cached, expectedCnpj);
-          if (stale) {
-            periods = stale.periods;
-            fundamentalsIsStale = true;
-            fundamentalsFetchedAt = stale.fetchedAt.toISOString();
-          }
-        }
-      } catch (error) {
-        const stale = validatedCachedFundamentals(cached, expectedCnpj);
-        if (!stale) throw error;
-        periods = stale.periods;
-        fundamentalsIsStale = true;
-        fundamentalsFetchedAt = stale.fetchedAt.toISOString();
-        logger.warn("stock_fundamentals_stale_cache_used", {
-          requestId,
-          ticker,
-          cnpj: expectedCnpj,
-          fetchedAt: stale.fetchedAt.toISOString(),
-          periods: periods.length,
-        });
-      } finally {
-        refreshMs = Date.now() - refreshStartedAt;
-      }
-    }
+    const stale = validatedCachedFundamentals(cached, expectedCnpj);
+    const periods = cacheValid
+      ? normalizeCachedPeriods(cached)
+      : (stale?.periods ?? []);
+    const fundamentalsIsStale = Boolean(stale && !cacheValid);
+    const fundamentalsFetchedAt = stale?.fetchedAt.toISOString() ?? null;
+    const fundamentalsRefresh = await this.getRefreshState(
+      ticker,
+      expectedCnpj,
+    );
     const validatedQuote = await quotePromise;
     const marketDataIdentityVerified = validatedQuote !== null;
     const marketCapIdentityVerified = false;
@@ -1280,7 +1225,7 @@ export class StockAnalysisService {
       ticker,
       repositoryReadMs: cacheReadMs,
       fundamentalsCacheHit: cacheValid,
-      refreshMs,
+      refreshMs: 0,
       quoteMs: Date.now() - quoteStartedAt,
       marketDataIdentityVerified,
       marketCapIdentityVerified,
@@ -1289,6 +1234,7 @@ export class StockAnalysisService {
       marketDataFallbackAvailable: marketDataSource === "brapi_quote",
       fundamentalsIsStale,
       fundamentalsFetchedAt,
+      fundamentalsRefresh,
       valuationSource: valuationEvidence.source,
       valuationMarketDataDate: valuationEvidence.marketDataDate,
       valuationMethod: null,
@@ -1311,6 +1257,7 @@ export class StockAnalysisService {
       marketCapIdentityVerified,
       fundamentalsIsStale,
       fundamentalsFetchedAt,
+      fundamentalsRefresh,
     };
   }
 
@@ -1324,80 +1271,166 @@ export class StockAnalysisService {
     return this.marketProvider.searchTickers(query.data);
   }
 
-  private async refreshFundamentals(
+  private async getRefreshState(
     ticker: string,
-    cnpj: string | null,
+    cnpj: string,
+  ): Promise<FundamentalsRefreshState> {
+    if (!this.repository.getRefresh)
+      return { status: "idle", retryAfter: null, errorCode: null };
+    return this.repository.getRefresh(
+      ticker,
+      cnpj,
+      currentFundamentalsSourceVersion(),
+    );
+  }
+
+  async getFundamentalsRefreshState(
+    rawTicker: unknown,
+    rawCnpj: unknown,
+  ): Promise<FundamentalsRefreshState> {
+    const parsedTicker = tickerSchema.safeParse(rawTicker);
+    if (!parsedTicker.success)
+      throw new ApplicationError(parsedTicker.error.issues[0]!.message, 400);
+    const cnpj = normalizeCnpj(typeof rawCnpj === "string" ? rawCnpj : null);
+    if (cnpj.length !== 14)
+      throw new ApplicationError(
+        "Não foi possível confirmar o CNPJ do emissor.",
+        422,
+      );
+    return this.getRefreshState(parsedTicker.data, cnpj);
+  }
+
+  async requestFundamentalsRefresh(
+    rawTicker: unknown,
+    rawCnpj: unknown,
     requestId?: string,
   ) {
+    const parsedTicker = tickerSchema.safeParse(rawTicker);
+    if (!parsedTicker.success)
+      throw new ApplicationError(parsedTicker.error.issues[0]!.message, 400);
+    const cnpj = normalizeCnpj(typeof rawCnpj === "string" ? rawCnpj : null);
+    if (cnpj.length !== 14)
+      throw new ApplicationError(
+        "Não foi possível confirmar o CNPJ do emissor.",
+        422,
+      );
+    if (!this.repository.claimRefresh)
+      throw new ApplicationError(
+        "Atualização de fundamentos indisponível.",
+        503,
+      );
+    const ticker = parsedTicker.data;
     const sourceVersion = currentFundamentalsSourceVersion();
-    const refreshKey = `${ticker}:${normalizeCnpj(cnpj)}:${sourceVersion}`;
-    const pendingRefresh = this.fundamentalsRefreshes.get(refreshKey);
-    if (pendingRefresh) {
-      logger.info("stock_fundamentals_refresh_reused", {
-        requestId,
-        ticker,
-        cnpjAvailable: Boolean(cnpj),
-      });
-      return pendingRefresh;
-    }
-
-    const refresh = this.fetchAndPersistFundamentals(
+    const leaseToken = await this.repository.claimRefresh(
       ticker,
       cnpj,
       sourceVersion,
-      requestId,
     );
-    this.fundamentalsRefreshes.set(refreshKey, refresh);
-    try {
-      return await refresh;
-    } finally {
-      this.fundamentalsRefreshes.delete(refreshKey);
-    }
+    const state = leaseToken
+      ? { status: "running" as const, retryAfter: null, errorCode: null }
+      : await this.getRefreshState(ticker, cnpj);
+    logger.info("stock_fundamentals_refresh_claimed", {
+      requestId,
+      ticker,
+      claimed: Boolean(leaseToken),
+      status: state.status,
+    });
+    return {
+      claimed: Boolean(leaseToken),
+      state,
+      run: leaseToken
+        ? () =>
+            this.runClaimedRefresh(
+              ticker,
+              cnpj,
+              sourceVersion,
+              leaseToken,
+              requestId,
+            )
+        : null,
+    };
   }
 
-  private async fetchAndPersistFundamentals(
+  private async runClaimedRefresh(
     ticker: string,
-    cnpj: string | null,
+    cnpj: string,
     sourceVersion: string,
+    leaseToken: string,
     requestId?: string,
   ) {
     const startedAt = Date.now();
-    logger.info("stock_fundamentals_refresh_started", {
-      requestId,
-      ticker,
-      cnpjAvailable: Boolean(cnpj),
-    });
     try {
       const periods = await this.fundamentalsProvider.getByTicker({
         ticker,
         cnpj,
       });
-      if (!cnpj)
-        throw new ApplicationError(
-          "Não foi possível associar o ativo à CVM.",
-          422,
+      if (!periods.length) {
+        await this.markRefreshFailed(
+          ticker,
+          cnpj,
+          sourceVersion,
+          leaseToken,
+          "NO_VALID_DATA",
+          requestId,
         );
-      await this.repository.save(ticker, cnpj, sourceVersion, periods);
-      logger.info("stock_fundamentals_persisted", {
+        return;
+      }
+      const saved = await this.repository.completeRefresh?.(
+        ticker,
+        cnpj,
+        sourceVersion,
+        leaseToken,
+        periods,
+      );
+      logger.info("stock_fundamentals_refresh_finished", {
         requestId,
         ticker,
-        periods: periods.length,
+        fenced: saved === false,
+        periods: saved ? periods.length : 0,
         durationMs: Date.now() - startedAt,
       });
-      return periods;
     } catch (error) {
+      await this.markRefreshFailed(
+        ticker,
+        cnpj,
+        sourceVersion,
+        leaseToken,
+        error instanceof ApplicationError
+          ? "PROVIDER_REJECTED"
+          : "PROVIDER_ERROR",
+        requestId,
+      );
       logger.error("stock_fundamentals_refresh_failed", {
         requestId,
         ticker,
-        stage: "cvm_refresh",
+        errorType: error instanceof Error ? error.name : typeof error,
         durationMs: Date.now() - startedAt,
-        error,
       });
-      if (error instanceof ApplicationError) throw error;
-      throw new ApplicationError(
-        "Não foi possível consultar os demonstrativos oficiais da CVM agora.",
-        502,
+    }
+  }
+
+  private async markRefreshFailed(
+    ticker: string,
+    cnpj: string,
+    sourceVersion: string,
+    leaseToken: string,
+    errorCode: string,
+    requestId?: string,
+  ) {
+    try {
+      await this.repository.failRefresh?.(
+        ticker,
+        cnpj,
+        sourceVersion,
+        leaseToken,
+        errorCode,
       );
+    } catch (error) {
+      logger.error("stock_fundamentals_refresh_failure_record_failed", {
+        requestId,
+        ticker,
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
     }
   }
 }

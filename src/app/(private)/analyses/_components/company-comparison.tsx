@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -52,11 +52,22 @@ type ComparisonCompany = {
   identityVerified: boolean;
   fundamentals: { roe: MetricCell; netMargin: MetricCell };
   valuation: { pe: MetricCell; pb: MetricCell };
+  fundamentalsRefresh?: {
+    status: "idle" | "running" | "completed" | "failed";
+    retryAfter: string | null;
+    errorCode: string | null;
+  };
 };
 type ComparisonResult = {
   sector: string | null;
   sectorMetadataAsOf: string | null;
   companies: ComparisonCompany[];
+};
+type ComparisonRefreshStatus = {
+  companies: Array<{
+    ticker: string;
+    fundamentalsRefresh: NonNullable<ComparisonCompany["fundamentalsRefresh"]>;
+  }>;
 };
 
 const basisLabels: Record<string, string> = {
@@ -309,27 +320,149 @@ export function CompanyComparison({
   const [submittedTickers, setSubmittedTickers] = useState<string[]>([]);
   const [shouldCompare, setShouldCompare] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState(0);
+  const comparisonPhase = useRef(new Map<string, "start" | "poll" | "done">());
+  const comparisonPoll = useRef({
+    key: "",
+    dataUpdatedAt: 0,
+    intervalMs: 2_000,
+  });
   const criteriaPreferences = useStockCriteriaPreferences();
   const comparisonQuery = useQuery({
     queryKey: queryKeys.analyses.comparison(submittedTickers),
     enabled: shouldCompare && submittedTickers.length > 0,
-    queryFn: () =>
-      apiRequest<ComparisonResult>(
-        "/api/analyses/companies/compare",
-        {
-          method: "POST",
-          body: JSON.stringify({ tickers: submittedTickers }),
-        },
-        "Não foi possível comparar as empresas agora.",
-      ),
+    queryFn: async ({ client, queryKey }) => {
+      const key = submittedTickers.join(",");
+      const phase = comparisonPhase.current.get(key) ?? "start";
+      const postComparison = () =>
+        apiRequest<ComparisonResult>(
+          "/api/analyses/companies/compare",
+          {
+            method: "POST",
+            body: JSON.stringify({ tickers: submittedTickers }),
+          },
+          "Não foi possível comparar as empresas agora.",
+        );
+      const getRefreshStatus = () =>
+        apiRequest<ComparisonRefreshStatus>(
+          `/api/analyses/companies/compare?${new URLSearchParams({ tickers: submittedTickers.join(",") })}`,
+          undefined,
+          "Não foi possível consultar o andamento da comparação.",
+        );
+      const applyRefreshStatus = async () => {
+        const status = await getRefreshStatus();
+        const current = client.getQueryData<ComparisonResult>(queryKey);
+        if (!current) return postComparison();
+        const statuses = new Map(
+          status.companies.map((company) => [
+            company.ticker,
+            company.fundamentalsRefresh,
+          ]),
+        );
+        return {
+          ...current,
+          companies: current.companies.map((company) => ({
+            ...company,
+            fundamentalsRefresh:
+              statuses.get(company.ticker) ?? company.fundamentalsRefresh,
+          })),
+        };
+      };
+
+      if (phase === "start") {
+        const response = await postComparison();
+        comparisonPhase.current.set(
+          key,
+          response.companies.some(
+            (company) => company.fundamentalsRefresh?.status === "running",
+          )
+            ? "poll"
+            : "done",
+        );
+        return response;
+      }
+      if (phase === "poll") {
+        const response = await applyRefreshStatus();
+        if (
+          response.companies.some(
+            (company) => company.fundamentalsRefresh?.status === "running",
+          )
+        )
+          return response;
+        const allCompleted =
+          response.companies.length > 0 &&
+          response.companies.every(
+            (company) => company.fundamentalsRefresh?.status === "completed",
+          );
+        if (allCompleted) {
+          const refreshed = await postComparison();
+          comparisonPhase.current.set(key, "done");
+          return refreshed;
+        }
+        comparisonPhase.current.set(key, "done");
+        return response;
+      }
+      return applyRefreshStatus();
+    },
+    refetchInterval: (query) => {
+      const result = query.state.data;
+      const key = submittedTickers.join(",");
+      const isRunning = Boolean(
+        result?.companies.some(
+          (company) => company.fundamentalsRefresh?.status === "running",
+        ),
+      );
+      if (!isRunning) {
+        comparisonPoll.current = {
+          key: "",
+          dataUpdatedAt: 0,
+          intervalMs: 2_000,
+        };
+        return false;
+      }
+      if (comparisonPoll.current.key !== key) {
+        comparisonPoll.current = {
+          key,
+          dataUpdatedAt: query.state.dataUpdatedAt,
+          intervalMs: 2_000,
+        };
+      } else if (
+        comparisonPoll.current.dataUpdatedAt !== query.state.dataUpdatedAt
+      ) {
+        comparisonPoll.current = {
+          key,
+          dataUpdatedAt: query.state.dataUpdatedAt,
+          intervalMs: Math.min(comparisonPoll.current.intervalMs * 1.5, 15_000),
+        };
+      }
+      return comparisonPoll.current.intervalMs;
+    },
   });
   const result = comparisonQuery.data ?? null;
-  const loading = comparisonQuery.isFetching;
+  const loading = comparisonQuery.isFetching && !comparisonQuery.data;
   const queryError =
     shouldCompare && comparisonQuery.error instanceof Error
       ? comparisonQuery.error.message
       : null;
   const error = actionError ?? queryError;
+  const failedCompanies =
+    result?.companies.filter(
+      (company) => company.fundamentalsRefresh?.status === "failed",
+    ) ?? [];
+  const refreshingCompanies =
+    result?.companies.filter(
+      (company) => company.fundamentalsRefresh?.status === "running",
+    ) ?? [];
+  const isRefreshing = refreshingCompanies.length > 0;
+  const retryAfterMs = failedCompanies.reduce((latest, company) => {
+    const retryAfter = company.fundamentalsRefresh?.retryAfter;
+    const timestamp = retryAfter ? Date.parse(retryAfter) : Number.NaN;
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+  }, 0);
+  const retryRemaining =
+    clockNow === 0 && retryAfterMs > 0
+      ? 1
+      : Math.max(0, Math.ceil((retryAfterMs - clockNow) / 1000));
   const displayedSelection =
     shouldCompare && result
       ? result.companies.map((company) => ({
@@ -338,6 +471,16 @@ export function CompanyComparison({
           logoUrl: company.logoUrl,
         }))
       : selected;
+
+  useEffect(() => {
+    if (retryAfterMs <= 0) return;
+    const nowTimer = window.setTimeout(() => setClockNow(Date.now()), 0);
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1_000);
+    return () => {
+      window.clearTimeout(nowTimer);
+      window.clearInterval(timer);
+    };
+  }, [retryAfterMs]);
 
   function addTicker(option: TickerOption) {
     setSearchTicker(option.ticker);
@@ -368,6 +511,7 @@ export function CompanyComparison({
       tickers.length === submittedTickers.length &&
       tickers.every((ticker, index) => ticker === submittedTickers[index])
     ) {
+      comparisonPhase.current.set(tickers.join(","), "start");
       void comparisonQuery.refetch();
       return;
     }
@@ -469,9 +613,20 @@ export function CompanyComparison({
             <Button
               type="button"
               onClick={compare}
-              disabled={loading || displayedSelection.length < 2}
+              disabled={
+                loading ||
+                isRefreshing ||
+                displayedSelection.length < 2 ||
+                retryRemaining > 0
+              }
             >
-              {loading ? "Comparando…" : "Comparar selecionadas"}
+              {loading
+                ? "Comparando…"
+                : isRefreshing
+                  ? "Atualizando dados…"
+                  : retryRemaining > 0
+                    ? `Tente novamente em ${retryRemaining}s`
+                    : "Comparar selecionadas"}
             </Button>
           </div>
           {loading && (
@@ -513,6 +668,44 @@ export function CompanyComparison({
           )}
         </CardContent>
       </Card>
+
+      {refreshingCompanies.length > 0 && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent
+            className="py-3 text-sm"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="font-medium">
+              Atualizando dados financeiros da CVM para{" "}
+              {refreshingCompanies.map((company) => company.ticker).join(", ")}.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Os dados já disponíveis continuam visíveis enquanto a consulta
+              termina.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {failedCompanies.length > 0 && (
+        <Card className="border-status-warning/40 bg-status-warning/5">
+          <CardContent
+            className="py-3 text-sm"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="font-medium">
+              Não foi possível atualizar os fundamentos de{" "}
+              {failedCompanies.map((company) => company.ticker).join(", ")}.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Os dados anteriores permanecem visíveis. Você pode tentar de novo
+              quando o intervalo de espera terminar.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {result && rows.length > 0 && (
         <Card>

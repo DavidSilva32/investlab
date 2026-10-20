@@ -7,18 +7,25 @@ import { ApplicationError } from "@/backend/errors/application-error";
 
 const mocks = vi.hoisted(() => ({
   compare: vi.fn(),
+  getRefreshStatus: vi.fn(),
+  after: vi.fn(),
   logger: {
     error: vi.fn(),
     info: vi.fn(),
     withContext: (_context: unknown, operation: () => unknown) => operation(),
   },
 }));
+vi.mock("next/server", () => ({ after: mocks.after }));
 vi.mock("@/backend/controllers/stock-comparison.controller", () => ({
-  stockComparisonController: { compare: mocks.compare },
+  stockComparisonController: {
+    compare: mocks.compare,
+    getRefreshStatus: mocks.getRefreshStatus,
+  },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: mocks.logger }));
 
 import { POST } from "@/app/api/analyses/companies/compare/route";
+import { GET } from "@/app/api/analyses/companies/compare/route";
 
 describe("company comparison route", () => {
   it("forwards the selected tickers and request ID", async () => {
@@ -35,8 +42,73 @@ describe("company comparison route", () => {
     expect(mocks.compare).toHaveBeenCalledWith(
       { tickers: ["PETR3", "VALE3"] },
       "compare-1",
+      expect.any(Function),
     );
     expect(response.status).toBe(200);
+    const scheduleAfterResponse = mocks.compare.mock.calls[0]?.[2] as
+      ((work: () => Promise<void>) => void) | undefined;
+    scheduleAfterResponse?.(async () => {});
+    expect(mocks.after).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("reads comparison refresh status without scheduling another refresh", async () => {
+    mocks.getRefreshStatus.mockResolvedValue(Response.json({ companies: [] }));
+    const response = await GET(
+      new Request(
+        "http://test/api/analyses/companies/compare?tickers=PETR3,VALE3",
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.getRefreshStatus).toHaveBeenCalledWith(
+      { tickers: ["PETR3", "VALE3"] },
+      expect.any(String),
+    );
+    expect(mocks.compare).not.toHaveBeenCalled();
+    expect(mocks.after).not.toHaveBeenCalled();
+  });
+
+  it("handles a status request with no ticker query", async () => {
+    mocks.getRefreshStatus.mockResolvedValue(Response.json({ companies: [] }));
+    const response = await GET(
+      new Request("http://test/api/analyses/companies/compare"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.getRefreshStatus).toHaveBeenCalledWith(
+      { tickers: [""] },
+      expect.any(String),
+    );
+  });
+
+  it("preserves safe application errors when reading refresh status", async () => {
+    mocks.getRefreshStatus.mockRejectedValue(
+      new ApplicationError("Ticker inválido.", 400),
+    );
+    const response = await GET(
+      new Request("http://test/api/analyses/companies/compare?tickers=bad"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toMatchObject({
+      message: "Ticker inválido.",
+    });
+  });
+
+  it("keeps unexpected status-read errors client-safe", async () => {
+    mocks.getRefreshStatus.mockRejectedValue("private status error");
+    const response = await GET(
+      new Request("http://test/api/analyses/companies/compare?tickers=PETR3"),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({
+      message: "Não foi possível consultar o status da comparação agora.",
+    });
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "stock_comparison_status_failed",
+      expect.objectContaining({ errorType: "string" }),
+    );
   });
 
   it("returns 400 for malformed JSON", async () => {

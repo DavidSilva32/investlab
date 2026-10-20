@@ -164,6 +164,202 @@ afterEach(() => {
 });
 
 describe("StockAnalysisDashboard", () => {
+  it("keeps saved fundamentals visible while a CVM refresh is running and polls for its status", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn((input: RequestInfo | URL) =>
+      Promise.resolve(
+        String(input).endsWith("/market")
+          ? jsonResponse(marketSnapshot())
+          : jsonResponse({
+              ...analysis,
+              fundamentalsIsStale: true,
+              fundamentalsFetchedAt: "2026-10-01T14:30:00.000Z",
+              fundamentalsRefresh: {
+                status: "running",
+                retryAfter: null,
+                errorCode: null,
+              },
+            }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText(/Mostrando os últimos dados salvos em 01\/10\/2026/),
+    ).toBeTruthy();
+    expect(screen.getByText("18,4%")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(
+      fetcher.mock.calls.filter(([input]) => String(input).endsWith("/PETR4")),
+    ).toHaveLength(2);
+    expect(
+      screen.getByText("Atualizando os dados financeiros da CVM."),
+    ).toBeTruthy();
+  });
+
+  it("starts an idle fundamentals refresh and exposes a retry after a failed refresh", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...analysis,
+          fundamentalsRefresh: {
+            status: "idle",
+            retryAfter: null,
+            errorCode: null,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ state: { status: "running" }, requestId: "request-1" }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...analysis,
+          fundamentalsRefresh: {
+            status: "failed",
+            retryAfter: "2026-10-19T10:00:00.000Z",
+            errorCode: "provider_error",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      "/api/analyses/stocks/PETR4/fundamentals/refresh",
+    );
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
+    const retry = await screen.findByRole("button", {
+      name: "Tentar novamente",
+    });
+    await userEvent.setup().click(retry);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(4));
+    expect(fetcher.mock.calls[3]?.[0]).toBe(
+      "/api/analyses/stocks/PETR4/fundamentals/refresh",
+    );
+    expect(fetcher.mock.calls[3]?.[1]).toMatchObject({ method: "POST" });
+  });
+
+  it("does not display an invalid saved-data date after a refresh failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          fundamentalsFetchedAt: "not-a-date",
+          fundamentalsRefresh: {
+            status: "failed",
+            retryAfter: null,
+            errorCode: "provider_error",
+          },
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    expect(
+      await screen.findByText(
+        "Os dados financeiros ainda não estão disponíveis.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+  });
+
+  it("keeps the latest saved date and countdown visible after a refresh failure", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T12:00:00.000Z"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          fundamentalsFetchedAt: "2026-10-19T14:30:00.000Z",
+          fundamentalsRefresh: {
+            status: "failed",
+            retryAfter: "2026-10-20T12:00:05.000Z",
+            errorCode: "provider_error",
+          },
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(
+      screen.getByText(/Exibindo os dados salvos em 19\/10\/2026/),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Tente novamente em 4s" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("explains that fundamentals are still being fetched when the cache is empty", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          fundamentals: [],
+          fundamentalsRefresh: {
+            status: "running",
+            retryAfter: null,
+            errorCode: null,
+          },
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    expect(
+      await screen.findByText("Buscando os dados financeiros da CVM."),
+    ).toBeTruthy();
+  });
+
+  it("does not show an update notice after fundamentals refresh completes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          fundamentalsRefresh: {
+            status: "completed",
+            retryAfter: null,
+            errorCode: null,
+          },
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    await screen.findByRole("heading", { name: "PETR4" });
+    expect(
+      screen.queryByText("Atualizando os dados financeiros da CVM."),
+    ).toBeNull();
+    expect(
+      screen.queryByText("Buscando os dados financeiros da CVM."),
+    ).toBeNull();
+  });
+
   it("shows a verified quote while the CVM analysis request is pending", async () => {
     let resolveAnalysis!: (response: Response) => void;
     const analysisResponse = new Promise<Response>((resolve) => {
@@ -902,6 +1098,7 @@ describe("StockAnalysisDashboard", () => {
 
   it("honors Retry-After, counts down, then enables retry", async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T12:00:00.000Z"));
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -921,7 +1118,8 @@ describe("StockAnalysisDashboard", () => {
     });
     expect(retry.getAttribute("disabled")).not.toBeNull();
     await act(async () => {
-      vi.advanceTimersByTime(1000);
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.resolve();
     });
     expect(
       screen
@@ -932,6 +1130,7 @@ describe("StockAnalysisDashboard", () => {
 
   it("honors the history provider Retry-After independently of the analysis request", async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T12:00:00.000Z"));
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -957,6 +1156,7 @@ describe("StockAnalysisDashboard", () => {
     ).toBe(true);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
+      await Promise.resolve();
     });
     expect(
       screen

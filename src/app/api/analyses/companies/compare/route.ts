@@ -2,11 +2,13 @@ import {
   getApiRequestId,
   withApiRequestLogging,
 } from "@/infrastructure/logging/api-request";
+import { after } from "next/server";
 import { stockComparisonController } from "@/backend/controllers/stock-comparison.controller";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { logger } from "@/infrastructure/logging/logger";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export const POST = withApiRequestLogging(
   "POST",
@@ -23,7 +25,9 @@ export const POST = withApiRequestLogging(
           400,
         );
       }
-      return await stockComparisonController.compare(body, requestId);
+      return await stockComparisonController.compare(body, requestId, (work) =>
+        after(work),
+      );
     } catch (error) {
       logger.error("stock_comparison_failed", {
         requestId,
@@ -38,6 +42,41 @@ export const POST = withApiRequestLogging(
       if (error instanceof ApplicationError && error.retryAfterSeconds != null)
         headers.set("retry-after", String(error.retryAfterSeconds));
       return Response.json({ message, requestId }, { status, headers });
+    }
+  },
+);
+
+export const GET = withApiRequestLogging(
+  "GET",
+  "/api/analyses/companies/compare",
+  async function GET(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      const tickers = new URL(request.url).searchParams.get("tickers") ?? "";
+      return await stockComparisonController.getRefreshStatus(
+        { tickers: tickers.split(",").map((ticker) => ticker.trim()) },
+        requestId,
+      );
+    } catch (error) {
+      logger.error("stock_comparison_status_failed", {
+        requestId,
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+      const status = error instanceof ApplicationError ? error.statusCode : 502;
+      const message =
+        error instanceof ApplicationError
+          ? error.message
+          : "Não foi possível consultar o status da comparação agora.";
+      return Response.json(
+        { message, requestId },
+        {
+          status,
+          headers: {
+            "x-request-id": requestId,
+            "cache-control": "private, no-store",
+          },
+        },
+      );
     }
   },
 );

@@ -893,6 +893,36 @@ export const stockFundamentals = pgTable("stock_fundamentals", {
   fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
+export const stockFundamentalRefreshes = pgTable(
+  "stock_fundamental_refreshes",
+  {
+    ticker: varchar({ length: 16 }).notNull(),
+    cnpj: varchar({ length: 14 }).notNull(),
+    sourceVersion: varchar({ length: 32 }).notNull(),
+    status: varchar({ length: 12 }).notNull(),
+    leaseToken: uuid().notNull(),
+    attemptCount: integer().notNull().default(1),
+    startedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    leaseExpiresAt: timestamp({ withTimezone: true }).notNull(),
+    completedAt: timestamp({ withTimezone: true }),
+    retryAfter: timestamp({ withTimezone: true }),
+    errorCode: varchar({ length: 64 }),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("stock_fundamental_refresh_identity_idx").on(
+      table.ticker,
+      table.cnpj,
+      table.sourceVersion,
+    ),
+    index("stock_fundamental_refresh_status_idx").on(table.status),
+    check(
+      "stock_fundamental_refresh_status_check",
+      sql`${table.status} IN ('RUNNING', 'COMPLETED', 'FAILED')`,
+    ),
+  ],
+);
+
 export const stockOpportunityManualInputs = pgTable(
   "stock_opportunity_manual_inputs",
   {

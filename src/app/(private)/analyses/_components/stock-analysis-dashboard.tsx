@@ -202,13 +202,22 @@ export function StockAnalysisDashboard({
     () => emptyRecentTickers,
   );
   const [selectedTicker, setSelectedTicker] = useState(initialTicker);
+  const [refreshRequestErrorTicker, setRefreshRequestErrorTicker] = useState<
+    string | null
+  >(null);
   const [notifiedTicker, setNotifiedTicker] = useState<string | null>(null);
   const pendingNotification = useRef<string | null>(null);
-  const [clockNow, setClockNow] = useState(0);
+  const fundamentalsRefreshRequests = useRef(new Set<string>());
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const automaticHistoryRetries = useRef(new Set<string>());
   const automaticHistoryRetryTimer = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const fundamentalsPoll = useRef({
+    ticker: "",
+    dataUpdatedAt: 0,
+    intervalMs: 2_000,
+  });
   const [days, setDays] = useState(365);
   const analysisQuery = useQuery({
     queryKey: queryKeys.analyses.stock(selectedTicker.toUpperCase()),
@@ -221,7 +230,39 @@ export function StockAnalysisDashboard({
       );
       return data;
     },
+    refetchInterval: (query) => {
+      const current = query.state.data;
+      if (current?.fundamentalsRefresh?.status !== "running") {
+        fundamentalsPoll.current = {
+          ticker: "",
+          dataUpdatedAt: 0,
+          intervalMs: 2_000,
+        };
+        return false;
+      }
+      const ticker = current.ticker.toUpperCase();
+      if (fundamentalsPoll.current.ticker !== ticker) {
+        fundamentalsPoll.current = {
+          ticker,
+          dataUpdatedAt: query.state.dataUpdatedAt,
+          intervalMs: 2_000,
+        };
+      } else if (
+        fundamentalsPoll.current.dataUpdatedAt !== query.state.dataUpdatedAt
+      ) {
+        fundamentalsPoll.current = {
+          ticker,
+          dataUpdatedAt: query.state.dataUpdatedAt,
+          intervalMs: Math.min(
+            fundamentalsPoll.current.intervalMs * 1.5,
+            15_000,
+          ),
+        };
+      }
+      return fundamentalsPoll.current.intervalMs;
+    },
   });
+  const refetchAnalysis = analysisQuery.refetch;
   const marketQuery = useQuery({
     queryKey: ["analyses", "stock-market", selectedTicker.toUpperCase()],
     enabled: false,
@@ -246,6 +287,11 @@ export function StockAnalysisDashboard({
     },
   });
   const refetchMarket = marketQuery.refetch;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setClockNow(Date.now()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     if (!selectedTicker || !analysisQuery.isPending || analysisQuery.data)
       return;
@@ -305,13 +351,28 @@ export function StockAnalysisDashboard({
   const retryStartedAt = analysisQuery.errorUpdatedAt;
   const retryRemaining =
     Number.isFinite(retryAfter) && retryAfter > 0 && retryStartedAt > 0
-      ? Math.max(
-          0,
-          Math.ceil(
-            retryAfter - ((clockNow || retryStartedAt) - retryStartedAt) / 1000,
-          ),
-        )
+      ? Math.max(0, Math.ceil(retryAfter - (clockNow - retryStartedAt) / 1000))
       : 0;
+  const fundamentalsRetryAfter = analysis?.fundamentalsRefresh?.retryAfter
+    ? Math.max(
+        0,
+        Math.ceil(
+          (Date.parse(analysis.fundamentalsRefresh.retryAfter) - clockNow) /
+            1000,
+        ),
+      )
+    : 0;
+  const fundamentalsFetchedAtLabel =
+    analysis?.fundamentalsFetchedAt &&
+    Number.isFinite(Date.parse(analysis.fundamentalsFetchedAt))
+      ? new Intl.DateTimeFormat("pt-BR", {
+          dateStyle: "short",
+          timeZone: "UTC",
+        }).format(new Date(analysis.fundamentalsFetchedAt))
+      : null;
+  const fundamentalsRefreshFailed =
+    analysis?.fundamentalsRefresh?.status === "failed" ||
+    refreshRequestErrorTicker === analysis?.ticker.toUpperCase();
   const historyFailure =
     historyRetryQuery.data?.historyFailure ?? analysis?.historyFailure;
   const historyRetryHttpError =
@@ -336,9 +397,7 @@ export function StockAnalysisDashboard({
       ? Math.max(
           0,
           Math.ceil(
-            historyRetryAfter -
-              ((clockNow || historyRetryStartedAt) - historyRetryStartedAt) /
-                1000,
+            historyRetryAfter - (clockNow - historyRetryStartedAt) / 1000,
           ),
         )
       : 0;
@@ -355,6 +414,38 @@ export function StockAnalysisDashboard({
     },
     [analysisQuery, selectedTicker],
   );
+
+  const requestFundamentalsRefresh = useCallback(
+    async (ticker: string) => {
+      const normalizedTicker = ticker.toUpperCase();
+      setRefreshRequestErrorTicker(null);
+      try {
+        await apiRequest(
+          `/api/analyses/stocks/${encodeURIComponent(normalizedTicker)}/fundamentals/refresh`,
+          { method: "POST" },
+          "Não foi possível iniciar a atualização dos fundamentos.",
+        );
+        await refetchAnalysis();
+      } catch {
+        setRefreshRequestErrorTicker(normalizedTicker);
+      }
+    },
+    [refetchAnalysis],
+  );
+
+  useEffect(() => {
+    const current = analysisQuery.data;
+    const ticker = selectedTicker.toUpperCase();
+    if (
+      !current ||
+      current.ticker.toUpperCase() !== ticker ||
+      current.fundamentalsRefresh?.status !== "idle" ||
+      fundamentalsRefreshRequests.current.has(ticker)
+    )
+      return;
+    fundamentalsRefreshRequests.current.add(ticker);
+    void requestFundamentalsRefresh(ticker);
+  }, [analysisQuery.data, requestFundamentalsRefresh, selectedTicker]);
 
   useEffect(() => {
     const loadedAnalysis = analysisQuery.data;
@@ -387,12 +478,19 @@ export function StockAnalysisDashboard({
   useEffect(() => {
     if (
       (!retryAfter || !retryStartedAt) &&
-      (!historyRetryAfter || !historyRetryStartedAt)
+      (!historyRetryAfter || !historyRetryStartedAt) &&
+      !analysis?.fundamentalsRefresh?.retryAfter
     )
       return;
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [retryAfter, retryStartedAt, historyRetryAfter, historyRetryStartedAt]);
+  }, [
+    retryAfter,
+    retryStartedAt,
+    historyRetryAfter,
+    historyRetryStartedAt,
+    analysis?.fundamentalsRefresh?.retryAfter,
+  ]);
 
   useEffect(() => {
     const currentAnalysis = analysisQuery.data;
@@ -728,6 +826,74 @@ export function StockAnalysisDashboard({
           </div>
         </CardContent>
       </Card>
+      {analysis.fundamentalsRefresh &&
+        (analysis.fundamentalsRefresh.status !== "completed" ||
+          refreshRequestErrorTicker === analysis.ticker.toUpperCase()) && (
+          <Card
+            className={
+              fundamentalsRefreshFailed
+                ? "border-status-warning/40 bg-status-warning/5"
+                : "border-primary/20 bg-primary/5"
+            }
+          >
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <div
+                role="status"
+                aria-live="polite"
+                className="space-y-1 text-sm"
+              >
+                {fundamentalsRefreshFailed ? (
+                  <>
+                    <p className="font-medium">
+                      Não foi possível atualizar os dados financeiros agora.
+                    </p>
+                    <p className="text-muted-foreground">
+                      {fundamentalsFetchedAtLabel
+                        ? `Exibindo os dados salvos em ${fundamentalsFetchedAtLabel}.`
+                        : "Os dados financeiros ainda não estão disponíveis."}
+                    </p>
+                  </>
+                ) : analysis.fundamentals.length > 0 ? (
+                  <>
+                    <p className="font-medium">
+                      Atualizando os dados financeiros da CVM.
+                    </p>
+                    <p className="text-muted-foreground">
+                      {fundamentalsFetchedAtLabel
+                        ? `Mostrando os últimos dados salvos em ${fundamentalsFetchedAtLabel} enquanto a atualização termina.`
+                        : "Os dados disponíveis continuam visíveis enquanto a atualização termina."}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">
+                      Buscando os dados financeiros da CVM.
+                    </p>
+                    <p className="text-muted-foreground">
+                      A cotação continua disponível; os indicadores aparecem
+                      assim que a consulta terminar.
+                    </p>
+                  </>
+                )}
+              </div>
+              {fundamentalsRefreshFailed && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={fundamentalsRetryAfter > 0}
+                  onClick={() =>
+                    void requestFundamentalsRefresh(analysis.ticker)
+                  }
+                >
+                  <RefreshCw className="size-4" aria-hidden="true" />
+                  {fundamentalsRetryAfter > 0
+                    ? `Tente novamente em ${fundamentalsRetryAfter}s`
+                    : "Tentar novamente"}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
       {!analysisQuery.data ? (
         <Card>
           <CardContent className="py-5 text-sm text-muted-foreground">
