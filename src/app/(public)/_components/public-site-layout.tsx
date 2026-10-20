@@ -4,7 +4,7 @@ import { CookieConsentPreferencesButton } from "@/components/cookie-consent-pref
 import { CURRENT_TERMS_VERSION } from "@/lib/privacy-policy";
 
 const documentLinks = [
-  { href: "/apresentacao", label: "Conheça o InvestLab" },
+  { href: "/apresentacao", label: "Landing page" },
   { href: "/termos-de-uso", label: "Termos de Uso" },
   { href: "/privacidade", label: "Privacidade" },
   { href: "/cookies", label: "Cookies" },
