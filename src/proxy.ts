@@ -10,6 +10,7 @@ const publicPaths = new Set([
   "/termos-de-uso",
   "/privacidade",
   "/cookies",
+  "/mcp",
   "/mcp/consent",
   "/api/auth/login",
   "/api/auth/logout",
