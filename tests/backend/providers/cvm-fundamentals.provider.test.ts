@@ -17,6 +17,7 @@ const accountLabels: Record<string, string> = {
   "3.01": "Receitas da Intermediação Financeira",
   "3.09": "Lucro/Prejuízo Consolidado do Período",
   "3.11": "Lucro/Prejuízo Consolidado do Período",
+  "3.13": "Lucro/Prejuízo Consolidado do Período",
   "2.03": "Patrimônio Líquido Consolidado",
   "2.07": "Patrimônio Líquido Consolidado",
   "2.08": "Patrimônio Líquido Consolidado",
@@ -92,6 +93,127 @@ function issuerCsv(rows: string[]) {
 }
 
 describe("CvmFundamentalsProvider", () => {
+  it("maps BB Seguridade consolidated net income from account 3.13", async () => {
+    const currentYear = new Date().getUTCFullYear();
+    const reportingYear = currentYear - 1;
+    const bbseCnpj = "17344597000194";
+    const bbseCode = "23159";
+    const period = {
+      CNPJ_CIA: "17.344.597/0001-94",
+      CD_CVM: bbseCode,
+      DT_REFER: `${reportingYear}-12-31`,
+      DT_INI_EXERC: `${reportingYear}-01-01`,
+      DT_FIM_EXERC: `${reportingYear}-12-31`,
+    };
+    const annual = csvZip(
+      `dfp_cia_aberta_DRE_con_${reportingYear}.csv`,
+      documentCsv([
+        row("3.13", "9017329", {
+          ...period,
+          DS_CONTA: "Lucro/Prejuízo Consolidado do Período",
+        }),
+        row("2.07", "100000", {
+          ...period,
+          DS_CONTA: "Patrimônio Líquido Consolidado",
+        }),
+      ]),
+    );
+    const emptyCurrentItr = csvZip(
+      `itr_cia_aberta_DRE_con_${currentYear}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv([
+            "17.344.597/0001-94;23159;BB SEGURIDADE PARTICIPAÇÕES S.A.;ATIVA",
+          ]),
+        );
+      if (url.endsWith(`/dfp_cia_aberta_${reportingYear}.zip`))
+        return new Response(annual);
+      if (url.endsWith(`/itr_cia_aberta_${currentYear}.zip`))
+        return new Response(emptyCurrentItr);
+      return new Response(null, { status: 404 });
+    });
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "BBSE3",
+      cnpj: bbseCnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: `${reportingYear}-12-31`,
+          netIncome: "9017329000.00",
+          netIncomeAccount: "3.13",
+          netIncomeConcept: "consolidated_net_income",
+        }),
+      ]),
+    );
+  });
+
+  it("does not accept a nonconsolidated label for account 3.13", async () => {
+    const currentYear = new Date().getUTCFullYear();
+    const reportingYear = currentYear - 1;
+    const bbseCnpj = "17344597000194";
+    const period = {
+      CNPJ_CIA: "17.344.597/0001-94",
+      CD_CVM: "23159",
+      DT_REFER: `${reportingYear}-12-31`,
+      DT_INI_EXERC: `${reportingYear}-01-01`,
+      DT_FIM_EXERC: `${reportingYear}-12-31`,
+    };
+    const annual = csvZip(
+      `dfp_cia_aberta_DRE_con_${reportingYear}.csv`,
+      documentCsv([
+        row("3.13", "9017329", {
+          ...period,
+          DS_CONTA: "Lucro Líquido Individual do Período",
+        }),
+        row("2.07", "100000", {
+          ...period,
+          DS_CONTA: "Patrimônio Líquido Consolidado",
+        }),
+      ]),
+    );
+    const emptyCurrentItr = csvZip(
+      `itr_cia_aberta_DRE_con_${currentYear}.csv`,
+      documentCsv([]),
+    );
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("cad_cia_aberta.csv"))
+        return new Response(
+          issuerCsv([
+            "17.344.597/0001-94;23159;BB SEGURIDADE PARTICIPAÇÕES S.A.;ATIVA",
+          ]),
+        );
+      if (url.endsWith(`/dfp_cia_aberta_${reportingYear}.zip`))
+        return new Response(annual);
+      if (url.endsWith(`/itr_cia_aberta_${currentYear}.zip`))
+        return new Response(emptyCurrentItr);
+      return new Response(null, { status: 404 });
+    });
+
+    const periods = await new CvmFundamentalsProvider(fetcher).getByTicker({
+      ticker: "BBSE3",
+      cnpj: bbseCnpj,
+    });
+
+    expect(periods).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: `${reportingYear}-12-31`,
+          netIncome: null,
+          netIncomeAccount: null,
+          netIncomeConcept: null,
+        }),
+      ]),
+    );
+  });
+
   it("starts the current interim archive while required annual archives load", async () => {
     const currentYear = new Date().getUTCFullYear();
     const currentAnnualUrl = `https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_${currentYear - 1}.zip`;
@@ -1415,6 +1537,11 @@ describe("CvmFundamentalsProvider", () => {
         DT_FIM_EXERC: `${year}-06-30`,
       }),
       row("3.11", "21", {
+        DT_REFER: `${year}-06-30`,
+        DT_INI_EXERC: `${year}-01-01`,
+        DT_FIM_EXERC: `${year}-06-30`,
+      }),
+      row("3.13", "22", {
         DT_REFER: `${year}-06-30`,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: `${year}-06-30`,

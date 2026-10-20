@@ -130,6 +130,15 @@ class MarketDataHttpError extends Error {
 class InvalidMarketDataResponseError extends Error {}
 const requestTimeoutMs = 15_000;
 
+function safeProviderErrorCode(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload))
+    return undefined;
+  const code = (payload as { code?: unknown }).code;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(code)
+    ? code
+    : undefined;
+}
+
 export class BrapiMarketDataProvider implements MarketDataProvider {
   private readonly quoteRequests = new Map<string, Promise<unknown>>();
 
@@ -218,9 +227,16 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       );
     }
     if (!response.ok) {
+      let providerCode: string | undefined;
+      try {
+        providerCode = safeProviderErrorCode(await response.clone().json());
+      } catch {
+        providerCode = undefined;
+      }
       logger.info("stock_market_provider_request_completed", {
         ...logContext,
         status: response.status,
+        ...(providerCode ? { providerCode } : {}),
         durationMs: Date.now() - startedAt,
       });
       throw new MarketDataHttpError(response.status);
@@ -387,7 +403,10 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
     )
       return { reason: "authentication" };
     if (error instanceof MarketDataHttpError)
-      return { reason: "http_error", httpStatus: error.status };
+      return {
+        reason: "http_error",
+        httpStatus: error.status,
+      };
     if (error instanceof InvalidMarketDataResponseError)
       return { reason: "invalid_response" };
     if (error instanceof RetryableMarketDataError)

@@ -26,9 +26,9 @@ const tickerSchema = z
   .regex(/^[A-Z]{4}[0-9]{1,2}$/, "Informe um ticker B3 válido.");
 const cacheDurationMs = 1000 * 60 * 60 * 24;
 const quoteFreshnessMs = 7 * 24 * 60 * 60 * 1000;
-const fundamentalsNormalizationRevision = "cvm-v4";
+const fundamentalsNormalizationRevision = "cvm-v5";
 const unavailableMarketCapReason =
-  "Indisponível: a metodologia atual não comprova a capitalização consolidada entre classes ativas e eventos societários; o snapshot de preço não basta.";
+  "Falta confirmar quantas ações de cada classe estão em circulação e alinhar esse total à data da cotação.";
 
 type MarketCapEvidence = {
   marketCap: number | null;

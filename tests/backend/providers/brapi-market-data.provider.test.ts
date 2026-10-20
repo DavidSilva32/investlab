@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrapiMarketDataProvider } from "@/backend/providers/brapi-market-data.provider";
+import { logger } from "@/infrastructure/logging/logger";
 
 vi.mock("@/infrastructure/logging/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -642,6 +643,81 @@ describe("BrapiMarketDataProvider", () => {
       new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
     ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
     expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("logs only a safe provider error code for a failed history response", async () => {
+    vi.mocked(logger.info).mockClear();
+    const secretMessage = "private provider detail";
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: true, code: "INVALID_RANGE", message: secretMessage },
+          400,
+        ),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      historyStatus: "unavailable",
+      historyFailure: { reason: "http_error", httpStatus: 400 },
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "stock_market_provider_request_completed",
+      expect.objectContaining({ status: 400, providerCode: "INVALID_RANGE" }),
+    );
+    expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain(
+      secretMessage,
+    );
+  });
+
+  it.each([
+    ["an unsafe code", { code: "BAD CODE", message: "private detail" }],
+    ["a non-object body", null],
+  ])("does not log provider payload text for %s", async (_label, payload) => {
+    vi.mocked(logger.info).mockClear();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(payload, 400));
+
+    await new BrapiMarketDataProvider(fetcher).getByTicker("PETR4");
+
+    const failedRequest = vi
+      .mocked(logger.info)
+      .mock.calls.find(
+        ([event, context]) =>
+          event === "stock_market_provider_request_completed" &&
+          (context as { status?: number }).status === 400,
+      );
+    expect(failedRequest?.[1]).not.toHaveProperty("providerCode");
+    expect(JSON.stringify(failedRequest)).not.toContain("private detail");
+  });
+
+  it("ignores a non-JSON body when logging a provider HTTP error", async () => {
+    vi.mocked(logger.info).mockClear();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(quote()))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(new Response("private detail", { status: 400 }));
+
+    await new BrapiMarketDataProvider(fetcher).getByTicker("PETR4");
+
+    const failedRequest = vi
+      .mocked(logger.info)
+      .mock.calls.find(
+        ([event, context]) =>
+          event === "stock_market_provider_request_completed" &&
+          (context as { status?: number }).status === 400,
+      );
+    expect(failedRequest?.[1]).not.toHaveProperty("providerCode");
+    expect(JSON.stringify(failedRequest)).not.toContain("private detail");
   });
 
   it("bypasses HTTP cache for a focused history retry and separates empty from malformed data", async () => {
