@@ -52,11 +52,14 @@ describe("McpDocumentation", () => {
     expect(
       screen.getByRole("tab", { name: /Conectar ao ChatGPT/ }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("tab", { name: /Outros clientes MCP/ }),
+    ).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Carteira/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Administração/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "O que é MCP?" })).toBeTruthy();
     expect(
-      screen.getByText(/É uma ponte para o ChatGPT consultar informações/),
+      screen.getByText(/MCP é um padrão que permite a sistemas compatíveis/),
     ).toBeTruthy();
     expect(
       screen.getByRole("list", { name: "Como funciona a conexão MCP" }),
@@ -127,6 +130,42 @@ describe("McpDocumentation", () => {
     ).toBe("https://developers.openai.com/api/docs/guides/custom-mcp-server");
   });
 
+  it("guides other remote MCP clients without claiming universal compatibility", () => {
+    render(<McpDocumentation endpoint={publicMcpEndpoint} />);
+    selectTab(/Outros clientes MCP/);
+
+    const panel = screen.getByRole("tabpanel");
+    expect(
+      within(panel).getByRole("heading", {
+        name: "Conectar outro cliente MCP",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByText(/servidores MCP remotos por HTTPS/),
+    ).toBeTruthy();
+    expect(
+      within(panel).getAllByText(/autenticação OAuth/).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(panel).getByRole("list", {
+        name: "Como conectar outro cliente MCP",
+      }),
+    ).toBeTruthy();
+    expect(within(panel).getByText(publicMcpEndpoint)).toBeTruthy();
+    expect(
+      within(panel).getByRole("img", { name: "Logo do InvestLab" }),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByRole("link", { name: /Baixar logo do InvestLab/ }),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByText(/nomes dos menus e campos mudam/),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByText(/esta conexão não está disponível nele/),
+    ).toBeTruthy();
+  });
+
   it("documents input and return contracts for each tool group", () => {
     render(<McpDocumentation endpoint={publicMcpEndpoint} />);
 
@@ -193,7 +232,7 @@ describe("McpDocumentation", () => {
     expect(screen.getAllByText(/perfil ADMIN/).length).toBeGreaterThan(0);
   });
 
-  it("explains access scopes, read-only limits, and available provider guides", () => {
+  it("explains access scopes, read-only limits, and the generic client guide", () => {
     render(<McpDocumentation endpoint={publicMcpEndpoint} />);
     selectTab(/Acesso e limites/);
 
@@ -209,11 +248,7 @@ describe("McpDocumentation", () => {
         /Não há ferramentas para gravar ou excluir dados/,
       ),
     ).toBeTruthy();
-    expect(
-      within(panel).getByText(
-        /Ainda não há guias de conexão validados para outros assistentes de IA/,
-      ),
-    ).toBeTruthy();
+    expect(within(panel).getByText(/use o guia geral da seção/)).toBeTruthy();
     expect(
       within(panel)
         .getByRole("link", { name: "suporte do ChatGPT" })
