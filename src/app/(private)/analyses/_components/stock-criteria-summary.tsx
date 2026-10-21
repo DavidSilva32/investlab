@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { RotateCcw, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,12 @@ import {
 import { classifyCvmSector } from "@/lib/cvm-sector-classification";
 import type { StockAnalysis } from "./stock-analysis-types";
 import { FundamentalIndicatorCard } from "./fundamental-indicator-card";
+import {
+  ManualStockValuationInputs,
+  type ManualStockValuationInput,
+} from "./manual-stock-valuation-inputs";
+
+const emptyManualValuationInputs: ManualStockValuationInput[] = [];
 
 function findRoeEquity(analysis: StockAnalysis) {
   const roe = analysis.indicators.find((indicator) => indicator.key === "roe");
@@ -90,11 +96,62 @@ export function StockCriteriaSummary({
   const [hasMaximumPbDraft, setHasMaximumPbDraft] = useState(true);
   const [minimumRoeDraft, setMinimumRoeDraft] = useState("15");
   const [storageMessage, setStorageMessage] = useState<string | null>(null);
+  const [manualInputsState, setManualInputsState] = useState<{
+    ticker: string;
+    inputs: ManualStockValuationInput[];
+  }>({ ticker: analysis.ticker, inputs: [] });
+  const manualInputs =
+    manualInputsState.ticker === analysis.ticker
+      ? manualInputsState.inputs
+      : emptyManualValuationInputs;
+  const updateManualInputs = useCallback(
+    (inputs: ManualStockValuationInput[]) =>
+      setManualInputsState({ ticker: analysis.ticker, inputs }),
+    [analysis.ticker],
+  );
   const roeEquity = useMemo(() => findRoeEquity(analysis), [analysis]);
+  const indicators = useMemo(() => {
+    const quoteIsVerified =
+      !analysis.priceIsStale &&
+      analysis.price !== null &&
+      analysis.price > 0 &&
+      analysis.priceUpdatedAt !== null &&
+      Number.isFinite(Date.parse(analysis.priceUpdatedAt));
+    return analysis.indicators.map((indicator) => {
+      if (indicator.value !== null || !quoteIsVerified) return indicator;
+      const key =
+        indicator.key === "pe"
+          ? "analysis_ltm_eps"
+          : indicator.key === "pb"
+            ? "analysis_bvps"
+            : null;
+      const input = key
+        ? manualInputs.find((entry) => entry.inputKey === key)
+        : undefined;
+      if (!input || input.value <= 0) return indicator;
+      const multiple = analysis.price! / input.value;
+      if (!Number.isFinite(multiple) || multiple <= 0) return indicator;
+      return {
+        ...indicator,
+        value: multiple,
+        unavailableReason: null,
+        referenceDate: input.asOf,
+        sourceDocument: null,
+        periodBasis:
+          indicator.key === "pe"
+            ? ("trailing_twelve_months" as const)
+            : ("point_in_time" as const),
+        marketDataDate: analysis.priceUpdatedAt,
+        manualSource: input.source,
+        manualBasis:
+          indicator.key === "pe" ? "LPA dos últimos 12 meses" : "VPA por ação",
+      };
+    });
+  }, [analysis, manualInputs]);
   const criteria = useMemo(() => {
-    const indicators = analysis.indicators.map((indicator) => {
+    const evaluatedIndicators = indicators.map((indicator) => {
       const isStale =
-        analysis.fundamentalsIsStale ||
+        (analysis.fundamentalsIsStale && !indicator.manualSource) ||
         ((indicator.key === "pe" || indicator.key === "pb") &&
           analysis.priceIsStale === true);
       return {
@@ -108,13 +165,13 @@ export function StockCriteriaSummary({
     return evaluateStockCriteria({
       instrument: analysis.instrumentType ?? "unknown",
       sector: analysis.issuerSector ?? null,
-      indicators,
+      indicators: evaluatedIndicators,
       equity: analysis.fundamentalsIsStale ? null : (roeEquity?.value ?? null),
       equityReferenceDate: roeEquity?.referenceDate ?? null,
       price: analysis.priceIsStale ? null : analysis.price,
       preferences,
     });
-  }, [analysis, preferences, roeEquity]);
+  }, [analysis, indicators, preferences, roeEquity]);
 
   function applyPreset(preset: Exclude<StockCriteriaPreset, "custom">) {
     const values = stockCriteriaPresets[preset];
@@ -350,7 +407,7 @@ export function StockCriteriaSummary({
         aria-label="Indicadores e avaliação"
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
       >
-        {analysis.indicators.map((indicator) => {
+        {indicators.map((indicator) => {
           const key = indicator.key;
           const criterion =
             key === "pe" || key === "pb" || key === "roe"
@@ -372,6 +429,26 @@ export function StockCriteriaSummary({
           );
         })}
       </div>
+      {(analysis.indicators.some(
+        (indicator) =>
+          (indicator.key === "pe" || indicator.key === "pb") &&
+          indicator.value === null,
+      ) ||
+        manualInputs.length > 0) && (
+        <ManualStockValuationInputs
+          key={analysis.ticker}
+          ticker={analysis.ticker}
+          quoteAvailable={
+            !analysis.priceIsStale &&
+            analysis.price !== null &&
+            analysis.price > 0 &&
+            Boolean(
+              analysis.priceUpdatedAt && Date.parse(analysis.priceUpdatedAt),
+            )
+          }
+          onChange={updateManualInputs}
+        />
+      )}
       {analysis.fundamentalsIsStale && (
         <p role="status" className="text-xs text-status-warning">
           {`Valores financeiros desatualizados${analysis.fundamentalsFetchedAt && Number.isFinite(Date.parse(analysis.fundamentalsFetchedAt)) ? ` · conferidos em ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(analysis.fundamentalsFetchedAt))}` : ""}. Limites suspensos.`}

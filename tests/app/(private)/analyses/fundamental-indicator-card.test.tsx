@@ -157,6 +157,30 @@ describe("FundamentalIndicatorCard", () => {
     expect(screen.getByText(/Data da cotação não informada/)).toBeTruthy();
   });
 
+  it("explains the generic base for a sourced manual indicator without a basis label", async () => {
+    render(
+      <FundamentalIndicatorCard
+        indicator={{
+          key: "pe",
+          value: 8,
+          unavailableReason: null,
+          referenceDate: "2026-06-30",
+          sourceDocument: null,
+          marketDataDate: "2026-09-19T15:30:00-03:00",
+          manualSource: "Relatório da empresa",
+        }}
+      />,
+    );
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
+    expect(
+      await screen.findByText(
+        "Base: valor por ação informado por você e cotação observada.",
+      ),
+    ).toBeTruthy();
+  });
+
   it.each([
     ["threshold_not_configured", "Defina um limite nas configurações"],
     [

@@ -1,6 +1,6 @@
 import { useReducedMotion } from "@/lib/use-reduced-motion";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, LoaderCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ChartContainer,
@@ -53,7 +53,7 @@ export function PriceHistoryChart({
   onRetry,
 }: {
   points: StockAnalysis["history"];
-  status?: "available" | "partial" | "empty" | "unavailable";
+  status?: "available" | "partial" | "empty" | "unavailable" | "loading";
   failure?: StockAnalysis["historyFailure"];
   retrying?: boolean;
   retryError?: boolean;
@@ -75,28 +75,40 @@ export function PriceHistoryChart({
           <span
             className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full ${status === "unavailable" || status === "partial" ? "bg-status-warning/10 text-status-warning" : "bg-muted text-muted-foreground"}`}
           >
-            <AlertCircle className="size-4" aria-hidden="true" />
+            {status === "loading" ? (
+              <LoaderCircle
+                className="size-4 motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <AlertCircle className="size-4" aria-hidden="true" />
+            )}
           </span>
           <div className="min-w-0 space-y-1">
             <p className="text-sm font-medium text-foreground">
-              {status === "unavailable"
-                ? "Histórico temporariamente indisponível"
-                : status === "partial"
-                  ? "Histórico parcial"
-                  : status === "empty"
-                    ? "Sem cotações para este ativo ou período"
-                    : "Histórico insuficiente para montar o gráfico"}
+              {status === "loading"
+                ? "Carregando histórico de cotações"
+                : status === "unavailable"
+                  ? "Histórico temporariamente indisponível"
+                  : status === "partial"
+                    ? "Histórico parcial"
+                    : status === "empty"
+                      ? "Sem cotações para este ativo ou período"
+                      : "Histórico insuficiente para montar o gráfico"}
             </p>
             <p className="text-xs text-muted-foreground">
               {retryError
                 ? "Não foi possível atualizar agora. Tente novamente."
-                : (status === "unavailable" || status === "partial") && failure
-                  ? failureMessages[failure.reason]
-                  : status === "empty"
-                    ? "A fonte não retornou preços de fechamento neste intervalo."
-                    : status === "partial"
-                      ? "Algumas cotações foram ignoradas por estarem incompletas."
-                      : "O gráfico precisa de pelo menos dois fechamentos observados."}
+                : status === "loading"
+                  ? "A cotação e os fundamentos já podem ser consultados."
+                  : (status === "unavailable" || status === "partial") &&
+                      failure
+                    ? failureMessages[failure.reason]
+                    : status === "empty"
+                      ? "A fonte não retornou preços de fechamento neste intervalo."
+                      : status === "partial"
+                        ? "Algumas cotações foram ignoradas por estarem incompletas."
+                        : "O gráfico precisa de pelo menos dois fechamentos observados."}
             </p>
           </div>
         </div>

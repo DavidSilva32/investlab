@@ -58,59 +58,21 @@ describe("StockFundamentalsRepository", () => {
     expect(orderBy).toHaveBeenCalledOnce();
   });
 
-  it("skips replacement when no periods are available", async () => {
-    await expect(
-      repository.save("PETR4", "12345678000190", "v1", []),
-    ).resolves.toBeUndefined();
-    expect(database.transaction).not.toHaveBeenCalled();
-  });
+  it("lists refresh work due for the weekly cache refresh", async () => {
+    const rows = [
+      { ticker: "PETR4", cnpj: "12345678000190", sourceVersion: "v1" },
+    ];
+    const limit = vi.fn().mockResolvedValue(rows);
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const where = vi.fn().mockReturnValue({ orderBy });
+    const from = vi.fn().mockReturnValue({ where });
+    database.select.mockReturnValue({ from });
 
-  it("replaces the ticker rows transactionally with normalized periods", async () => {
-    const where = vi.fn().mockResolvedValue(undefined);
-    const values = vi.fn().mockResolvedValue(undefined);
-    const transaction = {
-      delete: vi.fn().mockReturnValue({ where }),
-      insert: vi.fn().mockReturnValue({ values }),
-    };
-    database.transaction.mockImplementation(
-      (callback: (tx: typeof transaction) => unknown) => callback(transaction),
-    );
-
-    await repository.save("PETR4", "12345678000190", "dfp-2025", [period]);
-
-    expect(transaction.delete).toHaveBeenCalledOnce();
+    await expect(repository.listDueRefreshes("v1", 5)).resolves.toEqual(rows);
+    expect(database.select).toHaveBeenCalledOnce();
     expect(where).toHaveBeenCalledOnce();
-    expect(transaction.insert).toHaveBeenCalledOnce();
-    expect(values).toHaveBeenCalledWith([
-      {
-        ticker: "PETR4",
-        cnpj: "12345678000190",
-        periodType: "annual",
-        referenceDate: "2025-12-31",
-        periodStart: "2025-01-01",
-        periodEnd: "2025-12-31",
-        filingReferenceDate: "2025-12-31",
-        exerciseOrder: "last",
-        periodBasis: "annual",
-        revenueVersion: "1",
-        revenueAccountLabel: "Receitas de venda de bens e serviços",
-        netIncomeVersion: "1",
-        netIncomeAccount: "3.11",
-        netIncomeConcept: "consolidated_net_income",
-        equityVersion: "1",
-        equityAccount: "2.03",
-        equityConcept: "consolidated_equity",
-        revenue: "100",
-        netIncome: "10",
-        equity: "50",
-        assets: "80",
-        liabilities: "30",
-        cash: "20",
-        debt: "15",
-        sourceDocument: "DFP",
-        sourceVersion: "dfp-2025",
-      },
-    ]);
+    expect(orderBy).toHaveBeenCalledOnce();
+    expect(limit).toHaveBeenCalledWith(5);
   });
 
   it("reports idle when a refresh lease does not exist", async () => {

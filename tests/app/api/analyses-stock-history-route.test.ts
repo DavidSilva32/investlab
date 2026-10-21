@@ -78,3 +78,6 @@ describe("stock history route", () => {
     );
   });
 });
+vi.mock("@/backend/services/privacy-center.service", () => ({
+  privacyCenterService: { hasAcceptedCurrentTerms: vi.fn(async () => true) },
+}));

@@ -8,15 +8,15 @@ import {
 } from "@/app/(private)/portfolio/_components/portfolio-navigation";
 
 export default async function PortfolioPage({
-  searchParams = Promise.resolve({}),
+  searchParams,
 }: {
-  searchParams?: Promise<{
+  searchParams: Promise<{
     view?: string;
     panel?: string;
     objective?: string;
     screen?: string;
   }>;
-} = {}) {
+}) {
   const { view, panel, objective, screen } = await searchParams;
   const activeView: PortfolioView =
     panel === "objectives" || panel === "classification"

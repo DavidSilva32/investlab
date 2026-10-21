@@ -54,6 +54,8 @@ export type AnalysisIndicator = {
     | "point_in_time"
     | null;
   marketDataDate?: string | null;
+  manualSource?: string | null;
+  manualBasis?: string | null;
 };
 
 export type StockAnalysis = {

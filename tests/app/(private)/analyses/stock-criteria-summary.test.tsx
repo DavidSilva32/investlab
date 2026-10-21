@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const apiRequest = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api-client", () => ({ apiRequest }));
 import { StockCriteriaSummary } from "@/app/(private)/analyses/_components/stock-criteria-summary";
 import type { StockAnalysis } from "@/app/(private)/analyses/_components/stock-analysis-types";
 
@@ -72,7 +75,10 @@ function analysis(overrides: Partial<StockAnalysis> = {}): StockAnalysis {
 }
 
 describe("StockCriteriaSummary", () => {
-  beforeEach(() => window.localStorage.clear());
+  beforeEach(() => {
+    window.localStorage.clear();
+    apiRequest.mockReset().mockResolvedValue({ inputs: [] });
+  });
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
@@ -140,6 +146,211 @@ describe("StockCriteriaSummary", () => {
       screen.getByRole("listitem", {
         name: /Margem Líquida: 5.0%, Não aplicável/,
       }),
+    ).toBeTruthy();
+  });
+
+  it("calculates missing multiples from user-supplied per-share values and the dated quote", async () => {
+    apiRequest.mockResolvedValue({
+      inputs: [
+        {
+          inputKey: "analysis_ltm_eps",
+          value: 2,
+          source: "Relações com Investidores",
+          asOf: "2025-12-31",
+        },
+        {
+          inputKey: "analysis_bvps",
+          value: 16,
+          source: "Relatório anual",
+          asOf: "2025-12-31",
+        },
+      ],
+    });
+    const source = analysis();
+    source.indicators = source.indicators.map((indicator) =>
+      indicator.key === "pe" ||
+      indicator.key === "pb" ||
+      indicator.key === "netMargin"
+        ? {
+            ...indicator,
+            value: null,
+            referenceDate: null,
+            sourceDocument: null,
+          }
+        : indicator,
+    );
+    render(<StockCriteriaSummary analysis={source} />);
+
+    expect(
+      screen.getByRole("listitem", { name: /P\/L: Indisponível/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", { name: /P\/VP: Indisponível/ }),
+    ).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Usar valores salvos nesta análise",
+      }),
+    );
+    expect(
+      await screen.findByRole("listitem", { name: /P\/L: 10,0x/ }),
+    ).toBeTruthy();
+    expect(screen.getByRole("listitem", { name: /P\/VP: 1,3x/ })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Ajuda sobre P/L" }));
+    expect(
+      (await screen.findAllByText(/Relações com Investidores/)).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/Relações com Investidores · 31 de dez. de 2025/)
+        .length,
+    ).toBeGreaterThan(0);
+    expect(apiRequest).toHaveBeenCalledWith(
+      "/api/analyses/stocks/ABCD3/manual-inputs",
+      undefined,
+      "Não foi possível carregar os valores informados.",
+    );
+  });
+
+  it("does not calculate P/L from a zero or negative reported LPA", async () => {
+    apiRequest.mockResolvedValue({
+      inputs: [
+        {
+          inputKey: "analysis_ltm_eps",
+          value: -0.75,
+          source: "Relatório anual",
+          asOf: "2025-12-31",
+        },
+      ],
+    });
+    const source = analysis();
+    source.indicators = source.indicators.map((indicator) =>
+      indicator.key === "pe"
+        ? {
+            ...indicator,
+            value: null,
+            referenceDate: null,
+            sourceDocument: null,
+          }
+        : indicator,
+    );
+    render(<StockCriteriaSummary analysis={source} />);
+    await screen.findByText("Completar P/L e P/VP");
+    expect(
+      screen.getByRole("listitem", { name: /P\/L: Indisponível/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/LPA zero ou negativo: o P\/L não é calculado/),
+    ).toBeTruthy();
+  });
+
+  it("does not reuse a previous ticker's manual values for a new analysis", async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        inputs: [
+          {
+            inputKey: "analysis_ltm_eps",
+            value: 2,
+            source: "Relatório anual",
+            asOf: "2025-12-31",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ inputs: [] });
+    const source = analysis();
+    source.indicators = source.indicators.map((indicator) =>
+      indicator.key === "pe"
+        ? {
+            ...indicator,
+            value: null,
+            referenceDate: null,
+            sourceDocument: null,
+          }
+        : indicator,
+    );
+    const view = render(<StockCriteriaSummary analysis={source} />);
+    await userEvent.setup().click(
+      await screen.findByRole("button", {
+        name: "Usar valores salvos nesta análise",
+      }),
+    );
+    expect(
+      await screen.findByRole("listitem", { name: /P\/L: 10,0x/ }),
+    ).toBeTruthy();
+
+    view.rerender(
+      <StockCriteriaSummary
+        analysis={analysis({
+          ticker: "WXYZ3",
+          indicators: source.indicators,
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole("listitem", { name: /P\/L: Indisponível/ }),
+    ).toBeTruthy();
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2));
+  });
+
+  it("handles absent ROE equity and missing instrument type without assumptions", () => {
+    const source = analysis({
+      instrumentType: undefined,
+      fundamentals: analysis().fundamentals.map((period) => ({
+        ...period,
+        equity: null,
+      })),
+    });
+    render(<StockCriteriaSummary analysis={source} />);
+    expect(
+      screen.getByRole("listitem", { name: /ROE: 12,0%, Sem dados/ }),
+    ).toBeTruthy();
+  });
+
+  it("formats a confirmed fundamentals refresh timestamp", () => {
+    render(
+      <StockCriteriaSummary
+        analysis={analysis({
+          fundamentalsIsStale: true,
+          fundamentalsFetchedAt: "2026-10-02T12:00:00.000Z",
+        })}
+      />,
+    );
+    expect(
+      screen.getByText(/Valores financeiros desatualizados · conferidos em/),
+    ).toBeTruthy();
+  });
+
+  it("keeps a multiple unavailable when a finite per-share value overflows division", async () => {
+    apiRequest.mockResolvedValue({
+      inputs: [
+        {
+          inputKey: "analysis_ltm_eps",
+          value: Number.MIN_VALUE,
+          source: "Relatório anual",
+          asOf: "2025-12-31",
+        },
+      ],
+    });
+    const source = analysis();
+    source.indicators = source.indicators.map((indicator) =>
+      indicator.key === "pe"
+        ? {
+            ...indicator,
+            value: null,
+            referenceDate: null,
+            sourceDocument: null,
+          }
+        : indicator,
+    );
+    render(<StockCriteriaSummary analysis={source} />);
+
+    await userEvent.setup().click(
+      await screen.findByRole("button", {
+        name: "Usar valores salvos nesta análise",
+      }),
+    );
+    expect(
+      await screen.findByRole("listitem", { name: /P\/L: Indisponível/ }),
     ).toBeTruthy();
   });
 

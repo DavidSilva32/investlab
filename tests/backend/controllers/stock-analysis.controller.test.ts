@@ -9,6 +9,7 @@ vi.mock("@/backend/services/stock-analysis.service", () => ({
     getMarketByTicker: vi.fn(),
     getHistoryByTicker: vi.fn(),
     requestFundamentalsRefresh: vi.fn(),
+    refreshDueFundamentals: vi.fn(),
   },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
@@ -120,5 +121,25 @@ describe("StockAnalysisController market stage", () => {
     expect(
       stockAnalysisService.requestFundamentalsRefresh,
     ).toHaveBeenCalledWith("ITUB4", "60701190000104", "request-refresh");
+  });
+
+  it("delegates weekly due-fundamentals refresh to the service", async () => {
+    const result = {
+      selectedIssuers: 2,
+      attemptedIssuers: 2,
+      updatedIssuers: 1,
+      unavailableIssuers: 1,
+      remainingIssuers: 0,
+    };
+    vi.mocked(stockAnalysisService.refreshDueFundamentals).mockResolvedValue(
+      result as never,
+    );
+
+    await expect(
+      new StockAnalysisController().refreshDueFundamentals("request-weekly"),
+    ).resolves.toEqual(result);
+    expect(stockAnalysisService.refreshDueFundamentals).toHaveBeenCalledWith(
+      "request-weekly",
+    );
   });
 });

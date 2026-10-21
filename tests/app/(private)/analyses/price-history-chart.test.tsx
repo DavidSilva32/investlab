@@ -57,6 +57,15 @@ vi.mock("recharts", () => ({
 describe("PriceHistoryChart", () => {
   afterEach(cleanup);
 
+  it("shows a quiet loading state while optional history is fetched", () => {
+    render(<PriceHistoryChart points={[]} status="loading" />);
+
+    expect(screen.getByText("Carregando histórico de cotações")).toBeTruthy();
+    expect(
+      screen.getByText("A cotação e os fundamentos já podem ser consultados."),
+    ).toBeTruthy();
+  });
+
   it("renders the chronological points with a visible theme color", () => {
     render(
       <PriceHistoryChart

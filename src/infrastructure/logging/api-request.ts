@@ -25,7 +25,9 @@ function isOwnerScopedPrivateApi(route: string) {
   return (
     /^\/api\/(portfolio|imports|positions|emergency-reserve|cdb-rates)(\/|$)/.test(
       route,
-    ) || route.startsWith("/api/analyses/portfolio-opportunities")
+    ) ||
+    route.startsWith("/api/analyses/portfolio-opportunities") ||
+    route.startsWith("/api/analyses/stocks/")
   );
 }
 
@@ -59,6 +61,7 @@ const supportReadOnlyRoutes = new Set([
   "GET /api/analyses/portfolio-opportunities",
   "GET /api/analyses/stocks/search",
   "GET /api/analyses/stocks/[ticker]",
+  "GET /api/analyses/stocks/[ticker]/manual-inputs",
   "GET /api/analyses/stocks/[ticker]/history",
   "GET /api/screener",
   "POST /api/analyses/companies/compare",

@@ -19,10 +19,8 @@ vi.mock("@/infrastructure/logging/logger", () => ({
     withContext: (_context: unknown, operation: () => unknown) => operation(),
   },
 }));
-import {
-  POST,
-  screenerMarketRefreshRouteInternals,
-} from "@/app/api/screener/market/refresh/route";
+import { POST } from "@/app/api/screener/market/refresh/route";
+import { isSameOrigin } from "@/lib/http/is-same-origin";
 
 const request = (origin?: string) =>
   new Request("http://localhost/api/screener/market/refresh", {
@@ -40,26 +38,14 @@ describe("POST /api/screener/market/refresh", () => {
   });
 
   it("accepts only a same-origin browser request", async () => {
-    expect(
-      screenerMarketRefreshRouteInternals.isSameOrigin(
-        request("http://localhost"),
-      ),
-    ).toBe(true);
-    expect(
-      screenerMarketRefreshRouteInternals.isSameOrigin(
-        request("https://attacker.test"),
-      ),
-    ).toBe(false);
-    expect(screenerMarketRefreshRouteInternals.isSameOrigin(request())).toBe(
-      false,
-    );
+    expect(isSameOrigin(request("http://localhost"))).toBe(true);
+    expect(isSameOrigin(request("https://attacker.test"))).toBe(false);
+    expect(isSameOrigin(request())).toBe(false);
     const malformed = new Request("http://localhost", {
       method: "POST",
       headers: { origin: "invalid" },
     });
-    expect(screenerMarketRefreshRouteInternals.isSameOrigin(malformed)).toBe(
-      false,
-    );
+    expect(isSameOrigin(malformed)).toBe(false);
     const response = await POST(request("https://attacker.test"));
     expect(response.status).toBe(403);
     expect(mocks.refresh).not.toHaveBeenCalled();
