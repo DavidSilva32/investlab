@@ -866,6 +866,38 @@ describe("StockAnalysisDashboard", () => {
     expect(container.querySelector(".text-status-danger")).toBeTruthy();
   });
 
+  it("defaults to the longest covered fallback interval and presents it as partial history", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...analysis,
+          historyStatus: "partial",
+          historyFailure: { reason: "http_error" },
+          history: [
+            { date: "2026-07-22", close: 10 },
+            { date: "2026-08-20", close: 11 },
+            { date: "2026-10-20", close: 12 },
+          ],
+        }),
+      ),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    const selectedPeriod = await screen.findByRole("button", {
+      name: "3 meses",
+    });
+    expect(selectedPeriod.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("+20%")).toBeTruthy();
+    expect(screen.getByText(/Exibindo cotações de/)).toBeTruthy();
+    expect(
+      screen.queryByText("A fonte de cotações recusou a consulta."),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Tentar novamente" }),
+    ).toBeNull();
+  });
+
   it("shows zero change neutrally", async () => {
     vi.stubGlobal(
       "fetch",

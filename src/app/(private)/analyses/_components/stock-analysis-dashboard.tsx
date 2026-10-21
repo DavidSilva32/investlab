@@ -218,7 +218,7 @@ export function StockAnalysisDashboard({
     dataUpdatedAt: 0,
     intervalMs: 2_000,
   });
-  const [days, setDays] = useState(365);
+  const [days, setDays] = useState<number | null>(null);
   const analysisQuery = useQuery({
     queryKey: queryKeys.analyses.stock(selectedTicker.toUpperCase()),
     enabled: Boolean(selectedTicker),
@@ -587,7 +587,7 @@ export function StockAnalysisDashboard({
         ? queryTicker.toUpperCase()
         : "";
       setSelectedTicker(ticker);
-      setDays(365);
+      setDays(null);
       setNotifiedTicker(null);
       pendingNotification.current = null;
     }
@@ -602,7 +602,7 @@ export function StockAnalysisDashboard({
       const url = new URL(window.location.href);
       url.searchParams.set("ticker", ticker);
       window.history.pushState({}, "", url);
-      setDays(365);
+      setDays(null);
       void load(ticker);
     },
     [load],
@@ -615,14 +615,22 @@ export function StockAnalysisDashboard({
         .sort((left, right) => left.date.localeCompare(right.date)),
     [analysis, historyRetryQuery.data],
   );
-  const points = useMemo(() => {
-    const latest = history.at(-1);
-    if (!latest) return [];
-    const from = periodStart(latest.date, days);
-    return history.filter(
-      (point) => new Date(`${point.date}T00:00:00Z`) >= from,
-    );
-  }, [days, history]);
+  const intervals = historyIntervals.filter(({ days }) =>
+    hasPeriodCoverage(history, days),
+  );
+  const selectedDays =
+    days !== null && intervals.some((interval) => interval.days === days)
+      ? days
+      : (intervals.at(-1)?.days ?? days ?? 365);
+  const latestHistoryDate = history.at(-1)?.date;
+  const historyStartDate = latestHistoryDate
+    ? periodStart(latestHistoryDate, selectedDays)
+    : null;
+  const points = historyStartDate
+    ? history.filter(
+        (point) => new Date(`${point.date}T00:00:00Z`) >= historyStartDate,
+      )
+    : [];
 
   const search = (
     <AnalysisStockSearch ticker={selectedTicker} onSelect={selectTicker} />
@@ -738,16 +746,13 @@ export function StockAnalysisDashboard({
       period.periodBasis === "quarterly" &&
       period.exerciseOrder !== "previous",
   );
-  const intervals = historyIntervals.filter(({ days }) =>
-    hasPeriodCoverage(history, days),
-  );
   const selectedIntervalLabel = historyIntervals.find(
-    (interval) => interval.days === days,
+    (interval) => interval.days === selectedDays,
   )!.label;
   const firstVisiblePrice = points[0]?.close;
   const lastVisiblePrice = points.at(-1)?.close;
   const priceChange =
-    intervals.some((interval) => interval.days === days) &&
+    intervals.some((interval) => interval.days === selectedDays) &&
     points.length >= 2 &&
     Number.isFinite(firstVisiblePrice) &&
     Number.isFinite(lastVisiblePrice) &&
@@ -989,8 +994,10 @@ export function StockAnalysisDashboard({
                       key={interval.days}
                       type="button"
                       size="sm"
-                      variant={interval.days === days ? "default" : "outline"}
-                      aria-pressed={interval.days === days}
+                      variant={
+                        interval.days === selectedDays ? "default" : "outline"
+                      }
+                      aria-pressed={interval.days === selectedDays}
                       onClick={() => setDays(interval.days)}
                     >
                       {interval.label}
@@ -1008,9 +1015,17 @@ export function StockAnalysisDashboard({
                     ? "unavailable"
                     : historyRetryQuery.isFetching
                       ? "loading"
-                      : (analysis.historyStatus ?? "unavailable"))
+                      : (analysis.historyStatus ??
+                        (history.length > 0 ? "available" : "unavailable")))
                 }
-                failure={historyFailure}
+                failure={
+                  historyRetryQuery.isError
+                    ? historyFailure
+                    : (historyRetryQuery.data?.historyStatus ??
+                          analysis.historyStatus) === "partial"
+                      ? undefined
+                      : historyFailure
+                }
                 retrying={historyRetryQuery.isFetching}
                 retryError={historyRetryQuery.error instanceof Error}
                 retryAfterSeconds={historyRetryRemaining}

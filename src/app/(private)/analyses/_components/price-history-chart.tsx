@@ -196,19 +196,23 @@ export function PriceHistoryChart({
           />
         </AreaChart>
       </ChartContainer>
-      {status === "partial" && (
+      {(status === "partial" || status === "unavailable" || retryError) && (
         <div
           className="flex flex-col gap-2 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 sm:flex-row sm:items-center sm:justify-between"
-          role={failure ? "status" : undefined}
+          role={
+            status === "partial" || failure || retryError ? "status" : undefined
+          }
         >
           <p className="text-xs text-status-warning">
             {retryError
               ? "Não foi possível atualizar agora. Tente novamente."
-              : failure
-                ? failureMessages[failure.reason]
-                : "Algumas cotações incompletas foram ignoradas."}
+              : status === "partial"
+                ? `Exibindo cotações de ${dateLabel(points[0]!.date)} a ${dateLabel(points.at(-1)!.date)}; este é o período mais longo disponível.`
+                : failure
+                  ? failureMessages[failure.reason]
+                  : "O histórico não pôde ser atualizado."}
           </p>
-          {failure && onRetry && (
+          {(status === "unavailable" || retryError) && onRetry && (
             <Button
               type="button"
               variant="outline"

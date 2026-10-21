@@ -140,12 +140,12 @@ describe("PriceHistoryChart", () => {
     expect(screen.getByTestId("price-chart").dataset.points).toBe(
       "2026-01-01,2026-01-02",
     );
-    expect(
-      screen.getByText("Algumas cotações incompletas foram ignoradas."),
-    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Exibindo cotações de 01 de jan. de 2026 a 02 de jan. de 2026; este é o período mais longo disponível.",
+    );
   });
 
-  it("explains a fallback failure and offers retry while partial points remain visible", () => {
+  it("keeps visible points and offers retry when refreshing partial history fails", () => {
     const onRetry = vi.fn();
     render(
       <PriceHistoryChart
@@ -153,7 +153,7 @@ describe("PriceHistoryChart", () => {
           { date: "2026-01-01", close: 10 },
           { date: "2026-01-02", close: 11 },
         ]}
-        status="partial"
+        status="unavailable"
         failure={{ reason: "timeout" }}
         onRetry={onRetry}
       />,
@@ -197,7 +197,7 @@ describe("PriceHistoryChart", () => {
     ).toBe(true);
   });
 
-  it("shows the retry cooldown for a partial chart", () => {
+  it("shows the retry cooldown when history is unavailable", () => {
     const onRetry = vi.fn();
     render(
       <PriceHistoryChart
@@ -205,7 +205,7 @@ describe("PriceHistoryChart", () => {
           { date: "2026-01-01", close: 10 },
           { date: "2026-01-02", close: 11 },
         ]}
-        status="partial"
+        status="unavailable"
         failure={{ reason: "rate_limited", retryAfterSeconds: 8 }}
         retryAfterSeconds={8}
         onRetry={onRetry}
@@ -218,12 +218,12 @@ describe("PriceHistoryChart", () => {
     expect(onRetry).not.toHaveBeenCalled();
   });
 
-  it("shows the original provider failure with retry in the compact partial state", () => {
+  it("shows the source failure with retry when history cannot be rendered", () => {
     const onRetry = vi.fn();
     render(
       <PriceHistoryChart
         points={[{ date: "2026-01-01", close: 10 }]}
-        status="partial"
+        status="unavailable"
         failure={{ reason: "provider_error" }}
         onRetry={onRetry}
       />,
@@ -236,23 +236,24 @@ describe("PriceHistoryChart", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
-  it("shows a compact partial state and keeps manual retry available", () => {
-    const onRetry = vi.fn();
+  it("explains successfully loaded partial history without a failure or retry", () => {
     render(
       <PriceHistoryChart
-        points={[{ date: "2026-01-01", close: 10 }]}
+        points={[
+          { date: "2026-01-01", close: 10 },
+          { date: "2026-01-02", close: 11 },
+        ]}
         status="partial"
-        onRetry={onRetry}
       />,
     );
-    expect(screen.getByText("Histórico parcial")).toBeTruthy();
     expect(
       screen.getByText(
-        "Algumas cotações foram ignoradas por estarem incompletas.",
+        /Exibindo cotações de 01 de jan\. de 2026 a 02 de jan\. de 2026/,
       ),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("button", { name: "Tentar novamente" }),
+    ).toBeNull();
   });
 
   it("explains a temporary source failure and offers a focused retry", () => {
