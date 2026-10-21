@@ -227,6 +227,37 @@ describe("PortfolioClient", () => {
     expect(fetchMock).not.toHaveBeenCalledWith("/api/portfolio/allocation");
   });
 
+  it("does not offer individual analysis for positions without a classification", async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === "/api/portfolio"
+            ? {
+                ...overview,
+                positions: [
+                  {
+                    id: "unclassified-position",
+                    product: "Ativo não classificado",
+                    assetCode: "BBSE3",
+                    totalValue: "1000",
+                    institution: "Corretora",
+                    maturityAt: null,
+                    classification: null,
+                  },
+                ],
+              }
+            : monthlyReview,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPortfolio("positions");
+
+    expect(await screen.findByText("Posições")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Analisar ação/ })).toBeNull();
+  });
+
   it("retries a monthly close request and refetches for the selected year", async () => {
     let monthlyReviewRequest = 0;
     const fetchMock = vi.fn((url: string) => {
