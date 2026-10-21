@@ -145,6 +145,26 @@ describe("PriceHistoryChart", () => {
     );
   });
 
+  it("explains partial history with fewer than two points and keeps retry available", () => {
+    const onRetry = vi.fn();
+    render(
+      <PriceHistoryChart
+        points={[{ date: "2026-01-01", close: 10 }]}
+        status="partial"
+        onRetry={onRetry}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Histórico parcial",
+    );
+    expect(screen.getByRole("status").textContent).toContain(
+      "Algumas cotações foram ignoradas por estarem incompletas.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("keeps visible points and offers retry when refreshing partial history fails", () => {
     const onRetry = vi.fn();
     render(
@@ -234,6 +254,27 @@ describe("PriceHistoryChart", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the unavailable fallback message when failure details are absent", () => {
+    render(
+      <PriceHistoryChart
+        points={[
+          { date: "2026-01-01", close: 10 },
+          { date: "2026-01-02", close: 11 },
+        ]}
+        status="unavailable"
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("O histórico não pôde ser atualizado."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    ).toBeTruthy();
   });
 
   it("explains successfully loaded partial history without a failure or retry", () => {

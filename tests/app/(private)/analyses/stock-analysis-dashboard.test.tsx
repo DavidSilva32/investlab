@@ -898,6 +898,18 @@ describe("StockAnalysisDashboard", () => {
     ).toBeNull();
   });
 
+  it("uses the unavailable state when history is empty and the provider omits its status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ ...analysis, history: [] })),
+    );
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    expect(
+      await screen.findByText("Histórico temporariamente indisponível"),
+    ).toBeTruthy();
+  });
+
   it("shows zero change neutrally", async () => {
     vi.stubGlobal(
       "fetch",
