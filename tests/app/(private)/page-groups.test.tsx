@@ -31,7 +31,7 @@ describe("secondary pages", () => {
       renderWithQueryClient(
         await AnalysesPage({ searchParams: Promise.resolve({}) }),
       ),
-    ).toContain("Minha carteira");
+    ).toContain("Análise individual");
     expect(renderWithQueryClient(await SettingsPage())).toContain(
       "Fundamentos e cadastro",
     );

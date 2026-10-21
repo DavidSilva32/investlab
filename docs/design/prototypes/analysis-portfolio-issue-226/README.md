@@ -1,5 +1,7 @@
 # Proposta — Minha carteira em Análises (#226)
 
+> **Histórico:** a experiência Minha carteira dentro de Análises foi removida na issue #257. Este protótipo e suas capturas ficam como registro das decisões anteriores, não como especificação ativa.
+
 ## Escopo e contexto
 
 - **Rota e componente:** `/analyses`, aba “Minha carteira”, implementada em `src/app/(private)/analyses/_components/portfolio-opportunities.tsx`.

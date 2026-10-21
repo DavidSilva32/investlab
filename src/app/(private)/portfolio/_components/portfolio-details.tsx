@@ -18,8 +18,10 @@ import {
 } from "@/components/portfolio-table";
 import { formatCurrency, formatQuantity } from "@/lib/utils";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
+import Link from "next/link";
 import { useState } from "react";
 import {
+  BarChart3,
   Info,
   MoreHorizontal,
   Pencil,
@@ -94,6 +96,7 @@ const currentValueCents = (row: PortfolioPosition) => {
 const positionColumns = (
   onAdjustRate: (position: PortfolioPosition) => void,
   onDelete: (position: PortfolioPosition) => void,
+  analysisTickersByPositionId: ReadonlyMap<string, string>,
 ): PortfolioTableColumn<PortfolioPosition>[] => [
   {
     id: "product",
@@ -355,6 +358,7 @@ const positionColumns = (
     render: (row) => {
       const isDiCdb =
         /^CDB\b/i.test(row.product) && /^(DI|CDI)$/i.test(row.indexer ?? "");
+      const analysisTicker = analysisTickersByPositionId.get(row.id);
       if (row.source !== "MANUAL" && row.source !== "B3") return null;
 
       return (
@@ -372,6 +376,16 @@ const positionColumns = (
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {analysisTicker && (
+                <DropdownMenuItem asChild>
+                  <Link
+                    href={`/analises?ticker=${encodeURIComponent(analysisTicker)}`}
+                  >
+                    <BarChart3 aria-hidden="true" />
+                    Analisar ação
+                  </Link>
+                </DropdownMenuItem>
+              )}
               {isDiCdb && row.assetCode && (
                 <DropdownMenuItem onSelect={() => onAdjustRate(row)}>
                   <Settings2 aria-hidden="true" />
@@ -556,8 +570,10 @@ const movementColumns = (
 
 export function PositionDetails({
   positions,
+  analysisTickersByPositionId = new Map(),
 }: {
   positions: PortfolioPosition[];
+  analysisTickersByPositionId?: ReadonlyMap<string, string>;
 }) {
   const [ratePosition, setRatePosition] = useState<PortfolioPosition | null>(
     null,
@@ -616,11 +632,15 @@ export function PositionDetails({
         </CardHeader>
         <CardContent className="p-0">
           <PortfolioTable
-            columns={positionColumns((position) => {
-              setRatePosition(position);
-              setRateDialogKey((key) => key + 1);
-              setRateDialogOpen(true);
-            }, setPositionToDelete)}
+            columns={positionColumns(
+              (position) => {
+                setRatePosition(position);
+                setRateDialogKey((key) => key + 1);
+                setRateDialogOpen(true);
+              },
+              setPositionToDelete,
+              analysisTickersByPositionId,
+            )}
             rows={positions}
             initialSort={{ id: "product", direction: "asc" }}
             emptyMessage="Importe um arquivo da B3 ou adicione uma posição manual."

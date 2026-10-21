@@ -45,6 +45,11 @@ export type PortfolioPosition = {
   cdbProjectedThroughDate?: string | null;
   cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
   cdbEstimateLimitation?: string | null;
+  classification?: {
+    assetClass: string | null;
+    subClass: string | null;
+    geography: string | null;
+  };
 };
 
 export type ClassifiedPosition = {

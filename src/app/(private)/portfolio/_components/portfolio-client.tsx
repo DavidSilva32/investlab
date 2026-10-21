@@ -26,6 +26,7 @@ import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 import type { ContributionGuidance } from "@/lib/next-contribution-guidance";
 import type { PortfolioInsights } from "@/lib/portfolio-insights";
 import type { PortfolioConcentration } from "@/lib/portfolio-concentration";
+import { getAnalyzableEquityTicker } from "@/lib/analyzable-equity";
 import { MovementDetails, PositionDetails } from "./portfolio-details";
 import {
   PortfolioOverview,
@@ -60,6 +61,7 @@ export function PortfolioClient({
 }) {
   const overviewQuery = usePortfolioOverview<Overview>(loadErrorMessage);
   const allocationQuery = usePortfolioAllocation<{
+    positions: ClassifiedPosition[];
     classDistribution: PortfolioConcentration;
   }>(activeView === "overview");
   const [monthlyReviewPeriod, setMonthlyReviewPeriod] = useState<string | null>(
@@ -70,6 +72,19 @@ export function PortfolioClient({
     activeView === "overview",
   );
   const overview = overviewQuery.data;
+  const analysisTickersByPositionId = useMemo(() => {
+    const tickers = new Map<string, string>();
+    for (const position of overview?.positions ?? []) {
+      if (!position.classification) continue;
+      const ticker = getAnalyzableEquityTicker({
+        product: position.product,
+        assetCode: position.assetCode,
+        classification: position.classification,
+      });
+      if (ticker) tickers.set(position.id, ticker);
+    }
+    return tickers;
+  }, [overview?.positions]);
   const classification = useMemo(() => {
     if (allocationQuery.isError) return { status: "unavailable" as const };
     if (allocationQuery.data) {
@@ -303,7 +318,10 @@ export function PortfolioClient({
           </div>
         </div>
       ) : activeView === "positions" ? (
-        <PositionDetails positions={overview.positions} />
+        <PositionDetails
+          positions={overview.positions}
+          analysisTickersByPositionId={analysisTickersByPositionId}
+        />
       ) : (
         <MovementDetails movements={overview.movements} />
       )}

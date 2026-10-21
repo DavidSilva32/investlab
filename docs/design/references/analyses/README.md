@@ -2,6 +2,8 @@
 
 ## Minha carteira
 
+**Histórica — experiência removida na issue #257.** Esta proposta e o restante desta seção documentam a aba que deixou de existir; não devem ser usadas como especificação ativa nem regeneradas automaticamente.
+
 `design-reference.png` é uma proposta desktop de IA recriada em 06/10/2026 para a aba “Minha carteira” em `/analyses`, não uma captura do produto. A versão azul/neutra substitui a antiga proposta verde, que incluía controles sem suporte. Tickers, valores, datas e fontes são sintéticos.
 
 A referência atual mostra as abas “Minha carteira” e “Análise individual”, a comparação de referências das ações, a premissa configurável do Bazin e cartões de Graham e Bazin com fonte e data. Não incluir ordenação por ticker nem o CTA “Saiba mais sobre as metodologias”: esses controles não existem na tela. As referências calculadas são para estudo e não determinam aporte.
@@ -44,6 +46,8 @@ Usar superfícies neutras e identidade azul. O histórico de cotação usa a cor
 ## Comparar empresas
 
 `company-comparison-reference.png` é uma proposta desktop gerada em 06/10/2026 para a nova aba de comparação em `/analyses`. Mostra a seleção ordenada ITUB4, BBAS3 e BBDC4, com o setor Bancos, fundamentos e valuation em grupos visuais separados. Não é uma captura do produto nem uma referência mobile.
+
+A barra de navegação daquela imagem ainda inclui a antiga aba “Minha carteira”; esse trecho é histórico e não corresponde à navegação atual de duas abas. A composição da comparação continua sendo uma proposta para a experiência de comparar empresas.
 
 Os ROEs e a data-base LTM até 30/06/2026 ilustram os valores do estudo oficial documentado na metodologia aprovada da issue #115. As demais métricas exibidas como indisponíveis refletem as limitações metodológicas atuais: margem bancária sem definição comparável e P/L/P/VP sem reconciliação temporal da cotação e da classe da ação. O código deve obter os valores e períodos efetivamente disponíveis, mostrar origem e data-base por célula, preservar a ordem escolhida e não apresentar ranking, pontuação ou recomendação.
 

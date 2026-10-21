@@ -73,7 +73,20 @@ vi.mock("recharts", () => ({
   YAxis: () => null,
 }));
 vi.mock("@/app/(private)/portfolio/_components/portfolio-details", () => ({
-  PositionDetails: () => <p>Posições</p>,
+  PositionDetails: ({
+    analysisTickersByPositionId,
+  }: {
+    analysisTickersByPositionId?: ReadonlyMap<string, string>;
+  }) => (
+    <div>
+      <p>Posições</p>
+      {[...(analysisTickersByPositionId ?? new Map())].map(([id, ticker]) => (
+        <a key={id} href={`/analises?ticker=${ticker}`}>
+          Analisar ação {ticker}
+        </a>
+      ))}
+    </div>
+  ),
   MovementDetails: () => <p>Movimentações</p>,
 }));
 
@@ -170,7 +183,79 @@ describe("PortfolioClient", () => {
     if (activeView === "overview") {
       expect(fetch).toHaveBeenCalledWith("/api/portfolio/allocation");
       expect(fetch).toHaveBeenCalledWith("/api/portfolio/monthly-review");
+    } else if (activeView === "positions") {
+      expect(fetch).not.toHaveBeenCalledWith("/api/portfolio/allocation");
     }
+  });
+
+  it("uses the overview classification to link eligible positions without requesting allocation again", async () => {
+    const classifiedPosition = {
+      id: "bbse-position",
+      product: "BB Seguridade Participações S.A.",
+      assetCode: "BBSE3",
+      totalValue: "1000",
+      institution: "Corretora",
+      maturityAt: null,
+      classification: {
+        assetClass: "Renda variável",
+        subClass: "Ação preferencial",
+        geography: "Brasil",
+      },
+    };
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === "/api/portfolio"
+            ? {
+                ...overview,
+                positions: [classifiedPosition],
+              }
+            : monthlyReview,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPortfolio("positions");
+
+    const analyzeLink = await screen.findByRole("link", {
+      name: "Analisar ação BBSE3",
+    });
+    expect(analyzeLink.getAttribute("href")).toBe("/analises?ticker=BBSE3");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/portfolio/allocation");
+  });
+
+  it("does not offer individual analysis for positions without a classification", async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url === "/api/portfolio"
+            ? {
+                ...overview,
+                positions: [
+                  {
+                    id: "unclassified-position",
+                    product: "Ativo não classificado",
+                    assetCode: "BBSE3",
+                    totalValue: "1000",
+                    institution: "Corretora",
+                    maturityAt: null,
+                    classification: null,
+                  },
+                ],
+              }
+            : monthlyReview,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPortfolio("positions");
+
+    expect(await screen.findByText("Posições")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Analisar ação/ })).toBeNull();
   });
 
   it("retries a monthly close request and refetches for the selected year", async () => {

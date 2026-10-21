@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, Eye, EyeOff, ShieldCheck, UserRound } from "lucide-react";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Sparkles,
+  UserRound,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, apiRequest } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -193,6 +200,12 @@ export function UserProfileDialog({
             <Link href="/privacidade-conta">
               <ShieldCheck aria-hidden="true" className="size-4" />
               Privacidade
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/mcp">
+              <Sparkles aria-hidden="true" className="size-4" />
+              MCP
             </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>

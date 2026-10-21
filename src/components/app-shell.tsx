@@ -13,7 +13,6 @@ import {
   LayoutDashboard,
   Menu,
   Settings,
-  Sparkles,
   UserRoundCog,
   WalletCards,
 } from "lucide-react";
@@ -82,7 +81,6 @@ const navigation = [
   { href: "/estrategia", label: "Estratégia", Icon: Compass },
   { href: "/aprender", label: "Aprender", Icon: BookOpen },
   { href: "/analises", label: "Análises", Icon: BarChart3 },
-  { href: "/mcp", label: "Conectar IA", Icon: Sparkles },
   { href: "/configuracoes", label: "Configurações", Icon: Settings },
 ];
 
