@@ -284,7 +284,12 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         ),
       };
     } catch (error) {
-      if (!(error instanceof RetryableMarketDataError) || parentSignal.aborted)
+      const limitedRange =
+        error instanceof MarketDataHttpError && error.status === 400;
+      if (
+        (!(error instanceof RetryableMarketDataError) && !limitedRange) ||
+        parentSignal.aborted
+      )
         throw error;
       const fallbackFailure = this.historyFailure(error);
 

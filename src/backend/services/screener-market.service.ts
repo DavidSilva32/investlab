@@ -206,7 +206,7 @@ export class ScreenerMarketService {
     const now = this.clock();
     const universe = await this.repository.getUniverse();
     const eligible = filterScreenerCompanies(universe, {}).filter(
-      ({ sectorClassification }) => sectorClassification === "non_financial",
+      ({ securities }) => securities.length > 0,
     );
     const companyByCnpj = new Map(
       universe.map((company) => [company.cnpj, company]),
@@ -272,12 +272,7 @@ export class ScreenerMarketService {
       const observationTime = this.clock();
       const resolved = validateIssuerMarketQuotes(securities, quotes);
       const quoteEvidence = collectQuoteEvidence(securities, quotes);
-      const sourceTicker =
-        resolved?.sourceTicker ?? securities[0]?.ticker ?? "UNKNOWN";
-      if (securities.length === 0) {
-        unavailableIssuers += 1;
-        continue;
-      }
+      const sourceTicker = resolved?.sourceTicker ?? securities[0]!.ticker;
       await this.repository.saveMarketSnapshot(
         resolved
           ? {

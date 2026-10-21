@@ -193,6 +193,35 @@ describe("ScreenerMarketService", () => {
     );
   });
 
+  it("refreshes financial issuers only when every share class reconciles", async () => {
+    const bank = {
+      ...company("bank", ["ITUB3", "ITUB4"]),
+      sector: "Bancos",
+    };
+    const repository = repositoryFor([bank]);
+    const provider = {
+      getQuoteByTicker: vi.fn(async (ticker: string) =>
+        quote(ticker, 4200, quoteTime, ticker === "ITUB3" ? 36 : 48),
+      ),
+    };
+    const service = new ScreenerMarketService(provider, repository, () => now);
+
+    await expect(service.refreshBatch()).resolves.toMatchObject({
+      attemptedIssuers: 1,
+      updatedIssuers: 1,
+      unavailableIssuers: 0,
+    });
+    expect(provider.getQuoteByTicker).toHaveBeenCalledWith("ITUB3");
+    expect(provider.getQuoteByTicker).toHaveBeenCalledWith("ITUB4");
+    expect(repository.saveMarketSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issuerCnpj: "bank",
+        marketCap: 4200,
+        classSemanticsValidated: true,
+      }),
+    );
+  });
+
   it("records mismatched dual-class issuer quotes as unavailable without guessing", async () => {
     const repository = repositoryFor([company("dual", ["PETR3", "PETR4"])]);
     const provider = {
@@ -539,8 +568,8 @@ describe("ScreenerMarketService", () => {
     const service = new ScreenerMarketService(provider, repository, () => now);
 
     await expect(service.refreshBatch()).resolves.toMatchObject({
-      attemptedIssuers: 1,
-      unavailableIssuers: 1,
+      attemptedIssuers: 0,
+      unavailableIssuers: 0,
     });
     expect(provider.getQuoteByTicker).not.toHaveBeenCalled();
     expect(repository.saveMarketSnapshot).not.toHaveBeenCalled();

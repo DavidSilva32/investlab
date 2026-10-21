@@ -12,8 +12,10 @@ const requiredAccounts = new Set([
   "3.01",
   "3.09",
   "3.11",
-  "3.13",
+  "3.11.01",
+  "3.11.02",
   "2.03",
+  "2.03.09",
   "2.07",
   "2.08",
   "1",
@@ -312,6 +314,22 @@ const consolidatedNetIncomeLabels = [
   "LUCRO OU PREJUIZO LIQUIDO CONSOLIDADO DO PERIODO",
 ];
 const consolidatedEquityLabels = ["PATRIMONIO LIQUIDO CONSOLIDADO"];
+const parentNetIncomeLabels = [
+  "LUCRO/PREJUIZO ATRIBUIDO AOS SOCIOS DA EMPRESA CONTROLADORA",
+  "LUCRO/PREJUIZO ATRIBUIDO AOS ACIONISTAS DA EMPRESA CONTROLADORA",
+  "LUCRO OU PREJUIZO ATRIBUIDO AOS SOCIOS DA EMPRESA CONTROLADORA",
+  "LUCRO OU PREJUIZO ATRIBUIDO AOS ACIONISTAS DA EMPRESA CONTROLADORA",
+];
+const nonControllingNetIncomeLabels = [
+  "LUCRO/PREJUIZO ATRIBUIDO AOS SOCIOS NAO CONTROLADORES",
+  "LUCRO/PREJUIZO ATRIBUIDO AOS ACIONISTAS NAO CONTROLADORES",
+  "LUCRO OU PREJUIZO ATRIBUIDO AOS SOCIOS NAO CONTROLADORES",
+  "LUCRO OU PREJUIZO ATRIBUIDO AOS ACIONISTAS NAO CONTROLADORES",
+];
+const nonControllingEquityLabels = [
+  "PARTICIPACAO DOS ACIONISTAS NAO CONTROLADORES",
+  "PARTICIPACAO DOS SOCIOS NAO CONTROLADORES",
+];
 
 function sumAccountValues(period: AccountMap, accounts: string[]) {
   const values = accounts.map((account) => accountValue(period, account));
@@ -681,14 +699,29 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
       }) => {
         const netIncome = selectedAccount(
           accounts,
-          ["3.09", "3.11", "3.13"],
+          ["3.11"],
           consolidatedNetIncomeLabels,
+        );
+        const parentNetIncome = selectedAccount(
+          accounts,
+          ["3.11.01"],
+          parentNetIncomeLabels,
+        );
+        const nonControllingNetIncome = selectedAccount(
+          accounts,
+          ["3.11.02"],
+          nonControllingNetIncomeLabels,
         );
         const equity = selectedAccount(
           accounts,
           ["2.03", "2.07", "2.08"],
           consolidatedEquityLabels,
           true,
+        );
+        const nonControllingEquity = selectedAccount(
+          accounts,
+          ["2.03.09"],
+          nonControllingEquityLabels,
         );
         return {
           referenceDate: periodEnd,
@@ -709,15 +742,44 @@ export class CvmFundamentalsProvider implements FundamentalsProvider {
               : String(netIncome.version),
           netIncomeAccount: netIncome?.code ?? null,
           netIncomeConcept: netIncome ? "consolidated_net_income" : null,
+          parentNetIncomeVersion:
+            parentNetIncome?.version === null || parentNetIncome === null
+              ? null
+              : String(parentNetIncome.version),
+          parentNetIncomeAccount: parentNetIncome?.code ?? null,
+          parentNetIncomeConcept: parentNetIncome
+            ? "parent_attributable_net_income"
+            : null,
+          nonControllingNetIncomeVersion:
+            nonControllingNetIncome?.version === null ||
+            nonControllingNetIncome === null
+              ? null
+              : String(nonControllingNetIncome.version),
+          nonControllingNetIncomeAccount: nonControllingNetIncome?.code ?? null,
+          nonControllingNetIncomeConcept: nonControllingNetIncome
+            ? "non_controlling_net_income"
+            : null,
           equityVersion:
             equity?.version === null || equity === null
               ? null
               : String(equity.version),
           equityAccount: equity?.code ?? null,
           equityConcept: equity ? "consolidated_equity" : null,
+          nonControllingEquityVersion:
+            nonControllingEquity?.version === null ||
+            nonControllingEquity === null
+              ? null
+              : String(nonControllingEquity.version),
+          nonControllingEquityAccount: nonControllingEquity?.code ?? null,
+          nonControllingEquityConcept: nonControllingEquity
+            ? "non_controlling_equity"
+            : null,
           revenue: accountValue(accounts, "3.01"),
           netIncome: netIncome?.value ?? null,
+          parentNetIncome: parentNetIncome?.value ?? null,
+          nonControllingNetIncome: nonControllingNetIncome?.value ?? null,
           equity: equity?.value ?? null,
+          nonControllingEquity: nonControllingEquity?.value ?? null,
           assets: accountValue(accounts, "1"),
           liabilities: accountValue(accounts, "2"),
           cash: accountValue(accounts, "1.01.01"),

@@ -26,9 +26,9 @@ const tickerSchema = z
   .regex(/^[A-Z]{4}[0-9]{1,2}$/, "Informe um ticker B3 válido.");
 const cacheDurationMs = 1000 * 60 * 60 * 24 * 7;
 const quoteFreshnessMs = 7 * 24 * 60 * 60 * 1000;
-const fundamentalsNormalizationRevision = "cvm-v5";
+const fundamentalsNormalizationRevision = "cvm-v7";
 const unavailableMarketCapReason =
-  "Falta confirmar quantas ações de cada classe estão em circulação e alinhar esse total à data da cotação.";
+  "Não foi possível validar a capitalização total do emissor para este ticker e data da cotação.";
 
 type MarketCapEvidence = {
   marketCap: number | null;
@@ -46,15 +46,15 @@ const unavailableMarketCap: MarketCapEvidence = {
 
 function valuationMethod(key: "pe" | "pb") {
   return key === "pe"
-    ? "market_cap_emissor / lucro_liquido_consolidado_cvm"
-    : "market_cap_emissor / patrimonio_liquido_consolidado_cvm";
+    ? "market_cap_emissor / lucro_atribuido_controladora_cvm"
+    : "market_cap_emissor / patrimonio_controladora_cvm";
 }
 
 function currentFundamentalsSourceVersion() {
   return `${new Date().getUTCFullYear()}-${fundamentalsNormalizationRevision}`;
 }
 
-function numericValue(value: string | null) {
+function numericValue(value: string | null | undefined) {
   const parsed = value === null ? Number.NaN : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -66,6 +66,38 @@ function isUsableConsolidatedEquity(period: FundamentalPeriod) {
     Boolean(period.equityVersion) &&
     numericValue(period.equity) !== null
   );
+}
+
+function isUsableParentNetIncome(period: FundamentalPeriod) {
+  return (
+    period.parentNetIncomeConcept === "parent_attributable_net_income" &&
+    period.parentNetIncomeAccount === "3.11.01" &&
+    Boolean(period.parentNetIncomeVersion) &&
+    numericValue(period.parentNetIncome) !== null
+  );
+}
+
+function parentEquityValue(period: FundamentalPeriod) {
+  if (
+    !isUsableConsolidatedEquity(period) ||
+    period.equityAccount !== "2.03" ||
+    period.nonControllingEquityConcept !== "non_controlling_equity" ||
+    period.nonControllingEquityAccount !== "2.03.09" ||
+    !period.nonControllingEquityVersion ||
+    period.nonControllingEquityVersion !== period.equityVersion ||
+    numericValue(period.nonControllingEquity) === null ||
+    (period.periodEnd ?? period.referenceDate) !== period.referenceDate ||
+    !period.filingReferenceDate ||
+    !period.equityVersion
+  )
+    return null;
+  const total = numericValue(period.equity);
+  const nonControlling = numericValue(period.nonControllingEquity);
+  if (total === null || nonControlling === null || total <= 0) return null;
+  const parentEquity = total - nonControlling;
+  return Number.isFinite(parentEquity) && parentEquity > 0
+    ? parentEquity
+    : null;
 }
 
 function normalizeCnpj(value: string | null | undefined) {
@@ -117,8 +149,35 @@ function hasCachedPeriodProvenance(
   )
     return false;
   if (
+    period.parentNetIncome !== null &&
+    period.parentNetIncome !== undefined &&
+    (period.parentNetIncomeAccount !== "3.11.01" ||
+      period.parentNetIncomeConcept !== "parent_attributable_net_income" ||
+      !period.parentNetIncomeVersion ||
+      numericValue(period.parentNetIncome) === null)
+  )
+    return false;
+  if (
+    period.nonControllingNetIncome !== null &&
+    period.nonControllingNetIncome !== undefined &&
+    (period.nonControllingNetIncomeAccount !== "3.11.02" ||
+      period.nonControllingNetIncomeConcept !== "non_controlling_net_income" ||
+      !period.nonControllingNetIncomeVersion ||
+      numericValue(period.nonControllingNetIncome) === null)
+  )
+    return false;
+  if (
     period.equity !== null &&
     (!period.equityVersion || !period.equityAccount || !period.equityConcept)
+  )
+    return false;
+  if (
+    period.nonControllingEquity !== null &&
+    period.nonControllingEquity !== undefined &&
+    (period.nonControllingEquityAccount !== "2.03.09" ||
+      period.nonControllingEquityConcept !== "non_controlling_equity" ||
+      !period.nonControllingEquityVersion ||
+      numericValue(period.nonControllingEquity) === null)
   )
     return false;
   return true;
@@ -366,8 +425,8 @@ function ltmFlowPeriods(periods: FundamentalPeriod[]) {
         (!fullYear.netIncomeAccount ||
           !current.netIncomeAccount ||
           current.netIncomeAccount !== priorYtd.netIncomeAccount ||
-          !["3.09", "3.11"].includes(fullYear.netIncomeAccount) ||
-          !["3.09", "3.11"].includes(current.netIncomeAccount))
+          fullYear.netIncomeAccount !== "3.11" ||
+          current.netIncomeAccount !== "3.11")
       )
         return null;
       const values = [fullYear[field], current[field], priorYtd[field]].map(
@@ -386,7 +445,28 @@ function ltmFlowPeriods(periods: FundamentalPeriod[]) {
       "netIncomeVersion",
       "netIncomeConcept",
     );
-    if (revenue === null && netIncome === null) return [];
+    const parentNetIncome =
+      current.parentNetIncomeAccount === "3.11.01" &&
+      priorYtd.parentNetIncomeAccount === "3.11.01" &&
+      fullYear.parentNetIncomeAccount === "3.11.01" &&
+      current.parentNetIncomeConcept === "parent_attributable_net_income" &&
+      priorYtd.parentNetIncomeConcept === "parent_attributable_net_income" &&
+      fullYear.parentNetIncomeConcept === "parent_attributable_net_income" &&
+      current.parentNetIncomeVersion &&
+      current.parentNetIncomeVersion === priorYtd.parentNetIncomeVersion &&
+      current.parentNetIncomeVersion === fullYear.parentNetIncomeVersion
+        ? [
+            fullYear.parentNetIncome,
+            current.parentNetIncome,
+            priorYtd.parentNetIncome,
+          ].map(numericValue)
+        : null;
+    const parentNetIncomeLtm =
+      parentNetIncome && parentNetIncome.every((value) => value !== null)
+        ? parentNetIncome[0]! + parentNetIncome[1]! - parentNetIncome[2]!
+        : null;
+    if (revenue === null && netIncome === null && parentNetIncomeLtm === null)
+      return [];
     return [
       {
         ...current,
@@ -395,7 +475,16 @@ function ltmFlowPeriods(periods: FundamentalPeriod[]) {
         periodBasis: "trailing_twelve_months" as const,
         revenue: revenue?.toFixed(2) ?? null,
         netIncome: netIncome?.toFixed(2) ?? null,
+        parentNetIncome: parentNetIncomeLtm?.toFixed(2) ?? null,
         equity: null,
+        nonControllingNetIncome: null,
+        nonControllingNetIncomeVersion: null,
+        nonControllingNetIncomeAccount: null,
+        nonControllingNetIncomeConcept: null,
+        nonControllingEquity: null,
+        nonControllingEquityVersion: null,
+        nonControllingEquityAccount: null,
+        nonControllingEquityConcept: null,
         assets: null,
         liabilities: null,
         cash: null,
@@ -479,7 +568,14 @@ export function calculateAnalysisIndicators(
   const previousAnnual = annual[1];
   const netIncomeFlowPeriod =
     ltm && numericValue(ltm.netIncome) !== null ? ltm : latestAnnual;
-  const marketFlowPeriod = netIncomeFlowPeriod;
+  const parentAnnualPeriod =
+    latestAnnual && isUsableParentNetIncome(latestAnnual)
+      ? latestAnnual
+      : undefined;
+  const parentLtmPeriod = ltmFlowPeriods(periods)
+    .filter(isUsableParentNetIncome)
+    .sort((left, right) => right.periodEnd!.localeCompare(left.periodEnd!))[0];
+  const parentNetIncomeFlowPeriod = parentLtmPeriod ?? parentAnnualPeriod;
   const marginPeriod = ltm ?? latest;
   const roeFlowPeriod = netIncomeFlowPeriod;
   const usesLtmRoe = roeFlowPeriod?.periodBasis === "trailing_twelve_months";
@@ -494,30 +590,35 @@ export function calculateAnalysisIndicators(
     revenue !== 0
       ? (netIncome / revenue) * 100
       : null;
-  const equityBalancePeriods = periods.filter(
-    (period) =>
-      period.exerciseOrder !== "previous" &&
-      numericValue(period.equity) !== null,
-  );
-  const latestBalanceDate = equityBalancePeriods
+  const latestBalanceDate = periods
+    .filter((period) => period.exerciseOrder !== "previous")
+    .filter((period) => numericValue(period.equity) !== null)
     .map((period) => period.periodEnd ?? period.referenceDate)
     .sort((left, right) => right.localeCompare(left))[0];
-  const latestBalances = latestBalanceDate
-    ? deduplicateEquivalentBalances(
-        periods.filter(
-          (period) =>
-            period.exerciseOrder !== "previous" &&
-            (period.periodEnd ?? period.referenceDate) === latestBalanceDate &&
-            numericValue(period.equity) !== null,
-        ),
+  const latestBalanceRecords = latestBalanceDate
+    ? periods.filter(
+        (period) =>
+          period.exerciseOrder !== "previous" &&
+          numericValue(period.equity) !== null &&
+          (period.periodEnd ?? period.referenceDate) === latestBalanceDate,
       )
     : [];
-  const latestBalance = latestBalances.length === 1 ? latestBalances[0] : null;
-  const latestBalanceIsAmbiguous =
-    latestBalanceDate !== undefined && latestBalances.length > 1;
-  const latestEquity = latestBalance
-    ? numericValue(latestBalance.equity)
-    : null;
+  const latestParentEquityRecords = latestBalanceRecords.map((period) => ({
+    period,
+    value: parentEquityValue(period),
+  }));
+  const parentEquityBalance =
+    latestParentEquityRecords.length > 0 &&
+    latestParentEquityRecords.every(
+      ({ value }) =>
+        value !== null && value === latestParentEquityRecords[0]!.value,
+    )
+      ? {
+          period: latestParentEquityRecords[0]!.period,
+          value: latestParentEquityRecords[0]!.value!,
+        }
+      : undefined;
+  const latestParentEquity = parentEquityBalance?.value ?? null;
   const latestBalanceAtFlowEnd = roeFlowPeriod
     ? deduplicateEquivalentBalances(
         periods.filter(
@@ -574,7 +675,7 @@ export function calculateAnalysisIndicators(
   const previousEquity = numericValue(openingBalance?.equity ?? null);
   const supportedNetIncome = (period: FundamentalPeriod | undefined) =>
     period?.netIncomeConcept === "consolidated_net_income" &&
-    ["3.09", "3.11"].includes(period.netIncomeAccount ?? "");
+    period.netIncomeAccount === "3.11";
   const annualNetIncome = supportedNetIncome(roeFlowPeriod)
     ? numericValue(roeFlowPeriod.netIncome)
     : null;
@@ -586,13 +687,18 @@ export function calculateAnalysisIndicators(
     Number.isFinite(Date.parse(marketDataDate)),
   );
   const usableMarketCap = hasMarketCap ? marketCap : null;
+  const parentNetIncome = parentNetIncomeFlowPeriod
+    ? numericValue(parentNetIncomeFlowPeriod.parentNetIncome)
+    : null;
   const pe =
-    usableMarketCap !== null && annualNetIncome !== null && annualNetIncome > 0
-      ? usableMarketCap / annualNetIncome
+    usableMarketCap !== null && parentNetIncome !== null && parentNetIncome > 0
+      ? usableMarketCap / parentNetIncome
       : null;
   const pb =
-    usableMarketCap !== null && latestEquity !== null && latestEquity > 0
-      ? usableMarketCap / latestEquity
+    usableMarketCap !== null &&
+    latestParentEquity !== null &&
+    latestParentEquity > 0
+      ? usableMarketCap / latestParentEquity
       : null;
   const compatibleRoePeriod = usesLtmRoe
     ? Boolean(
@@ -637,9 +743,9 @@ export function calculateAnalysisIndicators(
       ? null
       : !hasMarketCap
         ? unavailableMarketValue
-        : marketFlowPeriod?.periodBasis === "trailing_twelve_months"
-          ? `Indisponível: o lucro líquido positivo não está disponível no LTM encerrado em ${marketFlowPeriod!.periodEnd}.`
-          : "Indisponível: as demonstrações financeiras anuais mais recentes não informam lucro líquido positivo compatível.";
+        : parentNetIncomeFlowPeriod?.periodBasis === "trailing_twelve_months"
+          ? `Indisponível: o lucro atribuível à controladora não está disponível no LTM encerrado em ${parentNetIncomeFlowPeriod.periodEnd}.`
+          : "Indisponível: as demonstrações financeiras mais recentes não informam lucro positivo atribuível à controladora.";
   const roeUnavailableReason =
     roe !== null
       ? null
@@ -652,14 +758,15 @@ export function calculateAnalysisIndicators(
       key: "pe",
       value: pe,
       unavailableReason: peUnavailableReason,
-      referenceDate: pe === null ? null : marketFlowPeriod!.periodEnd!,
-      sourceDocument: pe === null ? null : marketFlowPeriod!.sourceDocument,
+      referenceDate: pe === null ? null : parentNetIncomeFlowPeriod!.periodEnd!,
+      sourceDocument:
+        pe === null ? null : parentNetIncomeFlowPeriod!.sourceDocument,
       periodBasis:
         pe === null
           ? null
-          : marketFlowPeriod === ltm
+          : parentNetIncomeFlowPeriod === parentLtmPeriod
             ? "trailing_twelve_months"
-            : "annual",
+            : parentNetIncomeFlowPeriod!.periodBasis,
       marketDataDate,
       valuationSource: hasMarketCap ? marketEvidence.source : null,
       valuationMethod: hasMarketCap ? valuationMethod("pe") : null,
@@ -670,16 +777,16 @@ export function calculateAnalysisIndicators(
       unavailableReason:
         pb === null
           ? hasMarketCap
-            ? latestBalanceIsAmbiguous
-              ? `Indisponível: há saldos de patrimônio líquido conflitantes em ${latestBalanceDate}; não foi possível reconciliar o P/VP.`
-              : "Indisponível: as demonstrações financeiras anuais mais recentes não informam patrimônio líquido positivo compatível."
+            ? "Indisponível: não foi possível reconciliar o patrimônio consolidado com a participação dos sócios não controladores na mesma demonstração."
             : unavailableMarketValue
           : null,
       referenceDate:
         pb === null
           ? null
-          : (latestBalance!.periodEnd ?? latestBalance!.referenceDate),
-      sourceDocument: pb === null ? null : latestBalance!.sourceDocument,
+          : (parentEquityBalance!.period.periodEnd ??
+            parentEquityBalance!.period.referenceDate),
+      sourceDocument:
+        pb === null ? null : parentEquityBalance!.period.sourceDocument,
       periodBasis: pb === null ? null : "point_in_time",
       marketDataDate,
       valuationSource: hasMarketCap ? marketEvidence.source : null,
@@ -788,21 +895,16 @@ export class StockAnalysisService {
 
     if (!validLastObservedQuote(quote, ticker, expectedCnpj, Date.now()))
       return { evidence: unavailableMarketCap, quote: null };
+    const validatedQuote = quote!;
 
-    /*
-     * Do not use the stored cap for P/L or P/VP yet. ScreenerMarketService
-     * currently checks matching BRAPI marketCap and observation times for the
-     * active securities returned by its catalog, but that does not prove the
-     * completeness of active ticker classes or issuer-level capitalization.
-     * reconcileShareClassFacts still leaves tickerClass, unitComposition,
-     * crossSource, effectiveDate, and eventHistory unavailable, while
-     * getStockValuationContext keeps marketDateAligned=false. Until those facts
-     * are reconciled, no issuer cap or valuation provenance is valid. The quote
-     * remains useful as price evidence only.
-     */
     return {
-      evidence: unavailableMarketCap,
-      quote,
+      evidence: {
+        marketCap: Number(validatedQuote.marketCap),
+        marketDataDate: validatedQuote.quoteObservedAt!.toISOString(),
+        source: "ScreenerRepository.getValidatedAnalysisQuote" as const,
+        unavailableReason: null,
+      },
+      quote: validatedQuote,
     };
   }
 
@@ -890,18 +992,28 @@ export class StockAnalysisService {
     let issuerSector: string | null = null;
     let issuerSubType: string | null = null;
     let issuerMetadataUpdatedAt: Date | null = null;
+    let cvmTickerCnpj: string | null = null;
+    const issuerMatches = await issuerMetadataPromise;
+    issuerMetadataMs = Date.now() - issuerMetadataStartedAt;
+    const exactMatches = issuerMatches.filter(
+      (issuer) =>
+        issuer.ticker === parsed.data &&
+        normalizeCnpj(issuer.cnpj).length === 14,
+    );
+    const linkedCnpis = [
+      ...new Set(exactMatches.map((issuer) => normalizeCnpj(issuer.cnpj))),
+    ];
+    if (linkedCnpis.length === 1) cvmTickerCnpj = linkedCnpis[0]!;
+    const linkedIssuer = exactMatches.filter(
+      (issuer) => normalizeCnpj(issuer.cnpj) === cvmTickerCnpj,
+    );
+    if (linkedIssuer.length === 1) {
+      issuerSector = linkedIssuer[0]!.sector;
+      issuerSubType = linkedIssuer[0]!.subType;
+      issuerMetadataUpdatedAt = linkedIssuer[0]!.issuerMetadataUpdatedAt;
+    }
     if (market) {
       const providerCnpj = normalizeCnpj(market.cnpj);
-      const issuerMatches = await issuerMetadataPromise;
-      issuerMetadataMs = Date.now() - issuerMetadataStartedAt;
-      const exactMatches = issuerMatches.filter(
-        (issuer) =>
-          issuer.ticker === parsed.data &&
-          normalizeCnpj(issuer.cnpj).length === 14,
-      );
-      const linkedCnpis = [
-        ...new Set(exactMatches.map((issuer) => normalizeCnpj(issuer.cnpj))),
-      ];
       if (providerCnpj.length !== 14 && linkedCnpis.length === 1) {
         market = { ...market, cnpj: linkedCnpis[0]! };
       } else if (providerCnpj.length !== 14) {
@@ -911,14 +1023,6 @@ export class StockAnalysisService {
         (linkedCnpis.length === 1 && linkedCnpis[0] !== providerCnpj)
       ) {
         issuerIdentityConflict = true;
-      }
-      const linkedIssuer = exactMatches.filter(
-        (issuer) => normalizeCnpj(issuer.cnpj) === normalizeCnpj(market!.cnpj),
-      );
-      if (linkedIssuer.length === 1) {
-        issuerSector = linkedIssuer[0]!.sector;
-        issuerSubType = linkedIssuer[0]!.subType;
-        issuerMetadataUpdatedAt = linkedIssuer[0]!.issuerMetadataUpdatedAt;
       }
     }
     if (issuerIdentityConflict) {
@@ -944,6 +1048,8 @@ export class StockAnalysisService {
       quoteAge >= 0,
     );
     let priceIsStale = marketPriceIsUsable && quoteAge > quoteFreshnessMs;
+    // A BRAPI quote is tied to one security class. It cannot establish total
+    // issuer capitalization across common, preferred, and unit classes.
     let valuationResolution = {
       evidence: unavailableMarketCap,
       quote: null as Awaited<
@@ -951,11 +1057,11 @@ export class StockAnalysisService {
       > | null,
     };
     let quoteFallbackMs = 0;
-    if (!marketPriceIsUsable || priceIsStale) {
+    if (!marketPriceIsUsable || priceIsStale || cvmTickerCnpj !== null) {
       const quoteFallbackStartedAt = Date.now();
       valuationResolution = await this.resolveValuationMarketData(
         parsed.data,
-        expectedCnpj,
+        cvmTickerCnpj ?? expectedCnpj,
         requestId,
       );
       quoteFallbackMs = Date.now() - quoteFallbackStartedAt;
@@ -1001,7 +1107,13 @@ export class StockAnalysisService {
         502,
       );
     }
-    market = { ...market, marketCap: null };
+    const marketCapEvidence = cvmTickerCnpj
+      ? valuationResolution.evidence
+      : unavailableMarketCap;
+    market = {
+      ...market,
+      marketCap: marketCapEvidence.marketCap,
+    };
     const cacheReadStartedAt = Date.now();
     const cached = await this.repository.listByTicker(market.ticker);
     const cacheReadMs = Date.now() - cacheReadStartedAt;
@@ -1049,10 +1161,7 @@ export class StockAnalysisService {
 
     const normalizationStartedAt = Date.now();
     const ltmPeriods = ltmFlowPeriods(periods);
-    const indicators = calculateAnalysisIndicators(
-      periods,
-      valuationResolution.evidence,
-    );
+    const indicators = calculateAnalysisIndicators(periods, marketCapEvidence);
     const normalizationMs = Date.now() - normalizationStartedAt;
     logger.info("stock_analysis_stage_timing", {
       requestId,
@@ -1065,17 +1174,17 @@ export class StockAnalysisService {
       fundamentalsRefreshMs: 0,
       normalizationMs,
       normalizedPeriods: periods.length + ltmPeriods.length,
-      marketCapIdentityVerified: false,
-      valuationSource: valuationResolution.evidence.source,
-      valuationMarketDataDate: valuationResolution.evidence.marketDataDate,
-      valuationMethod: null,
-      valuationUnavailableReason:
-        valuationResolution.evidence.unavailableReason,
+      marketCapIdentityVerified: marketCapEvidence.marketCap !== null,
+      valuationSource: marketCapEvidence.source,
+      valuationMarketDataDate: marketCapEvidence.marketDataDate,
+      valuationMethod:
+        marketCapEvidence.marketCap === null ? null : "issuer_market_cap",
+      valuationUnavailableReason: marketCapEvidence.unavailableReason,
       totalMs: Date.now() - startedAt,
     });
     return {
       ...market,
-      marketCapIdentityVerified: false,
+      marketCapIdentityVerified: marketCapEvidence.marketCap !== null,
       issuerSector,
       issuerMetadataUpdatedAt,
       instrumentType:
@@ -1104,9 +1213,7 @@ export class StockAnalysisService {
       requestId,
       ticker: parsed.data,
     });
-    const history = await this.marketProvider.getHistoryByTicker(parsed.data, {
-      bypassCache: true,
-    });
+    const history = await this.marketProvider.getHistoryByTicker(parsed.data);
     logger.info("stock_analysis_history_responded", {
       requestId,
       ticker: history.ticker,
@@ -1174,6 +1281,9 @@ export class StockAnalysisService {
         )
           return null;
         marketDataSource = "brapi_quote";
+        // Keep the quote for its price only. Valuation ratios require the
+        // class-reconciled issuer snapshot resolved above.
+        valuationEvidence = unavailableMarketCap;
         return {
           price: providerQuote.price!,
           observedAt: providerQuote.observedAt!,
@@ -1222,8 +1332,8 @@ export class StockAnalysisService {
     );
     const validatedQuote = await quotePromise;
     const marketDataIdentityVerified = validatedQuote !== null;
-    const marketCapIdentityVerified = false;
-    const marketCap = null;
+    const marketCapIdentityVerified = valuationEvidence.marketCap !== null;
+    const marketCap = valuationEvidence.marketCap;
     const marketPrice = validatedQuote?.price ?? null;
     const marketPriceDate = validatedQuote?.observedAt.toISOString() ?? null;
     logger.info("stock_issuer_fundamentals_stage_timing", {
@@ -1243,7 +1353,7 @@ export class StockAnalysisService {
       fundamentalsRefresh,
       valuationSource: valuationEvidence.source,
       valuationMarketDataDate: valuationEvidence.marketDataDate,
-      valuationMethod: null,
+      valuationMethod: marketCapIdentityVerified ? "issuer_market_cap" : null,
       valuationUnavailableReason: valuationEvidence.unavailableReason,
       totalMs: Date.now() - startedAt,
     });
