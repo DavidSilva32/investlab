@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AssetClassLearningDetail } from "@/app/(private)/learn/_components/asset-class-learning-detail";
 import { assetClassLearningContent } from "@/lib/asset-class-learning";
@@ -26,12 +32,21 @@ describe("AssetClassLearningDetail", () => {
         imageSrc: originalContent.imageSrc,
         thumbnailSrc: originalContent.thumbnailSrc,
         description: originalContent.description,
+        lesson: originalContent.lesson,
+        quiz: originalContent.quiz,
+        sources: originalContent.sources,
         availability: "coming-soon",
       };
 
       render(<AssetClassLearningDetail selectedClass="fiis" />);
 
       expect(screen.getByRole("status").textContent).toContain("em breve");
+      expect(
+        screen.getByRole("heading", { name: originalContent.lesson.title }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("heading", { name: originalContent.quiz.question }),
+      ).toBeTruthy();
       expect(document.querySelector("video")).toBeNull();
     } finally {
       assetClassLearningContent.fiis = originalContent;
@@ -56,6 +71,16 @@ describe("AssetClassLearningDetail", () => {
       expect(video.getAttribute("poster")).toBe(posterByClass[id]);
       expect(source?.getAttribute("src")).toBe(`/videos/${id}.mp4`);
       expect(source?.getAttribute("type")).toBe("video/mp4");
+      expect(
+        screen.getByRole("heading", { name: contentLesson(id) }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("heading", { name: contentQuestion(id) }),
+      ).toBeTruthy();
+      expect(screen.getAllByRole("radio")).toHaveLength(4);
+      expect(
+        screen.getByRole("button", { name: `Fontes oficiais sobre ${label}` }),
+      ).toBeTruthy();
       expect(screen.queryByText(/em breve/i)).toBeNull();
       expect(screen.queryByRole("status")).toBeNull();
     },
@@ -67,4 +92,33 @@ describe("AssetClassLearningDetail", () => {
     expect(document.getElementById("class-content")).toBeNull();
     expect(document.querySelector("video")).toBeNull();
   });
+
+  it("keeps official references collapsed until requested", async () => {
+    render(<AssetClassLearningDetail selectedClass="fiis" />);
+
+    const trigger = screen.getByRole("button", {
+      name: "Fontes oficiais sobre Fundos imobiliários (FIIs)",
+    });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByRole("link", { name: /Portal do Investidor/ }),
+    ).toBeNull();
+
+    fireEvent.click(trigger);
+
+    await waitFor(() => {
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(
+        screen.getAllByRole("link", { name: /Portal do Investidor/ }),
+      ).toHaveLength(2);
+    });
+  });
 });
+
+function contentLesson(id: StrategyAssetClassId) {
+  return assetClassLearningContent[id].lesson.title;
+}
+
+function contentQuestion(id: StrategyAssetClassId) {
+  return assetClassLearningContent[id].quiz.question;
+}
