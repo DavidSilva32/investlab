@@ -26,7 +26,7 @@ const tickerSchema = z
   .regex(/^[A-Z]{4}[0-9]{1,2}$/, "Informe um ticker B3 válido.");
 const cacheDurationMs = 1000 * 60 * 60 * 24 * 7;
 const quoteFreshnessMs = 7 * 24 * 60 * 60 * 1000;
-const fundamentalsNormalizationRevision = "cvm-v7";
+const fundamentalsNormalizationRevision = "cvm-v8";
 const unavailableMarketCapReason =
   "Não foi possível validar a capitalização total do emissor para este ticker e data da cotação.";
 

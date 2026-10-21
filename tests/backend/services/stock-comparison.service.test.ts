@@ -741,7 +741,7 @@ describe("StockComparisonService", () => {
         id: record.ticker,
         ticker: record.ticker,
         cnpj: record.cnpj,
-        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
         fetchedAt: now,
         revenue: "1000",
         revenueVersion: "2",
