@@ -175,6 +175,25 @@ describe("StockAnalysisDashboard", () => {
     expect(screen.queryByTestId("price-chart")).toBeNull();
   });
 
+  it("ignores ticker popstate events outside the analyses route", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard />);
+
+    window.history.pushState({}, "", "/?ticker=PETR4");
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Encontre uma empresa para analisar",
+      }),
+    ).toBeTruthy();
+    expect(fetcher).not.toHaveBeenCalled();
+    window.history.replaceState({}, "", "/");
+  });
+
   it("loads price history separately after the quote and fundamentals response", async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -664,7 +683,9 @@ describe("StockAnalysisDashboard", () => {
       return initialResponse;
     });
     vi.stubGlobal("fetch", fetcher);
-    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    const { unmount } = render(
+      <StockAnalysisDashboard initialTicker="PETR4" />,
+    );
     const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "Vale" } });
     await act(async () => {
@@ -711,6 +732,7 @@ describe("StockAnalysisDashboard", () => {
     expect(screen.getByText("Encontre uma empresa para analisar")).toBeTruthy();
 
     const requestsBeforeLeaving = fetcher.mock.calls.length;
+    unmount();
     window.history.pushState({}, "", "/?ticker=VALE3");
     window.dispatchEvent(new PopStateEvent("popstate"));
     await act(async () => {

@@ -141,7 +141,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.completeRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      expect.stringMatching(/^\d{4}-cvm-v7$/),
       "lease-token",
       [reportedPeriod],
     );
@@ -277,7 +277,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.failRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      expect.stringMatching(/^\d{4}-cvm-v7$/),
       "lease-token",
       "PROVIDER_ERROR",
     );
@@ -321,7 +321,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.failRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      expect.stringMatching(/^\d{4}-cvm-v7$/),
       "lease-token",
       "PROVIDER_REJECTED",
     );
@@ -419,7 +419,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.failRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v5$/),
+      expect.stringMatching(/^\d{4}-cvm-v7$/),
       "lease-token",
       "NO_VALID_DATA",
     );
@@ -653,9 +653,7 @@ describe("StockAnalysisService isolated history refresh", () => {
     await expect(
       service.getHistoryByTicker(" petr4 ", "history-request"),
     ).resolves.toEqual(historyResult);
-    expect(getHistoryByTicker).toHaveBeenCalledWith("PETR4", {
-      bypassCache: true,
-    });
+    expect(getHistoryByTicker).toHaveBeenCalledWith("PETR4");
   });
 
   it("rejects invalid tickers before contacting the provider", async () => {
@@ -697,7 +695,7 @@ describe("StockAnalysisService isolated history refresh", () => {
 });
 
 describe("StockAnalysisService", () => {
-  it("keeps BRAPI market cap out of individual valuation on a fresh quote", async () => {
+  it("does not treat a single-class BRAPI capitalization as issuer valuation evidence", async () => {
     const getValidatedAnalysisQuote = vi.fn().mockResolvedValue(null);
     const service = new StockAnalysisService(
       {
@@ -740,10 +738,10 @@ describe("StockAnalysisService", () => {
       valuationMethod: null,
       marketDataDate: null,
       unavailableReason: expect.stringContaining(
-        "quantas ações de cada classe estão em circulação",
+        "capitalização total do emissor",
       ),
     });
-    expect(getValidatedAnalysisQuote).not.toHaveBeenCalled();
+    expect(getValidatedAnalysisQuote).toHaveBeenCalledWith("PETR4");
   });
 
   it("returns market data when fundamentals are absent from the cache", async () => {
@@ -827,21 +825,33 @@ describe("StockAnalysisService", () => {
       periodBasis: "year_to_date" as const,
       periodType: "interim" as const,
       sourceDocument: "ITR" as const,
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
-      equityAccount: "2.07",
+      netIncomeVersion: "1",
+      equityAccount: "2.03",
       equityConcept: "consolidated_equity",
+      equityVersion: "1",
       revenueAccountLabel: "Receita operacional consolidada",
       revenue: "120",
       netIncome: "24",
+      parentNetIncome: "24",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "90",
+      nonControllingNetIncome: "2",
+      nonControllingNetIncomeVersion: "1",
+      nonControllingNetIncomeAccount: "3.11.02",
+      nonControllingNetIncomeConcept: "non_controlling_net_income",
+      nonControllingEquity: "0",
+      nonControllingEquityVersion: "1",
+      nonControllingEquityAccount: "2.03.09",
+      nonControllingEquityConcept: "non_controlling_equity",
       assets: null,
       liabilities: null,
       cash: null,
       debt: null,
       revenueVersion: "1",
-      netIncomeVersion: "1",
-      equityVersion: "1",
     };
     const comparativeYtd = {
       ...currentYtd,
@@ -851,10 +861,15 @@ describe("StockAnalysisService", () => {
       exerciseOrder: "previous" as const,
       revenue: "80",
       netIncome: "16",
+      parentNetIncome: "16",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "70",
-      netIncomeAccount: "3.09",
+      nonControllingNetIncome: "1",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
-      equityAccount: "2.07",
+      equityAccount: "2.03",
       equityConcept: "consolidated_equity",
       revenueAccountLabel: "Receita operacional consolidada",
     };
@@ -864,7 +879,7 @@ describe("StockAnalysisService", () => {
         [annual, currentYtd, comparativeYtd].map((period) => ({
           ...period,
           cnpj: "33000167000101",
-          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
           fetchedAt,
         })),
       ),
@@ -919,6 +934,17 @@ describe("StockAnalysisService", () => {
       revenue: "240.00",
       netIncome: "48.00",
       equity: null,
+      equityVersion: "1",
+      equityAccount: "2.03",
+      equityConcept: "consolidated_equity",
+      nonControllingNetIncome: null,
+      nonControllingNetIncomeVersion: null,
+      nonControllingNetIncomeAccount: null,
+      nonControllingNetIncomeConcept: null,
+      nonControllingEquity: null,
+      nonControllingEquityVersion: null,
+      nonControllingEquityAccount: null,
+      nonControllingEquityConcept: null,
     });
     expect(result.indicators).toEqual(
       expect.arrayContaining([
@@ -931,7 +957,7 @@ describe("StockAnalysisService", () => {
           valuationSource: null,
           valuationMethod: null,
           unavailableReason: expect.stringContaining(
-            "quantas ações de cada classe estão em circulação",
+            "capitalização total do emissor",
           ),
         }),
         expect.objectContaining({
@@ -1066,8 +1092,10 @@ it("calculates only ratios supported by compatible statement periods", () => {
       sourceDocument: "DFP",
       netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
-      equityAccount: "2.07",
+      netIncomeVersion: "1",
+      equityAccount: "2.03",
       equityConcept: "consolidated_equity",
+      equityVersion: "1",
       revenue: "100",
       netIncome: "20",
       equity: "80",
@@ -1087,8 +1115,10 @@ it("calculates only ratios supported by compatible statement periods", () => {
       sourceDocument: "DFP",
       netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
-      equityAccount: "2.07",
+      equityAccount: "2.03",
       equityConcept: "consolidated_equity",
+      netIncomeVersion: "1",
+      equityVersion: "1",
       revenue: "90",
       netIncome: "10",
       equity: "60",
@@ -1146,7 +1176,7 @@ it("explains unavailable ratios when cap evidence or positive equity is missing"
     sourceDocument: "DFP" as const,
     netIncomeAccount: "3.11",
     netIncomeConcept: "consolidated_net_income" as const,
-    equityAccount: "2.07",
+    equityAccount: "2.03",
     equityConcept: "consolidated_equity" as const,
     revenue: "100",
     netIncome: "20",
@@ -1164,7 +1194,7 @@ it("explains unavailable ratios when cap evidence or positive equity is missing"
     unavailableReason: null,
   });
   expect(unavailable.find(({ key }) => key === "pe")?.unavailableReason).toBe(
-    "Falta confirmar quantas ações de cada classe estão em circulação e alinhar esse total à data da cotação.",
+    "Não foi possível validar a capitalização total do emissor para este ticker e data da cotação.",
   );
 
   const withCapEvidence = calculateAnalysisIndicators(
@@ -1174,8 +1204,51 @@ it("explains unavailable ratios when cap evidence or positive equity is missing"
   expect(withCapEvidence.find(({ key }) => key === "pb")).toMatchObject({
     value: null,
     unavailableReason:
-      "Indisponível: as demonstrações financeiras anuais mais recentes não informam patrimônio líquido positivo compatível.",
+      "Indisponível: não foi possível reconciliar o patrimônio consolidado com a participação dos sócios não controladores na mesma demonstração.",
   });
+});
+
+it("rejects nonpositive controller equity derived from consolidated equity", () => {
+  const balance = {
+    referenceDate: "2025-12-31",
+    periodStart: "2025-01-01",
+    periodEnd: "2025-12-31",
+    filingReferenceDate: "2026-03-20",
+    exerciseOrder: "last" as const,
+    periodBasis: "annual" as const,
+    periodType: "annual" as const,
+    sourceDocument: "DFP" as const,
+    equityVersion: "1",
+    equityAccount: "2.03",
+    equityConcept: "consolidated_equity",
+    nonControllingEquityVersion: "1",
+    nonControllingEquityAccount: "2.03.09",
+    nonControllingEquityConcept: "non_controlling_equity",
+    revenue: null,
+    netIncome: null,
+    parentNetIncome: null,
+    assets: null,
+    liabilities: null,
+    cash: null,
+    debt: null,
+  };
+
+  for (const [equity, nonControllingEquity] of [
+    ["0", "0"],
+    ["100", "100"],
+  ]) {
+    const pb = calculateAnalysisIndicators(
+      [
+        {
+          ...balance,
+          equity,
+          nonControllingEquity,
+        },
+      ],
+      validatedCapEvidence(200),
+    ).find(({ key }) => key === "pb");
+    expect(pb).toMatchObject({ value: null, referenceDate: null });
+  }
 });
 
 it("keeps annual ROE unavailable when either year lacks matching concepts", () => {
@@ -1248,9 +1321,12 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
     revenue: null,
     netIncome: null,
     equity: null,
+    parentNetIncome: null,
+    nonControllingNetIncome: null,
+    nonControllingEquity: null,
     revenueAccountLabel: "Receita operacional consolidada",
     netIncomeConcept: "consolidated_net_income",
-    equityAccount: "2.07",
+    equityAccount: "2.03",
     equityConcept: "consolidated_equity",
     assets: null,
     liabilities: null,
@@ -1271,6 +1347,10 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       revenue: "100",
       netIncome: "20",
       equity: "80",
+      parentNetIncome: "20",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       netIncomeAccount: "3.11",
     },
     {
@@ -1286,13 +1366,21 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       revenue: "60",
       netIncome: "12",
       equity: "90",
+      parentNetIncome: "12",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
+      nonControllingEquity: "0",
+      nonControllingEquityVersion: "1",
+      nonControllingEquityAccount: "2.03.09",
+      nonControllingEquityConcept: "non_controlling_equity",
       revenueVersion: "1",
       netIncomeVersion: "1",
       equityVersion: "1",
       revenueAccountLabel: "Receita operacional consolidada",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
-      equityAccount: "2.07",
+      equityAccount: "2.03",
       equityConcept: "consolidated_equity",
     },
     {
@@ -1308,13 +1396,17 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       revenue: "40",
       netIncome: "8",
       equity: "70",
+      parentNetIncome: "8",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       revenueVersion: "1",
       netIncomeVersion: "1",
       equityVersion: "1",
       revenueAccountLabel: "Receita operacional consolidada",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
-      equityAccount: "2.07",
+      equityAccount: "2.03",
       equityConcept: "consolidated_equity",
     },
   ];
@@ -1369,6 +1461,130 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
       }),
     ]),
   );
+
+  const parentOnlyFlows = calculateAnalysisIndicators(
+    periods.map((period) => ({ ...period, netIncome: null })),
+    validatedCapEvidence(240),
+  );
+  expect(parentOnlyFlows.find(({ key }) => key === "pe")).toMatchObject({
+    value: 10,
+  });
+  expect(parentOnlyFlows.find(({ key }) => key === "netMargin")).toMatchObject({
+    value: null,
+  });
+
+  const missingConsolidatedConcept = periods.map((period) =>
+    period.periodBasis === "year_to_date"
+      ? { ...period, netIncomeConcept: null }
+      : period,
+  );
+  expect(
+    calculateAnalysisIndicators(
+      missingConsolidatedConcept,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "netMargin"),
+  ).toMatchObject({ value: null });
+
+  const balancesWithoutPeriodEnd = periods.map((period) =>
+    period.exerciseOrder === "previous"
+      ? period
+      : { ...period, periodEnd: undefined },
+  );
+  expect(
+    calculateAnalysisIndicators(
+      balancesWithoutPeriodEnd,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "pb"),
+  ).toMatchObject({
+    value: 240 / 90,
+    referenceDate: "2026-06-30",
+  });
+
+  const incompatibleConsolidatedIncome = periods.map((period) =>
+    period.periodBasis === "year_to_date"
+      ? { ...period, netIncomeAccount: "3.12" }
+      : period,
+  );
+  expect(
+    calculateAnalysisIndicators(
+      incompatibleConsolidatedIncome,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "netMargin"),
+  ).toMatchObject({ value: null });
+
+  const latestAnnualWithoutParent = {
+    ...periods[0]!,
+    parentNetIncome: null,
+    parentNetIncomeVersion: null,
+    parentNetIncomeAccount: null,
+    parentNetIncomeConcept: null,
+  };
+  const olderAnnualWithParent = {
+    ...periods[0]!,
+    referenceDate: "2024-12-31",
+    periodStart: "2024-01-01",
+    periodEnd: "2024-12-31",
+    filingReferenceDate: "2025-03-20",
+  };
+  expect(
+    calculateAnalysisIndicators(
+      [latestAnnualWithoutParent, olderAnnualWithParent],
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "pe"),
+  ).toMatchObject({
+    value: null,
+    unavailableReason: expect.stringContaining(
+      "demonstrações financeiras mais recentes",
+    ),
+  });
+
+  const unverifiedCurrentBalance = {
+    ...periods[1]!,
+    sourceDocument: undefined,
+    periodEnd: undefined,
+    exerciseOrder: undefined,
+  } as unknown as (typeof periods)[number];
+  expect(
+    calculateAnalysisIndicators(
+      [...periods, unverifiedCurrentBalance],
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: null });
+
+  const mismatchedLtmIncomeAccount = periods.map((period) =>
+    period.exerciseOrder === "previous"
+      ? { ...period, parentNetIncomeAccount: "3.12" }
+      : period.periodBasis === "year_to_date"
+        ? { ...period, parentNetIncomeAccount: "3.12" }
+        : period,
+  );
+  expect(
+    calculateAnalysisIndicators(
+      mismatchedLtmIncomeAccount,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "pe"),
+  ).toMatchObject({
+    value: 12,
+    referenceDate: "2025-12-31",
+    periodBasis: "annual",
+  });
+  expect(
+    calculateAnalysisIndicators(
+      mismatchedLtmIncomeAccount,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: 30 });
+
+  const duplicateAnnual = [
+    ...periods,
+    { ...periods[0]!, exerciseOrder: "previous" as const },
+  ];
+  expect(
+    calculateAnalysisIndicators(
+      duplicateAnnual,
+      validatedCapEvidence(240),
+    ).find(({ key }) => key === "roe"),
+  ).toMatchObject({ value: 30 });
 
   const mismatchedOpeningAccount = periods.map((period) =>
     period.exerciseOrder === "previous"
@@ -1446,7 +1662,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
 
   const mismatchedIncomeConcept = periods.map((period) =>
     period.sourceDocument === "DFP"
-      ? { ...period, netIncomeConcept: "other_income_concept" }
+      ? { ...period, parentNetIncomeConcept: "other_income_concept" }
       : period,
   );
   expect(
@@ -1462,7 +1678,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
 
   const mismatchedInterimAccount = periods.map((period) =>
     period.exerciseOrder === "previous"
-      ? { ...period, netIncomeAccount: "3.11" }
+      ? { ...period, parentNetIncomeAccount: "3.11.02" }
       : period,
   );
   expect(
@@ -1478,7 +1694,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
 
   const missingIncomeConcept = periods.map((period) =>
     period.exerciseOrder === "last" && period.sourceDocument === "ITR"
-      ? { ...period, netIncomeConcept: null }
+      ? { ...period, parentNetIncomeConcept: null }
       : period,
   );
   expect(
@@ -1494,7 +1710,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
 
   const missingAnnualIncomeAccount = periods.map((period) =>
     period.sourceDocument === "DFP"
-      ? { ...period, netIncomeAccount: null }
+      ? { ...period, parentNetIncomeAccount: null }
       : period,
   );
   expect(
@@ -1504,9 +1720,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
     ).find(({ key }) => key === "pe"),
   ).toMatchObject({
     value: null,
-    unavailableReason: expect.stringContaining(
-      "demonstrações financeiras anuais",
-    ),
+    unavailableReason: expect.stringContaining("atribuível à controladora"),
   });
 
   expect(
@@ -1515,6 +1729,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
         ...period,
         revenue: "invalid amount",
         netIncome: "invalid amount",
+        parentNetIncome: "invalid amount",
       })),
       validatedCapEvidence(240),
     ).find(({ key }) => key === "pe"),
@@ -1523,7 +1738,7 @@ it("calculates LTM flows from annual and aligned current-filing YTD periods", ()
     referenceDate: null,
     periodBasis: null,
     unavailableReason: expect.stringContaining(
-      "demonstrações financeiras anuais",
+      "lucro positivo atribuível à controladora",
     ),
   });
 });
@@ -1558,7 +1773,7 @@ it("reconciles ITUB4 LTM ROE when the same CVM balance is reported twice", () =>
       exerciseOrder: "last" as const,
       netIncome: "45849000",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equity: "210000000",
       equityVersion: "1",
@@ -1571,7 +1786,7 @@ it("reconciles ITUB4 LTM ROE when the same CVM balance is reported twice", () =>
       exerciseOrder: "last" as const,
       netIncome: "24199000",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equity: "228026000",
     },
@@ -1583,7 +1798,7 @@ it("reconciles ITUB4 LTM ROE when the same CVM balance is reported twice", () =>
       exerciseOrder: "previous" as const,
       netIncome: "22105000",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equity: "218451000",
     },
@@ -1628,7 +1843,7 @@ it("uses the exact prior-year ITR equity when period end is implicit", () => {
       revenueAccountLabel: "Receita operacional consolidada",
       netIncome: "180",
       netIncomeVersion: "dfp-4",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equity: "150",
       equityVersion: "dfp-3",
@@ -1653,7 +1868,7 @@ it("uses the exact prior-year ITR equity when period end is implicit", () => {
       revenueAccountLabel: "Receita operacional consolidada",
       netIncome: "100",
       netIncomeVersion: "itr-1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equity: "200",
       equityVersion: "itr-1",
@@ -1678,7 +1893,7 @@ it("uses the exact prior-year ITR equity when period end is implicit", () => {
       revenueAccountLabel: "Receita operacional consolidada",
       netIncome: "40",
       netIncomeVersion: "itr-1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equity: null,
       equityVersion: null,
@@ -1769,7 +1984,7 @@ it("uses the exact prior-year ITR equity when period end is implicit", () => {
         netIncomeConcept: null,
         equity: "100",
         equityVersion: "itr-1",
-        equityAccount: "2.07",
+        equityAccount: "2.03",
         equityConcept: "consolidated_equity",
       },
       {
@@ -1799,9 +2014,21 @@ it("keeps CSAN3 margin and P/VP when the opening equity needed for ROE is unavai
     netIncomeVersion: "1",
     netIncomeAccount: "3.11",
     netIncomeConcept: "consolidated_net_income",
+    parentNetIncome: null,
+    parentNetIncomeVersion: null,
+    parentNetIncomeAccount: null,
+    parentNetIncomeConcept: null,
+    nonControllingNetIncome: null,
+    nonControllingNetIncomeVersion: null,
+    nonControllingNetIncomeAccount: null,
+    nonControllingNetIncomeConcept: null,
     equityVersion: "1",
-    equityAccount: "2.07",
+    equityAccount: "2.03",
     equityConcept: "consolidated_equity",
+    nonControllingEquity: null,
+    nonControllingEquityVersion: null,
+    nonControllingEquityAccount: null,
+    nonControllingEquityConcept: null,
     assets: null,
     liabilities: null,
     cash: null,
@@ -1836,6 +2063,10 @@ it("keeps CSAN3 margin and P/VP when the opening equity needed for ROE is unavai
         revenue: "70",
         netIncome: "8",
         equity: "500",
+        nonControllingEquity: "0",
+        nonControllingEquityVersion: "1",
+        nonControllingEquityAccount: "2.03.09",
+        nonControllingEquityConcept: "non_controlling_equity",
       },
       {
         ...common,
@@ -1877,6 +2108,10 @@ it("keeps valid LTM income and ROE when revenue is unavailable", () => {
       sourceDocument: "DFP" as const,
       revenue: null,
       netIncome: "20",
+      parentNetIncome: "20",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "80",
       netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
@@ -1898,9 +2133,13 @@ it("keeps valid LTM income and ROE when revenue is unavailable", () => {
       sourceDocument: "ITR" as const,
       revenue: null,
       netIncome: "12",
+      parentNetIncome: "12",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "90",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equityVersion: "1",
       equityAccount: "2.07",
@@ -1921,9 +2160,13 @@ it("keeps valid LTM income and ROE when revenue is unavailable", () => {
       sourceDocument: "ITR" as const,
       revenue: null,
       netIncome: "8",
+      parentNetIncome: "8",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "70",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equityVersion: "1",
       equityAccount: "2.07",
@@ -1959,6 +2202,9 @@ it("keeps valid LTM income and ROE when revenue is unavailable", () => {
 it("does not expose bank intermediation income as a comparable net margin", () => {
   const common = {
     revenueAccountLabel: "Receitas da Intermediação Financeira",
+    parentNetIncomeVersion: "1",
+    parentNetIncomeAccount: "3.11.01",
+    parentNetIncomeConcept: "parent_attributable_net_income",
     equity: "80",
     equityVersion: "1",
     equityAccount: "2.07",
@@ -1981,6 +2227,7 @@ it("does not expose bank intermediation income as a comparable net margin", () =
       sourceDocument: "DFP" as const,
       revenue: "100",
       netIncome: "20",
+      parentNetIncome: "20",
       netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
     },
@@ -1996,9 +2243,10 @@ it("does not expose bank intermediation income as a comparable net margin", () =
       sourceDocument: "ITR" as const,
       revenue: "60",
       netIncome: "12",
+      parentNetIncome: "12",
       revenueVersion: "1",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
     },
     {
@@ -2013,9 +2261,10 @@ it("does not expose bank intermediation income as a comparable net margin", () =
       sourceDocument: "ITR" as const,
       revenue: "40",
       netIncome: "8",
+      parentNetIncome: "8",
       revenueVersion: "1",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
     },
   ];
@@ -2082,6 +2331,10 @@ it("does not derive LTM when the comparative YTD came from another filing", () =
 it("uses the annual fallback when flow versions do not align", () => {
   const common = {
     equity: "70",
+    parentNetIncomeVersion: "1",
+    parentNetIncomeAccount: "3.11.01",
+    parentNetIncomeConcept: "parent_attributable_net_income",
+    parentNetIncome: "20",
     assets: null,
     liabilities: null,
     cash: null,
@@ -2116,6 +2369,8 @@ it("uses the annual fallback when flow versions do not align", () => {
         sourceDocument: "ITR",
         revenue: "60",
         netIncome: "12",
+        parentNetIncome: "12",
+        parentNetIncomeVersion: "2",
         revenueVersion: "2",
         netIncomeVersion: "2",
       },
@@ -2131,6 +2386,7 @@ it("uses the annual fallback when flow versions do not align", () => {
         sourceDocument: "ITR",
         revenue: "40",
         netIncome: "8",
+        parentNetIncome: "8",
         revenueVersion: "1",
         netIncomeVersion: "1",
       },
@@ -2158,6 +2414,10 @@ it("explains unavailable ratios using their active LTM basis", () => {
       sourceDocument: "DFP" as const,
       revenue: "100",
       netIncome: "0",
+      parentNetIncome: "0",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "70",
       netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
@@ -2179,11 +2439,15 @@ it("explains unavailable ratios using their active LTM basis", () => {
       sourceDocument: "ITR" as const,
       revenue: "60",
       netIncome: "-5",
+      parentNetIncome: "-5",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "90",
       revenueVersion: "1",
       netIncomeVersion: "1",
       equityVersion: "2",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equityAccount: "2.07",
       equityConcept: "consolidated_equity",
@@ -2203,11 +2467,15 @@ it("explains unavailable ratios using their active LTM basis", () => {
       sourceDocument: "ITR" as const,
       revenue: "40",
       netIncome: "-3",
+      parentNetIncome: "-3",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
       equity: "80",
       revenueVersion: "1",
       netIncomeVersion: "1",
       equityVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equityAccount: "2.07",
       equityConcept: "consolidated_equity",
@@ -2223,7 +2491,7 @@ it("explains unavailable ratios using their active LTM basis", () => {
     validatedCapEvidence(240),
   );
   expect(indicators.find(({ key }) => key === "pe")?.unavailableReason).toBe(
-    "Indisponível: o lucro líquido positivo não está disponível no LTM encerrado em 2026-06-30.",
+    "Indisponível: o lucro atribuível à controladora não está disponível no LTM encerrado em 2026-06-30.",
   );
   expect(indicators.find(({ key }) => key === "roe")?.unavailableReason).toBe(
     "Indisponível: não foi possível reconciliar o lucro LTM encerrado em 2026-06-30 com patrimônio líquido médio compatível nas datas-base e versões disponíveis.",
@@ -2241,9 +2509,65 @@ it("calculates P/L and P/VP only from market cap and the latest annual DFP", () 
         sourceDocument: "DFP",
         exerciseOrder: "last",
         periodBasis: "annual",
-        filingReferenceDate: null,
+        filingReferenceDate: "2026-03-20",
         isDerived: false,
         netIncomeAccount: "3.11",
+        netIncomeConcept: "consolidated_net_income",
+        equityAccount: "2.03",
+        equityConcept: "consolidated_equity",
+        revenue: "100",
+        netIncome: "20",
+        equity: "80",
+        parentNetIncome: "20",
+        parentNetIncomeVersion: "1",
+        parentNetIncomeAccount: "3.11.01",
+        parentNetIncomeConcept: "parent_attributable_net_income",
+        nonControllingEquity: "10",
+        nonControllingEquityVersion: "1",
+        nonControllingEquityAccount: "2.03.09",
+        nonControllingEquityConcept: "non_controlling_equity",
+        equityVersion: "1",
+        assets: null,
+        liabilities: null,
+        cash: null,
+        debt: null,
+      },
+    ],
+    validatedCapEvidence(400),
+  );
+
+  expect(indicators).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ key: "pe", value: 20, sourceDocument: "DFP" }),
+      expect.objectContaining({
+        key: "pb",
+        value: 400 / 70,
+        sourceDocument: "DFP",
+      }),
+      expect.objectContaining({
+        key: "roe",
+        value: null,
+        unavailableReason:
+          "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados.",
+      }),
+    ]),
+  );
+});
+
+it("does not treat CVM earnings per share account 3.13 as net income for P/L", () => {
+  const indicators = calculateAnalysisIndicators(
+    [
+      {
+        referenceDate: "2025-12-31",
+        periodStart: "2025-01-01",
+        periodEnd: "2025-12-31",
+        periodType: "annual",
+        sourceDocument: "DFP",
+        exerciseOrder: "last",
+        periodBasis: "annual",
+        filingReferenceDate: null,
+        isDerived: false,
+        netIncomeAccount: "3.13",
         netIncomeConcept: "consolidated_net_income",
         equityAccount: "2.07",
         equityConcept: "consolidated_equity",
@@ -2259,21 +2583,13 @@ it("calculates P/L and P/VP only from market cap and the latest annual DFP", () 
     validatedCapEvidence(400),
   );
 
-  expect(indicators).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ key: "pe", value: 20, sourceDocument: "DFP" }),
-      expect.objectContaining({ key: "pb", value: 5, sourceDocument: "DFP" }),
-      expect.objectContaining({
-        key: "roe",
-        value: null,
-        unavailableReason:
-          "Indisponível: são necessárias demonstrações financeiras anuais de dois anos consecutivos, com lucro líquido e patrimônio líquido informados.",
-      }),
-    ]),
-  );
+  expect(indicators.find(({ key }) => key === "pe")).toMatchObject({
+    value: null,
+    unavailableReason: expect.stringContaining("atribuível à controladora"),
+  });
 });
 
-it("uses the reported reference date when a legacy balance lacks period metadata", () => {
+it("does not calculate P/VP from legacy balances without provenance and minority equity", () => {
   const indicators = calculateAnalysisIndicators(
     [
       {
@@ -2309,10 +2625,9 @@ it("uses the reported reference date when a legacy balance lacks period metadata
   );
 
   expect(indicators.find(({ key }) => key === "pb")).toMatchObject({
-    value: 2,
-    referenceDate: "2025-06-30",
-    periodBasis: "point_in_time",
-    sourceDocument: "ITR",
+    value: null,
+    referenceDate: null,
+    unavailableReason: expect.stringContaining("não foi possível reconciliar"),
   });
 });
 
@@ -2328,8 +2643,12 @@ it("makes P/VP unavailable for conflicting balances at the latest cutoff", () =>
     exerciseOrder: "last" as const,
     equity: "100",
     equityVersion: "2",
-    equityAccount: "2.07",
+    equityAccount: "2.03",
     equityConcept: "consolidated_equity",
+    nonControllingEquity: "10",
+    nonControllingEquityVersion: "2",
+    nonControllingEquityAccount: "2.03.09",
+    nonControllingEquityConcept: "non_controlling_equity",
     revenue: null,
     netIncome: null,
     assets: null,
@@ -2348,7 +2667,10 @@ it("makes P/VP unavailable for conflicting balances at the latest cutoff", () =>
       [balance, quarterlyEquivalent],
       validatedCapEvidence(200),
     ).find(({ key }) => key === "pb"),
-  ).toMatchObject({ value: 2, referenceDate: "2025-06-30" });
+  ).toMatchObject({
+    value: 200 / 90,
+    referenceDate: "2025-06-30",
+  });
   expect(
     calculateAnalysisIndicators(
       [balance, { ...quarterlyEquivalent, equity: "110" }],
@@ -2357,9 +2679,21 @@ it("makes P/VP unavailable for conflicting balances at the latest cutoff", () =>
   ).toMatchObject({
     value: null,
     referenceDate: null,
-    unavailableReason:
-      "Indisponível: há saldos de patrimônio líquido conflitantes em 2025-06-30; não foi possível reconciliar o P/VP.",
+    unavailableReason: expect.stringContaining("não foi possível reconciliar"),
   });
+
+  const newerIncompatibleBalance = {
+    ...balance,
+    referenceDate: "2025-09-30",
+    periodEnd: "2025-09-30",
+    nonControllingEquity: null,
+  };
+  expect(
+    calculateAnalysisIndicators(
+      [balance, newerIncompatibleBalance],
+      validatedCapEvidence(200),
+    ).find(({ key }) => key === "pb"),
+  ).toMatchObject({ value: null, referenceDate: null });
 });
 
 describe("StockAnalysisService cache and failures", () => {
@@ -2388,7 +2722,7 @@ describe("StockAnalysisService cache and failures", () => {
     revenueVersion: "1",
     revenueAccountLabel: "Receita operacional consolidada",
     netIncomeVersion: "1",
-    netIncomeAccount: "3.09",
+    netIncomeAccount: "3.11",
     netIncomeConcept: "consolidated_net_income",
     equityVersion: "1",
     equityAccount: "2.03",
@@ -2454,6 +2788,287 @@ describe("StockAnalysisService cache and failures", () => {
     ).rejects.toMatchObject({
       statusCode: 422,
     });
+  });
+
+  it.each([
+    {
+      ticker: "CMIG4",
+      cnpj: "17155730000164",
+      companyName: "Cemig",
+      marketCap: 25_000_000_000,
+    },
+    {
+      ticker: "ITUB4",
+      cnpj: "60872504000123",
+      companyName: "Itaú Unibanco",
+      marketCap: 300_000_000_000,
+    },
+  ])(
+    "calculates issuer ratios from validated $ticker quote and CVM data",
+    async (company) => {
+      const quoteObservedAt = new Date();
+      const cached = expiredCachePeriod({
+        cnpj: company.cnpj,
+        netIncome: "5000000000",
+        parentNetIncome: "5000000000",
+        parentNetIncomeVersion: "1",
+        parentNetIncomeAccount: "3.11.01",
+        parentNetIncomeConcept: "parent_attributable_net_income",
+        equity: "30000000000",
+        nonControllingEquity: "10000000000",
+        nonControllingEquityVersion: "1",
+        nonControllingEquityAccount: "2.03.09",
+        nonControllingEquityConcept: "non_controlling_equity",
+      });
+      const market = {
+        ticker: company.ticker,
+        cnpj: company.cnpj,
+        companyName: company.companyName,
+        price: 20,
+        marketCap: company.marketCap,
+        changePercent: 1,
+        priceUpdatedAt: quoteObservedAt.toISOString(),
+        history: [],
+      };
+      const service = new StockAnalysisService(
+        {
+          getAnalysisByTicker: vi.fn().mockResolvedValue(market),
+          getByTicker: vi.fn(),
+          getQuoteByTicker: vi.fn(),
+          searchTickers: vi.fn(),
+        },
+        { getByTicker: vi.fn() },
+        { listByTicker: vi.fn().mockResolvedValue([cached]) },
+        {
+          getComparisonMetadata: vi.fn().mockResolvedValue([
+            {
+              ticker: company.ticker,
+              cnpj: company.cnpj,
+              sector: "Setor de teste",
+              subType: "stock",
+              issuerMetadataUpdatedAt: quoteObservedAt,
+            },
+          ]),
+          getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+        },
+      );
+
+      const result = await service.getByTicker(company.ticker);
+
+      expect(result).toMatchObject({
+        marketCap: null,
+        marketCapIdentityVerified: false,
+      });
+      expect(
+        result.indicators.find(({ key }) => key === "pe")?.value,
+      ).toBeNull();
+      expect(
+        result.indicators.find(({ key }) => key === "pb")?.value,
+      ).toBeNull();
+    },
+  );
+
+  it("uses validated screener capitalization when the fresh provider quote omits it", async () => {
+    const observedAt = new Date();
+    const cnpj = "17155730000164";
+    const cached = expiredCachePeriod({
+      cnpj,
+      fetchedAt: new Date(),
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      netIncome: "5000000000",
+      parentNetIncome: "5000000000",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
+      equity: "30000000000",
+      nonControllingEquity: "10000000000",
+      nonControllingEquityVersion: "1",
+      nonControllingEquityAccount: "2.03.09",
+      nonControllingEquityConcept: "non_controlling_equity",
+    });
+    const marketProvider = {
+      getAnalysisByTicker: vi.fn().mockResolvedValue({
+        ticker: "CMIG4",
+        cnpj,
+        companyName: "Cemig",
+        price: 20,
+        marketCap: null,
+        changePercent: 1,
+        priceUpdatedAt: observedAt.toISOString(),
+        history: [],
+      }),
+      getByTicker: vi.fn(),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const screener = {
+      getComparisonMetadata: vi
+        .fn()
+        .mockResolvedValue([{ ticker: "CMIG4", cnpj, subType: "stock" }]),
+      getValidatedAnalysisQuote: vi.fn().mockResolvedValue({
+        ticker: "CMIG4",
+        returnedTicker: "CMIG4",
+        issuerCnpj: cnpj,
+        price: "20",
+        marketCap: "300000000000",
+        quoteObservedAt: observedAt,
+        snapshotMarketCap: "300000000000",
+        snapshotObservedAt: observedAt,
+        snapshotQuoteObservedAt: observedAt,
+      }),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
+      screener,
+    );
+
+    const result = await service.getByTicker("CMIG4");
+
+    expect(screener.getValidatedAnalysisQuote).toHaveBeenCalledWith("CMIG4");
+    expect(result).toMatchObject({
+      price: 20,
+      marketCap: 300_000_000_000,
+      marketCapIdentityVerified: true,
+    });
+    expect(result.indicators.find(({ key }) => key === "pe")).toMatchObject({
+      value: 60,
+      valuationSource: "ScreenerRepository.getValidatedAnalysisQuote",
+    });
+  });
+
+  it.each([
+    {
+      description: "missing market capitalization",
+      overrides: { marketCap: null },
+    },
+    {
+      description: "stale quote observation",
+      overrides: {
+        priceUpdatedAt: new Date(
+          Date.now() - 8 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      },
+    },
+    {
+      description: "future quote observation",
+      overrides: {
+        priceUpdatedAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    },
+    {
+      description: "nonpositive market capitalization",
+      overrides: { marketCap: 0 },
+    },
+  ])("keeps valuation unavailable with $description", async ({ overrides }) => {
+    const quoteObservedAt = new Date();
+    const cnpj = "17155730000164";
+    const cached = expiredCachePeriod({ cnpj });
+    const market = {
+      ticker: "CMIG4",
+      cnpj,
+      companyName: "Cemig",
+      price: 20,
+      marketCap: 25_000_000_000,
+      changePercent: 1,
+      priceUpdatedAt: quoteObservedAt.toISOString(),
+      history: [],
+      ...overrides,
+    };
+    const service = new StockAnalysisService(
+      {
+        getAnalysisByTicker: vi.fn().mockResolvedValue(market),
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
+      {
+        getComparisonMetadata: vi
+          .fn()
+          .mockResolvedValue([{ ticker: "CMIG4", cnpj, subType: "stock" }]),
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+      },
+    );
+
+    const result = await service.getByTicker("CMIG4");
+
+    expect(result.marketCapIdentityVerified).toBe(false);
+    expect(result.indicators.find(({ key }) => key === "pe")?.value).toBeNull();
+    expect(result.indicators.find(({ key }) => key === "pb")?.value).toBeNull();
+  });
+
+  it("rejects a ticker quote whose CNPJ conflicts with the CVM link", async () => {
+    const cnpj = "17155730000164";
+    const service = new StockAnalysisService(
+      {
+        getAnalysisByTicker: vi.fn().mockResolvedValue({
+          ticker: "CMIG4",
+          cnpj: "33000167000101",
+          companyName: "Cemig",
+          price: 20,
+          marketCap: 25_000_000_000,
+          changePercent: 1,
+          priceUpdatedAt: new Date().toISOString(),
+          history: [],
+        }),
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
+      {
+        getComparisonMetadata: vi
+          .fn()
+          .mockResolvedValue([{ ticker: "CMIG4", cnpj, subType: "stock" }]),
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+      },
+    );
+
+    await expect(service.getByTicker("CMIG4")).rejects.toMatchObject({
+      statusCode: 422,
+    });
+  });
+
+  it("does not treat provider CNPJ as a CVM ticker link when the link is absent", async () => {
+    const cnpj = "17155730000164";
+    const cached = expiredCachePeriod({
+      cnpj,
+      netIncome: "5000000000",
+      equity: "30000000000",
+    });
+    const service = new StockAnalysisService(
+      {
+        getAnalysisByTicker: vi.fn().mockResolvedValue({
+          ticker: "CMIG4",
+          cnpj,
+          companyName: "Cemig",
+          price: 20,
+          marketCap: 25_000_000_000,
+          changePercent: 1,
+          priceUpdatedAt: new Date().toISOString(),
+          history: [],
+        }),
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
+      {
+        getComparisonMetadata: vi.fn().mockResolvedValue([]),
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+      },
+    );
+
+    const result = await service.getByTicker("CMIG4");
+
+    expect(result.marketCapIdentityVerified).toBe(false);
+    expect(result.indicators.find(({ key }) => key === "pe")?.value).toBeNull();
+    expect(result.indicators.find(({ key }) => key === "pb")?.value).toBeNull();
   });
 
   it("fails closed for invalid or ambiguous market-stage issuer metadata", async () => {
@@ -2595,7 +3210,15 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      parentNetIncome: "10",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
+      nonControllingEquity: "0",
+      nonControllingEquityVersion: "1",
+      nonControllingEquityAccount: "2.03.09",
+      nonControllingEquityConcept: "non_controlling_equity",
     });
     const service = new StockAnalysisService(
       {
@@ -2628,28 +3251,33 @@ describe("StockAnalysisService cache and failures", () => {
 
     expect(result).toMatchObject({
       marketDataIdentityVerified: true,
-      marketCapIdentityVerified: false,
+      marketCapIdentityVerified: true,
       price: 30,
-      marketCap: null,
+      marketCap: 300,
       priceUpdatedAt: observedAt.toISOString(),
     });
     expect(service["marketProvider"].getQuoteByTicker).not.toHaveBeenCalled();
     expect(result.indicators.find(({ key }) => key === "pe")).toMatchObject({
-      value: null,
-      valuationSource: null,
-      valuationMethod: null,
-      marketDataDate: null,
-      unavailableReason: expect.stringContaining(
-        "quantas ações de cada classe estão em circulação",
-      ),
+      value: 30,
+      valuationSource: "ScreenerRepository.getValidatedAnalysisQuote",
+      valuationMethod: "market_cap_emissor / lucro_atribuido_controladora_cvm",
+      marketDataDate: observedAt.toISOString(),
     });
   });
 
-  it("uses the validated provider price but not unreconciled issuer capitalization", async () => {
+  it("uses the validated provider quote and issuer capitalization", async () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      parentNetIncome: "10",
+      parentNetIncomeVersion: "1",
+      parentNetIncomeAccount: "3.11.01",
+      parentNetIncomeConcept: "parent_attributable_net_income",
+      nonControllingEquity: "0",
+      nonControllingEquityVersion: "1",
+      nonControllingEquityAccount: "2.03.09",
+      nonControllingEquityConcept: "non_controlling_equity",
     });
     const marketProvider = {
       getByTicker: vi.fn(),
@@ -2678,6 +3306,7 @@ describe("StockAnalysisService cache and failures", () => {
     expect(marketProvider.getQuoteByTicker).toHaveBeenCalledOnce();
     expect(result).toMatchObject({
       marketDataIdentityVerified: true,
+      marketCapIdentityVerified: false,
       price: 30,
       marketCap: null,
       priceUpdatedAt: observedAt.toISOString(),
@@ -2690,7 +3319,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
     });
     const marketProvider = {
       getByTicker: vi.fn(),
@@ -2737,7 +3366,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date("2026-10-17T14:30:00.000Z");
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
     });
     const service = new StockAnalysisService(
       {
@@ -2775,7 +3404,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("keeps current fundamentals available when the fallback quote request fails", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
     });
     const service = new StockAnalysisService(
       {
@@ -2812,7 +3441,7 @@ describe("StockAnalysisService cache and failures", () => {
     async (_label, fields) => {
       const cached = expiredCachePeriod({
         fetchedAt: new Date(),
-        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
       });
       const service = new StockAnalysisService(
         {
@@ -2853,7 +3482,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("loads cached fundamentals when the optional quote repository method is absent", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
     });
     const service = new StockAnalysisService(
       {
@@ -2997,7 +3626,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("serves a fresh cache with complete issuer provenance as current", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
     });
     const service = new StockAnalysisService(
       {
@@ -3034,7 +3663,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -3149,7 +3778,7 @@ describe("StockAnalysisService cache and failures", () => {
       revenueVersion: "1",
       revenueAccountLabel: "Receita operacional consolidada",
       netIncomeVersion: "1",
-      netIncomeAccount: "3.09",
+      netIncomeAccount: "3.11",
       netIncomeConcept: "consolidated_net_income",
       equityVersion: "1",
       equityAccount: "2.03",
@@ -3252,6 +3881,114 @@ describe("StockAnalysisService cache and failures", () => {
     ["revenue label", { revenueAccountLabel: " " }],
     ["net income account", { netIncomeAccount: null }],
     ["equity concept", { equityConcept: null }],
+    [
+      "parent profit account",
+      {
+        parentNetIncome: "10",
+        parentNetIncomeVersion: "1",
+        parentNetIncomeAccount: null,
+        parentNetIncomeConcept: "parent_attributable_net_income",
+      },
+    ],
+    [
+      "parent profit concept",
+      {
+        parentNetIncome: "10",
+        parentNetIncomeVersion: "1",
+        parentNetIncomeAccount: "3.11.01",
+        parentNetIncomeConcept: null,
+      },
+    ],
+    [
+      "parent profit version",
+      {
+        parentNetIncome: "10",
+        parentNetIncomeVersion: null,
+        parentNetIncomeAccount: "3.11.01",
+        parentNetIncomeConcept: "parent_attributable_net_income",
+      },
+    ],
+    [
+      "parent profit value",
+      {
+        parentNetIncome: "invalid",
+        parentNetIncomeVersion: "1",
+        parentNetIncomeAccount: "3.11.01",
+        parentNetIncomeConcept: "parent_attributable_net_income",
+      },
+    ],
+    [
+      "minority profit account",
+      {
+        nonControllingNetIncome: "2",
+        nonControllingNetIncomeVersion: "1",
+        nonControllingNetIncomeAccount: null,
+        nonControllingNetIncomeConcept: "non_controlling_net_income",
+      },
+    ],
+    [
+      "minority profit concept",
+      {
+        nonControllingNetIncome: "2",
+        nonControllingNetIncomeVersion: "1",
+        nonControllingNetIncomeAccount: "3.11.02",
+        nonControllingNetIncomeConcept: null,
+      },
+    ],
+    [
+      "minority profit version",
+      {
+        nonControllingNetIncome: "2",
+        nonControllingNetIncomeVersion: null,
+        nonControllingNetIncomeAccount: "3.11.02",
+        nonControllingNetIncomeConcept: "non_controlling_net_income",
+      },
+    ],
+    [
+      "minority profit value",
+      {
+        nonControllingNetIncome: "invalid",
+        nonControllingNetIncomeVersion: "1",
+        nonControllingNetIncomeAccount: "3.11.02",
+        nonControllingNetIncomeConcept: "non_controlling_net_income",
+      },
+    ],
+    [
+      "minority equity account",
+      {
+        nonControllingEquity: "2",
+        nonControllingEquityVersion: "1",
+        nonControllingEquityAccount: null,
+        nonControllingEquityConcept: "non_controlling_equity",
+      },
+    ],
+    [
+      "minority equity concept",
+      {
+        nonControllingEquity: "2",
+        nonControllingEquityVersion: "1",
+        nonControllingEquityAccount: "2.03.09",
+        nonControllingEquityConcept: null,
+      },
+    ],
+    [
+      "minority equity version",
+      {
+        nonControllingEquity: "2",
+        nonControllingEquityVersion: null,
+        nonControllingEquityAccount: "2.03.09",
+        nonControllingEquityConcept: "non_controlling_equity",
+      },
+    ],
+    [
+      "minority equity value",
+      {
+        nonControllingEquity: "invalid",
+        nonControllingEquityVersion: "1",
+        nonControllingEquityAccount: "2.03.09",
+        nonControllingEquityConcept: "non_controlling_equity",
+      },
+    ],
     ["period start", { periodStart: "not-a-date" }],
     ["reported end date", { periodEnd: "2025-11-30" }],
     ["filing date", { filingReferenceDate: null }],
@@ -3375,6 +4112,9 @@ describe("StockAnalysisService cache and failures", () => {
   it("uses a fresh validated Screener quote as an explicitly stale last observation", async () => {
     const observedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
     const screener = {
+      getComparisonMetadata: vi
+        .fn()
+        .mockResolvedValue([{ ticker: "PETR4", cnpj: "33000167000101" }]),
       getValidatedAnalysisQuote: vi.fn().mockResolvedValue({
         ticker: "PETR4",
         returnedTicker: "PETR4",
@@ -3408,7 +4148,7 @@ describe("StockAnalysisService cache and failures", () => {
       ticker: "PETR4",
       cnpj: "33000167000101",
       price: 31.25,
-      marketCap: null,
+      marketCap: 300_000_000_000,
       changePercent: null,
       priceUpdatedAt: observedAt.toISOString(),
       priceIsStale: true,
@@ -3441,6 +4181,9 @@ describe("StockAnalysisService cache and failures", () => {
         snapshotQuoteObservedAt: observedAt,
       };
       const screener = {
+        getComparisonMetadata: vi
+          .fn()
+          .mockResolvedValue([{ ticker: "PETR4", cnpj: "33000167000101" }]),
         getValidatedAnalysisQuote: vi.fn().mockResolvedValue(screenerQuote),
       };
       const repository = {
@@ -3465,7 +4208,7 @@ describe("StockAnalysisService cache and failures", () => {
 
       expect(result).toMatchObject({
         price: 31.25,
-        marketCap: null,
+        marketCap: 300_000_000_000,
         priceUpdatedAt: observedAt.toISOString(),
         priceIsStale: true,
       });
@@ -3664,7 +4407,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v5`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
       revenue: "100",
       netIncome: "10",
       equity: "50",

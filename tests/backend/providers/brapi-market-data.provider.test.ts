@@ -704,6 +704,12 @@ describe("BrapiMarketDataProvider", () => {
           { error: true, code: "INVALID_RANGE", message: secretMessage },
           400,
         ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: true, code: "INVALID_RANGE", message: secretMessage },
+          400,
+        ),
       );
 
     await expect(
@@ -731,6 +737,7 @@ describe("BrapiMarketDataProvider", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse(quote()))
       .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse(payload, 400))
       .mockResolvedValueOnce(jsonResponse(payload, 400));
 
     await new BrapiMarketDataProvider(fetcher).getByTicker("PETR4");
@@ -752,6 +759,7 @@ describe("BrapiMarketDataProvider", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse(quote()))
       .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(new Response("private detail", { status: 400 }))
       .mockResolvedValueOnce(new Response("private detail", { status: 400 }));
 
     await new BrapiMarketDataProvider(fetcher).getByTicker("PETR4");
@@ -1049,6 +1057,34 @@ describe("BrapiMarketDataProvider", () => {
       ],
       historyStatus: "partial",
       historyFailure: { reason: "provider_error" },
+    });
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain("range=5y");
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain("range=1y");
+  });
+
+  it("falls back to the one-year range when the provider rejects the five-year plan window", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              data: {
+                historicalDataPrice: [{ date: 1767225600, close: 49 }],
+              },
+            },
+          ],
+        }),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+      history: [{ date: "2026-01-01", close: 49 }],
+      historyStatus: "partial",
+      historyFailure: { reason: "http_error", httpStatus: 400 },
     });
     expect(String(fetcher.mock.calls[0]?.[0])).toContain("range=5y");
     expect(String(fetcher.mock.calls[1]?.[0])).toContain("range=1y");

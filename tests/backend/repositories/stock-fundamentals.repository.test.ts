@@ -26,14 +26,26 @@ const period: FundamentalPeriod = {
   netIncomeVersion: "1",
   netIncomeAccount: "3.11",
   netIncomeConcept: "consolidated_net_income",
+  parentNetIncomeVersion: "1",
+  parentNetIncomeAccount: "3.11.01",
+  parentNetIncomeConcept: "parent_attributable_net_income",
+  nonControllingNetIncomeVersion: "1",
+  nonControllingNetIncomeAccount: "3.11.02",
+  nonControllingNetIncomeConcept: "non_controlling_net_income",
   equityVersion: "1",
   equityAccount: "2.03",
   equityConcept: "consolidated_equity",
+  nonControllingEquityVersion: "1",
+  nonControllingEquityAccount: "2.03.09",
+  nonControllingEquityConcept: "non_controlling_equity",
   periodType: "annual",
   sourceDocument: "DFP",
   revenue: "100",
   netIncome: "10",
+  parentNetIncome: "9",
+  nonControllingNetIncome: "1",
   equity: "50",
+  nonControllingEquity: "5",
   assets: "80",
   liabilities: "30",
   cash: "20",
@@ -206,6 +218,16 @@ describe("StockFundamentalsRepository", () => {
     expect(tx.update).toHaveBeenCalledOnce();
     expect(tx.delete).toHaveBeenCalledOnce();
     expect(tx.insert).toHaveBeenCalledOnce();
+    expect(values).toHaveBeenCalledWith([
+      expect.objectContaining({
+        parentNetIncome: "9",
+        parentNetIncomeAccount: "3.11.01",
+        nonControllingNetIncome: "1",
+        nonControllingNetIncomeAccount: "3.11.02",
+        nonControllingEquity: "5",
+        nonControllingEquityAccount: "2.03.09",
+      }),
+    ]);
   });
 
   it("does not replace cache after another worker takes the lease", async () => {

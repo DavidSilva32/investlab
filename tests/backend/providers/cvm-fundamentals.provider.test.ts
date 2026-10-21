@@ -19,10 +19,13 @@ const accountLabels: Record<string, string> = {
   "3.01": "Receitas da Intermediação Financeira",
   "3.09": "Lucro/Prejuízo Consolidado do Período",
   "3.11": "Lucro/Prejuízo Consolidado do Período",
-  "3.13": "Lucro/Prejuízo Consolidado do Período",
+  "3.11.01": "Lucro/Prejuízo Atribuído aos Sócios da Empresa Controladora",
+  "3.11.02": "Lucro/Prejuízo Atribuído aos Sócios Não Controladores",
+  "3.13": "Lucro básico e diluído por ação",
   "2.03": "Patrimônio Líquido Consolidado",
   "2.07": "Patrimônio Líquido Consolidado",
   "2.08": "Patrimônio Líquido Consolidado",
+  "2.03.09": "Participação dos Acionistas Não Controladores",
 };
 
 function csvZip(name: string, csv: string) {
@@ -61,7 +64,7 @@ function priorAnnualDfpResponse(currentYear: number) {
     csvZip(
       `dfp_cia_aberta_DRE_con_${year}.csv`,
       documentCsv([
-        row("3.09", "100", {
+        row("3.11", "100", {
           DT_REFER: `${year}-12-31`,
           DT_INI_EXERC: `${year}-01-01`,
           DT_FIM_EXERC: `${year}-12-31`,
@@ -227,7 +230,7 @@ describe("CvmFundamentalsProvider", () => {
     );
   });
 
-  it("maps BB Seguridade consolidated net income from account 3.13", async () => {
+  it("maps BB Seguridade consolidated net income from account 3.11", async () => {
     vi.mocked(logger.info).mockClear();
     const currentYear = new Date().getUTCFullYear();
     const reportingYear = currentYear - 1;
@@ -243,14 +246,17 @@ describe("CvmFundamentalsProvider", () => {
     const annual = csvZip(
       `dfp_cia_aberta_DRE_con_${reportingYear}.csv`,
       documentCsv([
-        row("3.13", "9017329", {
+        row("3.11", "9017329", {
           ...period,
           DS_CONTA: "Lucro/Prejuízo Consolidado do Período",
         }),
-        row("2.07", "100000", {
+        row("3.11.01", "8917329", { ...period }),
+        row("3.11.02", "100000", { ...period }),
+        row("2.03", "100000", {
           ...period,
           DS_CONTA: "Patrimônio Líquido Consolidado",
         }),
+        row("2.03.09", "10000", { ...period }),
       ]),
     );
     const emptyCurrentItr = csvZip(
@@ -286,8 +292,14 @@ describe("CvmFundamentalsProvider", () => {
         expect.objectContaining({
           referenceDate: `${reportingYear}-12-31`,
           netIncome: "9017329000.00",
-          netIncomeAccount: "3.13",
+          netIncomeAccount: "3.11",
           netIncomeConcept: "consolidated_net_income",
+          parentNetIncome: "8917329000.00",
+          parentNetIncomeAccount: "3.11.01",
+          parentNetIncomeConcept: "parent_attributable_net_income",
+          nonControllingNetIncome: "100000000.00",
+          nonControllingNetIncomeAccount: "3.11.02",
+          nonControllingNetIncomeConcept: "non_controlling_net_income",
         }),
       ]),
     );
@@ -322,7 +334,7 @@ describe("CvmFundamentalsProvider", () => {
     );
   });
 
-  it("does not accept a nonconsolidated label for account 3.13", async () => {
+  it("does not mistake earnings per share account 3.13 for net income", async () => {
     const currentYear = new Date().getUTCFullYear();
     const reportingYear = currentYear - 1;
     const bbseCnpj = "17344597000194";
@@ -338,7 +350,7 @@ describe("CvmFundamentalsProvider", () => {
       documentCsv([
         row("3.13", "9017329", {
           ...period,
-          DS_CONTA: "Lucro Líquido Individual do Período",
+          DS_CONTA: "Lucro/Prejuízo Consolidado do Período",
         }),
         row("2.07", "100000", {
           ...period,
@@ -529,7 +541,7 @@ describe("CvmFundamentalsProvider", () => {
     const priorMarchEnd = `${year - 1}-03-31`;
     const priorEnd = `${year - 1}-06-30`;
     const currentItrRows = [
-      row("3.09", "30", {
+      row("3.11", "30", {
         DT_REFER: marchEnd,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: marchEnd,
@@ -539,13 +551,13 @@ describe("CvmFundamentalsProvider", () => {
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: marchEnd,
       }),
-      row("3.09", "20", {
+      row("3.11", "20", {
         DT_REFER: marchEnd,
         DT_INI_EXERC: `${year - 1}-01-01`,
         DT_FIM_EXERC: priorMarchEnd,
         ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
       }),
-      row("3.09", "60", {
+      row("3.11", "60", {
         DT_REFER: currentEnd,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: currentEnd,
@@ -555,7 +567,7 @@ describe("CvmFundamentalsProvider", () => {
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: currentEnd,
       }),
-      row("3.09", "50", {
+      row("3.11", "50", {
         DT_REFER: currentEnd,
         DT_INI_EXERC: `${year - 1}-01-01`,
         DT_FIM_EXERC: priorEnd,
@@ -619,12 +631,12 @@ describe("CvmFundamentalsProvider", () => {
     const currentEnd = `${year}-06-30`;
     const priorEnd = `${year - 1}-06-30`;
     const currentItrRows = [
-      row("3.09", "60", {
+      row("3.11", "60", {
         DT_REFER: currentEnd,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: currentEnd,
       }),
-      row("3.09", "50", {
+      row("3.11", "50", {
         DT_REFER: currentEnd,
         DT_INI_EXERC: `${year - 1}-01-01`,
         DT_FIM_EXERC: priorEnd,
@@ -688,7 +700,7 @@ describe("CvmFundamentalsProvider", () => {
     const priorJuneEnd = `${year - 1}-06-30`;
     let historicalArchiveAvailable = true;
     const currentItrRows = [
-      row("3.09", "30", {
+      row("3.11", "30", {
         DT_REFER: marchEnd,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: marchEnd,
@@ -698,7 +710,7 @@ describe("CvmFundamentalsProvider", () => {
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: marchEnd,
       }),
-      row("3.09", "20", {
+      row("3.11", "20", {
         DT_REFER: marchEnd,
         DT_INI_EXERC: `${year - 1}-01-01`,
         DT_FIM_EXERC: priorMarchEnd,
@@ -710,7 +722,7 @@ describe("CvmFundamentalsProvider", () => {
         DT_FIM_EXERC: priorMarchEnd,
         ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
       }),
-      row("3.09", "60", {
+      row("3.11", "60", {
         DT_REFER: juneEnd,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: juneEnd,
@@ -720,7 +732,7 @@ describe("CvmFundamentalsProvider", () => {
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: juneEnd,
       }),
-      row("3.09", "50", {
+      row("3.11", "50", {
         DT_REFER: juneEnd,
         DT_INI_EXERC: `${year - 1}-01-01`,
         DT_FIM_EXERC: priorJuneEnd,
@@ -1328,8 +1340,8 @@ describe("CvmFundamentalsProvider", () => {
       DT_FIM_EXERC: `${year}-06-30`,
     };
     const itr = documentCsv([
-      row("3.09", "20", { ...period, VERSAO: "2" }),
-      row("3.09", "21", { ...period, VERSAO: "2" }),
+      row("3.11", "20", { ...period, VERSAO: "2" }),
+      row("3.11", "21", { ...period, VERSAO: "2" }),
       row("3.11", "30", { ...period, VERSAO: "1" }),
     ]);
     const emptyAnnual = csvZip(
@@ -1597,7 +1609,7 @@ describe("CvmFundamentalsProvider", () => {
   it("maps consolidated bank income and equity by verified account labels", async () => {
     const year = new Date().getUTCFullYear();
     const itr = documentCsv([
-      row("3.09", "20", {
+      row("3.11", "20", {
         DT_REFER: `${year}-06-30`,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: `${year}-06-30`,
@@ -1613,7 +1625,7 @@ describe("CvmFundamentalsProvider", () => {
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: `${year}-06-30`,
       }),
-      row("3.09", "15", {
+      row("3.11", "15", {
         DT_REFER: `${year}-06-30`,
         DT_INI_EXERC: `${year - 1}-01-01`,
         DT_FIM_EXERC: `${year - 1}-06-30`,
@@ -1625,7 +1637,7 @@ describe("CvmFundamentalsProvider", () => {
         DT_FIM_EXERC: `${year - 1}-06-30`,
         ORDEM_EXERC: `PEN${String.fromCharCode(218)}LTIMO`,
       }),
-      row("3.09", "20", {
+      row("3.11", "20", {
         DT_REFER: `${year}-08-01`,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: `${year}-06-30`,
@@ -1635,7 +1647,7 @@ describe("CvmFundamentalsProvider", () => {
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: `${year}-06-30`,
       }),
-      row("3.09", "999", {
+      row("3.11", "999", {
         DT_REFER: `${year}-07-01`,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: `${year}-06-30`,
@@ -1677,7 +1689,7 @@ describe("CvmFundamentalsProvider", () => {
           periodEnd: `${year}-06-30`,
           filingReferenceDate: `${year}-08-01`,
           netIncome: "20000.00",
-          netIncomeAccount: "3.09",
+          netIncomeAccount: "3.11",
           netIncomeConcept: "consolidated_net_income",
           equity: "90000.00",
           equityAccount: "2.07",
@@ -1686,7 +1698,7 @@ describe("CvmFundamentalsProvider", () => {
         expect.objectContaining({
           periodEnd: `${year - 1}-06-30`,
           netIncome: "15000.00",
-          netIncomeAccount: "3.09",
+          netIncomeAccount: "3.11",
           netIncomeConcept: "consolidated_net_income",
           equity: "75000.00",
           equityAccount: "2.08",
@@ -1699,7 +1711,7 @@ describe("CvmFundamentalsProvider", () => {
   it("keeps consolidated income unavailable when multiple accepted accounts match", async () => {
     const year = new Date().getUTCFullYear();
     const itr = documentCsv([
-      row("3.09", "20", {
+      row("3.11", "20", {
         DT_REFER: `${year}-06-30`,
         DT_INI_EXERC: `${year}-01-01`,
         DT_FIM_EXERC: `${year}-06-30`,
@@ -2117,5 +2129,118 @@ describe("CvmFundamentalsProvider", () => {
         cnpj,
       }),
     ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("reuses one ITR read when historical and LTM refreshes request the same year", async () => {
+    const currentYear = new Date().getUTCFullYear();
+    const previousYear = currentYear - 1;
+    const filingReferenceDate = `${currentYear}-08-10`;
+    const annual: FundamentalPeriod = {
+      referenceDate: `${previousYear}-12-31`,
+      periodStart: `${previousYear}-01-01`,
+      periodEnd: `${previousYear}-12-31`,
+      filingReferenceDate: `${currentYear}-03-20`,
+      exerciseOrder: "last",
+      periodBasis: "annual",
+      periodType: "annual",
+      sourceDocument: "DFP",
+      revenue: null,
+      netIncome: "100",
+      netIncomeVersion: "1",
+      netIncomeAccount: "3.11",
+      netIncomeConcept: "consolidated_net_income",
+      equity: null,
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    };
+    const currentYtd: FundamentalPeriod = {
+      referenceDate: `${currentYear}-06-30`,
+      periodStart: `${currentYear}-01-01`,
+      periodEnd: `${currentYear}-06-30`,
+      filingReferenceDate,
+      exerciseOrder: "last",
+      periodBasis: "year_to_date",
+      periodType: "interim",
+      sourceDocument: "ITR",
+      revenue: null,
+      netIncome: "60",
+      netIncomeVersion: "1",
+      netIncomeAccount: "3.11",
+      netIncomeConcept: "consolidated_net_income",
+      equity: "100",
+      equityVersion: "1",
+      equityAccount: "2.03",
+      equityConcept: "consolidated_equity",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    };
+    const comparativeYtd: FundamentalPeriod = {
+      ...currentYtd,
+      referenceDate: `${previousYear}-06-30`,
+      periodStart: `${previousYear}-01-01`,
+      periodEnd: `${previousYear}-06-30`,
+      exerciseOrder: "previous",
+      netIncome: "50",
+      equity: null,
+      equityVersion: null,
+      equityAccount: null,
+      equityConcept: null,
+    };
+    type ReadDocument = (
+      document: "DFP" | "ITR",
+      year: number,
+      cnpj: string,
+      cvmCode: string,
+      ticker: string,
+    ) => Promise<FundamentalPeriod[]>;
+    const provider = new CvmFundamentalsProvider(
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(issuerCsv(["33.000.167/0001-01;9512;Petrobras;ATIVO"])),
+        ),
+    );
+    const documentRead = vi
+      .spyOn(
+        provider as unknown as { readDocument: ReadDocument },
+        "readDocument",
+      )
+      .mockImplementation(async (document, year) => {
+        if (document === "DFP" && year === previousYear) return [annual];
+        if (document === "ITR" && year === currentYear)
+          return [currentYtd, comparativeYtd];
+        if (document === "ITR" && year === previousYear)
+          return [
+            {
+              ...comparativeYtd,
+              sourceDocument: "ITR",
+              equity: "80",
+              equityVersion: "1",
+              equityAccount: "2.03",
+              equityConcept: "consolidated_equity",
+            },
+          ];
+        return [];
+      });
+
+    await expect(
+      provider.getByTicker({ ticker: "PETR4", cnpj }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          referenceDate: annual.referenceDate,
+          sourceDocument: "DFP",
+        }),
+      ]),
+    );
+    expect(
+      documentRead.mock.calls.filter(
+        ([document, year]) => document === "ITR" && year === previousYear,
+      ),
+    ).toHaveLength(1);
   });
 });
