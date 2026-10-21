@@ -10,6 +10,7 @@ import {
   ChartNoAxesCombined,
   ChevronRight,
   CircleHelp,
+  Globe2,
   LockKeyhole,
   MessageSquareText,
   ShieldCheck,
@@ -19,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { McpConnectionValues } from "@/app/(public)/mcp/_components/mcp-connection-values";
+import { McpOtherClientGuide } from "@/app/(public)/mcp/_components/mcp-other-client-guide";
 
 const connectionSteps = [
   {
@@ -218,9 +220,8 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
             MCP do InvestLab
           </h1>
           <p className="mt-3 text-base leading-7 text-muted-foreground">
-            Conecte o ChatGPT ao InvestLab para consultar sua carteira e seu
-            planejamento com a sua autorização. MCP é a ponte que permite essa
-            consulta.
+            Conecte um cliente compatível com MCP ao InvestLab para consultar
+            sua carteira e seu planejamento com a sua autorização.
           </p>
         </div>
         <Button
@@ -275,6 +276,13 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                 />
                 Conectar ao ChatGPT
               </TabsTrigger>
+              <TabsTrigger
+                value="other-clients"
+                className="min-h-10 justify-start gap-2 px-3 text-left data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              >
+                <Globe2 aria-hidden="true" className="size-4" />
+                Outros clientes MCP
+              </TabsTrigger>
               <div
                 role="presentation"
                 className="mb-1 mt-5 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -316,9 +324,9 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                   O que é MCP?
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                  É uma ponte para o ChatGPT consultar informações do InvestLab
-                  depois que você autoriza a conexão. O acesso é somente para
-                  leitura.
+                  MCP é um padrão que permite a sistemas compatíveis consultar
+                  informações do InvestLab depois que você autoriza a conexão. O
+                  acesso é somente para leitura.
                 </p>
               </section>
 
@@ -340,7 +348,7 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                   },
                   {
                     icon: WalletCards,
-                    title: "O ChatGPT consulta",
+                    title: "O cliente MCP consulta",
                     description:
                       "O InvestLab retorna os dados disponíveis para responder.",
                   },
@@ -350,18 +358,7 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                     className="relative flex min-h-36 gap-4 rounded-xl border border-border/70 bg-card p-4 transition-colors hover:border-primary/35 sm:p-5"
                   >
                     <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                      {title === "O ChatGPT consulta" ? (
-                        <Image
-                          src="/chatgpt-icon.svg"
-                          alt=""
-                          width={20}
-                          height={20}
-                          className="size-5 rounded-full bg-white p-0.5"
-                          unoptimized
-                        />
-                      ) : (
-                        <Icon aria-hidden="true" className="size-5" />
-                      )}
+                      <Icon aria-hidden="true" className="size-5" />
                     </span>
                     <div>
                       <span className="text-xs font-semibold uppercase tracking-wide text-primary">
@@ -473,6 +470,10 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                 Abrir o guia oficial do ChatGPT para servidores MCP
                 <ArrowUpRight aria-hidden="true" className="size-4" />
               </Link>
+            </TabsContent>
+
+            <TabsContent value="other-clients" className="mt-0">
+              <McpOtherClientGuide endpoint={endpoint} />
             </TabsContent>
 
             {toolGroups.map((group) => (
@@ -600,8 +601,10 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                       Não há ferramentas para gravar ou excluir dados. A
                       simulação usa somente premissas informadas. As cotações B3
                       são limitadas a 10 ativos e não incluem histórico,
-                      fundamentos ou preço em tempo real. Ainda não há guias de
-                      conexão validados para outros assistentes de IA.
+                      fundamentos ou preço em tempo real. Para conectar outros
+                      clientes, use o guia geral da seção “Outros clientes MCP”.
+                      A conexão depende de suporte a servidores MCP remotos por
+                      HTTPS e autenticação OAuth.
                     </p>
                   </div>
                 </div>
