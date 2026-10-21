@@ -664,7 +664,9 @@ describe("StockAnalysisDashboard", () => {
       return initialResponse;
     });
     vi.stubGlobal("fetch", fetcher);
-    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+    const { unmount } = render(
+      <StockAnalysisDashboard initialTicker="PETR4" />,
+    );
     const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "Vale" } });
     await act(async () => {
@@ -711,6 +713,7 @@ describe("StockAnalysisDashboard", () => {
     expect(screen.getByText("Encontre uma empresa para analisar")).toBeTruthy();
 
     const requestsBeforeLeaving = fetcher.mock.calls.length;
+    unmount();
     window.history.pushState({}, "", "/?ticker=VALE3");
     window.dispatchEvent(new PopStateEvent("popstate"));
     await act(async () => {
