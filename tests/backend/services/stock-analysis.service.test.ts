@@ -141,7 +141,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.completeRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v7$/),
+      expect.stringMatching(/^\d{4}-cvm-v8$/),
       "lease-token",
       [reportedPeriod],
     );
@@ -277,7 +277,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.failRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v7$/),
+      expect.stringMatching(/^\d{4}-cvm-v8$/),
       "lease-token",
       "PROVIDER_ERROR",
     );
@@ -321,7 +321,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.failRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v7$/),
+      expect.stringMatching(/^\d{4}-cvm-v8$/),
       "lease-token",
       "PROVIDER_REJECTED",
     );
@@ -419,7 +419,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     expect(repository.failRefresh).toHaveBeenCalledWith(
       ticker,
       issuerCnpj,
-      expect.stringMatching(/^\d{4}-cvm-v7$/),
+      expect.stringMatching(/^\d{4}-cvm-v8$/),
       "lease-token",
       "NO_VALID_DATA",
     );
@@ -879,7 +879,7 @@ describe("StockAnalysisService", () => {
         [annual, currentYtd, comparativeYtd].map((period) => ({
           ...period,
           cnpj: "33000167000101",
-          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
           fetchedAt,
         })),
       ),
@@ -2874,7 +2874,7 @@ describe("StockAnalysisService cache and failures", () => {
     const cached = expiredCachePeriod({
       cnpj,
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
       netIncome: "5000000000",
       parentNetIncome: "5000000000",
       parentNetIncomeVersion: "1",
@@ -3210,7 +3210,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
       parentNetIncome: "10",
       parentNetIncomeVersion: "1",
       parentNetIncomeAccount: "3.11.01",
@@ -3269,7 +3269,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
       parentNetIncome: "10",
       parentNetIncomeVersion: "1",
       parentNetIncomeAccount: "3.11.01",
@@ -3319,7 +3319,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date();
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
     });
     const marketProvider = {
       getByTicker: vi.fn(),
@@ -3366,7 +3366,7 @@ describe("StockAnalysisService cache and failures", () => {
     const observedAt = new Date("2026-10-17T14:30:00.000Z");
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
     });
     const service = new StockAnalysisService(
       {
@@ -3404,7 +3404,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("keeps current fundamentals available when the fallback quote request fails", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
     });
     const service = new StockAnalysisService(
       {
@@ -3441,7 +3441,7 @@ describe("StockAnalysisService cache and failures", () => {
     async (_label, fields) => {
       const cached = expiredCachePeriod({
         fetchedAt: new Date(),
-        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+        sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
       });
       const service = new StockAnalysisService(
         {
@@ -3482,7 +3482,7 @@ describe("StockAnalysisService cache and failures", () => {
   it("loads cached fundamentals when the optional quote repository method is absent", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
     });
     const service = new StockAnalysisService(
       {
@@ -3606,7 +3606,7 @@ describe("StockAnalysisService cache and failures", () => {
       listByTicker: vi.fn().mockResolvedValue([
         expiredCachePeriod({
           fetchedAt: new Date(),
-          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
+          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
         }),
       ]),
     };
@@ -3623,10 +3623,86 @@ describe("StockAnalysisService cache and failures", () => {
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
   });
 
+  it("reprocesses a v7 cache through a v8 claim and persists the v8 provider result", async () => {
+    const currentVersion = `${new Date().getUTCFullYear()}-cvm-v8`;
+    const refreshedPeriod = {
+      referenceDate: "2025-12-31",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      filingReferenceDate: "2026-03-20",
+      exerciseOrder: "last" as const,
+      periodBasis: "annual" as const,
+      periodType: "annual" as const,
+      sourceDocument: "DFP" as const,
+      revenue: "200",
+      netIncome: "20",
+      parentNetIncome: "18",
+      equity: "100",
+      assets: null,
+      liabilities: null,
+      cash: null,
+      debt: null,
+    };
+    const marketProvider = {
+      getByTicker: vi.fn().mockResolvedValue(market),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([refreshedPeriod]),
+    };
+    const repository = {
+      listByTicker: vi.fn().mockResolvedValue([
+        expiredCachePeriod({
+          fetchedAt: new Date(),
+          sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+        }),
+      ]),
+      claimRefresh: vi.fn().mockResolvedValue("v8-lease-token"),
+      completeRefresh: vi.fn().mockResolvedValue(true),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      fundamentalsProvider,
+      repository,
+      rejectedScreenerLookups(),
+    );
+
+    const staleAnalysis = await service.getByTicker("PETR4");
+    expect(staleAnalysis).toMatchObject({
+      fundamentalsIsStale: true,
+      fundamentals: [expect.objectContaining({ netIncome: "10" })],
+    });
+
+    const refresh = await service.requestFundamentalsRefresh(
+      "PETR4",
+      "33000167000101",
+      "refresh-v8-cache",
+    );
+    expect(repository.claimRefresh).toHaveBeenCalledWith(
+      "PETR4",
+      "33000167000101",
+      currentVersion,
+    );
+    await refresh.run?.();
+
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledWith({
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+    });
+    expect(repository.completeRefresh).toHaveBeenCalledWith(
+      "PETR4",
+      "33000167000101",
+      currentVersion,
+      "v8-lease-token",
+      [refreshedPeriod],
+    );
+  });
+
   it("serves a fresh cache with complete issuer provenance as current", async () => {
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
     });
     const service = new StockAnalysisService(
       {
@@ -3663,7 +3739,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -4407,7 +4483,7 @@ describe("StockAnalysisService cache and failures", () => {
       periodType: "annual",
       sourceDocument: "DFP",
       cnpj: "33000167000101",
-      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v7`,
+      sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,
       revenue: "100",
       netIncome: "10",
       equity: "50",
@@ -4449,11 +4525,11 @@ describe("StockAnalysisService cache and failures", () => {
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
   });
 
-  it("serves an issuer cache from a previous CVM revision as stale", async () => {
+  it("marks a v7 issuer cache stale so the current revision can refresh it", async () => {
     const year = new Date().getUTCFullYear();
     const cachedPeriod = expiredCachePeriod({
       fetchedAt: new Date(),
-      sourceVersion: `${year}-cvm-v4`,
+      sourceVersion: `${year}-cvm-v7`,
     });
     const marketProvider = {
       getByTicker: vi.fn().mockRejectedValue(new Error("market unavailable")),
