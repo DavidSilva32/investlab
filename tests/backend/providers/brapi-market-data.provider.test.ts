@@ -876,6 +876,22 @@ describe("BrapiMarketDataProvider", () => {
     }
   });
 
+  it("classifies unexpected history request setup errors as provider errors", async () => {
+    const abortAnySpy = vi.spyOn(AbortSignal, "any").mockImplementation(() => {
+      throw new Error("signal setup failed");
+    });
+    try {
+      await expect(
+        new BrapiMarketDataProvider(vi.fn()).getHistoryByTicker("PETR4"),
+      ).resolves.toMatchObject({
+        historyStatus: "unavailable",
+        historyFailure: { reason: "provider_error" },
+      });
+    } finally {
+      abortAnySpy.mockRestore();
+    }
+  });
+
   it("bounds the required quote request and cancels optional requests on failure", async () => {
     const controllers: AbortController[] = [];
     const timeoutSpy = vi

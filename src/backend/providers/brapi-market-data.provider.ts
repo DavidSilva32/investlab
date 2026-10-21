@@ -296,10 +296,11 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
           error instanceof MarketDataHttpError &&
           error.providerCode === "INVALID_RANGE";
         const nextRange = historicalRanges[index + 1];
-        if (!rangeUnavailable || !nextRange || parentSignal.aborted)
-          throw error;
+        if (!rangeUnavailable || parentSignal.aborted) throw error;
 
         fallbackFailure ??= this.historyFailure(error);
+        if (!nextRange) return { payload: { results: [] }, fallbackFailure };
+
         logger.warn("stock_market_history_range_fallback", {
           provider: "brapi",
           ticker: decodeURIComponent(symbol),
@@ -310,7 +311,9 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
       }
     }
 
-    throw new Error("No historical range was requested");
+    // The configured range list is a non-empty tuple, so this is a defensive return.
+    /* c8 ignore next */
+    return { payload: { results: [] }, fallbackFailure };
   }
 
   private normalizeHistory(
@@ -334,7 +337,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         ticker,
         history: [],
         historyStatus: "unavailable",
-        historyFailure: { reason: "invalid_response" },
+        historyFailure: fallbackFailure ?? { reason: "invalid_response" },
       };
     const points = result.data.historicalDataPrice;
     const pointsByDate = new Map<
