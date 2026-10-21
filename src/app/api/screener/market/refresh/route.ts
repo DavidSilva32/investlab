@@ -5,19 +5,10 @@ import {
 import { ApplicationError } from "@/backend/errors/application-error";
 import { screenerMarketController } from "@/backend/controllers/screener-market.controller";
 import { logger } from "@/infrastructure/logging/logger";
+import { isSameOrigin } from "@/lib/http/is-same-origin";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
-
-function isSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).origin === new URL(request.url).origin;
-  } catch {
-    return false;
-  }
-}
 
 export const POST = withApiRequestLogging(
   "POST",
@@ -55,5 +46,3 @@ export const POST = withApiRequestLogging(
     }
   },
 );
-
-export const screenerMarketRefreshRouteInternals = { isSameOrigin };

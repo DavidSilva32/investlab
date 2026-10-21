@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { McpConsentForm } from "@/app/(public)/mcp/consent/mcp-consent-form";
 import { getAuthSecret } from "@/infrastructure/auth/auth-configuration";
+import { scopeLabel } from "@/lib/mcp/scope-label";
 
 type ConsentPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -56,17 +57,4 @@ export default async function McpConsentPage({
       </section>
     </main>
   );
-}
-
-export function scopeLabel(scope: string) {
-  if (scope === "mcp:read") return "Consultar sua carteira e posições.";
-  if (scope === "mcp:admin:read")
-    return "Buscar dados básicos de contas e consultar a carteira escolhida; disponível somente para ADMIN.";
-  if (scope === "openid") return "Confirmar sua identidade para esta conexão.";
-  if (scope === "profile")
-    return "Compartilhar informações básicas do seu perfil.";
-  if (scope === "email") return "Compartilhar seu endereço de e-mail.";
-  if (scope === "offline_access")
-    return "Manter a conexão ativa até você revogá-la.";
-  return scope;
 }

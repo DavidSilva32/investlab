@@ -28,7 +28,7 @@ vi.mock("@/infrastructure/auth/auth-configuration", () => ({
   getAuthSecret: mocks.getAuthSecret,
 }));
 
-import McpConsentPage, { scopeLabel } from "@/app/(public)/mcp/consent/page";
+import McpConsentPage from "@/app/(public)/mcp/consent/page";
 
 describe("MCP consent page", () => {
   beforeEach(() => {
@@ -105,21 +105,5 @@ describe("MCP consent page", () => {
     const text = JSON.stringify(page);
     expect(text).toContain("ChatGPT");
     expect(text).not.toContain("mcp:read");
-  });
-
-  it("labels all known scopes and leaves unknown scope names intact", () => {
-    expect(scopeLabel("mcp:read")).toBe("Consultar sua carteira e posições.");
-    expect(scopeLabel("mcp:admin:read")).toContain("somente para ADMIN");
-    expect(scopeLabel("openid")).toBe(
-      "Confirmar sua identidade para esta conexão.",
-    );
-    expect(scopeLabel("profile")).toBe(
-      "Compartilhar informações básicas do seu perfil.",
-    );
-    expect(scopeLabel("email")).toBe("Compartilhar seu endereço de e-mail.");
-    expect(scopeLabel("offline_access")).toBe(
-      "Manter a conexão ativa até você revogá-la.",
-    );
-    expect(scopeLabel("custom:scope")).toBe("custom:scope");
   });
 });

@@ -76,3 +76,6 @@ it("returns application errors without a retry delay", async () => {
     message: "Ticker inválido.",
   });
 });
+vi.mock("@/backend/services/privacy-center.service", () => ({
+  privacyCenterService: { hasAcceptedCurrentTerms: vi.fn(async () => true) },
+}));

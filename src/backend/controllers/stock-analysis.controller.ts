@@ -60,5 +60,9 @@ export class StockAnalysisController {
     );
     return { state: result.state, run: result.run };
   }
+
+  async refreshDueFundamentals(requestId: string) {
+    return stockAnalysisService.refreshDueFundamentals(requestId);
+  }
 }
 export const stockAnalysisController = new StockAnalysisController();

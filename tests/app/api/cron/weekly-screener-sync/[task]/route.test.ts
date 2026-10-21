@@ -4,6 +4,7 @@ import { ApplicationError } from "@/backend/errors/application-error";
 const mocks = vi.hoisted(() => ({
   sync: vi.fn(),
   refresh: vi.fn(),
+  refreshDueFundamentals: vi.fn(),
   error: vi.fn(),
 }));
 vi.mock("@/backend/controllers/screener-sync.controller", () => ({
@@ -11,6 +12,11 @@ vi.mock("@/backend/controllers/screener-sync.controller", () => ({
 }));
 vi.mock("@/backend/controllers/screener-market.controller", () => ({
   screenerMarketController: { refresh: mocks.refresh },
+}));
+vi.mock("@/backend/controllers/stock-analysis.controller", () => ({
+  stockAnalysisController: {
+    refreshDueFundamentals: mocks.refreshDueFundamentals,
+  },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
   logger: {
@@ -47,6 +53,7 @@ describe("GET /api/cron/weekly-screener-sync/[task]", () => {
     vi.stubEnv("CRON_SECRET", secret);
     mocks.sync.mockReset();
     mocks.refresh.mockReset();
+    mocks.refreshDueFundamentals.mockReset();
     mocks.error.mockReset();
   });
 
@@ -118,6 +125,89 @@ describe("GET /api/cron/weekly-screener-sync/[task]", () => {
     });
     expect(mocks.refresh).toHaveBeenCalledTimes(2);
     expect(mocks.refresh).toHaveBeenCalledWith("weekly-sync-test");
+  });
+
+  it("drains weekly stock fundamentals batches", async () => {
+    mocks.refreshDueFundamentals
+      .mockResolvedValueOnce({
+        selectedIssuers: 5,
+        attemptedIssuers: 5,
+        updatedIssuers: 4,
+        unavailableIssuers: 1,
+        remainingIssuers: 1,
+      })
+      .mockResolvedValueOnce({
+        selectedIssuers: 1,
+        attemptedIssuers: 1,
+        updatedIssuers: 1,
+        unavailableIssuers: 0,
+        remainingIssuers: 0,
+      });
+
+    const response = await GET(
+      request(`Bearer ${secret}`),
+      context("stock-fundamentals"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      batchCount: 2,
+      attemptedIssuers: 6,
+      updatedIssuers: 5,
+      unavailableIssuers: 1,
+      remainingIssuers: 0,
+      requestId: "weekly-sync-test",
+    });
+    expect(mocks.refreshDueFundamentals).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops when a stock-fundamentals batch makes no progress", async () => {
+    mocks.refreshDueFundamentals.mockResolvedValue({
+      selectedIssuers: 1,
+      attemptedIssuers: 0,
+      updatedIssuers: 0,
+      unavailableIssuers: 0,
+      remainingIssuers: 1,
+    });
+
+    const response = await GET(
+      request(`Bearer ${secret}`),
+      context("stock-fundamentals"),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      message:
+        "A atualização de fundamentos não avançou; será retomada na próxima execução.",
+    });
+    expect(mocks.refreshDueFundamentals).toHaveBeenCalledOnce();
+  });
+
+  it("stops stock-fundamentals batches before the function timeout", async () => {
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(281_000);
+    mocks.refreshDueFundamentals.mockResolvedValue({
+      selectedIssuers: 1,
+      attemptedIssuers: 1,
+      updatedIssuers: 1,
+      unavailableIssuers: 0,
+      remainingIssuers: 1,
+    });
+
+    const response = await GET(
+      request(`Bearer ${secret}`),
+      context("stock-fundamentals"),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      message:
+        "A atualização de fundamentos excedeu o tempo disponível e continuará na próxima execução.",
+    });
+    expect(mocks.refreshDueFundamentals).toHaveBeenCalledOnce();
   });
 
   it("stops when a market batch makes no progress", async () => {

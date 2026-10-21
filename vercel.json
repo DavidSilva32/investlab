@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/weekly-screener-sync/market",
       "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/cron/weekly-screener-sync/stock-fundamentals",
+      "schedule": "0 12 * * 1"
     }
   ]
 }

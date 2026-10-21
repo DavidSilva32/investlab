@@ -24,64 +24,13 @@ export class StockFundamentalsRepository {
     return periods;
   }
 
-  async save(
-    ticker: string,
-    cnpj: string,
-    sourceVersion: string,
-    periods: FundamentalPeriod[],
-  ) {
-    if (!periods.length) return;
-    const startedAt = Date.now();
-    const database = getDatabaseClient();
-    await database.transaction(async (transaction) => {
-      await transaction
-        .delete(stockFundamentals)
-        .where(eq(stockFundamentals.ticker, ticker));
-      await transaction.insert(stockFundamentals).values(
-        periods.map((period) => ({
-          ticker,
-          cnpj,
-          periodType: period.periodType,
-          referenceDate: period.referenceDate,
-          periodStart: period.periodStart,
-          periodEnd: period.periodEnd,
-          filingReferenceDate: period.filingReferenceDate,
-          exerciseOrder: period.exerciseOrder,
-          periodBasis: period.periodBasis,
-          revenueVersion: period.revenueVersion,
-          revenueAccountLabel: period.revenueAccountLabel,
-          netIncomeVersion: period.netIncomeVersion,
-          netIncomeAccount: period.netIncomeAccount,
-          netIncomeConcept: period.netIncomeConcept,
-          equityVersion: period.equityVersion,
-          equityAccount: period.equityAccount,
-          equityConcept: period.equityConcept,
-          revenue: period.revenue,
-          netIncome: period.netIncome,
-          equity: period.equity,
-          assets: period.assets,
-          liabilities: period.liabilities,
-          cash: period.cash,
-          debt: period.debt,
-          sourceDocument: period.sourceDocument,
-          sourceVersion,
-        })),
-      );
-    });
-    logger.info("stock_fundamentals_repository_write_completed", {
-      ticker,
-      periods: periods.length,
-      durationMs: Date.now() - startedAt,
-    });
-  }
-
   async getRefresh(ticker: string, cnpj: string, sourceVersion: string) {
     const [refresh] = await getDatabaseClient()
       .select({
         status: stockFundamentalRefreshes.status,
         retryAfter: stockFundamentalRefreshes.retryAfter,
         errorCode: stockFundamentalRefreshes.errorCode,
-        refreshDue: sql<boolean>`${stockFundamentalRefreshes.completedAt} <= now() - interval '1 day'`,
+        refreshDue: sql<boolean>`${stockFundamentalRefreshes.completedAt} <= now() - interval '7 days'`,
         activeLease: sql<boolean>`${stockFundamentalRefreshes.leaseExpiresAt} > now()`,
         retryReady: sql<boolean>`${stockFundamentalRefreshes.retryAfter} IS NULL OR ${stockFundamentalRefreshes.retryAfter} <= now()`,
       })
@@ -108,6 +57,37 @@ export class StockFundamentalsRepository {
       retryAfter: refresh.retryAfter?.toISOString() ?? null,
       errorCode: refresh.errorCode,
     };
+  }
+
+  async listDueRefreshes(sourceVersion: string, limit: number) {
+    return getDatabaseClient()
+      .select({
+        ticker: stockFundamentalRefreshes.ticker,
+        cnpj: stockFundamentalRefreshes.cnpj,
+        sourceVersion: stockFundamentalRefreshes.sourceVersion,
+      })
+      .from(stockFundamentalRefreshes)
+      .where(
+        and(
+          eq(stockFundamentalRefreshes.sourceVersion, sourceVersion),
+          or(
+            and(
+              eq(stockFundamentalRefreshes.status, "COMPLETED"),
+              sql`${stockFundamentalRefreshes.completedAt} <= now() - interval '7 days'`,
+            ),
+            and(
+              eq(stockFundamentalRefreshes.status, "FAILED"),
+              sql`(${stockFundamentalRefreshes.retryAfter} IS NULL OR ${stockFundamentalRefreshes.retryAfter} <= now())`,
+            ),
+            and(
+              eq(stockFundamentalRefreshes.status, "RUNNING"),
+              sql`${stockFundamentalRefreshes.leaseExpiresAt} <= now()`,
+            ),
+          ),
+        ),
+      )
+      .orderBy(sql`${stockFundamentalRefreshes.completedAt} ASC NULLS FIRST`)
+      .limit(limit);
   }
 
   async claimRefresh(ticker: string, cnpj: string, sourceVersion: string) {
@@ -153,7 +133,7 @@ export class StockFundamentalsRepository {
           ),
           and(
             eq(stockFundamentalRefreshes.status, "COMPLETED"),
-            sql`${stockFundamentalRefreshes.completedAt} <= now() - interval '1 day'`,
+            sql`${stockFundamentalRefreshes.completedAt} <= now() - interval '7 days'`,
           ),
         ),
       })

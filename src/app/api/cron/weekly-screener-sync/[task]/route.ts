@@ -1,5 +1,6 @@
 import { screenerMarketController } from "@/backend/controllers/screener-market.controller";
 import { screenerSyncController } from "@/backend/controllers/screener-sync.controller";
+import { stockAnalysisController } from "@/backend/controllers/stock-analysis.controller";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { hasValidCronAuthorization } from "@/infrastructure/auth/cron-authorization";
 import {
@@ -14,7 +15,7 @@ export const maxDuration = 300;
 const maximumMarketBatches = 500;
 const responseDeadlineMarginMs = 20_000;
 
-type Task = "fundamentals" | "market";
+type Task = "fundamentals" | "market" | "stock-fundamentals";
 type RouteContext = { params: Promise<{ task: string }> };
 
 async function refreshMarketUntilComplete(requestId: string) {
@@ -66,6 +67,50 @@ async function refreshMarketUntilComplete(requestId: string) {
   };
 }
 
+async function refreshStockFundamentalsUntilComplete(requestId: string) {
+  const startedAt = Date.now();
+  let batchCount = 0;
+  let attemptedIssuers = 0;
+  let updatedIssuers = 0;
+  let unavailableIssuers = 0;
+  let remainingIssuers = 1;
+
+  while (remainingIssuers > 0) {
+    if (
+      batchCount >= maximumMarketBatches ||
+      Date.now() - startedAt >= 300_000 - responseDeadlineMarginMs
+    ) {
+      throw new ApplicationError(
+        "A atualização de fundamentos excedeu o tempo disponível e continuará na próxima execução.",
+        503,
+      );
+    }
+
+    const result =
+      await stockAnalysisController.refreshDueFundamentals(requestId);
+    batchCount += 1;
+    attemptedIssuers += result.attemptedIssuers;
+    updatedIssuers += result.updatedIssuers;
+    unavailableIssuers += result.unavailableIssuers;
+    remainingIssuers = result.remainingIssuers;
+
+    if (remainingIssuers > 0 && result.attemptedIssuers === 0) {
+      throw new ApplicationError(
+        "A atualização de fundamentos não avançou; será retomada na próxima execução.",
+        503,
+      );
+    }
+  }
+
+  return {
+    batchCount,
+    attemptedIssuers,
+    updatedIssuers,
+    unavailableIssuers,
+    remainingIssuers,
+  };
+}
+
 export const GET = withApiRequestLogging(
   "GET",
   "/api/cron/weekly-screener-sync/[task]",
@@ -98,7 +143,11 @@ export const GET = withApiRequestLogging(
     }
 
     const { task } = await context.params;
-    if (task !== "fundamentals" && task !== "market") {
+    if (
+      task !== "fundamentals" &&
+      task !== "market" &&
+      task !== "stock-fundamentals"
+    ) {
       return Response.json(
         { message: "Tarefa não encontrada.", requestId },
         {
@@ -115,7 +164,9 @@ export const GET = withApiRequestLogging(
       const result =
         task === "fundamentals"
           ? await screenerSyncController.sync()
-          : await refreshMarketUntilComplete(requestId);
+          : task === "market"
+            ? await refreshMarketUntilComplete(requestId)
+            : await refreshStockFundamentalsUntilComplete(requestId);
       return Response.json(
         { ...result, requestId },
         {
@@ -149,8 +200,3 @@ export const GET = withApiRequestLogging(
     }
   },
 );
-
-export const weeklyScreenerSyncRouteInternals = {
-  refreshMarketUntilComplete,
-  maximumMarketBatches,
-};

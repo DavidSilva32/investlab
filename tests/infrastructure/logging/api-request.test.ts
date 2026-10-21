@@ -182,6 +182,57 @@ describe("withApiRequestLogging", () => {
     expect(await response.json()).toEqual({ ownerId: "new-user" });
   });
 
+  it("scopes stock-analysis manual valuation inputs to the authenticated owner", async () => {
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/analyses/stocks/[ticker]/manual-inputs",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+    const response = await handler(
+      new Request(
+        "https://investlab.test/api/analyses/stocks/ITUB4/manual-inputs",
+      ),
+    );
+    await expect(response.json()).resolves.toEqual({ ownerId: "owner-1" });
+  });
+
+  it("permits support-mode reads of owner inputs and denies writes", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const read = withApiRequestLogging(
+      "GET",
+      "/api/analyses/stocks/[ticker]/manual-inputs",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+    const readResponse = await read(
+      new Request(
+        "https://investlab.test/api/analyses/stocks/ITUB4/manual-inputs",
+        {
+          headers: { cookie: "investlab-support-view=token" },
+        },
+      ),
+    );
+    await expect(readResponse.json()).resolves.toEqual({
+      ownerId: "customer-1",
+    });
+
+    const write = withApiRequestLogging(
+      "PUT",
+      "/api/analyses/stocks/[ticker]/manual-inputs/[inputKey]",
+      async (_request: Request) => Response.json({ saved: true }),
+    );
+    const writeResponse = await write(
+      new Request(
+        "https://investlab.test/api/analyses/stocks/ITUB4/manual-inputs/graham_eps",
+        {
+          method: "PUT",
+          headers: { cookie: "investlab-support-view=token" },
+        },
+      ),
+    );
+    expect(writeResponse.status).toBe(403);
+  });
+
   it("rejects private requests without a session before invoking the handler", async () => {
     authorization.user = null;
     const routeHandler = vi.fn(async (_request: Request) =>

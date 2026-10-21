@@ -19,10 +19,8 @@ vi.mock("@/infrastructure/logging/logger", () => ({
     withContext: (_context: unknown, operation: () => unknown) => operation(),
   },
 }));
-import {
-  POST,
-  screenerSessionSyncRouteInternals,
-} from "@/app/api/settings/screener/sync/route";
+import { POST } from "@/app/api/settings/screener/sync/route";
+import { isSameOrigin } from "@/lib/http/is-same-origin";
 const request = (origin?: string) =>
   new Request("http://localhost/api/settings/screener/sync", {
     method: "POST",
@@ -36,21 +34,11 @@ describe("POST /api/settings/screener/sync", () => {
   });
 
   it("requires an exact same-origin browser request", async () => {
+    expect(isSameOrigin(request("http://localhost"))).toBe(true);
+    expect(isSameOrigin(request("https://attacker.test"))).toBe(false);
+    expect(isSameOrigin(request())).toBe(false);
     expect(
-      screenerSessionSyncRouteInternals.isSameOrigin(
-        request("http://localhost"),
-      ),
-    ).toBe(true);
-    expect(
-      screenerSessionSyncRouteInternals.isSameOrigin(
-        request("https://attacker.test"),
-      ),
-    ).toBe(false);
-    expect(screenerSessionSyncRouteInternals.isSameOrigin(request())).toBe(
-      false,
-    );
-    expect(
-      screenerSessionSyncRouteInternals.isSameOrigin(
+      isSameOrigin(
         new Request("http://localhost", {
           method: "POST",
           headers: { origin: "invalid" },

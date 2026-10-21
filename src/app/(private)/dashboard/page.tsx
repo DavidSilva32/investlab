@@ -4,10 +4,10 @@ import { DashboardClient } from "@/app/(private)/_components/dashboard-client";
 import { AppShell } from "@/components/app-shell";
 
 export default async function DashboardPage({
-  searchParams = Promise.resolve({}),
+  searchParams,
 }: {
-  searchParams?: Promise<{ openImport?: string }>;
-} = {}) {
+  searchParams: Promise<{ openImport?: string }>;
+}) {
   const { openImport } = await searchParams;
   return (
     <AppShell title="Dashboard">

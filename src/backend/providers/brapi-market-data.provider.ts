@@ -484,6 +484,30 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         observedAt && Number.isFinite(observedAt.getTime()) ? observedAt : null,
     };
   }
+  async getAnalysisByTicker(ticker: string): Promise<MarketData> {
+    const symbol = encodeURIComponent(ticker);
+    const payload = await this.getQuotePayload(symbol);
+    const quote = quoteSchema.parse(payload).results[0]!;
+    const observedAt = quote.data.regularMarketTime
+      ? new Date(quote.data.regularMarketTime)
+      : null;
+
+    return {
+      ticker: quote.symbol,
+      ...optionalLogo(quote.symbol, quote),
+      companyName: quote.data.longName ?? quote.data.shortName ?? null,
+      cnpj: quote.data.cnpj?.replace(/\D/g, "") ?? null,
+      price: quote.data.regularMarketPrice ?? null,
+      marketCap: quote.data.marketCap ?? null,
+      changePercent: quote.data.regularMarketChangePercent ?? null,
+      priceUpdatedAt:
+        observedAt && Number.isFinite(observedAt.getTime())
+          ? observedAt.toISOString()
+          : null,
+      history: [],
+      historyStatus: "empty",
+    };
+  }
   async getByTicker(ticker: string): Promise<MarketData> {
     const symbol = encodeURIComponent(ticker);
     const optionalRequests = new AbortController();

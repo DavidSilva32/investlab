@@ -308,6 +308,8 @@ export function StockAnalysisDashboard({
   const historyRetryQuery = useQuery({
     queryKey: queryKeys.analyses.stockHistory(selectedTicker.toUpperCase()),
     enabled: false,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
     queryFn: () =>
       apiRequest<
         Pick<
@@ -321,6 +323,18 @@ export function StockAnalysisDashboard({
       ),
   });
   const refetchHistory = historyRetryQuery.refetch;
+  useEffect(() => {
+    const currentAnalysis = analysisQuery.data;
+    const ticker = selectedTicker.toUpperCase();
+    if (
+      !currentAnalysis ||
+      currentAnalysis.ticker.toUpperCase() !== ticker ||
+      currentAnalysis.historyStatus !== "empty" ||
+      currentAnalysis.history.length > 0
+    )
+      return;
+    void refetchHistory();
+  }, [analysisQuery.data, refetchHistory, selectedTicker]);
   const analysis = useMemo(
     () =>
       selectedTicker
@@ -493,15 +507,34 @@ export function StockAnalysisDashboard({
   ]);
 
   useEffect(() => {
-    const currentAnalysis = analysisQuery.data;
+    const currentHistory = historyRetryQuery.data;
     const ticker = selectedTicker.toUpperCase();
-    const failure = currentAnalysis?.historyFailure;
+    const historyError = historyRetryQuery.error;
+    const analysisHistory =
+      analysisQuery.data?.ticker.toUpperCase() === ticker
+        ? analysisQuery.data
+        : undefined;
+    const failure =
+      currentHistory?.historyFailure ??
+      analysisHistory?.historyFailure ??
+      (historyError instanceof ApiError &&
+      (historyError.status === 429 || historyError.status >= 500)
+        ? {
+            reason:
+              historyError.status === 429
+                ? ("rate_limited" as const)
+                : ("provider_error" as const),
+            retryAfterSeconds: retryAfterSeconds(historyError.retryAfter),
+          }
+        : undefined);
     if (
       !ticker ||
-      !currentAnalysis ||
-      currentAnalysis.ticker.toUpperCase() !== ticker ||
-      currentAnalysis.historyStatus !== "unavailable" ||
+      (currentHistory?.ticker ?? analysisHistory?.ticker)?.toUpperCase() !==
+        ticker ||
       !failure ||
+      (currentHistory?.historyStatus !== "unavailable" &&
+        analysisHistory?.historyStatus !== "unavailable" &&
+        !historyError) ||
       automaticHistoryRetries.current.has(ticker)
     )
       return;
@@ -527,7 +560,13 @@ export function StockAnalysisDashboard({
         clearTimeout(automaticHistoryRetryTimer.current);
       automaticHistoryRetryTimer.current = null;
     };
-  }, [analysisQuery.data, refetchHistory, selectedTicker]);
+  }, [
+    historyRetryQuery.data,
+    historyRetryQuery.error,
+    analysisQuery.data,
+    refetchHistory,
+    selectedTicker,
+  ]);
 
   const retryHistoryManually = useCallback(() => {
     const ticker = selectedTicker.toUpperCase();
@@ -965,8 +1004,11 @@ export function StockAnalysisDashboard({
                 points={points}
                 status={
                   historyRetryQuery.data?.historyStatus ??
-                  analysis.historyStatus ??
-                  "unavailable"
+                  (historyRetryQuery.isError
+                    ? "unavailable"
+                    : historyRetryQuery.isFetching
+                      ? "loading"
+                      : (analysis.historyStatus ?? "unavailable"))
                 }
                 failure={historyFailure}
                 retrying={historyRetryQuery.isFetching}

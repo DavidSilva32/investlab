@@ -4,7 +4,11 @@ import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import { stockOpportunityManualInputs } from "@/infrastructure/database/schema";
 
 export type StockOpportunityInputKey =
-  "graham_eps" | "graham_book_value_per_share" | "bazin_dividend_per_share";
+  | "graham_eps"
+  | "graham_book_value_per_share"
+  | "bazin_dividend_per_share"
+  | "analysis_ltm_eps"
+  | "analysis_bvps";
 
 export type StockOpportunityManualInput = {
   ticker: string;

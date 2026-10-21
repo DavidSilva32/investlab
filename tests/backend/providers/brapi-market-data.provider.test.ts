@@ -45,6 +45,53 @@ describe("BrapiMarketDataProvider", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("loads only the quote needed for analysis without waiting for profile or history", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      jsonResponse(
+        quote({
+          cnpj: "33.000.167/0001-01",
+          longName: "Petrobras S.A.",
+          regularMarketPrice: 39,
+          regularMarketChangePercent: 1.5,
+          regularMarketTime: "2026-10-20T14:00:00.000Z",
+        }),
+      ),
+    );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getAnalysisByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+      cnpj: "33000167000101",
+      price: 39,
+      changePercent: 1.5,
+      priceUpdatedAt: "2026-10-20T14:00:00.000Z",
+      history: [],
+      historyStatus: "empty",
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("keeps analysis quotes usable when the observation time is malformed", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(quote({ regularMarketTime: "not-a-date" })),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getAnalysisByTicker("PETR4"),
+    ).resolves.toMatchObject({ priceUpdatedAt: null, history: [] });
+  });
+
+  it("keeps analysis quotes usable when the provider omits the observation time", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(quote()));
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getAnalysisByTicker("PETR4"),
+    ).resolves.toMatchObject({ priceUpdatedAt: null, history: [] });
+  });
+
   it("accepts result-level logos in the complete analysis payload", async () => {
     const fetcher = vi.fn<typeof fetch>((input) =>
       Promise.resolve(

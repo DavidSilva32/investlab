@@ -9,10 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default async function PlanningPage({
-  searchParams = Promise.resolve({}),
+  searchParams,
 }: {
-  searchParams?: Promise<{ objective?: string }>;
-} = {}) {
+  searchParams: Promise<{ objective?: string }>;
+}) {
   const { objective } = await searchParams;
   return (
     <AppShell title="Planejamento">

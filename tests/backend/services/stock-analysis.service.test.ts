@@ -44,7 +44,7 @@ describe("StockAnalysisService ticker search", () => {
     const service = new StockAnalysisService(
       marketProvider,
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
     );
     await expect(
       service.searchTickers("  Vale  ", "request-search"),
@@ -61,7 +61,7 @@ describe("StockAnalysisService ticker search", () => {
     const service = new StockAnalysisService(
       marketProvider,
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
     );
     await expect(service.searchTickers("A")).resolves.toEqual([]);
     expect(marketProvider.searchTickers).not.toHaveBeenCalled();
@@ -100,7 +100,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("claims a lease and persists provider results through the fenced completion", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -152,7 +151,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("does not report persisted periods when the lease fence rejects completion", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -185,7 +183,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("does not start a second provider call when a lease already exists", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -221,7 +218,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("does not read refresh state after claiming a lease", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockRejectedValue(new Error("database read failed")),
       claimRefresh: vi.fn().mockResolvedValue("lease-token"),
       completeRefresh: vi.fn(),
@@ -250,7 +246,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("records safe provider failure and leaves cache persistence untouched", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -292,7 +287,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("records expected provider rejection without exposing provider details", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -336,7 +330,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("contains failure-recording errors inside the background refresh", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -370,7 +363,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("contains non-Error provider and persistence rejections", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -400,7 +392,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("marks an empty provider response as a retryable no-data failure", async () => {
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "running",
         retryAfter: null,
@@ -443,7 +434,7 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
     );
 
     await expect(
@@ -457,7 +448,6 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
   it("reads a refresh status only after validating ticker and issuer", async () => {
     const repository = {
       listByTicker: vi.fn(),
-      save: vi.fn(),
       getRefresh: vi.fn().mockResolvedValue({
         status: "completed",
         retryAfter: null,
@@ -492,6 +482,152 @@ describe("StockAnalysisService fundamentals refresh leases", () => {
     ).rejects.toMatchObject({ statusCode: 422 });
     expect(repository.getRefresh).toHaveBeenCalledOnce();
   });
+
+  it("requires a repository query for scheduled cache refreshes", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      { listByTicker: vi.fn() },
+    );
+
+    await expect(service.refreshDueFundamentals()).rejects.toMatchObject({
+      statusCode: 503,
+    });
+  });
+
+  it("returns an empty result when no cached issuer is due", async () => {
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      {
+        listByTicker: vi.fn(),
+        listDueRefreshes: vi.fn().mockResolvedValue([]),
+      },
+    );
+
+    await expect(service.refreshDueFundamentals()).resolves.toEqual({
+      selectedIssuers: 0,
+      attemptedIssuers: 0,
+      updatedIssuers: 0,
+      unavailableIssuers: 0,
+      remainingIssuers: 0,
+    });
+  });
+
+  it("refreshes due cached issuers and reports replacements", async () => {
+    const repository = {
+      listByTicker: vi.fn(),
+      listDueRefreshes: vi
+        .fn()
+        .mockResolvedValue([{ ticker, cnpj: issuerCnpj }]),
+      claimRefresh: vi.fn().mockResolvedValue("scheduled-lease"),
+      completeRefresh: vi.fn().mockResolvedValue(true),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "completed",
+        retryAfter: null,
+        errorCode: null,
+      }),
+    };
+    const fundamentalsProvider = {
+      getByTicker: vi.fn().mockResolvedValue([reportedPeriod]),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      fundamentalsProvider,
+      repository,
+    );
+
+    await expect(
+      service.refreshDueFundamentals("weekly-request", 1),
+    ).resolves.toEqual({
+      selectedIssuers: 1,
+      attemptedIssuers: 1,
+      updatedIssuers: 1,
+      unavailableIssuers: 0,
+      remainingIssuers: 1,
+    });
+    expect(fundamentalsProvider.getByTicker).toHaveBeenCalledWith({
+      ticker,
+      cnpj: issuerCnpj,
+    });
+    expect(repository.completeRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("reports scheduled provider failures while recording their retry", async () => {
+    const repository = {
+      listByTicker: vi.fn(),
+      listDueRefreshes: vi
+        .fn()
+        .mockResolvedValue([{ ticker, cnpj: issuerCnpj }]),
+      claimRefresh: vi.fn().mockResolvedValue("scheduled-lease"),
+      failRefresh: vi.fn().mockResolvedValue(undefined),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "failed",
+        retryAfter: null,
+        errorCode: "PROVIDER_ERROR",
+      }),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn().mockRejectedValue(new Error("source offline")) },
+      repository,
+    );
+
+    await expect(service.refreshDueFundamentals()).resolves.toMatchObject({
+      attemptedIssuers: 1,
+      updatedIssuers: 0,
+      unavailableIssuers: 1,
+    });
+    expect(repository.failRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("does not count another worker's refresh claim as work", async () => {
+    const repository = {
+      listByTicker: vi.fn(),
+      listDueRefreshes: vi
+        .fn()
+        .mockResolvedValue([{ ticker, cnpj: issuerCnpj }]),
+      claimRefresh: vi.fn().mockResolvedValue(null),
+      getRefresh: vi.fn().mockResolvedValue({
+        status: "running",
+        retryAfter: null,
+        errorCode: null,
+      }),
+    };
+    const service = new StockAnalysisService(
+      {
+        getByTicker: vi.fn(),
+        getQuoteByTicker: vi.fn(),
+        searchTickers: vi.fn(),
+      },
+      { getByTicker: vi.fn() },
+      repository,
+    );
+
+    await expect(service.refreshDueFundamentals()).resolves.toMatchObject({
+      selectedIssuers: 1,
+      attemptedIssuers: 0,
+      updatedIssuers: 0,
+      unavailableIssuers: 0,
+      remainingIssuers: 0,
+    });
+  });
 });
 
 describe("StockAnalysisService isolated history refresh", () => {
@@ -511,7 +647,7 @@ describe("StockAnalysisService isolated history refresh", () => {
         getHistoryByTicker,
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
     );
 
     await expect(
@@ -532,7 +668,7 @@ describe("StockAnalysisService isolated history refresh", () => {
         getHistoryByTicker,
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
     );
 
     await expect(
@@ -551,7 +687,7 @@ describe("StockAnalysisService isolated history refresh", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
     );
 
     await expect(service.getHistoryByTicker("PETR4")).rejects.toMatchObject({
@@ -579,7 +715,7 @@ describe("StockAnalysisService", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn().mockResolvedValue([]) },
-      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
       {
         getComparisonMetadata: vi.fn().mockResolvedValue([
           {
@@ -627,7 +763,6 @@ describe("StockAnalysisService", () => {
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
     };
     const fundamentalsProvider = {
       getByTicker: vi.fn().mockResolvedValue([]),
@@ -733,7 +868,6 @@ describe("StockAnalysisService", () => {
           fetchedAt,
         })),
       ),
-      save: vi.fn(),
     };
     const fundamentalsProvider = {
       getByTicker: vi
@@ -826,6 +960,40 @@ describe("StockAnalysisService optional Screener lookups", () => {
     history: [],
   };
 
+  it("uses the fast analysis quote path when the provider supports it", async () => {
+    const marketProvider = {
+      getAnalysisByTicker: vi.fn().mockResolvedValue(market),
+      getByTicker: vi.fn(),
+      getQuoteByTicker: vi.fn(),
+      searchTickers: vi.fn(),
+    };
+    const service = new StockAnalysisService(
+      marketProvider,
+      { getByTicker: vi.fn().mockResolvedValue([]) },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
+      {
+        getComparisonMetadata: vi.fn().mockResolvedValue([
+          {
+            ticker: "PETR4",
+            cnpj: market.cnpj,
+            sector: null,
+            subType: "stock",
+            issuerMetadataUpdatedAt: new Date("2026-10-20T12:00:00.000Z"),
+          },
+        ]),
+        getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
+      },
+    );
+
+    await expect(service.getByTicker("PETR4")).resolves.toMatchObject({
+      ticker: "PETR4",
+      history: [],
+      cnpj: market.cnpj,
+    });
+    expect(marketProvider.getAnalysisByTicker).toHaveBeenCalledWith("PETR4");
+    expect(marketProvider.getByTicker).not.toHaveBeenCalled();
+  });
+
   it("continues analysis when issuer metadata lookup fails", async () => {
     const logger = await import("@/infrastructure/logging/logger");
     const warn = vi.spyOn(logger.logger, "warn").mockImplementation(() => {});
@@ -836,7 +1004,7 @@ describe("StockAnalysisService optional Screener lookups", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn().mockResolvedValue([]) },
-      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
       {
         getComparisonMetadata: vi.fn().mockRejectedValue(new Error("offline")),
         getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
@@ -865,7 +1033,7 @@ describe("StockAnalysisService optional Screener lookups", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn().mockResolvedValue([]) },
-      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
       {
         getComparisonMetadata: vi.fn().mockResolvedValue([]),
         getValidatedAnalysisQuote: vi
@@ -2252,7 +2420,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       {
         getValidatedAnalysisQuote: vi.fn(),
         getComparisonMetadata: vi
@@ -2273,7 +2441,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       {
         getValidatedAnalysisQuote: vi.fn(),
         getComparisonMetadata: vi
@@ -2304,7 +2472,7 @@ describe("StockAnalysisService cache and failures", () => {
           searchTickers: vi.fn(),
         },
         { getByTicker: vi.fn() },
-        { listByTicker: vi.fn(), save: vi.fn() },
+        { listByTicker: vi.fn() },
         {
           getValidatedAnalysisQuote: vi.fn(),
           getComparisonMetadata: vi.fn().mockResolvedValue(metadata),
@@ -2341,7 +2509,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       { getValidatedAnalysisQuote: vi.fn() },
     );
     await expect(service.getMarketByTicker("PETR4")).rejects.toMatchObject({
@@ -2363,7 +2531,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       {
         getComparisonMetadata: vi
           .fn()
@@ -2389,7 +2557,6 @@ describe("StockAnalysisService cache and failures", () => {
       { getByTicker: vi.fn().mockRejectedValue(new Error("CVM timeout")) },
       {
         listByTicker: vi.fn().mockResolvedValue([stale]),
-        save: vi.fn(),
       },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
@@ -2413,7 +2580,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn().mockResolvedValue([]) },
-      { listByTicker: vi.fn().mockResolvedValue([stale]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([stale]) },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
     const result = await service.getFundamentalsByIssuer(
@@ -2437,7 +2604,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
       {
         getValidatedAnalysisQuote: vi.fn().mockResolvedValue({
           ticker: "PETR4",
@@ -2499,7 +2666,7 @@ describe("StockAnalysisService cache and failures", () => {
     const service = new StockAnalysisService(
       marketProvider,
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
@@ -2540,7 +2707,7 @@ describe("StockAnalysisService cache and failures", () => {
     const service = new StockAnalysisService(
       marketProvider,
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
       {
         getValidatedAnalysisQuote: vi.fn().mockResolvedValue({
           ticker: "PETR4",
@@ -2586,7 +2753,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
@@ -2617,7 +2784,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
@@ -2662,7 +2829,7 @@ describe("StockAnalysisService cache and failures", () => {
           searchTickers: vi.fn(),
         },
         { getByTicker: vi.fn() },
-        { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+        { listByTicker: vi.fn().mockResolvedValue([cached]) },
         { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
       );
 
@@ -2695,7 +2862,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
       {} as never,
     );
 
@@ -2716,7 +2883,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn().mockRejectedValue(new Error("CVM offline")) },
-      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
     await expect(
@@ -2736,7 +2903,7 @@ describe("StockAnalysisService cache and failures", () => {
     const service = new StockAnalysisService(
       marketProvider,
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
     );
 
     await expect(service.getByTicker("invalid")).rejects.toMatchObject({
@@ -2754,7 +2921,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
@@ -2772,7 +2939,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
 
@@ -2813,7 +2980,6 @@ describe("StockAnalysisService cache and failures", () => {
           sourceVersion: `${new Date().getUTCFullYear()}-cvm-v4`,
         }),
       ]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -2826,7 +2992,6 @@ describe("StockAnalysisService cache and failures", () => {
     expect(result.fundamentalsIsStale).toBe(true);
     expect(result.fundamentals).toHaveLength(1);
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("serves a fresh cache with complete issuer provenance as current", async () => {
@@ -2841,7 +3006,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn().mockResolvedValue([cached]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([cached]) },
       rejectedScreenerLookups(),
     );
 
@@ -2914,7 +3079,6 @@ describe("StockAnalysisService cache and failures", () => {
         legacyInterimPeriod,
         comparativeInterimPeriod,
       ]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -2967,7 +3131,6 @@ describe("StockAnalysisService cache and failures", () => {
       }),
     ]);
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("uses an expired CNPJ-matched cache with complete CVM provenance when refresh fails", async () => {
@@ -3002,7 +3165,6 @@ describe("StockAnalysisService cache and failures", () => {
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       {
@@ -3028,7 +3190,6 @@ describe("StockAnalysisService cache and failures", () => {
         }),
       ],
     });
-    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("uses a valid stale cache when CVM refresh succeeds without periods", async () => {
@@ -3036,7 +3197,6 @@ describe("StockAnalysisService cache and failures", () => {
     const fetchedAt = cachedPeriod.fetchedAt;
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       {
@@ -3077,7 +3237,6 @@ describe("StockAnalysisService cache and failures", () => {
       { getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")) },
       {
         listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
-        save: vi.fn(),
       },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
@@ -3134,7 +3293,6 @@ describe("StockAnalysisService cache and failures", () => {
         },
         {
           listByTicker: vi.fn().mockResolvedValue([expiredCachePeriod(change)]),
-          save: vi.fn(),
         },
         { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
       );
@@ -3156,7 +3314,6 @@ describe("StockAnalysisService cache and failures", () => {
       { getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")) },
       {
         listByTicker: vi.fn().mockResolvedValue([expiredCachePeriod()]),
-        save: vi.fn(),
       },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
@@ -3205,7 +3362,6 @@ describe("StockAnalysisService cache and failures", () => {
       { getByTicker: vi.fn().mockRejectedValue(new Error("CVM unavailable")) },
       {
         listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
-        save: vi.fn(),
       },
       { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
     );
@@ -3234,7 +3390,6 @@ describe("StockAnalysisService cache and failures", () => {
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       {
@@ -3290,7 +3445,6 @@ describe("StockAnalysisService cache and failures", () => {
       };
       const repository = {
         listByTicker: vi.fn().mockResolvedValue([]),
-        save: vi.fn(),
       };
       const service = new StockAnalysisService(
         {
@@ -3341,7 +3495,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       screener,
     );
 
@@ -3387,7 +3541,7 @@ describe("StockAnalysisService cache and failures", () => {
           searchTickers: vi.fn(),
         },
         { getByTicker: vi.fn() },
-        { listByTicker: vi.fn(), save: vi.fn() },
+        { listByTicker: vi.fn() },
         { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(row) },
       );
 
@@ -3402,7 +3556,6 @@ describe("StockAnalysisService cache and failures", () => {
     const marketWithoutQuote = { ...market, price: null };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       {
@@ -3489,7 +3642,6 @@ describe("StockAnalysisService cache and failures", () => {
         },
         {
           listByTicker: vi.fn().mockResolvedValue([latest, older]),
-          save: vi.fn(),
         },
         { getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null) },
       );
@@ -3530,7 +3682,6 @@ describe("StockAnalysisService cache and failures", () => {
     const fundamentalsProvider = { getByTicker: vi.fn() };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -3553,7 +3704,6 @@ describe("StockAnalysisService cache and failures", () => {
     });
     expect(marketProvider.getByTicker).not.toHaveBeenCalled();
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("serves an issuer cache from a previous CVM revision as stale", async () => {
@@ -3572,7 +3722,6 @@ describe("StockAnalysisService cache and failures", () => {
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -3588,7 +3737,6 @@ describe("StockAnalysisService cache and failures", () => {
     expect(result.fundamentalsIsStale).toBe(true);
     expect(result.fundamentals[0]?.netIncome).toBe("10");
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("does not serve a cache when its CNPJ differs from the expected issuer", async () => {
@@ -3638,7 +3786,6 @@ describe("StockAnalysisService cache and failures", () => {
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([cachedPeriod]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -3654,7 +3801,6 @@ describe("StockAnalysisService cache and failures", () => {
     expect(result.fundamentals).toEqual([]);
     expect(result.fundamentalsIsStale).toBe(false);
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
     expect(marketProvider.getByTicker).not.toHaveBeenCalled();
   });
 
@@ -3686,7 +3832,6 @@ describe("StockAnalysisService cache and failures", () => {
     const fundamentalsProvider = { getByTicker: vi.fn().mockResolvedValue([]) };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([stalePeriod]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -3700,7 +3845,6 @@ describe("StockAnalysisService cache and failures", () => {
     );
     expect(result.fundamentals).toEqual([]);
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
     await expect(
       service.getFundamentalsByIssuer("PETR4", "invalid"),
     ).rejects.toMatchObject({ statusCode: 422 });
@@ -3721,7 +3865,6 @@ describe("StockAnalysisService cache and failures", () => {
     const fundamentalsProvider = { getByTicker: vi.fn().mockResolvedValue([]) };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
     };
     const service = new StockAnalysisService(
       marketProvider,
@@ -3738,7 +3881,6 @@ describe("StockAnalysisService cache and failures", () => {
       service.requestFundamentalsRefresh("PETR4", null),
     ).rejects.toMatchObject({ statusCode: 422 });
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("resolves a missing BRAPI profile CNPJ from the exact active ticker on first and repeated requests", async () => {
@@ -3757,7 +3899,6 @@ describe("StockAnalysisService cache and failures", () => {
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
     };
     const screener = {
       getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
@@ -3806,7 +3947,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn().mockResolvedValue([]) },
-      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
       {
         getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
         getComparisonMetadata: vi.fn().mockResolvedValue([
@@ -3840,7 +3981,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn().mockResolvedValue([]) },
-      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
       {
         getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
         getComparisonMetadata: vi.fn().mockResolvedValue([
@@ -3877,7 +4018,7 @@ describe("StockAnalysisService cache and failures", () => {
         searchTickers: vi.fn(),
       },
       { getByTicker: vi.fn() },
-      { listByTicker: vi.fn(), save: vi.fn() },
+      { listByTicker: vi.fn() },
       {
         getValidatedAnalysisQuote: vi.fn().mockResolvedValue(null),
         getComparisonMetadata: vi
@@ -3904,7 +4045,7 @@ describe("StockAnalysisService cache and failures", () => {
     const service = new StockAnalysisService(
       marketProvider,
       fundamentalsProvider,
-      { listByTicker: vi.fn().mockResolvedValue([]), save: vi.fn() },
+      { listByTicker: vi.fn().mockResolvedValue([]) },
       rejectedScreenerLookups(),
     );
 
@@ -3921,7 +4062,6 @@ describe("StockAnalysisService cache and failures", () => {
     };
     const repository = {
       listByTicker: vi.fn().mockResolvedValue([]),
-      save: vi.fn().mockResolvedValue(undefined),
     };
     const service = new StockAnalysisService(
       {
@@ -3957,7 +4097,6 @@ describe("StockAnalysisService cache and failures", () => {
       [0, "idle"],
     ]);
     expect(fundamentalsProvider.getByTicker).not.toHaveBeenCalled();
-    expect(repository.save).not.toHaveBeenCalled();
   });
 });
 

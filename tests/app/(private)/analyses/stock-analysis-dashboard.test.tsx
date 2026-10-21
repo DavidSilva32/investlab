@@ -164,6 +164,109 @@ afterEach(() => {
 });
 
 describe("StockAnalysisDashboard", () => {
+  it("shows the initial empty state when no ticker is selected", () => {
+    render(<StockAnalysisDashboard />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Encontre uma empresa para analisar",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("price-chart")).toBeNull();
+  });
+
+  it("loads price history separately after the quote and fundamentals response", async () => {
+    const fetcher = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/market"))
+        return Promise.resolve(jsonResponse(marketSnapshot()));
+      if (url.endsWith("/history"))
+        return Promise.resolve(
+          jsonResponse({
+            ticker: "PETR4",
+            history: [
+              { date: "2026-09-18", close: 29 },
+              { date: "2026-09-19", close: 30 },
+            ],
+            historyStatus: "available",
+          }),
+        );
+      return Promise.resolve(
+        jsonResponse({
+          ...analysis,
+          history: [],
+          historyStatus: "empty",
+          fundamentalsRefresh: {
+            status: "completed",
+            retryAfter: null,
+            errorCode: null,
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(([input]) =>
+          String(input).endsWith("/history"),
+        ),
+      ).toBe(true),
+    );
+    expect((await screen.findByTestId("price-chart")).dataset.points).toBe(
+      "2026-09-18,2026-09-19",
+    );
+    expect(screen.getByText("R$ 30,00")).toBeTruthy();
+  });
+
+  it.each([
+    [429, { "retry-after": "1" }],
+    [502, undefined],
+  ])(
+    "retries the separate history request after HTTP %i",
+    async (status, headers) => {
+      let historyRequests = 0;
+      const fetcher = vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/market"))
+          return Promise.resolve(jsonResponse(marketSnapshot()));
+        if (url.endsWith("/history")) {
+          historyRequests += 1;
+          return Promise.resolve(
+            historyRequests === 1
+              ? jsonResponse(
+                  { message: "temporarily unavailable" },
+                  status,
+                  headers,
+                )
+              : jsonResponse({
+                  ticker: "PETR4",
+                  history: [{ date: "2026-09-19", close: 30 }],
+                  historyStatus: "available",
+                }),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse({
+            ...analysis,
+            history: [],
+            historyStatus: "empty",
+            fundamentalsRefresh: {
+              status: "completed",
+              retryAfter: null,
+              errorCode: null,
+            },
+          }),
+        );
+      });
+      vi.stubGlobal("fetch", fetcher);
+      render(<StockAnalysisDashboard initialTicker="PETR4" />);
+
+      await waitFor(() => expect(historyRequests).toBe(2), { timeout: 5_000 });
+    },
+  );
+
   it("keeps saved fundamentals visible while a CVM refresh is running and polls for its status", async () => {
     vi.useFakeTimers();
     const fetcher = vi.fn((input: RequestInfo | URL) =>

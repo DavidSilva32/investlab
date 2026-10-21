@@ -41,6 +41,8 @@ export type MarketQuote = {
   observedAt: Date | null;
 };
 export interface MarketDataProvider {
+  /** Fast quote/profile data needed by individual analysis; history is loaded separately. */
+  getAnalysisByTicker?(ticker: string): Promise<MarketData>;
   getByTicker(ticker: string): Promise<MarketData>;
   getHistoryByTicker?(
     ticker: string,

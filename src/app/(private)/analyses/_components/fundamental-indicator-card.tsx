@@ -195,7 +195,9 @@ export function FundamentalIndicatorCard({
               ? "Acumulado no ano até"
               : "Ano encerrado em";
   const fundamentalsReference = indicator.referenceDate
-    ? `${periodLabel} ${dateLabel(indicator.referenceDate)}`
+    ? indicator.manualSource
+      ? `${indicator.manualSource} · ${dateLabel(indicator.referenceDate)}`
+      : `${periodLabel} ${dateLabel(indicator.referenceDate)}`
     : unavailableMessages[indicator.key];
   const marketReference = usesRatio
     ? indicator.marketDataDate
@@ -265,7 +267,9 @@ export function FundamentalIndicatorCard({
               <p className="border-t pt-2 text-muted-foreground">{details}</p>
               <p className="text-xs text-muted-foreground">{reference}</p>
               <p className="text-xs text-muted-foreground">
-                Base: demonstrações públicas da CVM.
+                {indicator.manualSource
+                  ? `Base: ${indicator.manualBasis ?? "valor por ação"} informado por você e cotação observada.`
+                  : "Base: demonstrações públicas da CVM."}
               </p>
             </PopoverContent>
           </Popover>
@@ -291,6 +295,11 @@ export function FundamentalIndicatorCard({
             ? unavailableMessages[indicator.key]
             : reference}
       </p>
+      {indicator.manualSource && (
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {reference}
+        </p>
+      )}
     </article>
   );
 }

@@ -24,7 +24,7 @@ const tickerSchema = z
   .trim()
   .toUpperCase()
   .regex(/^[A-Z]{4}[0-9]{1,2}$/, "Informe um ticker B3 válido.");
-const cacheDurationMs = 1000 * 60 * 60 * 24;
+const cacheDurationMs = 1000 * 60 * 60 * 24 * 7;
 const quoteFreshnessMs = 7 * 24 * 60 * 60 * 1000;
 const fundamentalsNormalizationRevision = "cvm-v5";
 const unavailableMarketCapReason =
@@ -745,12 +745,16 @@ export class StockAnalysisService {
     private readonly fundamentalsProvider: FundamentalsProvider = new CvmFundamentalsProvider(),
     private readonly repository: Pick<
       StockFundamentalsRepository,
-      "listByTicker" | "save"
+      "listByTicker"
     > &
       Partial<
         Pick<
           StockFundamentalsRepository,
-          "getRefresh" | "claimRefresh" | "completeRefresh" | "failRefresh"
+          | "getRefresh"
+          | "claimRefresh"
+          | "completeRefresh"
+          | "failRefresh"
+          | "listDueRefreshes"
         >
       > = stockFundamentalsRepository,
     private readonly screener: Pick<
@@ -870,7 +874,9 @@ export class StockAnalysisService {
     let marketError: unknown = null;
     const marketStartedAt = Date.now();
     try {
-      market = await this.marketProvider.getByTicker(parsed.data);
+      market = await (this.marketProvider.getAnalysisByTicker
+        ? this.marketProvider.getAnalysisByTicker(parsed.data)
+        : this.marketProvider.getByTicker(parsed.data));
       if (market.ticker.toUpperCase() !== parsed.data) {
         marketError = new Error("Market provider returned a different ticker");
         market = null;
@@ -1348,6 +1354,43 @@ export class StockAnalysisService {
               requestId,
             )
         : null,
+    };
+  }
+
+  async refreshDueFundamentals(requestId?: string, batchSize = 5) {
+    if (!this.repository.listDueRefreshes)
+      throw new ApplicationError(
+        "A atualização programada dos fundamentos não está disponível.",
+        503,
+      );
+    const due = await this.repository.listDueRefreshes(
+      currentFundamentalsSourceVersion(),
+      batchSize,
+    );
+    let attemptedIssuers = 0;
+    let updatedIssuers = 0;
+    let unavailableIssuers = 0;
+
+    for (const item of due) {
+      const refresh = await this.requestFundamentalsRefresh(
+        item.ticker,
+        item.cnpj,
+        requestId,
+      );
+      if (!refresh.run) continue;
+      attemptedIssuers += 1;
+      await refresh.run();
+      const state = await this.getRefreshState(item.ticker, item.cnpj);
+      if (state.status === "completed") updatedIssuers += 1;
+      else unavailableIssuers += 1;
+    }
+
+    return {
+      selectedIssuers: due.length,
+      attemptedIssuers,
+      updatedIssuers,
+      unavailableIssuers,
+      remainingIssuers: due.length === batchSize ? 1 : 0,
     };
   }
 
