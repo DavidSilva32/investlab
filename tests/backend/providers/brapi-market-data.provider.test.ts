@@ -628,7 +628,7 @@ describe("BrapiMarketDataProvider", () => {
     ).resolves.toMatchObject({ history: [], historyStatus: "unavailable" });
     expect(invalidHistoryFetcher).toHaveBeenCalledTimes(3);
   });
-  it("does not retry a historical rate limit but falls back to one year on other failures", async () => {
+  it("does not retry historical rate limits or other provider failures", async () => {
     const rateLimited = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(quote()))
@@ -649,10 +649,7 @@ describe("BrapiMarketDataProvider", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse(quote()))
       .mockResolvedValueOnce(jsonResponse({}))
-      .mockResolvedValueOnce(jsonResponse({}, 503))
-      .mockResolvedValueOnce(
-        jsonResponse({ results: [{ data: { historicalDataPrice: [] } }] }),
-      );
+      .mockResolvedValueOnce(jsonResponse({}, 503));
     await expect(
       new BrapiMarketDataProvider(unavailable).getByTicker("PETR4"),
     ).resolves.toMatchObject({
@@ -661,7 +658,7 @@ describe("BrapiMarketDataProvider", () => {
       historyFailure: { reason: "provider_error" },
     });
     expect(unavailable.mock.calls[2]?.[0]).toContain("range=5y");
-    expect(unavailable.mock.calls[3]?.[0]).toContain("range=1y");
+    expect(unavailable).toHaveBeenCalledTimes(3);
   });
 
   it("does not retry invalid history payloads and exposes unavailable history", async () => {
@@ -692,23 +689,19 @@ describe("BrapiMarketDataProvider", () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
-  it("logs only a safe provider error code for a failed history response", async () => {
+  it("exhausts documented ranges and logs only a safe provider error code", async () => {
     vi.mocked(logger.info).mockClear();
     const secretMessage = "private provider detail";
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(quote()))
       .mockResolvedValueOnce(jsonResponse({}))
-      .mockResolvedValueOnce(
-        jsonResponse(
-          { error: true, code: "INVALID_RANGE", message: secretMessage },
-          400,
-        ),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(
-          { error: true, code: "INVALID_RANGE", message: secretMessage },
-          400,
+      .mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse(
+            { error: true, code: "INVALID_RANGE", message: secretMessage },
+            400,
+          ),
         ),
       );
 
@@ -718,6 +711,12 @@ describe("BrapiMarketDataProvider", () => {
       historyStatus: "unavailable",
       historyFailure: { reason: "http_error", httpStatus: 400 },
     });
+
+    expect(
+      fetcher.mock.calls
+        .slice(2)
+        .map(([url]) => new URL(String(url)).searchParams.get("range")),
+    ).toEqual(["5y", "1y", "6mo", "3mo", "1mo", "5d"]);
 
     expect(logger.info).toHaveBeenCalledWith(
       "stock_market_provider_request_completed",
@@ -851,11 +850,10 @@ describe("BrapiMarketDataProvider", () => {
       historyStatus: "unavailable",
       historyFailure: { reason: "timeout" },
     });
-    expect(timedOut).toHaveBeenCalledTimes(2);
-    expect(String(timedOut.mock.calls[1]?.[0])).toContain("range=1y");
+    expect(timedOut).toHaveBeenCalledTimes(1);
   });
 
-  it("classifies an aborted provider fetch as a timeout before retrying the shorter range", async () => {
+  it("classifies an aborted provider fetch as a timeout without retrying", async () => {
     const timeoutSignal = AbortSignal.abort(
       new DOMException("The request timed out", "TimeoutError"),
     );
@@ -872,9 +870,25 @@ describe("BrapiMarketDataProvider", () => {
         historyStatus: "unavailable",
         historyFailure: { reason: "timeout" },
       });
-      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher).toHaveBeenCalledTimes(1);
     } finally {
       timeoutSpy.mockRestore();
+    }
+  });
+
+  it("classifies unexpected history request setup errors as provider errors", async () => {
+    const abortAnySpy = vi.spyOn(AbortSignal, "any").mockImplementation(() => {
+      throw new Error("signal setup failed");
+    });
+    try {
+      await expect(
+        new BrapiMarketDataProvider(vi.fn()).getHistoryByTicker("PETR4"),
+      ).resolves.toMatchObject({
+        historyStatus: "unavailable",
+        historyFailure: { reason: "provider_error" },
+      });
+    } finally {
+      abortAnySpy.mockRestore();
     }
   });
 
@@ -968,7 +982,7 @@ describe("BrapiMarketDataProvider", () => {
     }
   });
 
-  it("falls back to one year when the five-year history request times out", async () => {
+  it("does not fall back to another period when the five-year history request times out", async () => {
     const controllers: AbortController[] = [];
     const timeoutSpy = vi
       .spyOn(AbortSignal, "timeout")
@@ -1015,57 +1029,41 @@ describe("BrapiMarketDataProvider", () => {
 
       await expect(resultPromise).resolves.toMatchObject({
         price: 50,
-        history: [{ date: "2026-01-01", close: 49 }],
-        historyStatus: "partial",
+        history: [],
+        historyStatus: "unavailable",
         historyFailure: { reason: "timeout" },
       });
-      expect(fetcher).toHaveBeenCalledTimes(4);
+      expect(fetcher).toHaveBeenCalledTimes(3);
       expect(fetcher.mock.calls[2]?.[0]).toContain("range=5y");
-      expect(fetcher.mock.calls[3]?.[0]).toContain("range=1y");
-      expect(controllers).toHaveLength(4);
+      expect(controllers).toHaveLength(3);
     } finally {
       timeoutSpy.mockRestore();
     }
   });
 
-  it("preserves one-year points as partial after a retryable five-year provider failure", async () => {
+  it("does not retry a five-year history request after a retryable provider failure", async () => {
     const fetcher = vi
       .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          results: [
-            {
-              data: {
-                historicalDataPrice: [
-                  { date: 1767225600, close: 49 },
-                  { date: 1767139200, close: 48 },
-                ],
-              },
-            },
-          ],
-        }),
-      );
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
 
     await expect(
       new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
     ).resolves.toMatchObject({
       ticker: "PETR4",
-      history: [
-        { date: "2025-12-31", close: 48 },
-        { date: "2026-01-01", close: 49 },
-      ],
-      historyStatus: "partial",
+      history: [],
+      historyStatus: "unavailable",
       historyFailure: { reason: "provider_error" },
     });
     expect(String(fetcher.mock.calls[0]?.[0])).toContain("range=5y");
-    expect(String(fetcher.mock.calls[1]?.[0])).toContain("range=1y");
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to the one-year range when the provider rejects the five-year plan window", async () => {
+  it("falls back to the one-year range when the provider reports INVALID_RANGE", async () => {
     const fetcher = vi
       .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_RANGE" }, 400),
+      )
       .mockResolvedValueOnce(
         jsonResponse({
           results: [
@@ -1090,7 +1088,89 @@ describe("BrapiMarketDataProvider", () => {
     expect(String(fetcher.mock.calls[1]?.[0])).toContain("range=1y");
   });
 
-  it("returns unavailable history after both attempts time out while retaining the quote", async () => {
+  it("tries shorter documented periods after INVALID_RANGE until one succeeds", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_RANGE" }, 400),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_RANGE" }, 400),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_RANGE" }, 400),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_RANGE" }, 400),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_RANGE" }, 400),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          results: [
+            {
+              data: { historicalDataPrice: [{ date: 1767225600, close: 49 }] },
+            },
+          ],
+        }),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      ticker: "PETR4",
+      history: [{ date: "2026-01-01", close: 49 }],
+      historyStatus: "partial",
+      historyFailure: { reason: "http_error", httpStatus: 400 },
+    });
+    expect(
+      fetcher.mock.calls.map(([url]) =>
+        new URL(String(url)).searchParams.get("range"),
+      ),
+    ).toEqual(["5y", "1y", "6mo", "3mo", "1mo", "5d"]);
+  });
+
+  it("does not retry HTTP 400 responses without the INVALID_RANGE code", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_SYMBOL" }, 400),
+      );
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "http_error", httpStatus: 400 },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the range fallback when a shorter-range request fails for another reason", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ error: true, code: "INVALID_RANGE" }, 400),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    await expect(
+      new BrapiMarketDataProvider(fetcher).getHistoryByTicker("PETR4"),
+    ).resolves.toMatchObject({
+      history: [],
+      historyStatus: "unavailable",
+      historyFailure: { reason: "rate_limited" },
+    });
+    expect(
+      fetcher.mock.calls.map(([url]) =>
+        new URL(String(url)).searchParams.get("range"),
+      ),
+    ).toEqual(["5y", "1y"]);
+  });
+
+  it("returns unavailable history after a timeout while retaining the quote", async () => {
     const controllers: AbortController[] = [];
     const timeoutSpy = vi
       .spyOn(AbortSignal, "timeout")
@@ -1117,8 +1197,6 @@ describe("BrapiMarketDataProvider", () => {
       );
       await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
       controllers[2]!.abort();
-      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(4));
-      controllers[3]!.abort();
 
       await expect(resultPromise).resolves.toMatchObject({
         price: 50,
@@ -1126,7 +1204,7 @@ describe("BrapiMarketDataProvider", () => {
         historyStatus: "unavailable",
       });
       expect(fetcher.mock.calls[2]?.[0]).toContain("range=5y");
-      expect(fetcher.mock.calls[3]?.[0]).toContain("range=1y");
+      expect(fetcher).toHaveBeenCalledTimes(3);
     } finally {
       timeoutSpy.mockRestore();
     }
