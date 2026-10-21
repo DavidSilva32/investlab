@@ -1,5 +1,7 @@
 # Proposta — Análises da carteira (#243)
 
+> **Histórico:** a aba “Minha carteira” foi aposentada na issue #257. Este protótipo preserva o registro da aprovação anterior, mas não descreve a interface atual nem deve orientar implementação nova.
+
 ## Contexto
 
 - **Rota e experiência:** `/analyses`, aba **Minha carteira**.

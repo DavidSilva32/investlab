@@ -67,6 +67,25 @@ describe("UserProfileDialog", () => {
     expect(privacyLink.getAttribute("href")).toBe("/privacidade-conta");
   });
 
+  it("links the account menu to MCP documentation", async () => {
+    const user = userEvent.setup();
+    render(
+      <UserProfileDialog
+        name="David"
+        email="david@example.com"
+        role="USER"
+        onNameUpdated={vi.fn()}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Abrir menu da conta" }),
+    );
+
+    expect(
+      screen.getByRole("menuitem", { name: "MCP" }).getAttribute("href"),
+    ).toBe("/mcp");
+  });
+
   it("shows a separate assisted recovery path when the current password is forgotten", async () => {
     await renderProfile();
 

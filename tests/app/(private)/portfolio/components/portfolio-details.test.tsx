@@ -173,6 +173,49 @@ describe("portfolio detail components", () => {
     );
   });
 
+  it("offers individual analysis for positions with a confirmed equity classification", async () => {
+    const user = userEvent.setup();
+    render(
+      <PositionDetails
+        positions={[
+          {
+            ...position,
+            id: "equity-1",
+            product: "BB Seguridade Participações S.A.",
+            assetCode: "BBSE3",
+            source: "B3",
+          },
+        ]}
+        analysisTickersByPositionId={new Map([["equity-1", "BBSE3"]])}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para BB Seguridade Participações S.A.",
+      }),
+    );
+    const analysisLink = screen.getByRole("menuitem", {
+      name: "Analisar ação",
+    });
+    expect(analysisLink.getAttribute("href")).toBe("/analises?ticker=BBSE3");
+  });
+
+  it("does not offer analysis when the classification lookup found no eligible stock", async () => {
+    const user = userEvent.setup();
+    render(
+      <PositionDetails
+        positions={[{ ...position, source: "B3" }]}
+        analysisTickersByPositionId={new Map()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Ações para CDB" }));
+    expect(
+      screen.queryByRole("menuitem", { name: "Analisar ação" }),
+    ).toBeNull();
+  });
+
   it("shows the saved CDI percentage as an informational manual-position fact", () => {
     const html = renderToStaticMarkup(
       <PositionDetails

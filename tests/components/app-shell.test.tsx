@@ -105,11 +105,7 @@ describe("AppShell", () => {
     renderShell();
 
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
-    expect(
-      screen
-        .getAllByRole("link", { name: "Conectar IA" })
-        .some((link) => link.getAttribute("href") === "/mcp"),
-    ).toBe(true);
+    expect(screen.queryByRole("link", { name: "Conectar IA" })).toBeNull();
     expect(screen.getAllByText("David Silva").length).toBeGreaterThan(0);
     expect(screen.queryByText("Usuário autorizado")).toBeNull();
     expect(screen.queryByRole("link", { name: "Configurações" })).toBeNull();
@@ -122,6 +118,9 @@ describe("AppShell", () => {
     );
     expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
     expect(screen.getByRole("menuitem", { name: "Meu perfil" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "MCP" }).getAttribute("href")).toBe(
+      "/mcp",
+    );
     await user.keyboard("{Escape}");
     expect(
       screen
@@ -229,14 +228,12 @@ describe("AppShell", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("shows MCP to regular users without exposing administration", () => {
+  it("keeps MCP out of the sidebar for regular users without exposing administration", () => {
     navigation.pathname = "/analises/filtros";
     renderShell();
     expect(screen.queryByRole("button", { name: "Administração" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Usuários" })).toBeNull();
-    expect(screen.getAllByRole("link", { name: "Conectar IA" })).toHaveLength(
-      1,
-    );
+    expect(screen.queryByRole("link", { name: "Conectar IA" })).toBeNull();
     const links = screen.getAllByRole("link", { name: "Análises" });
     expect(links.length).toBeGreaterThan(0);
     expect(
