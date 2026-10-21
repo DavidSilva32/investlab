@@ -123,12 +123,16 @@ class RetryableMarketDataError extends Error {
   }
 }
 class MarketDataHttpError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    readonly providerCode?: string,
+  ) {
     super(`BRAPI request failed: ${status}`);
   }
 }
 class InvalidMarketDataResponseError extends Error {}
 const requestTimeoutMs = 15_000;
+const historicalRanges = ["5y", "1y", "6mo", "3mo", "1mo", "5d"] as const;
 
 function safeProviderErrorCode(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
@@ -239,7 +243,7 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
         ...(providerCode ? { providerCode } : {}),
         durationMs: Date.now() - startedAt,
       });
-      throw new MarketDataHttpError(response.status);
+      throw new MarketDataHttpError(response.status, providerCode);
     }
     try {
       const payload = await response.json();
@@ -275,41 +279,38 @@ export class BrapiMarketDataProvider implements MarketDataProvider {
   ) {
     const signal = () =>
       AbortSignal.any([parentSignal, AbortSignal.timeout(requestTimeoutMs)]);
-    try {
-      return {
-        payload: await this.request(
-          `/api/v2/stocks/historical?symbols=${symbol}&range=5y&interval=1d`,
-          signal(),
-          cacheMode,
-        ),
-      };
-    } catch (error) {
-      const limitedRange =
-        error instanceof MarketDataHttpError && error.status === 400;
-      if (
-        (!(error instanceof RetryableMarketDataError) && !limitedRange) ||
-        parentSignal.aborted
-      )
-        throw error;
-      const fallbackFailure = this.historyFailure(error);
+    let fallbackFailure: MarketHistoryFailure | undefined;
+    for (let index = 0; index < historicalRanges.length; index += 1) {
+      const range = historicalRanges[index]!;
+      try {
+        return {
+          payload: await this.request(
+            `/api/v2/stocks/historical?symbols=${symbol}&range=${range}&interval=1d`,
+            signal(),
+            cacheMode,
+          ),
+          ...(fallbackFailure ? { fallbackFailure } : {}),
+        };
+      } catch (error) {
+        const rangeUnavailable =
+          error instanceof MarketDataHttpError &&
+          error.providerCode === "INVALID_RANGE";
+        const nextRange = historicalRanges[index + 1];
+        if (!rangeUnavailable || !nextRange || parentSignal.aborted)
+          throw error;
 
-      logger.warn("stock_market_history_range_fallback", {
-        provider: "brapi",
-        ticker: decodeURIComponent(symbol),
-        fromRange: "5y",
-        toRange: "1y",
-        reason: fallbackFailure.reason,
-      });
-
-      return {
-        payload: await this.request(
-          `/api/v2/stocks/historical?symbols=${symbol}&range=1y&interval=1d`,
-          signal(),
-          cacheMode,
-        ),
-        fallbackFailure,
-      };
+        fallbackFailure ??= this.historyFailure(error);
+        logger.warn("stock_market_history_range_fallback", {
+          provider: "brapi",
+          ticker: decodeURIComponent(symbol),
+          fromRange: range,
+          toRange: nextRange,
+          reason: fallbackFailure.reason,
+        });
+      }
     }
+
+    throw new Error("No historical range was requested");
   }
 
   private normalizeHistory(
