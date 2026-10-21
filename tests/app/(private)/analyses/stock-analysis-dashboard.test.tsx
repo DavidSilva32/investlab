@@ -175,6 +175,25 @@ describe("StockAnalysisDashboard", () => {
     expect(screen.queryByTestId("price-chart")).toBeNull();
   });
 
+  it("ignores ticker popstate events outside the analyses route", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    render(<StockAnalysisDashboard />);
+
+    window.history.pushState({}, "", "/?ticker=PETR4");
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Encontre uma empresa para analisar",
+      }),
+    ).toBeTruthy();
+    expect(fetcher).not.toHaveBeenCalled();
+    window.history.replaceState({}, "", "/");
+  });
+
   it("loads price history separately after the quote and fundamentals response", async () => {
     const fetcher = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
