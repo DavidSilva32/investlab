@@ -63,7 +63,9 @@ beforeEach(() => {
         const responseBody = {
           progress: {
             courseId: request.courseId,
-            courseVersion: 1,
+            courseVersion: 2,
+            hasCurrentVersionProgress: true,
+            currentVersionPassed: Boolean(request.assessment),
             completedLessonIds: request.completedLessonIds ?? [],
             lastLessonId: request.lastLessonId ?? null,
             latestScore: request.assessment ? 10 : null,
@@ -101,7 +103,13 @@ beforeEach(() => {
         malformedNextGet = false;
         return Response.json({});
       }
-      return Response.json({ courses: savedCourses });
+      return Response.json({
+        courses: savedCourses.map((course) => ({
+          hasCurrentVersionProgress: true,
+          currentVersionPassed: Boolean(course.passed),
+          ...course,
+        })),
+      });
     }),
   );
 });
@@ -200,7 +208,7 @@ describe("AssetClassLearningCourse", () => {
     expect(
       screen.getAllByRole("heading", { name: "Prova final" }),
     ).toHaveLength(2);
-    expect(screen.getByText("1 de 5")).toBeTruthy();
+    expect(screen.getByText("1 de 10")).toBeTruthy();
     expect(await screen.findAllByRole("radio")).toHaveLength(4);
   });
 
@@ -274,7 +282,7 @@ describe("AssetClassLearningCourse", () => {
     savedCourses = [
       {
         courseId: "fixed_income",
-        courseVersion: 1,
+        courseVersion: 2,
         completedLessonIds: ["lesson-1", "lesson-2", "lesson-3", "lesson-4"],
         lastLessonId: "lesson-4",
         latestScore: 6,
@@ -293,10 +301,14 @@ describe("AssetClassLearningCourse", () => {
       />,
     );
 
-    await screen.findByText("Curso concluído!");
+    await screen.findByRole("heading", {
+      name: "Aprovação anterior preservada",
+    });
     const completion = screen
       .getAllByRole("status")
-      .find((status) => status.textContent?.includes("Curso concluído!"));
+      .find((status) =>
+        status.textContent?.includes("Aprovação anterior preservada"),
+      );
     expect(completion?.textContent).toContain("6,0/10");
     expect(completion?.textContent).toContain("Melhor nota aprovada: 8,0/10.");
   });
@@ -305,7 +317,7 @@ describe("AssetClassLearningCourse", () => {
     savedCourses = [
       {
         courseId: "fiis",
-        courseVersion: 1,
+        courseVersion: 2,
         completedLessonIds: ["lesson-1"],
         lastLessonId: "lesson-1",
         latestScore: null,
@@ -344,16 +356,18 @@ describe("AssetClassLearningCourse", () => {
     );
   });
 
-  it("restores a legacy approval without an attempt score or saved best score", async () => {
+  it("preserves a legacy medal but requires the learner to repeat updated lessons", async () => {
     savedCourses = [
       {
         courseId: "fiis",
-        courseVersion: 1,
-        completedLessonIds: ["lesson-1", "lesson-2", "lesson-3", "lesson-4"],
-        lastLessonId: "lesson-4",
+        courseVersion: 2,
+        hasCurrentVersionProgress: false,
+        currentVersionPassed: false,
+        completedLessonIds: [],
+        lastLessonId: null,
         latestScore: null,
         bestScore: null,
-        quizAttemptCount: 1,
+        quizAttemptCount: 0,
         passed: true,
         passedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -366,9 +380,54 @@ describe("AssetClassLearningCourse", () => {
       />,
     );
 
-    const completion = await screen.findByText("Curso concluído!");
-    expect(completion.textContent).toBe("Curso concluído!");
-    expect(screen.getByText("Emblema conquistado")).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", {
+        name: assetClassLearningContent.fiis.courseLessons[0].title,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Sua medalha anterior continua no perfil. As aulas foram atualizadas; conclua esta edição para registrar o progresso e a nota atuais.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("8,0/10")).toBeNull();
+  });
+
+  it("resumes lesson two when a historical medal exists but current-version progress has no result", async () => {
+    savedCourses = [
+      {
+        courseId: "fiis",
+        courseVersion: 2,
+        hasCurrentVersionProgress: true,
+        currentVersionPassed: false,
+        completedLessonIds: ["lesson-1"],
+        lastLessonId: "lesson-1",
+        latestScore: null,
+        bestScore: null,
+        quizAttemptCount: 0,
+        passed: true,
+        passedAt: "2026-10-20T10:00:00.000Z",
+        updatedAt: "2026-10-22T10:00:00.000Z",
+      },
+    ];
+    render(
+      <AssetClassLearningCourse
+        selectedClass="fiis"
+        content={assetClassLearningContent.fiis}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: assetClassLearningContent.fiis.courseLessons[1].title,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Sua medalha anterior continua no perfil. As aulas foram atualizadas; conclua esta edição para registrar o progresso e a nota atuais.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Prova final" })).toBeNull();
   });
 
   it("shows a retry when progress cannot load and recovers on retry", async () => {

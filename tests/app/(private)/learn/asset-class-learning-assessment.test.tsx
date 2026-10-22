@@ -32,7 +32,7 @@ async function answerQuestion(index: number, correctly: boolean) {
 
 describe("AssetClassLearningAssessment", () => {
   it("calculates a passing score, awards a medal, and reports the completion", async () => {
-    const onComplete = vi.fn().mockResolvedValue({ score: 8, passed: true });
+    const onComplete = vi.fn().mockResolvedValue({ score: 7, passed: true });
     render(
       <AssetClassLearningAssessment
         questions={questions}
@@ -41,7 +41,7 @@ describe("AssetClassLearningAssessment", () => {
     );
 
     for (const [index] of questions.entries()) {
-      await answerQuestion(index, index < 4);
+      await answerQuestion(index, index < 7);
       fireEvent.click(
         screen.getByRole("button", {
           name:
@@ -57,7 +57,7 @@ describe("AssetClassLearningAssessment", () => {
         "Curso concluído!",
       ),
     );
-    expect(screen.getByRole("status").textContent).toContain("8,0/10");
+    expect(screen.getByRole("status").textContent).toContain("7,0/10");
     expect(onComplete).toHaveBeenCalledWith(
       expect.objectContaining({
         attemptId: expect.any(String),
@@ -81,25 +81,48 @@ describe("AssetClassLearningAssessment", () => {
     expect(screen.getByRole("status").textContent).toContain("6,0/10");
   });
 
+  it("keeps a prior medal while clearly identifying a failed updated exam", () => {
+    render(
+      <AssetClassLearningAssessment
+        questions={questions}
+        initialResult={{
+          score: 6,
+          passed: true,
+          attemptPassed: false,
+          bestScore: 6,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Aprovação anterior preservada" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("6,0/10");
+    expect(screen.getByRole("status").textContent).toContain(
+      "A nota desta prova ficou abaixo de 7,0. Sua medalha continua no perfil.",
+    );
+    expect(screen.queryByText(/Melhor nota aprovada/)).toBeNull();
+  });
+
   it("uses a passing result as the best score when no explicit best is saved", () => {
     render(
       <AssetClassLearningAssessment
         questions={questions}
-        initialResult={{ score: 8, passed: true }}
+        initialResult={{ score: 7, passed: true }}
       />,
     );
 
     expect(screen.getByRole("status").textContent).toContain(
       "Curso concluído!",
     );
-    expect(screen.getByRole("status").textContent).toContain("8,0/10");
+    expect(screen.getByRole("status").textContent).toContain("7,0/10");
   });
 
   it("keeps a retry available below seven and resets the exam", async () => {
     render(<AssetClassLearningAssessment questions={questions} />);
 
     for (const [index] of questions.entries()) {
-      await answerQuestion(index, index < 3);
+      await answerQuestion(index, index < 6);
       fireEvent.click(
         screen.getByRole("button", {
           name:
@@ -115,7 +138,7 @@ describe("AssetClassLearningAssessment", () => {
     );
     expect(screen.getByRole("status").textContent).toContain("6,0/10");
     fireEvent.click(screen.getByRole("button", { name: "Refazer prova" }));
-    expect(screen.getByText("1 de 5")).toBeTruthy();
+    expect(screen.getByText("1 de 10")).toBeTruthy();
     await screen.findAllByRole("radio");
     expect(
       screen
@@ -204,7 +227,9 @@ describe("AssetClassLearningAssessment", () => {
         }),
       );
     }
-    await screen.findByText("Sua aprovação continua registrada");
+    await screen.findByText(
+      "A nota desta prova ficou abaixo de 7,0. Sua medalha continua no perfil.",
+    );
     expect(screen.getByRole("status").textContent).toContain("6,0/10");
     expect(screen.getByRole("status").textContent).toContain(
       "Melhor nota aprovada: 10,0/10",
@@ -222,7 +247,7 @@ describe("AssetClassLearningAssessment", () => {
       />,
     );
     expect(screen.getByRole("status").textContent).toContain(
-      "Curso concluído!",
+      "Aprovação anterior preservada",
     );
     expect(screen.getByRole("status").textContent).toContain(
       "Melhor nota aprovada: 10,0/10",

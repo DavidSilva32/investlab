@@ -155,17 +155,17 @@ const lessonVisuals: Record<
       steps: [
         {
           label: "P/L",
-          detail: "Preço da ação ÷ lucro por ação",
+          detail: "Relaciona preço e lucro por ação",
           icon: Scale,
         },
         {
           label: "P/VP",
-          detail: "Preço da ação ÷ valor patrimonial por ação",
+          detail: "Compara preço e patrimônio por ação",
           icon: FileSearch,
         },
         {
           label: "ROE",
-          detail: "Lucro líquido ÷ patrimônio líquido médio do período × 100",
+          detail: "Relaciona lucro e patrimônio da empresa",
           icon: Coins,
         },
       ],
@@ -278,57 +278,78 @@ export function AssetClassLearningLesson({
       )}
     </section>
   );
+  const examplesSection = lesson.examples && (
+    <section
+      aria-label={`Exemplos: ${className}`}
+      className="rounded-2xl border border-border/60 bg-muted/20 p-4 sm:p-5"
+    >
+      <h4 className="text-sm font-semibold">Exemplos para visualizar</h4>
+      <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {lesson.examples.map((example) => (
+          <li
+            key={example.title}
+            className="rounded-xl border border-border/60 bg-card p-3 sm:p-4"
+          >
+            <h5 className="text-sm font-medium">{example.title}</h5>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {example.description}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 
   if (!isFii) {
     const visual = lessonVisuals[selectedClass][lessonIndex];
     const accent = visualClassName[selectedClass];
     const accentSoft = visualSoftClassName[selectedClass];
 
-    if (!visual) return null;
-
-    return (
-      <div className="mt-1 space-y-4">
-        <section
-          aria-label={visual.title}
-          className={`relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-muted/60 via-card to-card p-4 sm:p-5 ${accent}`}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <h4 className="text-sm font-semibold text-foreground sm:text-base">
-              {visual.title}
-            </h4>
-            <span className="shrink-0 rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
-              Esquema simplificado
-            </span>
-          </div>
-          <div className="mt-5 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1 sm:gap-3">
-            {visual.steps.map(({ label, detail, icon: Icon }, index) => (
-              <div key={label} className="contents">
-                <div className="min-w-0 text-center">
-                  <span
-                    className={`mx-auto grid size-12 place-items-center rounded-2xl ${accentSoft} ${accent} sm:size-14`}
-                  >
-                    <Icon aria-hidden="true" className="size-6" />
-                  </span>
-                  <p className="mt-2 text-xs font-semibold text-foreground sm:text-sm">
-                    {label}
-                  </p>
-                  <p className="mx-auto mt-1 max-w-32 text-xs leading-4 text-muted-foreground sm:text-sm">
-                    {detail}
-                  </p>
+    if (visual)
+      return (
+        <div className="mt-1 space-y-4">
+          <section
+            aria-label={visual.title}
+            className={`relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-muted/60 via-card to-card p-4 sm:p-5 ${accent}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold text-foreground sm:text-base">
+                {visual.title}
+              </h4>
+              <span className="shrink-0 rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
+                Esquema simplificado
+              </span>
+            </div>
+            <div className="mt-5 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1 sm:gap-3">
+              {visual.steps.map(({ label, detail, icon: Icon }, index) => (
+                <div key={label} className="contents">
+                  <div className="min-w-0 text-center">
+                    <span
+                      className={`mx-auto grid size-12 place-items-center rounded-2xl ${accentSoft} ${accent} sm:size-14`}
+                    >
+                      <Icon aria-hidden="true" className="size-6" />
+                    </span>
+                    <p className="mt-2 text-xs font-semibold text-foreground sm:text-sm">
+                      {label}
+                    </p>
+                    <p className="mx-auto mt-1 max-w-32 text-xs leading-4 text-muted-foreground sm:text-sm">
+                      {detail}
+                    </p>
+                  </div>
+                  {index < visual.steps.length - 1 && (
+                    <ArrowRight
+                      aria-hidden="true"
+                      className={`size-4 ${accent} sm:size-5`}
+                    />
+                  )}
                 </div>
-                {index < visual.steps.length - 1 && (
-                  <ArrowRight
-                    aria-hidden="true"
-                    className={`size-4 ${accent} sm:size-5`}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-        {analysisRoadmap}
-      </div>
-    );
+              ))}
+            </div>
+          </section>
+          {examplesSection}
+          {analysisRoadmap}
+        </div>
+      );
   }
 
   return (
@@ -418,7 +439,7 @@ export function AssetClassLearningLesson({
 
       {isFii && lessonIndex === 2 && (
         <section
-          aria-label="Exemplo de vacância física"
+          aria-label="Exemplo de vacância física em 10 salas de mesma área"
           className="grid gap-4 rounded-2xl border border-border/60 bg-gradient-to-br from-muted/50 via-card to-card p-4 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] sm:p-5"
         >
           <div>
@@ -427,11 +448,11 @@ export function AssetClassLearningLesson({
                 aria-hidden="true"
                 className="size-4 text-asset-class-fiis"
               />
-              Imagine um prédio com 10 salas
+              Imagine um prédio com 10 salas de mesma área
             </div>
             <div
               role="img"
-              aria-label="Oito salas ocupadas e duas salas vazias, exemplo de 20 por cento de vacância física"
+              aria-label="Dez salas de mesma área: oito ocupadas e duas vazias, exemplo de 20 por cento da área com vacância física"
               className="mt-4 grid grid-cols-5 gap-2"
             >
               {Array.from({ length: 10 }, (_, index) => {
@@ -475,7 +496,8 @@ export function AssetClassLearningLesson({
             <div className="rounded-xl bg-asset-class-fiis/5 p-3">
               <h5 className="text-sm font-semibold">Vacância física</h5>
               <p className="mt-1 text-sm text-muted-foreground">
-                Área sem locatário. No exemplo, 2 de 10 salas estão vazias.
+                Área sem locatário. Como as salas têm a mesma área, 2 de 10
+                vazias representam 20% da área.
               </p>
             </div>
             <div className="rounded-xl bg-muted/70 p-3">
@@ -487,6 +509,8 @@ export function AssetClassLearningLesson({
           </div>
         </section>
       )}
+
+      {examplesSection}
 
       {analysisRoadmap}
     </div>

@@ -44,9 +44,18 @@ describe("AssetClassLearningLesson", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Exemplo de vacância física")).toBeTruthy();
     expect(
-      screen.getByRole("img", { name: /Oito salas ocupadas/ }),
+      screen.getByRole("region", {
+        name: "Exemplo de vacância física em 10 salas de mesma área",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: /Dez salas de mesma área: oito ocupadas e duas vazias/,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/2 de 10 vazias representam 20% da área/),
     ).toBeTruthy();
     expect(screen.getByText("Vacância financeira")).toBeTruthy();
   });
@@ -67,13 +76,12 @@ describe("AssetClassLearningLesson", () => {
         />,
       );
 
-      expect(
-        screen.getByRole("region", {
-          name: `Roteiro de análise: ${className}`,
-        }),
-      ).toBeTruthy();
+      const roadmap = screen.getByRole("region", {
+        name: `Roteiro de análise: ${className}`,
+      });
+      expect(roadmap).toBeTruthy();
       expect(screen.getByText(representativeStep)).toBeTruthy();
-      expect(screen.getAllByRole("listitem")).toHaveLength(4);
+      expect(within(roadmap).getAllByRole("listitem")).toHaveLength(4);
     },
   );
 
@@ -107,6 +115,50 @@ describe("AssetClassLearningLesson", () => {
     expect(
       screen.queryByLabelText("Como funciona a participação em um fundo"),
     ).toBeNull();
+  });
+
+  it("shows practical example cards for each asset class", () => {
+    const examples = [
+      ["fixed_income", 0, "CDB", "LCI e LCA", "A ‘caixinha’ do aplicativo"],
+      ["brazilian_equities", 1, "Uma padaria", "Demanda recorrente"],
+      ["international_etfs", 1, "Mercado amplo", "Setor ou renda fixa"],
+      [
+        "fiis",
+        1,
+        "Imóveis de renda (tijolo)",
+        "Títulos imobiliários (papel)",
+        "Fundos de fundos",
+      ],
+    ] as const;
+
+    for (const [selectedClass, lessonIndex, ...titles] of examples) {
+      const lesson =
+        assetClassLearningContent[selectedClass].courseLessons[lessonIndex];
+      const { unmount } = render(
+        <AssetClassLearningLesson
+          selectedClass={selectedClass}
+          lessonIndex={lessonIndex}
+          lesson={lesson}
+        />,
+      );
+
+      const section = screen.getByRole("region", {
+        name: `Exemplos: ${
+          {
+            fiis: "Fundos imobiliários (FIIs)",
+            fixed_income: "Renda fixa",
+            brazilian_equities: "Ações e BDRs",
+            international_etfs: "ETFs internacionais",
+          }[selectedClass]
+        }`,
+      });
+      for (const title of titles) {
+        expect(
+          within(section).getByRole("heading", { name: title }),
+        ).toBeTruthy();
+      }
+      unmount();
+    }
   });
 
   it("does not add unrelated FII diagrams to another class", () => {
@@ -225,7 +277,7 @@ describe("AssetClassLearningLesson", () => {
     },
   );
 
-  it("states the precise per-share bases for equity indicators", () => {
+  it("explains equity indicators in plain language", () => {
     render(
       <AssetClassLearningLesson
         selectedClass="brazilian_equities"
@@ -234,14 +286,12 @@ describe("AssetClassLearningLesson", () => {
       />,
     );
 
-    expect(screen.getByText("Preço da ação ÷ lucro por ação")).toBeTruthy();
+    expect(screen.getByText("Relaciona preço e lucro por ação")).toBeTruthy();
     expect(
-      screen.getByText("Preço da ação ÷ valor patrimonial por ação"),
+      screen.getByText("Compara preço e patrimônio por ação"),
     ).toBeTruthy();
-    const roeBasis = screen.getByText(
-      "Lucro líquido ÷ patrimônio líquido médio do período × 100",
-    );
-    expect(roeBasis).toBeTruthy();
-    expect(roeBasis.className).toContain("text-xs");
+    expect(
+      screen.getByText("Relaciona lucro e patrimônio da empresa"),
+    ).toBeTruthy();
   });
 });
