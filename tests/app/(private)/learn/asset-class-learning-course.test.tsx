@@ -430,6 +430,39 @@ describe("AssetClassLearningCourse", () => {
     expect(screen.queryByRole("heading", { name: "Prova final" })).toBeNull();
   });
 
+  it("shows the preserved medal message on the updated course assessment", async () => {
+    const content = assetClassLearningContent.fiis;
+    savedCourses = [
+      {
+        courseId: "fiis",
+        courseVersion: 2,
+        hasCurrentVersionProgress: true,
+        currentVersionPassed: false,
+        completedLessonIds: content.courseLessons.map(
+          (_, index) => `lesson-${index + 1}`,
+        ),
+        lastLessonId: `lesson-${content.courseLessons.length}`,
+        latestScore: null,
+        bestScore: null,
+        quizAttemptCount: 0,
+        passed: true,
+        passedAt: "2026-10-20T10:00:00.000Z",
+        updatedAt: "2026-10-22T10:00:00.000Z",
+      },
+    ];
+
+    render(<AssetClassLearningCourse selectedClass="fiis" content={content} />);
+
+    expect(
+      await screen.findAllByRole("heading", { name: "Prova final" }),
+    ).toHaveLength(2);
+    expect(
+      screen.getByText(
+        "Sua medalha anterior foi preservada. Faça a prova atualizada para registrar uma nova nota.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows a retry when progress cannot load and recovers on retry", async () => {
     failNextGet = true;
     render(

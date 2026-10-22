@@ -53,6 +53,13 @@ describe("ThemeToggle", () => {
     await user.keyboard("{Enter}{ArrowDown}{Enter}");
     expect(state.setTheme).toHaveBeenCalledWith("dark");
   });
+
+  it("uses automatic appearance when next-themes has not resolved it yet", () => {
+    state.theme = undefined;
+    render(<ThemeToggle />);
+
+    expect(screen.getByText("Aparência: Automático; cor: Azul")).toBeTruthy();
+  });
   it("changes palette without changing the appearance preference", async () => {
     const user = userEvent.setup();
     render(

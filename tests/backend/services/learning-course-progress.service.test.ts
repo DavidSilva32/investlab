@@ -155,6 +155,40 @@ describe("LearningCourseProgressService", () => {
     });
   });
 
+  it("reports the newest update timestamp even when a historical row is newer", async () => {
+    repository.listForCurrentOwner.mockResolvedValue([
+      {
+        courseId: "fiis",
+        courseVersion: 2,
+        completedLessonIds: ["lesson-1"],
+        lastLessonId: "lesson-1",
+        latestScore: null,
+        bestScore: null,
+        quizAttemptCount: 0,
+        passedAt: null,
+        updatedAt: new Date("2026-10-20T10:00:00.000Z"),
+      },
+      {
+        courseId: "fiis",
+        courseVersion: 1,
+        completedLessonIds: ["lesson-1"],
+        lastLessonId: "lesson-1",
+        latestScore: 8,
+        bestScore: 8,
+        quizAttemptCount: 1,
+        passedAt: new Date("2026-10-19T10:00:00.000Z"),
+        updatedAt: new Date("2026-10-22T10:00:00.000Z"),
+      },
+    ]);
+
+    const result = await service.listCurrentOwnerProgress();
+
+    expect(result.courses[0]).toMatchObject({
+      courseId: "fiis",
+      updatedAt: "2026-10-22T10:00:00.000Z",
+    });
+  });
+
   it("returns an empty list when the repository has no course rows", async () => {
     repository.listForCurrentOwner.mockResolvedValue([]);
     await expect(service.listCurrentOwnerProgress()).resolves.toEqual({
