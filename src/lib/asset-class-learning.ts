@@ -837,6 +837,12 @@ export function calculateLearningAssessmentScore(
   );
 }
 
+export function hasAllLearningAnswers(
+  answers: readonly (number | null)[],
+): boolean {
+  return answers.every((answer) => answer !== null);
+}
+
 export const learningAssessmentPassScore = 7;
 
 export function getLearningClassHref(id: StrategyAssetClassId) {

@@ -409,6 +409,7 @@ describe("withApiRequestLogging", () => {
       "/api/positions/reconciliation",
       "/api/emergency-reserve",
       "/api/analyses/portfolio-opportunities",
+      "/api/learning/progress",
     ];
 
     for (const route of routes) {

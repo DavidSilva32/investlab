@@ -122,7 +122,6 @@ export function AssetClassLearningCourse({
 
   async function saveCheckpoint(checkpoint: CourseCheckpoint) {
     setSavingProgress(true);
-    setSaveError(null);
     setPendingCheckpoint(checkpoint);
     try {
       const response = await apiRequest<SaveProgressResponse>(
@@ -130,6 +129,7 @@ export function AssetClassLearningCourse({
         { method: "PUT", body: JSON.stringify(checkpoint) },
         "Não foi possível salvar seu progresso.",
       );
+      setSaveError(null);
       setProgress(response.progress);
       setAnsweredLessons(
         content.courseLessons.map((_, index) =>

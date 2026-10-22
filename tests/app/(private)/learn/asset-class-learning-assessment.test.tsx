@@ -67,6 +67,34 @@ describe("AssetClassLearningAssessment", () => {
     expect(screen.getByRole("button", { name: "Refazer prova" })).toBeTruthy();
   });
 
+  it("restores a failed result without a recorded best score", () => {
+    render(
+      <AssetClassLearningAssessment
+        questions={questions}
+        initialResult={{ score: 6, passed: false }}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Continue aprendendo",
+    );
+    expect(screen.getByRole("status").textContent).toContain("6,0/10");
+  });
+
+  it("uses a passing result as the best score when no explicit best is saved", () => {
+    render(
+      <AssetClassLearningAssessment
+        questions={questions}
+        initialResult={{ score: 8, passed: true }}
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Curso concluído!",
+    );
+    expect(screen.getByRole("status").textContent).toContain("8,0/10");
+  });
+
   it("keeps a retry available below seven and resets the exam", async () => {
     render(<AssetClassLearningAssessment questions={questions} />);
 
@@ -95,6 +123,43 @@ describe("AssetClassLearningAssessment", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
     expect(screen.queryByText("6,0/10")).toBeNull();
+  });
+
+  it("keeps answers and the attempt id when saving fails, then retries", async () => {
+    const onComplete = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValueOnce({ score: 10, passed: true });
+    render(
+      <AssetClassLearningAssessment
+        questions={questions}
+        onComplete={onComplete}
+      />,
+    );
+
+    for (const [index] of questions.entries()) {
+      await answerQuestion(index, true);
+      fireEvent.click(
+        screen.getByRole("button", {
+          name:
+            index === questions.length - 1
+              ? "Ver resultado"
+              : "Próxima pergunta",
+        }),
+      );
+    }
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "suas respostas foram mantidas",
+    );
+    expect(screen.getByRole("button", { name: "Ver resultado" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
+
+    await screen.findByText("Curso concluído!");
+    expect(onComplete).toHaveBeenCalledTimes(2);
+    expect(onComplete.mock.calls[0][0].attemptId).toBe(
+      onComplete.mock.calls[1][0].attemptId,
+    );
   });
 
   it("keeps a permanent approval after a lower retry and restores it after reload", async () => {

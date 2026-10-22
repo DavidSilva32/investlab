@@ -3,6 +3,7 @@ import {
   assetClassLearningContent,
   calculateLearningAssessmentScore,
   getLearningClassHref,
+  hasAllLearningAnswers,
   learningAssessmentPassScore,
   resolveLearningClassId,
   shuffleLearningOptions,
@@ -115,6 +116,7 @@ describe("asset class learning links", () => {
     expect(secondAttempt.findIndex(({ isCorrect }) => isCorrect)).not.toBe(
       firstAttempt.findIndex(({ isCorrect }) => isCorrect),
     );
+    expect(shuffleLearningOptions(options, 0, () => 0)).toHaveLength(4);
   });
 
   it("scores the final assessment from zero to ten with a seven-point pass mark", () => {
@@ -128,6 +130,11 @@ describe("asset class learning links", () => {
     expect(calculateLearningAssessmentScore(5, 5)).toBe(10);
     expect(calculateLearningAssessmentScore(5, 0)).toBe(0);
     expect(learningAssessmentPassScore).toBe(7);
+  });
+
+  it("requires an answer for every assessment question before submission", () => {
+    expect(hasAllLearningAnswers([0, 2, 1])).toBe(true);
+    expect(hasAllLearningAnswers([0, null, 1])).toBe(false);
   });
 
   it("resolves only a single official class id", () => {

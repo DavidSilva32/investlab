@@ -136,6 +136,38 @@ describe("AuthRepository", () => {
     expect(resetOrderBy).toHaveBeenCalledOnce();
   });
 
+  it("updates a profile with an optional phone and returns the saved user", async () => {
+    const user = { name: "Ana Souza", phone: "11987654321" };
+    const query = createUpdateQuery([user]);
+    database.update.mockReturnValue({ set: query.set });
+
+    await expect(
+      repository.updateOwnProfile({
+        id: "user-1",
+        name: "Ana Souza",
+        phone: "11987654321",
+      }),
+    ).resolves.toEqual(user);
+    expect(query.set).toHaveBeenCalledWith({
+      name: "Ana Souza",
+      phone: "11987654321",
+      updatedAt: expect.any(Date),
+    });
+  });
+
+  it("omits an unspecified phone and returns null when the user is missing", async () => {
+    const query = createUpdateQuery([]);
+    database.update.mockReturnValue({ set: query.set });
+
+    await expect(
+      repository.updateOwnProfile({ id: "user-1", name: "Ana Souza" }),
+    ).resolves.toBeNull();
+    expect(query.set).toHaveBeenCalledWith({
+      name: "Ana Souza",
+      updatedAt: expect.any(Date),
+    });
+  });
+
   it("returns login eligibility for an existing user and null for an unknown email", async () => {
     const limit = vi
       .fn()

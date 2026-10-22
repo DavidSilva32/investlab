@@ -166,6 +166,27 @@ describe("AuthService", () => {
     });
   });
 
+  it("reports when the authenticated profile no longer exists", async () => {
+    mocks.repository.updateOwnProfile.mockResolvedValue(null);
+    await expect(
+      authService.updateOwnProfile("user-1", "Name", "11987654321"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("leaves the saved telephone unchanged when the profile edit omits it", async () => {
+    mocks.repository.updateOwnProfile.mockResolvedValue({
+      name: "New Name",
+      phone: "11987654321",
+    });
+
+    await authService.updateOwnProfile("user-1", "New Name");
+
+    expect(mocks.repository.updateOwnProfile).toHaveBeenCalledWith({
+      id: "user-1",
+      name: "New Name",
+    });
+  });
+
   it("rejects invalid phones and hides repository errors", async () => {
     await expect(
       authService.updateOwnProfile("user-1", "Name", "123"),

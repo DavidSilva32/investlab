@@ -125,6 +125,25 @@ describe("AdminUsersTable", () => {
     expect(screen.queryByText("ana@example.com")).toBeNull();
   });
 
+  it("filters users by their saved telephone number", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable users={users} invitations={[]} onUpdate={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Telefone" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Telefone" }),
+      "987654321",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    expect(screen.getByText("ana@example.com")).toBeTruthy();
+    expect(screen.queryByText("bruno@example.com")).toBeNull();
+  });
+
   it("filters by role and account status values", async () => {
     const user = userEvent.setup();
     render(

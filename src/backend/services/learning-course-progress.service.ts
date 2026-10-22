@@ -16,10 +16,9 @@ function getCourse(courseId: string) {
 
 function toProgressDto(
   row: Awaited<
-    ReturnType<typeof learningCourseProgressRepository.getForCurrentOwner>
-  >,
+    ReturnType<typeof learningCourseProgressRepository.listForCurrentOwner>
+  >[number],
 ) {
-  if (!row) return null;
   return {
     courseId: row.courseId,
     courseVersion: row.courseVersion,
@@ -38,7 +37,7 @@ export class LearningCourseProgressService {
   async listCurrentOwnerProgress() {
     const rows = await learningCourseProgressRepository.listForCurrentOwner();
     return {
-      courses: rows.map((row) => toProgressDto(row)).filter(Boolean),
+      courses: rows.map((row) => toProgressDto(row)),
     };
   }
 

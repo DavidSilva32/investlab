@@ -61,12 +61,11 @@ export function AssetClassLearningQuiz({
   }, [correctOptionIndex, options]);
 
   function submitAnswer() {
+    if (selectedOption === null) return;
     setSubmittedOption(selectedOption);
     onAnswered?.(
-      selectedOption !== null && shuffledOptions[selectedOption].isCorrect,
-      selectedOption === null
-        ? null
-        : shuffledOptions[selectedOption].sourceIndex,
+      shuffledOptions[selectedOption].isCorrect,
+      shuffledOptions[selectedOption].sourceIndex,
     );
   }
 

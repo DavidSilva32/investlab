@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   calculateLearningAssessmentScore,
+  hasAllLearningAnswers,
   learningAssessmentPassScore,
   type AssetClassLearningQuestion,
 } from "@/lib/asset-class-learning";
@@ -75,7 +76,6 @@ export function AssetClassLearningAssessment({
 
   async function moveForward() {
     const selectedAnswer = answers[questionIndex];
-    if (selectedAnswer === null) return;
     const nextCorrectAnswers =
       correctAnswers + (currentAnswerCorrect === true ? 1 : 0);
     if (questionIndex < questions.length - 1) {
@@ -89,7 +89,7 @@ export function AssetClassLearningAssessment({
     const completedAnswers = answers.map((answer, index) =>
       index === questionIndex ? selectedAnswer : answer,
     );
-    if (completedAnswers.some((answer) => answer === null)) return;
+    if (!hasAllLearningAnswers(completedAnswers)) return;
     setSubmitting(true);
     setSubmitError(null);
     const id = attemptId ?? crypto.randomUUID();

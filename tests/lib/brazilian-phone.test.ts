@@ -9,6 +9,7 @@ import {
 describe("Brazilian phone helpers", () => {
   it("masks partial input and both landline and mobile numbers", () => {
     expect(formatBrazilianPhone("1")).toBe("(1");
+    expect(formatBrazilianPhone("1198")).toBe("(11) 98");
     expect(formatBrazilianPhone("11987654321")).toBe("(11) 98765-4321");
     expect(formatBrazilianPhone("1133334444")).toBe("(11) 3333-4444");
   });

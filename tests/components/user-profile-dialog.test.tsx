@@ -164,6 +164,8 @@ describe("UserProfileDialog", () => {
     const phone = screen.getByLabelText("Telefone") as HTMLInputElement;
     expect(phone.maxLength).toBe(-1);
 
+    fireEvent.change(phone, { target: { value: "1198" } });
+    expect(phone.value).toBe("(11) 98");
     fireEvent.change(phone, {
       target: { value: "+55 (11) 98765-4321" },
     });

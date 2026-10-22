@@ -10,6 +10,7 @@ vi.mock("@/backend/services/learning-course-progress.service", () => ({
 }));
 
 import { LearningCourseProgressController } from "@/backend/controllers/learning-course-progress.controller";
+import { ApplicationError } from "@/backend/errors/application-error";
 
 const controller = new LearningCourseProgressController();
 const put = (body: unknown) =>
@@ -27,6 +28,62 @@ describe("LearningCourseProgressController", () => {
     const response = await controller.list();
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({ courses: [] });
+  });
+
+  it("returns a safe error when listing progress fails", async () => {
+    service.listCurrentOwnerProgress.mockRejectedValue(
+      new ApplicationError("Faça login novamente.", 401),
+    );
+    const response = await controller.list();
+    expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({
+      message: "Faça login novamente.",
+    });
+  });
+
+  it("hides unexpected errors while listing and saving progress", async () => {
+    service.listCurrentOwnerProgress.mockRejectedValue(
+      new Error("database-secret"),
+    );
+    const listResponse = await controller.list();
+    expect(listResponse.status).toBe(500);
+    await expect(listResponse.json()).resolves.toEqual({
+      message: "Não foi possível salvar seu progresso de aprendizagem.",
+    });
+
+    service.saveCurrentOwnerProgress.mockRejectedValue(
+      new ApplicationError("Curso não encontrado.", 404),
+    );
+    const saveResponse = await controller.save(put({ courseId: "fiis" }));
+    expect(saveResponse.status).toBe(404);
+    expect(saveResponse.headers.get("cache-control")).toBe("no-store");
+    await expect(saveResponse.json()).resolves.toEqual({
+      message: "Curso não encontrado.",
+    });
+
+    service.saveCurrentOwnerProgress.mockRejectedValue(
+      new Error("database-secret"),
+    );
+    const failedSave = await controller.save(put({ courseId: "fiis" }));
+    expect(failedSave.status).toBe(500);
+    expect(failedSave.headers.get("cache-control")).toBe("no-store");
+    await expect(failedSave.json()).resolves.toEqual({
+      message: "Não foi possível salvar seu progresso de aprendizagem.",
+    });
+  });
+
+  it("treats malformed JSON as invalid progress input", async () => {
+    const response = await controller.save(
+      new Request("https://test/api/learning/progress", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: "{broken",
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(service.saveCurrentOwnerProgress).not.toHaveBeenCalled();
   });
 
   it("rejects client supplied scores, pass flags, or owner identifiers", async () => {
