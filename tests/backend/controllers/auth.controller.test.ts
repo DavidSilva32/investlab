@@ -84,18 +84,19 @@ describe("AuthController", () => {
     vi.unstubAllEnvs();
   });
 
-  it("validates and updates only the current profile name", async () => {
+  it("validates and updates the authenticated profile name and phone", async () => {
     mocks.service.updateOwnProfile.mockResolvedValue(
       Response.json({ ok: true }),
     );
     const success = await controller.updateOwnProfile(
-      request({ name: " New Person " }),
+      request({ name: " New Person ", phone: "11987654321" }),
     );
     expect(success.status).toBe(200);
     expect(success.headers.get("cache-control")).toBe("no-store");
     expect(mocks.service.updateOwnProfile).toHaveBeenCalledWith(
+      "user-1",
       "New Person",
-      expect.any(Headers),
+      "11987654321",
     );
 
     expect(

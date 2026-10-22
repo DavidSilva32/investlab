@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     getLoginEligibility: vi.fn(),
     recordSuccessfulLogin: vi.fn(),
     updateManagedUser: vi.fn(),
+    updateOwnProfile: vi.fn(),
   },
   signUpEmail: vi.fn(),
   updateUser: vi.fn(),
@@ -143,53 +144,38 @@ describe("AuthService", () => {
     );
   });
 
-  it("updates only the current Better Auth user's name and returns a safe response", async () => {
-    const headers = new Headers({ cookie: "session=secret" });
-    const betterAuthResponse = new Response(JSON.stringify({ status: true }), {
-      headers: { "set-cookie": "session=rotated; HttpOnly; SameSite=Lax" },
+  it("updates the authenticated profile with a canonical Brazilian phone", async () => {
+    mocks.repository.updateOwnProfile.mockResolvedValue({
+      name: "New Name",
+      phone: "11987654321",
     });
-    mocks.updateUser.mockResolvedValue(betterAuthResponse);
-
     const response = await authService.updateOwnProfile(
+      "user-1",
       "  New Name  ",
-      headers,
+      "(11) 98765-4321",
     );
-
-    expect(mocks.updateUser).toHaveBeenCalledWith({
-      body: { name: "New Name" },
-      headers,
-      asResponse: true,
+    expect(mocks.repository.updateOwnProfile).toHaveBeenCalledWith({
+      id: "user-1",
+      name: "New Name",
+      phone: "11987654321",
     });
-    await expect(response.json()).resolves.toEqual({ ok: true });
-    expect(response.headers.getSetCookie()).toEqual([
-      "session=rotated; HttpOnly; SameSite=Lax",
-    ]);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      name: "New Name",
+      phone: "11987654321",
+    });
   });
 
-  it("does not expose Better Auth errors when updating the profile fails", async () => {
-    mocks.updateUser.mockResolvedValue(new Response(null, { status: 500 }));
+  it("rejects invalid phones and hides repository errors", async () => {
     await expect(
-      authService.updateOwnProfile("Name", new Headers()),
-    ).rejects.toMatchObject({ statusCode: 500 });
-
-    for (const status of [401, 403]) {
-      mocks.updateUser.mockResolvedValueOnce(
-        Response.json({ message: "internal detail" }, { status }),
-      );
-      await expect(
-        authService.updateOwnProfile("Name", new Headers()),
-      ).rejects.toMatchObject({
-        statusCode: status,
-        message:
-          status === 401
-            ? "Sua sessão não pôde ser validada. Entre novamente."
-            : "A alteração não foi autorizada.",
-      });
-    }
-
-    mocks.updateUser.mockRejectedValueOnce(new Error("internal"));
+      authService.updateOwnProfile("user-1", "Name", "123"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.repository.updateOwnProfile).not.toHaveBeenCalled();
+    mocks.repository.updateOwnProfile.mockRejectedValueOnce(
+      new Error("internal"),
+    );
     await expect(
-      authService.updateOwnProfile("Name", new Headers()),
+      authService.updateOwnProfile("user-1", "Name", null),
     ).rejects.toMatchObject({ statusCode: 500 });
   });
 

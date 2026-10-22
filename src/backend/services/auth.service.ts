@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes } from "node:crypto";
 import { authRepository } from "@/backend/repositories/auth.repository";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getCurrentTermsVersion } from "@/lib/privacy-policy";
+import { normalizeBrazilianPhone } from "@/lib/brazilian-phone";
 
 const tokenLifetimeMs = 1000 * 60 * 60 * 24;
 const digest = (token: string) =>
@@ -9,31 +10,32 @@ const digest = (token: string) =>
 const createToken = () => randomBytes(32).toString("base64url");
 
 export class AuthService {
-  async updateOwnProfile(name: string, headers: Headers) {
-    const { auth } = await import("@/infrastructure/auth/auth");
-    let response: Response;
+  async updateOwnProfile(id: string, name: string, phone?: string | null) {
+    const normalizedPhone =
+      phone === undefined ? undefined : normalizeBrazilianPhone(phone);
+    if (phone !== undefined && normalizedPhone === undefined) {
+      throw new ApplicationError(
+        "Informe um telefone com DDD e 8 ou 9 dígitos.",
+        400,
+      );
+    }
+    let user: Awaited<ReturnType<typeof authRepository.updateOwnProfile>>;
     try {
-      response = await auth.api.updateUser({
-        body: { name: name.trim() },
-        headers,
-        asResponse: true,
+      user = await authRepository.updateOwnProfile({
+        id,
+        name: name.trim(),
+        ...(phone !== undefined ? { phone: normalizedPhone } : {}),
       });
     } catch {
       throw new ApplicationError("Não foi possível atualizar seu perfil.", 500);
     }
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new ApplicationError(
-          "Sua sessão não pôde ser validada. Entre novamente.",
-          401,
-        );
-      }
-      if (response.status === 403) {
-        throw new ApplicationError("A alteração não foi autorizada.", 403);
-      }
-      throw new ApplicationError("Não foi possível atualizar seu perfil.", 500);
+    if (!user) {
+      throw new ApplicationError("Não foi possível atualizar seu perfil.", 404);
     }
-    return this.safeAuthSuccess(response);
+    return Response.json(
+      { ok: true, name: user.name, phone: user.phone },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   async changeOwnPassword(

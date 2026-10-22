@@ -39,12 +39,14 @@ import {
 export type ShellUser = {
   name: string;
   email: string;
+  phone?: string | null;
   role: "USER" | "ADMIN";
 };
 
 const ShellUserContext = createContext<{
   user: ShellUser;
   updateName: (name: string) => void;
+  updatePhone: (phone: string | null) => void;
 } | null>(null);
 
 const AdminSupportViewContext = createContext<boolean | null | "error">(null);
@@ -67,6 +69,8 @@ export function ShellUserProvider({
         user: currentUser,
         updateName: (name) =>
           setCurrentUser((previous) => ({ ...previous, name })),
+        updatePhone: (phone) =>
+          setCurrentUser((previous) => ({ ...previous, phone })),
       }}
     >
       {children}
@@ -214,7 +218,7 @@ export function AppShell({
       "AppShell precisa ser renderizado dentro de ShellUserProvider.",
     );
   }
-  const { user, updateName } = userContext;
+  const { user, updateName, updatePhone } = userContext;
   const [supportViewActive, setSupportViewActive] = useState<
     boolean | null | "error"
   >(user.role === "ADMIN" ? null : false);
@@ -272,8 +276,10 @@ export function AppShell({
             <UserProfileDialog
               name={user.name}
               email={user.email}
+              phone={user.phone ?? null}
               role={user.role}
               onNameUpdated={updateName}
+              onPhoneUpdated={updatePhone}
             />
           </div>
         </header>

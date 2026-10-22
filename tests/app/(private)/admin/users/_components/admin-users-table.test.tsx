@@ -12,6 +12,7 @@ const users: ManagedUser[] = [
     id: "user-1",
     name: "Ana Souza",
     email: "ana@example.com",
+    phone: "11987654321",
     role: "USER",
     accountStatus: "ACTIVE",
     lastLoginAt: "2026-10-15T12:00:00.000Z",
@@ -21,6 +22,7 @@ const users: ManagedUser[] = [
     id: "user-2",
     name: "Bruno Lima",
     email: "bruno@example.com",
+    phone: null,
     role: "ADMIN",
     accountStatus: "DISABLED",
     lastLoginAt: null,
@@ -30,6 +32,7 @@ const users: ManagedUser[] = [
     id: "user-3",
     name: "Caio Reis",
     email: "caio@example.com",
+    phone: null,
     role: "USER",
     accountStatus: "PENDING",
     lastLoginAt: "invalid-date",
@@ -39,6 +42,7 @@ const users: ManagedUser[] = [
     id: "user-4",
     name: "Daniel Reis",
     email: "daniel@example.com",
+    phone: null,
     role: "USER",
     accountStatus: "ACTIVE",
     lastLoginAt: null,
@@ -68,7 +72,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("AdminUsersTable", () => {
-  it("shows separate name/email columns, account states, and access dates", () => {
+  it("shows name, email, phone, account states, and access dates", () => {
     render(
       <AdminUsersTable
         users={users}
@@ -89,6 +93,7 @@ describe("AdminUsersTable", () => {
     );
 
     expect(screen.getByText("ana@example.com")).toBeTruthy();
+    expect(screen.getByText("(11) 98765-4321")).toBeTruthy();
     expect(screen.getByText("Ana Souza")).toBeTruthy();
     expect(screen.getByText("bruno@example.com")).toBeTruthy();
     expect(screen.getByText("caio@example.com")).toBeTruthy();

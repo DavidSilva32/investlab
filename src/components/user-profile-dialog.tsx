@@ -13,6 +13,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, apiRequest } from "@/lib/api-client";
+import {
+  formatBrazilianPhone,
+  normalizeBrazilianPhone,
+} from "@/lib/brazilian-phone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,25 +39,31 @@ import {
 type UserProfileDialogProps = {
   name: string;
   email: string;
+  phone?: string | null;
   role: "USER" | "ADMIN";
   onNameUpdated: (name: string) => void;
+  onPhoneUpdated?: (phone: string | null) => void;
 };
 
 export function UserProfileDialog({
   name,
   email,
+  phone,
   role,
   onNameUpdated,
+  onPhoneUpdated,
 }: UserProfileDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [displayName, setDisplayName] = useState(name);
+  const [displayPhone, setDisplayPhone] = useState(formatBrazilianPhone(phone));
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<{
     field: "newPassword" | "confirmPassword";
     message: string;
@@ -64,8 +74,13 @@ export function UserProfileDialog({
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
-    if (nextOpen) return;
+    if (nextOpen) {
+      setDisplayName(name);
+      setDisplayPhone(formatBrazilianPhone(phone));
+      return;
+    }
     setDisplayName(name);
+    setDisplayPhone(formatBrazilianPhone(phone));
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
@@ -73,26 +88,44 @@ export function UserProfileDialog({
     setNewPasswordVisible(false);
     setConfirmPasswordVisible(false);
     setNameError(null);
+    setPhoneError(null);
     setPasswordError(null);
   }
 
-  async function saveName(event: React.FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNameError(null);
+    setPhoneError(null);
     const normalizedName = displayName.trim();
     if (!normalizedName || normalizedName.length > 120) {
       setNameError("Informe um nome com até 120 caracteres.");
       return;
     }
+    const normalizedPhone = normalizeBrazilianPhone(displayPhone);
+    if (normalizedPhone === undefined) {
+      setPhoneError("Informe DDD e 8 dígitos para fixo ou 9 para celular.");
+      return;
+    }
     setSavingName(true);
     try {
-      await apiRequest<{ ok: true }>(
+      const response = await apiRequest<{
+        ok: true;
+        name: string;
+        phone: string | null;
+      }>(
         "/api/auth/profile",
-        { method: "PATCH", body: JSON.stringify({ name: normalizedName }) },
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: normalizedName,
+            phone: normalizedPhone,
+          }),
+        },
         "Não foi possível atualizar seu perfil.",
       );
-      onNameUpdated(normalizedName);
-      toast.success("Seu nome foi atualizado.");
+      onNameUpdated(response.name);
+      onPhoneUpdated?.(response.phone);
+      toast.success("Seu perfil foi atualizado.");
       router.refresh();
     } catch (error) {
       toast.error(
@@ -215,8 +248,8 @@ export function UserProfileDialog({
           <DialogHeader>
             <DialogTitle>Meu perfil</DialogTitle>
             <DialogDescription>
-              Atualize seu nome ou altere sua senha. O e-mail permanece somente
-              para leitura.
+              Atualize seu nome e telefone ou altere sua senha. O e-mail
+              permanece somente para leitura.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-6">
@@ -227,7 +260,7 @@ export function UserProfileDialog({
               <h2 id="profile-account-title" className="text-sm font-semibold">
                 Dados da conta
               </h2>
-              <form className="grid gap-4" onSubmit={saveName}>
+              <form className="grid gap-4" onSubmit={saveProfile}>
                 <div className="grid gap-2">
                   <Label htmlFor="profile-name">Nome</Label>
                   <Input
@@ -251,6 +284,32 @@ export function UserProfileDialog({
                   )}
                 </div>
                 <div className="grid gap-2">
+                  <Label htmlFor="profile-phone">Telefone</Label>
+                  <Input
+                    id="profile-phone"
+                    type="tel"
+                    autoComplete="tel-national"
+                    inputMode="tel"
+                    placeholder="(11) 99999-9999"
+                    value={displayPhone}
+                    onChange={(event) =>
+                      setDisplayPhone(formatBrazilianPhone(event.target.value))
+                    }
+                    aria-invalid={Boolean(phoneError)}
+                    aria-describedby={
+                      phoneError ? "profile-phone-error" : undefined
+                    }
+                  />
+                  {phoneError && (
+                    <p
+                      id="profile-phone-error"
+                      className="text-sm text-destructive"
+                    >
+                      {phoneError}
+                    </p>
+                  )}
+                </div>
+                <div className="grid gap-2">
                   <Label htmlFor="profile-email">E-mail</Label>
                   <Input
                     id="profile-email"
@@ -261,7 +320,7 @@ export function UserProfileDialog({
                 </div>
                 <div>
                   <Button type="submit" disabled={savingName}>
-                    {savingName ? "Salvando…" : "Salvar nome"}
+                    {savingName ? "Salvando…" : "Salvar perfil"}
                   </Button>
                 </div>
               </form>

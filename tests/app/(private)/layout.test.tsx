@@ -46,6 +46,7 @@ describe("PrivateLayout", () => {
       name: "Test User",
       email: "user@example.com",
       role: "USER",
+      phone: null,
     });
     expect(result.props.children).toBe(children);
   });
@@ -69,6 +70,7 @@ describe("PrivateLayout", () => {
       name: "",
       email: "admin@example.com",
       role: "ADMIN",
+      phone: null,
     });
   });
 

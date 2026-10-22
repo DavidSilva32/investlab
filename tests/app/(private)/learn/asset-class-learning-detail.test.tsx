@@ -6,7 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssetClassLearningDetail } from "@/app/(private)/learn/_components/asset-class-learning-detail";
 import { assetClassLearningContent } from "@/lib/asset-class-learning";
 import {
@@ -14,7 +14,41 @@ import {
   type StrategyAssetClassId,
 } from "@/lib/strategy-allocation";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") {
+        const request = JSON.parse(String(init.body)) as {
+          courseId: string;
+          completedLessonIds?: string[];
+          lastLessonId?: string;
+        };
+        return Response.json({
+          progress: {
+            courseId: request.courseId,
+            courseVersion: 1,
+            completedLessonIds: request.completedLessonIds ?? [],
+            lastLessonId: request.lastLessonId ?? null,
+            latestScore: null,
+            bestScore: null,
+            quizAttemptCount: 0,
+            passed: false,
+            passedAt: null,
+            updatedAt: new Date().toISOString(),
+          },
+          assessment: null,
+        });
+      }
+      return Response.json({ courses: [] });
+    }),
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const posterByClass: Record<StrategyAssetClassId, string> = {
   fixed_income: "/images/asset-classes/fixed-income-office.webp",
@@ -24,7 +58,7 @@ const posterByClass: Record<StrategyAssetClassId, string> = {
 };
 
 describe("AssetClassLearningDetail", () => {
-  it("shows the coming-soon status without a player when a class has no video", () => {
+  it("shows the coming-soon status without a player when a class has no video", async () => {
     const originalContent = assetClassLearningContent.fiis;
 
     try {
@@ -33,20 +67,24 @@ describe("AssetClassLearningDetail", () => {
         thumbnailSrc: originalContent.thumbnailSrc,
         description: originalContent.description,
         courseLessons: originalContent.courseLessons,
-        quiz: originalContent.quiz,
+        assessment: originalContent.assessment,
         sources: originalContent.sources,
         availability: "coming-soon",
       };
 
       render(<AssetClassLearningDetail selectedClass="fiis" />);
 
+      await screen.findByRole("heading", {
+        name: originalContent.courseLessons[0].title,
+      });
+      await screen.findAllByRole("radio");
       expect(screen.getByRole("status").textContent).toContain("em breve");
       expect(
         screen.getByRole("heading", {
           name: originalContent.courseLessons[0].title,
         }),
       ).toBeTruthy();
-      expect(screen.queryByRole("radio")).toBeNull();
+      expect(screen.getAllByRole("radio")).toHaveLength(4);
       expect(document.querySelector("video")).toBeNull();
     } finally {
       assetClassLearningContent.fiis = originalContent;
@@ -55,8 +93,11 @@ describe("AssetClassLearningDetail", () => {
 
   it.each(strategyAssetClasses)(
     "renders the $id accessible video player with its class poster and MP4 source",
-    ({ id, label }) => {
+    async ({ id, label }) => {
       render(<AssetClassLearningDetail selectedClass={id} />);
+
+      await screen.findByRole("heading", { name: contentCourseLesson(id) });
+      await screen.findAllByRole("radio");
 
       const detail = screen.getByRole("region", { name: label });
       const video = detail.querySelector("video") as HTMLVideoElement;
@@ -74,16 +115,31 @@ describe("AssetClassLearningDetail", () => {
       expect(
         screen.getByRole("heading", { name: contentCourseLesson(id) }),
       ).toBeTruthy();
-      expect(screen.queryByRole("radio")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
-      fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
-      fireEvent.click(
-        screen.getByRole("button", { name: "Ir para a pergunta" }),
-      );
-      expect(
-        screen.getByRole("heading", { name: contentQuestion(id) }),
-      ).toBeTruthy();
       expect(screen.getAllByRole("radio")).toHaveLength(4);
+      const firstLesson = assetClassLearningContent[id].courseLessons[0];
+      fireEvent.click(
+        screen.getByRole("radio", {
+          name: firstLesson.question.options[
+            firstLesson.question.correctOptionIndex
+          ].text,
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Conferir resposta" }),
+      );
+      await waitFor(() => {
+        expect(
+          screen
+            .getByRole("button", { name: "Próxima aula" })
+            .hasAttribute("disabled"),
+        ).toBe(false);
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
+      expect(
+        await screen.findByRole("heading", {
+          name: assetClassLearningContent[id].courseLessons[1].title,
+        }),
+      ).toBeTruthy();
       expect(
         screen.getByRole("button", { name: `Fontes oficiais sobre ${label}` }),
       ).toBeTruthy();
@@ -101,6 +157,10 @@ describe("AssetClassLearningDetail", () => {
 
   it("keeps official references collapsed until requested", async () => {
     render(<AssetClassLearningDetail selectedClass="fiis" />);
+
+    await screen.findByRole("heading", {
+      name: contentCourseLesson("fiis"),
+    });
 
     const trigger = screen.getByRole("button", {
       name: "Fontes oficiais sobre Fundos imobiliários (FIIs)",
@@ -123,8 +183,4 @@ describe("AssetClassLearningDetail", () => {
 
 function contentCourseLesson(id: StrategyAssetClassId) {
   return assetClassLearningContent[id].courseLessons[0].title;
-}
-
-function contentQuestion(id: StrategyAssetClassId) {
-  return assetClassLearningContent[id].quiz.question;
 }

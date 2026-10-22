@@ -94,6 +94,7 @@ export class AuthRepository {
         id: authUsers.id,
         name: authUsers.name,
         email: authUsers.email,
+        phone: authUsers.phone,
         role: authUsers.role,
         accountStatus: authUsers.accountStatus,
         lastLoginAt: authUsers.lastLoginAt,
@@ -102,6 +103,24 @@ export class AuthRepository {
       })
       .from(authUsers)
       .orderBy(desc(authUsers.createdAt));
+  }
+
+  async updateOwnProfile(input: {
+    id: string;
+    name: string;
+    phone?: string | null;
+  }) {
+    const updates = {
+      name: input.name,
+      updatedAt: new Date(),
+      ...(input.phone !== undefined ? { phone: input.phone } : {}),
+    };
+    const [user] = await getDatabaseClient()
+      .update(authUsers)
+      .set(updates)
+      .where(eq(authUsers.id, input.id))
+      .returning({ name: authUsers.name, phone: authUsers.phone });
+    return user ?? null;
   }
 
   async getLoginEligibility(email: string) {
