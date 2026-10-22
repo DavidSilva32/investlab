@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useState } from "react";
 import { Check, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -22,16 +22,10 @@ export function AssetClassLearningQuiz({
   const quizId = useId();
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [submittedOption, setSubmittedOption] = useState<number | null>(null);
-  const feedbackRef = useRef<HTMLDivElement>(null);
   const answered = submittedOption !== null;
   const correct = submittedOption === correctOptionIndex;
 
-  useEffect(() => {
-    if (submittedOption !== null) feedbackRef.current?.focus();
-  }, [submittedOption]);
-
   function submitAnswer() {
-    if (selectedOption === null) return;
     setSubmittedOption(selectedOption);
   }
 
@@ -99,11 +93,9 @@ export function AssetClassLearningQuiz({
       ) : (
         <>
           <div
-            ref={feedbackRef}
-            tabIndex={-1}
             role="status"
             aria-live="polite"
-            className={`mt-4 rounded-lg border p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            className={`mt-4 rounded-lg border p-3 ${
               correct
                 ? "border-status-success/40 bg-status-success/10"
                 : "border-status-danger/40 bg-status-danger/10"

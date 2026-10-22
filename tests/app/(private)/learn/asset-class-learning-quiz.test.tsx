@@ -79,7 +79,7 @@ describe("AssetClassLearningQuiz", () => {
         .getByRole("radio", { name: /Uma participação/ })
         .hasAttribute("data-disabled"),
     ).toBe(true);
-    expect(document.activeElement).toBe(screen.getByRole("status"));
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
   });
 
   it("confirms a correct choice and lets the learner retry", () => {
