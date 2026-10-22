@@ -59,6 +59,16 @@ describe("ThemeProvider palette preference", () => {
     expect(document.documentElement.dataset.palette).toBe("blue");
   });
 
+  it("keeps the default context setter safe outside the provider", async () => {
+    render(<PaletteControls />);
+
+    expect(screen.getByText("blue")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Set palette" }));
+
+    expect(screen.getByText("blue")).toBeTruthy();
+    expect(document.documentElement.dataset.palette).toBeUndefined();
+  });
+
   it("updates the active palette when another tab changes local storage", async () => {
     render(
       <ThemeProvider>
