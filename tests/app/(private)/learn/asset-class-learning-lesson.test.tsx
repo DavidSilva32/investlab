@@ -183,7 +183,15 @@ describe("AssetClassLearningLesson", () => {
         name: "Três pontos para conferir na oferta",
       }),
     ).toBeTruthy();
-    expect(examples.querySelectorAll("li")).toHaveLength(3);
+    const list = within(examples).getByRole("list");
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(list.className).toContain("sm:grid-cols-3");
+    for (const item of items.slice(0, 2)) {
+      const icons = item.querySelectorAll("svg");
+      expect(icons).toHaveLength(2);
+      expect(icons[1].getAttribute("class")).toContain("sm:absolute");
+    }
     expect(within(examples).getByText(/resgate em dias úteis/)).toBeTruthy();
     expect(
       within(examples).getByText(/data prevista para o título terminar/),

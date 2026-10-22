@@ -326,7 +326,7 @@ export function AssetClassLearningLesson({
       <ul
         className={`mt-3 grid items-stretch gap-2 ${
           selectedClass === "fixed_income" && lessonIndex === 1
-            ? "sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center"
+            ? "sm:grid-cols-3 sm:gap-x-8"
             : "sm:grid-cols-2 xl:grid-cols-3"
         }`}
       >
@@ -337,7 +337,7 @@ export function AssetClassLearningLesson({
           return (
             <li
               key={example.title}
-              className={`flex min-w-0 items-stretch gap-2 ${selectedClass === "fixed_income" && lessonIndex === 1 ? "flex-col sm:flex-row sm:items-center" : ""}`}
+              className={`flex min-w-0 items-stretch gap-2 ${selectedClass === "fixed_income" && lessonIndex === 1 ? "relative flex-col sm:flex-row sm:items-center" : ""}`}
             >
               <article
                 className={`relative flex min-w-0 flex-1 gap-3 overflow-hidden rounded-xl border border-border/60 bg-muted/20 p-3 transition-colors ${visualSoftClassName[selectedClass]} sm:p-4`}
@@ -359,7 +359,7 @@ export function AssetClassLearningLesson({
                 exampleIndex < lessonExamples.length - 1 && (
                   <ArrowRight
                     aria-hidden="true"
-                    className="mx-auto size-4 rotate-90 text-asset-class-fixed-income sm:rotate-0"
+                    className="mx-auto size-4 rotate-90 text-asset-class-fixed-income sm:absolute sm:right-[-1.5rem] sm:top-1/2 sm:mx-0 sm:-translate-y-1/2 sm:rotate-0"
                   />
                 )}
             </li>
