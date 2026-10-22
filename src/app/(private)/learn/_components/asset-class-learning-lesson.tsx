@@ -10,15 +10,29 @@ import {
   Layers3,
   MapPinned,
   Network,
+  PackageOpen,
+  Percent,
   Scale,
   ShieldCheck,
   Wallet,
+  Landmark as Bank,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import type { AssetClassLearningContent } from "@/lib/asset-class-learning";
 import type { StrategyAssetClassId } from "@/lib/strategy-allocation";
 
 type Lesson = AssetClassLearningContent["courseLessons"][number];
+type ExampleIconName =
+  | "clock"
+  | "bank"
+  | "percent"
+  | "scale"
+  | "building"
+  | "layers"
+  | "file"
+  | "trend"
+  | "package";
 
 type AssetClassLearningLessonProps = {
   selectedClass: StrategyAssetClassId;
@@ -215,17 +229,31 @@ const lessonVisuals: Record<
   },
 };
 
-const visualClassName = {
+const visualClassName: Record<StrategyAssetClassId, string> = {
+  fiis: "text-asset-class-fiis",
   fixed_income: "text-asset-class-fixed-income",
   brazilian_equities: "text-asset-class-brazilian-equities",
   international_etfs: "text-asset-class-international-etfs",
 } as const;
 
-const visualSoftClassName = {
+const visualSoftClassName: Record<StrategyAssetClassId, string> = {
+  fiis: "bg-asset-class-fiis/5",
   fixed_income: "bg-asset-class-fixed-income/10",
   brazilian_equities: "bg-asset-class-brazilian-equities/10",
   international_etfs: "bg-asset-class-international-etfs/10",
 } as const;
+
+const exampleIcons: Record<ExampleIconName, LucideIcon> = {
+  clock: Clock3,
+  bank: Bank,
+  percent: Percent,
+  scale: Scale,
+  building: Building2,
+  layers: Layers3,
+  file: FileSearch,
+  trend: TrendingUp,
+  package: PackageOpen,
+};
 
 export function AssetClassLearningLesson({
   selectedClass,
@@ -278,24 +306,65 @@ export function AssetClassLearningLesson({
       )}
     </section>
   );
-  const examplesSection = lesson.examples && (
+  const lessonExamples = lesson.examples;
+  const examplesSection = lessonExamples && (
     <section
       aria-label={`Exemplos: ${className}`}
-      className="rounded-2xl border border-border/60 bg-muted/20 p-4 sm:p-5"
+      className="rounded-2xl border border-border/60 bg-card p-4 sm:p-5"
     >
-      <h4 className="text-sm font-semibold">Exemplos para visualizar</h4>
-      <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {lesson.examples.map((example) => (
-          <li
-            key={example.title}
-            className="rounded-xl border border-border/60 bg-card p-3 sm:p-4"
-          >
-            <h5 className="text-sm font-medium">{example.title}</h5>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {example.description}
-            </p>
-          </li>
-        ))}
+      <div className="flex items-center gap-2">
+        <Network
+          aria-hidden="true"
+          className={`size-4 ${visualClassName[selectedClass]}`}
+        />
+        <h4 className="text-sm font-semibold">
+          {selectedClass === "fixed_income" && lessonIndex === 1
+            ? "Três pontos para conferir na oferta"
+            : "Na prática"}
+        </h4>
+      </div>
+      <ul
+        className={`mt-3 grid items-stretch gap-2 ${
+          selectedClass === "fixed_income" && lessonIndex === 1
+            ? "sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center"
+            : "sm:grid-cols-2 xl:grid-cols-3"
+        }`}
+      >
+        {lessonExamples.map((example, exampleIndex) => {
+          const Icon = example.icon
+            ? exampleIcons[example.icon]
+            : exampleIcons.package;
+          return (
+            <li
+              key={example.title}
+              className={`flex min-w-0 items-stretch gap-2 ${selectedClass === "fixed_income" && lessonIndex === 1 ? "flex-col sm:flex-row sm:items-center" : ""}`}
+            >
+              <article
+                className={`relative flex min-w-0 flex-1 gap-3 overflow-hidden rounded-xl border border-border/60 bg-muted/20 p-3 transition-colors ${visualSoftClassName[selectedClass]} sm:p-4`}
+              >
+                <span
+                  className={`grid size-9 shrink-0 place-items-center rounded-lg bg-background ${visualClassName[selectedClass]}`}
+                >
+                  <Icon aria-hidden="true" className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <h5 className="text-sm font-semibold">{example.title}</h5>
+                  <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                    {example.description}
+                  </p>
+                </div>
+              </article>
+              {selectedClass === "fixed_income" &&
+                lessonIndex === 1 &&
+                exampleIndex < lessonExamples.length - 1 && (
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="mx-auto size-4 rotate-90 text-asset-class-fixed-income sm:rotate-0"
+                  />
+                )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

@@ -114,14 +114,14 @@ export function AssetClassLearningQuiz({
               <label
                 key={option.text}
                 htmlFor={id}
-                className={`flex cursor-pointer items-start gap-3 rounded-xl border border-transparent p-3 text-sm transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+                className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
                   answered && isCorrectOption
-                    ? "bg-status-success/10 ring-1 ring-status-success/30"
+                    ? "border-status-success/50 bg-status-success/10 ring-1 ring-status-success/30"
                     : answered && isSelected
-                      ? "bg-status-danger/10 ring-1 ring-status-danger/30"
+                      ? "border-status-danger/50 bg-status-danger/10 ring-1 ring-status-danger/30"
                       : isSelected
-                        ? "bg-primary/5 ring-1 ring-primary/40"
-                        : "bg-background/80 hover:bg-background hover:shadow-sm"
+                        ? "border-primary/60 bg-primary/10 ring-1 ring-primary/40"
+                        : "border-border/70 bg-background/80 hover:border-primary/45 hover:bg-primary/5 hover:shadow-sm"
                 }`}
               >
                 <RadioGroupItem

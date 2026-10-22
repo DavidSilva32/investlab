@@ -66,6 +66,11 @@ describe("AssetClassLearningQuiz", () => {
     );
     const initialCorrectPosition = radios.indexOf(correctRadio!);
     expect(initialCorrectPosition).not.toBe(0);
+    const unselectedOption = screen
+      .getByRole("radio", { name: quiz.options[2].text })
+      .closest("label");
+    expect(unselectedOption?.className).toContain("hover:border-primary/45");
+    expect(unselectedOption?.className).toContain("hover:bg-primary/5");
 
     const checkButton = screen.getByRole("button", {
       name: "Conferir resposta",
@@ -73,6 +78,11 @@ describe("AssetClassLearningQuiz", () => {
     expect(checkButton.hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("radio", { name: quiz.options[1].text }));
+    const selectedLabel = screen
+      .getByRole("radio", { name: quiz.options[1].text })
+      .closest("label");
+    expect(selectedLabel?.className).toContain("border-primary/60");
+    expect(selectedLabel?.className).toContain("bg-primary/10");
     const selectedPosition = screen
       .getAllByRole("radio")
       .findIndex((radio) => radio.getAttribute("data-state") === "checked");
