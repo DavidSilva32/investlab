@@ -27,9 +27,60 @@ function toProgressDto(
     latestScore: row.latestScore,
     bestScore: row.bestScore,
     quizAttemptCount: row.quizAttemptCount,
+    currentVersionPassed:
+      row.courseVersion === assetClassLearningCourseVersion &&
+      row.passedAt !== null,
     passed: row.passedAt !== null,
     passedAt: row.passedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function mergeCourseProgress(
+  rows: Awaited<
+    ReturnType<typeof learningCourseProgressRepository.listForCurrentOwner>
+  >,
+  courseId: string,
+) {
+  const courseRows = rows
+    .filter((row) => row.courseId === courseId)
+    .sort((left, right) => right.courseVersion - left.courseVersion);
+  if (courseRows.length === 0) return null;
+
+  const currentVersionRow = courseRows.find(
+    (row) => row.courseVersion === assetClassLearningCourseVersion,
+  );
+  const activeRow = currentVersionRow ?? courseRows[0];
+  const passedRows = courseRows.filter((row) => row.passedAt !== null);
+  const completedLessonIds = currentVersionRow?.completedLessonIds ?? [];
+  const lastLessonId = currentVersionRow?.lastLessonId ?? null;
+  const latestUpdatedAt = courseRows.reduce(
+    (latest, row) => (row.updatedAt > latest ? row.updatedAt : latest),
+    activeRow.updatedAt,
+  );
+  const currentExamData =
+    activeRow.courseVersion === assetClassLearningCourseVersion;
+
+  return {
+    ...toProgressDto(activeRow),
+    courseVersion: assetClassLearningCourseVersion,
+    hasCurrentVersionProgress: Boolean(currentVersionRow),
+    completedLessonIds,
+    lastLessonId,
+    currentVersionPassed: Boolean(currentVersionRow?.passedAt),
+    latestScore: currentExamData ? activeRow.latestScore : null,
+    bestScore: currentExamData ? activeRow.bestScore : null,
+    quizAttemptCount: currentExamData ? activeRow.quizAttemptCount : 0,
+    passed: passedRows.length > 0,
+    passedAt:
+      activeRow.passedAt?.toISOString() ??
+      passedRows
+        .map((row) => row.passedAt)
+        .filter((passedAt): passedAt is Date => passedAt !== null)
+        .sort((left, right) => left.getTime() - right.getTime())[0]
+        ?.toISOString() ??
+      null,
+    updatedAt: latestUpdatedAt.toISOString(),
   };
 }
 
@@ -37,7 +88,9 @@ export class LearningCourseProgressService {
   async listCurrentOwnerProgress() {
     const rows = await learningCourseProgressRepository.listForCurrentOwner();
     return {
-      courses: rows.map((row) => toProgressDto(row)),
+      courses: Object.keys(assetClassLearningContent)
+        .map((courseId) => mergeCourseProgress(rows, courseId))
+        .filter((progress) => progress !== null),
     };
   }
 
@@ -111,8 +164,13 @@ export class LearningCourseProgressService {
       attemptId: input.assessment?.attemptId ?? null,
       passed,
     });
+    const allRows =
+      await learningCourseProgressRepository.listForCurrentOwner();
     return {
-      progress: toProgressDto(saved.progress),
+      progress: mergeCourseProgress(allRows, input.courseId) ?? {
+        ...toProgressDto(saved.progress),
+        hasCurrentVersionProgress: true,
+      },
       assessment: saved.attempt
         ? {
             score: saved.attempt.score,

@@ -28,6 +28,8 @@ import { AssetClassLearningLesson } from "./asset-class-learning-lesson";
 type CourseProgress = {
   courseId: string;
   courseVersion: number;
+  hasCurrentVersionProgress: boolean;
+  currentVersionPassed: boolean;
   completedLessonIds: string[];
   lastLessonId: string | null;
   latestScore: number | null;
@@ -98,7 +100,8 @@ export function AssetClassLearningCourse({
         `lesson-${lastLessonNumber}`,
       );
       setStep(
-        saved?.passed || saved?.latestScore != null
+        (saved?.hasCurrentVersionProgress && saved.currentVersionPassed) ||
+          saved?.latestScore != null
           ? examStep
           : Math.min(
               Math.max(lastLessonNumber + (lastLessonComplete ? 1 : 0) - 1, 0),
@@ -304,6 +307,15 @@ export function AssetClassLearningCourse({
       </div>
 
       <div className="p-3 sm:p-6 lg:p-7">
+        {progress?.passed && !progress.currentVersionPassed && (
+          <p
+            role="status"
+            className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground"
+          >
+            Sua medalha anterior continua no perfil. As aulas foram atualizadas;
+            conclua esta edição para registrar o progresso e a nota atuais.
+          </p>
+        )}
         {!isExam && lesson ? (
           <article
             key={step}
@@ -409,19 +421,12 @@ export function AssetClassLearningCourse({
                 progress?.latestScore !== undefined
                   ? {
                       score: progress.latestScore,
-                      passed: progress.passed,
+                      passed: progress.currentVersionPassed,
                       attemptPassed:
                         progress.latestScore >= learningAssessmentPassScore,
                       bestScore: progress.bestScore ?? 0,
                     }
-                  : progress?.passed
-                    ? {
-                        score: progress.bestScore ?? 10,
-                        passed: true,
-                        attemptPassed: true,
-                        bestScore: progress.bestScore ?? 10,
-                      }
-                    : null
+                  : null
               }
               onComplete={async ({ attemptId, answers }) => {
                 const saved = await saveCheckpoint({
@@ -438,7 +443,7 @@ export function AssetClassLearningCourse({
                 return {
                   score: saved.assessment.score,
                   passed: saved.assessment.passed,
-                  coursePassed: saved.progress.passed,
+                  coursePassed: saved.progress.currentVersionPassed,
                   bestScore: saved.progress.bestScore ?? 0,
                 };
               }}
@@ -452,9 +457,13 @@ export function AssetClassLearningCourse({
                 aria-hidden="true"
                 className="size-4 shrink-0 text-primary"
               />
-              {progress?.quizAttemptCount
-                ? `Provas realizadas: ${progress.quizAttemptCount}.`
-                : "Você pode rever as aulas e refazer a prova quando quiser."}
+              {progress?.passed &&
+              !progress.currentVersionPassed &&
+              progress.latestScore === null
+                ? "Sua medalha anterior foi preservada. Faça a prova atualizada para registrar uma nova nota."
+                : progress?.quizAttemptCount
+                  ? `Provas realizadas: ${progress.quizAttemptCount}.`
+                  : "Você pode rever as aulas e refazer a prova quando quiser."}
             </div>
           </div>
         )}

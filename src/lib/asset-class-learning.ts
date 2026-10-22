@@ -28,6 +28,10 @@ type AssetClassLearningContentBase = {
   courseLessons: {
     title: string;
     content: string;
+    examples?: {
+      title: string;
+      description: string;
+    }[];
     question: AssetClassLearningQuestion;
     visuals?: AssetClassLearningVisual[];
   }[];
@@ -48,7 +52,7 @@ export type AssetClassLearningContent =
       videoSrc?: never;
     });
 
-export const assetClassLearningCourseVersion = 1;
+export const assetClassLearningCourseVersion = 2;
 
 function question(
   title: string,
@@ -98,9 +102,36 @@ export const assetClassLearningContent: Record<
         question: fiiQuestion,
       },
       {
-        title: "Um fundo pode investir em vários tipos de imóvel",
+        title: "FIIs podem investir em imóveis e créditos imobiliários",
         content:
-          "O gestor pode selecionar imóveis e ativos conforme a estratégia descrita nos documentos do fundo. Veja exemplos comuns; cada fundo pode ter características próprias.",
+          "A estratégia de um FII pode envolver imóveis prontos, créditos ligados ao setor imobiliário, cotas de outros fundos ou projetos de desenvolvimento. No mercado, você pode encontrar grupos como fundos de renda, de títulos, de desenvolvimento e híbridos, além dos fundos de fundos. Confira a política do fundo: ela explica o que ele pode ter na carteira.",
+        examples: [
+          {
+            title: "Imóveis de renda (tijolo)",
+            description:
+              "Investe em imóveis prontos, como shoppings, galpões ou escritórios, e pode receber receitas previstas nos contratos.",
+          },
+          {
+            title: "Títulos imobiliários (papel)",
+            description:
+              "O fundo investe em títulos de crédito ligados ao mercado imobiliário. A renda depende das condições e dos pagamentos desses créditos.",
+          },
+          {
+            title: "Fundos de fundos",
+            description:
+              "O portfólio reúne cotas de outros FIIs. Para entender a exposição, vale olhar também os fundos que estão dentro dele.",
+          },
+          {
+            title: "Desenvolvimento",
+            description:
+              "Pode participar de projetos de incorporação para locação ou venda futura. O prazo e os riscos dependem do projeto.",
+          },
+          {
+            title: "Híbridos",
+            description:
+              "Têm política que pode combinar diferentes tipos de ativos imobiliários. Confira os limites definidos para cada fundo.",
+          },
+        ],
         visuals: [
           {
             title: "Shoppings",
@@ -146,7 +177,19 @@ export const assetClassLearningContent: Record<
       {
         title: "Vacância mostra espaços sem locação",
         content:
-          "Vacância física indica espaço desocupado. Vacância financeira estima o efeito dos espaços vagos na receita potencial. Contratos, localização e concentração também ajudam a contextualizar o número.",
+          "Vacância física indica espaço desocupado. Vacância financeira estima o efeito dos espaços vagos na receita potencial. Também observe se poucos imóveis, inquilinos ou regiões concentram boa parte da carteira: um número grande de imóveis, sozinho, não conta toda a história.",
+        examples: [
+          {
+            title: "Ocupação",
+            description:
+              "Se duas de dez salas de mesma área estão vazias, 20% da área está sem locação. Isso não informa, sozinho, quanto de receita deixou de entrar.",
+          },
+          {
+            title: "Concentração",
+            description:
+              "Dez imóveis podem estar na mesma região ou depender de poucos inquilinos. Veja onde estão e de quem vêm as receitas.",
+          },
+        ],
         question: question(
           "O que a vacância física procura mostrar?",
           [
@@ -164,40 +207,52 @@ export const assetClassLearningContent: Record<
         ),
       },
       {
-        title: "Rendimentos e preço pedem contexto",
+        title: "Rendimentos, patrimônio e preço pedem contexto",
         content:
-          "Distribuições podem ser recorrentes, mas os valores variam e não são garantidos. Compare o histórico, a origem das receitas, os contratos e o preço da cota; um indicador isolado não resume a qualidade do fundo.",
+          "Distribuições podem ser recorrentes, mas variam. O patrimônio líquido é uma estimativa do valor dos ativos menos as obrigações; dividido pelas cotas, forma o valor patrimonial por cota. Comparar esse valor com o preço de mercado pode ajudar a abrir perguntas, mas diferença para baixo não significa automaticamente que a cota está barata. Veja também a origem das receitas e o histórico de distribuições.",
+        examples: [
+          {
+            title: "Valor patrimonial por cota",
+            description:
+              "É uma referência baseada nos registros e avaliações do fundo. O preço negociado pode ficar acima ou abaixo dela por vários motivos.",
+          },
+          {
+            title: "Rendimento passado",
+            description:
+              "Ajuda a contar o que foi distribuído em um período. Não promete o mesmo pagamento nos próximos meses.",
+          },
+        ],
         question: question(
-          "Como interpretar o dividend yield de um FII?",
+          "Um FII negocia abaixo do valor patrimonial por cota. O que isso permite concluir?",
           [
-            "Como uma relação histórica entre distribuições e preço, que não garante o futuro.",
-            "Como promessa de que o mesmo valor será pago todo mês.",
-            "Como medida completa da qualidade do fundo.",
-            "Como garantia de valorização da cota.",
+            "É um ponto de comparação; ainda é preciso entender a carteira, os ativos e os riscos.",
+            "Que a cota está necessariamente barata e deve subir.",
+            "Que os rendimentos mensais estão garantidos.",
+            "Que o fundo tem patrimônio maior que os demais.",
           ],
           [
-            "Correto. É uma referência histórica e precisa ser lida junto com outras informações.",
-            "Distribuições podem mudar e não são garantidas.",
-            "Nenhum indicador isolado resume carteira, gestão, contratos e riscos.",
-            "O indicador não garante valorização futura da cota.",
+            "Isso. A relação ajuda a comparar, mas não substitui entender o que há no fundo e por que o preço difere.",
+            "Uma diferença para o valor patrimonial não prevê a valorização futura.",
+            "O valor patrimonial não garante distribuições futuras.",
+            "Patrimônio total e valor patrimonial por cota são medidas diferentes.",
           ],
         ),
       },
     ],
     assessment: [
       question(
-        "Você compara dois FIIs para entender onde investem. O que consultar primeiro?",
+        "Um FII investe principalmente em títulos de crédito ligados a imóveis. Qual descrição combina melhor?",
         [
-          "A estratégia, a carteira e as regras de cada fundo.",
-          "Escolher o fundo com a cota de menor preço.",
-          "Assumir que ambos têm os mesmos imóveis e contratos.",
-          "Usar somente a quantidade de cotistas.",
+          "É uma estratégia de papel; confira os créditos, as condições e a carteira.",
+          "É necessariamente um fundo de tijolo com imóveis alugados.",
+          "É um fundo de ações de construtoras.",
+          "É uma aplicação cujo rendimento é fixo e garantido.",
         ],
         [
-          "Isso. Estratégia, carteira e regras ajudam a entender como cada fundo opera.",
-          "Preço por cota sozinho não compara o patrimônio ou os riscos dos fundos.",
-          "Fundos podem ter carteiras e contratos diferentes.",
-          "A quantidade de cotistas não explica a estratégia nem a carteira.",
+          "Isso. Fundos de papel investem em créditos ligados ao mercado imobiliário; as condições variam.",
+          "Fundos de tijolo investem em imóveis; a descrição apresentada fala de créditos.",
+          "A estratégia descrita é de crédito imobiliário, não necessariamente de ações.",
+          "A estratégia não elimina riscos nem garante um valor de rendimento.",
         ],
       ),
       question(
@@ -246,18 +301,93 @@ export const assetClassLearningContent: Record<
         ],
       ),
       question(
-        "Um FII teve DY alto em um período. Qual é o próximo passo?",
+        "O preço de uma cota está abaixo do valor patrimonial por cota. Qual é um próximo passo útil?",
         [
-          "Ver a origem e recorrência das receitas, os contratos e outros riscos do fundo.",
-          "Projetar o mesmo rendimento para os próximos meses.",
-          "Concluir que a carteira está sempre ocupada.",
-          "Tratar o número como garantia contra queda da cota.",
+          "Entender a carteira, a data e as avaliações usadas e os riscos que podem explicar a diferença.",
+          "Concluir que o mercado errou e que a cota vai subir.",
+          "Assumir que os imóveis estão todos alugados.",
+          "Tratar o valor patrimonial como garantia de preço mínimo.",
         ],
         [
-          "Correto. O DY passado é um retrato do período; contexto e fontes das receitas importam.",
-          "Distribuições futuras não são garantidas pelo histórico.",
-          "Ocupação requer dados como vacância e contratos.",
-          "O indicador não elimina os riscos de mercado.",
+          "Isso. A diferença merece contexto; os valores patrimoniais e os preços têm datas e critérios próprios.",
+          "A relação não indica com certeza a direção futura do preço.",
+          "O valor da cota não mede a ocupação dos imóveis.",
+          "O valor patrimonial é uma referência, não um piso garantido.",
+        ],
+      ),
+      question(
+        "Um FII anuncia que investe em shoppings e galpões. Que tipo de informação isso descreve?",
+        [
+          "Exemplos de imóveis do portfólio; a política do fundo mostra os detalhes.",
+          "Uma garantia de que todos os imóveis terão inquilinos.",
+          "A quantidade exata de rendimento que será distribuída.",
+          "Uma regra de que o fundo não pode mudar sua carteira.",
+        ],
+        [
+          "Isso. A carteira e a política explicam quais imóveis e limites fazem parte da estratégia.",
+          "Imóveis podem ficar vagos e os contratos podem mudar.",
+          "O tipo de imóvel não determina um pagamento fixo aos cotistas.",
+          "Mudanças dependem das regras e decisões previstas para o fundo.",
+        ],
+      ),
+      question(
+        "Um fundo tem muitos imóveis, mas a maior parte da receita vem de um inquilino. O que isso sugere observar?",
+        [
+          "A concentração de receitas e as condições dos contratos desse inquilino.",
+          "Que o fundo é diversificado só pelo número de imóveis.",
+          "Que o inquilino continuará pagando para sempre.",
+          "Que o valor patrimonial da cota está garantido.",
+        ],
+        [
+          "Correto. A quantidade de imóveis não mostra, sozinha, de onde vem a receita.",
+          "Concentração de receita pode continuar mesmo com vários imóveis.",
+          "Contratos e pagamentos podem mudar ao longo do tempo.",
+          "Receita de inquilino não garante o valor patrimonial da cota.",
+        ],
+      ),
+      question(
+        "Um fundo distribuiu valores parecidos por vários meses. O que é correto concluir?",
+        [
+          "Esse foi o histórico observado; não é garantia de que os próximos pagamentos serão iguais.",
+          "Que o próximo pagamento mensal está garantido nesse valor.",
+          "Que a cota não pode perder valor.",
+          "Que vacância e contratos deixaram de importar.",
+        ],
+        [
+          "Isso. O histórico informa o passado; receitas e distribuições podem variar.",
+          "Pagamentos futuros não são definidos apenas pelo histórico.",
+          "O preço da cota pode oscilar mesmo quando houve distribuições.",
+          "Ocupação e contratos continuam ajudando a explicar as receitas.",
+        ],
+      ),
+      question(
+        "Uma pessoa quer saber se dois FIIs têm exposição parecida a regiões e inquilinos. O que comparar?",
+        [
+          "A localização dos imóveis e a distribuição dos locatários e das receitas.",
+          "Somente o número de cotistas de cada fundo.",
+          "Apenas o preço unitário das cotas.",
+          "O nome dos fundos, sem olhar as carteiras.",
+        ],
+        [
+          "Correto. A carteira ajuda a enxergar concentração por região e por inquilino.",
+          "O número de cotistas não revela onde estão os imóveis ou as receitas.",
+          "O preço unitário não mostra a composição dos fundos.",
+          "Nomes parecidos ou diferentes não substituem consultar a carteira.",
+        ],
+      ),
+      question(
+        "Um FII tem patrimônio total maior que outro. O que esse dado permite concluir sozinho?",
+        [
+          "Que o fundo é maior em valor total; não que seja automaticamente melhor.",
+          "Que as cotas terão mais valorização.",
+          "Que haverá menos vacância em todos os imóveis.",
+          "Que o rendimento por cota será maior.",
+        ],
+        [
+          "Isso. Patrimônio total mostra escala, mas não resume carteira, riscos ou adequação.",
+          "O tamanho do patrimônio não prevê a valorização futura das cotas.",
+          "Patrimônio total não mede a ocupação de cada imóvel.",
+          "O valor distribuído por cota depende de outros fatores.",
         ],
       ),
     ],
@@ -265,6 +395,10 @@ export const assetClassLearningContent: Record<
       {
         label: "Portal do Investidor: Fundos imobiliários",
         href: "https://www.gov.br/investidor/pt-br/investir/tipos-de-investimentos/fundos-de-investimentos-imobiliarios-fii",
+      },
+      {
+        label: "Portal do Investidor: Ativos em que os FII investem",
+        href: "https://www.gov.br/investidor/pt-br/investir/tipos-de-investimentos/fundos-de-investimentos-imobiliarios-fii/politica-de-investimentos-ativos-em-que-os-fii-investem",
       },
       {
         label: "Portal do Investidor: Como negociar cotas de FII",
@@ -283,7 +417,24 @@ export const assetClassLearningContent: Record<
       {
         title: "O que significa comprar uma ação?",
         content:
-          "Uma ação representa uma pequena participação em uma empresa. A quantidade e a classe das ações determinam direitos específicos.",
+          "Uma ação representa uma pequena participação em uma empresa. A quantidade e a classe das ações determinam direitos específicos; algumas dão voto em assembleias. No Brasil, também existem BDRs: certificados negociados aqui que representam valores mobiliários emitidos no exterior. Não são a mesma coisa que comprar diretamente a ação estrangeira.",
+        examples: [
+          {
+            title: "Ação",
+            description:
+              "É como ter uma pequena parte de um negócio: você participa dos riscos e pode se beneficiar se a empresa e o mercado forem bem.",
+          },
+          {
+            title: "BDR",
+            description:
+              "É um certificado negociado no Brasil que representa um ativo emitido fora do país. Confira qual ativo e quais condições ele representa.",
+          },
+          {
+            title: "Como pode vir o resultado",
+            description:
+              "A pessoa pode receber valores distribuídos pela empresa ou ter ganho se vender por mais do que pagou. Nenhum dos dois é garantido.",
+          },
+        ],
         question: question(
           "Ao comprar uma ação, o que você passa a ter?",
           [
@@ -303,7 +454,19 @@ export const assetClassLearningContent: Record<
       {
         title: "Comece entendendo o negócio e os resultados",
         content:
-          "Receita mostra vendas ou serviços; lucro mostra o resultado após despesas. Compare períodos equivalentes e considere o setor antes de interpretar mudanças.",
+          "Receita mostra vendas ou serviços; lucro é o que sobra depois de reconhecer custos e despesas. Antes dos números, pergunte o que a empresa vende e de quem vem a receita. Uma demanda que costuma se repetir pode ajudar a entender o negócio, mas não torna a empresa imune a crises, concorrência, dívida ou mudanças no setor.",
+        examples: [
+          {
+            title: "Uma padaria",
+            description:
+              "O dinheiro das vendas é receita. Depois de pagar ingredientes, equipe, aluguel e outras despesas, o resultado pode ser lucro ou prejuízo.",
+          },
+          {
+            title: "Demanda recorrente",
+            description:
+              "Contas de energia, alimentos e serviços básicos ajudam a ilustrar demandas frequentes. Isso não significa que toda empresa desses setores seja boa ou segura.",
+          },
+        ],
         question: question(
           "O que o lucro líquido ajuda a entender?",
           [
@@ -437,11 +600,90 @@ export const assetClassLearningContent: Record<
           "Dados desatualizados ou inconsistentes podem distorcer uma estimativa.",
         ],
       ),
+      question(
+        "Uma companhia vende alimentos e costuma ter clientes recorrentes. O que essa característica permite avaliar?",
+        [
+          "Como a demanda pode funcionar, sem concluir que a empresa está livre de riscos.",
+          "Que a empresa sempre terá lucro, qualquer que seja o cenário.",
+          "Que o preço da ação vai subir todos os anos.",
+          "Que não é necessário olhar concorrentes ou resultados.",
+        ],
+        [
+          "Isso. Frequência de demanda ajuda a entender o negócio, mas não elimina riscos.",
+          "Demanda recorrente não garante lucro nem pagamento aos acionistas.",
+          "A característica do setor não prevê o preço futuro da ação.",
+          "Concorrência e resultados continuam relevantes.",
+        ],
+      ),
+      question(
+        "Uma empresa mostra lucro no relatório. O que isso significa para quem tem ações?",
+        [
+          "É o resultado do período; não significa que todo o lucro será distribuído.",
+          "Que cada acionista receberá o lucro integralmente em dinheiro.",
+          "Que a cotação não poderá cair.",
+          "Que a empresa não tem despesas ou dívidas.",
+        ],
+        [
+          "Correto. A empresa pode reter parte do resultado, e o preço da ação continua variando.",
+          "Distribuições dependem de decisões e regras da companhia.",
+          "O preço das ações pode oscilar mesmo quando há lucro.",
+          "Ter lucro não significa não ter despesas ou dívidas.",
+        ],
+      ),
+      question(
+        "Uma pessoa lê ‘ação preferencial’ e ‘ação ordinária’. O que deve conferir?",
+        [
+          "Os direitos e as características previstos para cada classe de ação.",
+          "Assumir que os nomes garantem prioridade em qualquer situação.",
+          "Concluir que as duas classes sempre pagam os mesmos proventos.",
+          "Escolher apenas pela letra usada no ticker.",
+        ],
+        [
+          "Isso. As classes podem ter direitos diferentes; confira os detalhes da companhia.",
+          "Os direitos dependem das regras aplicáveis e dos documentos da empresa.",
+          "Distribuições não são necessariamente iguais ou garantidas.",
+          "O ticker, sozinho, não substitui entender os direitos da ação.",
+        ],
+      ),
+      question(
+        "Uma pessoa quer investir em uma empresa estrangeira pela bolsa brasileira e encontra um BDR. O que está comprando?",
+        [
+          "Um certificado negociado no Brasil que representa um valor mobiliário do exterior.",
+          "A mesma coisa que abrir conta e comprar diretamente no exterior.",
+          "Uma cota de fundo imobiliário brasileiro.",
+          "Um depósito com rendimento fixo.",
+        ],
+        [
+          "Correto. O BDR oferece exposição indireta ao ativo que representa, segundo suas regras.",
+          "O BDR é um certificado negociado no Brasil; não é a compra direta no mercado estrangeiro.",
+          "BDR e FII são produtos diferentes.",
+          "BDR é renda variável e não promete remuneração fixa.",
+        ],
+      ),
+      question(
+        "O preço de uma ação caiu em um dia. Qual é uma forma equilibrada de continuar estudando a empresa?",
+        [
+          "Separar a oscilação do dia dos resultados, do negócio e do motivo da mudança.",
+          "Concluir que a empresa deixou de ter valor.",
+          "Comprar automaticamente porque ficou mais barata.",
+          "Ignorar os resultados e observar só o preço.",
+        ],
+        [
+          "Isso. Preço varia; contexto do negócio e dos resultados ajuda a interpretar a mudança.",
+          "Uma oscilação diária não resume o valor ou a situação de uma empresa.",
+          "Queda de preço, por si só, não define se uma ação é adequada.",
+          "Cotação isolada não explica os fundamentos do negócio.",
+        ],
+      ),
     ],
     sources: [
       {
         label: "Portal do Investidor: Ações",
         href: "https://www.gov.br/investidor/pt-br/investir/tipos-de-investimentos/acoes",
+      },
+      {
+        label: "Portal do Investidor: BDRs",
+        href: "https://www.gov.br/investidor/pt-br/investir/tipos-de-investimentos/brazilian-depositary-receipts-bdrs",
       },
     ],
     availability: "available",
@@ -456,7 +698,19 @@ export const assetClassLearningContent: Record<
       {
         title: "Como funciona um ETF internacional?",
         content:
-          "ETF é um fundo com cotas negociadas em bolsa. Ele pode acompanhar um índice ou uma carteira com exposição a outros mercados.",
+          "ETF é um fundo com cotas negociadas em bolsa. Muitos buscam acompanhar um índice: uma carteira de referência com regras para escolher e combinar ativos. A cota dá exposição indireta à carteira do fundo; ela não transforma o investidor em dono direto de cada ativo.",
+        examples: [
+          {
+            title: "Uma cesta pronta",
+            description:
+              "Em vez de comprar cada item separadamente, a pessoa compra cotas de um fundo que reúne ativos conforme uma estratégia definida.",
+          },
+          {
+            title: "Índice é uma regra de seleção",
+            description:
+              "Como uma lista com critérios: ela define quais ativos entram e seus pesos. A carteira pode mudar quando as regras do índice mudam.",
+          },
+        ],
         question: question(
           "O que é um ETF?",
           [
@@ -476,7 +730,19 @@ export const assetClassLearningContent: Record<
       {
         title: "Veja o que existe dentro do fundo",
         content:
-          "Índice acompanhado, ativos, custos e regras de composição ajudam a entender a exposição. Fundos diferentes podem seguir estratégias diferentes.",
+          "Há ETFs de ações, renda fixa, setores e mercados diferentes. O nome ajuda a localizar o tema, mas o índice e a carteira mostram a exposição de verdade. Confira também se poucos ativos ou empresas pesam muito no resultado e quais custos estão descritos.",
+        examples: [
+          {
+            title: "Mercado amplo",
+            description:
+              "Pode reunir empresas de vários setores, mas algumas podem ter peso maior que outras.",
+          },
+          {
+            title: "Setor ou renda fixa",
+            description:
+              "Um ETF pode focar em um setor específico ou acompanhar títulos de renda fixa. A palavra ETF, sozinha, não diz qual é o risco.",
+          },
+        ],
         question: question(
           "O que consultar para entender a exposição de um ETF?",
           [
@@ -610,6 +876,81 @@ export const assetClassLearningContent: Record<
           "Desempenho futuro não é garantido.",
         ],
       ),
+      question(
+        "Um ETF acompanha um índice de ações. O que o índice ajuda a entender?",
+        [
+          "As regras e os ativos que servem de referência para a carteira do fundo.",
+          "Uma promessa de que todos os ativos terão lucro.",
+          "O preço que a cota terá no futuro.",
+          "Que o fundo não terá custos.",
+        ],
+        [
+          "Isso. A referência e suas regras ajudam a entender o que o fundo busca acompanhar.",
+          "Índices não garantem o resultado de seus ativos.",
+          "O índice não determina o preço futuro da cota.",
+          "Custos e condições devem ser conferidos nos documentos do fundo.",
+        ],
+      ),
+      question(
+        "Uma pessoa quer saber se um ETF distribui exposição a muitas empresas. O que deve olhar?",
+        [
+          "A carteira e o peso de cada ativo, não apenas a quantidade total.",
+          "Somente o nome do índice.",
+          "O preço de uma cota em reais.",
+          "A garantia de que a carteira não terá perdas.",
+        ],
+        [
+          "Correto. Os pesos mostram se poucos ativos concentram boa parte da carteira.",
+          "O nome não mostra todos os pesos atuais da carteira.",
+          "Preço unitário não informa concentração.",
+          "Distribuir exposição não elimina perdas possíveis.",
+        ],
+      ),
+      question(
+        "Dois ETFs têm exposições parecidas, mas taxas e custos diferentes. O que fazer?",
+        [
+          "Conferir os custos descritos e compará-los junto com carteira e regras.",
+          "Ignorar custos porque os fundos acompanham índices.",
+          "Escolher automaticamente o fundo mais caro.",
+          "Tratar a taxa como garantia de desempenho superior.",
+        ],
+        [
+          "Isso. Custos são uma parte da comparação, junto com exposição e condições.",
+          "Seguir um índice não significa que custos deixem de existir.",
+          "O preço maior não prova que o fundo seja melhor.",
+          "Taxa não garante desempenho superior.",
+        ],
+      ),
+      question(
+        "Um ETF internacional caiu em reais enquanto a moeda estrangeira subiu. O que ajuda a explicar o resultado?",
+        [
+          "Ativos, moeda, período e regras do fundo podem atuar juntos.",
+          "A moeda sozinha sempre determina o resultado total.",
+          "O índice garante que a cotação em reais suba.",
+          "A quantidade de cotas explica toda a variação da cota.",
+        ],
+        [
+          "Correto. A cotação em reais pode refletir fatores diferentes ao mesmo tempo.",
+          "A variação dos ativos também pode influenciar o valor do ETF.",
+          "Um índice é uma referência, não uma garantia de preço.",
+          "A quantidade de cotas afeta o valor investido, não explica sozinha a variação unitária.",
+        ],
+      ),
+      question(
+        "Uma pessoa percebe que o ETF segue um setor específico. Que conclusão é adequada?",
+        [
+          "A exposição é direcionada a esse setor e pode ser mais concentrada que um mercado amplo.",
+          "O fundo representa igualmente todos os setores.",
+          "O setor não afeta os riscos do fundo.",
+          "A especialização garante retorno maior.",
+        ],
+        [
+          "Isso. A estratégia setorial ajuda a entender onde a exposição se concentra.",
+          "Um ETF setorial não representa automaticamente todos os setores.",
+          "O setor pode influenciar os riscos e oscilações da carteira.",
+          "Seguir um setor não garante retorno maior.",
+        ],
+      ),
     ],
     sources: [
       {
@@ -633,7 +974,34 @@ export const assetClassLearningContent: Record<
       {
         title: "O que é renda fixa?",
         content:
-          "As regras de remuneração são definidas na aplicação: podem ser prefixadas, acompanhar uma taxa ou combinar critérios. Isso não significa que o retorno seja sempre igual.",
+          "Na renda fixa, as regras de remuneração são definidas na aplicação: podem ser prefixadas, acompanhar uma taxa ou combinar critérios. CDB, LCI e LCA são exemplos de títulos bancários: você empresta recursos à instituição emissora, que assume o compromisso previsto no título. Cada um tem regras próprias de remuneração, prazo e resgate.",
+        examples: [
+          {
+            title: "CDB",
+            description:
+              "Certificado de Depósito Bancário: um título pelo qual a instituição financeira capta dinheiro e se compromete a devolvê-lo conforme as condições combinadas.",
+          },
+          {
+            title: "LCI e LCA",
+            description:
+              "Letras de Crédito Imobiliário e do Agronegócio. São títulos bancários com lastro ligado aos créditos desses setores; não significam que cada aplicação financie um imóvel ou uma fazenda específicos.",
+          },
+          {
+            title: "Tesouro Direto",
+            description:
+              "São títulos públicos federais: ao investir, você empresta recursos ao governo federal, conforme as regras daquele título.",
+          },
+          {
+            title: "Debênture",
+            description:
+              "É uma forma de uma empresa captar recursos de investidores. A empresa assume os pagamentos previstos, e o risco de crédito precisa ser considerado.",
+          },
+          {
+            title: "A ‘caixinha’ do aplicativo",
+            description:
+              "É um nome de recurso para guardar dinheiro, não um tipo único de investimento. O produto por trás pode variar: confira o nome e as condições da aplicação mostrada no app.",
+          },
+        ],
         question: question(
           "O que caracteriza renda fixa?",
           [
@@ -653,7 +1021,24 @@ export const assetClassLearningContent: Record<
       {
         title: "Prazo e liquidez mudam de produto para produto",
         content:
-          "Liquidez descreve quando e em que condições o recurso pode ser resgatado. Confira vencimento, carência, possibilidade de venda e eventuais custos.",
+          "Liquidez descreve quando e em que condições o recurso pode ser resgatado. Um título pode vencer em uma data futura e ter ou não resgate antes disso. Confira carência, vencimento e se há possibilidade de venda; o nome popular ou a taxa não revela essas condições.",
+        examples: [
+          {
+            title: "Dinheiro para uma conta próxima",
+            description:
+              "Se a reserva pode ser necessária em breve, confira se o produto permite resgate a tempo e em quais condições.",
+          },
+          {
+            title: "Dinheiro com data planejada",
+            description:
+              "Para um objetivo mais distante, compare o vencimento com a data em que você pretende usar o recurso.",
+          },
+          {
+            title: "Três jeitos de calcular a remuneração",
+            description:
+              "Prefixada: taxa definida na aplicação. Pós-fixada: acompanha uma referência, como o CDI. Híbrida: combina taxa e inflação, como IPCA mais juros.",
+          },
+        ],
         question: question(
           "O que significa liquidez?",
           [
@@ -758,18 +1143,18 @@ export const assetClassLearningContent: Record<
         ],
       ),
       question(
-        "Um título é emitido por uma empresa. Que informação ajuda a avaliar o risco de crédito?",
+        "Uma pessoa encontra uma ‘caixinha’ no aplicativo. O que deve conferir para saber em que está investindo?",
         [
-          "Quem é o emissor e informações sobre sua capacidade de cumprir pagamentos.",
-          "Somente a taxa oferecida pelo título.",
-          "A cotação de uma ação sem relação com o emissor.",
-          "Supor que toda proteção se aplica sem limites ou condições.",
+          "O produto que está por trás do recurso, o emissor e as regras de prazo e resgate.",
+          "Concluir que toda caixinha é um CDB com as mesmas condições.",
+          "Olhar apenas o nome e a cor usados no aplicativo.",
+          "Assumir que o dinheiro pode ser retirado a qualquer momento.",
         ],
         [
-          "Isso. O risco está ligado à capacidade de pagamento do emissor; proteções têm regras próprias.",
-          "Taxa não mede por si só a capacidade de pagamento.",
-          "Uma cotação sem relação não informa o risco do emissor.",
-          "Proteções podem ter elegibilidade, limites e condições.",
+          "Isso. ‘Caixinha’ é uma apresentação do aplicativo; produto e condições podem mudar conforme a opção e a instituição.",
+          "O nome de uma funcionalidade não garante que o investimento por trás seja sempre igual.",
+          "Nomes e cores não substituem a identificação do produto e das regras.",
+          "O prazo e as condições de retirada dependem do investimento escolhido.",
         ],
       ),
       question(
@@ -787,11 +1172,102 @@ export const assetClassLearningContent: Record<
           "As condições do produto continuam relevantes.",
         ],
       ),
+      question(
+        "Qual frase descreve melhor um CDB?",
+        [
+          "Um título em que a instituição financeira capta recursos e promete pagar conforme condições combinadas.",
+          "Uma participação societária em um banco.",
+          "Uma cota de fundo que garante pagamento mensal.",
+          "Um empréstimo feito diretamente a um imóvel específico.",
+        ],
+        [
+          "Isso. No CDB, a instituição que emite é quem assume o compromisso previsto no título.",
+          "Uma ação representa participação em uma empresa; CDB é um título de dívida.",
+          "CDB não é uma cota de fundo e não garante pagamento mensal.",
+          "CDB é emitido por instituição financeira, não ligado diretamente a um imóvel específico.",
+        ],
+      ),
+      question(
+        "Qual diferença simples ajuda a distinguir LCI e LCA?",
+        [
+          "A LCI tem lastro ligado ao crédito imobiliário; a LCA, ao crédito do agronegócio.",
+          "A LCI é uma ação e a LCA é um fundo de ações.",
+          "A LCI sempre tem resgate imediato e a LCA nunca vence.",
+          "A LCA é emitida pelo governo e a LCI por empresas de construção.",
+        ],
+        [
+          "Correto. Os nomes e o lastro remetem a setores diferentes; cada oferta tem regras próprias.",
+          "Ambas são títulos bancários, não ações nem fundos de ações.",
+          "Prazo e resgate dependem das condições do título.",
+          "LCI e LCA são títulos bancários, não títulos públicos federais.",
+        ],
+      ),
+      question(
+        "Uma pessoa vê uma taxa prefixada e outra ligada a um índice. O que muda entre elas?",
+        [
+          "A forma prevista para calcular a remuneração; compare também prazo e resgate.",
+          "A taxa prefixada não tem risco e a indexada sempre perde dinheiro.",
+          "As duas garantem exatamente o mesmo valor final.",
+          "Apenas o nome mostrado no aplicativo.",
+        ],
+        [
+          "Isso. A regra de remuneração é diferente, e as demais condições também importam.",
+          "Nenhuma forma de remuneração elimina todos os riscos ou garante resultado real.",
+          "O valor final depende das regras e do período da aplicação.",
+          "A regra afeta como o valor evolui, não apenas a apresentação.",
+        ],
+      ),
+      question(
+        "Qual situação descreve melhor uma debênture?",
+        [
+          "Uma empresa capta dinheiro de investidores e assume uma dívida com condições definidas.",
+          "Uma pessoa compra uma parte da empresa e passa a votar automaticamente.",
+          "Um banco guarda dinheiro sem prazo ou remuneração.",
+          "Um fundo compra apenas imóveis para aluguel.",
+        ],
+        [
+          "Correto. Quem compra debênture é credor da empresa emissora, não sócio por esse título.",
+          "A descrição se refere a uma participação societária, não a uma debênture.",
+          "Debêntures têm condições de pagamento definidas na emissão.",
+          "Essa descrição se aproxima de uma estratégia de FII, não de debênture.",
+        ],
+      ),
+      question(
+        "Uma pessoa separa dinheiro numa caixinha para usar em alguns meses. Qual é a primeira checagem útil?",
+        [
+          "Identificar o investimento por trás do recurso e confirmar se o prazo de resgate combina com a data de uso.",
+          "Supor que toda caixinha permite saque imediato.",
+          "Escolher apenas pela maior taxa anunciada.",
+          "Tratar o nome ‘caixinha’ como uma categoria única de investimento.",
+        ],
+        [
+          "Isso. O nome da funcionalidade não substitui conferir produto, prazo e liquidez.",
+          "A possibilidade de retirada depende das regras do produto escolhido.",
+          "Taxa sozinha não mostra se o dinheiro estará disponível quando necessário.",
+          "As aplicações por trás de uma caixinha podem variar por instituição e opção.",
+        ],
+      ),
     ],
     sources: [
       {
         label: "Portal do Investidor: Características dos investimentos",
         href: "https://www.gov.br/investidor/pt-br/investir/antes-de-investir/entenda-as-caracteristicas-dos-investimentos",
+      },
+      {
+        label: "Portal do Investidor: Títulos bancários",
+        href: "https://www.gov.br/investidor/pt-br/investir/tipos-de-investimentos/titulos-bancarios/titulos-bancarios",
+      },
+      {
+        label: "Banco Central: O que são CDB e RDB?",
+        href: "https://www.bcb.gov.br/meubc/faqs/p/o-que-sao-cdb-e-rdb",
+      },
+      {
+        label: "Portal do Investidor: Títulos públicos",
+        href: "https://www.gov.br/investidor/pt-br/investir/tipos-de-investimentos/titulos-publicos",
+      },
+      {
+        label: "Portal do Investidor: Debêntures",
+        href: "https://www.gov.br/investidor/pt-br/investir/tipos-de-investimentos/debentures/",
       },
       {
         label: "Portal do Investidor: Risco e relação risco x retorno",

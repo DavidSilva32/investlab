@@ -227,12 +227,14 @@ export function AssetClassLearningAssessment({
                   />
                 </span>
                 <h3 className="mt-3 text-2xl font-bold tracking-tight">
-                  Curso concluído!
+                  {result.attemptPassed
+                    ? "Curso concluído!"
+                    : "Aprovação anterior preservada"}
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {result.attemptPassed
                     ? "Emblema conquistado"
-                    : "Sua aprovação continua registrada"}
+                    : "A nota desta prova ficou abaixo de 7,0. Sua medalha continua no perfil."}
                 </p>
                 <PartyPopper
                   aria-hidden="true"
@@ -269,16 +271,18 @@ export function AssetClassLearningAssessment({
             <p className="mt-2 text-sm text-muted-foreground">
               Nota mínima: 7,0
             </p>
-            {result.passed && !result.attemptPassed && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Melhor nota aprovada:{" "}
-                {result.bestScore.toLocaleString("pt-BR", {
-                  minimumFractionDigits: 1,
-                  maximumFractionDigits: 1,
-                })}
-                /10.
-              </p>
-            )}
+            {result.passed &&
+              !result.attemptPassed &&
+              result.bestScore >= learningAssessmentPassScore && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Melhor nota aprovada:{" "}
+                  {result.bestScore.toLocaleString("pt-BR", {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                  })}
+                  /10.
+                </p>
+              )}
           </div>
           <Button
             type="button"
