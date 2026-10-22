@@ -38,11 +38,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatBrazilianPhone } from "@/lib/brazilian-phone";
 
 export type ManagedUser = {
   id: string;
   name: string;
   email: string;
+  phone: string | null;
   role: "USER" | "ADMIN";
   accountStatus: "ACTIVE" | "PENDING" | "DISABLED";
   lastLoginAt: string | null;
@@ -59,6 +61,7 @@ type UserTableRowBase = {
   id: string;
   name: string;
   email: string;
+  phone: string | null;
   status: "waiting" | "active" | "disabled";
   lastLoginAt: string | null;
 };
@@ -137,6 +140,7 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
       id: user.id,
       name: user.name,
       email: user.email,
+      phone: user.phone,
       role: user.role,
       status: (user.accountStatus === "DISABLED"
         ? "disabled"
@@ -153,6 +157,7 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
         id: `invitation:${invitation.id}`,
         name: "Convite enviado",
         email: invitation.email,
+        phone: null,
         role: null,
         status: "waiting" as const,
         lastLoginAt: null,
@@ -176,6 +181,17 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
       value: (row) => row.email,
       render: (row) => (
         <p className="truncate text-sm text-muted-foreground">{row.email}</p>
+      ),
+    },
+    {
+      id: "phone",
+      label: "Telefone",
+      width: "12rem",
+      value: (row) => row.phone ?? "",
+      render: (row) => (
+        <span className="text-sm text-muted-foreground">
+          {row.phone ? formatBrazilianPhone(row.phone) : "Não informado"}
+        </span>
       ),
     },
     {

@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetClassLearningQuiz } from "@/app/(private)/learn/_components/asset-class-learning-quiz";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const quiz = {
   question: "O que representa uma cota?",
@@ -26,7 +29,7 @@ const quiz = {
 };
 
 describe("AssetClassLearningQuiz", () => {
-  it("keeps labels and radio groups unique when multiple quizzes are rendered", () => {
+  it("keeps labels and radio groups unique when multiple quizzes are rendered", async () => {
     render(
       <>
         <AssetClassLearningQuiz {...quiz} />
@@ -34,7 +37,7 @@ describe("AssetClassLearningQuiz", () => {
       </>,
     );
 
-    const radios = screen.getAllByRole("radio");
+    const radios = await screen.findAllByRole("radio");
     expect(new Set(radios.map((radio) => radio.id)).size).toBe(radios.length);
     expect(screen.getAllByRole("radiogroup")).toHaveLength(2);
     expect(radios.every((radio) => radio.closest("label") !== null)).toBe(true);
@@ -53,18 +56,27 @@ describe("AssetClassLearningQuiz", () => {
     }
   });
 
-  it("requires an answer before checking and explains an incorrect choice", () => {
+  it("requires an answer and explains an incorrect choice without moving options", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
     render(<AssetClassLearningQuiz {...quiz} />);
+
+    const radios = await screen.findAllByRole("radio");
+    const correctRadio = radios.find((radio) =>
+      radio.closest("label")?.textContent?.includes(quiz.options[0].text),
+    );
+    const initialCorrectPosition = radios.indexOf(correctRadio!);
+    expect(initialCorrectPosition).not.toBe(0);
 
     const checkButton = screen.getByRole("button", {
       name: "Conferir resposta",
     });
     expect(checkButton.hasAttribute("disabled")).toBe(true);
 
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Um rendimento garantido/ }),
-    );
-    expect(checkButton.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByRole("radio", { name: quiz.options[1].text }));
+    const selectedPosition = screen
+      .getAllByRole("radio")
+      .findIndex((radio) => radio.getAttribute("data-state") === "checked");
+    expect(selectedPosition).toBeGreaterThanOrEqual(0);
     fireEvent.click(checkButton);
 
     expect(screen.getByRole("status").textContent).toContain("Ainda não");
@@ -74,36 +86,43 @@ describe("AssetClassLearningQuiz", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Uma participação no fundo.",
     );
+    const answeredRadios = screen.getAllByRole("radio");
     expect(
-      screen
-        .getByRole("radio", { name: /Uma participação/ })
-        .hasAttribute("data-disabled"),
+      answeredRadios.findIndex(
+        (radio) => radio.getAttribute("data-state") === "checked",
+      ),
+    ).toBe(selectedPosition);
+    expect(
+      answeredRadios.every((radio) => radio.hasAttribute("data-disabled")),
     ).toBe(true);
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    const retryCorrectPosition = screen
+      .getAllByRole("radio")
+      .findIndex((radio) =>
+        radio.closest("label")?.textContent?.includes(quiz.options[0].text),
+      );
+    expect(retryCorrectPosition).not.toBe(initialCorrectPosition);
+    expect(
+      screen
+        .getByRole("button", { name: "Conferir resposta" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
   });
 
-  it("confirms a correct choice and lets the learner retry", () => {
+  it("confirms a correct choice", async () => {
     render(<AssetClassLearningQuiz {...quiz} />);
 
-    fireEvent.click(screen.getByRole("radio", { name: /Uma participação/ }));
+    fireEvent.click(
+      await screen.findByRole("radio", { name: quiz.options[0].text }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Conferir resposta" }));
 
     expect(screen.getByRole("status").textContent).toContain("Resposta certa");
     expect(screen.getByRole("status").textContent).toContain(
       "Certa explicação.",
     );
-
-    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(
-      screen
-        .getByRole("radio", { name: /Uma participação/ })
-        .hasAttribute("data-disabled"),
-    ).toBe(false);
-    expect(
-      screen
-        .getByRole("button", { name: "Conferir resposta" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
   });
 });

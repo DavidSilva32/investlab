@@ -71,7 +71,10 @@ const managedUserUpdateSchema = z
       body.isActive !== undefined,
   );
 const profileUpdateSchema = z
-  .object({ name: z.string().trim().min(1).max(120) })
+  .object({
+    name: z.string().trim().min(1).max(120),
+    phone: z.string().max(32).nullable().optional(),
+  })
   .strict();
 const ownPasswordChangeSchema = z
   .object({
@@ -94,7 +97,7 @@ export class AuthController {
 
   async updateOwnProfile(request: Request) {
     try {
-      await requireAuthenticatedUser(request.headers);
+      const user = await requireAuthenticatedUser(request.headers);
       const body = profileUpdateSchema.safeParse(await jsonBody(request));
       if (!body.success) {
         return Response.json(
@@ -103,8 +106,9 @@ export class AuthController {
         );
       }
       const response = await authService.updateOwnProfile(
+        user.id,
         body.data.name,
-        request.headers,
+        body.data.phone,
       );
       return noStore(response);
     } catch (error) {

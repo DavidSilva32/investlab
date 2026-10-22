@@ -32,6 +32,7 @@ async function renderProfile(role: "USER" | "ADMIN" = "USER") {
     <UserProfileDialog
       name="David"
       email="david@example.com"
+      phone={null}
       role={role}
       onNameUpdated={onNameUpdated}
     />,
@@ -55,6 +56,7 @@ describe("UserProfileDialog", () => {
       <UserProfileDialog
         name="David"
         email="david@example.com"
+        phone={null}
         role="USER"
         onNameUpdated={vi.fn()}
       />,
@@ -73,6 +75,7 @@ describe("UserProfileDialog", () => {
       <UserProfileDialog
         name="David"
         email="david@example.com"
+        phone={null}
         role="USER"
         onNameUpdated={vi.fn()}
       />,
@@ -107,7 +110,11 @@ describe("UserProfileDialog", () => {
   });
 
   it("saves the current user's display name, keeps email read-only, and refreshes the header", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ ok: true, name: "David Silva", phone: null }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const { user, onNameUpdated } = await renderProfile();
 
@@ -116,15 +123,15 @@ describe("UserProfileDialog", () => {
     expect(email.readOnly).toBe(true);
     await user.clear(screen.getByLabelText("Nome"));
     await user.type(screen.getByLabelText("Nome"), "David Silva");
-    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/profile", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "David Silva" }),
+      body: JSON.stringify({ name: "David Silva", phone: null }),
     });
-    expect(mocks.success).toHaveBeenCalledWith("Seu nome foi atualizado.");
+    expect(mocks.success).toHaveBeenCalledWith("Seu perfil foi atualizado.");
     expect(onNameUpdated).toHaveBeenCalledWith("David Silva");
     expect(mocks.refresh).toHaveBeenCalledOnce();
   });
@@ -136,13 +143,73 @@ describe("UserProfileDialog", () => {
     const name = screen.getByLabelText("Nome");
 
     await user.clear(name);
-    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
     expect(
       screen.getByText("Informe um nome com até 120 caracteres."),
     ).toBeTruthy();
 
     fireEvent.change(name, { target: { value: "n".repeat(121) } });
-    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid +55 number and sends only its national digits", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ ok: true, name: "David", phone: "11987654321" }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = await renderProfile();
+    const phone = screen.getByLabelText("Telefone") as HTMLInputElement;
+    expect(phone.maxLength).toBe(-1);
+
+    fireEvent.change(phone, { target: { value: "1198" } });
+    expect(phone.value).toBe("(11) 98");
+    fireEvent.change(phone, {
+      target: { value: "+55 (11) 98765-4321" },
+    });
+    expect(phone.value).toBe("(11) 98765-4321");
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/profile",
+      expect.objectContaining({
+        body: JSON.stringify({ name: "David", phone: "11987654321" }),
+      }),
+    );
+  });
+
+  it("preserves and rejects extra phone digits instead of truncating the number", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = await renderProfile();
+    const phone = screen.getByLabelText("Telefone") as HTMLInputElement;
+
+    fireEvent.change(phone, { target: { value: "1198765432100" } });
+    expect(phone.value).toBe("1198765432100");
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
+
+    expect(
+      screen.getByText("Informe DDD e 8 dígitos para fixo ou 9 para celular."),
+    ).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a +55 prefix cut off before the full national number", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = await renderProfile();
+    const phone = screen.getByLabelText("Telefone") as HTMLInputElement;
+
+    fireEvent.change(phone, { target: { value: "+55 (11) 98765-4" } });
+    expect(phone.value).toBe("+55 (11) 98765-4");
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
+
+    expect(
+      screen.getByText("Informe DDD e 8 dígitos para fixo ou 9 para celular."),
+    ).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -159,7 +226,7 @@ describe("UserProfileDialog", () => {
         ),
     );
     const { user } = await renderProfile();
-    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
     await waitFor(() =>
       expect(mocks.error).toHaveBeenCalledWith(
         "Não foi possível atualizar seu perfil.",
@@ -173,7 +240,7 @@ describe("UserProfileDialog", () => {
       .mockRejectedValueOnce(new Error("internal password detail"));
     const { user } = await renderProfile();
 
-    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
     await waitFor(() => expect(mocks.error).toHaveBeenCalledOnce());
 
     await user.type(screen.getByLabelText("Senha atual"), "current-password");

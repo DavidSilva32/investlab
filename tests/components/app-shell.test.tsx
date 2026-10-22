@@ -259,7 +259,11 @@ describe("AppShell", () => {
     navigation.pathname = "/carteira";
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(Response.json({ ok: true })),
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ ok: true, name: "Alex Silva", phone: null }),
+        ),
     );
     const user = userEvent.setup();
     renderShell();
@@ -271,7 +275,7 @@ describe("AppShell", () => {
     const name = screen.getByLabelText("Nome");
     await user.clear(name);
     await user.type(name, "Alex Silva");
-    await user.click(screen.getByRole("button", { name: "Salvar nome" }));
+    await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
 
     await waitFor(() =>
       expect(screen.getAllByText("Alex Silva").length).toBeGreaterThan(0),

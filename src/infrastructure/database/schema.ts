@@ -10,6 +10,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -23,6 +24,7 @@ export const authUsers = pgTable(
     id: text().primaryKey(),
     name: text().notNull(),
     email: text().notNull(),
+    phone: varchar({ length: 11 }),
     emailVerified: boolean().notNull().default(false),
     image: text(),
     role: varchar({ length: 10 }).notNull().default("USER"),
@@ -39,6 +41,90 @@ export const authUsers = pgTable(
     check(
       "auth_users_account_status_check",
       sql`${table.accountStatus} in ('ACTIVE', 'PENDING', 'DISABLED')`,
+    ),
+  ],
+);
+
+export const learningCourseProgress = pgTable(
+  "learning_course_progress",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    courseId: varchar({ length: 32 }).notNull(),
+    courseVersion: integer().notNull(),
+    completedLessonIds: jsonb().$type<string[]>().notNull().default([]),
+    lastLessonId: varchar({ length: 64 }),
+    latestScore: real(),
+    bestScore: real(),
+    quizAttemptCount: integer().notNull().default(0),
+    lastAttemptId: varchar({ length: 64 }),
+    passedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("learning_course_progress_user_course_version_uidx").on(
+      table.userId,
+      table.courseId,
+      table.courseVersion,
+    ),
+    check(
+      "learning_course_progress_version_check",
+      sql`${table.courseVersion} > 0`,
+    ),
+    check(
+      "learning_course_progress_course_check",
+      sql`${table.courseId} in ('fixed_income', 'brazilian_equities', 'international_etfs', 'fiis')`,
+    ),
+    check(
+      "learning_course_progress_latest_score_check",
+      sql`${table.latestScore} is null or (${table.latestScore} >= 0 and ${table.latestScore} <= 10)`,
+    ),
+    check(
+      "learning_course_progress_best_score_check",
+      sql`${table.bestScore} is null or (${table.bestScore} >= 0 and ${table.bestScore} <= 10)`,
+    ),
+    check(
+      "learning_course_progress_attempt_count_check",
+      sql`${table.quizAttemptCount} >= 0`,
+    ),
+  ],
+);
+
+export const learningCourseAttempts = pgTable(
+  "learning_course_attempts",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    courseId: varchar({ length: 32 }).notNull(),
+    courseVersion: integer().notNull(),
+    attemptId: uuid().notNull(),
+    score: real().notNull(),
+    passed: boolean().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("learning_course_attempts_owner_course_attempt_uidx").on(
+      table.userId,
+      table.courseId,
+      table.courseVersion,
+      table.attemptId,
+    ),
+    check(
+      "learning_course_attempts_version_check",
+      sql`${table.courseVersion} > 0`,
+    ),
+    check(
+      "learning_course_attempts_course_check",
+      sql`${table.courseId} in ('fixed_income', 'brazilian_equities', 'international_etfs', 'fiis')`,
+    ),
+    check(
+      "learning_course_attempts_score_check",
+      sql`${table.score} >= 0 and ${table.score} <= 10`,
     ),
   ],
 );

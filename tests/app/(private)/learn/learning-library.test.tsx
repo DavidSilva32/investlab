@@ -90,7 +90,7 @@ describe("AssetClassLearningCard", () => {
         thumbnailSrc: originalContent.thumbnailSrc,
         description: originalContent.description,
         courseLessons: originalContent.courseLessons,
-        quiz: originalContent.quiz,
+        assessment: originalContent.assessment,
         sources: originalContent.sources,
         availability: "coming-soon",
       };

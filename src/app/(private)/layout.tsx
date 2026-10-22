@@ -23,6 +23,7 @@ export default async function PrivateLayout({
       user={{
         name: user.name ?? "",
         email: user.email,
+        phone: user.phone ?? null,
         role: user.role === "ADMIN" ? "ADMIN" : "USER",
       }}
     >

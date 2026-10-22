@@ -3,6 +3,7 @@
 import type { DashboardDestinationSummary } from "@/app/(private)/_components/dashboard-destinations-overview";
 import type { DashboardDestinationPosition } from "@/app/(private)/_components/dashboard-destinations-overview";
 import { DashboardSummary } from "@/app/(private)/_components/dashboard-summary";
+import { DashboardLearningEntry } from "@/app/(private)/_components/dashboard-learning-entry";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { useAdminSupportView } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,7 @@ export function DashboardClient({
     return <AppContentSkeleton title="Dashboard" variant="dashboard" />;
   return (
     <div className="space-y-4">
+      <DashboardLearningEntry />
       {overviewQuery.isError && error && (
         <div role="alert" className="space-y-2 text-sm text-destructive">
           <p>{error}</p>
