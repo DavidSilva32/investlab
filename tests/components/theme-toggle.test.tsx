@@ -40,6 +40,24 @@ describe("ThemeToggle", () => {
     expect(screen.getAllByRole("menuitemradio")).toHaveLength(9);
     expect(
       screen
+        .getByRole("group", { name: "Aparência" })
+        .classList.contains("space-y-1"),
+    ).toBe(true);
+    for (const palette of [
+      "blue",
+      "teal",
+      "green",
+      "violet",
+      "orange",
+      "rose",
+    ]) {
+      const radio = screen.getByRole("menuitemradio", {
+        name: themeLabel(palette),
+      });
+      expect(radio.querySelector(`[data-palette="${palette}"]`)).not.toBeNull();
+    }
+    expect(
+      screen
         .getByRole("menuitemradio", { name: "Automático" })
         .getAttribute("aria-checked"),
     ).toBe("true");
@@ -81,3 +99,14 @@ describe("ThemeToggle", () => {
     expect(state.setPalette).toHaveBeenCalledWith("rose");
   });
 });
+
+function themeLabel(palette: string) {
+  return {
+    blue: "Azul",
+    teal: "Turquesa",
+    green: "Verde",
+    violet: "Violeta",
+    orange: "Laranja",
+    rose: "Rosa",
+  }[palette];
+}

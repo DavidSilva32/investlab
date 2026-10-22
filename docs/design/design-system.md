@@ -4,7 +4,7 @@ Esta documentação orienta novas páginas e mudanças visuais relevantes. A imp
 
 ## Direção visual
 
-- **Identidade global padrão:** azul. A pessoa pode escolher entre seis cores de identidade pré-definidas: azul, turquesa, verde, violeta, laranja e rosa. A escolha é independente do modo de aparência Claro, Escuro ou Automático; use os tokens globais em vez de cores locais.
+- **Identidade global padrão:** azul. A pessoa pode escolher entre seis paletas de identidade pré-definidas: azul, turquesa, verde, violeta, laranja e rosa. Cada escolha coordena vários tons nas superfícies, seleção, foco e navegação lateral, em Claro e Escuro. A escolha continua independente do modo Claro, Escuro ou Automático; use os tokens globais em vez de cores locais.
 - Mantenha contraste e hierarquia equivalentes em todas as combinações. A cor de identidade não altera os tokens semânticos de classe, finalidade, estado ou série de gráfico.
 - Apresente primeiro a informação que ajuda a decidir. Use texto curto, valores importantes em destaque e detalhes explicativos sob demanda.
 - Use gráficos quando ajudarem a comparar composição, evolução, concentração ou cenários. Evite métricas e ornamentos sem uma decisão associada.
@@ -33,7 +33,7 @@ Os tokens de classe mantêm a mesma identidade em todas as paletas, com luminosi
 
 A cor da identidade pode ser azul, assim como a cor de uma classe de ações brasileiras, mas os dois significados continuam independentes: use `brand` para a interface e `asset-class-brazilian-equities` somente para dados identificados como ações brasileiras. Não derive a classe nem sua cor do ticker, produto, subclasse ou proximidade visual. Quando o dado estiver em uma classe ampla ou desconhecida, use `asset-class-neutral`.
 
-Após a migração consolidada da #106, use `brand` para identidade explícita e os tokens shadcn `primary`, `primary-foreground` e `ring` para ações, seleção e foco. Esses tokens resolvem para a paleta escolhida. Mantenha superfícies e texto em tokens compartilhados; preserve tokens separados para classes, destinos, estados e séries genéricas. Não replique cores da marca em utilitários locais.
+Após a migração consolidada da #106, use `brand` para identidade explícita e os tokens shadcn `primary`, `primary-foreground` e `ring` para ações, seleção e foco. Esses tokens resolvem para a paleta escolhida. Use também os tokens compartilhados de superfície, borda e navegação para que a paleta escolhida coordene a interface inteira. Preserve tokens separados para classes, destinos, estados e séries genéricas. Não replique cores da marca em utilitários locais.
 
 ## Taxonomia de investimentos e nomenclatura oficial
 
