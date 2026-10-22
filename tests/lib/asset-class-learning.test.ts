@@ -18,7 +18,7 @@ describe("asset class learning links", () => {
     );
   });
 
-  it("keeps lesson, quiz, image, thumbnail, and video content for every official class", () => {
+  it("keeps three short course lessons, quiz, image, thumbnail, and video for every official class", () => {
     expect(Object.keys(assetClassLearningContent).sort()).toEqual(
       officialClassIds.sort(),
     );
@@ -30,9 +30,12 @@ describe("asset class learning links", () => {
       expect(content.imageSrc).toMatch(/^\/images\/asset-classes\/.+\.webp$/);
       expect(content.thumbnailSrc).toBe(content.imageSrc);
       expect(content.videoSrc).toBe(`/videos/${id}.mp4`);
-      expect(content.lesson.title.length).toBeGreaterThan(0);
-      expect(content.lesson.explanation.length).toBeGreaterThan(0);
-      expect(content.lesson.takeaway.length).toBeGreaterThan(0);
+      expect(content.courseLessons).toHaveLength(3);
+      expect(
+        content.courseLessons.every(
+          (lesson) => lesson.title.length > 0 && lesson.content.length > 0,
+        ),
+      ).toBe(true);
       expect(content.quiz.question.length).toBeGreaterThan(0);
       expect(content.quiz.options).toHaveLength(4);
       expect(
