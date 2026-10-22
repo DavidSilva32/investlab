@@ -119,20 +119,22 @@ export function AdminSupportViewControl() {
           <Button
             type="button"
             variant={currentTarget ? "secondary" : "outline"}
-            size="sm"
             disabled={busy}
             aria-label={
               currentTarget
                 ? "Trocar cliente em visualização"
                 : "Selecionar cliente para visualização de suporte"
             }
-            className="max-w-44 gap-2"
+            className="h-10 w-10 justify-center gap-0 p-0 sm:h-11 sm:w-44 sm:justify-between sm:gap-2 sm:px-3"
           >
             <Eye aria-hidden="true" className="size-4 shrink-0" />
-            <span className="truncate">
+            <span className="hidden truncate sm:inline">
               {currentTarget ? "Trocar cliente" : "Ver cliente"}
             </span>
-            <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0" />
+            <ChevronsUpDown
+              aria-hidden="true"
+              className="hidden size-4 shrink-0 sm:block"
+            />
           </Button>
         </PopoverTrigger>
         <PopoverContent

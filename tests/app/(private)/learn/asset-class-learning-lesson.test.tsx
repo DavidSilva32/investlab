@@ -202,6 +202,37 @@ describe("AssetClassLearningLesson", () => {
     expect(examples.querySelectorAll("svg")).toHaveLength(6);
   });
 
+  it("uses a package icon when a visual example has no specific icon", () => {
+    const lesson = assetClassLearningContent.fiis.courseLessons[1];
+    const examples = lesson.examples?.map((example, index) =>
+      index === 0 ? { ...example, icon: undefined } : example,
+    );
+
+    render(
+      <AssetClassLearningLesson
+        selectedClass="fiis"
+        lessonIndex={1}
+        lesson={{ ...lesson, examples }}
+      />,
+    );
+
+    const section = screen.getByRole("region", {
+      name: "Exemplos: Fundos imobiliários (FIIs)",
+    });
+    expect(
+      within(section).getByRole("heading", { name: "Na prática" }),
+    ).toBeTruthy();
+    expect(within(section).getAllByRole("listitem")).toHaveLength(
+      examples?.length ?? 0,
+    );
+    const firstExample = within(section).getByRole("heading", {
+      name: "Imóveis de renda (tijolo)",
+    });
+    expect(
+      firstExample.closest("li")?.querySelector("svg.lucide-package-open"),
+    ).toBeTruthy();
+  });
+
   it("does not add unrelated FII diagrams to another class", () => {
     const lesson =
       assetClassLearningContent.brazilian_equities.courseLessons[0];

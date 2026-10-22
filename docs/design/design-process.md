@@ -12,9 +12,9 @@ Antes de reutilizar uma imagem, confirme sua origem e status. Preserve referênc
 
 ### Identidade aprovada e enquadramento
 
-- Preserve a identidade visual global aprovada: azul para a interface, superfícies escuras neutras e suporte ao tema claro. Gere imagens futuras usando os tokens e referências vigentes; não proponha nem introduza uma mudança de paleta sem registrá-la como decisão pendente.
+- Use azul como identidade padrão. A interface oferece seis cores de identidade (azul, turquesa, verde, violeta, laranja e rosa), independentes do modo de aparência Claro, Escuro ou Automático. Novas referências devem indicar ambos e manter contraste equivalente.
 - Gere referências apenas para telas grandes/desktop. Não crie variantes em imagem para mobile; mantenha e valide a responsividade na implementação e nos testes aplicáveis.
-- Mantenha as cores semânticas de classe independentes da identidade global: renda fixa laranja, ações brasileiras azul, ETFs internacionais roxo e FIIs verde. Confirme no código que a classe exibida é suportada; não infira classe/cor pelo ticker, produto ou subclasse.
+- Mantenha as cores semânticas de classe independentes da identidade global e invariáveis entre paletas: renda fixa laranja, ações brasileiras azul, ETFs internacionais roxo e FIIs verde. Confirme no código que a classe exibida é suportada; não infira classe/cor pelo ticker, produto ou subclasse.
 - Uma referência de componente complexo pode mostrar somente o componente em foco, sem reproduzir toda a página ao fundo, quando o contexto ao redor não fizer parte da decisão visual. Identifique no README a rota, o componente, o estado, o tema e o contexto de página omitido. Não acrescente controles de fundo que não existem no produto.
 
 ## Implementação e cores
@@ -25,7 +25,7 @@ Antes de gerar qualquer referência, leia `src/lib/strategy-allocation.ts` para 
 
 Distinga categoria ampla, classe específica, subclasse, instrumento/produto, geografia e destino conforme o modelo documentado em `design-system.md`. Não apresente `Renda variável` como sinônimo de `Ações e BDRs`, não trate “Investimentos internacionais” como equivalente a `ETFs internacionais` e mantenha nomes legítimos de instrumentos e subclasses. Use tokens `asset-class-*`; não replique cores em componentes nem confunda classe com destino, estado operacional ou série genérica. Aplique o mesmo nome e cor da classe em imagem, protótipo, implementação e documentação, em ambos os temas. Cores não são o único indicador.
 
-Use os tokens globais de identidade (incluindo `primary`) para azul de marca, ações primárias, estados ativos e foco. A identidade azul não substitui a cor semântica de uma classe; uma tela só aplica uma cor de classe quando o dado identifica essa classe sem ambiguidade.
+Use os tokens globais de identidade (incluindo `primary`) para a cor de marca escolhida, ações primárias, estados ativos e foco. A identidade escolhida não substitui a cor semântica de uma classe; uma tela só aplica uma cor de classe quando o dado identifica essa classe sem ambiguidade.
 
 ## Evidência e qualidade
 

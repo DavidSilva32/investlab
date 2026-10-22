@@ -68,9 +68,10 @@ describe("UserProfileDialog", () => {
       />,
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Abrir menu da conta" }),
-    );
+    const trigger = screen.getByRole("button", { name: "Abrir menu da conta" });
+    expect(trigger.className).toContain("sm:w-44");
+    expect(trigger.className).toContain("sm:h-11");
+    await user.click(trigger);
 
     expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
   });

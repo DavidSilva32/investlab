@@ -231,7 +231,7 @@ export function UserProfileDialog({
             type="button"
             variant="outline"
             aria-label="Abrir menu da conta"
-            className="h-10 min-w-10 gap-2 rounded-lg border-border bg-background px-2.5 text-foreground shadow-sm hover:border-primary/40 hover:bg-accent focus-visible:ring-2 sm:h-11 sm:gap-3 sm:px-3"
+            className="h-10 w-10 justify-center gap-0 rounded-lg border-border bg-background p-1 text-foreground shadow-sm hover:border-primary/40 hover:bg-accent focus-visible:ring-2 sm:h-11 sm:w-44 sm:justify-between sm:gap-3 sm:px-3"
           >
             <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
               <UserRound aria-hidden="true" className="size-4" />
@@ -246,7 +246,7 @@ export function UserProfileDialog({
             </span>
             <ChevronDown
               aria-hidden="true"
-              className="size-4 shrink-0 text-muted-foreground"
+              className="hidden size-4 shrink-0 text-muted-foreground sm:block"
             />
           </Button>
         </DropdownMenuTrigger>

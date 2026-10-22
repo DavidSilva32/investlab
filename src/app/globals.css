@@ -2,7 +2,9 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 :root {
+  color-scheme: light;
   --background: oklch(0.985 0.003 255);
+  --brand-hue: 255;
   --foreground: oklch(0.22 0.012 255);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.012 255);
@@ -27,10 +29,10 @@
   --sidebar-accent: oklch(0.32 0.055 255);
   --sidebar-accent-foreground: oklch(0.98 0.006 255);
   --sidebar-border: oklch(0.34 0.025 255);
-  --sidebar-ring: oklch(0.78 0.12 230);
-  --sidebar-brand: oklch(0.82 0.11 230);
-  --brand: oklch(0.53 0.17 255);
-  --brand-foreground: oklch(0.98 0.01 255);
+  --sidebar-ring: oklch(0.78 0.12 var(--brand-hue));
+  --sidebar-brand: oklch(0.82 0.11 var(--brand-hue));
+  --brand: oklch(0.26 0.16 var(--brand-hue));
+  --brand-foreground: oklch(0.98 0.01 var(--brand-hue));
   --status-success: oklch(0.5 0.15 150);
   --status-warning: oklch(0.61 0.16 72);
   --status-danger: var(--destructive);
@@ -53,6 +55,7 @@
   --chart-category-6: oklch(0.56 0.16 25);
 }
 .dark {
+  color-scheme: dark;
   --background: oklch(0.18 0.006 255);
   --foreground: oklch(0.93 0.006 255);
   --card: oklch(0.225 0.008 255);
@@ -78,10 +81,10 @@
   --sidebar-accent: oklch(0.34 0.025 255);
   --sidebar-accent-foreground: oklch(0.96 0.006 255);
   --sidebar-border: oklch(0.38 0.008 255);
-  --sidebar-ring: oklch(0.76 0.13 255);
-  --sidebar-brand: oklch(0.78 0.12 230);
-  --brand: oklch(0.68 0.15 255);
-  --brand-foreground: oklch(0.18 0.025 255);
+  --sidebar-ring: oklch(0.76 0.13 var(--brand-hue));
+  --sidebar-brand: oklch(0.78 0.12 var(--brand-hue));
+  --brand: oklch(0.72 0.15 var(--brand-hue));
+  --brand-foreground: oklch(0.18 0.025 var(--brand-hue));
   --status-success: oklch(0.73 0.14 150);
   --status-warning: oklch(0.79 0.14 75);
   --status-danger: var(--destructive);
@@ -102,6 +105,31 @@
   --chart-category-4: oklch(0.78 0.13 70);
   --chart-category-5: oklch(0.75 0.14 305);
   --chart-category-6: oklch(0.74 0.14 25);
+}
+[data-palette="blue"] {
+  --brand-hue: 255;
+}
+[data-palette="teal"] {
+  --brand-hue: 190;
+}
+[data-palette="green"] {
+  --brand-hue: 145;
+}
+[data-palette="violet"] {
+  --brand-hue: 305;
+}
+[data-palette="orange"] {
+  --brand-hue: 40;
+}
+[data-palette="rose"] {
+  --brand-hue: 350;
+}
+.palette-swatch {
+  background: linear-gradient(
+    135deg,
+    oklch(0.99 0.006 255) 0 48%,
+    oklch(0.26 0.16 var(--brand-hue)) 49% 100%
+  );
 }
 @theme inline {
   --color-background: var(--background);

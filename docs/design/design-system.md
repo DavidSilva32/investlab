@@ -4,8 +4,8 @@ Esta documentação orienta novas páginas e mudanças visuais relevantes. A imp
 
 ## Direção visual
 
-- **Identidade global aprovada em 03/10/2026:** azul. Use os tokens compartilhados de identidade para marca, navegação ativa, foco e ações primárias; não derive identidade global dos tokens das classes de ativos.
-- O tema escuro usa superfícies neutras, sem dominante verde ou azul saturada; o tema claro continua suportado e precisa manter contraste e hierarquia equivalentes.
+- **Identidade global padrão:** azul. A pessoa pode escolher entre seis cores de identidade pré-definidas: azul, turquesa, verde, violeta, laranja e rosa. A escolha é independente do modo de aparência Claro, Escuro ou Automático; use os tokens globais em vez de cores locais.
+- Mantenha contraste e hierarquia equivalentes em todas as combinações. A cor de identidade não altera os tokens semânticos de classe, finalidade, estado ou série de gráfico.
 - Apresente primeiro a informação que ajuda a decidir. Use texto curto, valores importantes em destaque e detalhes explicativos sob demanda.
 - Use gráficos quando ajudarem a comparar composição, evolução, concentração ou cenários. Evite métricas e ornamentos sem uma decisão associada.
 - Use `Card`, `Sheet`, `Collapsible`, `Skeleton`, `Table` e os demais componentes shadcn existentes antes de criar padrões locais.
@@ -29,11 +29,11 @@ Use as variáveis CSS existentes ou suas classes Tailwind semânticas. Não repl
 | Finalidade/destino           | `destination-reserve`, `destination-personal`, `destination-long-term`, `destination-purpose-unknown`, `destination-unassigned` | Reserva, objetivos pessoais, longo prazo, finalidade não definida e sem destino; não representam classe de ativo |
 | Séries genéricas em gráficos | `chart-category-1` a `chart-category-6`                                                                                         | Categorias sem significado financeiro fixo, como instituições; não usar como cor de classe, destino ou estado    |
 
-Os tokens de classe mantêm a mesma identidade em claro e escuro, com luminosidade ajustada para o fundo. Cores não devem ser o único meio de explicar um estado: associe-as a texto, ícone ou rótulo. Use texto principal/secundário pelos tokens de foreground, não pela cor de classe.
+Os tokens de classe mantêm a mesma identidade em todas as paletas, com luminosidade ajustada para o fundo. Cores não devem ser o único meio de explicar um estado: associe-as a texto, ícone ou rótulo. Use texto principal/secundário pelos tokens de foreground, não pela cor de classe.
 
 A cor da identidade pode ser azul, assim como a cor de uma classe de ações brasileiras, mas os dois significados continuam independentes: use `brand` para a interface e `asset-class-brazilian-equities` somente para dados identificados como ações brasileiras. Não derive a classe nem sua cor do ticker, produto, subclasse ou proximidade visual. Quando o dado estiver em uma classe ampla ou desconhecida, use `asset-class-neutral`.
 
-Após a migração consolidada da #106, use `brand` para identidade explícita e os tokens shadcn `primary`, `primary-foreground` e `ring` para ações, seleção e foco. Ambos resolvem para o azul aprovado nos temas claro e escuro. Mantenha superfícies neutras e preserve tokens separados para classes, destinos, estados e séries genéricas. Não replique cores da marca em utilitários locais.
+Após a migração consolidada da #106, use `brand` para identidade explícita e os tokens shadcn `primary`, `primary-foreground` e `ring` para ações, seleção e foco. Esses tokens resolvem para a paleta escolhida. Mantenha superfícies e texto em tokens compartilhados; preserve tokens separados para classes, destinos, estados e séries genéricas. Não replique cores da marca em utilitários locais.
 
 ## Taxonomia de investimentos e nomenclatura oficial
 

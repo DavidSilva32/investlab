@@ -1,4 +1,5 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
+import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
 import { CookieConsentManager } from "@/components/cookie-consent-manager";
 import { Toaster } from "@/components/ui/sonner";
@@ -17,6 +18,14 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body>
+        <Script id="investlab-palette-init" strategy="beforeInteractive">
+          {`try {
+            const palette = localStorage.getItem("investlab-palette");
+            if (["blue", "teal", "green", "violet", "orange", "rose"].includes(palette ?? "")) {
+              document.documentElement.dataset.palette = palette;
+            }
+          } catch {}`}
+        </Script>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

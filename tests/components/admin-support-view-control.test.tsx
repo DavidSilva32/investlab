@@ -68,6 +68,8 @@ describe("AdminSupportViewControl", () => {
     const trigger = await screen.findByRole("button", {
       name: "Selecionar cliente para visualização de suporte",
     });
+    expect(trigger.className).toContain("sm:w-44");
+    expect(trigger.className).toContain("sm:h-11");
     await user.click(trigger);
     await user.click(
       await screen.findByRole("option", { name: /Marcos Paulo/ }),

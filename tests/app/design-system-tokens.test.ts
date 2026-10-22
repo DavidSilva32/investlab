@@ -60,13 +60,13 @@ describe("design system semantic color tokens", () => {
     }
   });
 
-  it("maps primary and focus to the blue brand token in both themes", () => {
+  it("maps primary and focus to the selected brand token in both themes", () => {
     expect(lightValues.primary).toBe("var(--brand)");
     expect(lightValues.ring).toBe("var(--brand)");
     expect(darkValues.primary).toBe("var(--brand)");
     expect(darkValues.ring).toBe("var(--brand)");
-    expect(oklchHue(lightValues.brand)).toBe(255);
-    expect(oklchHue(darkValues.brand)).toBe(255);
+    expect(lightValues.brand).toMatch(/oklch\([^)]*var\(--brand-hue\)\)/);
+    expect(darkValues.brand).toMatch(/oklch\([^)]*var\(--brand-hue\)\)/);
   });
 
   it("keeps asset colors tied to stable IDs and reserves neutral for unknown IDs", () => {
