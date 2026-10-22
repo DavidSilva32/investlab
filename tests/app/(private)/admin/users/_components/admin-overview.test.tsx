@@ -47,4 +47,65 @@ describe("AdminOverview", () => {
       screen.getByText("Vencem em 7 dias").parentElement?.textContent,
     ).toContain("—");
   });
+
+  it("renders empty account metrics without inventing progress", () => {
+    render(
+      <AdminOverview
+        stats={{
+          totalUsers: 0,
+          activeUsers: 0,
+          pendingUsers: 0,
+          disabledUsers: 0,
+          expiringTrials: 0,
+          expiredTrials: 0,
+          invitationsPending: 0,
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: "Ativas: 0 de 0 contas" }),
+    ).toBeTruthy();
+  });
+
+  it("uses zero fallbacks when an older summary omits access counts", () => {
+    render(
+      <AdminOverview
+        stats={
+          {
+            ...stats,
+            activeUsers: undefined,
+            pendingUsers: undefined,
+            disabledUsers: undefined,
+          } as unknown as AdminStats
+        }
+      />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: "Ativas: 0 de 0 contas" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Aguardando ativação: 0 de 0 contas" }),
+    ).toBeTruthy();
+  });
+
+  it("calculates an omitted state as zero when other accounts are counted", () => {
+    render(
+      <AdminOverview
+        stats={
+          {
+            ...stats,
+            activeUsers: undefined,
+            pendingUsers: 2,
+            disabledUsers: 0,
+          } as unknown as AdminStats
+        }
+      />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: "Ativas: 0 de 2 contas" }),
+    ).toBeTruthy();
+  });
 });

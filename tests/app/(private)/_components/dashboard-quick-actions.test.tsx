@@ -116,15 +116,47 @@ describe("DashboardQuickActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Como começar" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText("Comece pela sua carteira")).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: /Conhecer o planejamento/ }),
-    ).toBeTruthy();
+    const planningLink = screen.getByRole("link", {
+      name: /Conhecer o planejamento/,
+    });
+    expect(planningLink.getAttribute("href")).toBe("/planejamento");
     expect(screen.getByText("Acompanhe os próximos passos")).toBeTruthy();
+
+    fireEvent.click(planningLink);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Como começar" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Importar arquivo da B3" }),
     );
     expect(onImportOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("closes the onboarding guide before opening manual position entry", async () => {
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    render(
+      <DashboardQuickActions
+        positions={[]}
+        importOpen={false}
+        onImportOpenChange={vi.fn()}
+        objectivesOpen={false}
+        onObjectivesOpenChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Como começar" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cadastrar manualmente" }),
+    );
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "portfolio:manual-position:create" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Adicionar posição manual" }),
+    ).toBeTruthy();
   });
 
   it("opens the selected objective inside the existing dashboard sheet", () => {

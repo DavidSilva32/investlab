@@ -572,4 +572,160 @@ describe("AdminUsersClient", () => {
     );
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
+
+  it("deletes an account with email confirmation and reloads the list", async () => {
+    const accountData = {
+      users: [
+        {
+          id: "user-1",
+          name: "Ana Souza",
+          email: "ana@example.com",
+          role: "USER",
+          accountStatus: "ACTIVE",
+          createdAt: "2026-09-01T12:00:00.000Z",
+        },
+      ],
+      invitations: [],
+      passwordResets: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(accountData))
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+      .mockResolvedValueOnce(
+        Response.json({ users: [], invitations: [], passwordResets: [] }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Excluir conta e dados" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Para confirmar, digite ana@example.com",
+      }),
+      "ana@example.com",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir definitivamente" }),
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        "/api/admin/users/user-1",
+        expect.objectContaining({
+          method: "DELETE",
+          body: JSON.stringify({ confirmEmail: "ana@example.com" }),
+        }),
+      ),
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      "Conta e dados associados foram excluídos.",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the delete dialog open and preserves a safe server message", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          users: [
+            {
+              id: "user-1",
+              name: "Ana Souza",
+              email: "ana@example.com",
+              role: "USER",
+              createdAt: "2026-09-01T12:00:00.000Z",
+            },
+          ],
+          invitations: [],
+          passwordResets: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ message: "Conta protegida." }, { status: 409 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Excluir conta e dados" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Para confirmar, digite ana@example.com",
+      }),
+      "ana@example.com",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir definitivamente" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Conta protegida."),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a localized fallback when account deletion fails unexpectedly", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          users: [
+            {
+              id: "user-1",
+              name: "Ana Souza",
+              email: "ana@example.com",
+              role: "USER",
+              createdAt: "2026-09-01T12:00:00.000Z",
+            },
+          ],
+          invitations: [],
+          passwordResets: [],
+        }),
+      )
+      .mockRejectedValueOnce(new Error("network details must not be shown"));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<AdminUsersClient />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Excluir conta e dados" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Para confirmar, digite ana@example.com",
+      }),
+      "ana@example.com",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir definitivamente" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível excluir esta conta.",
+      ),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(
+      "network details must not be shown",
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
 });

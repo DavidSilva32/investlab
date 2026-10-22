@@ -182,19 +182,16 @@ export function AdminUsersClient({
       });
       const body = await response.json();
       if (!response.ok) {
-        throw new Error(
+        toast.error(
           getApiMessage(body, "Não foi possível excluir esta conta."),
         );
+        return false;
       }
       toast.success("Conta e dados associados foram excluídos.");
       await loadData();
       return true;
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível excluir esta conta.",
-      );
+    } catch {
+      toast.error("Não foi possível excluir esta conta.");
       return false;
     }
   }

@@ -56,7 +56,9 @@ export function AdminOverview({ stats }: { stats: AdminStats | undefined }) {
     },
   ];
   const accountedUsers = stats
-    ? stats.activeUsers + stats.pendingUsers + stats.disabledUsers
+    ? (stats.activeUsers ?? 0) +
+      (stats.pendingUsers ?? 0) +
+      (stats.disabledUsers ?? 0)
     : 0;
   const accessStates = [
     {

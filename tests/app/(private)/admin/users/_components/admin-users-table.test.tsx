@@ -539,6 +539,119 @@ describe("AdminUsersTable", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("clears deletion confirmation when the dialog is dismissed", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={vi.fn().mockResolvedValue(true)}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Excluir conta e dados" }),
+    );
+    const emailInput = screen.getByRole("textbox", {
+      name: "Para confirmar, digite ana@example.com",
+    });
+    await user.type(emailInput, "ana@example.com");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Excluir conta e dados" }),
+    );
+    expect(
+      screen
+        .getByRole("textbox", {
+          name: "Para confirmar, digite ana@example.com",
+        })
+        .getAttribute("value"),
+    ).toBe("");
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps deletion open while the server is processing", async () => {
+    let finishDelete: (result: boolean) => void = () => undefined;
+    const onDelete = vi.fn(
+      () => new Promise<boolean>((resolve) => (finishDelete = resolve)),
+    );
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={vi.fn().mockResolvedValue(true)}
+        onDelete={onDelete}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Excluir conta e dados" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Para confirmar, digite ana@example.com",
+      }),
+      "ana@example.com",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir definitivamente" }),
+    );
+    await waitFor(() => expect(onDelete).toHaveBeenCalledOnce());
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    finishDelete(false);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Excluir definitivamente" }),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("extends beta from the current date when no expiry has been recorded", async () => {
+    const onUpdate = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable
+        users={[{ ...users[0], betaExpiresAt: null }]}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Estender beta por 30 dias" }),
+    );
+
+    const [, changes] = onUpdate.mock.calls[0] as [
+      string,
+      { betaExpiresAt: string },
+    ];
+    expect(changes.betaExpiresAt).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(onUpdate).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ betaExpiresAt: expect.any(String) }),
+    );
+  });
+
   it("shows read-only beta state when access has expired", () => {
     render(
       <AdminUsersTable

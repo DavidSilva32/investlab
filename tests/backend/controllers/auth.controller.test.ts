@@ -231,6 +231,22 @@ describe("AuthController", () => {
     ).toBe(403);
   });
 
+  it("converts a valid beta expiry string to a Date before updating", async () => {
+    const betaExpiresAt = "2026-12-01T00:00:00.000Z";
+
+    const response = await controller.updateUser(
+      request({ betaExpiresAt }),
+      "user-1",
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.service.updateManagedUser).toHaveBeenCalledWith({
+      id: "user-1",
+      actorId: "admin-1",
+      betaExpiresAt: new Date(betaExpiresAt),
+    });
+  });
+
   it("deletes a managed user only after administrator authorization and email confirmation", async () => {
     const success = await controller.deleteUser(
       request({ confirmEmail: "person@example.com" }),
