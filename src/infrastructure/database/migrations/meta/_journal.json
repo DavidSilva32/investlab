@@ -393,6 +393,13 @@
       "when": 1792674978450,
       "tag": "0055_white_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792706232407,
+      "tag": "0056_big_dark_beast",
+      "breakpoints": true
     }
   ]
 }

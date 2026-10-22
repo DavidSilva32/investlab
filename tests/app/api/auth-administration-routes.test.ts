@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     createInvite: vi.fn(),
     revokeInvite: vi.fn(),
     revokePasswordReset: vi.fn(),
+    deleteUser: vi.fn(),
     createPasswordReset: vi.fn(),
     activateInvite: vi.fn(),
     resetPassword: vi.fn(),
@@ -29,7 +30,10 @@ import {
   GET as getUsers,
   POST as postInvite,
 } from "@/app/api/admin/users/route";
-import { PATCH as patchUser } from "@/app/api/admin/users/[id]/route";
+import {
+  DELETE as deleteUser,
+  PATCH as patchUser,
+} from "@/app/api/admin/users/[id]/route";
 import { DELETE as deleteInvite } from "@/app/api/admin/invitations/[id]/route";
 import { POST as postReset } from "@/app/api/admin/password-resets/route";
 import { DELETE as deleteReset } from "@/app/api/admin/password-resets/[id]/route";
@@ -64,6 +68,20 @@ describe("auth administration route handlers", () => {
       patchUser(request, { params: Promise.resolve({ id: "user-1" }) }),
     ).resolves.toBe(response);
     expect(mocks.controller.updateUser).toHaveBeenCalledWith(request, "user-1");
+  });
+
+  it("delegates account deletion through the dynamic route", async () => {
+    const request = new Request("https://test/api/admin/users/user-1", {
+      method: "DELETE",
+      body: JSON.stringify({ confirmEmail: "user@example.com" }),
+    });
+    const response = Response.json({ ok: true });
+    mocks.controller.deleteUser.mockResolvedValueOnce(response);
+
+    await expect(
+      deleteUser(request, { params: Promise.resolve({ id: "user-1" }) }),
+    ).resolves.toBe(response);
+    expect(mocks.controller.deleteUser).toHaveBeenCalledWith(request, "user-1");
   });
 
   it("delegates invitation and reset revocation with route parameters", async () => {
@@ -137,14 +155,23 @@ describe("auth administration route handlers", () => {
       id: "user-1",
       email: "user@example.com",
       role: "USER",
+      betaActivatedAt: new Date("2026-10-22T00:00:00.000Z"),
+      betaExpiresAt: new Date("2026-11-21T00:00:00.000Z"),
       password: "must-not-leak",
     });
     const response = await getSession(
       new Request("https://test/api/auth/session"),
     );
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({
-      user: { id: "user-1", email: "user@example.com", role: "USER" },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        role: "USER",
+        betaActivatedAt: "2026-10-22T00:00:00.000Z",
+        betaExpiresAt: "2026-11-21T00:00:00.000Z",
+      },
     });
   });
 
@@ -154,6 +181,29 @@ describe("auth administration route handlers", () => {
       new Request("https://test/api/auth/session"),
     );
     expect(response.status).toBe(401);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({ user: null });
+  });
+
+  it("returns null beta dates for a legacy authenticated session", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValueOnce({
+      id: "legacy-user",
+      email: "legacy@example.com",
+      role: "USER",
+    });
+
+    const response = await getSession(
+      new Request("https://test/api/auth/session"),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      user: {
+        id: "legacy-user",
+        email: "legacy@example.com",
+        role: "USER",
+        betaActivatedAt: null,
+        betaExpiresAt: null,
+      },
+    });
   });
 });

@@ -62,14 +62,20 @@ const managedUserUpdateSchema = z
     name: z.string().trim().min(1).max(120).optional(),
     role: z.enum(["USER", "ADMIN"]).optional(),
     isActive: z.boolean().optional(),
+    betaExpiresAt: z.iso
+      .datetime()
+      .transform((value) => new Date(value))
+      .optional(),
   })
   .strict()
   .refine(
     (body) =>
       body.name !== undefined ||
       body.role !== undefined ||
-      body.isActive !== undefined,
+      body.isActive !== undefined ||
+      body.betaExpiresAt !== undefined,
   );
+const managedUserDeleteSchema = z.object({ confirmEmail: z.email() }).strict();
 const profileUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -140,7 +146,7 @@ export class AuthController {
   async adminData(request: Request) {
     try {
       await requireRole("ADMIN", request.headers);
-      return Response.json(await authService.listAdministrationData());
+      return noStore(Response.json(await authService.listAdministrationData()));
     } catch (error) {
       return errorResponse(error);
     }
@@ -164,6 +170,23 @@ export class AuthController {
       return Response.json({ ok: true });
     } catch (error) {
       return errorResponse(error);
+    }
+  }
+
+  async deleteUser(request: Request, id: string) {
+    try {
+      const admin = await requireRole("ADMIN", request.headers);
+      const body = managedUserDeleteSchema.safeParse(await jsonBody(request));
+      if (!body.success) {
+        return Response.json(
+          { message: "Informe o e-mail da conta para confirmar a exclusão." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      await authService.deleteManagedUser(id, admin.id, body.data.confirmEmail);
+      return noStore(Response.json({ ok: true }));
+    } catch (error) {
+      return noStore(errorResponse(error));
     }
   }
 

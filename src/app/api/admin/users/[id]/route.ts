@@ -9,3 +9,11 @@ export const PATCH = withApiRequestLogging(
     return authController.updateUser(request, id);
   },
 );
+export const DELETE = withApiRequestLogging(
+  "DELETE",
+  "/api/admin/users/[id]",
+  async (request: Request, context: { params: Promise<{ id: string }> }) => {
+    const { id } = await context.params;
+    return authController.deleteUser(request, id);
+  },
+);

@@ -6,9 +6,23 @@ export const GET = withApiRequestLogging(
   "/api/auth/session",
   async (request: Request) => {
     const user = await getAuthenticatedUser(request.headers);
-    if (!user) return Response.json({ user: null }, { status: 401 });
-    return Response.json({
-      user: { id: user.id, email: user.email, role: user.role },
-    });
+    if (!user) {
+      return Response.json(
+        { user: null },
+        { status: 401, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    return Response.json(
+      {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          betaActivatedAt: user.betaActivatedAt ?? null,
+          betaExpiresAt: user.betaExpiresAt ?? null,
+        },
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   },
 );

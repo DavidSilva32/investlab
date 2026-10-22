@@ -37,7 +37,7 @@ describe("Better Auth configuration", () => {
     return import("@/infrastructure/auth/auth");
   }
 
-  it("uses persistent Drizzle models and keeps public sign-up unmounted", async () => {
+  it("uses persistent Drizzle models and disables public sign-up", async () => {
     vi.stubEnv("AUTH_SECRET", "a-secure-auth-secret-with-at-least-32-chars");
     vi.stubEnv("NODE_ENV", "development");
     const { auth } = await loadAuth();
@@ -82,7 +82,7 @@ describe("Better Auth configuration", () => {
     });
     expect(options.emailAndPassword).toMatchObject({
       enabled: true,
-      disableSignUp: false,
+      disableSignUp: true,
     });
     expect(options.rateLimit).toMatchObject({
       enabled: true,

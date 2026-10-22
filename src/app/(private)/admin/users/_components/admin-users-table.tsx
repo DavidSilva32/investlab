@@ -2,8 +2,11 @@
 
 import { useState, type FormEvent } from "react";
 import {
+  Clock3,
   MoreHorizontal,
   Pencil,
+  ShieldAlert,
+  Trash2,
   UserRoundCheck,
   UserRoundX,
 } from "lucide-react";
@@ -47,6 +50,8 @@ export type ManagedUser = {
   phone: string | null;
   role: "USER" | "ADMIN";
   accountStatus: "ACTIVE" | "PENDING" | "DISABLED";
+  betaActivatedAt: string | null;
+  betaExpiresAt: string | null;
   lastLoginAt: string | null;
   createdAt: string;
 };
@@ -64,6 +69,7 @@ type UserTableRowBase = {
   phone: string | null;
   status: "waiting" | "active" | "disabled";
   lastLoginAt: string | null;
+  betaExpiresAt: string | null;
 };
 
 type UserTableRow = UserTableRowBase &
@@ -81,8 +87,14 @@ type Props = {
   invitations: PendingInvitation[];
   onUpdate: (
     id: string,
-    changes: { name?: string; role?: "USER" | "ADMIN"; isActive?: boolean },
+    changes: {
+      name?: string;
+      role?: "USER" | "ADMIN";
+      isActive?: boolean;
+      betaExpiresAt?: string;
+    },
   ) => Promise<boolean>;
+  onDelete: (id: string, confirmEmail: string) => Promise<boolean>;
 };
 
 const accessRoleOptions = [
@@ -128,13 +140,21 @@ function statusBadge(status: UserTableRow["status"]) {
   );
 }
 
-export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
+export function AdminUsersTable({
+  users,
+  invitations,
+  onUpdate,
+  onDelete,
+}: Props) {
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [deletingUser, setDeletingUser] = useState<ManagedUser | null>(null);
   const [deactivatingUser, setDeactivatingUser] = useState<ManagedUser | null>(
     null,
   );
   const [name, setName] = useState("");
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const rows: UserTableRow[] = [
     ...users.map((user) => ({
       id: user.id,
@@ -148,6 +168,7 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
           ? "waiting"
           : "active") as UserTableRow["status"],
       lastLoginAt: user.lastLoginAt,
+      betaExpiresAt: user.betaExpiresAt,
       sourceUser: user,
       isPendingInvite: false as const,
     })),
@@ -161,6 +182,7 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
         role: null,
         status: "waiting" as const,
         lastLoginAt: null,
+        betaExpiresAt: null,
         sourceUser: null,
         isPendingInvite: true as const,
       })),
@@ -238,7 +260,18 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
       value: (row) => row.status,
       searchValue: (row) => row.status,
       filterOptions: statusOptions,
-      render: (row) => statusBadge(row.status),
+      render: (row) => (
+        <span className="space-y-1">
+          {statusBadge(row.status)}
+          {row.sourceUser?.betaExpiresAt && row.role === "USER" && (
+            <span className="block text-xs text-muted-foreground">
+              {new Date(row.sourceUser.betaExpiresAt) <= new Date()
+                ? "Beta vencido · somente leitura"
+                : `Beta até ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(row.sourceUser.betaExpiresAt))}`}
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       id: "lastLoginAt",
@@ -302,6 +335,39 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
                     <UserRoundCheck aria-hidden="true" />
                   )}
                   {isActive ? "Desativar conta" : "Ativar conta"}
+                </DropdownMenuItem>
+                {user.role === "USER" && user.accountStatus === "ACTIVE" && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const existingExpiry = user.betaExpiresAt
+                          ? new Date(user.betaExpiresAt).getTime()
+                          : 0;
+                        const newExpiry = new Date(
+                          Math.max(Date.now(), existingExpiry) +
+                            30 * 24 * 60 * 60 * 1000,
+                        );
+                        void onUpdate(row.id, {
+                          betaExpiresAt: newExpiry.toISOString(),
+                        });
+                      }}
+                    >
+                      <Clock3 aria-hidden="true" />
+                      Estender beta por 30 dias
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-status-danger focus:text-status-danger"
+                  onSelect={() => {
+                    setConfirmEmail("");
+                    setDeletingUser(user);
+                  }}
+                >
+                  <Trash2 aria-hidden="true" />
+                  Excluir conta e dados
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -372,6 +438,83 @@ export function AdminUsersTable({ users, invitations, onUpdate }: Props) {
                 </Button>
                 <Button type="submit" disabled={savingName || !name.trim()}>
                   {savingName ? "Salvando…" : "Salvar nome"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        )}
+      </Dialog>
+      <Dialog
+        open={deletingUser !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeletingUser(null);
+            setConfirmEmail("");
+          }
+        }}
+      >
+        {deletingUser && (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-status-danger">
+                <ShieldAlert aria-hidden="true" className="size-5" />
+                Excluir conta e histórico?
+              </DialogTitle>
+              <DialogDescription>
+                Esta ação remove permanentemente os dados pessoais, o acesso e
+                os registros financeiros de {deletingUser.name}. Não pode ser
+                desfeita.
+              </DialogDescription>
+            </DialogHeader>
+            <form
+              className="space-y-4"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setDeleting(true);
+                try {
+                  if (await onDelete(deletingUser.id, confirmEmail.trim())) {
+                    setDeletingUser(null);
+                    setConfirmEmail("");
+                  }
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="confirm-delete-user-email">
+                  Para confirmar, digite {deletingUser.email}
+                </Label>
+                <Input
+                  id="confirm-delete-user-email"
+                  type="email"
+                  autoComplete="off"
+                  value={confirmEmail}
+                  onChange={(event) => setConfirmEmail(event.target.value)}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDeletingUser(null);
+                    setConfirmEmail("");
+                  }}
+                  disabled={deleting}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={
+                    deleting ||
+                    confirmEmail.trim().toLowerCase() !==
+                      deletingUser.email.toLowerCase()
+                  }
+                >
+                  {deleting ? "Excluindo…" : "Excluir definitivamente"}
                 </Button>
               </DialogFooter>
             </form>

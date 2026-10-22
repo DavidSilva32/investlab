@@ -29,6 +29,8 @@ export const authUsers = pgTable(
     image: text(),
     role: varchar({ length: 10 }).notNull().default("USER"),
     accountStatus: varchar({ length: 12 }).notNull().default("ACTIVE"),
+    betaActivatedAt: timestamp({ withTimezone: true }),
+    betaExpiresAt: timestamp({ withTimezone: true }),
     lastLoginAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
