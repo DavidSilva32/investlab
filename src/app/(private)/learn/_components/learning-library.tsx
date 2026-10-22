@@ -9,14 +9,25 @@ export function LearningLibrary({
   selectedClass: StrategyAssetClassId | null;
 }) {
   return (
-    <div className="w-full space-y-5">
-      <header className="max-w-3xl">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Aprenda sobre as classes de ativos
-        </h2>
+    <div className="w-full space-y-4">
+      <header className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+            Aprender
+          </p>
+          <h2 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">
+            Escolha um curso
+          </h2>
+        </div>
+        <p className="text-xs text-muted-foreground sm:text-sm">
+          Aulas visuais e prova final
+        </p>
       </header>
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <nav
+        aria-label="Cursos por classe de ativos"
+        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 md:grid md:grid-cols-2 md:overflow-visible 2xl:grid-cols-4"
+      >
         {(Object.keys(assetClassLearningContent) as StrategyAssetClassId[]).map(
           (id) => (
             <AssetClassLearningCard
@@ -26,7 +37,7 @@ export function LearningLibrary({
             />
           ),
         )}
-      </div>
+      </nav>
       <AssetClassLearningDetail selectedClass={selectedClass} />
     </div>
   );

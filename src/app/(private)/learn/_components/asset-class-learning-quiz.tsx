@@ -86,7 +86,7 @@ export function AssetClassLearningQuiz({
   return (
     <section
       aria-labelledby={`${quizId}-title`}
-      className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-5"
+      className="rounded-2xl bg-muted/40 p-4 sm:p-5"
     >
       <div className="mb-4">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -114,11 +114,15 @@ export function AssetClassLearningQuiz({
               <label
                 key={option.text}
                 htmlFor={id}
-                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
-                  isSelected
-                    ? "border-primary bg-primary/5"
-                    : "border-border bg-background hover:bg-muted/60"
-                } ${answered && isCorrectOption ? "border-status-success" : ""}`}
+                className={`flex cursor-pointer items-start gap-3 rounded-xl border border-transparent p-3 text-sm transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+                  answered && isCorrectOption
+                    ? "bg-status-success/10 ring-1 ring-status-success/30"
+                    : answered && isSelected
+                      ? "bg-status-danger/10 ring-1 ring-status-danger/30"
+                      : isSelected
+                        ? "bg-primary/5 ring-1 ring-primary/40"
+                        : "bg-background/80 hover:bg-background hover:shadow-sm"
+                }`}
               >
                 <RadioGroupItem
                   id={id}

@@ -33,20 +33,11 @@ export function AssetClassLearningDetail({
       key={selectedClass}
       id="class-content"
       aria-labelledby="class-content-title"
-      className="motion-content-reveal scroll-mt-24 rounded-2xl border border-border/70 bg-card p-5 shadow-sm sm:p-7"
-      style={{
-        borderTopColor: `color-mix(in srgb, var(${assetClass.colorToken}) 70%, var(--border))`,
-        borderTopWidth: "3px",
-      }}
+      className="motion-content-reveal scroll-mt-24"
     >
-      <div className="mb-5">
-        <h2
-          id="class-content-title"
-          className="text-2xl font-semibold tracking-tight"
-        >
-          {assetClass.label}
-        </h2>
-      </div>
+      <h2 id="class-content-title" className="sr-only">
+        {assetClass.label}
+      </h2>
 
       <AssetClassLearningCourse
         key={selectedClass}
@@ -54,7 +45,7 @@ export function AssetClassLearningDetail({
         content={content}
       />
 
-      <Collapsible className="mt-4 rounded-xl border border-border/70">
+      <Collapsible className="mt-4 rounded-2xl border border-border/60 bg-card/70">
         <CollapsibleTrigger asChild>
           <Button
             type="button"

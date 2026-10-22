@@ -8,7 +8,10 @@ import {
   resolveLearningClassId,
   shuffleLearningOptions,
 } from "@/lib/asset-class-learning";
-import { strategyAssetClasses } from "@/lib/strategy-allocation";
+import {
+  strategyAssetClasses,
+  type StrategyAssetClassId,
+} from "@/lib/strategy-allocation";
 
 describe("asset class learning links", () => {
   const officialClassIds = strategyAssetClasses.map(({ id }) => id);
@@ -87,6 +90,52 @@ describe("asset class learning links", () => {
         ),
       ).size,
     ).toBe(strategyAssetClasses.length);
+  });
+
+  it("uses final-exam scenarios to practice class-specific analysis steps", () => {
+    const appliedPrompts: Record<StrategyAssetClassId, string[]> = {
+      fiis: [
+        "Você compara dois FIIs",
+        "Ao comparar dois fundos",
+        "Um informe mostra aumento da vacância.",
+        "Um contrato importante está perto do vencimento.",
+        "Um FII teve DY alto em um período.",
+      ],
+      brazilian_equities: [
+        "Uma pessoa compra ações de uma companhia.",
+        "O relatório de uma empresa mostra receita maior e lucro menor.",
+        "Duas empresas têm P/L diferentes.",
+        "Uma empresa mostra lucro maior neste ano",
+        "Uma estimativa de preço teto ficou abaixo da cotação.",
+      ],
+      international_etfs: [
+        "Dois ETFs têm nomes parecidos.",
+        "Um ETF internacional acompanha um índice",
+        "Você acompanha um ETF internacional em reais",
+        "Um ETF reúne muitos ativos",
+        "Dois ETFs seguem mercados diferentes.",
+      ],
+      fixed_income: [
+        "Uma pessoa pode precisar do dinheiro antes do vencimento.",
+        "Um produto oferece taxa maior que outro.",
+        "Um título permite venda antes do vencimento.",
+        "Um título é emitido por uma empresa.",
+        "A ficha de um título menciona proteção ao investidor.",
+      ],
+    };
+
+    for (const { id } of strategyAssetClasses) {
+      const prompts = assetClassLearningContent[id].assessment.map(
+        ({ question }) => question,
+      );
+      expect(prompts).toHaveLength(5);
+
+      for (const appliedPrompt of appliedPrompts[id]) {
+        expect(prompts.some((prompt) => prompt.startsWith(appliedPrompt))).toBe(
+          true,
+        );
+      }
+    }
   });
 
   it("shuffles every answer once and moves the correct option for a new attempt", () => {
