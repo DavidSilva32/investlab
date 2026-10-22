@@ -1,11 +1,11 @@
-import { ChevronDown, CirclePlay, ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
-import { AssetClassLearningQuiz } from "./asset-class-learning-quiz";
+import { AssetClassLearningCourse } from "./asset-class-learning-course";
 import { assetClassLearningContent } from "@/lib/asset-class-learning";
 import {
   strategyAssetClassById,
@@ -48,49 +48,11 @@ export function AssetClassLearningDetail({
         </h2>
       </div>
 
-      <article className="mb-5 rounded-xl border border-border/70 bg-muted/30 p-4 sm:p-5">
-        <h3 className="text-lg font-semibold">{content.lesson.title}</h3>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          {content.lesson.explanation}
-        </p>
-        <p className="mt-3 max-w-3xl text-sm font-medium leading-6">
-          {content.lesson.takeaway}
-        </p>
-      </article>
-
-      {content.availability === "available" ? (
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-black">
-          <video
-            key={content.videoSrc}
-            className="aspect-video w-full"
-            controls
-            playsInline
-            preload="none"
-            poster={content.thumbnailSrc}
-            aria-label={`Conteúdo educativo: ${assetClass.label}`}
-          >
-            <source src={content.videoSrc} type="video/mp4" />
-            Seu navegador não oferece suporte à reprodução de vídeo.
-          </video>
-        </div>
-      ) : (
-        <p
-          role="status"
-          className="flex min-h-11 items-center gap-2 rounded-lg bg-muted/55 px-3 py-2 text-sm text-muted-foreground"
-        >
-          <CirclePlay aria-hidden="true" className="size-4 shrink-0" />
-          Vídeo em breve
-        </p>
-      )}
-
-      <div className="mt-5">
-        <AssetClassLearningQuiz
-          key={selectedClass}
-          question={content.quiz.question}
-          options={content.quiz.options}
-          correctOptionIndex={content.quiz.correctOptionIndex}
-        />
-      </div>
+      <AssetClassLearningCourse
+        key={selectedClass}
+        selectedClass={selectedClass}
+        content={content}
+      />
 
       <Collapsible className="mt-4 rounded-xl border border-border/70">
         <CollapsibleTrigger asChild>

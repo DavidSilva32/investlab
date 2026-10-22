@@ -32,7 +32,7 @@ describe("AssetClassLearningDetail", () => {
         imageSrc: originalContent.imageSrc,
         thumbnailSrc: originalContent.thumbnailSrc,
         description: originalContent.description,
-        lesson: originalContent.lesson,
+        courseLessons: originalContent.courseLessons,
         quiz: originalContent.quiz,
         sources: originalContent.sources,
         availability: "coming-soon",
@@ -42,11 +42,11 @@ describe("AssetClassLearningDetail", () => {
 
       expect(screen.getByRole("status").textContent).toContain("em breve");
       expect(
-        screen.getByRole("heading", { name: originalContent.lesson.title }),
+        screen.getByRole("heading", {
+          name: originalContent.courseLessons[0].title,
+        }),
       ).toBeTruthy();
-      expect(
-        screen.getByRole("heading", { name: originalContent.quiz.question }),
-      ).toBeTruthy();
+      expect(screen.queryByRole("radio")).toBeNull();
       expect(document.querySelector("video")).toBeNull();
     } finally {
       assetClassLearningContent.fiis = originalContent;
@@ -72,8 +72,14 @@ describe("AssetClassLearningDetail", () => {
       expect(source?.getAttribute("src")).toBe(`/videos/${id}.mp4`);
       expect(source?.getAttribute("type")).toBe("video/mp4");
       expect(
-        screen.getByRole("heading", { name: contentLesson(id) }),
+        screen.getByRole("heading", { name: contentCourseLesson(id) }),
       ).toBeTruthy();
+      expect(screen.queryByRole("radio")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
+      fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Ir para a pergunta" }),
+      );
       expect(
         screen.getByRole("heading", { name: contentQuestion(id) }),
       ).toBeTruthy();
@@ -115,8 +121,8 @@ describe("AssetClassLearningDetail", () => {
   });
 });
 
-function contentLesson(id: StrategyAssetClassId) {
-  return assetClassLearningContent[id].lesson.title;
+function contentCourseLesson(id: StrategyAssetClassId) {
+  return assetClassLearningContent[id].courseLessons[0].title;
 }
 
 function contentQuestion(id: StrategyAssetClassId) {

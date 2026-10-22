@@ -12,12 +12,14 @@ type AssetClassLearningQuizProps = {
     explanation: string;
   }[];
   correctOptionIndex: number;
+  onCorrect?: () => void;
 };
 
 export function AssetClassLearningQuiz({
   question,
   options,
   correctOptionIndex,
+  onCorrect,
 }: AssetClassLearningQuizProps) {
   const quizId = useId();
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -27,6 +29,7 @@ export function AssetClassLearningQuiz({
 
   function submitAnswer() {
     setSubmittedOption(selectedOption);
+    if (selectedOption === correctOptionIndex) onCorrect?.();
   }
 
   function retry() {

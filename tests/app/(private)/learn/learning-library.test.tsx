@@ -89,7 +89,7 @@ describe("AssetClassLearningCard", () => {
         imageSrc: originalContent.imageSrc,
         thumbnailSrc: originalContent.thumbnailSrc,
         description: originalContent.description,
-        lesson: originalContent.lesson,
+        courseLessons: originalContent.courseLessons,
         quiz: originalContent.quiz,
         sources: originalContent.sources,
         availability: "coming-soon",

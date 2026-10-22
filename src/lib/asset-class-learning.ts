@@ -7,11 +7,10 @@ type AssetClassLearningContentBase = {
   imageSrc: string;
   thumbnailSrc: string;
   description: string;
-  lesson: {
+  courseLessons: {
     title: string;
-    explanation: string;
-    takeaway: string;
-  };
+    content: string;
+  }[];
   quiz: {
     question: string;
     options: {
@@ -45,13 +44,23 @@ export const assetClassLearningContent: Record<
     thumbnailSrc: "/images/asset-classes/fiis.webp",
     description:
       "Conheça os fundos imobiliários, suas estruturas e as diferentes formas de exposição a ativos e estratégias imobiliárias.",
-    lesson: {
-      title: "O que é um fundo imobiliário?",
-      explanation:
-        "Um FII reúne recursos de várias pessoas para investir em imóveis ou em ativos ligados ao mercado imobiliário. Quem investe compra cotas, que podem ser negociadas em bolsa ou em balcão organizado, conforme o fundo.",
-      takeaway:
-        "O preço da cota e os rendimentos podem variar; não há distribuição garantida.",
-    },
+    courseLessons: [
+      {
+        title: "O que é um fundo imobiliário?",
+        content:
+          "Um FII reúne recursos de várias pessoas para investir em imóveis ou em ativos ligados ao mercado imobiliário.",
+      },
+      {
+        title: "A cota é sua participação",
+        content:
+          "Ao comprar cotas, você participa do fundo. Isso não significa ser dono direto de um imóvel específico.",
+      },
+      {
+        title: "Rendimentos podem variar",
+        content:
+          "O preço da cota e os rendimentos não são garantidos e podem mudar.",
+      },
+    ],
     quiz: {
       question: "O que representa uma cota de FII?",
       options: [
@@ -96,13 +105,22 @@ export const assetClassLearningContent: Record<
     thumbnailSrc: "/images/asset-classes/brazilian-equities.webp",
     description:
       "Entenda participações em empresas listadas no Brasil e os recibos de ações negociados no país.",
-    lesson: {
-      title: "O que significa comprar uma ação?",
-      explanation:
-        "Uma ação representa uma pequena participação em uma empresa. O valor da ação pode subir ou cair conforme os resultados da empresa e as condições do mercado.",
-      takeaway:
-        "A empresa pode distribuir dividendos, mas não existe garantia de pagamento ou de valorização.",
-    },
+    courseLessons: [
+      {
+        title: "O que significa comprar uma ação?",
+        content: "Uma ação representa uma pequena participação em uma empresa.",
+      },
+      {
+        title: "O preço pode mudar",
+        content:
+          "Resultados da empresa e condições do mercado podem influenciar o preço da ação.",
+      },
+      {
+        title: "Dividendos não são certos",
+        content:
+          "A empresa pode distribuir dividendos, mas não há garantia de pagamento ou de valorização.",
+      },
+    ],
     quiz: {
       question: "Ao comprar uma ação, o que você passa a ter?",
       options: [
@@ -143,13 +161,23 @@ export const assetClassLearningContent: Record<
     thumbnailSrc: "/images/asset-classes/international-etfs.webp",
     description:
       "Conheça fundos negociados em bolsa que oferecem exposição a mercados internacionais.",
-    lesson: {
-      title: "Como funciona um ETF internacional?",
-      explanation:
-        "Um ETF é um fundo com cotas negociadas na bolsa. Um ETF internacional pode acompanhar um índice ou uma carteira ligada a mercados de outros países.",
-      takeaway:
-        "O resultado pode variar com os ativos do fundo, o mercado externo e o câmbio.",
-    },
+    courseLessons: [
+      {
+        title: "Como funciona um ETF internacional?",
+        content:
+          "Um ETF é um fundo com cotas negociadas em bolsa. Ele pode acompanhar um índice ou uma carteira ligada a outros países.",
+      },
+      {
+        title: "O exterior e o câmbio influenciam",
+        content:
+          "O resultado pode variar com os ativos do fundo, os mercados internacionais e a moeda.",
+      },
+      {
+        title: "Índice não é promessa de retorno",
+        content:
+          "Acompanhar um índice não garante rendimento: o valor da cota pode subir ou cair.",
+      },
+    ],
     quiz: {
       question: "O que pode influenciar o resultado de um ETF internacional?",
       options: [
@@ -194,13 +222,23 @@ export const assetClassLearningContent: Record<
     thumbnailSrc: "/images/asset-classes/fixed-income-office.webp",
     description:
       "Conheça instrumentos de dívida e as diferentes formas de exposição à renda fixa.",
-    lesson: {
-      title: "O que é renda fixa?",
-      explanation:
-        "Na renda fixa, as regras de remuneração são definidas na aplicação. O resultado pode acompanhar uma taxa, ser prefixado ou combinar critérios.",
-      takeaway:
-        "As regras variam por produto. Prazo, liquidez e risco de crédito também importam.",
-    },
+    courseLessons: [
+      {
+        title: "O que é renda fixa?",
+        content:
+          "As regras de remuneração são definidas na aplicação: podem ser prefixadas, acompanhar uma taxa ou combinar critérios.",
+      },
+      {
+        title: "Cada produto tem suas condições",
+        content:
+          "Prazo, possibilidade de resgate e risco de crédito variam conforme o investimento.",
+      },
+      {
+        title: "Renda fixa não é risco zero",
+        content:
+          "As condições do emissor e do produto importam; confira as regras antes de investir.",
+      },
+    ],
     quiz: {
       question: "O que quer dizer que um investimento é de renda fixa?",
       options: [
