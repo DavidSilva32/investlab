@@ -152,6 +152,9 @@ describe("AssetClassLearningCourse", () => {
     expect(
       screen.getByLabelText(/Vídeo educativo/) instanceof HTMLVideoElement,
     ).toBe(true);
+    expect(
+      screen.getByRole("heading", { name: "Assista à aula" }),
+    ).toBeTruthy();
     expect(await screen.findAllByRole("radio")).toHaveLength(4);
     expect(
       screen
@@ -485,6 +488,47 @@ describe("AssetClassLearningCourse", () => {
     fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
 
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(callsBeforeRetry);
+    expect(
+      screen
+        .getByRole("button", { name: "Conferir resposta" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("does not reveal an incorrect answer before checking or mark a wrong answer complete", async () => {
+    const content = assetClassLearningContent.fiis;
+    render(<AssetClassLearningCourse selectedClass="fiis" content={content} />);
+    await screen.findByRole("heading", {
+      name: content.courseLessons[0].title,
+    });
+    await screen.findAllByRole("radio");
+
+    const wrongOption = content.courseLessons[0].question.options.find(
+      (_, index) =>
+        index !== content.courseLessons[0].question.correctOptionIndex,
+    );
+    expect(wrongOption).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: wrongOption!.text }));
+    expect(screen.queryByText("Quase lá")).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "Próxima aula" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Conferir resposta" }));
+    expect(await screen.findByText("Quase lá")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Próxima aula" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT"),
+    ).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(screen.queryByText("Quase lá")).toBeNull();
     expect(
       screen
         .getByRole("button", { name: "Conferir resposta" })

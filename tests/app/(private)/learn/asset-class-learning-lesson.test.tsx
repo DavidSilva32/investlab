@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetClassLearningLesson } from "@/app/(private)/learn/_components/asset-class-learning-lesson";
 import { assetClassLearningContent } from "@/lib/asset-class-learning";
@@ -27,6 +27,8 @@ describe("AssetClassLearningLesson", () => {
       screen.getByLabelText("Como funciona a participação em um fundo"),
     ).toBeTruthy();
     expect(screen.getByRole("img", { name: /seis investidores/ })).toBeTruthy();
+    expect(screen.getAllByText("Cotista")).toHaveLength(5);
+    expect(screen.queryByText("Cota", { exact: true })).toBeNull();
     expect(
       screen.getByRole("heading", { name: "Exemplos de portfólio" }),
     ).toBeTruthy();
@@ -49,7 +51,33 @@ describe("AssetClassLearningLesson", () => {
     expect(screen.getByText("Vacância financeira")).toBeTruthy();
   });
 
-  it("provides a concise FII analysis checklist and historical DY explanation", () => {
+  it.each([
+    ["fiis", "Fundos imobiliários (FIIs)", "Objetivo e estratégia"],
+    ["fixed_income", "Renda fixa", "Emissor e crédito"],
+    ["brazilian_equities", "Ações e BDRs", "Indicadores e contexto"],
+    ["international_etfs", "ETFs internacionais", "Índice e carteira"],
+  ] as const)(
+    "provides a compact, class-specific analysis roadmap for %s",
+    (selectedClass, className, representativeStep) => {
+      render(
+        <AssetClassLearningLesson
+          selectedClass={selectedClass}
+          lessonIndex={3}
+          lesson={assetClassLearningContent[selectedClass].courseLessons[3]}
+        />,
+      );
+
+      expect(
+        screen.getByRole("region", {
+          name: `Roteiro de análise: ${className}`,
+        }),
+      ).toBeTruthy();
+      expect(screen.getByText(representativeStep)).toBeTruthy();
+      expect(screen.getAllByRole("listitem")).toHaveLength(4);
+    },
+  );
+
+  it("keeps the FII historical DY caveat in its analysis roadmap", () => {
     render(
       <AssetClassLearningLesson
         selectedClass="fiis"
@@ -59,7 +87,7 @@ describe("AssetClassLearningLesson", () => {
     );
 
     expect(
-      screen.getByLabelText("Roteiro simples para analisar um fundo"),
+      screen.getByLabelText("Roteiro de análise: Fundos imobiliários (FIIs)"),
     ).toBeTruthy();
     expect(screen.getByText("DY histórico")).toBeTruthy();
     expect(screen.getByText(/não promessa de rendimento/)).toBeTruthy();
@@ -92,7 +120,128 @@ describe("AssetClassLearningLesson", () => {
       />,
     );
 
-    expect(screen.queryByText("Ideia principal")).toBeNull();
     expect(screen.queryByLabelText("Exemplo de vacância física")).toBeNull();
+  });
+
+  it.each([
+    [
+      "fixed_income",
+      1,
+      "Prazo e liquidez definem quando usar o recurso",
+      "Prazo",
+      "Liquidez",
+      "Produto",
+    ],
+    [
+      "fixed_income",
+      2,
+      "Emissor e proteções também importam",
+      "Emissor",
+      "Proteções",
+      "Crédito",
+    ],
+    [
+      "fixed_income",
+      3,
+      "Compare as condições lado a lado",
+      "Remuneração",
+      "Prazo",
+      "Liquidez",
+    ],
+    [
+      "brazilian_equities",
+      1,
+      "O resultado começa no negócio",
+      "Empresa",
+      "Receita",
+      "Lucro",
+    ],
+    [
+      "brazilian_equities",
+      2,
+      "Cada indicador responde uma pergunta",
+      "P/L",
+      "P/VP",
+      "ROE",
+    ],
+    [
+      "brazilian_equities",
+      3,
+      "Preço observado e estimativa são diferentes",
+      "Preço de mercado",
+      "Método",
+      "Estimativa",
+    ],
+    [
+      "international_etfs",
+      1,
+      "Entenda a referência e a composição",
+      "Índice",
+      "Regras",
+      "Ativos",
+    ],
+    [
+      "international_etfs",
+      2,
+      "Ativos, mercados e câmbio podem influenciar",
+      "Ativos",
+      "Mercados",
+      "Câmbio",
+    ],
+    [
+      "international_etfs",
+      3,
+      "Diversificar distribui exposição, sem zerar riscos",
+      "Cesta",
+      "Concentração",
+      "Riscos",
+    ],
+  ] as const)(
+    "shows the visual for %s lesson %i using that lesson's concepts",
+    (
+      selectedClass,
+      lessonIndex,
+      title,
+      firstLabel,
+      secondLabel,
+      thirdLabel,
+    ) => {
+      render(
+        <AssetClassLearningLesson
+          selectedClass={selectedClass}
+          lessonIndex={lessonIndex}
+          lesson={
+            assetClassLearningContent[selectedClass].courseLessons[lessonIndex]
+          }
+        />,
+      );
+
+      const visual = screen.getByRole("region", { name: title });
+      expect(visual).toBeTruthy();
+      expect(within(visual).getByText(firstLabel)).toBeTruthy();
+      expect(within(visual).getByText(secondLabel)).toBeTruthy();
+      expect(within(visual).getByText(thirdLabel)).toBeTruthy();
+      expect(screen.getByText("Esquema simplificado")).toBeTruthy();
+    },
+  );
+
+  it("states the precise per-share bases for equity indicators", () => {
+    render(
+      <AssetClassLearningLesson
+        selectedClass="brazilian_equities"
+        lessonIndex={2}
+        lesson={assetClassLearningContent.brazilian_equities.courseLessons[2]}
+      />,
+    );
+
+    expect(screen.getByText("Preço da ação ÷ lucro por ação")).toBeTruthy();
+    expect(
+      screen.getByText("Preço da ação ÷ valor patrimonial por ação"),
+    ).toBeTruthy();
+    const roeBasis = screen.getByText(
+      "Lucro líquido ÷ patrimônio líquido médio do período × 100",
+    );
+    expect(roeBasis).toBeTruthy();
+    expect(roeBasis.className).toContain("text-xs");
   });
 });

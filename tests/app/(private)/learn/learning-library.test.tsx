@@ -48,7 +48,7 @@ describe("LearningLibrary", () => {
     ).toBe("location");
     expect(
       screen.getByRole("heading", {
-        name: "Aprenda sobre as classes de ativos",
+        name: "Escolha um curso",
       }),
     ).toBeTruthy();
     expect(screen.queryByText("Educação financeira")).toBeNull();
@@ -56,6 +56,12 @@ describe("LearningLibrary", () => {
     expect(
       screen.getAllByRole("link", { name: /Abrir conteúdo sobre/ }),
     ).toHaveLength(4);
+    const courseNavigation = screen.getByRole("navigation", {
+      name: "Cursos por classe de ativos",
+    });
+    expect(courseNavigation.className).toContain("md:grid-cols-2");
+    expect(courseNavigation.className).toContain("2xl:grid-cols-4");
+    expect(courseNavigation.className).not.toContain("sm:grid-cols-4");
     const detail = screen.getByRole("region", {
       name: "Fundos imobiliários (FIIs)",
     });
@@ -106,7 +112,7 @@ describe("AssetClassLearningCard", () => {
     }
   });
 
-  it("shows each class description and availability while linking to the detail anchor", () => {
+  it("shows compact class selectors with lesson count and preserves official links", () => {
     render(<LearningLibrary selectedClass="fiis" />);
 
     for (const id of [
@@ -130,11 +136,8 @@ describe("AssetClassLearningCard", () => {
         `/aprender?class=${id}#class-content`,
       );
       expect(card.textContent).toContain(
-        assetClassLearningContent[id].description,
-      );
-      expect(card.textContent).toContain(
         assetClassLearningContent[id].availability === "available"
-          ? "Assistir conteúdo"
+          ? `${assetClassLearningContent[id].courseLessons.length} aulas · prova final`
           : "Vídeo em breve",
       );
       expect(card.querySelector("img")?.getAttribute("src")).toContain(
