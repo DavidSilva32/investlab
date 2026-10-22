@@ -21,6 +21,17 @@ export type AssetClassLearningVisual = {
   imageAlt: string;
 };
 
+export type AssetClassLearningExampleIcon =
+  | "clock"
+  | "bank"
+  | "percent"
+  | "scale"
+  | "building"
+  | "layers"
+  | "file"
+  | "trend"
+  | "package";
+
 type AssetClassLearningContentBase = {
   imageSrc: string;
   thumbnailSrc: string;
@@ -31,6 +42,7 @@ type AssetClassLearningContentBase = {
     examples?: {
       title: string;
       description: string;
+      icon?: AssetClassLearningExampleIcon;
     }[];
     question: AssetClassLearningQuestion;
     visuals?: AssetClassLearningVisual[];
@@ -108,26 +120,31 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "Imóveis de renda (tijolo)",
+            icon: "building",
             description:
               "Investe em imóveis prontos, como shoppings, galpões ou escritórios, e pode receber receitas previstas nos contratos.",
           },
           {
             title: "Títulos imobiliários (papel)",
+            icon: "file",
             description:
               "O fundo investe em títulos de crédito ligados ao mercado imobiliário. A renda depende das condições e dos pagamentos desses créditos.",
           },
           {
             title: "Fundos de fundos",
+            icon: "layers",
             description:
               "O portfólio reúne cotas de outros FIIs. Para entender a exposição, vale olhar também os fundos que estão dentro dele.",
           },
           {
             title: "Desenvolvimento",
+            icon: "trend",
             description:
               "Pode participar de projetos de incorporação para locação ou venda futura. O prazo e os riscos dependem do projeto.",
           },
           {
             title: "Híbridos",
+            icon: "layers",
             description:
               "Têm política que pode combinar diferentes tipos de ativos imobiliários. Confira os limites definidos para cada fundo.",
           },
@@ -181,11 +198,13 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "Ocupação",
+            icon: "building",
             description:
               "Se duas de dez salas de mesma área estão vazias, 20% da área está sem locação. Isso não informa, sozinho, quanto de receita deixou de entrar.",
           },
           {
             title: "Concentração",
+            icon: "scale",
             description:
               "Dez imóveis podem estar na mesma região ou depender de poucos inquilinos. Veja onde estão e de quem vêm as receitas.",
           },
@@ -213,11 +232,13 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "Valor patrimonial por cota",
+            icon: "scale",
             description:
               "É uma referência baseada nos registros e avaliações do fundo. O preço negociado pode ficar acima ou abaixo dela por vários motivos.",
           },
           {
             title: "Rendimento passado",
+            icon: "percent",
             description:
               "Ajuda a contar o que foi distribuído em um período. Não promete o mesmo pagamento nos próximos meses.",
           },
@@ -421,16 +442,19 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "Ação",
+            icon: "building",
             description:
               "É como ter uma pequena parte de um negócio: você participa dos riscos e pode se beneficiar se a empresa e o mercado forem bem.",
           },
           {
             title: "BDR",
+            icon: "file",
             description:
               "É um certificado negociado no Brasil que representa um ativo emitido fora do país. Confira qual ativo e quais condições ele representa.",
           },
           {
             title: "Como pode vir o resultado",
+            icon: "trend",
             description:
               "A pessoa pode receber valores distribuídos pela empresa ou ter ganho se vender por mais do que pagou. Nenhum dos dois é garantido.",
           },
@@ -458,11 +482,13 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "Uma padaria",
+            icon: "building",
             description:
               "O dinheiro das vendas é receita. Depois de pagar ingredientes, equipe, aluguel e outras despesas, o resultado pode ser lucro ou prejuízo.",
           },
           {
             title: "Demanda recorrente",
+            icon: "trend",
             description:
               "Contas de energia, alimentos e serviços básicos ajudam a ilustrar demandas frequentes. Isso não significa que toda empresa desses setores seja boa ou segura.",
           },
@@ -702,11 +728,13 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "Uma cesta pronta",
+            icon: "layers",
             description:
               "Em vez de comprar cada item separadamente, a pessoa compra cotas de um fundo que reúne ativos conforme uma estratégia definida.",
           },
           {
             title: "Índice é uma regra de seleção",
+            icon: "scale",
             description:
               "Como uma lista com critérios: ela define quais ativos entram e seus pesos. A carteira pode mudar quando as regras do índice mudam.",
           },
@@ -734,11 +762,13 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "Mercado amplo",
+            icon: "layers",
             description:
               "Pode reunir empresas de vários setores, mas algumas podem ter peso maior que outras.",
           },
           {
             title: "Setor ou renda fixa",
+            icon: "scale",
             description:
               "Um ETF pode focar em um setor específico ou acompanhar títulos de renda fixa. A palavra ETF, sozinha, não diz qual é o risco.",
           },
@@ -978,26 +1008,31 @@ export const assetClassLearningContent: Record<
         examples: [
           {
             title: "CDB",
+            icon: "bank",
             description:
               "Certificado de Depósito Bancário: um título pelo qual a instituição financeira capta dinheiro e se compromete a devolvê-lo conforme as condições combinadas.",
           },
           {
             title: "LCI e LCA",
+            icon: "bank",
             description:
               "Letras de Crédito Imobiliário e do Agronegócio. São títulos bancários com lastro ligado aos créditos desses setores; não significam que cada aplicação financie um imóvel ou uma fazenda específicos.",
           },
           {
             title: "Tesouro Direto",
+            icon: "file",
             description:
               "São títulos públicos federais: ao investir, você empresta recursos ao governo federal, conforme as regras daquele título.",
           },
           {
             title: "Debênture",
+            icon: "building",
             description:
               "É uma forma de uma empresa captar recursos de investidores. A empresa assume os pagamentos previstos, e o risco de crédito precisa ser considerado.",
           },
           {
             title: "A ‘caixinha’ do aplicativo",
+            icon: "package",
             description:
               "É um nome de recurso para guardar dinheiro, não um tipo único de investimento. O produto por trás pode variar: confira o nome e as condições da aplicação mostrada no app.",
           },
@@ -1024,19 +1059,22 @@ export const assetClassLearningContent: Record<
           "Liquidez descreve quando e em que condições o recurso pode ser resgatado. Um título pode vencer em uma data futura e ter ou não resgate antes disso. Confira carência, vencimento e se há possibilidade de venda; o nome popular ou a taxa não revela essas condições.",
         examples: [
           {
-            title: "Dinheiro para uma conta próxima",
+            title: "Liquidez diária",
+            icon: "clock",
             description:
-              "Se a reserva pode ser necessária em breve, confira se o produto permite resgate a tempo e em quais condições.",
+              "A oferta costuma permitir solicitar o resgate em dias úteis. O horário-limite e quando o dinheiro cai variam conforme o produto.",
           },
           {
-            title: "Dinheiro com data planejada",
+            title: "Vencimento",
+            icon: "file",
             description:
-              "Para um objetivo mais distante, compare o vencimento com a data em que você pretende usar o recurso.",
+              "É a data prevista para o título terminar. Compare com o dia em que você planeja usar o dinheiro; resgate antes pode ter outras regras.",
           },
           {
-            title: "Três jeitos de calcular a remuneração",
+            title: "Prefixado, pós-fixado ou híbrido",
+            icon: "percent",
             description:
-              "Prefixada: taxa definida na aplicação. Pós-fixada: acompanha uma referência, como o CDI. Híbrida: combina taxa e inflação, como IPCA mais juros.",
+              "Prefixado: taxa combinada. Pós-fixado: acompanha uma referência, como o CDI. Híbrido: combina taxa e inflação, como IPCA mais juros.",
           },
         ],
         question: question(

@@ -117,7 +117,7 @@ describe("AssetClassLearningLesson", () => {
     ).toBeNull();
   });
 
-  it("shows practical example cards for each asset class", () => {
+  it("shows visual examples for each asset class", () => {
     const examples = [
       ["fixed_income", 0, "CDB", "LCI e LCA", "A ‘caixinha’ do aplicativo"],
       ["brazilian_equities", 1, "Uma padaria", "Demanda recorrente"],
@@ -152,6 +152,11 @@ describe("AssetClassLearningLesson", () => {
           }[selectedClass]
         }`,
       });
+      expect(
+        within(section).getByRole("heading", {
+          name: "Na prática",
+        }),
+      ).toBeTruthy();
       for (const title of titles) {
         expect(
           within(section).getByRole("heading", { name: title }),
@@ -159,6 +164,34 @@ describe("AssetClassLearningLesson", () => {
       }
       unmount();
     }
+  });
+
+  it("uses a connected, product-focused visual for fixed-income offer terms", () => {
+    render(
+      <AssetClassLearningLesson
+        selectedClass="fixed_income"
+        lessonIndex={1}
+        lesson={assetClassLearningContent.fixed_income.courseLessons[1]}
+      />,
+    );
+
+    const examples = screen.getByRole("region", {
+      name: "Exemplos: Renda fixa",
+    });
+    expect(
+      within(examples).getByRole("heading", {
+        name: "Três pontos para conferir na oferta",
+      }),
+    ).toBeTruthy();
+    expect(examples.querySelectorAll("li")).toHaveLength(3);
+    expect(within(examples).getByText(/resgate em dias úteis/)).toBeTruthy();
+    expect(
+      within(examples).getByText(/data prevista para o título terminar/),
+    ).toBeTruthy();
+    expect(
+      within(examples).getByText(/acompanha uma referência, como o CDI/),
+    ).toBeTruthy();
+    expect(examples.querySelectorAll("svg")).toHaveLength(6);
   });
 
   it("does not add unrelated FII diagrams to another class", () => {
