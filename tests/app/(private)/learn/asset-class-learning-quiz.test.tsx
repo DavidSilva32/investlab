@@ -79,7 +79,7 @@ describe("AssetClassLearningQuiz", () => {
     expect(selectedPosition).toBeGreaterThanOrEqual(0);
     fireEvent.click(checkButton);
 
-    expect(screen.getByRole("status").textContent).toContain("Ainda não");
+    expect(screen.getByRole("status").textContent).toContain("Quase lá");
     expect(screen.getByRole("status").textContent).toContain(
       "Essa renda não é garantida.",
     );
@@ -120,7 +120,12 @@ describe("AssetClassLearningQuiz", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Conferir resposta" }));
 
-    expect(screen.getByRole("status").textContent).toContain("Resposta certa");
+    expect(screen.getByRole("status").textContent).toContain(
+      "Boa! Você acertou",
+    );
+    expect(screen.getByRole("status").textContent).toContain(
+      "Aprendizado registrado",
+    );
     expect(screen.getByRole("status").textContent).toContain(
       "Certa explicação.",
     );

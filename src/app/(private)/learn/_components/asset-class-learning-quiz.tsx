@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { Check, RotateCcw, X } from "lucide-react";
+import { Check, PartyPopper, RotateCcw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -86,7 +86,7 @@ export function AssetClassLearningQuiz({
   return (
     <section
       aria-labelledby={`${quizId}-title`}
-      className="rounded-xl border border-border/70 bg-muted/30 p-4 sm:p-5"
+      className="rounded-xl border border-border/70 bg-card p-4 shadow-sm sm:p-5"
     >
       <div className="mb-4">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -159,26 +159,38 @@ export function AssetClassLearningQuiz({
           <div
             role="status"
             aria-live="polite"
-            className={`mt-4 rounded-lg border p-3 ${
+            className={`mt-4 rounded-xl border p-4 ${
               correct
-                ? "border-status-success/40 bg-status-success/10"
+                ? "border-status-success/40 bg-status-success/10 shadow-sm"
                 : "border-status-danger/40 bg-status-danger/10"
             }`}
           >
             <p className="flex items-center gap-2 font-semibold">
               {correct ? (
-                <Check
-                  aria-hidden="true"
-                  className="size-4 text-status-success"
-                />
+                <span className="relative grid size-8 shrink-0 place-items-center rounded-full bg-status-success/15 text-status-success">
+                  <Check aria-hidden="true" className="size-5" />
+                  <Sparkles
+                    aria-hidden="true"
+                    className="absolute -right-2 -top-2 size-3 motion-safe:animate-ping motion-reduce:animate-none"
+                  />
+                </span>
               ) : (
                 <X aria-hidden="true" className="size-4 text-status-danger" />
               )}
-              {correct ? "Resposta certa" : "Ainda não"}
+              {correct ? "Boa! Você acertou" : "Quase lá"}
             </p>
-            <p className="mt-1 text-sm text-foreground">
+            <p className="mt-2 text-sm leading-6 text-foreground">
               {shuffledOptions[submittedOption].explanation}
             </p>
+            {correct && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-status-success">
+                <PartyPopper
+                  aria-hidden="true"
+                  className="size-3.5 motion-safe:animate-bounce motion-reduce:animate-none"
+                />
+                Aprendizado registrado
+              </p>
+            )}
             {!correct && (
               <p className="mt-2 text-sm text-foreground">
                 A resposta correta é:{" "}

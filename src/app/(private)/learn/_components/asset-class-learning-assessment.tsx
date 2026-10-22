@@ -209,54 +209,77 @@ export function AssetClassLearningAssessment({
         <div
           role="status"
           aria-live="polite"
-          className={`rounded-xl border p-5 text-center ${
+          className={`overflow-hidden rounded-2xl border ${
             result.passed
-              ? "border-status-success/40 bg-status-success/10"
+              ? "border-status-success/40 bg-status-success/5"
               : "border-border bg-background"
           }`}
         >
-          {result.passed ? (
-            <>
-              <Award
-                aria-hidden="true"
-                className="mx-auto size-10 text-status-success motion-safe:animate-bounce motion-reduce:animate-none"
-              />
-              <h3 className="mt-2 text-xl font-semibold">Curso concluído!</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {result.attemptPassed
-                  ? "Você recebeu a medalha de conclusão."
-                  : "Sua aprovação continua registrada."}
+          <div
+            className={`px-5 py-6 text-center ${result.passed ? "bg-status-success/10" : "bg-muted/40"}`}
+          >
+            {result.passed ? (
+              <>
+                <span className="mx-auto grid size-16 place-items-center rounded-full border border-status-success/30 bg-background text-status-success shadow-sm">
+                  <Award
+                    aria-hidden="true"
+                    className="size-9 motion-safe:animate-bounce motion-reduce:animate-none"
+                  />
+                </span>
+                <h3 className="mt-3 text-2xl font-bold tracking-tight">
+                  Curso concluído!
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {result.attemptPassed
+                    ? "Emblema conquistado"
+                    : "Sua aprovação continua registrada"}
+                </p>
+                <PartyPopper
+                  aria-hidden="true"
+                  className="mx-auto mt-2 size-5 text-status-success motion-safe:animate-pulse motion-reduce:animate-none"
+                />
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-semibold">Você está quase lá</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Reveja as aulas e tente a prova novamente.
+                </p>
+              </>
+            )}
+          </div>
+          <div className="mx-auto max-w-sm px-5 py-5 text-center">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Sua nota
+            </p>
+            <p className="mt-1 text-5xl font-bold tabular-nums tracking-tight">
+              {result.score.toLocaleString("pt-BR", {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              })}
+              <span className="text-lg font-medium text-muted-foreground">
+                /10
+              </span>
+            </p>
+            <Progress
+              value={result.score * 10}
+              aria-label={`Nota ${result.score.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} de 10`}
+              className={`mt-3 h-2 ${result.passed ? "[&>div]:bg-status-success" : ""}`}
+            />
+            <p className="mt-2 text-sm text-muted-foreground">
+              Nota mínima: 7,0
+            </p>
+            {result.passed && !result.attemptPassed && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Melhor nota aprovada:{" "}
+                {result.bestScore.toLocaleString("pt-BR", {
+                  minimumFractionDigits: 1,
+                  maximumFractionDigits: 1,
+                })}
+                /10.
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {result.attemptPassed
-                  ? `Melhor nota: ${result.bestScore.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/10.`
-                  : `Esta tentativa: ${result.score.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/10. Melhor nota aprovada: ${result.bestScore.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/10.`}
-              </p>
-              <PartyPopper
-                aria-hidden="true"
-                className="mx-auto mt-3 size-5 text-status-success motion-safe:animate-pulse motion-reduce:animate-none"
-              />
-            </>
-          ) : (
-            <>
-              <h3 className="text-xl font-semibold">Continue aprendendo</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Reveja as aulas e tente a prova novamente quando quiser.
-              </p>
-            </>
-          )}
-          <p className="mt-4 text-3xl font-bold tabular-nums">
-            {result.score.toLocaleString("pt-BR", {
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1,
-            })}
-            <span className="text-base font-medium text-muted-foreground">
-              /10
-            </span>
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Nota mínima para a medalha: 7,0
-          </p>
+            )}
+          </div>
           <Button
             type="button"
             variant="outline"

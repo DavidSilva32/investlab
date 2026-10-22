@@ -76,7 +76,7 @@ describe("AssetClassLearningAssessment", () => {
     );
 
     expect(screen.getByRole("status").textContent).toContain(
-      "Continue aprendendo",
+      "Você está quase lá",
     );
     expect(screen.getByRole("status").textContent).toContain("6,0/10");
   });
@@ -111,7 +111,7 @@ describe("AssetClassLearningAssessment", () => {
     }
 
     expect(screen.getByRole("status").textContent).toContain(
-      "Continue aprendendo",
+      "Você está quase lá",
     );
     expect(screen.getByRole("status").textContent).toContain("6,0/10");
     fireEvent.click(screen.getByRole("button", { name: "Refazer prova" }));
@@ -204,10 +204,8 @@ describe("AssetClassLearningAssessment", () => {
         }),
       );
     }
-    await screen.findByText("Sua aprovação continua registrada.");
-    expect(screen.getByRole("status").textContent).toContain(
-      "Esta tentativa: 6,0/10",
-    );
+    await screen.findByText("Sua aprovação continua registrada");
+    expect(screen.getByRole("status").textContent).toContain("6,0/10");
     expect(screen.getByRole("status").textContent).toContain(
       "Melhor nota aprovada: 10,0/10",
     );

@@ -170,7 +170,9 @@ describe("AssetClassLearningCourse", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
     expect(
-      screen.getByRole("list", { name: "Exemplos de ativos imobiliários" }),
+      screen.getByRole("region", {
+        name: "Exemplos de imóveis de fundos imobiliários",
+      }),
     ).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Shoppings" })).toBeTruthy();
     expect(
@@ -255,7 +257,7 @@ describe("AssetClassLearningCourse", () => {
       .getAllByRole("status")
       .find((status) => status.textContent?.includes("Curso concluído!"));
     expect(completion?.textContent).toContain("Curso concluído!");
-    expect(completion?.textContent).toContain("medalha");
+    expect(completion?.textContent).toContain("Emblema conquistado");
     expect(completion?.textContent).toContain("10,0/10");
     fireEvent.click(
       screen.getByRole("button", { name: "Etapa 1: O que é renda fixa?" }),
@@ -292,9 +294,8 @@ describe("AssetClassLearningCourse", () => {
     const completion = screen
       .getAllByRole("status")
       .find((status) => status.textContent?.includes("Curso concluído!"));
-    expect(completion?.textContent).toContain(
-      "Esta tentativa: 6,0/10. Melhor nota aprovada: 8,0/10.",
-    );
+    expect(completion?.textContent).toContain("6,0/10");
+    expect(completion?.textContent).toContain("Melhor nota aprovada: 8,0/10.");
   });
 
   it("resumes after the last lesson when that lesson was saved as complete", async () => {
@@ -364,9 +365,7 @@ describe("AssetClassLearningCourse", () => {
 
     const completion = await screen.findByText("Curso concluído!");
     expect(completion.textContent).toBe("Curso concluído!");
-    expect(
-      screen.getByText("Você recebeu a medalha de conclusão."),
-    ).toBeTruthy();
+    expect(screen.getByText("Emblema conquistado")).toBeTruthy();
   });
 
   it("shows a retry when progress cannot load and recovers on retry", async () => {
