@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -81,6 +82,7 @@ function SupportModeProbe() {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -266,6 +268,18 @@ describe("AppShell", () => {
       await screen.findByText(/Seu período de teste terminou/i),
     ).toBeTruthy();
     expect(screen.getByText(/as alterações estão pausadas/i)).toBeTruthy();
+  });
+
+  it("reschedules expiry checks when the beta period exceeds the browser timer limit", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const expiry = new Date(Date.now() + 2_147_483_647 + 60_000).toISOString();
+    const view = renderShell({ ...regularUser, betaExpiresAt: expiry });
+
+    act(() => vi.advanceTimersByTime(2_147_483_647));
+
+    expect(screen.queryByRole("status")).toBeNull();
+    view.unmount();
   });
 
   it.each([
