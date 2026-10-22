@@ -176,7 +176,7 @@ describe("AssetClassLearningDetail", () => {
       expect(trigger.getAttribute("aria-expanded")).toBe("true");
       expect(
         screen.getAllByRole("link", { name: /Portal do Investidor/ }),
-      ).toHaveLength(2);
+      ).toHaveLength(3);
     });
   });
 });

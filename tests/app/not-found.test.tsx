@@ -17,6 +17,6 @@ describe("not found page", () => {
     expect(markup).toContain("404");
     expect(markup).toContain('href="/"');
     expect(markup).toContain("Voltar ao Dashboard");
-    expect(markup).toContain('aria-label="Alternar tema"');
+    expect(markup).toContain('aria-label="Aparência e cores"');
   });
 });
