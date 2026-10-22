@@ -142,6 +142,25 @@ const destinationSummary = {
 };
 
 const objectivesOverview = { destinationSummary };
+const learningProgress = {
+  courses: [
+    { courseId: "fixed_income", passed: true },
+    { courseId: "brazilian_equities", passed: true },
+    { courseId: "international_etfs", passed: true },
+    { courseId: "fiis", passed: true },
+  ],
+};
+
+function dashboardResponse(
+  url: string,
+  portfolio: unknown = overview,
+  objectives: unknown = objectivesOverview,
+) {
+  if (url === "/api/portfolio") return jsonResponse(portfolio);
+  if (url === "/api/portfolio/objectives") return jsonResponse(objectives);
+  if (url === "/api/learning/progress") return jsonResponse(learningProgress);
+  throw new Error(`Unexpected dashboard request: ${url}`);
+}
 
 describe("DashboardClient", () => {
   afterEach(() => {
@@ -154,9 +173,7 @@ describe("DashboardClient", () => {
   });
 
   it("loads the portfolio overview and destination summary independently", async () => {
-    const fetchMock = vi.fn((url: string) =>
-      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-    );
+    const fetchMock = vi.fn((url: string) => dashboardResponse(url));
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
@@ -165,16 +182,15 @@ describe("DashboardClient", () => {
     expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith("/api/learning/progress");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("passes support mode to the empty dashboard so onboarding stays read only", async () => {
     mocks.supportView = true;
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) =>
-        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-      ),
+      vi.fn((url: string) => dashboardResponse(url)),
     );
 
     renderDashboard();
@@ -204,11 +220,7 @@ describe("DashboardClient", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) =>
-        jsonResponse(
-          url === "/api/portfolio" ? overviewWithPosition : objectivesOverview,
-        ),
-      ),
+      vi.fn((url: string) => dashboardResponse(url, overviewWithPosition)),
     );
 
     const dashboard = renderDashboard(true);
@@ -264,11 +276,7 @@ describe("DashboardClient", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) =>
-        jsonResponse(
-          url === "/api/portfolio" ? overviewWithPosition : objectivesOverview,
-        ),
-      ),
+      vi.fn((url: string) => dashboardResponse(url, overviewWithPosition)),
     );
     renderDashboard(true);
 
@@ -290,21 +298,19 @@ describe("DashboardClient", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) =>
-        jsonResponse(
-          url === "/api/portfolio"
-            ? overview
-            : {
-                ...objectivesOverview,
-                objectives: [
-                  {
-                    purpose: "LONG_TERM_INVESTMENT",
-                    missingPositionCount: 2,
-                  },
-                  { purpose: "PERSONAL_GOAL", missingPositionCount: 5 },
-                  { purpose: "LONG_TERM_INVESTMENT" },
-                ],
-              },
-        ),
+        url === "/api/portfolio/objectives"
+          ? jsonResponse({
+              ...objectivesOverview,
+              objectives: [
+                {
+                  purpose: "LONG_TERM_INVESTMENT",
+                  missingPositionCount: 2,
+                },
+                { purpose: "PERSONAL_GOAL", missingPositionCount: 5 },
+                { purpose: "LONG_TERM_INVESTMENT" },
+              ],
+            })
+          : dashboardResponse(url),
       ),
     );
 
@@ -317,9 +323,7 @@ describe("DashboardClient", () => {
   });
 
   it("opens the reserve in the dashboard panel without changing routes", async () => {
-    const fetchMock = vi.fn((url: string) =>
-      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-    );
+    const fetchMock = vi.fn((url: string) => dashboardResponse(url));
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
@@ -336,9 +340,7 @@ describe("DashboardClient", () => {
   it("keeps dashboard panel navigation synchronized when a child changes views", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) =>
-        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-      ),
+      vi.fn((url: string) => dashboardResponse(url)),
     );
 
     renderDashboard();
@@ -359,9 +361,7 @@ describe("DashboardClient", () => {
   });
 
   it("opens the import sheet from the dashboard deep link and clears the query", async () => {
-    const fetchMock = vi.fn((url: string) =>
-      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-    );
+    const fetchMock = vi.fn((url: string) => dashboardResponse(url));
     vi.stubGlobal("fetch", fetchMock);
     render(
       <QueryProvider>
@@ -380,9 +380,7 @@ describe("DashboardClient", () => {
   it("keeps a dismissed deep-linked import closed after rerender", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) =>
-        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-      ),
+      vi.fn((url: string) => dashboardResponse(url)),
     );
     const dashboard = renderDashboard(true);
 
@@ -401,9 +399,7 @@ describe("DashboardClient", () => {
   it("opens and closes the import sheet from dashboard quick actions", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) =>
-        jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-      ),
+      vi.fn((url: string) => dashboardResponse(url)),
     );
     renderDashboard();
     await screen.findByText("Resumo do dashboard");
@@ -415,11 +411,13 @@ describe("DashboardClient", () => {
   });
 
   it("keeps the portfolio available and retries only unavailable destinations", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(() => jsonResponse(overview))
-      .mockImplementationOnce(() => jsonResponse({}, false))
-      .mockImplementationOnce(() => jsonResponse(objectivesOverview));
+    let objectiveRequests = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/portfolio/objectives" && objectiveRequests++ === 0) {
+        return jsonResponse({}, false);
+      }
+      return dashboardResponse(url);
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
@@ -429,18 +427,25 @@ describe("DashboardClient", () => {
     screen.getByRole("button", { name: "Tentar novamente" }).click();
 
     expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/portfolio/objectives");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => url === "/api/portfolio/objectives",
+      ),
+    ).toHaveLength(2);
   });
 
   it("announces an overview API failure and allows retry", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(() =>
-        jsonResponse({ message: "Dashboard indisponível pela API." }, false),
-      )
-      .mockImplementationOnce(() => jsonResponse(overview))
-      .mockImplementationOnce(() => jsonResponse(objectivesOverview));
+    let portfolioRequests = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/portfolio" && portfolioRequests++ === 0) {
+        return jsonResponse(
+          { message: "Dashboard indisponível pela API." },
+          false,
+        );
+      }
+      return dashboardResponse(url);
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
@@ -453,13 +458,15 @@ describe("DashboardClient", () => {
   });
 
   it("uses the fixed fallback when an API payload has no safe message", async () => {
+    let portfolioRequests = 0;
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockImplementationOnce(() => jsonResponse({}, false))
-        .mockImplementationOnce(() => jsonResponse(overview))
-        .mockImplementationOnce(() => jsonResponse(objectivesOverview)),
+      vi.fn((url: string) => {
+        if (url === "/api/portfolio" && portfolioRequests++ === 0) {
+          return jsonResponse({}, false);
+        }
+        return dashboardResponse(url);
+      }),
     );
 
     renderDashboard();
@@ -470,15 +477,20 @@ describe("DashboardClient", () => {
   });
 
   it("keeps cached portfolio data visible after a later refresh fails", async () => {
-    const fetchMock = vi.fn((url: string) =>
-      jsonResponse(url === "/api/portfolio" ? overview : objectivesOverview),
-    );
+    const fetchMock = vi.fn((url: string) => dashboardResponse(url));
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
     await screen.findByText("Resumo do dashboard");
 
-    fetchMock.mockRejectedValueOnce(new Error("private transport detail"));
+    let failPortfolioRefresh = true;
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/portfolio" && failPortfolioRefresh) {
+        failPortfolioRefresh = false;
+        return Promise.reject(new Error("private transport detail"));
+      }
+      return dashboardResponse(url);
+    });
     window.dispatchEvent(new Event("portfolio:updated"));
 
     expect((await screen.findByRole("alert")).textContent).toContain(
@@ -493,7 +505,7 @@ describe("DashboardClient", () => {
   it("redirects unauthorized sessions without looping on the login page", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(() => jsonResponse(overview)),
+      vi.fn((url: string) => dashboardResponse(url)),
     );
     renderDashboard();
     await screen.findByText("Resumo do dashboard");

@@ -25,7 +25,10 @@ vi.mock("sonner", () => ({
 
 import { UserProfileDialog } from "@/components/user-profile-dialog";
 
-async function renderProfile(role: "USER" | "ADMIN" = "USER") {
+async function renderProfile(
+  role: "USER" | "ADMIN" = "USER",
+  tab: "account" | "security" = "account",
+) {
   const user = userEvent.setup();
   const onNameUpdated = vi.fn();
   render(
@@ -39,6 +42,9 @@ async function renderProfile(role: "USER" | "ADMIN" = "USER") {
   );
   await user.click(screen.getByRole("button", { name: "Abrir menu da conta" }));
   await user.click(screen.getByRole("menuitem", { name: "Meu perfil" }));
+  if (tab === "security") {
+    await user.click(screen.getByRole("tab", { name: "Segurança" }));
+  }
   return { user, onNameUpdated };
 }
 
@@ -50,6 +56,25 @@ afterEach(() => {
 });
 
 describe("UserProfileDialog", () => {
+  it("uses the email as account label when the name is empty", async () => {
+    const user = userEvent.setup();
+    render(
+      <UserProfileDialog
+        name=""
+        email="david@example.com"
+        phone={null}
+        role="USER"
+        onNameUpdated={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Abrir menu da conta" }),
+    );
+
+    expect(screen.getAllByText("david@example.com").length).toBeGreaterThan(0);
+  });
+
   it("links the account menu to the privacy center", async () => {
     const user = userEvent.setup();
     render(
@@ -89,8 +114,62 @@ describe("UserProfileDialog", () => {
     ).toBe("/mcp");
   });
 
+  it("shows earned course badges in a compact, dedicated profile tab", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        courses: [
+          {
+            courseId: "fiis",
+            passed: true,
+            bestScore: 9,
+            passedAt: "2026-10-22T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = await renderProfile();
+    await user.click(screen.getByRole("tab", { name: "Cursos" }));
+
+    expect(await screen.findByText("Fundos imobiliários (FIIs)")).toBeTruthy();
+    expect(screen.getByText("9,0")).toBeTruthy();
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/learning/progress");
+  });
+
+  it("keeps an inline retry when course badges fail to load", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network detail"))
+      .mockResolvedValueOnce(Response.json({ courses: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { user } = await renderProfile();
+    await user.click(screen.getByRole("tab", { name: "Cursos" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Não foi possível carregar seus emblemas.",
+    );
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(
+      await screen.findByText("Seu primeiro emblema está à espera"),
+    ).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the safe fallback for an unexpected badge loading error", async () => {
+    vi.spyOn(apiClient, "apiRequest").mockRejectedValueOnce(
+      new Error("internal badge loading detail"),
+    );
+    const { user } = await renderProfile();
+    await user.click(screen.getByRole("tab", { name: "Cursos" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Não foi possível carregar seus emblemas.",
+    );
+    expect(screen.queryByText("internal badge loading detail")).toBeNull();
+  });
+
   it("shows a separate assisted recovery path when the current password is forgotten", async () => {
-    await renderProfile();
+    await renderProfile("USER", "security");
 
     expect(screen.getByText("Esqueceu a senha atual?")).toBeTruthy();
     expect(screen.getByText(/Peça ao administrador do InvestLab/)).toBeTruthy();
@@ -100,7 +179,7 @@ describe("UserProfileDialog", () => {
   });
 
   it("gives administrators a direct route to the existing assisted reset form", async () => {
-    await renderProfile("ADMIN");
+    await renderProfile("ADMIN", "security");
 
     expect(
       screen
@@ -243,6 +322,7 @@ describe("UserProfileDialog", () => {
     await user.click(screen.getByRole("button", { name: "Salvar perfil" }));
     await waitFor(() => expect(mocks.error).toHaveBeenCalledOnce());
 
+    await user.click(screen.getByRole("tab", { name: "Segurança" }));
     await user.type(screen.getByLabelText("Senha atual"), "current-password");
     await user.type(screen.getByLabelText("Nova senha"), "new-password-long");
     await user.type(
@@ -259,7 +339,7 @@ describe("UserProfileDialog", () => {
   it("validates new password length and confirmation before sending", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const { user } = await renderProfile();
+    const { user } = await renderProfile("USER", "security");
 
     await user.click(
       screen.getByRole("button", { name: "Mostrar senha atual" }),
@@ -319,7 +399,7 @@ describe("UserProfileDialog", () => {
   });
 
   it("shows and hides each password independently with accessible state", async () => {
-    const { user } = await renderProfile();
+    const { user } = await renderProfile("USER", "security");
     const current = screen.getByLabelText("Senha atual") as HTMLInputElement;
     const fresh = screen.getByLabelText("Nova senha") as HTMLInputElement;
     const confirmation = screen.getByLabelText(
@@ -363,7 +443,7 @@ describe("UserProfileDialog", () => {
   it("changes the password and clears the fields after success", async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
-    const { user } = await renderProfile();
+    const { user } = await renderProfile("USER", "security");
 
     await user.click(
       screen.getByRole("button", { name: "Mostrar senha atual" }),
@@ -425,7 +505,7 @@ describe("UserProfileDialog", () => {
       )
       .mockRejectedValueOnce(new Error("internal detail"));
     vi.stubGlobal("fetch", fetchMock);
-    const { user } = await renderProfile();
+    const { user } = await renderProfile("USER", "security");
     await user.type(screen.getByLabelText("Senha atual"), "wrong-password");
     await user.type(screen.getByLabelText("Nova senha"), "new-password-long");
     await user.type(
@@ -453,7 +533,7 @@ describe("UserProfileDialog", () => {
   });
 
   it("clears credentials, errors, and visibility when closing the dialog", async () => {
-    const { user } = await renderProfile();
+    const { user } = await renderProfile("USER", "security");
     const current = screen.getByLabelText("Senha atual") as HTMLInputElement;
     const next = screen.getByLabelText("Nova senha") as HTMLInputElement;
     await user.type(current, "private-current-password");
@@ -473,6 +553,7 @@ describe("UserProfileDialog", () => {
       screen.getByRole("button", { name: "Abrir menu da conta" }),
     );
     await user.click(screen.getByRole("menuitem", { name: "Meu perfil" }));
+    await user.click(screen.getByRole("tab", { name: "Segurança" }));
 
     expect(
       (screen.getByLabelText("Senha atual") as HTMLInputElement).value,

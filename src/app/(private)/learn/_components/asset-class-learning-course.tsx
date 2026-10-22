@@ -15,7 +15,7 @@ import {
 } from "@/lib/strategy-allocation";
 import { AssetClassLearningAssessment } from "./asset-class-learning-assessment";
 import { AssetClassLearningQuiz } from "./asset-class-learning-quiz";
-import { AssetClassLearningVisuals } from "./asset-class-learning-visuals";
+import { AssetClassLearningLesson } from "./asset-class-learning-lesson";
 
 type CourseProgress = {
   courseId: string;
@@ -310,9 +310,11 @@ export function AssetClassLearningCourse({
               </p>
             )}
 
-            {lesson.visuals && (
-              <AssetClassLearningVisuals visuals={lesson.visuals} />
-            )}
+            <AssetClassLearningLesson
+              selectedClass={selectedClass}
+              lessonIndex={step}
+              lesson={lesson}
+            />
 
             <div className="mt-6">
               <AssetClassLearningQuiz
