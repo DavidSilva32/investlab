@@ -1,23 +1,24 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
-const stylesheet = postcss.parse(
-  readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8"),
+const stylesheet = readFileSync(
+  resolve(process.cwd(), "src/app/globals.css"),
+  "utf8",
 );
 
 function declarations(selector: string) {
-  const rule = stylesheet.nodes.find(
-    (node) => node.type === "rule" && node.selector === selector,
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rule = stylesheet.match(
+    new RegExp(`(?:^|\\n)\\s*${escapedSelector}\\s*\\{([^}]*)\\}`),
   );
-  if (!rule || rule.type !== "rule") {
+  if (!rule) {
     throw new Error(`Regra CSS ausente: ${selector}`);
   }
   return new Map(
-    rule.nodes
-      .filter((node) => node.type === "decl")
-      .map((node) => [node.prop, node.value]),
+    [...rule[1].matchAll(/((?:--)?[\w-]+)\s*:\s*([^;]+);/g)].map(
+      ([, property, value]) => [property, value.trim()],
+    ),
   );
 }
 
@@ -131,13 +132,7 @@ describe("paletas globais", () => {
     for (const name of semanticNames) {
       expect(nightTokens.has(name), `${name} night token`).toBe(true);
     }
-    expect(
-      stylesheet.nodes.some(
-        (node) =>
-          node.type === "rule" &&
-          /\.(green-dark|violet-dark)/.test(node.selector),
-      ),
-    ).toBe(false);
+    expect(stylesheet).not.toMatch(/\.(green-dark|violet-dark)\s*\{/);
   });
 
   it("defines independent primary aliases for both modes", () => {
