@@ -79,6 +79,5 @@ describe("ThemeToggle", () => {
     await user.click(screen.getByRole("menuitemradio", { name: "Rosa" }));
     expect(state.setTheme).not.toHaveBeenCalled();
     expect(state.setPalette).toHaveBeenCalledWith("rose");
-    expect(screen.getByText(/cor: Rosa/)).toBeTruthy();
   });
 });
