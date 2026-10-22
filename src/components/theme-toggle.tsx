@@ -41,10 +41,16 @@ export function ThemeToggle() {
           </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuLabel>Aparência</DropdownMenuLabel>
+      <DropdownMenuContent
+        align="end"
+        className="w-[min(20rem,calc(100vw-2rem))] p-2"
+      >
+        <DropdownMenuLabel className="px-2 text-xs uppercase tracking-wide text-muted-foreground">
+          Aparência
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
+          className="space-y-1"
           value={theme ?? "system"}
           onValueChange={setTheme}
           aria-label="Aparência"
@@ -57,7 +63,9 @@ export function ThemeToggle() {
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Cor da identidade</DropdownMenuLabel>
+        <DropdownMenuLabel className="px-2 text-xs uppercase tracking-wide text-muted-foreground">
+          Cor da identidade
+        </DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={selected.value}
           onValueChange={setPalette}
@@ -65,12 +73,12 @@ export function ThemeToggle() {
         >
           {themePalettes.map(({ value, label }) => (
             <DropdownMenuRadioItem key={value} value={value}>
+              <span className="min-w-0 flex-1 font-medium">{label}</span>
               <span
                 aria-hidden="true"
-                className="palette-swatch size-4 shrink-0 rounded-full border border-border"
+                className="palette-swatch h-3.5 w-24 shrink-0 overflow-hidden rounded-full border border-border/70 shadow-inner"
                 data-palette={value}
               />
-              {label}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

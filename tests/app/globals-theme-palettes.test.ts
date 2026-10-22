@@ -64,7 +64,7 @@ function contrastRatio(
 }
 
 describe("paletas globais", () => {
-  it("keeps palette identity hue-only and readable in both appearance modes", () => {
+  it("applies each identity hue to coordinated light and dark interface roles", () => {
     const root = declarations(":root");
     const dark = declarations(".dark");
     for (const [palette, hue] of Object.entries({
@@ -78,7 +78,10 @@ describe("paletas globais", () => {
       const selector = `[data-palette="${palette}"]`;
       const tokens = declarations(selector);
       expect(tokens.get("--brand-hue"), selector).toBe(String(hue));
-      expect(tokens.size, `${selector} only overrides identity hue`).toBe(1);
+      expect(
+        tokens.size,
+        `${selector} preserves one stable palette value`,
+      ).toBe(1);
       for (const appearance of [root, dark]) {
         expect(appearance.get("--primary")).toBe("var(--brand)");
         expect(appearance.get("--primary-foreground")).toBe(
@@ -102,13 +105,46 @@ describe("paletas globais", () => {
         ).toBeGreaterThanOrEqual(4.5);
       }
     }
+    for (const role of [
+      "--background",
+      "--card",
+      "--secondary",
+      "--muted",
+      "--accent",
+      "--border",
+      "--sidebar-background",
+      "--sidebar-accent",
+    ]) {
+      expect(root.get(role), `${role} light palette`).toContain(
+        "var(--brand-hue)",
+      );
+      expect(dark.get(role), `${role} dark palette`).toContain(
+        "var(--brand-hue)",
+      );
+    }
+    const lightSwatch = declarations(".palette-swatch");
+    const darkSwatch = declarations(".dark .palette-swatch");
+    const roleStops = [
+      ["--background", "var(--background) 0 20%"],
+      ["--secondary", "var(--secondary) 20% 40%"],
+      ["--accent", "var(--accent) 40% 60%"],
+      ["--brand", "var(--brand) 60% 80%"],
+      ["--sidebar-background", "var(--sidebar-background) 80% 100%"],
+    ] as const;
+    for (const [role, stop] of roleStops) {
+      expect(lightSwatch.get(role), `${role} light swatch`).toBe(
+        root.get(role),
+      );
+      expect(darkSwatch.get(role), `${role} dark swatch`).toBe(dark.get(role));
+      expect(stylesheet).toContain(stop);
+    }
     expect(declarations(":root").get("color-scheme")).toBe("light");
     expect(declarations(".dark").get("color-scheme")).toBe("dark");
     expect(declarations(":root").get("--foreground")).toBeTruthy();
     expect(declarations(".dark").get("--foreground")).toBeTruthy();
   });
 
-  it("preserves semantic class, status, destination, and chart colors across palette hues", () => {
+  it("preserves semantic class, status, destination, and chart colors across identity palettes", () => {
     const lightTokens = declarations(":root");
     const nightTokens = declarations(".dark");
     const semanticNames = [...lightTokens.keys()].filter((name) =>
