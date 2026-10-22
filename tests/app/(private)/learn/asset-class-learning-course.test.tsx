@@ -33,6 +33,11 @@ describe("AssetClassLearningCourse", () => {
     expect(
       screen.getByRole("heading", { name: "A cota é sua participação" }),
     ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Voltar" }));
+    expect(
+      screen.getByRole("heading", { name: "O que é um fundo imobiliário?" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
     expect(screen.queryByRole("video")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Próxima aula" }));
     expect(
