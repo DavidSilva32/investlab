@@ -170,7 +170,7 @@ describe("AppShell", () => {
       screen.getAllByRole("button", { name: "Administração" }).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole("link", { name: "Usuários" }).length,
+      screen.getAllByRole("link", { name: "Pessoas e acessos" }).length,
     ).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("link", { name: "Landing page" }).length,
@@ -183,7 +183,7 @@ describe("AppShell", () => {
     );
     expect(
       screen
-        .getAllByRole("link", { name: "Usuários" })
+        .getAllByRole("link", { name: "Pessoas e acessos" })
         .every((link) => link.getAttribute("aria-current") === "page"),
     ).toBe(true);
   });
@@ -193,9 +193,13 @@ describe("AppShell", () => {
     const user = userEvent.setup();
     renderShell(admin);
 
-    expect(screen.queryByRole("link", { name: "Usuários" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Pessoas e acessos" }),
+    ).toBeNull();
     await user.click(screen.getByRole("button", { name: "Administração" }));
-    expect(screen.getByRole("link", { name: "Usuários" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Pessoas e acessos" }),
+    ).toBeTruthy();
   });
 
   it("closes the mobile menu after choosing the users page", async () => {
@@ -205,7 +209,9 @@ describe("AppShell", () => {
 
     await user.click(screen.getByRole("button", { name: "Abrir menu" }));
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("link", { name: "Usuários" }));
+    await user.click(
+      within(dialog).getByRole("link", { name: "Pessoas e acessos" }),
+    );
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
@@ -220,7 +226,9 @@ describe("AppShell", () => {
     await user.click(
       within(dialog).getByRole("button", { name: "Administração" }),
     );
-    const usersLink = within(dialog).getByRole("link", { name: "Usuários" });
+    const usersLink = within(dialog).getByRole("link", {
+      name: "Pessoas e acessos",
+    });
     expect(usersLink.getAttribute("href")).toBe("/admin/usuarios");
     expect(usersLink.hasAttribute("aria-current")).toBe(false);
 
@@ -232,7 +240,9 @@ describe("AppShell", () => {
     navigation.pathname = "/analises/filtros";
     renderShell();
     expect(screen.queryByRole("button", { name: "Administração" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Usuários" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Pessoas e acessos" }),
+    ).toBeNull();
     expect(screen.queryByRole("link", { name: "Conectar IA" })).toBeNull();
     const links = screen.getAllByRole("link", { name: "Análises" });
     expect(links.length).toBeGreaterThan(0);
@@ -247,6 +257,27 @@ describe("AppShell", () => {
     expect(
       screen.getAllByRole("navigation", { name: "Navegação principal" }),
     ).toHaveLength(1);
+  });
+
+  it("explains when an expired beta account switches to read-only access", async () => {
+    renderShell({ ...regularUser, betaExpiresAt: "2020-01-01T00:00:00.000Z" });
+
+    expect(
+      await screen.findByText(/Seu período de teste terminou/i),
+    ).toBeTruthy();
+    expect(screen.getByText(/as alterações estão pausadas/i)).toBeTruthy();
+  });
+
+  it.each([
+    ["null expiry", { ...regularUser, betaExpiresAt: null }],
+    [
+      "future expiry",
+      { ...regularUser, betaExpiresAt: "2099-01-01T00:00:00.000Z" },
+    ],
+    ["administrator", { ...admin, betaExpiresAt: "2020-01-01T00:00:00.000Z" }],
+  ])("does not show the read-only notice for %s", (_label, user) => {
+    renderShell(user);
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("falls back to the account email when the profile has no name", () => {

@@ -241,6 +241,54 @@ describe("AdminUsersClient error and link operations", () => {
     );
   });
 });
+
+describe("AdminUsersClient administration overview", () => {
+  it("does not report zero metrics when the overview request fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue("load failed"));
+    render(<AdminUsersClient initialTab="overview" />);
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(
+      screen.getByText("Contas cadastradas").parentElement?.textContent,
+    ).toContain("—");
+    expect(
+      screen.getByText("Acesso beta vencido").parentElement?.textContent,
+    ).toContain("—");
+  });
+
+  it("shows source-backed account and beta metrics and opens people management", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          users: [],
+          invitations: [],
+          passwordResets: [],
+          stats: {
+            totalUsers: 8,
+            activeUsers: 5,
+            pendingUsers: 1,
+            disabledUsers: 2,
+            expiringTrials: 1,
+            expiredTrials: 2,
+            invitationsPending: 3,
+          },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<AdminUsersClient initialTab="overview" />);
+
+    expect(await screen.findByText("Central de operação")).toBeTruthy();
+    expect(screen.getByText("Acesso beta vencido")).toBeTruthy();
+    expect(screen.getByText("Contas cadastradas")).toBeTruthy();
+    expect(screen.getByText("JORNADA DO PARTICIPANTE")).toBeTruthy();
+    expect(screen.queryByText(/assinantes pagos/i)).toBeNull();
+
+    await user.click(screen.getByRole("tab", { name: "Pessoas e acessos" }));
+    expect(await screen.findByText("Convidar participante")).toBeTruthy();
+  });
+});
 describe("AdminUsersClient", () => {
   it("reloads the administration data from the refresh action", async () => {
     const fetchMock = vi.fn(async () =>

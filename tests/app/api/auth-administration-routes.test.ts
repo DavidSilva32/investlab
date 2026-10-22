@@ -137,14 +137,23 @@ describe("auth administration route handlers", () => {
       id: "user-1",
       email: "user@example.com",
       role: "USER",
+      betaActivatedAt: new Date("2026-10-22T00:00:00.000Z"),
+      betaExpiresAt: new Date("2026-11-21T00:00:00.000Z"),
       password: "must-not-leak",
     });
     const response = await getSession(
       new Request("https://test/api/auth/session"),
     );
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({
-      user: { id: "user-1", email: "user@example.com", role: "USER" },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        role: "USER",
+        betaActivatedAt: "2026-10-22T00:00:00.000Z",
+        betaExpiresAt: "2026-11-21T00:00:00.000Z",
+      },
     });
   });
 
@@ -154,6 +163,7 @@ describe("auth administration route handlers", () => {
       new Request("https://test/api/auth/session"),
     );
     expect(response.status).toBe(401);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({ user: null });
   });
 });

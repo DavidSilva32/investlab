@@ -80,6 +80,17 @@ function isReadOnlySupportRequest(method: string, route: string) {
   return supportReadOnlyRoutes.has(`${method} ${route}`);
 }
 
+function isExpiredBeta(user: {
+  role?: string | null;
+  betaExpiresAt?: Date | null;
+}) {
+  return (
+    user.role !== "ADMIN" &&
+    user.betaExpiresAt instanceof Date &&
+    user.betaExpiresAt.getTime() <= Date.now()
+  );
+}
+
 function clearSupportCookie(response: Response) {
   response.headers.append(
     "Set-Cookie",
@@ -179,6 +190,25 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
               { message: "Acesso não autorizado." },
               { status: 403 },
             );
+          }
+          const isWriteRequest = !["GET", "HEAD", "OPTIONS"].includes(
+            method.toUpperCase(),
+          );
+          if (
+            privateApi &&
+            isExpiredBeta(user) &&
+            isWriteRequest &&
+            !isReadOnlySupportRequest(method.toUpperCase(), route)
+          ) {
+            const response = Response.json(
+              {
+                code: "BETA_ACCESS_EXPIRED",
+                message:
+                  "Seu período de acesso terminou. Seus dados continuam disponíveis para consulta.",
+              },
+              { status: 403, headers: { "Cache-Control": "no-store" } },
+            );
+            return response;
           }
           authenticatedUserId = supportTargetUserId ?? user.id;
         }

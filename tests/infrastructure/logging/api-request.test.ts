@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 const authorization = vi.hoisted(() => ({
-  user: { id: "owner-1", role: "ADMIN" } as { id: string; role: string } | null,
+  user: {
+    id: "owner-1",
+    role: "ADMIN",
+    betaExpiresAt: null as Date | null,
+  } as { id: string; role: string; betaExpiresAt: Date | null } | null,
 }));
 const support = vi.hoisted(() => ({
   token: null as string | null,
@@ -33,7 +37,7 @@ import {
 
 describe("withApiRequestLogging", () => {
   afterEach(() => {
-    authorization.user = { id: "owner-1", role: "ADMIN" };
+    authorization.user = { id: "owner-1", role: "ADMIN", betaExpiresAt: null };
     support.token = null;
     support.active = null;
     terms.hasAcceptedCurrentTerms.mockReset().mockResolvedValue(true);
@@ -169,7 +173,7 @@ describe("withApiRequestLogging", () => {
   });
 
   it("allows each authenticated account and scopes its private request context", async () => {
-    authorization.user = { id: "new-user", role: "ADMIN" };
+    authorization.user = { id: "new-user", role: "ADMIN", betaExpiresAt: null };
     const handler = withApiRequestLogging(
       "GET",
       "/api/portfolio",
@@ -253,7 +257,7 @@ describe("withApiRequestLogging", () => {
   });
 
   it("requires ADMIN for global administrative writes", async () => {
-    authorization.user = { id: "user-1", role: "USER" };
+    authorization.user = { id: "user-1", role: "USER", betaExpiresAt: null };
     const handler = withApiRequestLogging(
       "POST",
       "/api/settings/screener/sync",
@@ -265,6 +269,76 @@ describe("withApiRequestLogging", () => {
       }),
     );
     expect(response.status).toBe(403);
+  });
+
+  it("keeps expired beta accounts read-only while preserving supported reads", async () => {
+    authorization.user = {
+      id: "owner-1",
+      role: "USER",
+      betaExpiresAt: new Date(0),
+    };
+    const writeHandler = vi.fn(async (_request: Request) =>
+      Response.json({ saved: true }),
+    );
+    const write = withApiRequestLogging(
+      "POST",
+      "/api/positions/manual",
+      writeHandler,
+    );
+    const writeResponse = await write(
+      new Request("https://investlab.test/api/positions/manual", {
+        method: "POST",
+      }),
+    );
+    expect(writeResponse.status).toBe(403);
+    await expect(writeResponse.json()).resolves.toMatchObject({
+      code: "BETA_ACCESS_EXPIRED",
+    });
+    expect(writeHandler).not.toHaveBeenCalled();
+
+    const readHandler = vi.fn(async (_request: Request) =>
+      Response.json({ items: [] }),
+    );
+    const read = withApiRequestLogging("GET", "/api/portfolio", readHandler);
+    const readResponse = await read(
+      new Request("https://investlab.test/api/portfolio"),
+    );
+    expect(readResponse.status).toBe(200);
+    expect(readHandler).toHaveBeenCalledOnce();
+
+    const analysis = withApiRequestLogging(
+      "POST",
+      "/api/portfolio/contribution",
+      async (_request: Request) => Response.json({ result: 1 }),
+    );
+    expect(
+      (
+        await analysis(
+          new Request("https://investlab.test/api/portfolio/contribution", {
+            method: "POST",
+          }),
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it("does not apply beta expiration to administrator writes", async () => {
+    authorization.user = {
+      id: "admin-1",
+      role: "ADMIN",
+      betaExpiresAt: new Date(0),
+    };
+    const handler = withApiRequestLogging(
+      "POST",
+      "/api/portfolio/objectives",
+      async (_request: Request) => Response.json({ saved: true }),
+    );
+    const response = await handler(
+      new Request("https://investlab.test/api/portfolio/objectives", {
+        method: "POST",
+      }),
+    );
+    expect(response.status).toBe(200);
   });
 
   it("allows the authenticated admin to manage the support-view cookie and logout", async () => {
@@ -495,7 +569,7 @@ describe("withApiRequestLogging", () => {
   });
 
   it("does not activate support mode for a non-administrator", async () => {
-    authorization.user = { id: "user-1", role: "USER" };
+    authorization.user = { id: "user-1", role: "USER", betaExpiresAt: null };
     support.token = "a".repeat(43);
     support.active = { targetUserId: "customer-1" };
     const handler = withApiRequestLogging(

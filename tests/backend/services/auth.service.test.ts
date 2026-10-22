@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     listInvitations: vi.fn(),
     listPasswordResets: vi.fn(),
     findUserByEmail: vi.fn(),
+    findUserById: vi.fn(),
     createInvitation: vi.fn(),
     revokeInvitation: vi.fn(),
     activateInvitation: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     getLoginEligibility: vi.fn(),
     recordSuccessfulLogin: vi.fn(),
     updateManagedUser: vi.fn(),
+    deleteManagedUser: vi.fn(),
     updateOwnProfile: vi.fn(),
   },
   signUpEmail: vi.fn(),
@@ -300,7 +302,8 @@ describe("AuthService", () => {
       .mockResolvedValueOnce({ kind: "updated" })
       .mockResolvedValueOnce({ kind: "not-found" })
       .mockResolvedValueOnce({ kind: "self-deactivation" })
-      .mockResolvedValueOnce({ kind: "last-admin" });
+      .mockResolvedValueOnce({ kind: "last-admin" })
+      .mockResolvedValueOnce({ kind: "trial-not-extended" });
     await expect(
       authService.updateManagedUser({
         id: "u1",
@@ -334,6 +337,55 @@ describe("AuthService", () => {
         role: "USER",
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      authService.updateManagedUser({
+        id: "u1",
+        actorId: "admin-1",
+        betaExpiresAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      authService.updateManagedUser({
+        id: "u1",
+        actorId: "admin-1",
+        betaExpiresAt: new Date(0),
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("confirms managed account deletion and maps safety conflicts", async () => {
+    mocks.repository.findUserById.mockResolvedValue({
+      id: "user-1",
+      email: "person@example.com",
+    });
+    mocks.repository.deleteManagedUser
+      .mockResolvedValueOnce({ kind: "deleted" })
+      .mockResolvedValueOnce({ kind: "self-delete" })
+      .mockResolvedValueOnce({ kind: "last-admin" })
+      .mockResolvedValueOnce({ kind: "not-found" });
+    await expect(
+      authService.deleteManagedUser(
+        "user-1",
+        "admin-1",
+        " PERSON@example.com ",
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      authService.deleteManagedUser("user-1", "admin-1", "wrong@example.com"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      authService.deleteManagedUser("user-1", "user-1", "person@example.com"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      authService.deleteManagedUser("user-1", "admin-1", "person@example.com"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      authService.deleteManagedUser("user-1", "admin-1", "person@example.com"),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    mocks.repository.findUserById.mockResolvedValue(null);
+    await expect(
+      authService.deleteManagedUser("missing", "admin-1", "x@example.com"),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("fails closed when the rate-limit secret is missing", async () => {
@@ -509,7 +561,26 @@ describe("AuthService", () => {
 
   it("lists users and token-free invite/reset statuses", async () => {
     const now = new Date();
-    mocks.repository.listUsers.mockResolvedValue([{ id: "u1", role: "USER" }]);
+    mocks.repository.listUsers.mockResolvedValue([
+      {
+        id: "u1",
+        role: "USER",
+        accountStatus: "ACTIVE",
+        betaExpiresAt: new Date(Date.now() + 60_000),
+      },
+      {
+        id: "u2",
+        role: "USER",
+        accountStatus: "PENDING",
+        betaExpiresAt: new Date(0),
+      },
+      {
+        id: "u3",
+        role: "USER",
+        accountStatus: "DISABLED",
+        betaExpiresAt: null,
+      },
+    ]);
     mocks.repository.listInvitations.mockResolvedValue([
       { id: "1", usedAt: now, revokedAt: null, expiresAt: now },
       { id: "2", usedAt: null, revokedAt: now, expiresAt: now },
@@ -538,6 +609,15 @@ describe("AuthService", () => {
       "pending",
     ]);
     expect(result.passwordResets[0].status).toBe("pending");
+    expect(result.stats).toEqual({
+      totalUsers: 3,
+      activeUsers: 1,
+      pendingUsers: 1,
+      disabledUsers: 1,
+      expiringTrials: 1,
+      expiredTrials: 1,
+      invitationsPending: 1,
+    });
     expect(JSON.stringify(result)).not.toContain("tokenHash");
   });
 

@@ -25,6 +25,7 @@ export default async function PrivateLayout({
         email: user.email,
         phone: user.phone ?? null,
         role: user.role === "ADMIN" ? "ADMIN" : "USER",
+        betaExpiresAt: user.betaExpiresAt?.toISOString() ?? null,
       }}
     >
       {hasAcceptedCurrentTerms ? (

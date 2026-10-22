@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,6 +10,7 @@ import {
   Calculator,
   ChevronDown,
   Compass,
+  CircleAlert,
   LayoutDashboard,
   Menu,
   Settings,
@@ -41,6 +42,7 @@ export type ShellUser = {
   email: string;
   phone?: string | null;
   role: "USER" | "ADMIN";
+  betaExpiresAt?: string | null;
 };
 
 const ShellUserContext = createContext<{
@@ -89,7 +91,8 @@ const navigation = [
 ];
 
 const adminNavigation = [
-  { href: "/admin/usuarios", label: "Usuários" },
+  { href: "/admin", label: "Visão geral" },
+  { href: "/admin/usuarios", label: "Pessoas e acessos" },
   { href: "/apresentacao", label: "Landing page" },
   { href: "/demonstracao", label: "Demonstração" },
 ];
@@ -178,7 +181,9 @@ function Navigation({
           <CollapsibleContent className="mt-1 space-y-1 pl-4">
             {adminNavigation.map(({ href, label }) => {
               const active =
-                pathname === href || pathname.startsWith(`${href}/`);
+                href === "/admin"
+                  ? pathname === href
+                  : pathname === href || pathname.startsWith(`${href}/`);
               const link = (
                 <Link
                   key={href}
@@ -219,6 +224,26 @@ export function AppShell({
     );
   }
   const { user, updateName, updatePhone } = userContext;
+  const [betaAccessExpired, setBetaAccessExpired] = useState(false);
+  useEffect(() => {
+    if (user.role === "ADMIN" || !user.betaExpiresAt) {
+      return;
+    }
+    const expiryTime = new Date(user.betaExpiresAt).getTime();
+    let timeout: number;
+    const scheduleExpiryCheck = () => {
+      const timeUntilExpiry = expiryTime - Date.now();
+      timeout = window.setTimeout(
+        () => {
+          if (expiryTime <= Date.now()) setBetaAccessExpired(true);
+          else scheduleExpiryCheck();
+        },
+        Math.min(Math.max(timeUntilExpiry, 0), 2_147_483_647),
+      );
+    };
+    scheduleExpiryCheck();
+    return () => window.clearTimeout(timeout);
+  }, [user.betaExpiresAt, user.role]);
   const [supportViewActive, setSupportViewActive] = useState<
     boolean | null | "error"
   >(user.role === "ADMIN" ? null : false);
@@ -287,7 +312,25 @@ export function AppShell({
           <AdminSupportViewBanner onSupportViewChange={setSupportViewActive} />
         )}
         <AdminSupportViewContext.Provider value={supportViewActive}>
-          <main className="w-full p-4 sm:p-6 lg:p-8">{children}</main>
+          <main className="w-full p-4 sm:p-6 lg:p-8">
+            {betaAccessExpired && (
+              <div
+                role="status"
+                className="mb-5 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-foreground"
+              >
+                <CircleAlert
+                  aria-hidden="true"
+                  className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400"
+                />
+                <p className="text-sm leading-relaxed">
+                  Seu período de teste terminou. Seus dados continuam salvos
+                  para consulta; as alterações estão pausadas. Fale com a
+                  administração se precisar de mais tempo.
+                </p>
+              </div>
+            )}
+            {children}
+          </main>
         </AdminSupportViewContext.Provider>
       </div>
       <PortfolioChatAssistant />

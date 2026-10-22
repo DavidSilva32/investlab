@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     canAttemptLogin: vi.fn(),
     recordSuccessfulLogin: vi.fn(),
     updateManagedUser: vi.fn(),
+    deleteManagedUser: vi.fn(),
     updateOwnProfile: vi.fn(),
     changeOwnPassword: vi.fn(),
   },
@@ -227,6 +228,35 @@ describe("AuthController", () => {
     );
     expect(
       (await controller.updateUser(request({ name: "A" }), "u1")).status,
+    ).toBe(403);
+  });
+
+  it("deletes a managed user only after administrator authorization and email confirmation", async () => {
+    const success = await controller.deleteUser(
+      request({ confirmEmail: "person@example.com" }),
+      "user-1",
+    );
+    expect(success.status).toBe(200);
+    expect(mocks.service.deleteManagedUser).toHaveBeenCalledWith(
+      "user-1",
+      "admin-1",
+      "person@example.com",
+    );
+
+    expect(
+      (await controller.deleteUser(request({ confirmEmail: "invalid" }), "u1"))
+        .status,
+    ).toBe(400);
+    mocks.requireRole.mockRejectedValueOnce(
+      new ApplicationError("Denied", 403),
+    );
+    expect(
+      (
+        await controller.deleteUser(
+          request({ confirmEmail: "person@example.com" }),
+          "u1",
+        )
+      ).status,
     ).toBe(403);
   });
 

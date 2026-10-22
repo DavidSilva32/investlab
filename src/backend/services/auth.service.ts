@@ -118,6 +118,7 @@ export class AuthService {
       authRepository.listPasswordResets(),
     ]);
     const now = Date.now();
+    const expiringSoonCutoff = now + 7 * 24 * 60 * 60 * 1000;
     const statusOf = (item: {
       usedAt: Date | null;
       revokedAt: Date | null;
@@ -132,6 +133,31 @@ export class AuthService {
             : "pending";
     return {
       users,
+      stats: {
+        totalUsers: users.length,
+        activeUsers: users.filter((user) => user.accountStatus === "ACTIVE")
+          .length,
+        pendingUsers: users.filter((user) => user.accountStatus === "PENDING")
+          .length,
+        disabledUsers: users.filter((user) => user.accountStatus === "DISABLED")
+          .length,
+        expiringTrials: users.filter(
+          (user) =>
+            user.betaExpiresAt !== null &&
+            user.betaExpiresAt.getTime() > now &&
+            user.betaExpiresAt.getTime() <= expiringSoonCutoff,
+        ).length,
+        expiredTrials: users.filter(
+          (user) =>
+            user.betaExpiresAt !== null && user.betaExpiresAt.getTime() <= now,
+        ).length,
+        invitationsPending: invitations.filter(
+          (invitation) =>
+            !invitation.usedAt &&
+            !invitation.revokedAt &&
+            invitation.expiresAt.getTime() > now,
+        ).length,
+      },
       invitations: invitations.map((invitation) => ({
         ...invitation,
         status: statusOf(invitation),
@@ -158,6 +184,7 @@ export class AuthService {
     name?: string;
     role?: "USER" | "ADMIN";
     isActive?: boolean;
+    betaExpiresAt?: Date;
   }) {
     const updates = { ...input };
     if (updates.name !== undefined) {
@@ -169,10 +196,21 @@ export class AuthService {
     if (
       updates.name === undefined &&
       updates.role === undefined &&
-      updates.isActive === undefined
+      updates.isActive === undefined &&
+      updates.betaExpiresAt === undefined
     ) {
       throw new ApplicationError(
         "Informe ao menos um campo para atualizar.",
+        400,
+      );
+    }
+
+    if (
+      updates.betaExpiresAt !== undefined &&
+      updates.betaExpiresAt.getTime() <= Date.now()
+    ) {
+      throw new ApplicationError(
+        "A nova data de acesso precisa estar no futuro.",
         400,
       );
     }
@@ -190,6 +228,41 @@ export class AuthService {
     if (result.kind === "last-admin") {
       throw new ApplicationError(
         "Não é possível desativar ou remover o papel do último administrador ativo.",
+        409,
+      );
+    }
+    if (result.kind === "trial-not-extended") {
+      throw new ApplicationError(
+        "A nova data deve ser posterior ao prazo atual do acesso.",
+        409,
+      );
+    }
+  }
+
+  async deleteManagedUser(id: string, actorId: string, confirmEmail: string) {
+    const target = await authRepository.findUserById(id);
+    if (!target) throw new ApplicationError("Usuário não encontrado.", 404);
+    if (
+      target.email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()
+    ) {
+      throw new ApplicationError(
+        "O e-mail de confirmação não corresponde à conta selecionada.",
+        400,
+      );
+    }
+    const result = await authRepository.deleteManagedUser({ id, actorId });
+    if (result.kind === "not-found") {
+      throw new ApplicationError("Usuário não encontrado.", 404);
+    }
+    if (result.kind === "self-delete") {
+      throw new ApplicationError(
+        "Você não pode excluir a própria conta por esta tela.",
+        409,
+      );
+    }
+    if (result.kind === "last-admin") {
+      throw new ApplicationError(
+        "Não é possível excluir o último administrador ativo.",
         409,
       );
     }

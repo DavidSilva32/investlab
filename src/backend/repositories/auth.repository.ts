@@ -8,6 +8,7 @@ import {
   authSessions,
   authTermsAcceptances,
   authUsers,
+  authVerifications,
   cdbRateConfigurations,
   emergencyReserveSettings,
   imports,
@@ -24,12 +25,14 @@ import {
   portfolioObjectiveReferenceBatches,
   portfolioObjectives,
   portfolioOperationReconciliationEvents,
+  oauthClients,
   positionItems,
   positionReconciliationEvents,
   positionSnapshots,
   stockOpportunityAnalysisSettings,
   stockOpportunityManualInputs,
   treasuryPositionLiquidityFacts,
+  tradingItems,
 } from "@/infrastructure/database/schema";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 
@@ -97,6 +100,8 @@ export class AuthRepository {
         phone: authUsers.phone,
         role: authUsers.role,
         accountStatus: authUsers.accountStatus,
+        betaActivatedAt: authUsers.betaActivatedAt,
+        betaExpiresAt: authUsers.betaExpiresAt,
         lastLoginAt: authUsers.lastLoginAt,
         createdAt: authUsers.createdAt,
         updatedAt: authUsers.updatedAt,
@@ -171,6 +176,7 @@ export class AuthRepository {
     name?: string;
     role?: "USER" | "ADMIN";
     isActive?: boolean;
+    betaExpiresAt?: Date;
   }) {
     return getDatabaseClient().transaction(async (transaction) => {
       await transaction.execute(
@@ -181,12 +187,20 @@ export class AuthRepository {
           id: authUsers.id,
           role: authUsers.role,
           accountStatus: authUsers.accountStatus,
+          betaExpiresAt: authUsers.betaExpiresAt,
         })
         .from(authUsers)
         .where(eq(authUsers.id, input.id))
         .for("update")
         .limit(1);
       if (!target) return { kind: "not-found" as const };
+      if (
+        input.betaExpiresAt &&
+        target.betaExpiresAt &&
+        input.betaExpiresAt.getTime() <= target.betaExpiresAt.getTime()
+      ) {
+        return { kind: "trial-not-extended" as const };
+      }
       if (input.actorId === target.id && input.isActive === false) {
         return { kind: "self-deactivation" as const };
       }
@@ -215,11 +229,15 @@ export class AuthRepository {
         name?: string;
         role?: "USER" | "ADMIN";
         accountStatus?: "ACTIVE" | "DISABLED";
+        betaExpiresAt?: Date;
       } = { updatedAt: new Date() };
       if (input.name !== undefined) updates.name = input.name;
       if (input.role !== undefined) updates.role = input.role;
       if (input.isActive !== undefined) {
         updates.accountStatus = input.isActive ? "ACTIVE" : "DISABLED";
+      }
+      if (input.betaExpiresAt !== undefined) {
+        updates.betaExpiresAt = input.betaExpiresAt;
       }
 
       const [updated] = await transaction
@@ -234,6 +252,130 @@ export class AuthRepository {
           .where(eq(authSessions.userId, target.id));
       }
       return { kind: "updated" as const };
+    });
+  }
+
+  async deleteManagedUser(input: { id: string; actorId: string }) {
+    return getDatabaseClient().transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext('investlab-auth-user-lifecycle'))`,
+      );
+      const [target] = await transaction
+        .select({
+          id: authUsers.id,
+          email: authUsers.email,
+          role: authUsers.role,
+          accountStatus: authUsers.accountStatus,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.id, input.id))
+        .for("update")
+        .limit(1);
+      if (!target) return { kind: "not-found" as const };
+      if (target.id === input.actorId) return { kind: "self-delete" as const };
+
+      if (target.role === "ADMIN" && target.accountStatus !== "DISABLED") {
+        const [result] = await transaction
+          .select({ total: sql<number>`count(*)::int` })
+          .from(authUsers)
+          .where(
+            and(
+              eq(authUsers.role, "ADMIN"),
+              sql`${authUsers.accountStatus} <> 'DISABLED'`,
+            ),
+          );
+        if (result.total <= 1) return { kind: "last-admin" as const };
+      }
+
+      // Remove restrictive history links before the account-owned records.
+      // Earlier reconciliation rows may have a NULL owner because ownership
+      // was added after those rows were created. Resolve ownership through the
+      // referenced account-owned operations before removing either parent.
+      await transaction.execute(sql`
+        delete from "b3_reconciliation_events" as reconciliation
+        where reconciliation."userId" = ${target.id}
+          or exists (
+            select 1 from "trading_items" trading
+            where trading.id = reconciliation."tradingItemId"
+              and trading."userId" = ${target.id}
+          )
+          or exists (
+            select 1 from "movement_items" movement
+            where movement.id = reconciliation."movementItemId"
+              and movement."userId" = ${target.id}
+          )
+      `);
+      await transaction.execute(sql`
+        delete from "portfolio_operation_reconciliation_events" as reconciliation
+        where reconciliation."userId" = ${target.id}
+          or exists (
+            select 1 from "manual_portfolio_operations" operation
+            where operation.id = reconciliation."operationId"
+              and operation."userId" = ${target.id}
+          )
+          or exists (
+            select 1 from "movement_items" movement
+            where movement.id = reconciliation."movementId"
+              and movement."userId" = ${target.id}
+          )
+      `);
+      await transaction
+        .delete(positionItems)
+        .where(eq(positionItems.userId, target.id));
+      await transaction
+        .delete(positionSnapshots)
+        .where(eq(positionSnapshots.userId, target.id));
+      await transaction
+        .delete(movementItems)
+        .where(eq(movementItems.userId, target.id));
+      await transaction
+        .delete(tradingItems)
+        .where(eq(tradingItems.userId, target.id));
+      await transaction.delete(imports).where(eq(imports.userId, target.id));
+
+      await transaction
+        .delete(authTermsAcceptances)
+        .where(eq(authTermsAcceptances.userId, target.id));
+      await transaction
+        .delete(authVerifications)
+        .where(eq(authVerifications.identifier, target.email));
+      await transaction
+        .delete(authInvitations)
+        .where(eq(authInvitations.createdByUserId, target.id));
+      await transaction
+        .delete(authPasswordResets)
+        .where(
+          sql`${authPasswordResets.userId} = ${target.id} OR ${authPasswordResets.createdByUserId} = ${target.id}`,
+        );
+
+      // OAuth grants can reference the account directly or its registered clients.
+      await transaction.execute(sql`
+        delete from "oauthAccessToken"
+        where "userId" = ${target.id}
+          or "clientId" in (select "clientId" from "oauthClient" where "userId" = ${target.id})
+          or "refreshId" in (select id from "oauthRefreshToken" where "userId" = ${target.id})
+      `);
+      await transaction.execute(sql`
+        delete from "oauthRefreshToken"
+        where "userId" = ${target.id}
+          or "clientId" in (select "clientId" from "oauthClient" where "userId" = ${target.id})
+      `);
+      await transaction.execute(sql`
+        delete from "oauthConsent"
+        where "userId" = ${target.id}
+          or "clientId" in (select "clientId" from "oauthClient" where "userId" = ${target.id})
+      `);
+      await transaction
+        .delete(oauthClients)
+        .where(eq(oauthClients.userId, target.id));
+
+      const [deleted] = await transaction
+        .delete(authUsers)
+        .where(eq(authUsers.id, target.id))
+        .returning({ id: authUsers.id });
+      return deleted
+        ? { kind: "deleted" as const }
+        : { kind: "not-found" as const };
     });
   }
 
@@ -326,6 +468,10 @@ export class AuthRepository {
         emailVerified: false,
         role: "USER",
         accountStatus: "PENDING",
+        betaActivatedAt: acceptedAt,
+        betaExpiresAt: new Date(
+          acceptedAt.getTime() + 30 * 24 * 60 * 60 * 1000,
+        ),
         createdAt: acceptedAt,
         updatedAt: acceptedAt,
       });
@@ -356,6 +502,15 @@ export class AuthRepository {
       })
       .from(authUsers)
       .where(eq(authUsers.email, email))
+      .limit(1);
+    return user ?? null;
+  }
+
+  async findUserById(id: string) {
+    const [user] = await getDatabaseClient()
+      .select({ id: authUsers.id, email: authUsers.email })
+      .from(authUsers)
+      .where(eq(authUsers.id, id))
       .limit(1);
     return user ?? null;
   }

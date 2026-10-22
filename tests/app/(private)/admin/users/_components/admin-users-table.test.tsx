@@ -15,6 +15,8 @@ const users: ManagedUser[] = [
     phone: "11987654321",
     role: "USER",
     accountStatus: "ACTIVE",
+    betaActivatedAt: "2026-09-01T12:00:00.000Z",
+    betaExpiresAt: "2026-10-30T12:00:00.000Z",
     lastLoginAt: "2026-10-15T12:00:00.000Z",
     createdAt: "2026-09-01T12:00:00.000Z",
   },
@@ -25,6 +27,8 @@ const users: ManagedUser[] = [
     phone: null,
     role: "ADMIN",
     accountStatus: "DISABLED",
+    betaActivatedAt: null,
+    betaExpiresAt: null,
     lastLoginAt: null,
     createdAt: "2026-09-02T12:00:00.000Z",
   },
@@ -35,6 +39,8 @@ const users: ManagedUser[] = [
     phone: null,
     role: "USER",
     accountStatus: "PENDING",
+    betaActivatedAt: null,
+    betaExpiresAt: null,
     lastLoginAt: "invalid-date",
     createdAt: "2026-09-03T12:00:00.000Z",
   },
@@ -45,6 +51,8 @@ const users: ManagedUser[] = [
     phone: null,
     role: "USER",
     accountStatus: "ACTIVE",
+    betaActivatedAt: "2026-09-04T12:00:00.000Z",
+    betaExpiresAt: null,
     lastLoginAt: null,
     createdAt: "2026-09-04T12:00:00.000Z",
   },
@@ -89,6 +97,7 @@ describe("AdminUsersTable", () => {
           },
         ]}
         onUpdate={vi.fn().mockResolvedValue(true)}
+        onDelete={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -109,7 +118,12 @@ describe("AdminUsersTable", () => {
   it("filters by email and role using the shared table filter", async () => {
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={vi.fn()} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(screen.getByRole("button", { name: "Filtros" }));
@@ -128,7 +142,12 @@ describe("AdminUsersTable", () => {
   it("filters users by their saved telephone number", async () => {
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={vi.fn()} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(screen.getByRole("button", { name: "Filtros" }));
@@ -153,6 +172,7 @@ describe("AdminUsersTable", () => {
           { id: "invite-1", email: "invitee@example.com", status: "pending" },
         ]}
         onUpdate={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -191,6 +211,7 @@ describe("AdminUsersTable", () => {
           },
         ]}
         onUpdate={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -216,7 +237,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -251,7 +277,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -268,7 +299,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockResolvedValue(false);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -287,7 +323,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockResolvedValue(false);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -309,7 +350,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -328,7 +374,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -345,7 +396,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockResolvedValue(true);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -368,7 +424,12 @@ describe("AdminUsersTable", () => {
     const onUpdate = vi.fn().mockReturnValue(pendingUpdate);
     const user = userEvent.setup();
     render(
-      <AdminUsersTable users={users} invitations={[]} onUpdate={onUpdate} />,
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
     );
 
     await user.click(
@@ -393,9 +454,100 @@ describe("AdminUsersTable", () => {
   });
 
   it("shows the empty state when there are no accounts or pending invitations", () => {
-    render(<AdminUsersTable users={[]} invitations={[]} onUpdate={vi.fn()} />);
+    render(
+      <AdminUsersTable
+        users={[]}
+        invitations={[]}
+        onUpdate={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
+    );
     expect(
       screen.getByText("Nenhum usuário ou convite aguardando ativação."),
     ).toBeTruthy();
+  });
+
+  it("lets an administrator extend an active user's beta access", async () => {
+    const onUpdate = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Estender beta por 30 dias" }),
+    );
+
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledOnce());
+    const [, changes] = onUpdate.mock.calls[0] as [
+      string,
+      { betaExpiresAt: string },
+    ];
+    expect(changes.betaExpiresAt).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(new Date(changes.betaExpiresAt).getTime()).toBeGreaterThan(
+      new Date(users[0].betaExpiresAt as string).getTime(),
+    );
+  });
+
+  it("requires the account email before deleting its data", async () => {
+    const onDelete = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    render(
+      <AdminUsersTable
+        users={users}
+        invitations={[]}
+        onUpdate={vi.fn().mockResolvedValue(true)}
+        onDelete={onDelete}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para ana@example.com" }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Excluir conta e dados" }),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Excluir definitivamente",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    await user.type(
+      screen.getByRole("textbox", {
+        name: "Para confirmar, digite ana@example.com",
+      }),
+      "ana@example.com",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir definitivamente" }),
+    );
+
+    await waitFor(() =>
+      expect(onDelete).toHaveBeenCalledWith("user-1", "ana@example.com"),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows read-only beta state when access has expired", () => {
+    render(
+      <AdminUsersTable
+        users={[{ ...users[0], betaExpiresAt: "2020-01-01T00:00:00.000Z" }]}
+        invitations={[]}
+        onUpdate={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Beta vencido · somente leitura")).toBeTruthy();
   });
 });

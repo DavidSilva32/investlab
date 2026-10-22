@@ -36,9 +36,9 @@ export const auth = betterAuth({
   secret: getAuthSecret(),
   emailAndPassword: {
     enabled: true,
-    // No public sign-up endpoint is mounted. Accounts are created only after
-    // a server-verified invitation token is consumed.
-    disableSignUp: false,
+    // Accounts are created only after a server-verified invitation token is
+    // consumed; do not expose Better Auth's public sign-up endpoint.
+    disableSignUp: true,
     autoSignIn: false,
   },
   user: {
@@ -63,6 +63,16 @@ export const auth = betterAuth({
       },
       phone: {
         type: "string",
+        required: false,
+        input: false,
+      },
+      betaActivatedAt: {
+        type: "date",
+        required: false,
+        input: false,
+      },
+      betaExpiresAt: {
+        type: "date",
         required: false,
         input: false,
       },
