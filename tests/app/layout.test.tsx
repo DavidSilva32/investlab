@@ -5,6 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/ui/sonner", () => ({
   Toaster: () => <div data-testid="toaster" />,
 }));
+vi.mock("next/script", () => ({
+  default: ({ children, id }: { children: string; id: string }) => (
+    <script id={id}>{children}</script>
+  ),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 
 import RootLayout, { metadata } from "@/app/layout";
@@ -27,5 +32,7 @@ describe("RootLayout", () => {
     );
     expect(markup).toContain('<html lang="pt-BR">');
     expect(markup).toContain('data-testid="toaster"');
+    expect(markup).toContain('id="investlab-palette-init"');
+    expect(markup).toContain('localStorage.getItem("investlab-palette")');
   });
 });

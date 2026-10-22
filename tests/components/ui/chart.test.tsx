@@ -28,6 +28,12 @@ const chartConfig = {
   nominalAmount: { label: "Patrimônio nominal", color: "#60a5fa" },
   purchasingPowerAmount: { label: "Patrimônio real", color: "#fbbf24" },
 };
+const themedChartConfig = {
+  value: {
+    label: "Valor",
+    theme: { light: "#60a5fa", dark: "#93c5fd" },
+  },
+};
 
 const tooltipPayload = [
   {
@@ -100,5 +106,21 @@ describe("ChartTooltipContent", () => {
     );
 
     expect(screen.queryByText("Saldo inicial")).not.toBeNull();
+  });
+});
+
+describe("ChartContainer theme support", () => {
+  afterEach(cleanup);
+
+  it("applies dark chart colors to every dark palette", () => {
+    const { container } = render(
+      <ChartContainer config={themedChartConfig}>
+        <div />
+      </ChartContainer>,
+    );
+
+    const style = container.querySelector("style")?.textContent;
+    expect(style).toContain(".dark [data-chart=");
+    expect(style).toContain("--color-value: #93c5fd");
   });
 });

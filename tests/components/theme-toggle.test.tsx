@@ -1,32 +1,18 @@
 // @vitest-environment jsdom
-// @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   theme: "system" as string | undefined,
   setTheme: vi.fn(),
 }));
-vi.mock("next-themes", () => ({ useTheme: () => state }));
-vi.mock("@/components/ui/dropdown-menu", () => ({
-  DropdownMenu: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  DropdownMenuItem: ({
-    children,
-    onSelect,
-  }: {
-    children: React.ReactNode;
-    onSelect: () => void;
-  }) => <button onClick={onSelect}>{children}</button>,
+vi.mock("next-themes", () => ({
+  useTheme: () => state,
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 describe("ThemeToggle", () => {
@@ -35,20 +21,49 @@ describe("ThemeToggle", () => {
     state.theme = "system";
     state.setTheme.mockReset();
   });
-  it("renders the selectable themes and changes the preference", () => {
+  it("keeps appearance and palette choices independent", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Aparência e cores" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Aparência e cores" }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(9);
+    expect(
+      screen
+        .getByRole("menuitemradio", { name: "Automático" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    await user.click(screen.getByRole("menuitemradio", { name: "Escuro" }));
+    expect(state.setTheme).toHaveBeenCalledWith("dark");
+    await user.click(screen.getByRole("button", { name: "Aparência e cores" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Verde" }));
+    expect(state.setTheme).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("investlab-palette")).toBe("green");
+  });
+  it("supports keyboard selection", async () => {
+    const user = userEvent.setup();
     render(<ThemeToggle />);
-    expect(screen.getByRole("button", { name: "Alternar tema" })).toBeTruthy();
-    expect(screen.getByText("Tema: Sistema")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Escuro/ }));
+    const trigger = screen.getByRole("button", { name: "Aparência e cores" });
+    trigger.focus();
+    await user.keyboard("{Enter}{ArrowDown}{Enter}");
     expect(state.setTheme).toHaveBeenCalledWith("dark");
   });
-  it("uses the selected option and safely falls back to system", () => {
-    state.theme = "dark";
-    const { rerender } = render(<ThemeToggle />);
-    expect(screen.getByText("Tema: Escuro")).toBeTruthy();
-    expect(screen.getByText("Ativo")).toBeTruthy();
-    state.theme = undefined;
-    rerender(<ThemeToggle />);
-    expect(screen.getByText("Tema: Sistema")).toBeTruthy();
+  it("changes palette without changing the appearance preference", async () => {
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <ThemeToggle />
+      </ThemeProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Aparência e cores" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Rosa" }));
+    expect(state.setTheme).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("investlab-palette")).toBe("rose");
+    expect(screen.getByText(/cor: Rosa/)).toBeTruthy();
   });
 });

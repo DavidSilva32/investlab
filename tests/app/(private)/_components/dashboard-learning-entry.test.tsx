@@ -30,6 +30,12 @@ describe("DashboardLearningEntry", () => {
     expect(
       screen.getByRole("link", { name: "Ações e BDRs" }).getAttribute("href"),
     ).toBe("/aprender?class=brazilian_equities#class-content");
+    expect(
+      screen.getByRole("link", { name: "Renda fixa" }).getAttribute("style"),
+    ).toContain("--asset-class-fixed-income");
+    expect(
+      screen.getByRole("link", { name: "Ações e BDRs" }).textContent,
+    ).toContain("Ações e BDRs");
     expect(screen.getByText("Faltam 3 cursos para concluir.")).toBeTruthy();
   });
 

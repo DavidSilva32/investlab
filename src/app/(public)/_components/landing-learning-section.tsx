@@ -30,7 +30,7 @@ export function LandingLearningSection() {
     >
       <div className="mx-auto grid w-full max-w-7xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:gap-14 lg:px-8">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-blue-300">
+          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-sidebar-brand">
             Também para quem está começando
           </p>
           <h2
@@ -45,7 +45,10 @@ export function LandingLearningSection() {
             aprendizado.
           </p>
           <p className="mt-4 flex items-center gap-2 text-sm text-slate-300">
-            <ShieldCheck aria-hidden="true" className="size-4 text-blue-300" />
+            <ShieldCheck
+              aria-hidden="true"
+              className="size-4 text-sidebar-brand"
+            />
             Acesso pessoal disponibilizado por convite.
           </p>
         </div>

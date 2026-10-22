@@ -37,6 +37,9 @@ describe("LandingLearningSection", () => {
     expect(
       screen.getByText("Acesso pessoal disponibilizado por convite."),
     ).toBeTruthy();
+    expect(
+      screen.getByText("Também para quem está começando").className,
+    ).toContain("text-sidebar-brand");
     expect(screen.queryByText(/questionário|aulas estruturadas/i)).toBeNull();
   });
 });

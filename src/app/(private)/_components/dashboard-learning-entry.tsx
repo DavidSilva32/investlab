@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowRight,
-  BookOpenCheck,
-  CircleCheck,
-  CircleHelp,
-  RefreshCw,
-} from "lucide-react";
+import { ArrowRight, BookOpenCheck, CircleHelp, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/api-client";
 import { getLearningClassHref } from "@/lib/asset-class-learning";
@@ -135,13 +129,16 @@ export function DashboardLearningEntry() {
             <li key={courseId}>
               <Link
                 href={getLearningClassHref(courseId)}
-                className="flex min-h-11 items-center justify-between gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex min-h-12 items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                style={{
+                  borderColor: `color-mix(in oklab, var(${assetClass.colorToken}) 38%, var(--border))`,
+                  borderInlineStartWidth: "3px",
+                  backgroundColor: `color-mix(in oklab, var(${assetClass.colorToken}) 8%, var(--background))`,
+                  color: `var(${assetClass.colorToken})`,
+                }}
               >
                 <span className="min-w-0 truncate">{assetClass.label}</span>
-                <CircleCheck
-                  aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
-                />
+                <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
               </Link>
             </li>
           );
