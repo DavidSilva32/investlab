@@ -3,6 +3,7 @@ import { getCurrentRequestId } from "@/infrastructure/logging/request-context";
 import { logger } from "@/infrastructure/logging/logger";
 import { getAuthenticatedUser } from "@/infrastructure/auth/authorization";
 import { privacyCenterService } from "@/backend/services/privacy-center.service";
+import { billingService } from "@/backend/services/billing.service";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 import {
   ADMIN_SUPPORT_VIEW_COOKIE,
@@ -23,7 +24,7 @@ export function getApiRequestId(request?: Request) {
 
 function isOwnerScopedPrivateApi(route: string) {
   return (
-    /^\/api\/(portfolio|imports|positions|emergency-reserve|cdb-rates|learning)(\/|$)/.test(
+    /^\/api\/(portfolio|imports|positions|emergency-reserve|cdb-rates|learning|billing)(\/|$)/.test(
       route,
     ) ||
     route.startsWith("/api/analyses/portfolio-opportunities") ||
@@ -196,9 +197,11 @@ export function withApiRequestLogging<Arguments extends unknown[]>(
           );
           if (
             privateApi &&
+            !route.startsWith("/api/billing") &&
             isExpiredBeta(user) &&
             isWriteRequest &&
-            !isReadOnlySupportRequest(method.toUpperCase(), route)
+            !isReadOnlySupportRequest(method.toUpperCase(), route) &&
+            !(await billingService.hasPaidAccess(user.id))
           ) {
             const response = Response.json(
               {

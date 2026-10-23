@@ -145,6 +145,34 @@ describe("PublicSignupForm", () => {
     expect(mocks.push).toHaveBeenCalledWith("/entrar");
   });
 
+  it("uses empty-value fallbacks when optional form data entries are absent", async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<PublicSignupForm termsVersion="terms-current" />);
+    await completeForm(user);
+    await user.click(screen.getByRole("checkbox"));
+    screen.getByLabelText("Nome").remove();
+    screen.getByLabelText("E-mail").remove();
+    screen.getByLabelText("Senha", { selector: "input" }).remove();
+    screen.getByLabelText("Confirme a senha", { selector: "input" }).remove();
+    await user.click(
+      screen.getByRole("button", { name: "Criar conta beta gratuita" }),
+    );
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    expect(
+      JSON.parse(String((fetch.mock.calls[0][1] as RequestInit).body)),
+    ).toMatchObject({
+      email: "",
+      name: "",
+      password: "",
+      confirmation: "",
+    });
+  });
+
   it("shows safe API errors and permits showing or hiding both password fields", async () => {
     const user = userEvent.setup();
     const fetch = vi.fn().mockResolvedValue({

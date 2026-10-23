@@ -1,0 +1,1 @@
+ALTER TABLE "billing_subscriptions" ADD COLUMN "localCancellationAt" timestamp with time zone;

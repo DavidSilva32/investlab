@@ -47,6 +47,107 @@ export const authUsers = pgTable(
   ],
 );
 
+export const billingSubscriptions = pgTable(
+  "billing_subscriptions",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    provider: varchar({ length: 16 }).notNull().default("ASAAS"),
+    providerSubscriptionId: varchar({ length: 64 }).notNull(),
+    status: varchar({ length: 24 }).notNull().default("PENDING"),
+    billingType: varchar({ length: 16 }).notNull(),
+    amountCents: integer().notNull(),
+    nextDueDate: date(),
+    accessUntil: timestamp({ withTimezone: true }),
+    providerEventAt: timestamp({ withTimezone: true }),
+    localCancellationAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("billing_subscriptions_provider_subscription_uidx").on(
+      table.provider,
+      table.providerSubscriptionId,
+    ),
+    uniqueIndex("billing_subscriptions_user_pending_uidx")
+      .on(table.userId)
+      .where(sql`${table.status} in ('PENDING', 'ACTIVE', 'OVERDUE')`),
+    check(
+      "billing_subscriptions_status_check",
+      sql`${table.status} in ('PENDING', 'ACTIVE', 'OVERDUE', 'CANCELED', 'REFUNDED', 'CHARGEBACK')`,
+    ),
+    check(
+      "billing_subscriptions_billing_type_check",
+      sql`${table.billingType} in ('CREDIT_CARD', 'PIX', 'BOLETO')`,
+    ),
+    check("billing_subscriptions_amount_check", sql`${table.amountCents} > 0`),
+  ],
+);
+
+export const billingCheckouts = pgTable(
+  "billing_checkouts",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    externalReference: varchar({ length: 200 }).notNull(),
+    providerCheckoutId: varchar({ length: 64 }),
+    providerSubscriptionId: varchar({ length: 64 }),
+    status: varchar({ length: 24 }).notNull().default("PENDING"),
+    billingType: varchar({ length: 16 }).notNull(),
+    amountCents: integer().notNull(),
+    nextDueDate: date(),
+    providerEventAt: timestamp({ withTimezone: true }),
+    checkoutUrl: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("billing_checkouts_external_reference_uidx").on(
+      table.externalReference,
+    ),
+    uniqueIndex("billing_checkouts_provider_checkout_uidx").on(
+      table.providerCheckoutId,
+    ),
+    uniqueIndex("billing_checkouts_user_open_uidx")
+      .on(table.userId)
+      .where(
+        sql`${table.status} in ('PENDING', 'PAID', 'SUBSCRIPTION_CREATED')`,
+      ),
+    check(
+      "billing_checkouts_status_check",
+      sql`${table.status} in ('PENDING', 'PAID', 'SUBSCRIPTION_CREATED', 'COMPLETED', 'CANCELED', 'EXPIRED')`,
+    ),
+    check(
+      "billing_checkouts_billing_type_check",
+      sql`${table.billingType} = 'CREDIT_CARD'`,
+    ),
+    check("billing_checkouts_amount_check", sql`${table.amountCents} > 0`),
+  ],
+);
+
+export const billingWebhookEvents = pgTable(
+  "billing_webhook_events",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    providerEventId: varchar({ length: 128 }).notNull(),
+    eventType: varchar({ length: 64 }).notNull(),
+    resourceId: varchar({ length: 64 }),
+    payload: jsonb().$type<Record<string, unknown>>().notNull(),
+    providerCreatedAt: timestamp({ withTimezone: true }),
+    receivedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp({ withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("billing_webhook_events_provider_event_uidx").on(
+      table.providerEventId,
+    ),
+  ],
+);
+
 export const learningCourseProgress = pgTable(
   "learning_course_progress",
   {
