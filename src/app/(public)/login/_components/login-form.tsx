@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, EyeOff, LockKeyhole } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type SyntheticEvent, useState } from "react";
 import { toast } from "sonner";
@@ -179,6 +180,15 @@ export function LoginForm({ supportWhatsAppUrl }: LoginFormProps) {
               )}
             </DialogContent>
           </Dialog>
+          <p className="mt-5 text-center text-sm text-muted-foreground">
+            Ainda não tem conta?{" "}
+            <Link
+              href="/cadastro"
+              className="font-medium text-primary underline underline-offset-4"
+            >
+              Criar conta beta gratuita
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </main>

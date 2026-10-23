@@ -22,9 +22,13 @@ async function jsonBody(request: Request) {
 
 function errorResponse(error: unknown) {
   if (error instanceof ApplicationError) {
+    const headers = new Headers();
+    if (error.retryAfterSeconds !== undefined) {
+      headers.set("Retry-After", String(error.retryAfterSeconds));
+    }
     return Response.json(
       { message: error.message },
-      { status: error.statusCode },
+      { status: error.statusCode, headers },
     );
   }
   return Response.json(
@@ -52,6 +56,17 @@ const activateSchema = z
     termsVersion: z.string().min(1).max(40),
   })
   .strict();
+const publicSignupSchema = z
+  .object({
+    email: z.string().trim().email().toLowerCase(),
+    name: z.string().trim().min(1).max(120),
+    password: z.string().min(12).max(128),
+    confirmation: z.string().min(12).max(128),
+    acceptTerms: z.literal(true),
+    termsVersion: z.string().min(1).max(40),
+  })
+  .strict()
+  .refine((body) => body.password === body.confirmation);
 const resetIssueSchema = z.object({ email: z.email() });
 const resetSchema = z.object({
   token: z.string().min(32),
@@ -246,6 +261,40 @@ export class AuthController {
       return noStore(Response.json({ ok: true }));
     } catch (error) {
       return errorResponse(error);
+    }
+  }
+
+  async publicSignup(request: Request) {
+    const body = publicSignupSchema.safeParse(await jsonBody(request));
+    if (!body.success) {
+      return noStore(
+        Response.json(
+          { message: "Confira os dados, as senhas e o aceite dos Termos." },
+          { status: 400 },
+        ),
+      );
+    }
+    try {
+      await authService.createPublicBetaAccount({
+        request,
+        email: body.data.email,
+        name: body.data.name,
+        password: body.data.password,
+        acceptTerms: body.data.acceptTerms,
+        termsVersion: body.data.termsVersion,
+      });
+      return noStore(
+        Response.json(
+          {
+            ok: true,
+            message:
+              "Conta criada. Entre com seu e-mail e senha para começar o período beta de 30 dias.",
+          },
+          { status: 201 },
+        ),
+      );
+    } catch (error) {
+      return noStore(errorResponse(error));
     }
   }
 

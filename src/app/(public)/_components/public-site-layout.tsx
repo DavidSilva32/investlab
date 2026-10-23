@@ -29,12 +29,22 @@ export function PublicSiteLayout({
             InvestLab
           </Link>
           <nav aria-label="Acesso à conta" className="text-sm">
-            <Link
-              href={authenticated ? "/dashboard" : "/entrar"}
-              className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {authenticated ? "Voltar ao painel" : "Entrar"}
-            </Link>
+            <div className="flex items-center gap-4">
+              {!authenticated && (
+                <Link
+                  href="/cadastro"
+                  className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Criar conta
+                </Link>
+              )}
+              <Link
+                href={authenticated ? "/dashboard" : "/entrar"}
+                className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {authenticated ? "Voltar ao painel" : "Entrar"}
+              </Link>
+            </div>
           </nav>
         </div>
       </header>

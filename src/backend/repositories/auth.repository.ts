@@ -493,6 +493,45 @@ export class AuthRepository {
     });
   }
 
+  async createPublicBetaAccount(input: {
+    email: string;
+    name: string;
+    passwordHash: string;
+    termsVersion: string;
+  }) {
+    return getDatabaseClient().transaction(async (transaction) => {
+      const createdAt = new Date();
+      const userId = randomUUID();
+      await transaction.insert(authUsers).values({
+        id: userId,
+        name: input.name,
+        email: input.email,
+        emailVerified: false,
+        role: "USER",
+        accountStatus: "PENDING",
+        betaActivatedAt: createdAt,
+        betaExpiresAt: new Date(createdAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+        createdAt,
+        updatedAt: createdAt,
+      });
+      await transaction.insert(authAccounts).values({
+        id: randomUUID(),
+        accountId: userId,
+        providerId: "credential",
+        userId,
+        password: input.passwordHash,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      await transaction.insert(authTermsAcceptances).values({
+        userId,
+        termsVersion: input.termsVersion,
+        acceptedAt: createdAt,
+      });
+      return true;
+    });
+  }
+
   async findUserByEmail(email: string) {
     const [user] = await getDatabaseClient()
       .select({

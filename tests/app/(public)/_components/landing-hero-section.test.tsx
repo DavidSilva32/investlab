@@ -37,6 +37,11 @@ describe("LandingHeroSection", () => {
         .getByRole("link", { name: "Entre na sua conta" })
         .getAttribute("href"),
     ).toBe("/entrar");
+    expect(
+      screen
+        .getByRole("link", { name: "Criar conta beta" })
+        .getAttribute("href"),
+    ).toBe("/cadastro");
   });
 
   it("clearly marks the sample portfolio as fictional", () => {

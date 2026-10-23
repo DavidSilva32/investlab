@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     revokeInvitation: vi.fn(),
     revokePasswordReset: vi.fn(),
     activateInvitation: vi.fn(),
+    createPublicBetaAccount: vi.fn(),
     createPasswordReset: vi.fn(),
     resetPassword: vi.fn(),
     checkLoginRateLimit: vi.fn(),
@@ -407,6 +408,100 @@ describe("AuthController", () => {
       true,
       "termos-2026-10-19.1",
     );
+  });
+
+  it("creates public beta accounts only with validated credentials and current terms", async () => {
+    const invalid = await controller.publicSignup(
+      request({
+        email: "bad",
+        name: "New User",
+        password: "short",
+        confirmation: "short",
+        acceptTerms: true,
+        termsVersion: "terms-2026-10-19.1",
+      }),
+    );
+    expect(invalid.status).toBe(400);
+    expect(mocks.service.createPublicBetaAccount).not.toHaveBeenCalled();
+
+    mocks.service.createPublicBetaAccount.mockResolvedValueOnce(undefined);
+    const success = await controller.publicSignup(
+      request({
+        email: " User@Example.com ",
+        name: " New User ",
+        password: "A-long-password-123",
+        confirmation: "A-long-password-123",
+        acceptTerms: true,
+        termsVersion: "terms-2026-10-19.1",
+      }),
+    );
+    expect(success.status).toBe(201);
+    expect(success.headers.get("cache-control")).toBe("no-store");
+    expect(await success.json()).toMatchObject({ ok: true });
+    expect(mocks.service.createPublicBetaAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "user@example.com",
+        name: "New User",
+        password: "A-long-password-123",
+        acceptTerms: true,
+        termsVersion: "terms-2026-10-19.1",
+      }),
+    );
+  });
+
+  it("returns safe signup errors including distributed rate-limit retry headers", async () => {
+    mocks.service.createPublicBetaAccount.mockRejectedValueOnce(
+      new ApplicationError(
+        "Não foi possível criar a conta com esses dados.",
+        409,
+      ),
+    );
+    const conflict = await controller.publicSignup(
+      request({
+        email: "user@example.com",
+        name: "New User",
+        password: "A-long-password-123",
+        confirmation: "A-long-password-123",
+        acceptTerms: true,
+        termsVersion: "terms-2026-10-19.1",
+      }),
+    );
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toEqual({
+      message: "Não foi possível criar a conta com esses dados.",
+    });
+
+    mocks.service.createPublicBetaAccount.mockRejectedValueOnce(
+      new ApplicationError("Muitas tentativas.", 429, 60),
+    );
+    const limited = await controller.publicSignup(
+      request({
+        email: "user@example.com",
+        name: "New User",
+        password: "A-long-password-123",
+        confirmation: "A-long-password-123",
+        acceptTerms: true,
+        termsVersion: "terms-2026-10-19.1",
+      }),
+    );
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+
+    mocks.service.createPublicBetaAccount.mockRejectedValueOnce(
+      new Error("database connection string"),
+    );
+    const unknown = await controller.publicSignup(
+      request({
+        email: "user@example.com",
+        name: "New User",
+        password: "A-long-password-123",
+        confirmation: "A-long-password-123",
+        acceptTerms: true,
+        termsVersion: "terms-2026-10-19.1",
+      }),
+    );
+    expect(unknown.status).toBe(500);
+    expect(await unknown.text()).not.toContain("connection string");
   });
 
   it("maps activation failures without exposing unexpected details", async () => {

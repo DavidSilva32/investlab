@@ -15,8 +15,9 @@ export const TERMS_OF_USE_SECTIONS: LegalDocumentSection[] = [
   {
     title: "2. Conta e acesso",
     paragraphs: [
-      "O acesso atual é criado por convite. O convite é destinado à pessoa indicada, pode expirar ou ser revogado e só pode ser usado uma vez. Para ativar a conta, a pessoa escolhe uma senha e aceita a versão destes Termos exibida durante a ativação.",
-      "Cada pessoa deve usar a própria conta e manter suas credenciais em segurança. Não compartilhe sua senha. Se perder acesso ou suspeitar que outra pessoa usou sua conta, procure o administrador que enviou seu convite.",
+      "Uma conta pode ser criada pelo cadastro público ou por convite. No cadastro, a pessoa informa nome, e-mail e senha e aceita a versão destes Termos exibida no formulário. O e-mail ainda não é verificado automaticamente.",
+      "O período beta oferece acesso completo por 30 dias após a criação da conta. Depois desse prazo, a conta fica em modo de somente leitura até que um plano seja disponibilizado. No momento, não há plano pago nem cobrança ativa.",
+      "Cada pessoa deve usar a própria conta e manter suas credenciais em segurança. Não compartilhe sua senha. Como a recuperação automática por e-mail ainda não está disponível, se perder acesso procure o administrador do InvestLab por um canal que você já conheça.",
     ],
   },
   {
@@ -44,14 +45,14 @@ export const TERMS_OF_USE_SECTIONS: LegalDocumentSection[] = [
     title: "6. Dados e documentos",
     paragraphs: [
       "O tratamento de dados pessoais é explicado na Política de Privacidade, disponível nesta plataforma. As escolhas sobre cookies são apresentadas separadamente na Política de Cookies e no controle de preferências; aceitar estes Termos não altera essa escolha.",
-      "Para pedir acesso ou correção de informações, entre em contato com o administrador que enviou seu convite. O InvestLab ainda não oferece uma ferramenta de autoatendimento para exportar ou excluir todos os dados da conta.",
+      "Para pedir acesso ou correção de informações, procure o administrador do InvestLab por um canal que você já conheça. O InvestLab ainda não oferece uma ferramenta de autoatendimento para exportar ou excluir todos os dados da conta.",
     ],
   },
   {
     title: "7. Atualizações e encerramento do acesso",
     paragraphs: [
       "Quando uma nova versão destes Termos exigir novo aceite, ela será apresentada antes de continuar usando as áreas privadas da plataforma. O histórico registra a versão aceita e a data do aceite.",
-      "O acesso pode ser encerrado ou suspenso pelo administrador responsável pela conta. Para solicitar o encerramento da sua conta ou esclarecer uma situação de acesso, procure esse administrador.",
+      "O acesso pode ser encerrado ou suspenso pelo administrador responsável pela conta. Para solicitar o encerramento da sua conta ou esclarecer uma situação de acesso, procure o administrador por um canal que você já conheça.",
     ],
   },
 ];

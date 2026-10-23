@@ -36,8 +36,8 @@ export const auth = betterAuth({
   secret: getAuthSecret(),
   emailAndPassword: {
     enabled: true,
-    // Accounts are created only after a server-verified invitation token is
-    // consumed; do not expose Better Auth's public sign-up endpoint.
+    // Keep Better Auth's generic sign-up endpoint closed. Public registration
+    // uses the guarded application flow for beta dates, Terms and throttling.
     disableSignUp: true,
     autoSignIn: false,
   },

@@ -34,6 +34,9 @@ describe("PublicSiteLayout", () => {
       screen.getByRole("link", { name: "Entrar" }).getAttribute("href"),
     ).toBe("/entrar");
     expect(
+      screen.getByRole("link", { name: "Criar conta" }).getAttribute("href"),
+    ).toBe("/cadastro");
+    expect(
       screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href"),
     ).toBe("/termos-de-uso");
     expect(
@@ -60,5 +63,6 @@ describe("PublicSiteLayout", () => {
         .getAttribute("href"),
     ).toBe("/dashboard");
     expect(screen.queryByRole("link", { name: "Entrar" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Criar conta" })).toBeNull();
   });
 });
