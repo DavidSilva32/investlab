@@ -13,6 +13,9 @@ const support = vi.hoisted(() => ({
 const terms = vi.hoisted(() => ({
   hasAcceptedCurrentTerms: vi.fn(async () => true),
 }));
+const billing = vi.hoisted(() => ({
+  hasPaidAccess: vi.fn(async () => false),
+}));
 vi.mock("@/infrastructure/auth/authorization", () => ({
   getAuthenticatedUser: vi.fn(async () => authorization.user),
 }));
@@ -29,6 +32,9 @@ vi.mock("@/backend/services/admin-support-view.service", () => ({
 vi.mock("@/backend/services/privacy-center.service", () => ({
   privacyCenterService: terms,
 }));
+vi.mock("@/backend/services/billing.service", () => ({
+  billingService: billing,
+}));
 import { getDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   getApiRequestId,
@@ -41,6 +47,7 @@ describe("withApiRequestLogging", () => {
     support.token = null;
     support.active = null;
     terms.hasAcceptedCurrentTerms.mockReset().mockResolvedValue(true);
+    billing.hasPaidAccess.mockReset().mockResolvedValue(false);
     vi.restoreAllMocks();
   });
 
@@ -295,6 +302,7 @@ describe("withApiRequestLogging", () => {
       code: "BETA_ACCESS_EXPIRED",
     });
     expect(writeHandler).not.toHaveBeenCalled();
+    expect(billing.hasPaidAccess).toHaveBeenCalledWith("owner-1");
 
     const readHandler = vi.fn(async (_request: Request) =>
       Response.json({ items: [] }),
@@ -305,6 +313,7 @@ describe("withApiRequestLogging", () => {
     );
     expect(readResponse.status).toBe(200);
     expect(readHandler).toHaveBeenCalledOnce();
+    expect(billing.hasPaidAccess).toHaveBeenCalledTimes(1);
 
     const analysis = withApiRequestLogging(
       "POST",
@@ -320,6 +329,29 @@ describe("withApiRequestLogging", () => {
         )
       ).status,
     ).toBe(200);
+  });
+
+  it("allows writes for an expired beta account with active paid access", async () => {
+    authorization.user = {
+      id: "paid-owner",
+      role: "USER",
+      betaExpiresAt: new Date(0),
+    };
+    billing.hasPaidAccess.mockResolvedValue(true);
+    const handler = withApiRequestLogging(
+      "POST",
+      "/api/positions/manual",
+      async (_request: Request) => Response.json({ saved: true }),
+    );
+
+    const response = await handler(
+      new Request("https://investlab.test/api/positions/manual", {
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(billing.hasPaidAccess).toHaveBeenCalledWith("paid-owner");
   });
 
   it("does not apply beta expiration to administrator writes", async () => {

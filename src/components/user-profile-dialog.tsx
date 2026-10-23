@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ChevronDown,
+  CreditCard,
   Eye,
   EyeOff,
   ShieldCheck,
@@ -274,6 +275,12 @@ export function UserProfileDialog({
             <Link href="/mcp">
               <Sparkles aria-hidden="true" className="size-4" />
               MCP
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/assinatura">
+              <CreditCard aria-hidden="true" className="size-4" />
+              Assinatura
             </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>

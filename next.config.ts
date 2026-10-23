@@ -42,6 +42,7 @@ const nextConfig: NextConfig = {
       { source: "/analises", destination: "/analyses" },
       { source: "/analises/filtros", destination: "/analyses/screener" },
       { source: "/configuracoes", destination: "/settings" },
+      { source: "/assinatura", destination: "/subscription" },
       { source: "/admin/usuarios", destination: "/admin/users" },
       { source: "/convite/:token", destination: "/invite/:token" },
       {

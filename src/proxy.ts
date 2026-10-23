@@ -21,6 +21,7 @@ const publicPaths = new Set([
   "/api/auth/session",
   "/api/auth/invitations/activate",
   "/api/auth/password-resets/consume",
+  "/api/webhooks/asaas",
   "/api/cron/weekly-screener-sync/fundamentals",
   "/api/cron/weekly-screener-sync/market",
 ]);
