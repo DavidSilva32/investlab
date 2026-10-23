@@ -54,6 +54,15 @@ export function LandingHeroSection() {
             >
               Entre na sua conta
             </Link>
+            <span className="mx-2" aria-hidden="true">
+              ·
+            </span>
+            <Link
+              href="/cadastro"
+              className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Criar conta beta
+            </Link>
           </p>
           <ul
             aria-label="O que você verá"

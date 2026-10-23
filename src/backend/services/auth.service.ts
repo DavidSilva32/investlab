@@ -10,6 +10,13 @@ const digest = (token: string) =>
 const createToken = () => randomBytes(32).toString("base64url");
 
 export class AuthService {
+  private publicSignupConflict() {
+    return new ApplicationError(
+      "Não foi possível criar a conta com esses dados. Confira o e-mail e tente novamente.",
+      409,
+    );
+  }
+
   async updateOwnProfile(id: string, name: string, phone?: string | null) {
     const normalizedPhone =
       phone === undefined ? undefined : normalizeBrazilianPhone(phone);
@@ -109,6 +116,111 @@ export class AuthService {
       now: Date.now(),
       windowMs: 60 * 1000,
     });
+  }
+
+  async checkPublicSignupRateLimit(request: Request, normalizedEmail: string) {
+    const secret = process.env.AUTH_SECRET;
+    if (!secret || secret.length < 32)
+      throw new Error("Authentication rate limiter is not configured.");
+    const key = (kind: string, value: string) =>
+      createHmac("sha256", secret).update(`${kind}:${value}`).digest("hex");
+    // The platform ingress normally supplies x-real-ip. If it is absent,
+    // throttle all such requests through one conservative shared bucket;
+    // falling back to email alone would let one client create many accounts.
+    // This also keeps local development deliberate: requests without an IP
+    // header share the same five-attempt window.
+    const trustedIngressIp = request.headers.get("x-real-ip")?.trim();
+    return authRepository.checkAuthenticationRateLimits({
+      keys: [
+        {
+          key: key("signup-ip", trustedIngressIp || "shared-no-trusted-ip"),
+          maximum: 5,
+        },
+        {
+          key: key("signup-email", normalizedEmail.trim().toLowerCase()),
+          maximum: 5,
+        },
+      ],
+      now: Date.now(),
+      windowMs: 60 * 1000,
+    });
+  }
+
+  async createPublicBetaAccount(input: {
+    request: Request;
+    email: string;
+    name: string;
+    password: string;
+    acceptTerms: boolean;
+    termsVersion: string;
+  }) {
+    const termsVersion = getCurrentTermsVersion();
+    if (input.acceptTerms !== true) {
+      throw new ApplicationError(
+        "É necessário aceitar os Termos de Uso para criar a conta.",
+        400,
+      );
+    }
+    if (input.termsVersion !== termsVersion) {
+      throw new ApplicationError(
+        "A versão dos Termos mudou. Atualize a página e leia a versão vigente.",
+        409,
+      );
+    }
+    if (input.password.length < 12) {
+      throw new ApplicationError(
+        "A senha deve ter pelo menos 12 caracteres.",
+        400,
+      );
+    }
+
+    const email = input.email.trim().toLowerCase();
+    let retryAfter: number | null;
+    try {
+      retryAfter = await this.checkPublicSignupRateLimit(input.request, email);
+    } catch {
+      throw new ApplicationError(
+        "O cadastro está temporariamente indisponível.",
+        503,
+      );
+    }
+    if (retryAfter !== null) {
+      throw new ApplicationError(
+        "Muitas tentativas de cadastro. Aguarde antes de tentar novamente.",
+        429,
+        retryAfter,
+      );
+    }
+    if (await authRepository.findUserByEmail(email)) {
+      throw this.publicSignupConflict();
+    }
+
+    try {
+      const { auth } = await import("@/infrastructure/auth/auth");
+      const context = await auth.$context;
+      const passwordHash = await context.password.hash(input.password);
+      await authRepository.createPublicBetaAccount({
+        email,
+        name: input.name.trim(),
+        passwordHash,
+        termsVersion,
+      });
+    } catch (error) {
+      const databaseError = error as {
+        code?: unknown;
+        cause?: { code?: unknown };
+      };
+      if (
+        databaseError.code === "23505" ||
+        databaseError.cause?.code === "23505"
+      ) {
+        throw this.publicSignupConflict();
+      }
+      throw new ApplicationError(
+        "Não foi possível criar a conta. Confira os dados e tente novamente.",
+        500,
+      );
+    }
   }
 
   async listAdministrationData() {

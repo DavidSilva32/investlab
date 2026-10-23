@@ -53,9 +53,12 @@ describe("LandingPage", () => {
         .getAttribute("href"),
     ).toBe("/entrar");
     expect(
-      screen.getByText(
-        /acesso a uma conta pessoal continua sendo disponibilizado por convite/,
-      ),
+      screen
+        .getByRole("link", { name: "Criar conta beta" })
+        .getAttribute("href"),
+    ).toBe("/cadastro");
+    expect(
+      screen.getByRole("heading", { name: "Crie sua conta beta" }),
     ).toBeTruthy();
     expect(
       screen.getByRole("heading", { name: "Antes de explorar" }),
@@ -65,8 +68,11 @@ describe("LandingPage", () => {
         /Dados, pessoas, instituições e percentuais são fictícios/,
       ),
     ).toBeTruthy();
-    expect(screen.queryByText(/plano gratuito/i)).toBeNull();
-    expect(screen.queryByText(/crie sua conta agora/i)).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Comece pelo período beta." }),
+    ).toBeTruthy();
+    expect(screen.getByText(/R\$ 19,90/)).toBeTruthy();
+    expect(screen.getByText(/ainda não pode ser contratado/i)).toBeTruthy();
   });
 
   it("presents the approved content areas and educational topics", () => {

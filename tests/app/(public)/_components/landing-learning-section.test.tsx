@@ -18,7 +18,7 @@ import { LandingLearningSection } from "@/app/(public)/_components/landing-learn
 afterEach(cleanup);
 
 describe("LandingLearningSection", () => {
-  it("presents only the available class videos and invite-based access", () => {
+  it("presents only the available class videos and beta signup access", () => {
     render(<LandingLearningSection />);
 
     expect(
@@ -35,7 +35,9 @@ describe("LandingLearningSection", () => {
       screen.getByRole("heading", { name: "Fundos imobiliários (FIIs)" }),
     ).toBeTruthy();
     expect(
-      screen.getByText("Acesso pessoal disponibilizado por convite."),
+      screen.getByText(
+        "Crie uma conta beta para explorar a plataforma por 30 dias.",
+      ),
     ).toBeTruthy();
     expect(
       screen.getByText("Também para quem está começando").className,

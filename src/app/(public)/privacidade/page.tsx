@@ -34,7 +34,7 @@ const sections: LegalDocumentSection[] = [
     title: "5. Seus direitos e como fazer uma solicitação",
     paragraphs: [
       "Você pode solicitar informações sobre o uso dos seus dados e exercer os direitos previstos na legislação aplicável, como pedir acesso ou correção. Pedidos de exportação ou exclusão dependem de confirmação da identidade e da análise de obrigações de guarda e de cópias de segurança. O serviço ainda não oferece uma ferramenta para exportar ou excluir automaticamente todos os dados da conta.",
-      "O canal oficial de privacidade e a identificação do responsável ainda aguardam confirmação. Enquanto isso, você pode encaminhar uma solicitação ao administrador que enviou seu convite. Não envie senhas, códigos de acesso ou extratos financeiros por canais cuja identidade não tenha sido confirmada.",
+      "O canal oficial de privacidade e a identificação do responsável ainda aguardam confirmação. Para uma solicitação, procure o administrador do InvestLab por um canal que você já conheça. Não envie senhas, códigos de acesso ou extratos financeiros por canais cuja identidade não tenha sido confirmada.",
     ],
   },
   {

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { LandingHeroSection } from "@/app/(public)/_components/landing-hero-section";
 import { LandingLearningSection } from "@/app/(public)/_components/landing-learning-section";
+import { LandingPlansSection } from "@/app/(public)/_components/landing-plans-section";
 import { LandingProductPreview } from "@/app/(public)/_components/landing-product-preview";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -134,6 +135,7 @@ export function LandingPage() {
       </section>
 
       <LandingLearningSection />
+      <LandingPlansSection />
       <section
         aria-labelledby="landing-start-heading"
         className="bg-muted/30 py-16 sm:py-20"
@@ -169,9 +171,9 @@ export function LandingPage() {
               },
               {
                 number: "3",
-                title: "Acesse com convite",
+                title: "Crie sua conta beta",
                 description:
-                  "O acesso a uma conta pessoal continua sendo disponibilizado por convite.",
+                  "Cadastre-se para testar com seus próprios dados por 30 dias.",
               },
             ].map((step) => (
               <Card key={step.number} className="border-border/80 bg-card">
@@ -236,7 +238,7 @@ export function LandingPage() {
               ],
               [
                 "Como consigo acesso pessoal?",
-                "No momento, o acesso a uma conta pessoal é disponibilizado por convite.",
+                "Crie uma conta beta gratuita para usar a plataforma por 30 dias. Depois, ela fica em modo de somente leitura.",
               ],
               [
                 "O InvestLab escolhe investimentos por mim?",

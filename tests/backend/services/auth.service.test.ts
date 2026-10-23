@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     findUserByEmail: vi.fn(),
     findUserById: vi.fn(),
     createInvitation: vi.fn(),
+    createPublicBetaAccount: vi.fn(),
     revokeInvitation: vi.fn(),
     activateInvitation: vi.fn(),
     claimInvitationExistsUnused: vi.fn(),
@@ -114,6 +115,192 @@ describe("AuthService", () => {
         .update("email:person@example.com")
         .digest("hex"),
     );
+  });
+
+  it("uses separate signup throttling buckets and a shared fallback when trusted IP is absent", async () => {
+    vi.stubEnv("AUTH_SECRET", "s".repeat(40));
+    mocks.repository.checkAuthenticationRateLimits.mockResolvedValue(null);
+    await authService.checkPublicSignupRateLimit(
+      new Request("https://test", {
+        headers: { "x-forwarded-for": "198.51.100.99" },
+      }),
+      " Person@Example.com ",
+    );
+    const input =
+      mocks.repository.checkAuthenticationRateLimits.mock.calls[0][0];
+    expect(input.keys).toHaveLength(2);
+    expect(input.keys[0]).toEqual({
+      key: createHmac("sha256", "s".repeat(40))
+        .update("signup-ip:shared-no-trusted-ip")
+        .digest("hex"),
+      maximum: 5,
+    });
+    expect(input.keys[1]).toEqual({
+      key: createHmac("sha256", "s".repeat(40))
+        .update("signup-email:person@example.com")
+        .digest("hex"),
+      maximum: 5,
+    });
+    expect(input.windowMs).toBe(60_000);
+
+    await authService.checkPublicSignupRateLimit(
+      new Request("https://test", {
+        headers: { "x-forwarded-for": "192.0.2.100" },
+      }),
+      "another@example.com",
+    );
+    const withoutTrustedIpAgain =
+      mocks.repository.checkAuthenticationRateLimits.mock.calls[1][0];
+    expect(withoutTrustedIpAgain.keys[0]).toEqual(input.keys[0]);
+    expect(withoutTrustedIpAgain.keys[1].key).not.toBe(input.keys[1].key);
+
+    await authService.checkPublicSignupRateLimit(
+      new Request("https://test", { headers: { "x-real-ip": "203.0.113.8" } }),
+      "person@example.com",
+    );
+    const withTrustedIp =
+      mocks.repository.checkAuthenticationRateLimits.mock.calls[2][0];
+    expect(withTrustedIp.keys).toHaveLength(2);
+    expect(
+      withTrustedIp.keys.map((entry: { maximum: number }) => entry.maximum),
+    ).toEqual([5, 5]);
+    expect(JSON.stringify(withTrustedIp.keys)).not.toContain("203.0.113.8");
+  });
+
+  it("creates a public beta account with normalized identity, hashed credentials and current terms", async () => {
+    vi.stubEnv("AUTH_SECRET", "s".repeat(40));
+    mocks.repository.checkAuthenticationRateLimits.mockResolvedValue(null);
+    mocks.repository.findUserByEmail.mockResolvedValue(null);
+    mocks.hashPassword.mockResolvedValue("credential-hash");
+    mocks.repository.createPublicBetaAccount.mockResolvedValue(true);
+    await expect(
+      authService.createPublicBetaAccount({
+        request: new Request("https://test", {
+          headers: { "x-real-ip": "203.0.113.8" },
+        }),
+        email: " Person@Example.com ",
+        name: "  New Person  ",
+        password: "A-long-safe-password-123",
+        acceptTerms: true,
+        termsVersion: "terms-2026-10-19.1",
+      }),
+    ).resolves.toBeUndefined();
+    expect(mocks.hashPassword).toHaveBeenCalledWith("A-long-safe-password-123");
+    expect(mocks.repository.findUserByEmail).toHaveBeenCalledWith(
+      "person@example.com",
+    );
+    expect(mocks.repository.createPublicBetaAccount).toHaveBeenCalledWith({
+      email: "person@example.com",
+      name: "New Person",
+      passwordHash: "credential-hash",
+      termsVersion: "terms-2026-10-19.1",
+    });
+  });
+
+  it("rejects signup without terms, with stale terms, or with a short password before rate limiting", async () => {
+    const input = {
+      request: new Request("https://test"),
+      email: "person@example.com",
+      name: "Person",
+      password: "A-long-safe-password-123",
+      acceptTerms: false,
+      termsVersion: "terms-2026-10-19.1",
+    };
+    await expect(
+      authService.createPublicBetaAccount(input),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      authService.createPublicBetaAccount({
+        ...input,
+        acceptTerms: true,
+        termsVersion: "old-version",
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      authService.createPublicBetaAccount({
+        ...input,
+        acceptTerms: true,
+        password: "short",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(
+      mocks.repository.checkAuthenticationRateLimits,
+    ).not.toHaveBeenCalled();
+    expect(mocks.repository.createPublicBetaAccount).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for signup throttling errors and returns retry guidance when limited", async () => {
+    vi.stubEnv("AUTH_SECRET", "s".repeat(40));
+    const input = {
+      request: new Request("https://test"),
+      email: "person@example.com",
+      name: "Person",
+      password: "A-long-safe-password-123",
+      acceptTerms: true,
+      termsVersion: "terms-2026-10-19.1",
+    };
+    mocks.repository.checkAuthenticationRateLimits.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+    await expect(
+      authService.createPublicBetaAccount(input),
+    ).rejects.toMatchObject({ statusCode: 503 });
+    mocks.repository.checkAuthenticationRateLimits.mockResolvedValueOnce(25);
+    await expect(
+      authService.createPublicBetaAccount(input),
+    ).rejects.toMatchObject({ statusCode: 429, retryAfterSeconds: 25 });
+    mocks.repository.checkAuthenticationRateLimits.mockReset();
+    vi.stubEnv("AUTH_SECRET", "");
+    await expect(
+      authService.checkPublicSignupRateLimit(
+        new Request("https://test"),
+        "person@example.com",
+      ),
+    ).rejects.toThrow("rate limiter");
+  });
+
+  it("keeps duplicate and concurrent signup conflicts indistinguishable", async () => {
+    vi.stubEnv("AUTH_SECRET", "s".repeat(40));
+    mocks.repository.checkAuthenticationRateLimits.mockResolvedValue(null);
+    const input = {
+      request: new Request("https://test"),
+      email: "person@example.com",
+      name: "Person",
+      password: "A-long-safe-password-123",
+      acceptTerms: true,
+      termsVersion: "terms-2026-10-19.1",
+    };
+    mocks.repository.findUserByEmail.mockResolvedValueOnce({ id: "existing" });
+    await expect(
+      authService.createPublicBetaAccount(input),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "Não foi possível criar a conta com esses dados. Confira o e-mail e tente novamente.",
+    });
+    mocks.repository.findUserByEmail.mockResolvedValueOnce(null);
+    mocks.hashPassword.mockResolvedValue("credential-hash");
+    mocks.repository.createPublicBetaAccount.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate"), { code: "23505" }),
+    );
+    await expect(
+      authService.createPublicBetaAccount(input),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "Não foi possível criar a conta com esses dados. Confira o e-mail e tente novamente.",
+    });
+    mocks.repository.findUserByEmail.mockResolvedValueOnce(null);
+    mocks.repository.createPublicBetaAccount.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+    await expect(
+      authService.createPublicBetaAccount(input),
+    ).rejects.toMatchObject({
+      statusCode: 500,
+      message:
+        "Não foi possível criar a conta. Confira os dados e tente novamente.",
+    });
   });
 
   it("allows new, active, and pending accounts to log in but rejects disabled accounts", async () => {

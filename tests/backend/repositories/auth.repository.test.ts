@@ -882,6 +882,67 @@ describe("AuthRepository", () => {
     expect(rollback).toHaveBeenCalledOnce();
   });
 
+  it("creates a beta user, credential and terms acceptance in one transaction", async () => {
+    const insertValues: unknown[] = [];
+    const transaction = {
+      insert: vi.fn(() => ({
+        values: vi.fn((value) => {
+          insertValues.push(value);
+          return Promise.resolve();
+        }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      repository.createPublicBetaAccount({
+        email: "person@example.com",
+        name: "Person",
+        passwordHash: "better-auth-compatible-hash",
+        termsVersion: "terms-2026-10-22.1",
+      }),
+    ).resolves.toBe(true);
+
+    expect(database.transaction).toHaveBeenCalledOnce();
+    expect(transaction.insert).toHaveBeenCalledTimes(3);
+    const [user, account, acceptance] = insertValues as [
+      typeof authUsers.$inferInsert,
+      { userId: string; accountId: string; password: string },
+      { userId: string; termsVersion: string; acceptedAt: Date },
+    ];
+    expect(user).toEqual(
+      expect.objectContaining({
+        email: "person@example.com",
+        name: "Person",
+        emailVerified: false,
+        role: "USER",
+        accountStatus: "PENDING",
+        betaActivatedAt: expect.any(Date),
+        betaExpiresAt: expect.any(Date),
+      }),
+    );
+    expect(
+      user.betaExpiresAt!.getTime() - user.betaActivatedAt!.getTime(),
+    ).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(account).toEqual(
+      expect.objectContaining({
+        accountId: user.id,
+        userId: user.id,
+        providerId: "credential",
+        password: "better-auth-compatible-hash",
+      }),
+    );
+    expect(acceptance).toEqual(
+      expect.objectContaining({
+        userId: user.id,
+        termsVersion: "terms-2026-10-22.1",
+        acceptedAt: user.betaActivatedAt,
+      }),
+    );
+  });
+
   it("finds a user by email and returns null when none exists", async () => {
     const limit = vi
       .fn()

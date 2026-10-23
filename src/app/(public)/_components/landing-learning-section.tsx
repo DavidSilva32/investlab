@@ -49,7 +49,7 @@ export function LandingLearningSection() {
               aria-hidden="true"
               className="size-4 text-sidebar-brand"
             />
-            Acesso pessoal disponibilizado por convite.
+            Crie uma conta beta para explorar a plataforma por 30 dias.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:gap-4">

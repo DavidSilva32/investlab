@@ -93,6 +93,6 @@ describe("PrivateLayout", () => {
 
     expect(result.type).toBe(ShellUserProvider);
     expect(result.props.children.type).toBe(TermsAcceptanceGate);
-    expect(result.props.children.props.version).toBe("termos-2026-10-19.1");
+    expect(result.props.children.props.version).toBe("termos-2026-10-22.1");
   });
 });

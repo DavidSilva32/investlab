@@ -26,6 +26,7 @@ describe("TermsPage", () => {
     expect(
       screen.getByText(`Versão vigente do produto · ${CURRENT_TERMS_VERSION}`),
     ).toBeTruthy();
+    expect(screen.getByText("22 de outubro de 2026")).toBeTruthy();
     expect(
       screen.getByText("7. Atualizações e encerramento do acesso"),
     ).toBeTruthy();

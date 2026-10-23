@@ -28,6 +28,7 @@ describe("optimistic authentication proxy", () => {
       "/",
       "/apresentacao",
       "/demonstracao",
+      "/cadastro",
       "/entrar",
       "/login",
       "/convite/some-token",
@@ -42,6 +43,7 @@ describe("optimistic authentication proxy", () => {
       "/privacidade",
       "/cookies",
       "/mcp",
+      "/api/auth/public-signup",
       "/mcp/consent",
       "/.well-known/oauth-authorization-server",
       "/.well-known/oauth-protected-resource/api/mcp",
@@ -64,7 +66,7 @@ describe("optimistic authentication proxy", () => {
     ).toBe(200);
   });
 
-  it("keeps arbitrary signup endpoints private while gated invite activation stays publicly reachable", () => {
+  it("keeps Better Auth signup private while the guarded public registration endpoint stays reachable", () => {
     expect(
       proxy(
         new NextRequest("http://test/api/auth/sign-up/email", {
@@ -75,6 +77,13 @@ describe("optimistic authentication proxy", () => {
     expect(
       proxy(
         new NextRequest("http://test/api/auth/invitations/activate", {
+          method: "POST",
+        }),
+      ).status,
+    ).toBe(200);
+    expect(
+      proxy(
+        new NextRequest("http://test/api/auth/public-signup", {
           method: "POST",
         }),
       ).status,
