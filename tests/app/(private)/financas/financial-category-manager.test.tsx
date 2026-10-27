@@ -219,4 +219,28 @@ describe("FinancialCategoryManager", () => {
       (screen.getByLabelText("Nova categoria") as HTMLInputElement).value,
     ).toBe("Saúde");
   });
+
+  it("uses a safe update fallback and closes the category dialog", async () => {
+    const user = userEvent.setup();
+    api.response.mockRejectedValue("network failure");
+    const onOpenChange = vi.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <FinancialCategoryManager open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Moradia");
+    await user.click(screen.getByRole("button", { name: "Ocultar Moradia" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível atualizar a categoria.",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });

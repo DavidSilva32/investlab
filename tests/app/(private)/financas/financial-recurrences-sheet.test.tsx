@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -70,6 +70,15 @@ describe("FinancialRecurrencesSheet", () => {
     expect(
       screen.queryByRole("dialog", { name: "Nova recorrência" }),
     ).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Novo" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Nova recorrência",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Nova recorrência" }),
+    ).toBeNull();
   });
 
   it("requires an explicit realized date when recording a due occurrence", async () => {
@@ -109,6 +118,35 @@ describe("FinancialRecurrencesSheet", () => {
         .getByRole("button", { name: "Confirmar" })
         .hasAttribute("disabled"),
     ).toBe(false);
+  });
+
+  it("closes a realization dialog with Cancel without saving", async () => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [], recurrenceOccurrences: [occurrence] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Registrar realização" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(
+      screen.queryByRole("dialog", { name: "Registrar realização" }),
+    ).toBeNull();
+    expect(api.request).not.toHaveBeenCalled();
   });
 
   it("opens the edit dialog and pauses a recurring model through the API", async () => {

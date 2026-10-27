@@ -1,6 +1,23 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/components/ui/chart", () => ({
+  ChartContainer: ({
+    children,
+    config: _config,
+    ...props
+  }: React.HTMLAttributes<HTMLDivElement> & {
+    children: React.ReactNode;
+    config: Record<string, unknown>;
+  }) => <div {...props}>{children}</div>,
+  ChartTooltip: ({ content }: { content: React.ReactNode }) => <>{content}</>,
+  ChartTooltipContent: ({
+    valueFormatter,
+  }: {
+    valueFormatter?: (value: unknown) => React.ReactNode;
+  }) => <span>{valueFormatter?.("5000.00")}</span>,
+}));
 import {
   FinancialHistory,
   formatFinancialHistoryTick,

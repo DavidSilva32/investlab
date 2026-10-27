@@ -108,4 +108,26 @@ describe("DashboardFinancesCard", () => {
     ).toBeTruthy();
     expect(screen.queryByText("R$ 0,00")).toBeNull();
   });
+
+  it("keeps missing realized values unavailable for an existing profile", async () => {
+    api.request.mockRejectedValueOnce("network failure");
+    api.request.mockResolvedValueOnce({
+      summary: {
+        expectedIncome: "3000.00",
+        realizedIncome: null,
+        expectedExpenses: "1200.00",
+        realizedExpenses: null,
+        recordedBalance: null,
+        completeness: "recorded_only",
+      },
+    });
+    const user = userEvent.setup();
+    renderCard();
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível carregar o resumo financeiro.",
+    );
+    await user.click(screen.getByRole("button", { name: /Tentar novamente/ }));
+    expect(await screen.findAllByText("Sem registro")).toHaveLength(3);
+  });
 });

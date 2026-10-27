@@ -121,4 +121,34 @@ describe("FinancialEntriesTable", () => {
     expect(screen.getAllByText("Realizado").length).toBeGreaterThan(1);
     expect(screen.getAllByText("Previsto").length).toBeGreaterThan(1);
   });
+
+  it("sorts kind, expected amount, status, and realized amount columns", async () => {
+    const user = userEvent.setup();
+    render(
+      <FinancialEntriesTable
+        entries={[entry]}
+        occurrences={[
+          {
+            id: "rec-income",
+            kind: "INCOME",
+            description: "Salário",
+            category: null,
+            dueDate: "2026-10-01",
+            expectedAmount: null,
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly
+        onEdit={() => {}}
+      />,
+    );
+
+    for (const column of ["Tipo", "Previsto", "Situação", "Realizado"]) {
+      await user.click(screen.getByRole("button", { name: column }));
+      expect(screen.getByText("Aluguel")).toBeTruthy();
+      expect(screen.getByText("Salário")).toBeTruthy();
+    }
+  });
 });

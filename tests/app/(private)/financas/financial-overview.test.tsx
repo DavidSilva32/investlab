@@ -239,4 +239,108 @@ describe("FinancialOverview", () => {
     ).toBe(true);
     expect(screen.queryByRole("button", { name: "Novo" })).toBeNull();
   });
+
+  it("shows recorded totals, undated occurrence guidance, categories, and edits a saved entry", async () => {
+    const user = userEvent.setup();
+    const populated = {
+      ...overview,
+      summary: {
+        expectedIncome: "5000.00",
+        realizedIncome: "4800.00",
+        expectedExpenses: "1800.00",
+        realizedExpenses: "1700.00",
+        expectedBalance: "3200.00",
+        recordedBalance: "3100.00",
+        undatedRecurringRealizations: 1,
+        completeness: "recorded_only" as const,
+      },
+      entries: [
+        {
+          id: "entry-1",
+          kind: "EXPENSE" as const,
+          description: "Conta de luz",
+          categoryId,
+          categoryName: "Moradia",
+          expectedAmount: "180.00",
+          expectedDate: "2026-10-10",
+          actualAmount: null,
+          actualDate: null,
+        },
+      ],
+      recurringOccurrences: [
+        {
+          id: "recurrence-1:2026-10-11",
+          recurrenceId: "recurrence-1",
+          kind: "EXPENSE" as const,
+          description: "Internet",
+          category: "Serviços",
+          essential: false,
+          dueDate: "2026-10-11",
+          expectedAmount: "120.00",
+          actualAmount: "120.00",
+          actualDate: null,
+          status: "realized" as const,
+        },
+      ],
+      history: {
+        ...overview.history,
+        months: overview.history.months.map((item, index) =>
+          index === 9
+            ? {
+                ...item,
+                realizedIncome: "4800.00",
+                realizedExpenses: "1700.00",
+                recordedBalance: "3100.00",
+              }
+            : item,
+        ),
+      },
+    };
+    api.request.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith("/api/finance-overview"))
+        return Promise.resolve(populated);
+      if (url === "/api/financial-entries" && options?.method === "PATCH")
+        return Promise.resolve({});
+      if (url.startsWith("/api/financial-recurrences"))
+        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+      return Promise.resolve({ categories: overview.categories });
+    });
+    renderFinance();
+
+    expect(await screen.findByText("Conta de luz")).toBeTruthy();
+    expect(
+      screen.getByText(/1 ocorrência\(s\) realizada\(s\) sem data/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Entradas realizadas").parentElement?.parentElement
+        ?.textContent,
+    ).toContain("4.800,00");
+    expect(
+      screen.getByLabelText(
+        "Gráfico de entradas e saídas realizadas nos últimos 12 meses",
+      ),
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Categorias" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Gerenciar categorias" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Editar lançamento" }),
+    ).toBeTruthy();
+    const description = screen.getByLabelText("Descrição") as HTMLInputElement;
+    await user.clear(description);
+    await user.type(description, "Energia elétrica");
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        "/api/financial-entries",
+        expect.objectContaining({ method: "PATCH" }),
+        "Não foi possível salvar o lançamento.",
+      ),
+    );
+  });
 });

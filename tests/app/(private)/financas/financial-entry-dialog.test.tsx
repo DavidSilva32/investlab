@@ -110,6 +110,39 @@ describe("FinancialEntryDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("saves an expected-only expense with its due date", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({});
+    render(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Descrição"), "Aluguel");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+      "550",
+    );
+    await user.type(screen.getByLabelText("Data prevista"), "05/10/2026");
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+
+    const [, options] = api.request.mock.calls[0];
+    expect(JSON.parse(options.body as string)).toMatchObject({
+      description: "Aluguel",
+      expectedAmount: 550,
+      expectedDate: "2026-10-05",
+      actualAmount: null,
+      actualDate: null,
+    });
+  });
+
   it("requires amount/date pairs and reports update or deletion failures", async () => {
     const user = userEvent.setup();
     const entry = {
@@ -158,5 +191,44 @@ describe("FinancialEntryDialog", () => {
       { method: "DELETE" },
       "Não foi possível excluir o lançamento.",
     );
+  });
+
+  it("closes on cancel and confirms deletion for an encoded entry ID", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const onOpenChange = vi.fn();
+    api.request.mockResolvedValue({});
+    render(
+      <FinancialEntryDialog
+        open
+        onOpenChange={onOpenChange}
+        categories={categories}
+        entry={{
+          id: "entry / 1",
+          kind: "EXPENSE",
+          description: "Conta",
+          categoryId: categories[0].id,
+          categoryName: "Moradia",
+          expectedAmount: "100.00",
+          expectedDate: "2026-10-10",
+          actualAmount: null,
+          actualDate: null,
+        }}
+        onSaved={onSaved}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(api.request).toHaveBeenLastCalledWith(
+      "/api/financial-entries?id=entry%20%2F%201",
+      { method: "DELETE" },
+      "Não foi possível excluir o lançamento.",
+    );
+    expect(toast.success).toHaveBeenCalledWith("Lançamento excluído.");
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
   });
 });

@@ -44,7 +44,23 @@ describe("financial schemas", () => {
         kind: "EXPENSE",
         description: "Conta",
         categoryId,
+        expectedDate: "2026-10-10",
+      }).success,
+    ).toBe(false);
+    expect(
+      financialEntryCreateSchema.safeParse({
+        kind: "EXPENSE",
+        description: "Conta",
+        categoryId,
         actualDate: "2026-10-10",
+      }).success,
+    ).toBe(false);
+    expect(
+      financialEntryCreateSchema.safeParse({
+        kind: "EXPENSE",
+        description: "Conta",
+        categoryId,
+        actualAmount: 100,
       }).success,
     ).toBe(false);
     expect(

@@ -65,6 +65,16 @@ describe("FinancialRecurrencesRepository", () => {
     expectOwnerScopedWhere(where, "owner-category");
   });
 
+  it("skips category lookup when no legacy free-text category is present", async () => {
+    await expect(
+      runWithDataOwner("owner-category", () =>
+        repository.findOrCreateCategory("EXPENSE", null),
+      ),
+    ).resolves.toBeNull();
+    expect(database.select).not.toHaveBeenCalled();
+    expect(database.insert).not.toHaveBeenCalled();
+  });
+
   it("creates an owner category when no shared or owner category matches", async () => {
     const selectLimit = vi.fn().mockResolvedValue([]);
     const selectWhere = vi.fn().mockReturnValue({ limit: selectLimit });
@@ -126,6 +136,20 @@ describe("FinancialRecurrencesRepository", () => {
         repository.findCategoryForUser("category", "EXPENSE"),
       ),
     ).resolves.toBe("category");
+    expectOwnerScopedWhere(where, "owner-category");
+  });
+
+  it("returns null when a category is missing or belongs to another kind", async () => {
+    const limit = vi.fn().mockResolvedValue([]);
+    const where = vi.fn().mockReturnValue({ limit });
+    const from = vi.fn().mockReturnValue({ where });
+    database.select.mockReturnValue({ from });
+
+    await expect(
+      runWithDataOwner("owner-category", () =>
+        repository.findCategoryForUser("other-kind-category", "INCOME"),
+      ),
+    ).resolves.toBeNull();
     expectOwnerScopedWhere(where, "owner-category");
   });
 

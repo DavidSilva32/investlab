@@ -418,6 +418,27 @@ describe("FinancialRecurrencesService", () => {
     );
   });
 
+  it("keeps a valid user category ID when saving a recurrence", async () => {
+    const categoryId = "24e0fa40-0563-4e4e-a52e-64fab0e6f79f";
+    await service.create({
+      kind: "EXPENSE",
+      description: "Aluguel",
+      categoryId,
+      amount: 550,
+      frequency: "MONTHLY",
+      firstDueDate: "2026-10-05",
+      essential: true,
+    });
+
+    expect(repository.findCategoryForUser).toHaveBeenCalledWith(
+      categoryId,
+      "EXPENSE",
+    );
+    expect(repository.createRecurrence).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId }),
+    );
+  });
+
   it("validates realization ownership, date cadence, and amount before saving", async () => {
     await expect(
       service.realizeOccurrence({}, new Date()),

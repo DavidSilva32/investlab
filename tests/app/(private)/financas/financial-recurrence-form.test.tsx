@@ -113,4 +113,64 @@ describe("FinancialRecurrenceForm", () => {
       "Internet",
     );
   });
+
+  it("preserves edited identity and active state when saving a recurrence", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <FinancialRecurrenceForm
+        month="2026-10"
+        categories={[]}
+        editing={{
+          id: "recurrence-1",
+          kind: "EXPENSE",
+          description: "Internet",
+          categoryId: null,
+          amount: "120.00",
+          frequency: "MONTHLY",
+          firstDueDate: "2026-10-12",
+          essential: false,
+          active: false,
+        }}
+        onSave={onSave}
+        onCancelEdit={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+    expect(onSave).toHaveBeenCalledWith({
+      id: "recurrence-1",
+      active: false,
+      kind: "EXPENSE",
+      description: "Internet",
+      categoryId: null,
+      amount: 120,
+      frequency: "MONTHLY",
+      firstDueDate: "2026-10-12",
+      essential: false,
+    });
+  });
+
+  it("shows the localized fallback for a non-Error save failure", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValue("offline");
+    render(
+      <FinancialRecurrenceForm
+        month="2026-10"
+        categories={[]}
+        editing={null}
+        onSave={onSave}
+        onCancelEdit={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Descrição"), "Internet");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "120");
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar recorrência" }),
+    );
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível salvar a recorrência.",
+    );
+  });
 });
