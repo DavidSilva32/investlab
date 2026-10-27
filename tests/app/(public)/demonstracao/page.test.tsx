@@ -68,4 +68,3 @@ describe("fictional portfolio demonstration page", () => {
     ).toBe("/entrar");
   });
 });
-
