@@ -305,6 +305,7 @@ export function FinancialOverview() {
             </CardHeader>
             <CardContent className="min-w-0 overflow-x-auto pt-0">
               <FinancialEntriesTable
+                key={month}
                 entries={data?.entries ?? []}
                 occurrences={data?.recurringOccurrences ?? []}
                 readOnly={!canEdit}

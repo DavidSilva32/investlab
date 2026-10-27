@@ -85,6 +85,18 @@ describe("FinancialEntryDialog", () => {
     expect(screen.getByLabelText("Data prevista")).toBeTruthy();
     expect(screen.getByLabelText("Data realizada")).toBeTruthy();
     expect(
+      (
+        screen.getByLabelText("Valor (R$)", {
+          selector: "#expected-amount",
+        }) as HTMLInputElement
+      ).type,
+    ).toBe("text");
+    expect(
+      screen.getByText(
+        "Este lançamento será salvo agora. A próxima ocorrência seguirá a data e a periodicidade escolhidas abaixo.",
+      ),
+    ).toBeTruthy();
+    expect(
       screen
         .getByRole("button", { name: "Salvar lançamento" })
         .hasAttribute("disabled"),
@@ -118,7 +130,7 @@ describe("FinancialEntryDialog", () => {
     await user.type(screen.getByLabelText("Descrição"), "Salário mensal");
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#actual-amount" }),
-      "5000",
+      "500000",
     );
     await user.type(screen.getByLabelText("Data realizada"), "05/10/2026");
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
@@ -161,8 +173,15 @@ describe("FinancialEntryDialog", () => {
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
-      "550",
+      "55000",
     );
+    expect(
+      (
+        screen.getByLabelText("Valor (R$)", {
+          selector: "#expected-amount",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("R$ 550,00");
     await user.type(screen.getByLabelText("Data prevista"), "05/10/2026");
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
@@ -174,6 +193,35 @@ describe("FinancialEntryDialog", () => {
       actualAmount: null,
       actualDate: null,
     });
+  });
+
+  it("formats and parses decimal monetary amounts", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({});
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    const amountInput = screen.getByLabelText("Valor (R$)", {
+      selector: "#expected-amount",
+    }) as HTMLInputElement;
+    await user.type(amountInput, "12345");
+    expect(amountInput.value).toBe("R$ 123,45");
+    await user.type(screen.getByLabelText("Data prevista"), "05/10/2026");
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, options] = api.request.mock.calls[0];
+    expect(JSON.parse(options.body as string).expectedAmount).toBe(123.45);
   });
 
   it("requires amount/date pairs and reports update failures", async () => {
@@ -204,12 +252,21 @@ describe("FinancialEntryDialog", () => {
       screen.getByText("Informe a data prevista para este valor."),
     ).toBeTruthy();
     expect(
+      (
+        screen.getByLabelText("Valor (R$)", {
+          selector: "#expected-amount",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("R$ 550,00");
+    expect(
       screen
         .getByRole("button", { name: "Salvar lançamento" })
         .hasAttribute("disabled"),
     ).toBe(true);
     await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+    const [, options] = api.request.mock.calls[0];
+    expect(JSON.parse(options.body as string).expectedAmount).toBe(550);
     expect(toast.error).toHaveBeenCalledWith("Falha segura.");
     expect(api.request).toHaveBeenLastCalledWith(
       "/api/financial-entries",
@@ -246,7 +303,7 @@ describe("FinancialEntryDialog", () => {
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#actual-amount" }),
-      "120",
+      "12000",
     );
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
@@ -288,7 +345,7 @@ describe("FinancialEntryDialog", () => {
     await user.type(screen.getByLabelText("Descrição"), "Consulta médica");
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
-      "180",
+      "18000",
     );
     await user.type(screen.getByLabelText("Data prevista"), "05/10/2026");
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
@@ -327,7 +384,7 @@ describe("FinancialEntryDialog", () => {
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
-      "550",
+      "55000",
     );
     await user.type(screen.getByLabelText("Data prevista"), "01/10/2026");
     await user.click(
@@ -372,7 +429,7 @@ describe("FinancialEntryDialog", () => {
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
-      "200",
+      "20000",
     );
     await user.type(screen.getByLabelText("Data prevista"), "01/10/2026");
     await user.click(
@@ -433,7 +490,7 @@ describe("FinancialEntryDialog", () => {
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
-      "550",
+      "55000",
     );
     await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
 

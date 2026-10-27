@@ -76,6 +76,13 @@ describe("FinancialEntriesTable", () => {
     expect(
       screen.queryByRole("button", { name: "Ações para Aluguel" }),
     ).toBeNull();
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Selecionar Aluguel",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it("shows an empty state when the month has no manual or recurring items", () => {
@@ -262,5 +269,132 @@ describe("FinancialEntriesTable", () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Falha segura."),
     );
+  });
+
+  it("selects all manual entries for the month and excludes generated occurrences from batch deletion", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const secondEntry = { ...entry, id: "entry-2", description: "Internet" };
+    api.request.mockResolvedValue({});
+    render(
+      <FinancialEntriesTable
+        entries={[entry, secondEntry]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-12",
+            kind: "INCOME",
+            description: "Salário",
+            category: "Renda",
+            dueDate: "2026-10-12",
+            expectedAmount: "3000.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+
+    const recurringCheckbox = screen.getByRole("checkbox", {
+      name: "Selecionar Salário",
+    }) as HTMLButtonElement;
+    expect(recurringCheckbox.disabled).toBe(true);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Selecionar todos os lançamentos avulsos do mês",
+      }),
+    );
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Selecionar Aluguel",
+        }) as HTMLButtonElement
+      ).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Selecionar Internet",
+        }) as HTMLButtonElement
+      ).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(recurringCheckbox.getAttribute("aria-checked")).toBe("false");
+    await user.click(
+      screen.getByRole("button", { name: "Excluir selecionados (2)" }),
+    );
+    expect(
+      screen.getByRole("alertdialog", { name: "Excluir 2 lançamentos?" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Excluir 2 lançamentos" }),
+    );
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    expect(api.request).toHaveBeenNthCalledWith(
+      1,
+      "/api/financial-entries?id=entry-1",
+      { method: "DELETE" },
+      "Não foi possível excluir o lançamento.",
+    );
+    expect(api.request).toHaveBeenNthCalledWith(
+      2,
+      "/api/financial-entries?id=entry-2",
+      { method: "DELETE" },
+      "Não foi possível excluir o lançamento.",
+    );
+    expect(onSaved).toHaveBeenCalledOnce();
+    expect(toast.success).toHaveBeenCalledWith("2 lançamentos excluídos.");
+  });
+
+  it("retains failed selections when only some batch deletions succeed", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("Falha segura."));
+    render(
+      <FinancialEntriesTable
+        entries={[entry, { ...entry, id: "entry-2", description: "Internet" }]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Selecionar todos os lançamentos avulsos do mês",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir selecionados (2)" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir 2 lançamentos" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "1 lançamento excluído; 1 não pôde ser excluído. Tente novamente.",
+      ),
+    );
+    expect(
+      screen.getByRole("alertdialog", { name: "Excluir lançamento?" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Selecionar Aluguel",
+        }) as HTMLButtonElement
+      ).getAttribute("aria-checked"),
+    ).toBe("false");
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Selecionar Internet",
+        }) as HTMLButtonElement
+      ).getAttribute("aria-checked"),
+    ).toBe("true");
   });
 });

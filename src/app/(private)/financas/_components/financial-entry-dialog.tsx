@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { CalendarClock, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
@@ -21,6 +21,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FinancialCategoryQuickCreateDialog } from "@/app/(private)/financas/_components/financial-category-quick-create-dialog";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 import {
   Select,
   SelectContent,
@@ -116,10 +124,12 @@ export function FinancialEntryDialog({
   const [description, setDescription] = useState(entry?.description ?? "");
   const [categoryId, setCategoryId] = useState(entry?.categoryId ?? "");
   const [expectedAmount, setExpectedAmount] = useState(
-    entry?.expectedAmount ?? "",
+    formatBrazilianAmountValue(entry?.expectedAmount ?? ""),
   );
   const [expectedDate, setExpectedDate] = useState(entry?.expectedDate ?? "");
-  const [actualAmount, setActualAmount] = useState(entry?.actualAmount ?? "");
+  const [actualAmount, setActualAmount] = useState(
+    formatBrazilianAmountValue(entry?.actualAmount ?? ""),
+  );
   const [actualDate, setActualDate] = useState(entry?.actualDate ?? "");
   const [busy, setBusy] = useState(false);
   const [quickCategoryOpen, setQuickCategoryOpen] = useState(false);
@@ -129,6 +139,10 @@ export function FinancialEntryDialog({
   const [manualNextOccurrence, setManualNextOccurrence] = useState<
     string | null
   >(null);
+  const expectedAmountInputRef = useRef<HTMLInputElement>(null);
+  const actualAmountInputRef = useRef<HTMLInputElement>(null);
+  const expectedSelectionRef = useRef<CurrencyInputSelection | null>(null);
+  const actualSelectionRef = useRef<CurrencyInputSelection | null>(null);
   const nextOccurrence =
     manualNextOccurrence ??
     (createRecurrence
@@ -137,6 +151,14 @@ export function FinancialEntryDialog({
   const expectedPairValid = Boolean(expectedAmount) === Boolean(expectedDate);
   const actualPairValid = Boolean(actualAmount) === Boolean(actualDate);
   const hasAmount = Boolean(expectedAmount || actualAmount);
+  const parsedExpectedAmount = parseBrazilianAmount(expectedAmount);
+  const parsedActualAmount = parseBrazilianAmount(actualAmount);
+  const expectedAmountValid =
+    !expectedAmount ||
+    (Number.isFinite(parsedExpectedAmount) && parsedExpectedAmount > 0);
+  const actualAmountValid =
+    !actualAmount ||
+    (Number.isFinite(parsedActualAmount) && parsedActualAmount > 0);
   const available = categories.filter(
     (category) => category.kind === kind && category.active,
   );
@@ -157,6 +179,41 @@ export function FinancialEntryDialog({
       normalizeDescription(recurrence.description) ===
         normalizeDescription(description),
   );
+
+  useLayoutEffect(() => {
+    const fields = [
+      [expectedAmountInputRef.current, expectedSelectionRef],
+      [actualAmountInputRef.current, actualSelectionRef],
+    ] as const;
+    for (const [input, selectionRef] of fields) {
+      const selection = selectionRef.current;
+      if (!input || !selection) continue;
+      const resolved = resolveCurrencyInputSelection(input.value, selection);
+      input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+      selectionRef.current = null;
+    }
+  }, [expectedAmount, actualAmount]);
+
+  function handleAmountChange(
+    value: string,
+    selectionStart: number | null,
+    selectionEnd: number | null,
+    selectionDirection: "forward" | "backward" | "none" | null,
+    setAmount: (value: string) => void,
+    selectionRef: React.MutableRefObject<CurrencyInputSelection | null>,
+  ) {
+    const nextAmount = formatAmountInput(value);
+    const start = selectionStart ?? value.length;
+    const end = selectionEnd ?? start;
+    selectionRef.current = getCurrencyInputSelection(
+      value,
+      nextAmount,
+      start,
+      end,
+      selectionDirection,
+    );
+    setAmount(nextAmount);
+  }
 
   function toggleRecurrence(checked: boolean) {
     setCreateRecurrence(checked);
@@ -181,9 +238,9 @@ export function FinancialEntryDialog({
         kind,
         description,
         categoryId,
-        expectedAmount: expectedAmount ? Number(expectedAmount) : null,
+        expectedAmount: expectedAmount ? parsedExpectedAmount : null,
         expectedDate: expectedDate || null,
-        actualAmount: actualAmount ? Number(actualAmount) : null,
+        actualAmount: actualAmount ? parsedActualAmount : null,
         actualDate: actualDate || null,
       };
       await apiRequest(
@@ -201,7 +258,7 @@ export function FinancialEntryDialog({
                 kind,
                 description: description.trim(),
                 categoryId,
-                amount: Number(expectedAmount || actualAmount),
+                amount: parseBrazilianAmount(expectedAmount || actualAmount),
                 frequency,
                 firstDueDate: nextOccurrence,
                 essential: false,
@@ -323,7 +380,8 @@ export function FinancialEntryDialog({
                     Criar recorrência
                   </span>
                   <span className="block text-xs text-muted-foreground">
-                    O lançamento atual conta como a primeira ocorrência.
+                    Este lançamento será salvo agora. A próxima ocorrência
+                    seguirá a data e a periodicidade escolhidas abaixo.
                   </span>
                 </span>
               </label>
@@ -387,11 +445,22 @@ export function FinancialEntryDialog({
                 <Label htmlFor="expected-amount">Valor (R$)</Label>
                 <Input
                   id="expected-amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  ref={expectedAmountInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={expectedAmount}
-                  onChange={(event) => setExpectedAmount(event.target.value)}
+                  placeholder="R$ 0,00"
+                  onChange={(event) =>
+                    handleAmountChange(
+                      event.target.value,
+                      event.target.selectionStart,
+                      event.target.selectionEnd,
+                      event.target.selectionDirection,
+                      setExpectedAmount,
+                      expectedSelectionRef,
+                    )
+                  }
                 />
               </div>
               <DatePickerField
@@ -407,11 +476,22 @@ export function FinancialEntryDialog({
                 <Label htmlFor="actual-amount">Valor (R$)</Label>
                 <Input
                   id="actual-amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  ref={actualAmountInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={actualAmount}
-                  onChange={(event) => setActualAmount(event.target.value)}
+                  placeholder="R$ 0,00"
+                  onChange={(event) =>
+                    handleAmountChange(
+                      event.target.value,
+                      event.target.selectionStart,
+                      event.target.selectionEnd,
+                      event.target.selectionDirection,
+                      setActualAmount,
+                      actualSelectionRef,
+                    )
+                  }
                 />
               </div>
               <DatePickerField
@@ -447,6 +527,16 @@ export function FinancialEntryDialog({
               Informe o valor realizado para esta data.
             </p>
           )}
+          {!expectedAmountValid && (
+            <p role="alert" className="text-sm text-destructive">
+              Informe um valor previsto maior que R$ 0,00.
+            </p>
+          )}
+          {!actualAmountValid && (
+            <p role="alert" className="text-sm text-destructive">
+              Informe um valor realizado maior que R$ 0,00.
+            </p>
+          )}
           <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end">
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
               <Button
@@ -462,6 +552,8 @@ export function FinancialEntryDialog({
                   !hasAmount ||
                   !expectedPairValid ||
                   !actualPairValid ||
+                  !expectedAmountValid ||
+                  !actualAmountValid ||
                   !categoryId ||
                   (createRecurrence && (!nextOccurrence || recurrencesLoading))
                 }
