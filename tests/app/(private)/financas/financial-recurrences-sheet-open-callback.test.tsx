@@ -1,14 +1,21 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
+const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({
+vi.mock("sonner", () => ({ toast }));
+vi.mock("@/components/ui/sheet", () => ({
+  Sheet: ({
     open,
     onOpenChange,
     children,
@@ -21,13 +28,50 @@ vi.mock("@/components/ui/dialog", () => ({
       <div>
         {children}
         <button type="button" onClick={() => onOpenChange(true)}>
-          Reportar diálogo aberto
+          Notificar painel aberto
         </button>
         <button type="button" onClick={() => onOpenChange(false)}>
-          Fechar diálogo controlado
+          Fechar painel
         </button>
       </div>
     ) : null,
+  SheetContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  SheetDescription: ({ children }: { children: React.ReactNode }) => (
+    <p>{children}</p>
+  ),
+  SheetHeader: ({ children }: { children: React.ReactNode }) => (
+    <header>{children}</header>
+  ),
+  SheetTitle: ({ children }: { children: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
+}));
+vi.mock("@/components/ui/dialog", () => ({
+  Dialog: ({
+    open,
+    onOpenChange,
+    children,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    children: React.ReactNode;
+  }) => (
+    <div hidden={!open}>
+      {children}
+      {open && (
+        <>
+          <button type="button" onClick={() => onOpenChange(true)}>
+            Reportar diálogo aberto
+          </button>
+          <button type="button" onClick={() => onOpenChange(false)}>
+            Fechar diálogo controlado
+          </button>
+        </>
+      )}
+    </div>
+  ),
   DialogContent: ({ children }: { children: React.ReactNode }) => (
     <section role="dialog" aria-label="Diálogo interno">
       {children}
@@ -134,7 +178,6 @@ describe("FinancialRecurrencesSheet controlled dialog callbacks", () => {
     expect(
       screen.queryByRole("dialog", { name: "Diálogo interno" }),
     ).toBeNull();
-    expect(screen.queryByLabelText("Descrição")).toBeNull();
   });
 
   it("keeps the selected occurrence open when its realization dialog reports open", async () => {
@@ -168,5 +211,58 @@ describe("FinancialRecurrencesSheet controlled dialog callbacks", () => {
     expect(
       screen.queryByRole("dialog", { name: "Diálogo interno" }),
     ).toBeNull();
+  });
+
+  it("preserves nested editor state on sheet open and clears it on sheet close", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Diálogo interno" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Notificar painel aberto" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Diálogo interno" }),
+    ).toBeTruthy();
+    expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe(
+      "Salário",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Fechar painel" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Diálogo interno" }),
+    ).toBeNull();
+  });
+
+  it("ignores a realization submit event queued as its dialog closes", async () => {
+    const user = userEvent.setup();
+    api.request.mockClear();
+    toast.success.mockClear();
+    renderSheet();
+
+    await user.click(
+      screen.getByRole("button", { name: "Registrar realização" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Diálogo interno" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Fechar diálogo controlado" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Diálogo interno" }),
+    ).toBeNull();
+
+    const staleForm = document
+      .getElementById("realized-amount")
+      ?.closest("form");
+    expect(staleForm).toBeTruthy();
+    fireEvent.submit(staleForm as HTMLFormElement);
+
+    expect(api.request).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

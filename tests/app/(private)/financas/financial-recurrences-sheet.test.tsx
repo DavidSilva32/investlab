@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
@@ -382,6 +389,125 @@ describe("FinancialRecurrencesSheet", () => {
     );
     expect(toast.success).toHaveBeenCalledWith("Recorrência reativada.");
     expect(onSaved).toHaveBeenCalledOnce();
+  });
+
+  it("preserves Error messages when pausing or realizing a recurrence fails", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockRejectedValueOnce(new Error("Falha ao pausar."))
+      .mockRejectedValueOnce(new Error("Falha ao registrar o pagamento."));
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{
+            recurrences: [recurrence],
+            recurrenceOccurrences: [occurrence],
+          }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Pausar" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Falha ao pausar."),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Registrar realização" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Falha ao registrar o pagamento.",
+      ),
+    );
+  });
+
+  it("labels an expense recurrence as an exit in the model list", () => {
+    const expense = {
+      ...recurrence,
+      id: "rent-id",
+      kind: "EXPENSE" as const,
+      description: "Aluguel",
+      amount: "550.00",
+      essential: true,
+    };
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [expense], recurrenceOccurrences: [] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(/Saída/)).toBeTruthy();
+  });
+
+  it("clears an open recurrence editor when the parent closes and reopens the sheet", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Abrir recorrências
+          </button>
+          <QueryClientProvider client={new QueryClient()}>
+            <FinancialRecurrencesSheet
+              open={open}
+              onOpenChange={setOpen}
+              month="2026-10"
+              data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
+              loading={false}
+              error={null}
+              retry={() => {}}
+              categories={[]}
+              onSaved={() => {}}
+              readOnly={false}
+            />
+          </QueryClientProvider>
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Compromissos recorrentes" }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Abrir recorrências" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Novo" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Nova recorrência" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeNull();
   });
 
   it("shows loading and errors with a retry action", async () => {
