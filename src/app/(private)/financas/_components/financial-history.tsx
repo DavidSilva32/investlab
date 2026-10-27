@@ -27,8 +27,8 @@ const monthLabel = (value: string) =>
     timeZone: "UTC",
   }).format(new Date(`${value}-01T00:00:00Z`));
 const historyChartConfig = {
-  entradas: { label: "Entradas", color: "var(--chart-1)" },
-  saidas: { label: "Saídas", color: "var(--chart-2)" },
+  entradas: { label: "Entradas", color: "var(--status-success)" },
+  saidas: { label: "Saídas", color: "var(--status-danger)" },
 } satisfies ChartConfig;
 
 export function formatFinancialHistoryTick(month: string) {
@@ -42,11 +42,9 @@ export function formatFinancialHistoryTick(month: string) {
 export function FinancialHistory({
   months,
   selectedMonth,
-  explanation,
 }: {
   months: FinancialHistoryMonth[];
   selectedMonth: string;
-  explanation: string;
 }) {
   const reducedMotion = useReducedMotion();
   const chartData = months.map((item) => ({
@@ -62,15 +60,9 @@ export function FinancialHistory({
   return (
     <section aria-labelledby="finance-history-title">
       <div className="mb-3 flex items-end justify-between">
-        <div>
-          <h2 id="finance-history-title" className="text-lg font-semibold">
-            Evolução registrada
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            O histórico usa somente registros salvos; meses sem dados não são
-            tratados como zero.
-          </p>
-        </div>
+        <h2 id="finance-history-title" className="text-lg font-semibold">
+          Evolução registrada
+        </h2>
       </div>
       {hasRecordedAmounts ? (
         <Card className="mb-4">
@@ -110,12 +102,14 @@ export function FinancialHistory({
                 <Bar
                   dataKey="entradas"
                   fill="var(--color-entradas)"
+                  stroke="var(--color-entradas)"
                   radius={[4, 4, 0, 0]}
                   isAnimationActive={!reducedMotion}
                 />
                 <Bar
                   dataKey="saidas"
                   fill="var(--color-saidas)"
+                  stroke="var(--color-saidas)"
                   radius={[4, 4, 0, 0]}
                   isAnimationActive={!reducedMotion}
                 />
@@ -140,19 +134,21 @@ export function FinancialHistory({
               </p>
               <p className="mt-2 text-sm">
                 Entradas{" "}
-                <span className="float-right font-medium">
+                <span className="float-right font-medium text-status-success">
                   {money(item.realizedIncome)}
                 </span>
               </p>
               <p className="mt-1 text-sm">
                 Saídas{" "}
-                <span className="float-right font-medium">
+                <span className="float-right font-medium text-status-danger">
                   {money(item.realizedExpenses)}
                 </span>
               </p>
               <p className="mt-3 border-t pt-2 text-sm">
                 Saldo registrado{" "}
-                <span className="float-right font-semibold">
+                <span
+                  className={`float-right font-semibold ${Number(item.recordedBalance) < 0 ? "text-status-danger" : "text-foreground"}`}
+                >
                   {money(item.recordedBalance)}
                 </span>
               </p>
@@ -160,7 +156,6 @@ export function FinancialHistory({
           </Card>
         ))}
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">{explanation}</p>
     </section>
   );
 }

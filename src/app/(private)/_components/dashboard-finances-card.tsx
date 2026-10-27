@@ -76,35 +76,31 @@ export function DashboardFinancesCard() {
                 Tentar novamente
               </Button>
             </div>
-          ) : data?.summary.completeness === "no_data" ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              Registre entradas e saídas para acompanhar o mês.
-            </p>
-          ) : (
+          ) : data?.summary.completeness === "no_data" ? null : (
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                <ArrowDown
-                  aria-hidden="true"
-                  className="size-3.5 text-muted-foreground"
-                />
+              <span className="inline-flex items-center gap-1 text-status-success">
+                <ArrowUp aria-hidden="true" className="size-3.5" />
                 Entradas{" "}
-                <strong className="text-foreground">
+                <strong>
                   {formatAmount(data?.summary.realizedIncome ?? null)}
                 </strong>
               </span>
-              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                <ArrowUp
-                  aria-hidden="true"
-                  className="size-3.5 text-muted-foreground"
-                />
+              <span className="inline-flex items-center gap-1 text-status-danger">
+                <ArrowDown aria-hidden="true" className="size-3.5" />
                 Saídas{" "}
-                <strong className="text-foreground">
+                <strong>
                   {formatAmount(data?.summary.realizedExpenses ?? null)}
                 </strong>
               </span>
               <span className="text-muted-foreground">
                 Saldo registrado{" "}
-                <strong className="text-foreground">
+                <strong
+                  className={
+                    Number(data?.summary.recordedBalance) < 0
+                      ? "text-status-danger"
+                      : "text-foreground"
+                  }
+                >
                   {formatAmount(data?.summary.recordedBalance ?? null)}
                 </strong>
               </span>

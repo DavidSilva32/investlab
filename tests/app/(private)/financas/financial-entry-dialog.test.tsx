@@ -2,12 +2,39 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { QueryClientWrapper } from "../../../utils/query-client-wrapper";
+import type { ReactNode } from "react";
 
-const api = vi.hoisted(() => ({ request: vi.fn() }));
+const api = vi.hoisted(() => ({ request: vi.fn(), withResponse: vi.fn() }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
-vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
+vi.mock("@/lib/api-client", () => ({
+  apiRequest: api.request,
+  apiRequestWithResponse: api.withResponse,
+}));
 vi.mock("sonner", () => ({ toast }));
 import { FinancialEntryDialog } from "@/app/(private)/financas/_components/financial-entry-dialog";
+
+const renderDialog = (ui: ReactNode) =>
+  render(<QueryClientWrapper>{ui}</QueryClientWrapper>);
+
+function StatefulEntryDialog() {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Abrir lançamento
+      </button>
+      <FinancialEntryDialog
+        open={open}
+        onOpenChange={setOpen}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />
+    </>
+  );
+}
 
 const categories = [
   {
@@ -30,11 +57,17 @@ const categories = [
   },
 ];
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  api.request.mockReset();
+  api.withResponse.mockReset();
+  toast.success.mockReset();
+  toast.error.mockReset();
+});
 
 describe("FinancialEntryDialog", () => {
   it("presents paired expected and actual amount/date fields with a selected category", () => {
-    render(
+    renderDialog(
       <FinancialEntryDialog
         open
         onOpenChange={() => {}}
@@ -63,7 +96,7 @@ describe("FinancialEntryDialog", () => {
     const onSaved = vi.fn();
     const onOpenChange = vi.fn();
     api.request.mockResolvedValue({});
-    render(
+    renderDialog(
       <FinancialEntryDialog
         open
         onOpenChange={onOpenChange}
@@ -113,7 +146,7 @@ describe("FinancialEntryDialog", () => {
   it("saves an expected-only expense with its due date", async () => {
     const user = userEvent.setup();
     api.request.mockResolvedValue({});
-    render(
+    renderDialog(
       <FinancialEntryDialog
         open
         onOpenChange={() => {}}
@@ -143,7 +176,7 @@ describe("FinancialEntryDialog", () => {
     });
   });
 
-  it("requires amount/date pairs and reports update or deletion failures", async () => {
+  it("requires amount/date pairs and reports update failures", async () => {
     const user = userEvent.setup();
     const entry = {
       id: "entry-id",
@@ -157,7 +190,7 @@ describe("FinancialEntryDialog", () => {
       actualDate: null,
     };
     api.request.mockRejectedValue(new Error("Falha segura."));
-    render(
+    renderDialog(
       <FinancialEntryDialog
         open
         onOpenChange={() => {}}
@@ -183,65 +216,12 @@ describe("FinancialEntryDialog", () => {
       expect.objectContaining({ method: "PATCH" }),
       "Não foi possível salvar o lançamento.",
     );
-
-    api.request.mockRejectedValueOnce("offline");
-    await user.click(screen.getByRole("button", { name: "Excluir" }));
-    expect(toast.error).toHaveBeenLastCalledWith(
-      "Não foi possível excluir o lançamento.",
-    );
-    expect(api.request).toHaveBeenLastCalledWith(
-      "/api/financial-entries?id=entry-id",
-      { method: "DELETE" },
-      "Não foi possível excluir o lançamento.",
-    );
-
-    await user.click(screen.getByRole("button", { name: "Excluir" }));
-    expect(toast.error).toHaveBeenLastCalledWith("Falha segura.");
-  });
-
-  it("closes on cancel and confirms deletion for an encoded entry ID", async () => {
-    const user = userEvent.setup();
-    const onSaved = vi.fn();
-    const onOpenChange = vi.fn();
-    api.request.mockResolvedValue({});
-    render(
-      <FinancialEntryDialog
-        open
-        onOpenChange={onOpenChange}
-        categories={categories}
-        entry={{
-          id: "entry / 1",
-          kind: "EXPENSE",
-          description: "Conta",
-          categoryId: categories[0].id,
-          categoryName: "Moradia",
-          expectedAmount: "100.00",
-          expectedDate: "2026-10-10",
-          actualAmount: null,
-          actualDate: null,
-        }}
-        onSaved={onSaved}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-    await user.click(screen.getByRole("button", { name: "Excluir" }));
-
-    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
-    expect(api.request).toHaveBeenLastCalledWith(
-      "/api/financial-entries?id=entry%20%2F%201",
-      { method: "DELETE" },
-      "Não foi possível excluir o lançamento.",
-    );
-    expect(toast.success).toHaveBeenCalledWith("Lançamento excluído.");
-    expect(onOpenChange).toHaveBeenLastCalledWith(false);
   });
 
   it("reports both incomplete date pairs and a safe fallback for save errors", async () => {
     const user = userEvent.setup();
     api.request.mockRejectedValue("offline");
-    render(
+    renderDialog(
       <FinancialEntryDialog
         open
         onOpenChange={() => {}}
@@ -272,6 +252,217 @@ describe("FinancialEntryDialog", () => {
 
     expect(toast.error).toHaveBeenCalledWith(
       "Não foi possível salvar o lançamento.",
+    );
+  });
+
+  it("creates and selects a category from the launch form", async () => {
+    const user = userEvent.setup();
+    api.withResponse.mockResolvedValue({
+      data: {
+        id: "cat-new",
+        kind: "EXPENSE",
+        name: "Saúde",
+        active: true,
+      },
+    });
+    api.request.mockResolvedValue({});
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Criar categoria/ }));
+    await user.type(screen.getByLabelText("Nome"), "Saúde");
+    await user.click(screen.getByRole("button", { name: "Criar categoria" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Nova categoria de saída" }),
+      ).toBeNull(),
+    );
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Saúde" }));
+    await user.type(screen.getByLabelText("Descrição"), "Consulta médica");
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+      "180",
+    );
+    await user.type(screen.getByLabelText("Data prevista"), "05/10/2026");
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, entryOptions] = api.request.mock.calls[0];
+    expect(JSON.parse(entryOptions.body as string).categoryId).toBe("cat-new");
+  });
+
+  it("creates a recurrence after the current launch and warns about normalized duplicates", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({});
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+        recurrences={[
+          {
+            id: "rec-1",
+            kind: "EXPENSE",
+            description: "ALUGUEL",
+            categoryId: categories[0].id,
+            amount: "550.00",
+            frequency: "MONTHLY",
+            firstDueDate: "2026-11-01",
+            essential: true,
+            active: true,
+          },
+        ]}
+      />,
+    );
+    await user.type(screen.getByLabelText("Descrição"), "Aluguel");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+      "550",
+    );
+    await user.type(screen.getByLabelText("Data prevista"), "01/10/2026");
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Criar recorrência para este lançamento",
+      }),
+    );
+    expect(
+      screen.getByText(/Já existe uma recorrência ativa parecida/),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    const [, recurrenceOptions] = api.request.mock.calls[1];
+    expect(JSON.parse(recurrenceOptions.body as string)).toMatchObject({
+      kind: "EXPENSE",
+      description: "Aluguel",
+      categoryId: categories[0].id,
+      amount: 550,
+      frequency: "MONTHLY",
+      firstDueDate: expect.stringMatching(/^2026-11-01$/),
+    });
+  });
+
+  it("reports when the launch succeeds but recurrence creation fails", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(
+        new Error("Não foi possível criar a recorrência."),
+      );
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+    await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+      "200",
+    );
+    await user.type(screen.getByLabelText("Data prevista"), "01/10/2026");
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Criar recorrência para este lançamento",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "O lançamento foi salvo, mas a recorrência não foi criada",
+        ),
+      ),
+    );
+  });
+
+  it("resets recurrence selection and suggested date when closing and reopening a launch", async () => {
+    const user = userEvent.setup();
+    renderDialog(<StatefulEntryDialog />);
+    const recurrenceCheckbox = screen.getByRole("checkbox", {
+      name: "Criar recorrência para este lançamento",
+    });
+
+    await user.click(recurrenceCheckbox);
+    expect(recurrenceCheckbox.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByLabelText("Próxima ocorrência")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await user.click(screen.getByRole("button", { name: "Abrir lançamento" }));
+
+    const reopenedCheckbox = screen.getByRole("checkbox", {
+      name: "Criar recorrência para este lançamento",
+    });
+    expect(reopenedCheckbox.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByLabelText("Próxima ocorrência")).toBeNull();
+  });
+
+  it("updates the suggested recurrence date when launch dates change but preserves a manual override", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({});
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Criar recorrência para este lançamento",
+      }),
+    );
+    await user.type(screen.getByLabelText("Descrição"), "Aluguel");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+      "550",
+    );
+    await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
+
+    const nextOccurrence = screen.getByLabelText(
+      "Próxima ocorrência",
+    ) as HTMLInputElement;
+    expect(nextOccurrence.value).toBe("10/11/2026");
+    await user.click(
+      screen.getByRole("combobox", {
+        name: "Periodicidade da recorrência",
+      }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Trimestral" }));
+    expect(nextOccurrence.value).toBe("10/01/2027");
+
+    await user.clear(nextOccurrence);
+    await user.type(nextOccurrence, "15/12/2026");
+    const expectedDate = screen.getByLabelText(
+      "Data prevista",
+    ) as HTMLInputElement;
+    await user.clear(expectedDate);
+    await user.type(expectedDate, "11/11/2026");
+    expect(nextOccurrence.value).toBe("15/12/2026");
+
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    const [, recurrenceOptions] = api.request.mock.calls[1];
+    expect(JSON.parse(recurrenceOptions.body as string).firstDueDate).toBe(
+      "2026-12-15",
     );
   });
 });

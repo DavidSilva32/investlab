@@ -43,7 +43,7 @@ describe("FinancialHistory", () => {
     );
   });
 
-  it("preserves missing months as unavailable and explains recorded-only history", () => {
+  it("preserves missing months as unavailable without redundant helper copy", () => {
     render(
       <FinancialHistory
         months={[
@@ -55,7 +55,6 @@ describe("FinancialHistory", () => {
           },
         ]}
         selectedMonth="2026-10"
-        explanation="Os meses sem registros não representam valores zero."
       />,
     );
 
@@ -66,8 +65,8 @@ describe("FinancialHistory", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBe(3);
     expect(
-      screen.getByText("Os meses sem registros não representam valores zero."),
-    ).toBeTruthy();
+      screen.queryByText(/meses sem registros não representam valores zero/),
+    ).toBeNull();
     expect(screen.queryByText("R$ 0,00")).toBeNull();
   });
 
@@ -89,7 +88,6 @@ describe("FinancialHistory", () => {
           },
         ]}
         selectedMonth="2026-10"
-        explanation="Comparação limitada aos meses com registros."
       />,
     );
 
@@ -112,8 +110,5 @@ describe("FinancialHistory", () => {
         "Ainda não há dados realizados para comparar no histórico.",
       ),
     ).toBeNull();
-    expect(
-      screen.getByText("Comparação limitada aos meses com registros."),
-    ).toBeTruthy();
   });
 });

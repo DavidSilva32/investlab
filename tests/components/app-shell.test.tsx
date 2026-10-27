@@ -163,8 +163,11 @@ describe("AppShell", () => {
         .every((link) => link.getAttribute("aria-current") === "page"),
     ).toBe(true);
     expect(
-      screen.getAllByRole("button", { name: "Aprender e análises" }).length,
+      screen.getAllByRole("link", { name: "Aprender" }).length,
     ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: "Aprender e análises" }),
+    ).toBeNull();
   });
 
   it("keeps Finanças active on nested cash-flow routes in desktop and mobile navigation", () => {
@@ -281,6 +284,9 @@ describe("AppShell", () => {
     expect(
       links.every((link) => link.getAttribute("aria-current") === "page"),
     ).toBe(true);
+    expect(
+      screen.getAllByRole("button", { name: "Investimentos" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("supports a null pathname while rendering navigation", () => {

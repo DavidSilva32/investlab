@@ -101,8 +101,8 @@ describe("DashboardFinancesCard", () => {
 
     expect(await screen.findByText("Comece por aqui")).toBeTruthy();
     expect(
-      screen.getByText("Registre entradas e saídas para acompanhar o mês."),
-    ).toBeTruthy();
+      screen.queryByText("Registre entradas e saídas para acompanhar o mês."),
+    ).toBeNull();
     expect(
       screen.getByText("Visualização de suporte: somente leitura."),
     ).toBeTruthy();

@@ -135,7 +135,7 @@ export function FinancialOverview() {
   });
   const recurrences = useQuery({
     queryKey: queryKeys.finances.recurrences(month),
-    enabled: recurrencesOpen,
+    enabled: recurrencesOpen || entryOpen,
     queryFn: () =>
       apiRequest<RecurrenceOverview>(
         `/api/financial-recurrences?month=${month}`,
@@ -237,45 +237,46 @@ export function FinancialOverview() {
               {
                 label: "Entradas previstas",
                 value: data?.summary.expectedIncome,
-                description: undefined,
+                tone: "text-status-success border-l-status-success",
               },
               {
                 label: "Entradas realizadas",
                 value: data?.summary.realizedIncome,
-                description: undefined,
+                tone: "text-status-success border-l-status-success",
               },
               {
                 label: "Saídas previstas",
                 value: data?.summary.expectedExpenses,
-                description: undefined,
+                tone: "text-status-danger border-l-status-danger",
               },
               {
                 label: "Saídas realizadas",
                 value: data?.summary.realizedExpenses,
-                description: undefined,
+                tone: "text-status-danger border-l-status-danger",
               },
               {
                 label: "Saldo previsto",
                 value: data?.summary.expectedBalance,
-                description: "Entradas menos saídas previstas.",
+                tone:
+                  Number(data?.summary.expectedBalance) < 0
+                    ? "text-status-danger border-l-status-danger"
+                    : "text-foreground border-l-border",
               },
               {
                 label: "Saldo realizado",
                 value: data?.summary.recordedBalance,
-                description: "Somente valores com data realizada informada.",
+                tone:
+                  Number(data?.summary.recordedBalance) < 0
+                    ? "text-status-danger border-l-status-danger"
+                    : "text-foreground border-l-border",
               },
-            ].map(({ label, value, description }) => (
-              <Card key={label}>
+            ].map(({ label, value, tone }) => (
+              <Card key={label} className={`border-l-2 ${tone}`}>
                 <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">{label}</p>
+                  <p className="text-sm opacity-85">{label}</p>
                   <p className="mt-2 text-2xl font-semibold tabular-nums">
                     {money(value as string | null)}
                   </p>
-                  {description && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {description}
-                    </p>
-                  )}
                 </CardContent>
               </Card>
             ))}
@@ -307,6 +308,7 @@ export function FinancialOverview() {
                 entries={data?.entries ?? []}
                 occurrences={data?.recurringOccurrences ?? []}
                 readOnly={!canEdit}
+                onSaved={() => void invalidateFinances(client)}
                 onEdit={(entry) => {
                   setEditingEntry(entry);
                   setEntryOpen(true);
@@ -317,7 +319,6 @@ export function FinancialOverview() {
           <FinancialHistory
             months={data?.history.months ?? []}
             selectedMonth={month}
-            explanation={data?.history.explanation ?? ""}
           />
         </>
       )}
@@ -330,6 +331,9 @@ export function FinancialOverview() {
         }}
         categories={overview.data?.categories ?? []}
         entry={editingEntry}
+        recurrences={recurrences.data?.recurrences ?? []}
+        recurrencesLoading={entryOpen && recurrences.isPending}
+        recurrencesError={entryOpen && recurrences.isError}
         onSaved={() => {
           void invalidateFinances(client);
         }}

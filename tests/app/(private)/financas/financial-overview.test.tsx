@@ -412,7 +412,10 @@ describe("FinancialOverview", () => {
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Fechar" }));
 
-    await user.click(screen.getByRole("button", { name: "Editar" }));
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Conta de luz" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Editar/ }));
     expect(
       await screen.findByRole("dialog", { name: "Editar lançamento" }),
     ).toBeTruthy();
@@ -421,7 +424,10 @@ describe("FinancialOverview", () => {
       screen.queryByRole("dialog", { name: "Editar lançamento" }),
     ).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Editar" }));
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Conta de luz" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Editar/ }));
     expect(
       await screen.findByRole("dialog", { name: "Editar lançamento" }),
     ).toBeTruthy();
