@@ -1,7 +1,40 @@
 import { describe, expect, it } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 
 describe("queryKeys", () => {
+  it("groups finance views under stable, invalidatable keys", async () => {
+    const month = "2026-10";
+    const financeKeys = [
+      queryKeys.finances.overview(month),
+      queryKeys.finances.entries(month),
+      queryKeys.finances.recurrences(month),
+      queryKeys.finances.categories(),
+    ];
+    expect(queryKeys.finances.all).toEqual(["finances"]);
+    expect(financeKeys).toEqual([
+      ["finances", "overview", month],
+      ["finances", "entries", month],
+      ["finances", "recurrences", month],
+      ["finances", "categories"],
+    ]);
+
+    const client = new QueryClient();
+    financeKeys.forEach((queryKey) => client.setQueryData(queryKey, {}));
+    client.setQueryData(queryKeys.portfolio.overview(), {});
+    await client.invalidateQueries({ queryKey: queryKeys.finances.all });
+
+    financeKeys.forEach((queryKey) =>
+      expect(
+        client.getQueryCache().find({ queryKey })?.state.isInvalidated,
+      ).toBe(true),
+    );
+    expect(
+      client.getQueryCache().find({ queryKey: queryKeys.portfolio.overview() })
+        ?.state.isInvalidated,
+    ).toBe(false);
+  });
+
   it("groups portfolio reads under stable portfolio keys", () => {
     expect(queryKeys.portfolio.all).toEqual(["portfolio"]);
     expect(queryKeys.portfolio.overview()).toEqual(["portfolio", "overview"]);

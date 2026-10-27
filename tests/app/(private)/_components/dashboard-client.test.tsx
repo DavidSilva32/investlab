@@ -17,6 +17,10 @@ vi.mock("@/components/app-page-skeleton", () => ({
   AppContentSkeleton: () => <p>Carregando dashboard...</p>,
 }));
 
+vi.mock("@/app/(private)/_components/dashboard-finances-card", () => ({
+  DashboardFinancesCard: () => <p>Resumo financeiro do dashboard</p>,
+}));
+
 vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
   DashboardSummary: ({
     destinationSummary,

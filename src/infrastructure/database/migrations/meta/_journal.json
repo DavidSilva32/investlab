@@ -421,6 +421,34 @@
       "when": 1793118024476,
       "tag": "0059_flippant_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1793124576571,
+      "tag": "0060_oval_tana_nile",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1793125703617,
+      "tag": "0061_nebulous_lila_cheney",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1793126042639,
+      "tag": "0062_foamy_the_twelve",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1793126117532,
+      "tag": "0063_legal_unus",
+      "breakpoints": true
     }
   ]
 }

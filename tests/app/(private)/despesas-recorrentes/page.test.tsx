@@ -1,35 +1,21 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/app-shell", () => ({
-  AppShell: ({
-    title,
-    children,
-  }: {
-    title: string;
-    children: React.ReactNode;
-  }) => <main aria-label={title}>{children}</main>,
+const next = vi.hoisted(() => ({ redirect: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  redirect: (href: string) => next.redirect(href),
 }));
-
-vi.mock(
-  "@/app/(private)/despesas-recorrentes/_components/recurring-expenses-client",
-  () => ({
-    RecurringExpensesClient: () => <p>Controles de despesas recorrentes</p>,
-  }),
-);
 
 import RecurringExpensesPage, {
   dynamic,
 } from "@/app/(private)/despesas-recorrentes/page";
 
-afterEach(cleanup);
-
 describe("RecurringExpensesPage", () => {
-  it("renders the recurring expense experience in the authenticated shell", () => {
-    render(<RecurringExpensesPage />);
+  it("redirects saved links to the recurring management panel in finances", () => {
+    RecurringExpensesPage();
     expect(dynamic).toBe("force-dynamic");
-    expect(screen.getByRole("main", { name: "Despesas" })).toBeTruthy();
-    expect(screen.getByText("Controles de despesas recorrentes")).toBeTruthy();
+    expect(next.redirect).toHaveBeenCalledWith(
+      "/financas?gerenciar=recorrencias",
+    );
   });
 });

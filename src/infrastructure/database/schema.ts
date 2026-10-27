@@ -761,16 +761,19 @@ export const emergencyReserveSettings = pgTable(
 );
 
 /* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
-export const recurringExpenses = pgTable(
-  "recurring_expenses",
+export const financialRecurrences = pgTable(
+  "financial_recurrences",
   {
     userId: text()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     description: varchar({ length: 120 }).notNull(),
-    category: varchar({ length: 80 }),
+    categoryId: uuid().references(() => financialCategories.id, {
+      onDelete: "restrict",
+    }),
     amount: numeric({ precision: 14, scale: 2 }).notNull(),
+    kind: varchar({ length: 8 }).notNull().default("EXPENSE"),
     frequency: varchar({ length: 16 }).notNull(),
     firstDueDate: date().notNull(),
     essential: boolean().notNull().default(false),
@@ -779,36 +782,146 @@ export const recurringExpenses = pgTable(
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("recurring_expenses_user_active_idx").on(table.userId, table.active),
+    check(
+      "financial_recurrences_kind_check",
+      sql`${table.kind} in ('INCOME', 'EXPENSE')`,
+    ),
+    check(
+      "financial_recurrences_income_not_essential_check",
+      sql`${table.kind} = 'EXPENSE' or ${table.essential} = false`,
+    ),
+    index("financial_recurrences_user_active_idx").on(
+      table.userId,
+      table.active,
+    ),
   ],
 );
 
-export const recurringExpenseOccurrences = pgTable(
-  "recurring_expense_occurrences",
+export const recurringFinancialOccurrences = pgTable(
+  "recurring_financial_occurrences",
   {
     userId: text()
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
-    recurringExpenseId: uuid()
+    recurrenceId: uuid()
       .notNull()
-      .references(() => recurringExpenses.id, { onDelete: "cascade" }),
+      .references(() => financialRecurrences.id, { onDelete: "cascade" }),
     dueDate: date().notNull(),
     expectedAmount: numeric({ precision: 14, scale: 2 }).notNull(),
     actualAmount: numeric({ precision: 14, scale: 2 }),
+    actualDate: date(),
     realizedAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("recurring_expense_occurrences_user_expense_date_uidx").on(
+    uniqueIndex("recurring_financial_occurrences_user_recurrence_date_uidx").on(
       table.userId,
-      table.recurringExpenseId,
+      table.recurrenceId,
       table.dueDate,
     ),
-    index("recurring_expense_occurrences_user_due_idx").on(
+    index("recurring_financial_occurrences_user_due_idx").on(
       table.userId,
       table.dueDate,
+    ),
+  ],
+);
+
+export const financialCategories = pgTable(
+  "financial_categories",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    kind: varchar({ length: 8 }).notNull(),
+    name: varchar({ length: 80 }).notNull(),
+    isDefault: boolean().notNull().default(false),
+    active: boolean().notNull().default(true),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "financial_categories_kind_check",
+      sql`${table.kind} in ('INCOME', 'EXPENSE')`,
+    ),
+    check(
+      "financial_categories_owner_default_check",
+      sql`(${table.userId} is null and ${table.isDefault}) or (${table.userId} is not null and not ${table.isDefault})`,
+    ),
+    uniqueIndex("financial_categories_default_name_uidx")
+      .on(table.kind, sql`lower(trim(${table.name}))`)
+      .where(sql`${table.userId} is null`),
+    uniqueIndex("financial_categories_owner_name_uidx")
+      .on(table.userId, table.kind, sql`lower(trim(${table.name}))`)
+      .where(sql`${table.userId} is not null`),
+  ],
+);
+
+export const financialCategoryPreferences = pgTable(
+  "financial_category_preferences",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    categoryId: uuid()
+      .notNull()
+      .references(() => financialCategories.id, { onDelete: "cascade" }),
+    nameOverride: varchar({ length: 80 }),
+    active: boolean().notNull().default(true),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("financial_category_preferences_user_category_uidx").on(
+      table.userId,
+      table.categoryId,
+    ),
+  ],
+);
+
+export const financialEntries = pgTable(
+  "financial_entries",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    kind: varchar({ length: 8 }).notNull(),
+    description: varchar({ length: 120 }).notNull(),
+    categoryId: uuid()
+      .notNull()
+      .references(() => financialCategories.id, { onDelete: "restrict" }),
+    expectedAmount: numeric({ precision: 14, scale: 2 }),
+    expectedDate: date(),
+    actualAmount: numeric({ precision: 14, scale: 2 }),
+    actualDate: date(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "financial_entries_kind_check",
+      sql`${table.kind} in ('INCOME', 'EXPENSE')`,
+    ),
+    check(
+      "financial_entries_expected_pair_check",
+      sql`(${table.expectedAmount} is null and ${table.expectedDate} is null) or (${table.expectedAmount} > 0 and ${table.expectedDate} is not null)`,
+    ),
+    check(
+      "financial_entries_actual_pair_check",
+      sql`(${table.actualAmount} is null and ${table.actualDate} is null) or (${table.actualAmount} > 0 and ${table.actualDate} is not null)`,
+    ),
+    check(
+      "financial_entries_amount_required_check",
+      sql`${table.expectedAmount} is not null or ${table.actualAmount} is not null`,
+    ),
+    index("financial_entries_user_expected_date_idx").on(
+      table.userId,
+      table.expectedDate,
+    ),
+    index("financial_entries_user_actual_date_idx").on(
+      table.userId,
+      table.actualDate,
     ),
   ],
 );
