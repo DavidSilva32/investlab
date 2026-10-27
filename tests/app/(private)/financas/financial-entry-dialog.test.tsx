@@ -354,6 +354,79 @@ describe("FinancialEntryDialog", () => {
     expect(JSON.parse(entryOptions.body as string).categoryId).toBe("cat-new");
   });
 
+  it("explains essential expenses and resets the flag when recurrence is disabled or changed to income", async () => {
+    const user = userEvent.setup();
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Marcar recorrência como despesa essencial",
+      }),
+    ).toBeNull();
+    const createRecurrence = screen.getByRole("checkbox", {
+      name: "Criar recorrência para este lançamento",
+    });
+    await user.click(createRecurrence);
+
+    const essential = screen.getByRole("checkbox", {
+      name: "Marcar recorrência como despesa essencial",
+    });
+    expect(essential.getAttribute("aria-checked")).toBe("false");
+    const help = screen.getByRole("button", {
+      name: "Ajuda sobre despesa essencial",
+    });
+    await user.hover(help);
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "Marque gastos necessários para manter suas necessidades básicas. Eles compõem a base mensal da sua reserva de emergência.",
+    );
+
+    await user.click(essential);
+    expect(essential.getAttribute("aria-checked")).toBe("true");
+    await user.click(createRecurrence);
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Marcar recorrência como despesa essencial",
+      }),
+    ).toBeNull();
+    await user.click(createRecurrence);
+    expect(
+      screen
+        .getByRole("checkbox", {
+          name: "Marcar recorrência como despesa essencial",
+        })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Tipo de lançamento" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Entrada" }));
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Marcar recorrência como despesa essencial",
+      }),
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("combobox", { name: "Tipo de lançamento" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Saída" }));
+    expect(
+      screen
+        .getByRole("checkbox", {
+          name: "Marcar recorrência como despesa essencial",
+        })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
+  });
+
   it("creates a recurrence after the current launch and warns about normalized duplicates", async () => {
     const user = userEvent.setup();
     api.request.mockResolvedValue({});
@@ -392,6 +465,11 @@ describe("FinancialEntryDialog", () => {
         name: "Criar recorrência para este lançamento",
       }),
     );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Marcar recorrência como despesa essencial",
+      }),
+    );
     expect(
       screen.getByText(/Já existe uma recorrência ativa parecida/),
     ).toBeTruthy();
@@ -405,6 +483,7 @@ describe("FinancialEntryDialog", () => {
       amount: 550,
       frequency: "MONTHLY",
       firstDueDate: expect.stringMatching(/^2026-11-01$/),
+      essential: true,
     });
   });
 
@@ -457,6 +536,11 @@ describe("FinancialEntryDialog", () => {
     await user.click(recurrenceCheckbox);
     expect(recurrenceCheckbox.getAttribute("aria-checked")).toBe("true");
     expect(screen.getByLabelText("Próxima ocorrência")).toBeTruthy();
+    const essentialCheckbox = screen.getByRole("checkbox", {
+      name: "Marcar recorrência como despesa essencial",
+    });
+    await user.click(essentialCheckbox);
+    expect(essentialCheckbox.getAttribute("aria-checked")).toBe("true");
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
     await user.click(screen.getByRole("button", { name: "Abrir lançamento" }));
 
@@ -465,6 +549,19 @@ describe("FinancialEntryDialog", () => {
     });
     expect(reopenedCheckbox.getAttribute("aria-checked")).toBe("false");
     expect(screen.queryByLabelText("Próxima ocorrência")).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Marcar recorrência como despesa essencial",
+      }),
+    ).toBeNull();
+    await user.click(reopenedCheckbox);
+    expect(
+      screen
+        .getByRole("checkbox", {
+          name: "Marcar recorrência como despesa essencial",
+        })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
   });
 
   it("updates the suggested recurrence date when launch dates change but preserves a manual override", async () => {
