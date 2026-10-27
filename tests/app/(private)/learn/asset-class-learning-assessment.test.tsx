@@ -71,6 +71,8 @@ describe("AssetClassLearningAssessment", () => {
       ),
     );
     expect(screen.getByRole("status").textContent).toContain("7,0/10");
+    const celebration = screen.getByTestId("learning-exam-celebration");
+    expect(celebration).toBeTruthy();
     expect(
       screen.getByRole("status").querySelector(".learning-achievement-pop"),
     ).toBeTruthy();
@@ -81,6 +83,7 @@ describe("AssetClassLearningAssessment", () => {
       }),
     );
     expect(screen.getByRole("button", { name: "Refazer prova" })).toBeTruthy();
+    expect(celebration.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("restores a failed result without a recorded best score", () => {
@@ -159,6 +162,7 @@ describe("AssetClassLearningAssessment", () => {
     expect(
       screen.getByRole("status").querySelector(".learning-achievement-pop"),
     ).toBeNull();
+    expect(screen.queryByTestId("learning-exam-celebration")).toBeNull();
   });
 
   it("keeps a prior medal while clearly identifying a failed updated exam", () => {
@@ -276,6 +280,44 @@ describe("AssetClassLearningAssessment", () => {
     expect(onComplete.mock.calls[0][0].attemptId).toBe(
       onComplete.mock.calls[1][0].attemptId,
     );
+  });
+
+  it("shows an animated status while the saved result is pending", async () => {
+    let resolveCompletion!: (result: {
+      score: number;
+      passed: boolean;
+    }) => void;
+    const onComplete = vi.fn(
+      () =>
+        new Promise<{ score: number; passed: boolean }>((resolve) => {
+          resolveCompletion = resolve;
+        }),
+    );
+    render(
+      <AssetClassLearningAssessment
+        questions={questions.slice(0, 1)}
+        onComplete={onComplete}
+      />,
+    );
+
+    await answerQuestion(0, true);
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
+
+    expect(
+      screen.getByRole("status", { name: "Conferindo suas respostas" })
+        .textContent,
+    ).toContain("salvando seu resultado");
+    expect(
+      screen
+        .getByRole("button", { name: "Salvando resultado…" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+
+    resolveCompletion({ score: 10, passed: true });
+    await screen.findByText("Você conquistou sua medalha!");
+    expect(
+      screen.queryByRole("status", { name: "Conferindo suas respostas" }),
+    ).toBeNull();
   });
 
   it("keeps a permanent approval after a lower retry and restores it after reload", async () => {
