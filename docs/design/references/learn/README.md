@@ -14,13 +14,13 @@ Os arquivos MP4 das quatro classes estão disponíveis localmente. O mockup não
 
 As aulas e os quizzes são educativos, sem recomendação de compra ou venda. O progresso das aulas, a nota da prova e a aprovação são persistidos por conta em `/api/learning/progress`; a conclusão exige nota mínima 7,0. Cada classe oferece fontes oficiais do Portal do Investidor/CVM sob demanda. O texto de FIIs distingue a participação no fundo da propriedade direta de imóveis e informa que cotas podem ser negociadas em bolsa ou balcão organizado.
 
-As aulas 2–4 de FIIs usam fotografias ilustrativas de shopping, galpão e imóvel residencial. Na aula 2, a pessoa escolhe um exemplo para atualizar a imagem e acompanhar uma representação animada de como um ativo pode entrar na carteira de um fundo. A cena é didática: não representa a composição de um fundo real, propriedade individual ou retorno. Renda fixa, ações/BDRs e ETFs usam diagramas didáticos específicos por aula. Esses exemplos não são dados de produtos ou ativos reais e não definem a composição de uma classe inteira.
+As aulas de FIIs usam fotografias ilustrativas de shopping, galpão e imóvel residencial na aula de tipos de imóveis. A pessoa escolhe um exemplo para atualizar a imagem e acompanhar uma representação animada de como um ativo pode fazer parte de um fundo. As aulas textuais de renda fixa, ações/BDRs e ETFs usam cenas interativas específicas por conceito: selecionar uma etapa atualiza a explicação correspondente. A interação é por toque/clique ou teclado, usa a cor semântica da classe e respeita `prefers-reduced-motion`. As cenas são didáticas; não representam ativos, carteiras, resultados ou recomendações reais.
 
 ## Caminho progressivo para interações gamificadas
 
 Este roteiro orienta melhorias futuras; não afirma que elas já estejam disponíveis.
 
-1. **Aprender — explorar conceitos:** permitir que a pessoa toque ou selecione elementos didáticos e veja a ilustração responder. A transição deve explicar um conceito curto, sem sugerir retorno ou composição real. A aula 2 de FIIs inicia essa etapa; renda fixa, ações/BDRs e ETFs podem receber cenas próprias.
+1. **Aprender — explorar conceitos:** concluída para os quatro cursos disponíveis. A aula de tipos de imóveis dos FIIs mantém fotos ilustrativas selecionáveis; as cenas de renda fixa, ações/BDRs e ETFs animam a explicação de etapas específicas por aula. Essas visualizações não sugerem retorno nem composição real.
 2. **Landing page — experimentar antes de entrar:** tornar a demonstração manipulável para que o visitante altere entradas de exemplo e veja a interface responder, sempre distinguindo dados fictícios de resultados reais.
 3. **Chatbot e navegação — acompanhar a ação:** animar abertura, envio, espera e resposta do chatbot e transições importantes da navegação, respeitando interrupção, erro e preferência por movimento reduzido.
 4. **Carteira e fluxos — mostrar mudanças reais:** avaliar importação, revisão, simulações e organização da carteira; cada animação deve corresponder a uma mudança confirmada e reversível, quando possível.
@@ -31,7 +31,7 @@ O pacote Motion para React é MIT e está restrito ao componente interativo de A
 
 Evitar pontos, rankings, sequências ou recompensas por aportes, patrimônio, risco, retorno ou volume de operações.
 
-As animações usam Motion apenas no componente interativo de Aprender e seguem `prefers-reduced-motion`. Ainda não existe um sistema global de pontuação ou progresso entre áreas.
+As animações usam Motion nos componentes interativos de Aprender e seguem `prefers-reduced-motion`. Ainda não existe um sistema global de pontuação ou progresso entre áreas.
 
 ## Tokens e composição
 
@@ -39,13 +39,13 @@ A referência usa o tema claro solicitado; a implementação conserva os temas c
 
 ## Estados de entrega
 
-| Estado                      | Situação                                                                                                                                                                                                                                                        |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Referência criada           | Sim: a proposta de 2026 é referência histórica; a composição da issue #269 foi aprovada pelo usuário em 22/10/2026.                                                                                                                                             |
-| Contexto funcional revisado | Sim: rota `/aprender`, catálogo oficial, quatro vídeos, quatro aulas por classe, quizzes, prova, progresso salvo, fontes e roteiros introdutórios foram conferidos.                                                                                             |
-| Layout implementado         | Sim: seletor responsivo, aula em duas colunas no desktop e empilhada no celular, vídeo preservado na primeira aula, visuais contextuais, checagem rápida e roteiros de análise por classe.                                                                      |
-| Verificação estrutural      | 94 testes da área Aprender, TypeScript, ESLint focado, Prettier nos arquivos alterados e `git diff --check` passaram. O build local não concluiu: Turbopack falhou ao criar processo filho e o fallback Webpack recebeu EPERM ao criar tipos dentro de `.next`. |
-| Comparação visual real      | Pendente até revisar a implementação no navegador e comparar desktop/mobile com a composição aprovada.                                                                                                                                                          |
-| Aprovação do usuário        | Proposta da issue #269 aprovada em 22/10/2026; aprovação do layout implementado permanece pendente.                                                                                                                                                             |
+| Estado                      | Situação                                                                                                                                                                                                                                                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Referência criada           | Sim: a proposta de 2026 é referência histórica; a composição da issue #269 foi aprovada pelo usuário em 22/10/2026.                                                                                                                                                                                               |
+| Contexto funcional revisado | Sim: rota `/aprender`, catálogo oficial, quatro vídeos, quatro aulas por classe, quizzes, prova, progresso salvo, fontes e roteiros introdutórios foram conferidos.                                                                                                                                               |
+| Layout implementado         | Sim: quatro cursos preservam vídeo, checagem rápida, prova e progresso salvo; cenas de cada classe respondem à seleção e mantêm diagramas empilhados em telas pequenas.                                                                                                                                           |
+| Verificação estrutural      | 4.097 testes em 388 arquivos e cobertura global de statements, branches, functions e lines a 100%; lint, formatação, TypeScript e `git diff --check` passaram. O build local não concluiu: Turbopack encerrou o processo auxiliar e o Webpack recebeu EPERM criando uma pasta em `.next/server/app/api/analyses`. |
+| Comparação visual real      | Não realizada; permanece pendente conforme `docs/design/design-process.md`.                                                                                                                                                                                                                                       |
+| Aprovação do usuário        | Proposta da issue #269 aprovada em 22/10/2026; aprovação do layout implementado permanece pendente.                                                                                                                                                                                                               |
 
 Propostas visuais não são capturas, conteúdo final ou prova de fidelidade. Uma implementação aprovada não elimina a necessidade de comparar a página real no navegador.
