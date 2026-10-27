@@ -1,7 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { Award, PartyPopper, RotateCcw, Sparkles } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import {
+  Award,
+  BookOpenCheck,
+  LoaderCircle,
+  PartyPopper,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
@@ -165,6 +172,85 @@ export function AssetClassLearningAssessment({
       aria-label="Prova final"
       className="space-y-4 rounded-xl border border-border/70 bg-muted/30 p-4 sm:p-5"
     >
+      {submitting && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-background/85 p-4 backdrop-blur-sm">
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="Conferindo suas respostas"
+            className="w-full max-w-sm rounded-3xl border border-primary/20 bg-card p-7 text-center shadow-2xl sm:p-9"
+          >
+            <div className="relative mx-auto grid size-24 place-items-center rounded-full bg-primary/10 text-primary">
+              <BookOpenCheck aria-hidden="true" className="size-10" />
+              <LoaderCircle
+                aria-hidden="true"
+                className="absolute inset-0 size-24 motion-safe:animate-spin"
+              />
+              <Sparkles
+                aria-hidden="true"
+                className="absolute -right-2 -top-1 size-6 text-status-success motion-safe:animate-pulse"
+              />
+            </div>
+            <h3 className="mt-5 text-xl font-bold tracking-tight">
+              Conferindo suas respostas
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Estamos calculando sua nota e salvando seu resultado.
+            </p>
+            <div
+              aria-hidden="true"
+              className="learning-exam-loading-track mx-auto mt-6 h-2 max-w-52 overflow-hidden rounded-full bg-primary/10"
+            >
+              <span className="learning-exam-loading-bar block h-full w-1/3 rounded-full bg-primary" />
+            </div>
+          </div>
+        </div>
+      )}
+      {result?.newlyPassed && !reducedMotion && (
+        <div
+          aria-hidden="true"
+          data-testid="learning-exam-celebration"
+          className="learning-exam-celebration pointer-events-none fixed inset-0 z-[100] grid place-items-center overflow-hidden bg-background/65 p-4 text-center backdrop-blur-[2px]"
+        >
+          {[0, 1, 2].map((burst) => (
+            <span
+              aria-hidden="true"
+              key={burst}
+              className={`learning-exam-firework learning-exam-firework-${burst + 1}`}
+            >
+              {Array.from({ length: 18 }, (_, index) => {
+                const angle = (index / 18) * Math.PI * 2;
+                const radius = 115 + (index % 3) * 25;
+                return (
+                  <span
+                    aria-hidden="true"
+                    key={index}
+                    className="learning-exam-firework-particle"
+                    style={
+                      {
+                        "--particle-x": `${Math.cos(angle) * radius}px`,
+                        "--particle-y": `${Math.sin(angle) * radius}px`,
+                        "--particle-delay": `${(index % 5) * 35}ms`,
+                      } as CSSProperties
+                    }
+                  />
+                );
+              })}
+            </span>
+          ))}
+          <div className="learning-exam-celebration-card rounded-3xl border border-status-success/30 bg-card/95 px-7 py-6 shadow-2xl sm:px-10 sm:py-8">
+            <span className="mx-auto grid size-16 place-items-center rounded-full bg-status-success/10 text-status-success">
+              <Award aria-hidden="true" className="size-9" />
+            </span>
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-status-success">
+              Conquista desbloqueada
+            </p>
+            <p className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+              Curso aprovado!
+            </p>
+          </div>
+        </div>
+      )}
       {!result ? (
         <>
           <div className="space-y-2">
@@ -323,15 +409,17 @@ export function AssetClassLearningAssessment({
                 </p>
               )}
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4 min-h-11"
-            onClick={retryAssessment}
-          >
-            <RotateCcw aria-hidden="true" className="size-4" />
-            Refazer prova
-          </Button>
+          <div className="flex justify-center border-t border-border/60 px-5 py-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 min-w-40"
+              onClick={retryAssessment}
+            >
+              <RotateCcw aria-hidden="true" className="size-4" />
+              Refazer prova
+            </Button>
+          </div>
         </div>
       )}
     </section>

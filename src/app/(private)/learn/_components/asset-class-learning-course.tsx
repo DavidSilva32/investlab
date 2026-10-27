@@ -77,7 +77,10 @@ export function AssetClassLearningCourse({
   const isExam = step === examStep;
   const lesson = content.courseLessons[step];
   const isLastLesson = step === content.courseLessons.length - 1;
-  const progressPercent = Math.round((step / totalSteps) * 100);
+  const hasCompletedExam = progress?.latestScore != null;
+  const progressPercent = hasCompletedExam
+    ? 100
+    : Math.round((step / totalSteps) * 100);
   const completedLessonIds = progress?.completedLessonIds ?? [];
 
   const loadProgress = useCallback(async () => {

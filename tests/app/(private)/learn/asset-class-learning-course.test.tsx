@@ -209,6 +209,11 @@ describe("AssetClassLearningCourse", () => {
     expect(
       screen.getAllByRole("heading", { name: "Prova final" }),
     ).toHaveLength(2);
+    expect(
+      screen
+        .getByRole("progressbar", { name: "Progresso do mini-curso" })
+        .getAttribute("aria-valuenow"),
+    ).toBe("80");
     expect(screen.getByText("1 de 10")).toBeTruthy();
     expect(await screen.findAllByRole("radio")).toHaveLength(4);
   });
@@ -264,6 +269,11 @@ describe("AssetClassLearningCourse", () => {
     }
 
     await screen.findByText("Você conquistou sua medalha!");
+    expect(
+      screen
+        .getByRole("progressbar", { name: "Progresso do mini-curso" })
+        .getAttribute("aria-valuenow"),
+    ).toBe("100");
 
     const completion = screen
       .getAllByRole("status")
@@ -306,6 +316,11 @@ describe("AssetClassLearningCourse", () => {
     await screen.findByRole("heading", {
       name: "Aprovação anterior preservada",
     });
+    expect(
+      screen
+        .getByRole("progressbar", { name: "Progresso do mini-curso" })
+        .getAttribute("aria-valuenow"),
+    ).toBe("100");
     const completion = screen
       .getAllByRole("status")
       .find((status) =>
