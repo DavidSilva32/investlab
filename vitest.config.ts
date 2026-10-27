@@ -6,6 +6,7 @@ export default defineConfig({
   resolve: { alias: { "@": path.join(rootDirectory, "src") } },
   test: {
     include: ["tests/**/*.test.{ts,tsx}"],
+    setupFiles: [path.join(rootDirectory, "tests/setup.ts")],
     maxWorkers: 4,
     coverage: {
       provider: "v8",

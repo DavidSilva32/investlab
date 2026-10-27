@@ -107,6 +107,8 @@ describe("AppShell", () => {
     renderShell();
 
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Finanças").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Investimentos").length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: "Conectar IA" })).toBeNull();
     expect(screen.getAllByText("David Silva").length).toBeGreaterThan(0);
     expect(screen.queryByText("Usuário autorizado")).toBeNull();
@@ -149,6 +151,20 @@ describe("AppShell", () => {
       .map((paint) => paint?.slice(5, -1));
     expect(paintReferences.length).toBeGreaterThan(0);
     paintReferences.forEach((id) => expect(gradientIds).toContain(id));
+  });
+
+  it("marks Finanças active for the new cash-flow route", () => {
+    navigation.pathname = "/financas";
+    renderShell();
+
+    expect(
+      screen
+        .getAllByRole("link", { name: "Finanças" })
+        .every((link) => link.getAttribute("aria-current") === "page"),
+    ).toBe(true);
+    expect(
+      screen.getAllByRole("button", { name: "Aprender e análises" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("uses the semantic high-contrast sidebar surface and visible focus ring", () => {

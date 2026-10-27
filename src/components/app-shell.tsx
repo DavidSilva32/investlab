@@ -83,11 +83,7 @@ export function ShellUserProvider({
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
-  {
-    href: "/despesas-recorrentes",
-    label: "Despesas",
-    Icon: CalendarClock,
-  },
+  { href: "/financas", label: "Finanças", Icon: CalendarClock },
   { href: "/carteira", label: "Carteira", Icon: WalletCards },
   { href: "/planejamento", label: "Planejamento", Icon: Calculator },
   { href: "/estrategia", label: "Estratégia", Icon: Compass },
@@ -128,39 +124,104 @@ function Navigation({
   const visibleNavigation = isAdmin
     ? navigation
     : navigation.filter((item) => item.href !== "/configuracoes");
+  const primaryNavigation = visibleNavigation.filter(
+    (item) => item.href === "/dashboard" || item.href === "/financas",
+  );
+  const investmentNavigation = visibleNavigation.filter((item) =>
+    ["/carteira", "/planejamento", "/estrategia"].includes(item.href),
+  );
+  const learningNavigation = visibleNavigation.filter((item) =>
+    ["/aprender", "/analises"].includes(item.href),
+  );
+  const settingsNavigation = visibleNavigation.filter(
+    (item) => item.href === "/configuracoes",
+  );
   const isAdministrationRoute =
     pathname.startsWith("/admin") ||
     pathname === "/apresentacao" ||
     pathname === "/demonstracao";
   const [adminOpen, setAdminOpen] = useState(isAdministrationRoute);
+  const [investmentOpen, setInvestmentOpen] = useState(
+    investmentNavigation.some((item) => pathname.startsWith(item.href)),
+  );
+  const [learningOpen, setLearningOpen] = useState(
+    learningNavigation.some((item) => pathname.startsWith(item.href)),
+  );
+
+  const renderLinks = (items: typeof navigation) =>
+    items.map(({ href, label, Icon }) => {
+      const active = pathname === href || pathname.startsWith(`${href}/`);
+      const link = (
+        <Link
+          key={href}
+          href={href}
+          aria-current={active ? "page" : undefined}
+          className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${active ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
+        >
+          <Icon aria-hidden="true" className="size-4" />
+          {label}
+        </Link>
+      );
+      return closeOnSelect ? (
+        <SheetClose key={href} asChild>
+          {link}
+        </SheetClose>
+      ) : (
+        link
+      );
+    });
+
+  const renderGroup = (
+    title: string,
+    items: typeof navigation,
+    open: boolean,
+    setOpen: (open: boolean) => void,
+  ) => {
+    if (!items.length) return null;
+    const active = items.some((item) => pathname.startsWith(item.href));
+    return (
+      <Collapsible
+        open={open || active}
+        onOpenChange={setOpen}
+        className="mt-1"
+      >
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={title}
+            className="flex min-h-10 w-full justify-between rounded-xl px-3 text-xs font-semibold uppercase tracking-wide text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-sidebar-ring"
+          >
+            {title}
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-4 transition-transform motion-reduce:transition-none ${open || active ? "rotate-180" : ""}`}
+            />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-1 pl-2">
+          {renderLinks(items)}
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  };
 
   return (
     <nav className="flex flex-col gap-1.5" aria-label="Navegação principal">
-      {visibleNavigation.map(({ href, label, Icon }) => {
-        const active =
-          pathname === href ||
-          (href === "/aprender" && pathname.startsWith("/aprender")) ||
-          (href === "/planejamento" && pathname.startsWith("/planejamento")) ||
-          (href === "/analises" && pathname.startsWith("/analises"));
-        const link = (
-          <Link
-            key={href}
-            href={href}
-            aria-current={active ? "page" : undefined}
-            className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${active ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"}`}
-          >
-            <Icon aria-hidden="true" className="size-4" />
-            {label}
-          </Link>
-        );
-        return closeOnSelect ? (
-          <SheetClose key={href} asChild>
-            {link}
-          </SheetClose>
-        ) : (
-          link
-        );
-      })}
+      {renderLinks(primaryNavigation)}
+      {renderGroup(
+        "Investimentos",
+        investmentNavigation,
+        investmentOpen,
+        setInvestmentOpen,
+      )}
+      {renderGroup(
+        "Aprender e análises",
+        learningNavigation,
+        learningOpen,
+        setLearningOpen,
+      )}
+      {renderLinks(settingsNavigation)}
       {isAdmin && (
         <Collapsible
           open={adminOpen || isAdministrationRoute}

@@ -514,6 +514,10 @@ describe("withApiRequestLogging", () => {
       "/api/positions/manual",
       "/api/positions/reconciliation",
       "/api/emergency-reserve",
+      "/api/finance-overview",
+      "/api/financial-entries",
+      "/api/financial-categories",
+      "/api/financial-recurrences",
       "/api/analyses/portfolio-opportunities",
       "/api/learning/progress",
     ];
@@ -531,6 +535,36 @@ describe("withApiRequestLogging", () => {
       expect(response.status, route).toBe(200);
       expect(await response.json(), route).toEqual({ ownerId: "customer-1" });
     }
+  });
+
+  it.each([
+    ["POST", "/api/finance-overview"],
+    ["POST", "/api/financial-entries"],
+    ["PATCH", "/api/financial-entries"],
+    ["DELETE", "/api/financial-entries"],
+    ["POST", "/api/financial-categories"],
+    ["PATCH", "/api/financial-categories"],
+    ["DELETE", "/api/financial-categories"],
+    ["POST", "/api/financial-recurrences"],
+    ["PATCH", "/api/financial-recurrences"],
+    ["PUT", "/api/financial-recurrences/occurrences"],
+  ])("keeps %s %s blocked during support mode", async (method, route) => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = vi.fn(async (_request: Request) =>
+      Response.json({ changed: true }),
+    );
+    const wrapped = withApiRequestLogging(method, route, handler);
+
+    const response = await wrapped(
+      new Request(`https://investlab.test${route}`, {
+        method,
+        headers: { cookie: "investlab-support-view=token" },
+      }),
+    );
+
+    expect(response.status, `${method} ${route}`).toBe(403);
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed or copied support token bound to another actor", async () => {

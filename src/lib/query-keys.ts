@@ -1,4 +1,11 @@
 export const queryKeys = {
+  finances: {
+    all: ["finances"] as const,
+    overview: (month: string) => ["finances", "overview", month] as const,
+    entries: (month: string) => ["finances", "entries", month] as const,
+    recurrences: (month: string) => ["finances", "recurrences", month] as const,
+    categories: () => ["finances", "categories"] as const,
+  },
   portfolio: {
     all: ["portfolio"] as const,
     overview: () => ["portfolio", "overview"] as const,

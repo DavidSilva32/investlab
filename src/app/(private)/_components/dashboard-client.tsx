@@ -4,6 +4,7 @@ import type { DashboardDestinationSummary } from "@/app/(private)/_components/da
 import type { DashboardDestinationPosition } from "@/app/(private)/_components/dashboard-destinations-overview";
 import { DashboardSummary } from "@/app/(private)/_components/dashboard-summary";
 import { DashboardLearningEntry } from "@/app/(private)/_components/dashboard-learning-entry";
+import { DashboardFinancesCard } from "@/app/(private)/_components/dashboard-finances-card";
 import { AppContentSkeleton } from "@/components/app-page-skeleton";
 import { useAdminSupportView } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -61,23 +62,32 @@ export function DashboardClient({
   const supportCheckError = supportView === "error";
   if (overviewQuery.isError && !overview)
     return (
-      <div role="alert" className="space-y-3 text-sm text-destructive">
-        <p>{error}</p>
-        <Button
-          type="button"
-          variant="link"
-          className="h-auto p-0 text-foreground"
-          onClick={() => void overviewQuery.refetch()}
-        >
-          Tentar novamente
-        </Button>
+      <div className="space-y-4">
+        <DashboardFinancesCard />
+        <div role="alert" className="space-y-3 text-sm text-destructive">
+          <p>{error}</p>
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto p-0 text-foreground"
+            onClick={() => void overviewQuery.refetch()}
+          >
+            Tentar novamente
+          </Button>
+        </div>
       </div>
     );
   if (!overview)
-    return <AppContentSkeleton title="Dashboard" variant="dashboard" />;
+    return (
+      <div className="space-y-4">
+        <DashboardFinancesCard />
+        <AppContentSkeleton title="Dashboard" variant="dashboard" />
+      </div>
+    );
   return (
     <div className="space-y-4">
       <DashboardLearningEntry />
+      <DashboardFinancesCard />
       {overviewQuery.isError && error && (
         <div role="alert" className="space-y-2 text-sm text-destructive">
           <p>{error}</p>
