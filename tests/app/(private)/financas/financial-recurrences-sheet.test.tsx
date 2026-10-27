@@ -151,6 +151,47 @@ describe("FinancialRecurrencesSheet", () => {
     expect(api.request).not.toHaveBeenCalled();
   });
 
+  it("lets a realized occurrence without a date add one using its recorded amount", async () => {
+    const user = userEvent.setup();
+    const undatedRealized = {
+      ...occurrence,
+      id: "recurrence-id:2026-10-10-realized",
+      status: "realized" as const,
+      actualAmount: "575.00",
+      actualDate: null,
+    };
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [], recurrenceOccurrences: [undatedRealized] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Informar data realizada" }),
+    );
+    expect(
+      (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
+    ).toBe("575.00");
+    expect(
+      (
+        screen.getByLabelText(
+          "Data do pagamento/recebimento",
+        ) as HTMLInputElement
+      ).value,
+    ).not.toBe("");
+  });
+
   it("handles non-Error pause and realization failures and closes the realization dialog", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();

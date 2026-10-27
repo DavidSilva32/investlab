@@ -180,6 +180,19 @@ describe("FinancialOverview", () => {
     expect(attempts).toBe(2);
   });
 
+  it("uses a client-safe fallback when the overview rejects without an Error", async () => {
+    api.request.mockImplementation((url: string) =>
+      url.startsWith("/api/finance-overview")
+        ? Promise.reject("offline")
+        : Promise.resolve({ recurrences: [], recurrenceOccurrences: [] }),
+    );
+    renderFinance();
+
+    expect(
+      await screen.findByText("Não foi possível carregar o fluxo financeiro."),
+    ).toBeTruthy();
+  });
+
   it("loads the selected month and opens recurring management on demand", async () => {
     const user = userEvent.setup();
     renderFinance();
