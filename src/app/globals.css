@@ -206,6 +206,57 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.landing-hero-scene {
+  perspective: 1400px;
+  transform-style: preserve-3d;
+}
+.landing-hero-card {
+  transform: rotateY(-3deg) rotateX(1.5deg);
+  transform-origin: center;
+  backface-visibility: hidden;
+}
+.landing-hero-depth-card {
+  position: absolute;
+  inset: 3% 2% -1%;
+  z-index: -1;
+  border: 1px solid color-mix(in oklch, var(--primary) 22%, transparent);
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(
+      circle at 18% 12%,
+      color-mix(
+        in oklch,
+        var(--asset-class-international-etfs) 24%,
+        transparent
+      ),
+      transparent 48%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in oklch, var(--primary) 13%, var(--card)),
+      color-mix(in oklch, var(--asset-class-fiis) 10%, var(--card))
+    );
+  box-shadow: 0 28px 70px color-mix(in oklch, var(--primary) 12%, transparent);
+  transform: rotateY(5deg) rotateX(5deg) translate3d(10px, 10px, -38px);
+}
+.landing-hero-glow {
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklch, var(--primary) 19%, transparent),
+    transparent 68%
+  );
+}
+
+@media (max-width: 639px) {
+  .landing-hero-card {
+    transform: none;
+  }
+  .landing-hero-depth-card {
+    inset: 2% 1% -1%;
+    transform: translate3d(0, 8px, -20px);
+  }
+}
+
 /* Motion explains content arrival and navigation; values remain immediate. */
 @keyframes motion-fade-in {
   from {
@@ -231,6 +282,24 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@keyframes landing-hero-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -5px;
+  }
+}
+@keyframes landing-hero-float-mobile {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -3px;
   }
 }
 @keyframes motion-panel-in {
@@ -360,6 +429,23 @@ body {
   }
 }
 @media (prefers-reduced-motion: no-preference) {
+  .landing-hero-card {
+    animation: landing-hero-float 7s ease-in-out infinite;
+  }
+  .landing-hero-scene:hover .landing-hero-card,
+  .landing-hero-scene:focus-within .landing-hero-card {
+    animation: none;
+    transform: rotateY(0) rotateX(0) translateY(-3px);
+    transition: transform 280ms ease-out;
+  }
+  .landing-hero-scene:hover .landing-hero-depth-card,
+  .landing-hero-scene:focus-within .landing-hero-depth-card {
+    transform: rotateY(2deg) rotateX(3deg) translate3d(5px, 7px, -30px);
+    transition: transform 280ms ease-out;
+  }
+  .landing-hero-depth-card {
+    transition: transform 420ms ease-out;
+  }
   .learning-achievement-pop {
     animation: learning-achievement-pop 560ms cubic-bezier(0.2, 0.8, 0.25, 1)
       both;
@@ -459,6 +545,12 @@ body {
   }
   .motion-disclosure[data-state="closed"] {
     animation: motion-disclosure-out 160ms ease-in;
+  }
+}
+
+@media (max-width: 639px) and (prefers-reduced-motion: no-preference) {
+  .landing-hero-card {
+    animation-name: landing-hero-float-mobile;
   }
 }
 

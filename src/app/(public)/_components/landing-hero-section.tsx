@@ -84,15 +84,16 @@ export function LandingHeroSection() {
           </ul>
         </div>
 
-        <div className="relative mx-auto w-full max-w-2xl motion-safe:transition-transform motion-safe:duration-500 motion-safe:hover:-translate-y-1">
+        <div className="landing-hero-scene relative mx-auto w-full max-w-2xl">
           <div
             aria-hidden="true"
-            className="absolute -inset-4 -z-10 rounded-[2rem] bg-primary/10 blur-2xl"
+            className="landing-hero-glow absolute -inset-4 -z-10 rounded-[2rem] bg-primary/10 blur-2xl"
           />
+          <div aria-hidden="true" className="landing-hero-depth-card" />
           <Card
             role="region"
             aria-label="Prévia fictícia da carteira no InvestLab"
-            className="overflow-hidden rounded-2xl border-border/80 bg-card shadow-2xl shadow-primary/10"
+            className="landing-hero-card relative overflow-hidden rounded-2xl border-border/80 bg-card shadow-2xl shadow-primary/10"
           >
             <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-7">
               <div className="flex items-center gap-3">
