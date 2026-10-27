@@ -124,6 +124,34 @@ describe("FinancialRecurrencesRepository", () => {
     expectOwnerScopedWhere(fallbackWhere, "owner-category");
   });
 
+  it("returns null when no category appears after an insert conflict", async () => {
+    const selectLimits = [
+      vi.fn().mockResolvedValueOnce([]),
+      vi.fn().mockResolvedValueOnce([]),
+    ];
+    const selectWheres = selectLimits.map((limit) =>
+      vi.fn().mockReturnValue({ limit }),
+    );
+    const selectFroms = selectWheres.map((where) =>
+      vi.fn().mockReturnValue({ where }),
+    );
+    database.select
+      .mockReturnValueOnce({ from: selectFroms[0] })
+      .mockReturnValueOnce({ from: selectFroms[1] });
+    const returning = vi.fn().mockResolvedValueOnce([]);
+    const onConflictDoNothing = vi.fn().mockReturnValue({ returning });
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    database.insert.mockReturnValue({ values });
+
+    await expect(
+      runWithDataOwner("owner-category", () =>
+        repository.findOrCreateCategory("EXPENSE", "Academia"),
+      ),
+    ).resolves.toBeNull();
+    expect(database.select).toHaveBeenCalledTimes(2);
+    expectOwnerScopedWhere(selectWheres[1], "owner-category");
+  });
+
   it("validates a category belongs to the recurrence kind and visible owner scope", async () => {
     const rows = [{ id: "category" }];
     const limit = vi.fn().mockResolvedValue(rows);

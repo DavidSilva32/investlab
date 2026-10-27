@@ -243,4 +243,41 @@ describe("FinancialCategoryManager", () => {
     await user.click(screen.getByRole("button", { name: "Fechar" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("shows a loading state while category data is still pending", () => {
+    api.request.mockReturnValue(new Promise(() => {}));
+    renderManager();
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Carregando categorias",
+    );
+  });
+
+  it("uses a safe fallback for non-Error category loading and creation failures", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValueOnce("offline");
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <FinancialCategoryManager open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Não foi possível carregar as categorias.",
+    );
+
+    view.unmount();
+    api.request.mockResolvedValue({ categories });
+    api.response.mockRejectedValue("offline");
+    renderManager();
+    await screen.findByText("Moradia");
+    await user.type(screen.getByLabelText("Nova categoria"), "Saúde");
+    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível cadastrar a categoria.",
+    );
+  });
 });

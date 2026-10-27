@@ -193,6 +193,7 @@ describe("FinancialOverview", () => {
         "Não foi possível carregar o fluxo financeiro.",
       ),
     );
+    await user.click(screen.getByRole("button", { name: "Próximo mês" }));
 
     await user.click(screen.getByRole("button", { name: "Recorrências" }));
     expect(
@@ -204,6 +205,49 @@ describe("FinancialOverview", () => {
       ),
       undefined,
       "Não foi possível carregar as recorrências.",
+    );
+  });
+
+  it("retries recurring data and invalidates the overview after saving a model", async () => {
+    const user = userEvent.setup();
+    state.searchParams = "gerenciar=recorrencias";
+    let recurrenceAttempts = 0;
+    let overviewReads = 0;
+    api.request.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith("/api/finance-overview")) {
+        overviewReads += 1;
+        return Promise.resolve(overview);
+      }
+      if (url.startsWith("/api/financial-recurrences?")) {
+        recurrenceAttempts += 1;
+        return recurrenceAttempts === 1
+          ? Promise.reject(new Error("Falha ao carregar recorrências."))
+          : Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+      }
+      if (url === "/api/financial-recurrences" && options?.method === "POST")
+        return Promise.resolve({});
+      return Promise.resolve({});
+    });
+    renderFinance();
+    expect(
+      (await screen.findAllByRole("alert")).some((alert) =>
+        alert.textContent?.includes("Falha ao carregar recorrências."),
+      ),
+    ).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    await user.click(screen.getByRole("button", { name: "Novo" }));
+    await user.type(screen.getByLabelText("Descrição"), "Salário");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "5000");
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar recorrência" }),
+    );
+
+    await waitFor(() => expect(recurrenceAttempts).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-recurrences",
+      expect.objectContaining({ method: "POST" }),
+      "Não foi possível salvar a recorrência.",
     );
   });
 

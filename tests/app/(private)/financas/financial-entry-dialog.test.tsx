@@ -184,8 +184,11 @@ describe("FinancialEntryDialog", () => {
       "Não foi possível salvar o lançamento.",
     );
 
+    api.request.mockRejectedValueOnce("offline");
     await user.click(screen.getByRole("button", { name: "Excluir" }));
-    expect(toast.error).toHaveBeenLastCalledWith("Falha segura.");
+    expect(toast.error).toHaveBeenLastCalledWith(
+      "Não foi possível excluir o lançamento.",
+    );
     expect(api.request).toHaveBeenLastCalledWith(
       "/api/financial-entries?id=entry-id",
       { method: "DELETE" },
@@ -230,5 +233,42 @@ describe("FinancialEntryDialog", () => {
     );
     expect(toast.success).toHaveBeenCalledWith("Lançamento excluído.");
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("reports both incomplete date pairs and a safe fallback for save errors", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue("offline");
+    render(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
+    expect(
+      screen.getByText("Informe o valor previsto para esta data."),
+    ).toBeTruthy();
+    await user.clear(screen.getByLabelText("Data prevista"));
+    await user.type(screen.getByLabelText("Data realizada"), "11/10/2026");
+    expect(
+      screen.getByText("Informe o valor realizado para esta data."),
+    ).toBeTruthy();
+
+    await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#actual-amount" }),
+      "120",
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não foi possível salvar o lançamento.",
+    );
   });
 });

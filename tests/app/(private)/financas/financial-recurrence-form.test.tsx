@@ -29,6 +29,15 @@ describe("FinancialRecurrenceForm", () => {
     );
     await user.click(await screen.findByRole("option", { name: "Entrada" }));
     expect(screen.queryByText("Despesa essencial")).toBeNull();
+    await user.click(
+      screen.getByRole("combobox", { name: "Tipo de recorrência" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Saída" }));
+    expect(screen.getByText("Despesa essencial")).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "Tipo de recorrência" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Entrada" }));
     await user.type(screen.getByLabelText("Descrição"), "Salário");
     await user.type(screen.getByLabelText("Valor esperado (R$)"), "3200");
     await user.click(

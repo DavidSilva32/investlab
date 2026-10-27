@@ -145,7 +145,13 @@ describe("FinancialEntriesTable", () => {
       />,
     );
 
-    for (const column of ["Tipo", "Previsto", "Situação", "Realizado"]) {
+    for (const column of [
+      "Lançamento",
+      "Tipo",
+      "Previsto",
+      "Situação",
+      "Realizado",
+    ]) {
       await user.click(screen.getByRole("button", { name: column }));
       expect(screen.getByText("Aluguel")).toBeTruthy();
       expect(screen.getByText("Salário")).toBeTruthy();

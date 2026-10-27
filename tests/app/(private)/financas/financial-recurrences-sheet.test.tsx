@@ -5,7 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
+const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
+vi.mock("sonner", () => ({ toast }));
 import { FinancialRecurrencesSheet } from "@/app/(private)/financas/_components/financial-recurrences-sheet";
 
 const occurrence = {
@@ -147,6 +149,67 @@ describe("FinancialRecurrencesSheet", () => {
       screen.queryByRole("dialog", { name: "Registrar realização" }),
     ).toBeNull();
     expect(api.request).not.toHaveBeenCalled();
+  });
+
+  it("handles non-Error pause and realization failures and closes the realization dialog", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    api.request.mockRejectedValue("offline");
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={onOpenChange}
+          month="2026-10"
+          data={{
+            recurrences: [recurrence],
+            recurrenceOccurrences: [occurrence],
+          }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Pausar" }));
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível atualizar a recorrência.",
+      ),
+    );
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-recurrences",
+      expect.objectContaining({ method: "PATCH" }),
+      "Não foi possível atualizar a recorrência.",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Registrar realização" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Registrar realização" });
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Registrar realização" }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Registrar realização" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível registrar a realização.",
+      ),
+    );
+    expect(api.request).toHaveBeenLastCalledWith(
+      "/api/financial-recurrences/occurrences",
+      expect.objectContaining({ method: "PUT" }),
+      "Não foi possível registrar a realização.",
+    );
   });
 
   it("opens the edit dialog and pauses a recurring model through the API", async () => {

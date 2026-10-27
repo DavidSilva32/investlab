@@ -88,6 +88,7 @@ describe("FinancialHistory", () => {
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("Entradas").length).toBeGreaterThan(0);
+    expect(screen.getByText(/5\.000,00/)).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
     expect(
       screen.queryByText(
