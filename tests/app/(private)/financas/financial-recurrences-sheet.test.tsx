@@ -16,6 +16,7 @@ const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
 vi.mock("sonner", () => ({ toast }));
 import { FinancialRecurrencesSheet } from "@/app/(private)/financas/_components/financial-recurrences-sheet";
+import { queryKeys } from "@/lib/query-keys";
 
 const occurrence = {
   id: "recurrence-id:2026-10-10",
@@ -88,6 +89,110 @@ describe("FinancialRecurrencesSheet", () => {
     expect(
       screen.queryByRole("dialog", { name: "Nova recorrência" }),
     ).toBeNull();
+  });
+
+  it("saves a new recurrence model, invalidates its query, and resets the form", async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient();
+    const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+    const onSaved = vi.fn();
+    api.request.mockResolvedValue({});
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [], recurrenceOccurrences: [] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={onSaved}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Novo" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Nova recorrência" }),
+    ).toBeTruthy();
+    await user.type(screen.getByLabelText("Descrição"), "Salário");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "5000");
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar recorrência" }),
+    );
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-recurrences",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining('"description":"Salário"'),
+      }),
+      "Não foi possível salvar a recorrência.",
+    );
+    const request = api.request.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(request.body as string)).toMatchObject({
+      kind: "EXPENSE",
+      description: "Salário",
+      categoryId: null,
+      amount: 5000,
+      frequency: "MONTHLY",
+      firstDueDate: "2026-10-01",
+      essential: false,
+    });
+    expect(toast.success).toHaveBeenCalledWith("Recorrência cadastrada.");
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: queryKeys.finances.recurrences("2026-10"),
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Nova recorrência" }),
+    ).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Novo" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Nova recorrência" }),
+    ).toBeTruthy();
+    expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe(
+      "",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    rerender(
+      <QueryClientProvider client={client}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={onSaved}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(2));
+    expect(api.request).toHaveBeenLastCalledWith(
+      "/api/financial-recurrences",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"id":"salary-id"'),
+      }),
+      "Não foi possível salvar a recorrência.",
+    );
+    expect(toast.success).toHaveBeenLastCalledWith("Recorrência atualizada.");
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
   });
 
   it("requires an explicit realized date when recording a due occurrence", async () => {
