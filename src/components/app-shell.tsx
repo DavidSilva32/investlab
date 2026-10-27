@@ -128,10 +128,12 @@ function Navigation({
     (item) => item.href === "/dashboard" || item.href === "/financas",
   );
   const investmentNavigation = visibleNavigation.filter((item) =>
-    ["/carteira", "/planejamento", "/estrategia"].includes(item.href),
+    ["/carteira", "/planejamento", "/estrategia", "/analises"].includes(
+      item.href,
+    ),
   );
-  const learningNavigation = visibleNavigation.filter((item) =>
-    ["/aprender", "/analises"].includes(item.href),
+  const learningNavigation = visibleNavigation.filter(
+    (item) => item.href === "/aprender",
   );
   const settingsNavigation = visibleNavigation.filter(
     (item) => item.href === "/configuracoes",
@@ -143,9 +145,6 @@ function Navigation({
   const [adminOpen, setAdminOpen] = useState(isAdministrationRoute);
   const [investmentOpen, setInvestmentOpen] = useState(
     investmentNavigation.some((item) => pathname.startsWith(item.href)),
-  );
-  const [learningOpen, setLearningOpen] = useState(
-    learningNavigation.some((item) => pathname.startsWith(item.href)),
   );
 
   const renderLinks = (items: typeof navigation) =>
@@ -214,12 +213,7 @@ function Navigation({
         investmentOpen,
         setInvestmentOpen,
       )}
-      {renderGroup(
-        "Aprender e análises",
-        learningNavigation,
-        learningOpen,
-        setLearningOpen,
-      )}
+      {renderLinks(learningNavigation)}
       {renderLinks(settingsNavigation)}
       {isAdmin && (
         <Collapsible

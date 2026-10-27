@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const api = vi.hoisted(() => ({ request: vi.fn() }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
+vi.mock("sonner", () => ({ toast }));
 import { FinancialEntriesTable } from "@/app/(private)/financas/_components/financial-entries-table";
 
 const entry = {
@@ -17,6 +22,11 @@ const entry = {
 };
 
 afterEach(cleanup);
+afterEach(() => {
+  api.request.mockReset();
+  toast.success.mockReset();
+  toast.error.mockReset();
+});
 
 describe("FinancialEntriesTable", () => {
   it("combines manual and recurring items and opens only manual entries for editing", async () => {
@@ -46,11 +56,14 @@ describe("FinancialEntriesTable", () => {
     expect(screen.getByText("Aluguel")).toBeTruthy();
     expect(screen.getByText("Salário")).toBeTruthy();
     expect(screen.getByRole("cell", { name: /R\$\s*560,00/ })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Editar" }));
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Aluguel" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Editar/ }));
     expect(onEdit).toHaveBeenCalledWith(entry);
   });
 
-  it("keeps view-only rows free of edit controls", () => {
+  it("keeps view-only rows free of action controls", () => {
     render(
       <FinancialEntriesTable
         entries={[entry]}
@@ -60,7 +73,9 @@ describe("FinancialEntriesTable", () => {
       />,
     );
     expect(screen.getByText("Aluguel")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Ações para Aluguel" }),
+    ).toBeNull();
   });
 
   it("shows an empty state when the month has no manual or recurring items", () => {
@@ -179,5 +194,73 @@ describe("FinancialEntriesTable", () => {
       expect(screen.getByText("Aluguel")).toBeTruthy();
       expect(screen.getByText("Salário")).toBeTruthy();
     }
+  });
+
+  it("uses positive and negative semantic colors with correctly directed arrows", () => {
+    render(
+      <FinancialEntriesTable
+        entries={[
+          { ...entry, kind: "INCOME", description: "Salário" },
+          { ...entry, kind: "EXPENSE", description: "Aluguel" },
+        ]}
+        occurrences={[]}
+        readOnly
+        onEdit={() => {}}
+      />,
+    );
+    const income = screen.getByText("Entrada");
+    const expense = screen.getByText("Saída");
+    expect(income.className).toContain("text-status-success");
+    expect(expense.className).toContain("text-status-danger");
+    expect(
+      income.parentElement?.querySelector("svg")?.getAttribute("class"),
+    ).toContain("text-status-success");
+    expect(
+      expense.parentElement?.querySelector("svg")?.getAttribute("class"),
+    ).toContain("text-status-danger");
+  });
+
+  it("confirms deletion, refreshes the data, and reports API failures", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    api.request.mockResolvedValueOnce({});
+    render(
+      <FinancialEntriesTable
+        entries={[entry]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Aluguel" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
+    expect(
+      screen.getByRole("alertdialog", { name: "Excluir lançamento?" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Excluir lançamento" }),
+    );
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-entries?id=entry-1",
+      { method: "DELETE" },
+      "Não foi possível excluir o lançamento.",
+    );
+    expect(toast.success).toHaveBeenCalledWith("Lançamento excluído.");
+
+    api.request.mockRejectedValueOnce(new Error("Falha segura."));
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Aluguel" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Excluir lançamento" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Falha segura."),
+    );
   });
 });

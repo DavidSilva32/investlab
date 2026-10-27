@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { CalendarClock, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
-import { DatePickerField } from "@/components/ui/date-picker-field";
+import {
+  DatePickerField,
+  getTodayDateIso,
+} from "@/components/ui/date-picker-field";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FinancialCategoryQuickCreateDialog } from "@/app/(private)/financas/_components/financial-category-quick-create-dialog";
 import {
   Select,
   SelectContent,
@@ -36,18 +42,75 @@ type Entry = {
   actualAmount: string | null;
   actualDate: string | null;
 };
+type Recurrence = {
+  id: string;
+  kind: Kind;
+  description: string;
+  categoryId: string | null;
+  amount: string;
+  frequency: string;
+  firstDueDate: string;
+  essential: boolean;
+  active: boolean;
+};
+const frequencies = [
+  ["WEEKLY", "Semanal"],
+  ["BIWEEKLY", "Quinzenal"],
+  ["MONTHLY", "Mensal"],
+  ["BIMONTHLY", "A cada dois meses"],
+  ["QUARTERLY", "Trimestral"],
+  ["SEMIANNUALLY", "Semestral"],
+  ["YEARLY", "Anual"],
+] as const;
+
+function normalizeDescription(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+}
+
+function nextDueDate(value: string, frequency: string) {
+  const intervals: Record<string, number> = {
+    WEEKLY: 7,
+    BIWEEKLY: 14,
+    MONTHLY: 1,
+    BIMONTHLY: 2,
+    QUARTERLY: 3,
+    SEMIANNUALLY: 6,
+    YEARLY: 12,
+  };
+  const [year, month, day] = value.split("-").map(Number);
+  const interval = intervals[frequency] ?? 1;
+  if (frequency === "WEEKLY" || frequency === "BIWEEKLY") {
+    const date = new Date(Date.UTC(year, month - 1, day + interval));
+    return date.toISOString().slice(0, 10);
+  }
+  const targetMonth = month - 1 + interval;
+  const lastDay = new Date(Date.UTC(year, targetMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, targetMonth, Math.min(day, lastDay)))
+    .toISOString()
+    .slice(0, 10);
+}
 export function FinancialEntryDialog({
   open,
   onOpenChange,
   categories,
   entry,
   onSaved,
+  recurrences = [],
+  recurrencesLoading = false,
+  recurrencesError = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: Category[];
   entry: Entry | null;
   onSaved: () => void;
+  recurrences?: Recurrence[];
+  recurrencesLoading?: boolean;
+  recurrencesError?: boolean;
 }) {
   const [kind, setKind] = useState<Kind>(entry?.kind ?? "EXPENSE");
   const [description, setDescription] = useState(entry?.description ?? "");
@@ -59,12 +122,56 @@ export function FinancialEntryDialog({
   const [actualAmount, setActualAmount] = useState(entry?.actualAmount ?? "");
   const [actualDate, setActualDate] = useState(entry?.actualDate ?? "");
   const [busy, setBusy] = useState(false);
+  const [quickCategoryOpen, setQuickCategoryOpen] = useState(false);
+  const [quickCategories, setQuickCategories] = useState<Category[]>([]);
+  const [createRecurrence, setCreateRecurrence] = useState(false);
+  const [frequency, setFrequency] = useState("MONTHLY");
+  const [manualNextOccurrence, setManualNextOccurrence] = useState<
+    string | null
+  >(null);
+  const nextOccurrence =
+    manualNextOccurrence ??
+    (createRecurrence
+      ? nextDueDate(expectedDate || actualDate || getTodayDateIso(), frequency)
+      : "");
   const expectedPairValid = Boolean(expectedAmount) === Boolean(expectedDate);
   const actualPairValid = Boolean(actualAmount) === Boolean(actualDate);
   const hasAmount = Boolean(expectedAmount || actualAmount);
   const available = categories.filter(
     (category) => category.kind === kind && category.active,
   );
+  const availableCategories = [
+    ...available,
+    ...quickCategories.filter(
+      (category) =>
+        category.kind === kind &&
+        category.active &&
+        !available.some((existing) => existing.id === category.id),
+    ),
+  ];
+  const duplicateRecurrence = recurrences.find(
+    (recurrence) =>
+      recurrence.active &&
+      recurrence.kind === kind &&
+      recurrence.categoryId === categoryId &&
+      normalizeDescription(recurrence.description) ===
+        normalizeDescription(description),
+  );
+
+  function toggleRecurrence(checked: boolean) {
+    setCreateRecurrence(checked);
+    setManualNextOccurrence(null);
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      setCreateRecurrence(false);
+      setFrequency("MONTHLY");
+      setManualNextOccurrence(null);
+    }
+    onOpenChange(nextOpen);
+  }
+
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -84,11 +191,37 @@ export function FinancialEntryDialog({
         { method: entry ? "PATCH" : "POST", body: JSON.stringify(payload) },
         "Não foi possível salvar o lançamento.",
       );
-      toast.success(
-        entry ? "Lançamento atualizado." : "Lançamento cadastrado.",
-      );
+      if (!entry && createRecurrence) {
+        try {
+          await apiRequest(
+            "/api/financial-recurrences",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                kind,
+                description: description.trim(),
+                categoryId,
+                amount: Number(expectedAmount || actualAmount),
+                frequency,
+                firstDueDate: nextOccurrence,
+                essential: false,
+              }),
+            },
+            "Não foi possível criar a recorrência.",
+          );
+          toast.success("Lançamento e recorrência cadastrados.");
+        } catch (error) {
+          toast.error(
+            `O lançamento foi salvo, mas a recorrência não foi criada${error instanceof Error ? `: ${error.message}` : ". Você pode cadastrá-la em Recorrências."}`,
+          );
+        }
+      } else {
+        toast.success(
+          entry ? "Lançamento atualizado." : "Lançamento cadastrado.",
+        );
+      }
       onSaved();
-      onOpenChange(false);
+      handleOpenChange(false);
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -100,7 +233,7 @@ export function FinancialEntryDialog({
     }
   }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
@@ -142,13 +275,28 @@ export function FinancialEntryDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Categoria</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="financial-entry-category">Categoria</Label>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto px-1 py-0 text-xs"
+                onClick={() => setQuickCategoryOpen(true)}
+              >
+                <Plus aria-hidden="true" className="mr-1 size-3.5" />
+                Criar categoria
+              </Button>
+            </div>
             <Select value={categoryId} onValueChange={setCategoryId} required>
-              <SelectTrigger aria-label="Categoria">
+              <SelectTrigger
+                id="financial-entry-category"
+                aria-label="Categoria"
+              >
                 <SelectValue placeholder="Selecione uma categoria" />
               </SelectTrigger>
               <SelectContent>
-                {available.map((category) => (
+                {availableCategories.map((category) => (
                   <SelectItem key={category.id} value={category.id}>
                     {category.name}
                   </SelectItem>
@@ -156,6 +304,82 @@ export function FinancialEntryDialog({
               </SelectContent>
             </Select>
           </div>
+          {!entry && (
+            <section className="space-y-3 rounded-xl border p-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox
+                  checked={createRecurrence}
+                  onCheckedChange={(checked) =>
+                    toggleRecurrence(checked === true)
+                  }
+                  aria-label="Criar recorrência para este lançamento"
+                />
+                <span className="space-y-0.5">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <CalendarClock
+                      aria-hidden="true"
+                      className="size-4 text-muted-foreground"
+                    />
+                    Criar recorrência
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    O lançamento atual conta como a primeira ocorrência.
+                  </span>
+                </span>
+              </label>
+              {createRecurrence && (
+                <div className="space-y-3 pl-7">
+                  <div className="space-y-2">
+                    <Label>Periodicidade</Label>
+                    <Select value={frequency} onValueChange={setFrequency}>
+                      <SelectTrigger aria-label="Periodicidade da recorrência">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {frequencies.map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DatePickerField
+                    id="next-recurrence-date"
+                    label="Próxima ocorrência"
+                    value={nextOccurrence}
+                    onChange={(value) => {
+                      setManualNextOccurrence(value);
+                    }}
+                    required
+                  />
+                  {recurrencesLoading && (
+                    <p role="status" className="text-xs text-muted-foreground">
+                      Verificando recorrências existentes…
+                    </p>
+                  )}
+                  {recurrencesError && !recurrencesLoading && (
+                    <p
+                      role="status"
+                      className="text-xs text-amber-700 dark:text-amber-300"
+                    >
+                      Não foi possível verificar possíveis duplicidades.
+                    </p>
+                  )}
+                  {duplicateRecurrence && !recurrencesLoading && (
+                    <p
+                      role="status"
+                      className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+                    >
+                      Já existe uma recorrência ativa parecida:{" "}
+                      {duplicateRecurrence.description}. Confira antes de
+                      continuar.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-3 rounded-xl border p-4">
               <p className="text-sm font-medium">Previsto</p>
@@ -223,44 +447,12 @@ export function FinancialEntryDialog({
               Informe o valor realizado para esta data.
             </p>
           )}
-          <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-between">
-            <div>
-              {entry && (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await apiRequest(
-                        `/api/financial-entries?id=${encodeURIComponent(entry.id)}`,
-                        { method: "DELETE" },
-                        "Não foi possível excluir o lançamento.",
-                      );
-                      toast.success("Lançamento excluído.");
-                      onSaved();
-                      onOpenChange(false);
-                    } catch (error) {
-                      toast.error(
-                        error instanceof Error
-                          ? error.message
-                          : "Não foi possível excluir o lançamento.",
-                      );
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Excluir
-                </Button>
-              )}
-            </div>
+          <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end">
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
+                onClick={() => handleOpenChange(false)}
               >
                 Cancelar
               </Button>
@@ -270,7 +462,8 @@ export function FinancialEntryDialog({
                   !hasAmount ||
                   !expectedPairValid ||
                   !actualPairValid ||
-                  !categoryId
+                  !categoryId ||
+                  (createRecurrence && (!nextOccurrence || recurrencesLoading))
                 }
               >
                 {busy ? "Salvando…" : "Salvar lançamento"}
@@ -279,6 +472,15 @@ export function FinancialEntryDialog({
           </DialogFooter>
         </form>
       </DialogContent>
+      <FinancialCategoryQuickCreateDialog
+        open={quickCategoryOpen}
+        kind={kind}
+        onOpenChange={setQuickCategoryOpen}
+        onCreated={(category) => {
+          setQuickCategories((current) => [...current, category]);
+          setCategoryId(category.id);
+        }}
+      />
     </Dialog>
   );
 }

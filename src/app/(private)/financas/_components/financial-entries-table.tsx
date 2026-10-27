@@ -1,11 +1,36 @@
 "use client";
 
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { useState } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
+import { apiRequest } from "@/lib/api-client";
 import {
   PortfolioTable,
   type PortfolioTableColumn,
 } from "@/components/portfolio-table";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatCurrency } from "@/lib/utils";
 
 type Kind = "INCOME" | "EXPENSE";
@@ -67,12 +92,40 @@ export function FinancialEntriesTable({
   occurrences,
   readOnly,
   onEdit,
+  onSaved,
 }: {
   entries: FinancialEntryRow[];
   occurrences: OccurrenceRow[];
   readOnly: boolean;
   onEdit: (entry: FinancialEntryRow) => void;
+  onSaved?: () => void;
 }) {
+  const [entryToDelete, setEntryToDelete] = useState<FinancialEntryRow | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
+  async function deleteEntry() {
+    if (!entryToDelete) return;
+    setDeleting(true);
+    try {
+      await apiRequest(
+        `/api/financial-entries?id=${encodeURIComponent(entryToDelete.id)}`,
+        { method: "DELETE" },
+        "Não foi possível excluir o lançamento.",
+      );
+      toast.success("Lançamento excluído.");
+      setEntryToDelete(null);
+      onSaved?.();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível excluir o lançamento.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
   const rows: TableRow[] = [
     ...entries.map((entry) => ({
       ...entry,
@@ -130,17 +183,25 @@ export function FinancialEntriesTable({
       render: (row) => (
         <span className="inline-flex items-center gap-1.5">
           {row.kind === "INCOME" ? (
-            <ArrowDown
-              className="size-4 text-muted-foreground"
+            <ArrowUp
+              className="size-4 text-status-success"
               aria-hidden="true"
             />
           ) : (
-            <ArrowUp
-              className="size-4 text-muted-foreground"
+            <ArrowDown
+              className="size-4 text-status-danger"
               aria-hidden="true"
             />
           )}
-          {row.kind === "INCOME" ? "Entrada" : "Saída"}
+          <span
+            className={
+              row.kind === "INCOME"
+                ? "text-status-success"
+                : "text-status-danger"
+            }
+          >
+            {row.kind === "INCOME" ? "Entrada" : "Saída"}
+          </span>
         </span>
       ),
     },
@@ -187,20 +248,67 @@ export function FinancialEntriesTable({
       render: (row) => {
         if (readOnly || row.source === "Recorrente") return null;
         return (
-          <Button variant="ghost" size="sm" onClick={() => onEdit(row.entry)}>
-            Editar
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Ações para ${row.description}`}
+              >
+                <MoreHorizontal className="size-4" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onEdit(row.entry)}>
+                <Pencil aria-hidden="true" /> Editar
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-status-danger focus:text-status-danger"
+                onSelect={() => setEntryToDelete(row.entry)}
+              >
+                <Trash2 aria-hidden="true" /> Excluir
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         );
       },
     },
   ];
 
   return (
-    <PortfolioTable
-      columns={columns}
-      rows={rows}
-      emptyMessage="Nenhum lançamento ou vencimento neste mês."
-      initialSort={{ id: "due", direction: "asc" }}
-    />
+    <>
+      <PortfolioTable
+        columns={columns}
+        rows={rows}
+        emptyMessage="Nenhum lançamento ou vencimento neste mês."
+        initialSort={{ id: "due", direction: "asc" }}
+      />
+      <AlertDialog
+        open={Boolean(entryToDelete)}
+        onOpenChange={(open) => !open && setEntryToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir lançamento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {entryToDelete?.description} será removido permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-status-danger text-white hover:bg-status-danger/90"
+              onClick={(event) => {
+                event.preventDefault();
+                void deleteEntry();
+              }}
+            >
+              {deleting ? "Excluindo…" : "Excluir lançamento"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
