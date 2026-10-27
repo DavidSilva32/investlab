@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  ListChecks,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -16,6 +17,12 @@ import {
 } from "@/components/portfolio-table";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -206,19 +213,22 @@ export function FinancialEntriesTable({
   const columns: PortfolioTableColumn<TableRow>[] = [
     {
       id: "selection",
-      label: "Selecionar",
-      width: "64px",
+      label: "",
+      width: "48px",
+      className: "text-center",
       sortable: false,
       render: (row) => (
-        <Checkbox
-          checked={row.source === "Avulso" && selectedIds.has(row.id)}
-          disabled={readOnly || row.source !== "Avulso"}
-          aria-label={`Selecionar ${row.description}`}
-          onCheckedChange={(checked) => {
-            if (row.source === "Avulso")
-              toggleEntry(row.entry, checked === true);
-          }}
-        />
+        <div className="flex justify-center">
+          <Checkbox
+            checked={row.source === "Avulso" && selectedIds.has(row.id)}
+            disabled={readOnly || row.source !== "Avulso"}
+            aria-label={`Selecionar ${row.description}`}
+            onCheckedChange={(checked) => {
+              if (row.source === "Avulso")
+                toggleEntry(row.entry, checked === true);
+            }}
+          />
+        </div>
       ),
     },
     {
@@ -351,34 +361,56 @@ export function FinancialEntriesTable({
         initialSort={{ id: "due", direction: "asc" }}
         toolbar={
           !readOnly && entries.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <span
-                aria-live="polite"
-                className="text-sm text-muted-foreground"
-              >
-                {selectedEntries.length} selecionado(s)
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-pressed={allEntriesSelected}
-                onClick={toggleAllEntries}
-              >
-                {allEntriesSelected
-                  ? "Desmarcar todos"
-                  : "Selecionar todos os lançamentos avulsos do mês"}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                disabled={selectedEntries.length === 0 || deleting}
-                onClick={() => setEntriesToDelete(selectedEntries)}
-              >
-                Excluir selecionados ({selectedEntries.length})
-              </Button>
-            </div>
+            <TooltipProvider>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <span
+                  aria-live="polite"
+                  className="text-sm text-muted-foreground"
+                >
+                  {selectedEntries.length} selecionado(s)
+                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label={
+                        allEntriesSelected
+                          ? "Desmarcar todos os lançamentos avulsos do mês"
+                          : "Selecionar todos os lançamentos avulsos do mês"
+                      }
+                      aria-pressed={allEntriesSelected}
+                      onClick={toggleAllEntries}
+                    >
+                      <ListChecks aria-hidden="true" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {allEntriesSelected
+                      ? "Desmarcar todos os lançamentos avulsos do mês"
+                      : "Selecionar todos os lançamentos avulsos do mês"}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      aria-label={`Excluir selecionados (${selectedEntries.length})`}
+                      disabled={selectedEntries.length === 0 || deleting}
+                      onClick={() => setEntriesToDelete(selectedEntries)}
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Excluir selecionados ({selectedEntries.length})
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
           ) : null
         }
       />

@@ -29,6 +29,35 @@ afterEach(() => {
 });
 
 describe("FinancialEntriesTable", () => {
+  it("uses compact accessible icon actions with tooltips for month selection", async () => {
+    const user = userEvent.setup();
+    render(
+      <FinancialEntriesTable
+        entries={[entry]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    const selectAll = screen.getByRole("button", {
+      name: "Selecionar todos os lançamentos avulsos do mês",
+    });
+    expect(selectAll.textContent).toBe("");
+    await user.hover(selectAll);
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Selecionar todos os lançamentos avulsos do mês",
+      }),
+    ).toBeTruthy();
+
+    const deleteSelected = screen.getByRole("button", {
+      name: "Excluir selecionados (0)",
+    });
+    expect(deleteSelected.textContent).toBe("");
+    expect((deleteSelected as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("combines manual and recurring items and opens only manual entries for editing", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();
