@@ -15,6 +15,7 @@ import {
   type PortfolioTableColumn,
 } from "@/components/portfolio-table";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -100,31 +101,80 @@ export function FinancialEntriesTable({
   onEdit: (entry: FinancialEntryRow) => void;
   onSaved?: () => void;
 }) {
-  const [entryToDelete, setEntryToDelete] = useState<FinancialEntryRow | null>(
-    null,
-  );
+  const [entriesToDelete, setEntriesToDelete] = useState<
+    FinancialEntryRow[] | null
+  >(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   async function deleteEntry() {
-    if (!entryToDelete) return;
+    if (!entriesToDelete?.length) return;
     setDeleting(true);
-    try {
-      await apiRequest(
-        `/api/financial-entries?id=${encodeURIComponent(entryToDelete.id)}`,
-        { method: "DELETE" },
-        "Não foi possível excluir o lançamento.",
+    const targetEntries = entriesToDelete;
+    const results = await Promise.allSettled(
+      targetEntries.map(
+        async (entry) =>
+          await apiRequest(
+            `/api/financial-entries?id=${encodeURIComponent(entry.id)}`,
+            { method: "DELETE" },
+            "Não foi possível excluir o lançamento.",
+          ),
+      ),
+    );
+    const failedEntries = targetEntries.filter(
+      (_, index) => results[index].status === "rejected",
+    );
+    const deletedEntries = targetEntries.length - failedEntries.length;
+    setSelectedIds(new Set(failedEntries.map((entry) => entry.id)));
+    onSaved?.();
+    if (failedEntries.length === 0) {
+      toast.success(
+        targetEntries.length === 1
+          ? "Lançamento excluído."
+          : `${deletedEntries} lançamentos excluídos.`,
       );
-      toast.success("Lançamento excluído.");
-      setEntryToDelete(null);
-      onSaved?.();
-    } catch (error) {
+      setEntriesToDelete(null);
+    } else {
+      const deletedMessage =
+        deletedEntries === 1
+          ? "1 lançamento excluído"
+          : `${deletedEntries} lançamentos excluídos`;
+      const failedMessage =
+        failedEntries.length === 1
+          ? "1 não pôde ser excluído"
+          : `${failedEntries.length} não puderam ser excluídos`;
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível excluir o lançamento.",
+        deletedEntries > 0
+          ? `${deletedMessage}; ${failedMessage}. Tente novamente.`
+          : failedEntries.length === 1
+            ? results[0].status === "rejected" &&
+              results[0].reason instanceof Error
+              ? results[0].reason.message
+              : "Não foi possível excluir o lançamento. Tente novamente."
+            : `Não foi possível excluir ${failedEntries.length} lançamentos. Tente novamente.`,
       );
-    } finally {
-      setDeleting(false);
+      setEntriesToDelete(failedEntries);
     }
+    setDeleting(false);
+  }
+  const selectedEntries = entries.filter((entry) => selectedIds.has(entry.id));
+  const allEntriesSelected =
+    entries.length > 0 && selectedEntries.length === entries.length;
+
+  function toggleEntry(entry: FinancialEntryRow, selected: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(entry.id);
+      else next.delete(entry.id);
+      return next;
+    });
+  }
+
+  function toggleAllEntries() {
+    setSelectedIds(
+      allEntriesSelected
+        ? new Set()
+        : new Set(entries.map((entry) => entry.id)),
+    );
   }
   const rows: TableRow[] = [
     ...entries.map((entry) => ({
@@ -154,6 +204,23 @@ export function FinancialEntriesTable({
     })),
   ].sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
   const columns: PortfolioTableColumn<TableRow>[] = [
+    {
+      id: "selection",
+      label: "Selecionar",
+      width: "64px",
+      sortable: false,
+      render: (row) => (
+        <Checkbox
+          checked={row.source === "Avulso" && selectedIds.has(row.id)}
+          disabled={readOnly || row.source !== "Avulso"}
+          aria-label={`Selecionar ${row.description}`}
+          onCheckedChange={(checked) => {
+            if (row.source === "Avulso")
+              toggleEntry(row.entry, checked === true);
+          }}
+        />
+      ),
+    },
     {
       id: "due",
       label: "Data",
@@ -264,7 +331,7 @@ export function FinancialEntriesTable({
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-status-danger focus:text-status-danger"
-                onSelect={() => setEntryToDelete(row.entry)}
+                onSelect={() => setEntriesToDelete([row.entry])}
               >
                 <Trash2 aria-hidden="true" /> Excluir
               </DropdownMenuItem>
@@ -282,16 +349,54 @@ export function FinancialEntriesTable({
         rows={rows}
         emptyMessage="Nenhum lançamento ou vencimento neste mês."
         initialSort={{ id: "due", direction: "asc" }}
+        toolbar={
+          !readOnly && entries.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span
+                aria-live="polite"
+                className="text-sm text-muted-foreground"
+              >
+                {selectedEntries.length} selecionado(s)
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-pressed={allEntriesSelected}
+                onClick={toggleAllEntries}
+              >
+                {allEntriesSelected
+                  ? "Desmarcar todos"
+                  : "Selecionar todos os lançamentos avulsos do mês"}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={selectedEntries.length === 0 || deleting}
+                onClick={() => setEntriesToDelete(selectedEntries)}
+              >
+                Excluir selecionados ({selectedEntries.length})
+              </Button>
+            </div>
+          ) : null
+        }
       />
       <AlertDialog
-        open={Boolean(entryToDelete)}
-        onOpenChange={(open) => !open && setEntryToDelete(null)}
+        open={Boolean(entriesToDelete?.length)}
+        onOpenChange={(open) => !open && setEntriesToDelete(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir lançamento?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {entriesToDelete?.length === 1
+                ? "Excluir lançamento?"
+                : `Excluir ${entriesToDelete?.length ?? 0} lançamentos?`}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {entryToDelete?.description} será removido permanentemente.
+              Esta ação excluirá {entriesToDelete?.length ?? 0} lançamento
+              {(entriesToDelete?.length ?? 0) === 1 ? "" : "s"}. As ocorrências
+              geradas por recorrências permanecem inalteradas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -304,7 +409,11 @@ export function FinancialEntriesTable({
                 void deleteEntry();
               }}
             >
-              {deleting ? "Excluindo…" : "Excluir lançamento"}
+              {deleting
+                ? "Excluindo…"
+                : entriesToDelete?.length === 1
+                  ? "Excluir lançamento"
+                  : `Excluir ${entriesToDelete?.length ?? 0} lançamentos`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
