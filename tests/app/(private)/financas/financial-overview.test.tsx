@@ -5,12 +5,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
+const state = vi.hoisted(() => ({ supportView: false, searchParams: "" }));
 vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
 vi.mock("@/components/app-shell", () => ({
-  useAdminSupportView: () => false,
+  useAdminSupportView: () => state.supportView,
 }));
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(state.searchParams),
 }));
 
 import { FinancialOverview } from "@/app/(private)/financas/_components/financial-overview";
@@ -71,6 +72,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  state.supportView = false;
+  state.searchParams = "";
 });
 
 describe("FinancialOverview", () => {
@@ -150,5 +153,90 @@ describe("FinancialOverview", () => {
       actualAmount: 200,
       actualDate: "2026-10-10",
     });
+  });
+
+  it("shows the API error and retries the overview request", async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    api.request.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance-overview")) {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new Error("Falha ao carregar o fluxo."))
+          : Promise.resolve(overview);
+      }
+      return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+    });
+    renderFinance();
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Falha ao carregar o fluxo.",
+    );
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+
+    expect(
+      await screen.findByText(/Ainda não há registros neste mês/),
+    ).toBeTruthy();
+    expect(attempts).toBe(2);
+  });
+
+  it("loads the selected month and opens recurring management on demand", async () => {
+    const user = userEvent.setup();
+    renderFinance();
+    await screen.findByText(/Ainda não há registros neste mês/);
+
+    await user.click(screen.getByRole("button", { name: "Mês anterior" }));
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/api\/finance-overview\?month=\d{4}-\d{2}$/),
+        undefined,
+        "Não foi possível carregar o fluxo financeiro.",
+      ),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Recorrências" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Compromissos recorrentes" }),
+    ).toBeTruthy();
+    expect(api.request).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^\/api\/financial-recurrences\?month=\d{4}-\d{2}$/,
+      ),
+      undefined,
+      "Não foi possível carregar as recorrências.",
+    );
+  });
+
+  it("opens recurring management from its route query and keeps support view read-only", async () => {
+    state.supportView = true;
+    state.searchParams = "gerenciar=recorrencias";
+    api.request.mockImplementation((url: string) =>
+      url.startsWith("/api/finance-overview")
+        ? Promise.resolve(overview)
+        : Promise.resolve({ recurrences: [], recurrenceOccurrences: [] }),
+    );
+    renderFinance();
+
+    expect(
+      await screen.findByRole("dialog", { name: "Compromissos recorrentes" }),
+    ).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Categorias" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Recorrências" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Lançamento" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Novo" })).toBeNull();
   });
 });

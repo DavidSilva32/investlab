@@ -5,7 +5,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
+const supportView = vi.hoisted(() => ({ active: false }));
 vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
+vi.mock("@/components/app-shell", () => ({
+  useAdminSupportView: () => supportView.active,
+}));
 vi.mock("next/link", () => ({
   default: ({
     href,
@@ -32,6 +36,7 @@ function renderCard() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  supportView.active = false;
 });
 
 describe("DashboardFinancesCard", () => {
@@ -78,5 +83,29 @@ describe("DashboardFinancesCard", () => {
     await user.click(screen.getByRole("button", { name: /Tentar novamente/ }));
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/Entradas/)).toBeTruthy();
+  });
+
+  it("explains a new financial profile and support-mode read-only access", async () => {
+    supportView.active = true;
+    api.request.mockResolvedValue({
+      summary: {
+        expectedIncome: null,
+        realizedIncome: null,
+        expectedExpenses: null,
+        realizedExpenses: null,
+        recordedBalance: null,
+        completeness: "no_data",
+      },
+    });
+    renderCard();
+
+    expect(await screen.findByText("Comece por aqui")).toBeTruthy();
+    expect(
+      screen.getByText("Registre entradas e saídas para acompanhar o mês."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Visualização de suporte: somente leitura."),
+    ).toBeTruthy();
+    expect(screen.queryByText("R$ 0,00")).toBeNull();
   });
 });

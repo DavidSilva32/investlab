@@ -62,4 +62,63 @@ describe("FinancialEntriesTable", () => {
     expect(screen.getByText("Aluguel")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
   });
+
+  it("shows an empty state when the month has no manual or recurring items", () => {
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText("Nenhum lançamento ou vencimento neste mês."),
+    ).toBeTruthy();
+  });
+
+  it("renders undated entries and recurring items with missing values safely", () => {
+    render(
+      <FinancialEntriesTable
+        entries={[
+          {
+            ...entry,
+            id: "income-1",
+            kind: "INCOME",
+            description: "Bônus",
+            categoryId: "cat-income",
+            categoryName: "Renda",
+            expectedAmount: null,
+            expectedDate: null,
+            actualAmount: "900.00",
+            actualDate: null,
+          },
+        ]}
+        occurrences={[
+          {
+            id: "rec-2:2026-10-01",
+            kind: "EXPENSE",
+            description: "Conta variável",
+            category: null,
+            dueDate: "2026-10-01",
+            expectedAmount: null,
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Bônus")).toBeTruthy();
+    expect(screen.getByText("Conta variável")).toBeTruthy();
+    expect(screen.getByText(/Recorrente · Sem categoria/)).toBeTruthy();
+    expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Sem data").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Realizado").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("Previsto").length).toBeGreaterThan(1);
+  });
 });

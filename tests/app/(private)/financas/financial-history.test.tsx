@@ -42,4 +42,43 @@ describe("FinancialHistory", () => {
     ).toBeTruthy();
     expect(screen.queryByText("R$ 0,00")).toBeNull();
   });
+
+  it("shows the recorded comparison chart when at least one value exists", () => {
+    render(
+      <FinancialHistory
+        months={[
+          {
+            month: "2026-09",
+            realizedIncome: "5000.00",
+            realizedExpenses: "3200.00",
+            recordedBalance: "1800.00",
+          },
+          {
+            month: "2026-10",
+            realizedIncome: null,
+            realizedExpenses: "120.00",
+            recordedBalance: null,
+          },
+        ]}
+        selectedMonth="2026-10"
+        explanation="Comparação limitada aos meses com registros."
+      />,
+    );
+
+    expect(
+      screen.getByLabelText(
+        "Gráfico de entradas e saídas realizadas nos últimos 12 meses",
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText("Entradas").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText(
+        "Ainda não há dados realizados para comparar no histórico.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByText("Comparação limitada aos meses com registros."),
+    ).toBeTruthy();
+  });
 });

@@ -385,6 +385,39 @@ describe("FinancialRecurrencesService", () => {
     expect(repository.hasRealizedOccurrences).not.toHaveBeenCalled();
   });
 
+  it("rejects essential income updates and category IDs outside the owner's kind", async () => {
+    repository.findRecurrence.mockResolvedValueOnce(
+      expense({ kind: "INCOME", essential: false }),
+    );
+    await expect(
+      service.update({
+        id: "e1e1e1e1-1111-4111-8111-111111111111",
+        description: "Salário",
+        amount: 5000,
+        frequency: "MONTHLY",
+        firstDueDate: "2026-10-10",
+        essential: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    repository.findCategoryForUser.mockResolvedValueOnce(null);
+    await expect(
+      service.create({
+        kind: "EXPENSE",
+        description: "Aluguel",
+        categoryId: "24e0fa40-0563-4e4e-a52e-64fab0e6f79f",
+        amount: 550,
+        frequency: "MONTHLY",
+        firstDueDate: "2026-10-05",
+        essential: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repository.findCategoryForUser).toHaveBeenCalledWith(
+      "24e0fa40-0563-4e4e-a52e-64fab0e6f79f",
+      "EXPENSE",
+    );
+  });
+
   it("validates realization ownership, date cadence, and amount before saving", async () => {
     await expect(
       service.realizeOccurrence({}, new Date()),

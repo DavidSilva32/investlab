@@ -70,6 +70,37 @@ describe("FinancialRecurrencesController", () => {
       id: "existing-expense",
       message: "Despesa recorrente atualizada.",
     });
+
+    state.create.mockResolvedValue({ id: "new-income", kind: "INCOME" });
+    const createdIncome = await controller.create(
+      { description: "Salário" },
+      "request-5",
+    );
+    expect(await createdIncome.json()).toEqual({
+      id: "new-income",
+      kind: "INCOME",
+      message: "Receita recorrente cadastrada.",
+    });
+
+    state.update.mockResolvedValue({ id: "existing-income", kind: "INCOME" });
+    const updatedIncome = await controller.update(
+      { id: "existing-income" },
+      "request-6",
+    );
+    expect(await updatedIncome.json()).toEqual({
+      id: "existing-income",
+      kind: "INCOME",
+      message: "Receita recorrente atualizada.",
+    });
+
+    state.update.mockResolvedValue(null);
+    const missingUpdate = await controller.update(
+      { id: "missing" },
+      "request-7",
+    );
+    expect(await missingUpdate.json()).toEqual({
+      message: "Despesa recorrente atualizada.",
+    });
   });
 
   it("records a realized occurrence", async () => {

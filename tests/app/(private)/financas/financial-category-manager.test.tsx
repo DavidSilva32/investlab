@@ -5,10 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn(), response: vi.fn() }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({
   apiRequest: api.request,
   apiRequestWithResponse: api.response,
 }));
+vi.mock("sonner", () => ({ toast }));
 
 import { FinancialCategoryManager } from "@/app/(private)/financas/_components/financial-category-manager";
 
@@ -156,5 +158,65 @@ describe("FinancialCategoryManager", () => {
         "Não foi possível atualizar a categoria.",
       ),
     );
+  });
+
+  it("shows a load failure and retries the category request", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValueOnce(new Error("Falha temporária."));
+    api.request.mockResolvedValueOnce({ categories });
+    renderManager();
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Falha temporária.",
+    );
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+
+    expect(await screen.findByText("Moradia")).toBeTruthy();
+    expect(api.request).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers reactivation for hidden categories and lets the user cancel editing", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({
+      categories: [{ ...categories[1], active: false }],
+    });
+    renderManager();
+    await screen.findByText("Pets");
+
+    await user.click(screen.getByRole("button", { name: "Renomear Pets" }));
+    await user.type(screen.getByLabelText("Nome da categoria"), " nova");
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByLabelText("Nome da categoria")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Reativar Pets" }));
+
+    await waitFor(() =>
+      expect(api.response).toHaveBeenCalledWith(
+        "/api/financial-categories",
+        {
+          method: "PATCH",
+          body: JSON.stringify({ id: "custom-expense", active: true }),
+        },
+        "Não foi possível atualizar a categoria.",
+      ),
+    );
+    expect(toast.success).toHaveBeenCalledWith("Categoria salva.");
+  });
+
+  it("shows an empty state and reports category creation errors", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({ categories: [] });
+    api.response.mockRejectedValue(new Error("Não foi possível salvar."));
+    renderManager();
+    expect(
+      await screen.findByText("Nenhuma categoria para esse tipo."),
+    ).toBeTruthy();
+
+    await user.type(screen.getByLabelText("Nova categoria"), "Saúde");
+    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    expect(toast.error).toHaveBeenCalledWith("Não foi possível salvar.");
+    expect(
+      (screen.getByLabelText("Nova categoria") as HTMLInputElement).value,
+    ).toBe("Saúde");
   });
 });
