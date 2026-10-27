@@ -15,6 +15,12 @@ Atualizado na issue #180 em 13/10/2026. A navegação de `AppShell` define as á
 
 | `/planning` | Planejamento por patrimônio total ou objetivo, com cenário ajustável e origem patrimonial quando completa e datada. Objetivo selecionado não usa patrimônio total como substituto; a Reserva não aparece como objetivo selecionável. Link contextual no detalhe dos objetivos pessoais. | Implementação da issue #10; comparação visual real pendente. |
 
+## Nova rota autenticada
+
+| Rota                    | Experiência ativa                                                                                                                                                                    | Referência visual                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `/despesas-recorrentes` | Cadastro e edição de despesas recorrentes, previsões mensais por periodicidade e registro revisável do valor realizado. As previsões incluem somente as despesas ativas cadastradas. | Implementação da issue #290; sem referência visual aprovada. Comparação visual real não realizada nesta entrega. |
+
 ## Rota pública fora da navegação
 
 | Rota            | Experiência ativa                                                                                                     | Referência visual                                                                                                                                                                    |

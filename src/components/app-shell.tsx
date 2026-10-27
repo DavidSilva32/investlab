@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Compass,
   CircleAlert,
+  CalendarClock,
   LayoutDashboard,
   Menu,
   Settings,
@@ -82,6 +83,11 @@ export function ShellUserProvider({
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
+  {
+    href: "/despesas-recorrentes",
+    label: "Despesas",
+    Icon: CalendarClock,
+  },
   { href: "/carteira", label: "Carteira", Icon: WalletCards },
   { href: "/planejamento", label: "Planejamento", Icon: Calculator },
   { href: "/estrategia", label: "Estratégia", Icon: Compass },
