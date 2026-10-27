@@ -759,6 +759,60 @@ export const emergencyReserveSettings = pgTable(
     ),
   ],
 );
+
+/* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
+export const recurringExpenses = pgTable(
+  "recurring_expenses",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    description: varchar({ length: 120 }).notNull(),
+    category: varchar({ length: 80 }),
+    amount: numeric({ precision: 14, scale: 2 }).notNull(),
+    frequency: varchar({ length: 16 }).notNull(),
+    firstDueDate: date().notNull(),
+    essential: boolean().notNull().default(false),
+    active: boolean().notNull().default(true),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("recurring_expenses_user_active_idx").on(table.userId, table.active),
+  ],
+);
+
+export const recurringExpenseOccurrences = pgTable(
+  "recurring_expense_occurrences",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    recurringExpenseId: uuid()
+      .notNull()
+      .references(() => recurringExpenses.id, { onDelete: "cascade" }),
+    dueDate: date().notNull(),
+    expectedAmount: numeric({ precision: 14, scale: 2 }).notNull(),
+    actualAmount: numeric({ precision: 14, scale: 2 }),
+    realizedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("recurring_expense_occurrences_user_expense_date_uidx").on(
+      table.userId,
+      table.recurringExpenseId,
+      table.dueDate,
+    ),
+    index("recurring_expense_occurrences_user_due_idx").on(
+      table.userId,
+      table.dueDate,
+    ),
+  ],
+);
+/* v8 ignore stop */
 /* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
 export const portfolioObjectives = pgTable(
   "portfolio_objectives",
