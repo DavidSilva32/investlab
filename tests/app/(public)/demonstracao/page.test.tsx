@@ -55,7 +55,11 @@ describe("fictional portfolio demonstration page", () => {
     expect(screen.getByRole("tab", { name: /Posições/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Objetivos/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Estratégia/ })).toBeTruthy();
-    expect(screen.getByText(/cenário é totalmente fictício/)).toBeTruthy();
+    expect(screen.getByText(/Explore com dados fictícios/)).toBeTruthy();
+    expect(
+      screen.getByText(/Nada aqui consulta ou altera uma conta real/),
+    ).toBeTruthy();
+    expect(screen.getByText(/não é recomendação nem projeção/)).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
     expect(
       screen
@@ -64,3 +68,4 @@ describe("fictional portfolio demonstration page", () => {
     ).toBe("/entrar");
   });
 });
+
