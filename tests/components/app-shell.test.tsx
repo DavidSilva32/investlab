@@ -167,6 +167,20 @@ describe("AppShell", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("keeps Finanças active on nested cash-flow routes in desktop and mobile navigation", () => {
+    navigation.pathname = "/financas/lancamentos";
+    renderShell();
+
+    expect(
+      screen
+        .getAllByRole("link", { name: "Finanças" })
+        .every((link) => link.getAttribute("aria-current") === "page"),
+    ).toBe(true);
+    expect(
+      screen.getAllByRole("navigation", { name: "Navegação principal" }),
+    ).toHaveLength(1);
+  });
+
   it("uses the semantic high-contrast sidebar surface and visible focus ring", () => {
     navigation.pathname = "/carteira";
     renderShell();

@@ -177,7 +177,6 @@ function Navigation({
     open: boolean,
     setOpen: (open: boolean) => void,
   ) => {
-    if (!items.length) return null;
     const active = items.some((item) => pathname.startsWith(item.href));
     return (
       <Collapsible
