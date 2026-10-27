@@ -346,6 +346,44 @@ describe("FinancialRecurrencesSheet", () => {
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
+  it("shows essential paused models and reactivates them from the list", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    api.request.mockResolvedValue({});
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{
+            recurrences: [{ ...recurrence, essential: true, active: false }],
+            recurrenceOccurrences: [],
+          }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={onSaved}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(/Essencial · Pausada/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Reativar" }));
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-recurrences",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"active":true'),
+      }),
+      "Não foi possível atualizar a recorrência.",
+    );
+    expect(toast.success).toHaveBeenCalledWith("Recorrência reativada.");
+    expect(onSaved).toHaveBeenCalledOnce();
+  });
+
   it("shows loading and errors with a retry action", async () => {
     const user = userEvent.setup();
     const retry = vi.fn();

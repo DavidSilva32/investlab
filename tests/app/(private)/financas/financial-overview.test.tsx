@@ -416,6 +416,15 @@ describe("FinancialOverview", () => {
     expect(
       await screen.findByRole("dialog", { name: "Editar lançamento" }),
     ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Editar lançamento" }),
+    ).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Editar lançamento" }),
+    ).toBeTruthy();
     const description = screen.getByLabelText("Descrição") as HTMLInputElement;
     await user.clear(description);
     await user.type(description, "Energia elétrica");
