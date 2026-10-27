@@ -12,10 +12,22 @@ import { assetClassLearningContent } from "@/lib/asset-class-learning";
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 const questions = assetClassLearningContent.fiis.assessment;
+
+function setReducedMotion(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+}
 
 async function answerQuestion(index: number, correctly: boolean) {
   const question = questions[index];
@@ -32,6 +44,7 @@ async function answerQuestion(index: number, correctly: boolean) {
 
 describe("AssetClassLearningAssessment", () => {
   it("calculates a passing score, awards a medal, and reports the completion", async () => {
+    setReducedMotion(false);
     const onComplete = vi.fn().mockResolvedValue({ score: 7, passed: true });
     render(
       <AssetClassLearningAssessment
@@ -54,10 +67,13 @@ describe("AssetClassLearningAssessment", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain(
-        "Curso concluído!",
+        "Você conquistou sua medalha!",
       ),
     );
     expect(screen.getByRole("status").textContent).toContain("7,0/10");
+    expect(
+      screen.getByRole("status").querySelector(".learning-achievement-pop"),
+    ).toBeTruthy();
     expect(onComplete).toHaveBeenCalledWith(
       expect.objectContaining({
         attemptId: expect.any(String),
@@ -79,6 +95,70 @@ describe("AssetClassLearningAssessment", () => {
       "Você está quase lá",
     );
     expect(screen.getByRole("status").textContent).toContain("6,0/10");
+  });
+
+  it("does not repeat the celebration when the course was already passed", async () => {
+    setReducedMotion(false);
+    render(
+      <AssetClassLearningAssessment
+        questions={questions.slice(0, 1)}
+        coursePreviouslyPassed
+        onComplete={vi.fn().mockResolvedValue({ score: 10, passed: true })}
+      />,
+    );
+
+    await answerQuestion(0, true);
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
+
+    await screen.findByText("Curso concluído!");
+    expect(screen.queryByText("Você conquistou sua medalha!")).toBeNull();
+    expect(
+      screen.getByRole("status").querySelector(".learning-achievement-pop"),
+    ).toBeNull();
+  });
+
+  it("does not celebrate a second passing attempt in the same visit", async () => {
+    setReducedMotion(false);
+    const onComplete = vi.fn().mockResolvedValue({ score: 10, passed: true });
+    render(
+      <AssetClassLearningAssessment
+        questions={questions.slice(0, 1)}
+        onComplete={onComplete}
+      />,
+    );
+
+    await answerQuestion(0, true);
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
+    await screen.findByText("Você conquistou sua medalha!");
+    fireEvent.click(screen.getByRole("button", { name: "Refazer prova" }));
+
+    await answerQuestion(0, true);
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
+
+    await screen.findByText("Curso concluído!");
+    expect(screen.queryByText("Você conquistou sua medalha!")).toBeNull();
+    expect(
+      screen.getByRole("status").querySelector(".learning-achievement-pop"),
+    ).toBeNull();
+    expect(onComplete).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the new-approval message static when reduced motion is preferred", async () => {
+    setReducedMotion(true);
+    render(
+      <AssetClassLearningAssessment
+        questions={questions.slice(0, 1)}
+        onComplete={vi.fn().mockResolvedValue({ score: 10, passed: true })}
+      />,
+    );
+
+    await answerQuestion(0, true);
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
+
+    await screen.findByText("Você conquistou sua medalha!");
+    expect(
+      screen.getByRole("status").querySelector(".learning-achievement-pop"),
+    ).toBeNull();
   });
 
   it("keeps a prior medal while clearly identifying a failed updated exam", () => {
@@ -148,6 +228,19 @@ describe("AssetClassLearningAssessment", () => {
     expect(screen.queryByText("6,0/10")).toBeNull();
   });
 
+  it("does not celebrate a passing result that was not persisted", async () => {
+    render(<AssetClassLearningAssessment questions={questions.slice(0, 1)} />);
+
+    await answerQuestion(0, true);
+    fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
+
+    await screen.findByText("Curso concluído!");
+    expect(screen.queryByText("Você conquistou sua medalha!")).toBeNull();
+    expect(
+      screen.getByRole("status").querySelector(".learning-achievement-pop"),
+    ).toBeNull();
+  });
+
   it("keeps answers and the attempt id when saving fails, then retries", async () => {
     const onComplete = vi
       .fn()
@@ -178,7 +271,7 @@ describe("AssetClassLearningAssessment", () => {
     expect(screen.getByRole("button", { name: "Ver resultado" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
 
-    await screen.findByText("Curso concluído!");
+    await screen.findByText("Você conquistou sua medalha!");
     expect(onComplete).toHaveBeenCalledTimes(2);
     expect(onComplete.mock.calls[0][0].attemptId).toBe(
       onComplete.mock.calls[1][0].attemptId,
@@ -213,7 +306,7 @@ describe("AssetClassLearningAssessment", () => {
         }),
       );
     }
-    await screen.findByText("Curso concluído!");
+    await screen.findByText("Você conquistou sua medalha!");
     fireEvent.click(screen.getByRole("button", { name: "Refazer prova" }));
 
     for (const [index] of questions.entries()) {

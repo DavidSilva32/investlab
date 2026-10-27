@@ -1,4 +1,3 @@
-import Image from "next/image";
 import {
   ArrowRight,
   Building2,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import type { AssetClassLearningContent } from "@/lib/asset-class-learning";
 import type { StrategyAssetClassId } from "@/lib/strategy-allocation";
+import { FiiPropertyExplorer } from "./fii-property-explorer";
 
 type Lesson = AssetClassLearningContent["courseLessons"][number];
 type ExampleIconName =
@@ -467,44 +467,7 @@ export function AssetClassLearningLesson({
         </section>
       )}
 
-      {lesson.visuals && (
-        <section aria-label="Exemplos de imóveis de fundos imobiliários">
-          <div className="mb-3 flex items-center gap-2">
-            <Building2
-              aria-hidden="true"
-              className="size-4 text-asset-class-fiis"
-            />
-            <h4 className="text-sm font-semibold">Exemplos de portfólio</h4>
-            <span className="text-xs text-muted-foreground">
-              Cada fundo tem sua própria estratégia
-            </span>
-          </div>
-          <ul className="grid gap-3 sm:grid-cols-3">
-            {lesson.visuals.map((visual) => (
-              <li
-                key={visual.title}
-                className="group overflow-hidden rounded-2xl bg-card shadow-sm transition-shadow hover:shadow-md"
-              >
-                <div className="relative aspect-[16/10] overflow-hidden bg-muted">
-                  <Image
-                    src={visual.imageSrc}
-                    alt={visual.imageAlt}
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                    className="object-cover transition-transform duration-500 motion-safe:group-hover:scale-105 motion-reduce:transition-none"
-                  />
-                </div>
-                <div className="p-3">
-                  <h5 className="text-sm font-semibold">{visual.title}</h5>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {visual.description}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {lesson.visuals && <FiiPropertyExplorer examples={lesson.visuals} />}
 
       {isFii && lessonIndex === 2 && (
         <section

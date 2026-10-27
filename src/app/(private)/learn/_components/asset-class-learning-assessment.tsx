@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Award, PartyPopper, RotateCcw } from "lucide-react";
+import { Award, PartyPopper, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useReducedMotion } from "@/lib/use-reduced-motion";
 import {
   calculateLearningAssessmentScore,
   hasAllLearningAnswers,
@@ -14,6 +15,7 @@ import { AssetClassLearningQuiz } from "./asset-class-learning-quiz";
 
 type AssetClassLearningAssessmentProps = {
   questions: AssetClassLearningQuestion[];
+  coursePreviouslyPassed?: boolean;
   initialResult?: {
     score: number;
     passed: boolean;
@@ -33,13 +35,16 @@ type AssessmentResult = {
   passed: boolean;
   attemptPassed: boolean;
   bestScore: number;
+  newlyPassed: boolean;
 };
 
 export function AssetClassLearningAssessment({
   questions,
+  coursePreviouslyPassed: previouslyPassed = false,
   initialResult = null,
   onComplete,
 }: AssetClassLearningAssessmentProps) {
+  const reducedMotion = useReducedMotion();
   const [questionIndex, setQuestionIndex] = useState(0);
   const [correctAnswers, setCorrectAnswers] = useState(0);
   const [answered, setAnswered] = useState(false);
@@ -53,6 +58,9 @@ export function AssetClassLearningAssessment({
   const [coursePassed, setCoursePassed] = useState(
     initialResult?.passed ?? false,
   );
+  const [hasEverPassedCourse, setHasEverPassedCourse] = useState(
+    previouslyPassed || (initialResult?.passed ?? false),
+  );
   const [bestScore, setBestScore] = useState(
     initialResult?.bestScore ??
       (initialResult?.passed ? initialResult.score : 0),
@@ -63,6 +71,7 @@ export function AssetClassLearningAssessment({
           score: initialResult.score,
           passed: initialResult.passed,
           attemptPassed: initialResult.attemptPassed ?? initialResult.passed,
+          newlyPassed: false,
           bestScore:
             initialResult.bestScore ??
             (initialResult.passed ? initialResult.score : 0),
@@ -110,18 +119,25 @@ export function AssetClassLearningAssessment({
           };
       const permanentlyPassed =
         coursePassed || finalResult.passed || finalResult.coursePassed === true;
+      const newlyPassed =
+        Boolean(onComplete) &&
+        !hasEverPassedCourse &&
+        !previouslyPassed &&
+        finalResult.passed;
       const nextBestScore = Math.max(
         bestScore,
         finalResult.bestScore ?? 0,
         finalResult.passed ? finalResult.score : 0,
       );
       setCoursePassed(permanentlyPassed);
+      setHasEverPassedCourse(permanentlyPassed || previouslyPassed);
       setBestScore(nextBestScore);
       setResult({
         score: finalResult.score,
         passed: permanentlyPassed,
         attemptPassed: finalResult.passed,
         bestScore: nextBestScore,
+        newlyPassed,
       });
     } catch {
       setSubmitError(
@@ -220,26 +236,49 @@ export function AssetClassLearningAssessment({
           >
             {result.passed ? (
               <>
-                <span className="mx-auto grid size-16 place-items-center rounded-full border border-status-success/30 bg-background text-status-success shadow-sm">
-                  <Award
-                    aria-hidden="true"
-                    className="size-9 motion-safe:animate-bounce motion-reduce:animate-none"
-                  />
+                <span
+                  className={`relative mx-auto grid size-16 place-items-center rounded-full border border-status-success/30 bg-background text-status-success shadow-sm ${
+                    result.newlyPassed && !reducedMotion
+                      ? "learning-achievement-pop"
+                      : ""
+                  }`}
+                >
+                  <Award aria-hidden="true" className="size-9" />
+                  {result.newlyPassed && !reducedMotion && (
+                    <>
+                      <Sparkles
+                        aria-hidden="true"
+                        className="learning-achievement-sparkle absolute -left-3 top-0 size-4 text-status-success"
+                      />
+                      <Sparkles
+                        aria-hidden="true"
+                        className="learning-achievement-sparkle absolute -right-3 bottom-0 size-4 text-status-success"
+                      />
+                    </>
+                  )}
                 </span>
                 <h3 className="mt-3 text-2xl font-bold tracking-tight">
                   {result.attemptPassed
-                    ? "Curso concluído!"
+                    ? result.newlyPassed
+                      ? "Você conquistou sua medalha!"
+                      : "Curso concluído!"
                     : "Aprovação anterior preservada"}
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {result.attemptPassed
-                    ? "Emblema conquistado"
+                    ? result.newlyPassed
+                      ? "Primeira aprovação registrada no seu perfil."
+                      : "Emblema conquistado"
                     : "A nota desta prova ficou abaixo de 7,0. Sua medalha continua no perfil."}
                 </p>
-                <PartyPopper
-                  aria-hidden="true"
-                  className="mx-auto mt-2 size-5 text-status-success motion-safe:animate-pulse motion-reduce:animate-none"
-                />
+                {result.newlyPassed && (
+                  <PartyPopper
+                    aria-hidden="true"
+                    className={`mx-auto mt-2 size-5 text-status-success ${
+                      reducedMotion ? "" : "learning-achievement-sparkle"
+                    }`}
+                  />
+                )}
               </>
             ) : (
               <>

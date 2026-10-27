@@ -30,9 +30,13 @@ describe("AssetClassLearningLesson", () => {
     expect(screen.getAllByText("Cotista")).toHaveLength(5);
     expect(screen.queryByText("Cota", { exact: true })).toBeNull();
     expect(
-      screen.getByRole("heading", { name: "Exemplos de portfólio" }),
+      screen.getByRole("heading", { name: "Explore exemplos de imóveis" }),
     ).toBeTruthy();
-    expect(screen.getAllByRole("img")).toHaveLength(4);
+    expect(
+      screen.getByRole("group", { name: "Escolha um exemplo de imóvel" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Shoppings" })).toBeTruthy();
+    expect(screen.getByText("Como isso entra no fundo")).toBeTruthy();
   });
 
   it("shows vacancy as occupied and empty spaces with physical and financial context", () => {
