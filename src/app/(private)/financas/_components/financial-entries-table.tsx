@@ -35,16 +35,23 @@ type TableRow = {
   id: string;
   kind: Kind;
   description: string;
-  categoryId?: string;
   categoryName?: string;
   category?: string | null;
-  source: "Avulso" | "Recorrente";
   due: string | null;
   amount: string | null;
   realAmount: string | null;
   realDate: string | null;
   state: "Previsto" | "Realizado";
-};
+} & (
+  | {
+      source: "Avulso";
+      categoryId: string;
+      entry: FinancialEntryRow;
+    }
+  | {
+      source: "Recorrente";
+    }
+);
 
 const money = (value: string | null) =>
   value === null ? "Sem registro" : formatCurrency(Number(value));
@@ -69,6 +76,7 @@ export function FinancialEntriesTable({
   const rows: TableRow[] = [
     ...entries.map((entry) => ({
       ...entry,
+      entry,
       source: "Avulso" as const,
       due: entry.expectedDate ?? entry.actualDate,
       amount: entry.expectedAmount,
@@ -177,13 +185,12 @@ export function FinancialEntriesTable({
       width: "90px",
       sortable: false,
       render: (row) => {
-        if (readOnly || !row.categoryId) return null;
-        const entry = entries.find((candidate) => candidate.id === row.id);
-        return entry ? (
-          <Button variant="ghost" size="sm" onClick={() => onEdit(entry)}>
+        if (readOnly || row.source === "Recorrente") return null;
+        return (
+          <Button variant="ghost" size="sm" onClick={() => onEdit(row.entry)}>
             Editar
           </Button>
-        ) : null;
+        );
       },
     },
   ];

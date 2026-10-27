@@ -244,6 +244,20 @@ describe("FinancialCategoryManager", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("preserves a client-safe Error message when updating a category fails", async () => {
+    const user = userEvent.setup();
+    api.response.mockRejectedValue(new Error("Falha temporária ao atualizar."));
+    renderManager();
+    await screen.findByText("Moradia");
+    await user.click(screen.getByRole("button", { name: "Ocultar Moradia" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Falha temporária ao atualizar.",
+      ),
+    );
+  });
+
   it("shows a loading state while category data is still pending", () => {
     api.request.mockReturnValue(new Promise(() => {}));
     renderManager();

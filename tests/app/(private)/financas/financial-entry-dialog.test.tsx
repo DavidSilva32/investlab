@@ -194,6 +194,9 @@ describe("FinancialEntryDialog", () => {
       { method: "DELETE" },
       "Não foi possível excluir o lançamento.",
     );
+
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+    expect(toast.error).toHaveBeenLastCalledWith("Falha segura.");
   });
 
   it("closes on cancel and confirms deletion for an encoded entry ID", async () => {

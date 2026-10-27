@@ -193,6 +193,34 @@ describe("FinancialOverview", () => {
     ).toBeTruthy();
   });
 
+  it("tolerates optional entry and history collections missing from a response", async () => {
+    const incomplete = {
+      ...overview,
+      entries: undefined,
+      recurringOccurrences: undefined,
+      history: {
+        ...overview.history,
+        months: undefined,
+        explanation: undefined,
+      },
+    };
+    api.request.mockImplementation((url: string) =>
+      url.startsWith("/api/finance-overview")
+        ? Promise.resolve(incomplete)
+        : Promise.resolve({ recurrences: [], recurrenceOccurrences: [] }),
+    );
+    renderFinance();
+
+    expect(
+      await screen.findByText("Nenhum lançamento ou vencimento neste mês."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Ainda não há dados realizados para comparar no histórico.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("loads the selected month and opens recurring management on demand", async () => {
     const user = userEvent.setup();
     renderFinance();

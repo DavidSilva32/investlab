@@ -94,6 +94,16 @@ describe("FinancialEntriesTable", () => {
             actualAmount: "900.00",
             actualDate: null,
           },
+          {
+            ...entry,
+            id: "bonus-2",
+            kind: "INCOME",
+            description: "Reembolso sem data",
+            expectedDate: null,
+            actualDate: null,
+            expectedAmount: null,
+            actualAmount: null,
+          },
         ]}
         occurrences={[
           {
@@ -107,6 +117,17 @@ describe("FinancialEntriesTable", () => {
             actualDate: null,
             status: "planned",
           },
+          {
+            id: "rec-3:2026-10-02",
+            kind: "INCOME",
+            description: "Salário recebido",
+            category: "Renda",
+            dueDate: "2026-10-02",
+            expectedAmount: "3000.00",
+            actualAmount: "3000.00",
+            actualDate: "2026-10-02",
+            status: "realized",
+          },
         ]}
         readOnly={false}
         onEdit={() => {}}
@@ -114,7 +135,9 @@ describe("FinancialEntriesTable", () => {
     );
 
     expect(screen.getByText("Bônus")).toBeTruthy();
+    expect(screen.getByText("Reembolso sem data")).toBeTruthy();
     expect(screen.getByText("Conta variável")).toBeTruthy();
+    expect(screen.getByText("Salário recebido")).toBeTruthy();
     expect(screen.getByText(/Recorrente · Sem categoria/)).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Sem data").length).toBeGreaterThan(0);

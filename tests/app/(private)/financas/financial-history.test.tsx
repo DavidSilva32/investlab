@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/ui/chart", () => ({
@@ -11,12 +11,23 @@ vi.mock("@/components/ui/chart", () => ({
     children: React.ReactNode;
     config: Record<string, unknown>;
   }) => <div {...props}>{children}</div>,
-  ChartTooltip: ({ content }: { content: React.ReactNode }) => <>{content}</>,
-  ChartTooltipContent: ({
-    valueFormatter,
+  ChartTooltip: ({
+    content,
   }: {
-    valueFormatter?: (value: unknown) => React.ReactNode;
-  }) => <span>{valueFormatter?.("5000.00")}</span>,
+    content: React.ReactElement<{
+      valueFormatter?: (value: unknown) => React.ReactNode;
+    }>;
+  }) => <span>{content.props.valueFormatter?.("5000.00")}</span>,
+  ChartTooltipContent: () => null,
+}));
+vi.mock("recharts", () => ({
+  Bar: () => null,
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  CartesianGrid: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
 }));
 import {
   FinancialHistory,
@@ -88,7 +99,13 @@ describe("FinancialHistory", () => {
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("Entradas").length).toBeGreaterThan(0);
-    expect(screen.getByText(/5\.000,00/)).toBeTruthy();
+    expect(
+      within(
+        screen.getByLabelText(
+          "Gráfico de entradas e saídas realizadas nos últimos 12 meses",
+        ),
+      ).getByText(/5\.000,00/),
+    ).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
     expect(
       screen.queryByText(
