@@ -3363,7 +3363,7 @@ describe("StockAnalysisService cache and failures", () => {
   });
 
   it("accepts a case-normalized price without BRAPI market capitalization", async () => {
-    const observedAt = new Date("2026-10-17T14:30:00.000Z");
+    const observedAt = new Date(Date.now() - 60 * 60 * 1000);
     const cached = expiredCachePeriod({
       fetchedAt: new Date(),
       sourceVersion: `${new Date().getUTCFullYear()}-cvm-v8`,

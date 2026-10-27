@@ -1,4 +1,3 @@
-import Image from "next/image";
 import {
   ArrowRight,
   Building2,
@@ -21,6 +20,8 @@ import {
 } from "lucide-react";
 import type { AssetClassLearningContent } from "@/lib/asset-class-learning";
 import type { StrategyAssetClassId } from "@/lib/strategy-allocation";
+import { FiiPropertyExplorer } from "./fii-property-explorer";
+import { InteractiveLessonScene } from "./interactive-lesson-scene";
 
 type Lesson = AssetClassLearningContent["courseLessons"][number];
 type ExampleIconName =
@@ -371,50 +372,15 @@ export function AssetClassLearningLesson({
 
   if (!isFii) {
     const visual = lessonVisuals[selectedClass][lessonIndex];
-    const accent = visualClassName[selectedClass];
-    const accentSoft = visualSoftClassName[selectedClass];
 
     if (visual)
       return (
         <div className="mt-1 space-y-4">
-          <section
-            aria-label={visual.title}
-            className={`relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-muted/60 via-card to-card p-4 sm:p-5 ${accent}`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h4 className="text-sm font-semibold text-foreground sm:text-base">
-                {visual.title}
-              </h4>
-              <span className="shrink-0 rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
-                Esquema simplificado
-              </span>
-            </div>
-            <div className="mt-5 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1 sm:gap-3">
-              {visual.steps.map(({ label, detail, icon: Icon }, index) => (
-                <div key={label} className="contents">
-                  <div className="min-w-0 text-center">
-                    <span
-                      className={`mx-auto grid size-12 place-items-center rounded-2xl ${accentSoft} ${accent} sm:size-14`}
-                    >
-                      <Icon aria-hidden="true" className="size-6" />
-                    </span>
-                    <p className="mt-2 text-xs font-semibold text-foreground sm:text-sm">
-                      {label}
-                    </p>
-                    <p className="mx-auto mt-1 max-w-32 text-xs leading-4 text-muted-foreground sm:text-sm">
-                      {detail}
-                    </p>
-                  </div>
-                  {index < visual.steps.length - 1 && (
-                    <ArrowRight
-                      aria-hidden="true"
-                      className={`size-4 ${accent} sm:size-5`}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
+          <InteractiveLessonScene
+            assetClass={selectedClass}
+            title={visual.title}
+            steps={visual.steps}
+          />
           {examplesSection}
           {analysisRoadmap}
         </div>
@@ -467,44 +433,7 @@ export function AssetClassLearningLesson({
         </section>
       )}
 
-      {lesson.visuals && (
-        <section aria-label="Exemplos de imóveis de fundos imobiliários">
-          <div className="mb-3 flex items-center gap-2">
-            <Building2
-              aria-hidden="true"
-              className="size-4 text-asset-class-fiis"
-            />
-            <h4 className="text-sm font-semibold">Exemplos de portfólio</h4>
-            <span className="text-xs text-muted-foreground">
-              Cada fundo tem sua própria estratégia
-            </span>
-          </div>
-          <ul className="grid gap-3 sm:grid-cols-3">
-            {lesson.visuals.map((visual) => (
-              <li
-                key={visual.title}
-                className="group overflow-hidden rounded-2xl bg-card shadow-sm transition-shadow hover:shadow-md"
-              >
-                <div className="relative aspect-[16/10] overflow-hidden bg-muted">
-                  <Image
-                    src={visual.imageSrc}
-                    alt={visual.imageAlt}
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                    className="object-cover transition-transform duration-500 motion-safe:group-hover:scale-105 motion-reduce:transition-none"
-                  />
-                </div>
-                <div className="p-3">
-                  <h5 className="text-sm font-semibold">{visual.title}</h5>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {visual.description}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {lesson.visuals && <FiiPropertyExplorer examples={lesson.visuals} />}
 
       {isFii && lessonIndex === 2 && (
         <section

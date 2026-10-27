@@ -60,18 +60,19 @@ beforeEach(() => {
         }
         const omitAssessment = request.assessment && omitNextAssessment;
         if (omitAssessment) omitNextAssessment = false;
+        const assessmentSaved = Boolean(request.assessment && !omitAssessment);
         const responseBody = {
           progress: {
             courseId: request.courseId,
             courseVersion: 2,
             hasCurrentVersionProgress: true,
-            currentVersionPassed: Boolean(request.assessment),
+            currentVersionPassed: assessmentSaved,
             completedLessonIds: request.completedLessonIds ?? [],
             lastLessonId: request.lastLessonId ?? null,
-            latestScore: request.assessment ? 10 : null,
-            bestScore: request.assessment ? assessmentBestScore : null,
-            quizAttemptCount: request.assessment ? 1 : 0,
-            passed: Boolean(request.assessment),
+            latestScore: assessmentSaved ? 10 : null,
+            bestScore: assessmentSaved ? assessmentBestScore : null,
+            quizAttemptCount: assessmentSaved ? 1 : 0,
+            passed: assessmentSaved,
             passedAt: null,
             updatedAt: new Date().toISOString(),
           },
@@ -185,12 +186,12 @@ describe("AssetClassLearningCourse", () => {
         name: "Exemplos de imóveis de fundos imobiliários",
       }),
     ).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Shoppings" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Shoppings" })).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Galpões logísticos" }),
+      screen.getByRole("button", { name: "Galpões logísticos" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Imóveis residenciais" }),
+      screen.getByRole("button", { name: "Imóveis residenciais" }),
     ).toBeTruthy();
 
     for (let index = 1; index < content.courseLessons.length; index += 1) {
@@ -262,13 +263,14 @@ describe("AssetClassLearningCourse", () => {
       );
     }
 
-    await screen.findByText("Curso concluído!");
+    await screen.findByText("Você conquistou sua medalha!");
 
     const completion = screen
       .getAllByRole("status")
-      .find((status) => status.textContent?.includes("Curso concluído!"));
-    expect(completion?.textContent).toContain("Curso concluído!");
-    expect(completion?.textContent).toContain("Emblema conquistado");
+      .find((status) =>
+        status.textContent?.includes("Você conquistou sua medalha!"),
+      );
+    expect(completion?.textContent).toContain("Primeira aprovação registrada");
     expect(completion?.textContent).toContain("10,0/10");
     fireEvent.click(
       screen.getByRole("button", { name: "Etapa 1: O que é renda fixa?" }),
@@ -664,6 +666,6 @@ describe("AssetClassLearningCourse", () => {
       "suas respostas foram mantidas",
     );
     fireEvent.click(screen.getByRole("button", { name: "Ver resultado" }));
-    await screen.findByText("Curso concluído!");
+    await screen.findByText("Você conquistou sua medalha!");
   });
 });

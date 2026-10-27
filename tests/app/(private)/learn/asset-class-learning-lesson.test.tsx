@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetClassLearningLesson } from "@/app/(private)/learn/_components/asset-class-learning-lesson";
 import { assetClassLearningContent } from "@/lib/asset-class-learning";
@@ -30,9 +36,13 @@ describe("AssetClassLearningLesson", () => {
     expect(screen.getAllByText("Cotista")).toHaveLength(5);
     expect(screen.queryByText("Cota", { exact: true })).toBeNull();
     expect(
-      screen.getByRole("heading", { name: "Exemplos de portfólio" }),
+      screen.getByRole("heading", { name: "Explore exemplos de imóveis" }),
     ).toBeTruthy();
-    expect(screen.getAllByRole("img")).toHaveLength(4);
+    expect(
+      screen.getByRole("group", { name: "Escolha um exemplo de imóvel" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Shoppings" })).toBeTruthy();
+    expect(screen.getByText("Como isso entra no fundo")).toBeTruthy();
   });
 
   it("shows vacancy as occupied and empty spaces with physical and financial context", () => {
@@ -255,6 +265,7 @@ describe("AssetClassLearningLesson", () => {
       "Prazo",
       "Liquidez",
       "Produto",
+      "Regras de saída",
     ],
     [
       "fixed_income",
@@ -263,6 +274,7 @@ describe("AssetClassLearningLesson", () => {
       "Emissor",
       "Proteções",
       "Crédito",
+      "Capacidade de pagamento",
     ],
     [
       "fixed_income",
@@ -271,6 +283,7 @@ describe("AssetClassLearningLesson", () => {
       "Remuneração",
       "Prazo",
       "Liquidez",
+      "Condições de resgate",
     ],
     [
       "brazilian_equities",
@@ -279,6 +292,7 @@ describe("AssetClassLearningLesson", () => {
       "Empresa",
       "Receita",
       "Lucro",
+      "Após despesas",
     ],
     [
       "brazilian_equities",
@@ -287,6 +301,7 @@ describe("AssetClassLearningLesson", () => {
       "P/L",
       "P/VP",
       "ROE",
+      "Relaciona lucro e patrimônio da empresa",
     ],
     [
       "brazilian_equities",
@@ -295,6 +310,7 @@ describe("AssetClassLearningLesson", () => {
       "Preço de mercado",
       "Método",
       "Estimativa",
+      "Não é garantia",
     ],
     [
       "international_etfs",
@@ -303,6 +319,7 @@ describe("AssetClassLearningLesson", () => {
       "Índice",
       "Regras",
       "Ativos",
+      "O que existe no fundo",
     ],
     [
       "international_etfs",
@@ -311,6 +328,7 @@ describe("AssetClassLearningLesson", () => {
       "Ativos",
       "Mercados",
       "Câmbio",
+      "Conversão para reais",
     ],
     [
       "international_etfs",
@@ -319,6 +337,7 @@ describe("AssetClassLearningLesson", () => {
       "Cesta",
       "Concentração",
       "Riscos",
+      "Ainda podem existir",
     ],
   ] as const)(
     "shows the visual for %s lesson %i using that lesson's concepts",
@@ -329,6 +348,7 @@ describe("AssetClassLearningLesson", () => {
       firstLabel,
       secondLabel,
       thirdLabel,
+      thirdDetail,
     ) => {
       render(
         <AssetClassLearningLesson
@@ -342,10 +362,24 @@ describe("AssetClassLearningLesson", () => {
 
       const visual = screen.getByRole("region", { name: title });
       expect(visual).toBeTruthy();
-      expect(within(visual).getByText(firstLabel)).toBeTruthy();
-      expect(within(visual).getByText(secondLabel)).toBeTruthy();
-      expect(within(visual).getByText(thirdLabel)).toBeTruthy();
-      expect(screen.getByText("Esquema simplificado")).toBeTruthy();
+      expect(
+        within(visual).getByRole("group", {
+          name: "Etapas para explorar este conceito",
+        }),
+      ).toBeTruthy();
+      expect(
+        within(visual).getByRole("button", { name: firstLabel }),
+      ).toBeTruthy();
+      expect(
+        within(visual).getByRole("button", { name: secondLabel }),
+      ).toBeTruthy();
+      const thirdStep = within(visual).getByRole("button", {
+        name: thirdLabel,
+      });
+      fireEvent.click(thirdStep);
+      expect(thirdStep.getAttribute("aria-pressed")).toBe("true");
+      expect(within(visual).getByText(thirdDetail)).toBeTruthy();
+      expect(screen.getByText("Toque para explorar")).toBeTruthy();
     },
   );
 
@@ -358,12 +392,14 @@ describe("AssetClassLearningLesson", () => {
       />,
     );
 
-    expect(screen.getByText("Relaciona preço e lucro por ação")).toBeTruthy();
-    expect(
-      screen.getByText("Compara preço e patrimônio por ação"),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Relaciona lucro e patrimônio da empresa"),
-    ).toBeTruthy();
+    const indicatorDetails = [
+      ["P/L", "Relaciona preço e lucro por ação"],
+      ["P/VP", "Compara preço e patrimônio por ação"],
+      ["ROE", "Relaciona lucro e patrimônio da empresa"],
+    ];
+    for (const [label, detail] of indicatorDetails) {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(screen.getByText(detail)).toBeTruthy();
+    }
   });
 });

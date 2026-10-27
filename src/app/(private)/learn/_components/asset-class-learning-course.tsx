@@ -416,6 +416,7 @@ export function AssetClassLearningCourse({
             <AssetClassLearningAssessment
               key={selectedClass}
               questions={content.assessment}
+              coursePreviouslyPassed={progress?.passed}
               initialResult={
                 progress?.latestScore !== null &&
                 progress?.latestScore !== undefined
