@@ -44,6 +44,8 @@ const keyB = `v1:${"b".repeat(64)}`;
 const keyC = `v1:${"c".repeat(64)}`;
 const editorData = {
   monthlyExpenses: 2000,
+  essentialMonthlyExpenses: 1500,
+  essentialExpenseSources: [],
   targetMonths: 6,
   selectedAssetKeys: [keyA],
   configured: true,
@@ -431,6 +433,40 @@ describe("EmergencyReserveEditor", () => {
       targetMonths: 12,
     });
     expect(toast.success).toHaveBeenCalledWith("Configuração salva.");
+  });
+
+  it("allows saving the monthly reference without selecting a target horizon", async () => {
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () =>
+        options?.method === "PUT"
+          ? { ...editorData, targetMonths: null }
+          : { ...editorData, targetMonths: null },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    await screen.findByLabelText("Custo mensal");
+    expect(
+      screen.getByText(/Mínimo estimado pelas recorrências essenciais/),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Salvar configuração" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+      ).toBe(true),
+    );
+    const saveCall = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(saveCall?.[1]?.body as string)).toEqual({
+      monthlyExpenses: 2000,
+      targetMonths: null,
+    });
   });
 
   it("shows the server message when the reserve settings save is rejected", async () => {

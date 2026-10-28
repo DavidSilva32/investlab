@@ -92,6 +92,54 @@ describe("EmergencyReserveSummary", () => {
     expect(html).not.toContain("recomendação do InvestLab");
   });
 
+  it("shows all four reserve coverage horizons and the calculated essential reference", async () => {
+    const data = {
+      ...calculation,
+      targetMonths: null,
+      targetValue: null,
+      difference: null,
+      essentialMonthlyExpenses: 850,
+      essentialExpenseSources: [
+        {
+          id: "rent",
+          description: "Aluguel",
+          frequency: "Mensal",
+          amount: 850,
+          monthlyEquivalent: 850,
+        },
+      ],
+      horizons: [3, 6, 9, 12].map((months) => ({
+        months: months as 3 | 6 | 9 | 12,
+        targetValue: 850 * months,
+        targetValueCents: String(85000 * months),
+        difference: 850 * months - 2500,
+        differenceCents: String(85000 * months - 250000),
+      })),
+    };
+    const html = renderToStaticMarkup(
+      <EmergencyReserveSummary calculation={data} />,
+    );
+
+    expect(html).toContain("Cenários de cobertura da reserva");
+    expect(html).toContain("3 meses");
+    expect(html).toContain("6 meses");
+    expect(html).toContain("9 meses");
+    expect(html).toContain("12 meses");
+    expect(html).not.toContain("R$ 850,00 por mês");
+
+    render(<EmergencyReserveSummary calculation={data} />);
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Origem, cálculo e limitações" }),
+      );
+    expect(screen.getByText(/mínimo estimado pelas recorrências/)).toBeTruthy();
+    expect(screen.getByText(/Aluguel \(Mensal\)/)).toBeTruthy();
+    expect(
+      screen.getByText(/não projetam aportes ou rendimentos/),
+    ).toBeTruthy();
+  });
+
   it("describes coverage above the configured personal target", () => {
     const html = renderToStaticMarkup(
       <EmergencyReserveSummary
@@ -143,6 +191,7 @@ describe("EmergencyReserveSummary", () => {
     expect(
       screen.getByText(/divide o valor conhecido das posições/),
     ).toBeTruthy();
+    expect(screen.getByText(/ponto de partida é 6 meses/)).toBeTruthy();
     expect(
       screen.getByText(/não verifica carência, resgate ou prazo/),
     ).toBeTruthy();
@@ -183,6 +232,22 @@ describe("EmergencyReserveSummary", () => {
           ...calculation,
           unvaluedGroups: 1,
           missingSelectionCount: 1,
+          horizons: [
+            {
+              months: 3,
+              targetValue: 3000,
+              targetValueCents: "300000",
+              difference: 500,
+              differenceCents: "50000",
+            },
+            {
+              months: 6,
+              targetValue: 2000,
+              targetValueCents: "200000",
+              difference: -500,
+              differenceCents: "-50000",
+            },
+          ],
         }}
       />,
     );
@@ -192,6 +257,9 @@ describe("EmergencyReserveSummary", () => {
     expect(html).not.toContain('role="progressbar"');
     expect(html).not.toContain("% da sua meta pessoal");
     expect(html).toContain("Origem, cálculo e limitações");
+    expect(html).toContain("R$ 3.000,00");
+    expect(html).not.toContain("Faltam R$ 500,00");
+    expect(html).not.toContain("R$ 500,00 acima");
     expect(html).not.toContain("contêm posições sem valor");
   });
 

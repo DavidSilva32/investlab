@@ -36,7 +36,10 @@ export class EmergencyReserveRepository {
     };
   }
 
-  async saveSettings(input: { monthlyExpenses: string; targetMonths: number }) {
+  async saveSettings(input: {
+    monthlyExpenses: string;
+    targetMonths: number | null;
+  }) {
     const userId = requireDataOwnerId();
     return getDatabaseClient()
       .insert(emergencyReserveSettings)

@@ -68,6 +68,14 @@ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 type EditorData = {
   monthlyExpenses: number | null;
+  essentialMonthlyExpenses: number | null;
+  essentialExpenseSources: Array<{
+    id: string;
+    description: string;
+    frequency: string;
+    amount: number;
+    monthlyEquivalent: number;
+  }>;
   targetMonths: number | null;
   selectedAssetKeys: string[];
   configured: boolean;
@@ -122,9 +130,9 @@ export function EmergencyReserveEditor({
   const [monthlyExpenses, setMonthlyExpenses] = useState("");
   const [targetMonths, setTargetMonths] = useState("");
   const [customMonths, setCustomMonths] = useState("");
-  const [monthChoice, setMonthChoice] = useState<"3" | "6" | "12" | "custom">(
-    "custom",
-  );
+  const [monthChoice, setMonthChoice] = useState<
+    "3" | "6" | "9" | "12" | "custom"
+  >("custom");
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [formError, setFormError] = useState<string | null>(null);
   const loading = reserveQuery.isPending;
@@ -147,7 +155,10 @@ export function EmergencyReserveEditor({
     const loadedMonths = data.targetMonths?.toString() ?? "";
     setCustomMonths(loadedMonths);
     setMonthChoice(
-      loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
+      loadedMonths === "3" ||
+        loadedMonths === "6" ||
+        loadedMonths === "9" ||
+        loadedMonths === "12"
         ? loadedMonths
         : "custom",
     );
@@ -234,10 +245,8 @@ export function EmergencyReserveEditor({
     }
     if (
       mode === "settings" &&
-      (!targetMonths ||
-        !Number.isInteger(months) ||
-        months < 1 ||
-        months > 1200)
+      targetMonths !== "" &&
+      (!Number.isInteger(months) || months < 1 || months > 1200)
     ) {
       setFormError(
         "Informe sua meta pessoal como um número inteiro de 1 a 1200 meses.",
@@ -259,7 +268,7 @@ export function EmergencyReserveEditor({
             mode === "settings"
               ? {
                   monthlyExpenses: expenses,
-                  targetMonths: months,
+                  targetMonths: targetMonths === "" ? null : months,
                 }
               : {
                   selectedAssetKeys: requestedKeys,
@@ -293,7 +302,10 @@ export function EmergencyReserveEditor({
       const loadedMonths = savedData.targetMonths?.toString() ?? "";
       setCustomMonths(loadedMonths);
       setMonthChoice(
-        loadedMonths === "3" || loadedMonths === "6" || loadedMonths === "12"
+        loadedMonths === "3" ||
+          loadedMonths === "6" ||
+          loadedMonths === "9" ||
+          loadedMonths === "12"
           ? loadedMonths
           : "custom",
       );
@@ -503,8 +515,45 @@ export function EmergencyReserveEditor({
                         id="reserve-cost-help"
                         className="text-xs text-muted-foreground"
                       >
-                        Use o valor que melhor representa suas despesas mensais.
+                        {data.essentialMonthlyExpenses === null
+                          ? "Informe o valor mensal que deseja usar para calcular sua reserva."
+                          : `Mínimo estimado pelas recorrências essenciais: ${formatCurrency(data.essentialMonthlyExpenses)}/mês. Você pode escolher outro valor.`}
                       </p>
+                      {data.essentialExpenseSources.length > 0 && (
+                        <Collapsible className="rounded-lg border bg-muted/20 p-3 text-xs">
+                          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            Ver despesas usadas na referência
+                            <ChevronDown
+                              aria-hidden="true"
+                              className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+                            />
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <ul className="mt-2 space-y-1.5">
+                              {data.essentialExpenseSources.map((source) => (
+                                <li
+                                  key={source.id}
+                                  className="flex flex-wrap justify-between gap-x-4 gap-y-1"
+                                >
+                                  <span>
+                                    {source.description} · {source.frequency}
+                                  </span>
+                                  <span className="tabular-nums">
+                                    {formatCurrency(source.amount)} →{" "}
+                                    {formatCurrency(source.monthlyEquivalent)}
+                                    /mês
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-2 text-muted-foreground">
+                              Contas com vencimentos diferentes são convertidas
+                              em custo anual e divididas por 12 para calcular a
+                              média mensal.
+                            </p>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
                     </div>
                     <div className="min-w-0 space-y-2">
                       <p className="text-sm font-medium">
@@ -514,30 +563,32 @@ export function EmergencyReserveEditor({
                         className="flex flex-wrap gap-2"
                         aria-label="Atalhos de meses"
                       >
-                        {(["3", "6", "12", "custom"] as const).map((choice) => (
-                          <Button
-                            key={choice}
-                            type="button"
-                            size="sm"
-                            variant={
-                              monthChoice === choice ? "default" : "outline"
-                            }
-                            aria-pressed={monthChoice === choice}
-                            onClick={() => {
-                              if (monthChoice === "custom")
-                                setCustomMonths(targetMonths);
-                              setMonthChoice(choice);
-                              setTargetMonths(
-                                choice === "custom" ? customMonths : choice,
-                              );
-                              setFormError(null);
-                            }}
-                          >
-                            {choice === "custom"
-                              ? "Personalizado"
-                              : `${choice} meses`}
-                          </Button>
-                        ))}
+                        {(["3", "6", "9", "12", "custom"] as const).map(
+                          (choice) => (
+                            <Button
+                              key={choice}
+                              type="button"
+                              size="sm"
+                              variant={
+                                monthChoice === choice ? "default" : "outline"
+                              }
+                              aria-pressed={monthChoice === choice}
+                              onClick={() => {
+                                if (monthChoice === "custom")
+                                  setCustomMonths(targetMonths);
+                                setMonthChoice(choice);
+                                setTargetMonths(
+                                  choice === "custom" ? customMonths : choice,
+                                );
+                                setFormError(null);
+                              }}
+                            >
+                              {choice === "custom"
+                                ? "Personalizado"
+                                : `${choice} meses`}
+                            </Button>
+                          ),
+                        )}
                       </div>
                       {monthChoice === "custom" && (
                         <div className="min-w-0 space-y-2">
@@ -557,7 +608,6 @@ export function EmergencyReserveEditor({
                               setCustomMonths(event.target.value);
                             }}
                             aria-describedby="reserve-months-help"
-                            required
                           />
                         </div>
                       )}
@@ -565,8 +615,8 @@ export function EmergencyReserveEditor({
                         id="reserve-months-help"
                         className="text-xs text-muted-foreground"
                       >
-                        A meta em reais é calculada pelo custo mensal
-                        multiplicado pelos meses que você definiu.
+                        Opcional. Sem um prazo escolhido, a tela mostra os
+                        cenários de 3, 6, 9 e 12 meses.
                       </p>
                       <Popover>
                         <PopoverTrigger asChild>

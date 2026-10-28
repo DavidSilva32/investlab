@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
+import { financialRecurrencesRepository } from "@/backend/repositories/financial-recurrences.repository";
 import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
@@ -11,7 +12,10 @@ import {
   suggestEmergencyReservePositions,
   type ReservePositionSuggestion,
 } from "@/backend/services/emergency-reserve-position-suggestions";
-import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
+import {
+  calculateEmergencyReserve,
+  calculateEssentialMonthlyBaseline,
+} from "@/lib/emergency-reserve";
 import { logger } from "@/infrastructure/logging/logger";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -48,7 +52,7 @@ const suggestionSchema = z.object({
 
 const settingsSchema = z.object({
   monthlyExpenses: z.number().finite().positive().max(1_000_000_000_000),
-  targetMonths: z.number().int().min(1).max(1200),
+  targetMonths: z.number().int().min(1).max(1200).nullable(),
 });
 const assetKeySchema = z
   .string()
@@ -107,9 +111,14 @@ type ClassifiedPosition = Position & {
   classification: { assetClass: string | null };
 };
 type ReserveSettings = {
-  monthlyExpenses: string | null;
+  monthlyExpenses: string | number | null;
+  monthlyExpensesCents?: string | null;
   targetMonths: number | null;
   selectedAssetKeys: string[];
+  essentialMonthlyExpenses?: number | null;
+  essentialExpenseSources?: ReturnType<
+    typeof calculateEssentialMonthlyBaseline
+  >["sources"];
 };
 type ReserveImpactObjective = {
   id: string;
@@ -181,6 +190,8 @@ export class EmergencyReserveService {
     );
     return calculateEmergencyReserve({
       monthlyExpenses: parsed.data.monthlyExpenses,
+      essentialMonthlyExpenses: data.essentialMonthlyExpenses,
+      essentialExpenseSources: data.essentialExpenseSources,
       targetMonths: parsed.data.targetMonths,
       selectedValue: centsToNumber(selectedValueCents)!,
       selectedValueCents: selectedValueCents.toString(),
@@ -193,11 +204,14 @@ export class EmergencyReserveService {
 
   async getEditorData(requestId?: string, selectedAssetKeys?: string[]) {
     logger.info("emergency_reserve_editor_loading", { requestId });
-    const [enrichedPositions, settings, objectives] = await Promise.all([
-      portfolioPositionService.listCurrentEnriched(requestId),
-      emergencyReserveRepository.getSettings(),
-      portfolioObjectivesRepository.list(),
-    ]);
+    const [enrichedPositions, settings, objectives, recurrences] =
+      await Promise.all([
+        portfolioPositionService.listCurrentEnriched(requestId),
+        emergencyReserveRepository.getSettings(),
+        portfolioObjectivesRepository.list(),
+        financialRecurrencesRepository.listRecurrences(),
+      ]);
+    const essentialBaseline = calculateEssentialMonthlyBaseline(recurrences);
     const positions = await portfolioAllocationService.classifyPositions(
       enrichedPositions,
       requestId,
@@ -218,8 +232,16 @@ export class EmergencyReserveService {
     const data = this.buildData(
       positions,
       {
-        monthlyExpenses: settings?.monthlyExpenses ?? null,
-        targetMonths: settings?.targetMonths ?? null,
+        monthlyExpenses:
+          settings?.monthlyExpenses ?? essentialBaseline.monthlyExpenses,
+        monthlyExpensesCents:
+          settings?.monthlyExpenses !== null &&
+          settings?.monthlyExpenses !== undefined
+            ? (decimalToCents(settings.monthlyExpenses)?.toString() ?? null)
+            : essentialBaseline.monthlyExpensesCents,
+        essentialMonthlyExpenses: essentialBaseline.monthlyExpenses,
+        essentialExpenseSources: essentialBaseline.sources,
+        targetMonths: settings?.targetMonths ?? 6,
         selectedAssetKeys:
           selectedAssetKeys ?? settings?.selectedAssetKeys ?? [],
       },
@@ -234,10 +256,22 @@ export class EmergencyReserveService {
   }
 
   async getSummary(positions: ClassifiedPosition[], requestId?: string) {
-    const settings = await emergencyReserveRepository.getSettings();
+    const [settings, recurrences] = await Promise.all([
+      emergencyReserveRepository.getSettings(),
+      financialRecurrencesRepository.listRecurrences(),
+    ]);
+    const essentialBaseline = calculateEssentialMonthlyBaseline(recurrences);
     const data = this.buildData(positions, {
-      monthlyExpenses: settings?.monthlyExpenses ?? null,
-      targetMonths: settings?.targetMonths ?? null,
+      monthlyExpenses:
+        settings?.monthlyExpenses ?? essentialBaseline.monthlyExpenses,
+      monthlyExpensesCents:
+        settings?.monthlyExpenses !== null &&
+        settings?.monthlyExpenses !== undefined
+          ? (decimalToCents(settings.monthlyExpenses)?.toString() ?? null)
+          : essentialBaseline.monthlyExpensesCents,
+      essentialMonthlyExpenses: essentialBaseline.monthlyExpenses,
+      essentialExpenseSources: essentialBaseline.sources,
+      targetMonths: settings?.targetMonths ?? 6,
       selectedAssetKeys: settings?.selectedAssetKeys ?? [],
     });
     logger.info("emergency_reserve_summary_loaded", {
@@ -252,10 +286,22 @@ export class EmergencyReserveService {
   }
 
   async getContributionContext(positions: ClassifiedPosition[]) {
-    const settings = await emergencyReserveRepository.getSettings();
+    const [settings, recurrences] = await Promise.all([
+      emergencyReserveRepository.getSettings(),
+      financialRecurrencesRepository.listRecurrences(),
+    ]);
+    const essentialBaseline = calculateEssentialMonthlyBaseline(recurrences);
     const data = this.buildData(positions, {
-      monthlyExpenses: settings?.monthlyExpenses ?? null,
-      targetMonths: settings?.targetMonths ?? null,
+      monthlyExpenses:
+        settings?.monthlyExpenses ?? essentialBaseline.monthlyExpenses,
+      monthlyExpensesCents:
+        settings?.monthlyExpenses !== null &&
+        settings?.monthlyExpenses !== undefined
+          ? (decimalToCents(settings.monthlyExpenses)?.toString() ?? null)
+          : essentialBaseline.monthlyExpensesCents,
+      essentialMonthlyExpenses: essentialBaseline.monthlyExpenses,
+      essentialExpenseSources: essentialBaseline.sources,
+      targetMonths: settings?.targetMonths ?? 6,
       selectedAssetKeys: settings?.selectedAssetKeys ?? [],
     });
     return {
@@ -350,23 +396,28 @@ export class EmergencyReserveService {
             baseline.searchLimited &&
             expandedDifference === baselineDifference)
         ) {
-          const [overview, reserveSettings] = await Promise.all([
-            portfolioObjectivesService.getOverview(
-              requestId,
-              valuationDate,
-              positions,
-            ),
-            parsed.data.reserveTargetAmount === undefined
-              ? emergencyReserveRepository.getSettings()
-              : Promise.resolve(null),
-          ]);
-          const reserveTarget =
+          const overview = await portfolioObjectivesService.getOverview(
+            requestId,
+            valuationDate,
+            positions,
+          );
+          let reserveTarget =
             parsed.data.reserveTargetAmount !== undefined
               ? parsed.data.reserveTargetAmount
-              : reserveSettings?.monthlyExpenses && reserveSettings.targetMonths
-                ? Number(reserveSettings.monthlyExpenses) *
-                  reserveSettings.targetMonths
-                : null;
+              : (overview.objectives.find(
+                  (objective) => objective.kind === "RESERVE",
+                )?.targetAmount ?? null);
+          if (
+            parsed.data.reserveTargetAmount === undefined &&
+            reserveTarget === null
+          ) {
+            const reserveSettings =
+              await emergencyReserveRepository.getSettings();
+            reserveTarget = reserveSettings?.monthlyExpenses
+              ? Number(reserveSettings.monthlyExpenses) *
+                (reserveSettings.targetMonths ?? 6)
+              : null;
+          }
           const objectiveById = new Map(
             overview.objectives.map((objective) => [objective.id, objective]),
           );
@@ -813,6 +864,9 @@ export class EmergencyReserveService {
         : Number(settings.monthlyExpenses);
     const calculation = calculateEmergencyReserve({
       monthlyExpenses,
+      monthlyExpensesCents: settings.monthlyExpensesCents,
+      essentialMonthlyExpenses: settings.essentialMonthlyExpenses ?? null,
+      essentialExpenseSources: settings.essentialExpenseSources ?? [],
       targetMonths: settings.targetMonths,
       selectedValue: centsToNumber(selectedValueCents)!,
       selectedValueCents: selectedValueCents.toString(),
@@ -823,6 +877,8 @@ export class EmergencyReserveService {
 
     return {
       monthlyExpenses,
+      essentialMonthlyExpenses: settings.essentialMonthlyExpenses ?? null,
+      essentialExpenseSources: settings.essentialExpenseSources ?? [],
       targetMonths: settings.targetMonths,
       selectedAssetKeys: settings.selectedAssetKeys,
       configured: monthlyExpenses !== null && settings.targetMonths !== null,

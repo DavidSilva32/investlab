@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   listLatestPositions: vi.fn(),
   listCurrentEnriched: vi.fn(),
   getSettings: vi.fn(),
+  listRecurrences: vi.fn(),
   saveSettings: vi.fn(),
   saveAssignments: vi.fn(),
   enrich: vi.fn(),
@@ -22,6 +23,9 @@ vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
     saveSettings: mocks.saveSettings,
     saveAssignments: mocks.saveAssignments,
   },
+}));
+vi.mock("@/backend/repositories/financial-recurrences.repository", () => ({
+  financialRecurrencesRepository: { listRecurrences: mocks.listRecurrences },
 }));
 vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
   portfolioObjectivesRepository: {
@@ -133,6 +137,7 @@ describe("EmergencyReserveService", () => {
         ),
     );
     mocks.getSettings.mockResolvedValue(null);
+    mocks.listRecurrences.mockResolvedValue([]);
     mocks.saveSettings.mockResolvedValue(undefined);
     mocks.saveAssignments.mockResolvedValue(undefined);
     mocks.listObjectives.mockResolvedValue({ objectives: [], assignments: [] });
@@ -557,10 +562,82 @@ describe("EmergencyReserveService", () => {
 
     expect(calculation).toMatchObject({
       monthlyExpenses: null,
-      targetMonths: null,
+      targetMonths: 6,
       selectedValue: 0,
       referenceDate: null,
       status: "not_configured",
+    });
+  });
+
+  it("uses essential recurring expenses as the baseline and defaults to six months", async () => {
+    mocks.listRecurrences.mockResolvedValue([
+      {
+        description: "Aluguel",
+        amount: "1200.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Salário",
+        amount: "5000.00",
+        frequency: "MONTHLY",
+        kind: "INCOME",
+        essential: false,
+        active: true,
+      },
+    ]);
+
+    const data = await new EmergencyReserveService().getEditorData();
+
+    expect(data).toMatchObject({
+      monthlyExpenses: 1200,
+      essentialMonthlyExpenses: 1200,
+      targetMonths: 6,
+      calculation: {
+        targetMonths: 6,
+        status: "below_target",
+        horizons: [
+          { months: 3, targetValue: 3600 },
+          { months: 6, targetValue: 7200 },
+          { months: 9, targetValue: 10800 },
+          { months: 12, targetValue: 14400 },
+        ],
+      },
+      essentialExpenseSources: [
+        {
+          description: "Aluguel",
+          frequency: "Mensal",
+          monthlyEquivalent: 1200,
+        },
+      ],
+    });
+  });
+
+  it("preserves a saved monthly target while showing the calculated essential reference", async () => {
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "900.00",
+      targetMonths: null,
+      selectedAssetKeys: [],
+    });
+    mocks.listRecurrences.mockResolvedValue([
+      {
+        description: "Moradia",
+        amount: "1200.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    const data = await new EmergencyReserveService().getEditorData();
+
+    expect(data).toMatchObject({
+      monthlyExpenses: 900,
+      essentialMonthlyExpenses: 1200,
+      targetMonths: 6,
     });
   });
 
@@ -622,6 +699,24 @@ describe("EmergencyReserveService", () => {
     expect(mocks.saveSettings).toHaveBeenCalledWith({
       monthlyExpenses: "1234.50",
       targetMonths: 12,
+    });
+  });
+
+  it("saves a monthly target without forcing the user to choose one horizon", async () => {
+    const service = new EmergencyReserveService();
+    const editorData = { configured: false, holdings: [] };
+    vi.spyOn(service, "getEditorData").mockResolvedValue(editorData as never);
+
+    await expect(
+      service.saveSettings(
+        { monthlyExpenses: 1234.5, targetMonths: null },
+        "settings-request",
+      ),
+    ).resolves.toEqual(editorData);
+
+    expect(mocks.saveSettings).toHaveBeenCalledWith({
+      monthlyExpenses: "1234.50",
+      targetMonths: null,
     });
   });
 
