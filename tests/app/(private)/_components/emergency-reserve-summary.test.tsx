@@ -140,6 +140,58 @@ describe("EmergencyReserveSummary", () => {
     ).toBeTruthy();
   });
 
+  it("renders all horizon difference states and unavailable references", () => {
+    const html = renderToStaticMarkup(
+      <EmergencyReserveSummary
+        calculation={{
+          ...calculation,
+          selectedValue: 6000,
+          coveredMonths: 6,
+          targetMonths: null,
+          targetValue: null,
+          difference: null,
+          progressPercentage: null,
+          status: "not_configured",
+          horizons: [
+            {
+              months: 3,
+              targetValue: null,
+              targetValueCents: null,
+              difference: null,
+              differenceCents: null,
+            },
+            {
+              months: 6,
+              targetValue: 6500,
+              targetValueCents: "650000",
+              difference: 500,
+              differenceCents: "50000",
+            },
+            {
+              months: 9,
+              targetValue: 5500,
+              targetValueCents: "550000",
+              difference: -500,
+              differenceCents: "-50000",
+            },
+            {
+              months: 12,
+              targetValue: 6000,
+              targetValueCents: "600000",
+              difference: 0,
+              differenceCents: "0",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain("Sem referência");
+    expect(html).toContain("Faltam R$ 500,00");
+    expect(html).toContain("R$ 500,00 acima");
+    expect(html).toContain("Valor atingido");
+  });
+
   it("describes coverage above the configured personal target", () => {
     const html = renderToStaticMarkup(
       <EmergencyReserveSummary

@@ -31,24 +31,17 @@ export type EssentialRecurrence = {
   active: boolean;
 };
 
-const annualOccurrencesByFrequency: Record<string, bigint> = {
-  WEEKLY: 52n,
-  BIWEEKLY: 26n,
-  MONTHLY: 12n,
-  BIMONTHLY: 6n,
-  QUARTERLY: 4n,
-  SEMIANNUALLY: 2n,
-  YEARLY: 1n,
-};
-
-const frequencyLabels: Record<string, string> = {
-  WEEKLY: "Semanal",
-  BIWEEKLY: "Quinzenal",
-  MONTHLY: "Mensal",
-  BIMONTHLY: "Bimestral",
-  QUARTERLY: "Trimestral",
-  SEMIANNUALLY: "Semestral",
-  YEARLY: "Anual",
+const frequencyConfig: Record<
+  string,
+  { annualOccurrences: bigint; label: string }
+> = {
+  WEEKLY: { annualOccurrences: 52n, label: "Semanal" },
+  BIWEEKLY: { annualOccurrences: 26n, label: "Quinzenal" },
+  MONTHLY: { annualOccurrences: 12n, label: "Mensal" },
+  BIMONTHLY: { annualOccurrences: 6n, label: "Bimestral" },
+  QUARTERLY: { annualOccurrences: 4n, label: "Trimestral" },
+  SEMIANNUALLY: { annualOccurrences: 2n, label: "Semestral" },
+  YEARLY: { annualOccurrences: 1n, label: "Anual" },
 };
 
 export function calculateEssentialMonthlyBaseline(
@@ -63,19 +56,18 @@ export function calculateEssentialMonthlyBaseline(
   let monthlyFloorTotalCents = 0n;
 
   for (const recurrence of recurrences) {
-    const annualOccurrences =
-      annualOccurrencesByFrequency[recurrence.frequency];
+    const frequency = frequencyConfig[recurrence.frequency];
     if (
       !recurrence.active ||
       !recurrence.essential ||
       recurrence.kind !== "EXPENSE" ||
-      annualOccurrences === undefined
+      frequency === undefined
     ) {
       continue;
     }
     const amountCents = decimalToCents(recurrence.amount);
     if (amountCents === null || amountCents <= 0n) continue;
-    const annualCents = amountCents * annualOccurrences;
+    const annualCents = amountCents * frequency.annualOccurrences;
     const monthlyCents = annualCents / 12n;
     annualTotalCents += annualCents;
     monthlyFloorTotalCents += monthlyCents;
@@ -85,8 +77,7 @@ export function calculateEssentialMonthlyBaseline(
           recurrence.id ??
           `${recurrence.description}:${recurrence.frequency}:${recurrence.amount}`,
         description: recurrence.description,
-        frequency:
-          frequencyLabels[recurrence.frequency] ?? recurrence.frequency,
+        frequency: frequency.label,
         amount: centsToNumber(amountCents)!,
         monthlyEquivalent: 0,
       },
@@ -210,6 +201,22 @@ export function calculateEmergencyReserve(
     };
   }
 
+  if (expenseCents === null) {
+    return {
+      ...input,
+      horizons,
+      selectedValue,
+      selectedValueCents: selectedValueCents.toString(),
+      targetValue: null,
+      targetValueCents: null,
+      coveredMonths: null,
+      difference: null,
+      differenceCents: null,
+      progressPercentage: null,
+      status: "not_configured",
+    };
+  }
+
   if (monthlyExpenses <= 0) {
     const targetCents =
       targetMonths === null || expenseCents === null
@@ -255,7 +262,7 @@ export function calculateEmergencyReserve(
     };
   }
 
-  const targetCents = (expenseCents ?? 0n) * BigInt(targetMonths);
+  const targetCents = expenseCents * BigInt(targetMonths);
   const targetValue = centsToNumber(targetCents)!;
   const differenceCents = targetCents - selectedValueCents;
   const difference = centsToNumber(differenceCents)!;
