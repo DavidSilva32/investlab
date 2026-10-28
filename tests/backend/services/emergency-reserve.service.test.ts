@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   listLatestPositions: vi.fn(),
   listCurrentEnriched: vi.fn(),
   getSettings: vi.fn(),
+  listRecurrences: vi.fn(),
   saveSettings: vi.fn(),
   saveAssignments: vi.fn(),
   enrich: vi.fn(),
@@ -22,6 +23,9 @@ vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
     saveSettings: mocks.saveSettings,
     saveAssignments: mocks.saveAssignments,
   },
+}));
+vi.mock("@/backend/repositories/financial-recurrences.repository", () => ({
+  financialRecurrencesRepository: { listRecurrences: mocks.listRecurrences },
 }));
 vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
   portfolioObjectivesRepository: {
@@ -133,6 +137,7 @@ describe("EmergencyReserveService", () => {
         ),
     );
     mocks.getSettings.mockResolvedValue(null);
+    mocks.listRecurrences.mockResolvedValue([]);
     mocks.saveSettings.mockResolvedValue(undefined);
     mocks.saveAssignments.mockResolvedValue(undefined);
     mocks.listObjectives.mockResolvedValue({ objectives: [], assignments: [] });
@@ -557,10 +562,139 @@ describe("EmergencyReserveService", () => {
 
     expect(calculation).toMatchObject({
       monthlyExpenses: null,
-      targetMonths: null,
+      targetMonths: 6,
       selectedValue: 0,
       referenceDate: null,
       status: "not_configured",
+    });
+  });
+
+  it("uses essential recurring expenses as the baseline and defaults to six months", async () => {
+    mocks.listRecurrences.mockResolvedValue([
+      {
+        description: "Aluguel",
+        amount: "1200.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Salário",
+        amount: "5000.00",
+        frequency: "MONTHLY",
+        kind: "INCOME",
+        essential: false,
+        active: true,
+      },
+    ]);
+
+    const data = await new EmergencyReserveService().getEditorData();
+
+    expect(data).toMatchObject({
+      monthlyExpenses: 1200,
+      essentialMonthlyExpenses: 1200,
+      targetMonths: 6,
+      calculation: {
+        targetMonths: 6,
+        status: "below_target",
+        horizons: [
+          { months: 3, targetValue: 3600 },
+          { months: 6, targetValue: 7200 },
+          { months: 9, targetValue: 10800 },
+          { months: 12, targetValue: 14400 },
+        ],
+      },
+      essentialExpenseSources: [
+        {
+          description: "Aluguel",
+          frequency: "Mensal",
+          monthlyEquivalent: 1200,
+        },
+      ],
+    });
+  });
+
+  it("uses the essential baseline when an existing setting has no monthly target", async () => {
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: null,
+      targetMonths: null,
+      selectedAssetKeys: [],
+    });
+    mocks.listRecurrences.mockResolvedValue([
+      {
+        id: "rent-monthly",
+        description: "Aluguel",
+        amount: "1200.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+    const service = new EmergencyReserveService();
+
+    const editor = await service.getEditorData();
+    const summary = await service.getSummary([]);
+    const context = await service.getContributionContext([]);
+
+    expect(editor.calculation).toMatchObject({
+      monthlyExpenses: 1200,
+      targetMonths: 6,
+      targetValue: 7200,
+    });
+    expect(summary).toMatchObject({
+      monthlyExpenses: 1200,
+      targetMonths: 6,
+      targetValue: 7200,
+    });
+    expect(context.calculation).toMatchObject({
+      monthlyExpenses: 1200,
+      targetMonths: 6,
+      targetValue: 7200,
+    });
+  });
+
+  it("returns null cents for an invalid legacy monthly target across consumers", async () => {
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "inválido",
+      targetMonths: null,
+      selectedAssetKeys: [],
+    });
+    const service = new EmergencyReserveService();
+
+    const editor = await service.getEditorData();
+    const summary = await service.getSummary([]);
+    const context = await service.getContributionContext([]);
+
+    expect(editor.calculation.monthlyExpensesCents).toBeNull();
+    expect(summary.monthlyExpensesCents).toBeNull();
+    expect(context.calculation.monthlyExpensesCents).toBeNull();
+  });
+
+  it("preserves a saved monthly target while showing the calculated essential reference", async () => {
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "900.00",
+      targetMonths: null,
+      selectedAssetKeys: [],
+    });
+    mocks.listRecurrences.mockResolvedValue([
+      {
+        description: "Moradia",
+        amount: "1200.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    const data = await new EmergencyReserveService().getEditorData();
+
+    expect(data).toMatchObject({
+      monthlyExpenses: 900,
+      essentialMonthlyExpenses: 1200,
+      targetMonths: 6,
     });
   });
 
@@ -622,6 +756,24 @@ describe("EmergencyReserveService", () => {
     expect(mocks.saveSettings).toHaveBeenCalledWith({
       monthlyExpenses: "1234.50",
       targetMonths: 12,
+    });
+  });
+
+  it("saves a monthly target without forcing the user to choose one horizon", async () => {
+    const service = new EmergencyReserveService();
+    const editorData = { configured: false, holdings: [] };
+    vi.spyOn(service, "getEditorData").mockResolvedValue(editorData as never);
+
+    await expect(
+      service.saveSettings(
+        { monthlyExpenses: 1234.5, targetMonths: null },
+        "settings-request",
+      ),
+    ).resolves.toEqual(editorData);
+
+    expect(mocks.saveSettings).toHaveBeenCalledWith({
+      monthlyExpenses: "1234.50",
+      targetMonths: null,
     });
   });
 
@@ -1001,6 +1153,62 @@ describe("EmergencyReserveService", () => {
     expect(result.candidates[0].impacts?.[0].progressPercent).toBeCloseTo(
       45.83,
     );
+  });
+
+  it("uses the default six-month horizon in reserve objective suggestions", async () => {
+    const free = position({
+      assetCode: "FREE-DEFAULT-HORIZON",
+      totalValue: "40",
+    });
+    const assigned = position({
+      assetCode: "GOAL-DEFAULT-HORIZON",
+      totalValue: "55",
+    });
+    const assignedKey = getEmergencyReserveAssetKey(assigned);
+    mocks.listLatestPositions.mockResolvedValue([free, assigned]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [{ id: "goal-trip-default", name: "Viagem" }],
+      assignments: [
+        { objectiveId: "goal-trip-default", assetKey: assignedKey },
+      ],
+    });
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "10.00",
+      targetMonths: null,
+      selectedAssetKeys: [],
+    });
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [
+        {
+          id: "goal-trip-default",
+          name: "Viagem",
+          currentValue: 100,
+          currentValueCents: "10000",
+          knownValue: 100,
+          knownValueCents: "10000",
+          targetAmount: 100,
+        },
+      ],
+      positions: [{ assetKey: assignedKey, value: 55 }],
+    });
+
+    const result = await new EmergencyReserveService().suggestPositions({
+      targetAmount: 50,
+    });
+
+    expect(result).toMatchObject({
+      status: "suggestions",
+      candidates: [
+        {
+          impacts: expect.arrayContaining([
+            expect.objectContaining({
+              objectiveName: "Reserva",
+              targetAmount: 60,
+            }),
+          ]),
+        },
+      ],
+    });
   });
 
   it("finds an exact transfer missed by the former 50,000-node baseline and expanded search", async () => {

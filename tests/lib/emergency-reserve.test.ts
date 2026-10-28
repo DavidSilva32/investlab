@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
+import {
+  calculateEmergencyReserve,
+  calculateEssentialMonthlyBaseline,
+} from "@/lib/emergency-reserve";
 
 const base = {
   monthlyExpenses: 1000,
@@ -11,6 +14,268 @@ const base = {
 };
 
 describe("calculateEmergencyReserve", () => {
+  it("averages essential expenses over a year with cent-accurate frequency conversion", () => {
+    const baseline = calculateEssentialMonthlyBaseline([
+      {
+        description: "Luz",
+        amount: "100.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Seguro anual",
+        amount: "120.00",
+        frequency: "YEARLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Compra semanal",
+        amount: "10.00",
+        frequency: "WEEKLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Internet",
+        amount: "50.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: false,
+        active: true,
+      },
+      {
+        description: "Salário",
+        amount: "5000.00",
+        frequency: "MONTHLY",
+        kind: "INCOME",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Aluguel encerrado",
+        amount: "700.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: false,
+      },
+      {
+        description: "Frequência futura",
+        amount: "20.00",
+        frequency: "UNKNOWN",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    expect(baseline).toMatchObject({
+      monthlyExpenses: 153.33,
+      monthlyExpensesCents: "15333",
+      sources: [
+        { description: "Luz", monthlyEquivalent: 100 },
+        { description: "Seguro anual", monthlyEquivalent: 10 },
+        { description: "Compra semanal", monthlyEquivalent: 43.33 },
+      ],
+    });
+  });
+
+  it.each([
+    ["BIWEEKLY", "60.00", 130],
+    ["BIMONTHLY", "120.00", 60],
+    ["QUARTERLY", "300.00", 100],
+    ["SEMIANNUALLY", "600.00", 100],
+  ])(
+    "converts %s recurrences to an annual monthly average",
+    (frequency, amount, monthlyEquivalent) => {
+      expect(
+        calculateEssentialMonthlyBaseline([
+          {
+            description: "Despesa",
+            amount,
+            frequency,
+            kind: "EXPENSE",
+            essential: true,
+            active: true,
+          },
+        ]).monthlyExpenses,
+      ).toBe(monthlyEquivalent);
+    },
+  );
+
+  it("rounds the aggregated monthly baseline once and allocates displayed cents consistently", () => {
+    const baseline = calculateEssentialMonthlyBaseline([
+      {
+        description: "Despesa A",
+        amount: "0.01",
+        frequency: "WEEKLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Despesa B",
+        amount: "0.01",
+        frequency: "WEEKLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    expect(baseline.monthlyExpenses).toBe(0.09);
+    expect(
+      baseline.sources.reduce(
+        (sum, source) => sum + source.monthlyEquivalent,
+        0,
+      ),
+    ).toBe(0.09);
+  });
+
+  it("ignores essential recurrences with invalid or non-positive amounts", () => {
+    const baseline = calculateEssentialMonthlyBaseline([
+      {
+        id: "invalid-amount",
+        description: "Valor inválido",
+        amount: "inválido",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        id: "zero-amount",
+        description: "Valor zero",
+        amount: "0.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    expect(baseline).toMatchObject({
+      monthlyExpenses: null,
+      monthlyExpensesCents: "0",
+      sources: [],
+    });
+  });
+
+  it("balances rounded monthly source cents by largest fractional remainder", () => {
+    const baseline = calculateEssentialMonthlyBaseline([
+      {
+        description: "Anual",
+        amount: "0.01",
+        frequency: "YEARLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Quinzenal",
+        amount: "0.01",
+        frequency: "BIWEEKLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        description: "Semanal",
+        amount: "0.01",
+        frequency: "WEEKLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    expect(baseline.monthlyExpenses).toBe(0.07);
+    expect(baseline.sources.map((source) => source.monthlyEquivalent)).toEqual([
+      0, 0.02, 0.05,
+    ]);
+    expect(
+      baseline.sources.reduce(
+        (sum, source) => sum + source.monthlyEquivalent,
+        0,
+      ),
+    ).toBe(baseline.monthlyExpenses);
+  });
+
+  it("awards the final rounded cent stably when sources tie at the boundary", () => {
+    const baseline = calculateEssentialMonthlyBaseline([
+      {
+        id: "first",
+        description: "Primeira",
+        amount: "0.01",
+        frequency: "WEEKLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        id: "second",
+        description: "Segunda",
+        amount: "0.01",
+        frequency: "YEARLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+      {
+        id: "third",
+        description: "Terceira",
+        amount: "0.01",
+        frequency: "QUARTERLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    expect(baseline.monthlyExpenses).toBe(0.05);
+    expect(baseline.sources.map((source) => source.monthlyEquivalent)).toEqual([
+      0.05, 0, 0,
+    ]);
+  });
+
+  it("shows 3, 6, 9, and 12 month targets from the selected monthly cost", () => {
+    expect(calculateEmergencyReserve(base).horizons).toEqual([
+      {
+        months: 3,
+        targetValue: 3000,
+        targetValueCents: "300000",
+        difference: 0,
+        differenceCents: "0",
+      },
+      {
+        months: 6,
+        targetValue: 6000,
+        targetValueCents: "600000",
+        difference: 3000,
+        differenceCents: "300000",
+      },
+      {
+        months: 9,
+        targetValue: 9000,
+        targetValueCents: "900000",
+        difference: 6000,
+        differenceCents: "600000",
+      },
+      {
+        months: 12,
+        targetValue: 12000,
+        targetValueCents: "1200000",
+        difference: 9000,
+        differenceCents: "900000",
+      },
+    ]);
+  });
+
   it("does not calculate coverage before monthly expenses are configured", () => {
     const result = calculateEmergencyReserve({
       ...base,
@@ -125,8 +390,13 @@ describe("calculateEmergencyReserve", () => {
         ...base,
         selectedValue: 999,
         selectedValueCents: "1250",
+        monthlyExpensesCents: "100000",
       }),
-    ).toMatchObject({ selectedValue: 12.5, selectedValueCents: "1250" });
+    ).toMatchObject({
+      selectedValue: 12.5,
+      selectedValueCents: "1250",
+      targetValue: 6000,
+    });
 
     expect(
       calculateEmergencyReserve({
@@ -141,21 +411,45 @@ describe("calculateEmergencyReserve", () => {
     });
   });
 
-  it("safely maps non-finite legacy numbers to zero cents", () => {
+  it("treats explicit null expense cents as unavailable instead of a zero target", () => {
+    const result = calculateEmergencyReserve({
+      ...base,
+      monthlyExpensesCents: null,
+      targetMonths: 6,
+    });
+
+    expect(result).toMatchObject({
+      monthlyExpenses: 1000,
+      targetValue: null,
+      targetValueCents: null,
+      coveredMonths: null,
+      difference: null,
+      status: "not_configured",
+      horizons: [
+        { months: 3, targetValue: null, difference: null },
+        { months: 6, targetValue: null, difference: null },
+        { months: 9, targetValue: null, difference: null },
+        { months: 12, targetValue: null, difference: null },
+      ],
+    });
+  });
+
+  it("safely maps invalid legacy expenses to an unconfigured state", () => {
     expect(
       calculateEmergencyReserve({
         ...base,
         selectedValue: Number.NaN,
         monthlyExpenses: Number.NaN,
+        monthlyExpensesCents: null,
         targetMonths: 1,
       }),
     ).toMatchObject({
       selectedValue: 0,
       selectedValueCents: "0",
-      targetValue: 0,
-      targetValueCents: "0",
+      targetValue: null,
+      targetValueCents: null,
       coveredMonths: null,
-      status: "on_target",
+      status: "not_configured",
     });
 
     expect(

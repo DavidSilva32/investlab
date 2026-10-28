@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { CalendarClock, Plus } from "lucide-react";
+import { CalendarClock, CircleHelp, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { FinancialCategoryQuickCreateDialog } from "@/app/(private)/financas/_components/financial-category-quick-create-dialog";
 import {
   formatAmountInput,
@@ -70,6 +76,7 @@ const frequencies = [
   ["SEMIANNUALLY", "Semestral"],
   ["YEARLY", "Anual"],
 ] as const;
+type Frequency = (typeof frequencies)[number][0];
 
 function normalizeDescription(value: string) {
   return value
@@ -79,8 +86,8 @@ function normalizeDescription(value: string) {
     .toLocaleLowerCase("pt-BR");
 }
 
-function nextDueDate(value: string, frequency: string) {
-  const intervals: Record<string, number> = {
+function nextDueDate(value: string, frequency: Frequency) {
+  const intervals: Record<Frequency, number> = {
     WEEKLY: 7,
     BIWEEKLY: 14,
     MONTHLY: 1,
@@ -90,7 +97,7 @@ function nextDueDate(value: string, frequency: string) {
     YEARLY: 12,
   };
   const [year, month, day] = value.split("-").map(Number);
-  const interval = intervals[frequency] ?? 1;
+  const interval = intervals[frequency];
   if (frequency === "WEEKLY" || frequency === "BIWEEKLY") {
     const date = new Date(Date.UTC(year, month - 1, day + interval));
     return date.toISOString().slice(0, 10);
@@ -135,7 +142,8 @@ export function FinancialEntryDialog({
   const [quickCategoryOpen, setQuickCategoryOpen] = useState(false);
   const [quickCategories, setQuickCategories] = useState<Category[]>([]);
   const [createRecurrence, setCreateRecurrence] = useState(false);
-  const [frequency, setFrequency] = useState("MONTHLY");
+  const [essential, setEssential] = useState(false);
+  const [frequency, setFrequency] = useState<Frequency>("MONTHLY");
   const [manualNextOccurrence, setManualNextOccurrence] = useState<
     string | null
   >(null);
@@ -217,15 +225,15 @@ export function FinancialEntryDialog({
 
   function toggleRecurrence(checked: boolean) {
     setCreateRecurrence(checked);
+    if (!checked) setEssential(false);
     setManualNextOccurrence(null);
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      setCreateRecurrence(false);
-      setFrequency("MONTHLY");
-      setManualNextOccurrence(null);
-    }
+    setCreateRecurrence(false);
+    setEssential(false);
+    setFrequency("MONTHLY");
+    setManualNextOccurrence(null);
     onOpenChange(nextOpen);
   }
 
@@ -261,7 +269,7 @@ export function FinancialEntryDialog({
                 amount: parseBrazilianAmount(expectedAmount || actualAmount),
                 frequency,
                 firstDueDate: nextOccurrence,
-                essential: false,
+                essential: kind === "EXPENSE" && essential,
               }),
             },
             "Não foi possível criar a recorrência.",
@@ -309,6 +317,7 @@ export function FinancialEntryDialog({
                 onValueChange={(value: Kind) => {
                   setKind(value);
                   setCategoryId("");
+                  if (value === "INCOME") setEssential(false);
                 }}
               >
                 <SelectTrigger aria-label="Tipo de lançamento">
@@ -387,9 +396,51 @@ export function FinancialEntryDialog({
               </label>
               {createRecurrence && (
                 <div className="space-y-3 pl-7">
+                  {kind === "EXPENSE" && (
+                    <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={essential}
+                          onCheckedChange={(checked) =>
+                            setEssential(checked === true)
+                          }
+                          aria-label="Marcar recorrência como despesa essencial"
+                        />
+                        Despesa essencial
+                      </label>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 shrink-0"
+                              aria-label="Ajuda sobre despesa essencial"
+                            >
+                              <CircleHelp
+                                aria-hidden="true"
+                                className="size-4 text-muted-foreground"
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-64 text-center">
+                            Marque gastos necessários para manter suas
+                            necessidades básicas. Eles compõem a base mensal da
+                            sua reserva de emergência.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label>Periodicidade</Label>
-                    <Select value={frequency} onValueChange={setFrequency}>
+                    <Select
+                      value={frequency}
+                      onValueChange={(value) =>
+                        setFrequency(value as Frequency)
+                      }
+                    >
                       <SelectTrigger aria-label="Periodicidade da recorrência">
                         <SelectValue />
                       </SelectTrigger>

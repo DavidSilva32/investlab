@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
+import { financialRecurrencesRepository } from "@/backend/repositories/financial-recurrences.repository";
 import {
   objectiveBalanceService,
   type ObjectiveBalanceProjectionResult,
@@ -26,6 +27,7 @@ import {
   reserveObjectiveId,
   type ObjectivePosition,
 } from "@/lib/portfolio-objectives";
+import { calculateEssentialMonthlyBaseline } from "@/lib/emergency-reserve";
 import {
   centsToNumber,
   decimalToCents,
@@ -173,11 +175,14 @@ export class PortfolioObjectivesService {
     evaluatedPositions?: RawPosition[],
     includeAllocationFingerprint = false,
   ) {
-    const [stored, reserveSettings, balanceReferences] = await Promise.all([
-      portfolioObjectivesRepository.list(),
-      emergencyReserveRepository.getSettings(),
-      portfolioObjectivesRepository.listLatestBalanceReferences(),
-    ]);
+    const [stored, reserveSettings, recurrences, balanceReferences] =
+      await Promise.all([
+        portfolioObjectivesRepository.list(),
+        emergencyReserveRepository.getSettings(),
+        financialRecurrencesRepository.listRecurrences(),
+        portfolioObjectivesRepository.listLatestBalanceReferences(),
+      ]);
+    const essentialBaseline = calculateEssentialMonthlyBaseline(recurrences);
     const balanceProjectionResults = await objectiveBalanceService
       .projectLatest(
         balanceReferences as ObjectiveBalanceReference[],
@@ -202,12 +207,14 @@ export class PortfolioObjectivesService {
       assignedByObjective.set(assignment.objectiveId, keys);
       objectiveByAssetKey.set(assignment.assetKey, assignment.objectiveId);
     }
-    const reserveExpenseCents = decimalToCents(
-      reserveSettings?.monthlyExpenses,
-    );
+    const reserveExpenseCents = reserveSettings?.monthlyExpenses
+      ? decimalToCents(reserveSettings.monthlyExpenses)
+      : essentialBaseline.monthlyExpensesCents === "0"
+        ? null
+        : BigInt(essentialBaseline.monthlyExpensesCents);
     const reserveTargetCents =
-      reserveExpenseCents !== null && reserveSettings?.targetMonths
-        ? reserveExpenseCents * BigInt(reserveSettings.targetMonths)
+      reserveExpenseCents !== null
+        ? reserveExpenseCents * BigInt(reserveSettings?.targetMonths ?? 6)
         : null;
     const objectives = stored.objectives.map((objective) => {
       const assignedAssetKeys = assignedByObjective.get(objective.id) ?? [];

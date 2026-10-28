@@ -44,6 +44,8 @@ const keyB = `v1:${"b".repeat(64)}`;
 const keyC = `v1:${"c".repeat(64)}`;
 const editorData = {
   monthlyExpenses: 2000,
+  essentialMonthlyExpenses: 1500,
+  essentialExpenseSources: [],
   targetMonths: 6,
   selectedAssetKeys: [keyA],
   configured: true,
@@ -433,6 +435,89 @@ describe("EmergencyReserveEditor", () => {
     expect(toast.success).toHaveBeenCalledWith("Configuração salva.");
   });
 
+  it("reveals each essential recurrence source in the monthly reference", async () => {
+    const data = {
+      ...editorData,
+      essentialMonthlyExpenses: 1200,
+      essentialExpenseSources: [
+        {
+          id: "rent",
+          description: "Aluguel",
+          frequency: "Mensal",
+          amount: 1200,
+          monthlyEquivalent: 1200,
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => data }),
+    );
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    await screen.findByText(/Mínimo estimado pelas recorrências essenciais/);
+    await user.click(
+      screen.getByRole("button", { name: "Ver despesas usadas na referência" }),
+    );
+
+    expect(screen.getByText("Aluguel · Mensal")).toBeTruthy();
+    expect(screen.getByText(/R\$ 1\.200,00 → R\$ 1\.200,00\/mês/)).toBeTruthy();
+  });
+
+  it("asks for a monthly value when no essential recurrence reference exists", async () => {
+    const data = {
+      ...editorData,
+      essentialMonthlyExpenses: null,
+      essentialExpenseSources: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => data }),
+    );
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    expect(
+      await screen.findByText(
+        "Informe o valor mensal que deseja usar para calcular sua reserva.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("allows saving the monthly reference without selecting a target horizon", async () => {
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
+      ok: true,
+      json: async () =>
+        options?.method === "PUT"
+          ? { ...editorData, targetMonths: null }
+          : { ...editorData, targetMonths: null },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    await screen.findByLabelText("Custo mensal");
+    expect(
+      screen.getByText(/Mínimo estimado pelas recorrências essenciais/),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Salvar configuração" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([, options]) => options?.method === "PUT"),
+      ).toBe(true),
+    );
+    const saveCall = fetchMock.mock.calls.find(
+      ([, options]) => options?.method === "PUT",
+    );
+    expect(JSON.parse(saveCall?.[1]?.body as string)).toEqual({
+      monthlyExpenses: 2000,
+      targetMonths: null,
+    });
+  });
+
   it("shows the server message when the reserve settings save is rejected", async () => {
     const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
       ok: options?.method !== "PUT",
@@ -641,6 +726,11 @@ describe("EmergencyReserveEditor", () => {
     await screen.findByText("R$ 18.000,00");
     await user.click(screen.getByRole("button", { name: "12 meses" }));
     expect(screen.queryByLabelText("Quantidade de meses")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Personalizado" }));
+    expect(
+      (screen.getByLabelText("Quantidade de meses") as HTMLInputElement).value,
+    ).toBe("9");
+    await user.click(screen.getByRole("button", { name: "6 meses" }));
     await user.click(screen.getByRole("button", { name: "Personalizado" }));
     expect(
       (screen.getByLabelText("Quantidade de meses") as HTMLInputElement).value,

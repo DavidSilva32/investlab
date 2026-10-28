@@ -130,10 +130,11 @@ describe("FinancialOverview", () => {
     await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
-    await user.type(
-      screen.getByLabelText("Valor (R$)", { selector: "#actual-amount" }),
-      "200",
-    );
+    const actualAmount = screen.getByLabelText("Valor (R$)", {
+      selector: "#actual-amount",
+    }) as HTMLInputElement;
+    await user.type(actualAmount, "20000");
+    expect(actualAmount.value).toBe("R$ 200,00");
     await user.type(screen.getByLabelText("Data realizada"), "10/10/2026");
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
@@ -441,6 +442,70 @@ describe("FinancialOverview", () => {
         expect.objectContaining({ method: "PATCH" }),
         "Não foi possível salvar o lançamento.",
       ),
+    );
+  }, 10_000);
+
+  it("marks negative balances and refreshes the overview after deleting an entry", async () => {
+    const user = userEvent.setup();
+    const populated = {
+      ...overview,
+      summary: {
+        ...overview.summary,
+        expectedBalance: "-200.00",
+        recordedBalance: "-100.00",
+      },
+      entries: [
+        {
+          id: "entry-delete",
+          kind: "EXPENSE" as const,
+          description: "Conta de teste",
+          categoryId,
+          categoryName: "Moradia",
+          expectedAmount: "100.00",
+          expectedDate: "2026-10-10",
+          actualAmount: null,
+          actualDate: null,
+        },
+      ],
+    };
+    api.request.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith("/api/finance-overview"))
+        return Promise.resolve(populated);
+      if (
+        url === "/api/financial-entries?id=entry-delete" &&
+        options?.method === "DELETE"
+      )
+        return Promise.resolve({});
+      if (url.startsWith("/api/financial-recurrences"))
+        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+      return Promise.resolve({ categories: overview.categories });
+    });
+    renderFinance();
+
+    await screen.findByText("Conta de teste");
+    expect(
+      screen.getByText("Saldo previsto").parentElement?.parentElement
+        ?.className,
+    ).toContain("text-status-danger");
+    expect(
+      screen.getByText("Saldo realizado").parentElement?.parentElement
+        ?.className,
+    ).toContain("text-status-danger");
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Conta de teste" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Excluir lançamento" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        api.request.mock.calls.filter(([url]) =>
+          String(url).startsWith("/api/finance-overview"),
+        ).length,
+      ).toBeGreaterThan(1),
     );
   });
 });

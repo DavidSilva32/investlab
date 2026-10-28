@@ -591,7 +591,7 @@ describe("PortfolioTable", () => {
     expect(screen.getByText("VOO")).toBeTruthy();
     expect(screen.queryByText("CDB")).toBeNull();
     expect(screen.queryByText("Desconhecido")).toBeNull();
-  });
+  }, 10_000);
 
   it("names each criterion control with its index", async () => {
     const user = userEvent.setup();

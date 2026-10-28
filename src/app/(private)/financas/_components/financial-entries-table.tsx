@@ -108,15 +108,13 @@ export function FinancialEntriesTable({
   onEdit: (entry: FinancialEntryRow) => void;
   onSaved?: () => void;
 }) {
-  const [entriesToDelete, setEntriesToDelete] = useState<
-    FinancialEntryRow[] | null
-  >(null);
+  const [entriesToDelete, setEntriesToDelete] = useState<FinancialEntryRow[]>(
+    [],
+  );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
-  async function deleteEntry() {
-    if (!entriesToDelete?.length) return;
+  async function deleteEntries(targetEntries: FinancialEntryRow[]) {
     setDeleting(true);
-    const targetEntries = entriesToDelete;
     const results = await Promise.allSettled(
       targetEntries.map(
         async (entry) =>
@@ -139,7 +137,7 @@ export function FinancialEntriesTable({
           ? "Lançamento excluído."
           : `${deletedEntries} lançamentos excluídos.`,
       );
-      setEntriesToDelete(null);
+      setEntriesToDelete([]);
     } else {
       const deletedMessage =
         deletedEntries === 1
@@ -223,10 +221,11 @@ export function FinancialEntriesTable({
             checked={row.source === "Avulso" && selectedIds.has(row.id)}
             disabled={readOnly || row.source !== "Avulso"}
             aria-label={`Selecionar ${row.description}`}
-            onCheckedChange={(checked) => {
-              if (row.source === "Avulso")
-                toggleEntry(row.entry, checked === true);
-            }}
+            onCheckedChange={
+              row.source === "Avulso"
+                ? (checked) => toggleEntry(row.entry, checked === true)
+                : undefined
+            }
           />
         </div>
       ),
@@ -414,42 +413,46 @@ export function FinancialEntriesTable({
           ) : null
         }
       />
-      <AlertDialog
-        open={Boolean(entriesToDelete?.length)}
-        onOpenChange={(open) => !open && setEntriesToDelete(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {entriesToDelete?.length === 1
-                ? "Excluir lançamento?"
-                : `Excluir ${entriesToDelete?.length ?? 0} lançamentos?`}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação excluirá {entriesToDelete?.length ?? 0} lançamento
-              {(entriesToDelete?.length ?? 0) === 1 ? "" : "s"}. As ocorrências
-              geradas por recorrências permanecem inalteradas.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleting}
-              className="bg-status-danger text-white hover:bg-status-danger/90"
-              onClick={(event) => {
-                event.preventDefault();
-                void deleteEntry();
-              }}
-            >
-              {deleting
-                ? "Excluindo…"
-                : entriesToDelete?.length === 1
-                  ? "Excluir lançamento"
-                  : `Excluir ${entriesToDelete?.length ?? 0} lançamentos`}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {entriesToDelete.length > 0 && (
+        <AlertDialog
+          open
+          onOpenChange={(open) => !open && setEntriesToDelete([])}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {entriesToDelete.length === 1
+                  ? "Excluir lançamento?"
+                  : `Excluir ${entriesToDelete.length} lançamentos?`}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação excluirá {entriesToDelete.length} lançamento
+                {entriesToDelete.length === 1 ? "" : "s"}. As ocorrências
+                geradas por recorrências permanecem inalteradas.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={deleting}
+                className="bg-status-danger text-white hover:bg-status-danger/90"
+                onClick={(event) => {
+                  event.preventDefault();
+                  void deleteEntries(entriesToDelete);
+                }}
+              >
+                {deleting
+                  ? "Excluindo…"
+                  : entriesToDelete.length === 1
+                    ? "Excluir lançamento"
+                    : `Excluir ${entriesToDelete.length} lançamentos`}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }

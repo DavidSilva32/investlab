@@ -114,6 +114,44 @@ export function EmergencyReserveSummary({
                   )}
               </div>
             </div>
+            {calculation.horizons?.some(
+              (horizon) => horizon.targetValue !== null,
+            ) && (
+              <section
+                aria-label="Cenários de cobertura da reserva"
+                className="space-y-2 border-t pt-3"
+              >
+                <h3 className="text-sm font-medium">
+                  Referência por horizonte
+                </h3>
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  {calculation.horizons.map((horizon) => (
+                    <div
+                      key={horizon.months}
+                      className="rounded-lg border bg-muted/20 p-3"
+                    >
+                      <p className="text-xs text-muted-foreground">
+                        {horizon.months} meses
+                      </p>
+                      <p className="mt-1 font-semibold tabular-nums">
+                        {horizon.targetValue === null
+                          ? "Sem referência"
+                          : formatCurrency(horizon.targetValue)}
+                      </p>
+                      {!incomplete && horizon.difference !== null && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {horizon.difference > 0
+                            ? `Faltam ${formatCurrency(horizon.difference)}`
+                            : horizon.difference < 0
+                              ? `${formatCurrency(Math.abs(horizon.difference))} acima`
+                              : "Valor atingido"}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             {hasPersonalTarget && incomplete ? (
               <p className="text-sm font-medium text-status-warning">
                 A comparação com sua meta está incompleta porque há posições ou
@@ -157,10 +195,37 @@ export function EmergencyReserveSummary({
             <CollapsibleContent className="mt-3 space-y-2">
               <p>
                 A cobertura divide o valor conhecido das posições que você
-                selecionou como reserva pelas despesas mensais informadas. A
-                meta em meses, quando aparece, é uma escolha sua e não uma
-                recomendação do InvestLab.
+                selecionou como reserva pelo custo mensal considerado. Se ainda
+                não houver prazo salvo, o ponto de partida é 6 meses; você pode
+                ajustar esse prazo na configuração da Reserva. Os cenários de 3,
+                6, 9 e 12 meses usam o custo mensal selecionado e não projetam
+                aportes ou rendimentos.
               </p>
+              <p>
+                Para a referência essencial, as recorrências são convertidas em
+                custo anual e divididas por 12 para chegar à média mensal.
+              </p>
+              {calculation.essentialMonthlyExpenses !== null &&
+                calculation.essentialMonthlyExpenses !== undefined && (
+                  <p>
+                    O mínimo estimado pelas recorrências de despesas essenciais
+                    ativas é de{" "}
+                    {formatCurrency(calculation.essentialMonthlyExpenses)} por
+                    mês. Você pode escolher outra meta na configuração da
+                    Reserva.
+                  </p>
+                )}
+              {calculation.essentialExpenseSources?.length ? (
+                <ul className="list-inside list-disc space-y-1">
+                  {calculation.essentialExpenseSources.map((source) => (
+                    <li key={source.id}>
+                      {source.description} ({source.frequency}):{" "}
+                      {formatCurrency(source.amount)} · média de{" "}
+                      {formatCurrency(source.monthlyEquivalent)}/mês
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <p>
                 Este cálculo não verifica carência, resgate ou prazo para o
                 dinheiro ficar disponível; ele não confirma liquidez efetiva.

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   listCurrentEnriched: vi.fn(),
   classifyPositions: vi.fn(),
   getSettings: vi.fn(),
+  listRecurrences: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -30,6 +31,9 @@ vi.mock("@/backend/services/portfolio-allocation.service", () => ({
 }));
 vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
   emergencyReserveRepository: { getSettings: mocks.getSettings },
+}));
+vi.mock("@/backend/repositories/financial-recurrences.repository", () => ({
+  financialRecurrencesRepository: { listRecurrences: mocks.listRecurrences },
 }));
 vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
   createAllocationSourceFingerprint: mocks.fingerprint,
@@ -86,6 +90,7 @@ describe("PortfolioObjectivesService", () => {
     mocks.listCurrentEnriched.mockResolvedValue([]);
     mocks.classifyPositions.mockImplementation(async (positions) => positions);
     mocks.getSettings.mockResolvedValue(null);
+    mocks.listRecurrences.mockResolvedValue([]);
     mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
     mocks.listLatestBalanceReferences.mockResolvedValue([]);
     mocks.getObjective.mockResolvedValue(customObjective);
@@ -121,6 +126,46 @@ describe("PortfolioObjectivesService", () => {
     });
     expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
     expect(mocks.classifyPositions).not.toHaveBeenCalled();
+  });
+
+  it("uses the essential expense baseline and default six-month horizon for the reserve objective", async () => {
+    mocks.list.mockResolvedValue({
+      objectives: [
+        {
+          id: reserveObjectiveId,
+          kind: "RESERVE",
+          purpose: "RESERVE",
+          name: "Reserva",
+          targetAmount: null,
+          monthlyPlannedAmount: null,
+          createdAt: new Date("2026-01-01"),
+          updatedAt: new Date("2026-01-01"),
+        },
+      ],
+      assignments: [],
+    });
+    mocks.listRecurrences.mockResolvedValue([
+      {
+        description: "Aluguel",
+        amount: "1500.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+
+    const result = await new PortfolioObjectivesService().getOverview(
+      undefined,
+      "2026-09-30",
+      [],
+    );
+
+    expect(result.objectives[0]).toMatchObject({
+      id: reserveObjectiveId,
+      targetAmount: 9000,
+      targetAmountCents: "900000",
+    });
   });
 
   it("does not report one reference date for grouped values from different dates", async () => {
