@@ -96,4 +96,24 @@ describe("FinancialCategoryQuickCreateDialog", () => {
       "Não foi possível cadastrar a categoria.",
     );
   });
+
+  it("preserves a server error message and closes on cancel", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    api.request.mockRejectedValue(new Error("Categoria duplicada."));
+    renderWithQuery(
+      <FinancialCategoryQuickCreateDialog
+        open
+        kind="EXPENSE"
+        onOpenChange={onOpenChange}
+        onCreated={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Nome"), "Saúde");
+    await user.click(screen.getByRole("button", { name: "Criar categoria" }));
+    expect(toast.error).toHaveBeenCalledWith("Categoria duplicada.");
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });

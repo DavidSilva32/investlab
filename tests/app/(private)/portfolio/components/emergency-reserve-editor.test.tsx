@@ -465,6 +465,25 @@ describe("EmergencyReserveEditor", () => {
     expect(screen.getByText(/R\$ 1\.200,00 → R\$ 1\.200,00\/mês/)).toBeTruthy();
   });
 
+  it("asks for a monthly value when no essential recurrence reference exists", async () => {
+    const data = {
+      ...editorData,
+      essentialMonthlyExpenses: null,
+      essentialExpenseSources: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => data }),
+    );
+    render(<EmergencyReserveEditor mode="settings" />);
+
+    expect(
+      await screen.findByText(
+        "Informe o valor mensal que deseja usar para calcular sua reserva.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("allows saving the monthly reference without selecting a target horizon", async () => {
     const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => ({
       ok: true,

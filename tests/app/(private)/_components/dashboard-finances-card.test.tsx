@@ -47,13 +47,19 @@ describe("DashboardFinancesCard", () => {
         realizedIncome: "3400.00",
         expectedExpenses: null,
         realizedExpenses: "1200.00",
-        recordedBalance: "2200.00",
+        recordedBalance: "-2200.00",
         completeness: "recorded_only",
       },
     });
     renderCard();
 
     expect(await screen.findByText(/Entradas/)).toBeTruthy();
+    expect(
+      screen.getByText("Saldo registrado").parentElement?.textContent,
+    ).toContain("2.200,00");
+    expect(screen.getByText(/2\.200,00/).className).toContain(
+      "text-status-danger",
+    );
     expect(
       screen.getByRole("link", { name: "Abrir Finanças" }).getAttribute("href"),
     ).toBe("/financas");

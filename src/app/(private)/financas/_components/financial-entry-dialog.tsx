@@ -76,6 +76,7 @@ const frequencies = [
   ["SEMIANNUALLY", "Semestral"],
   ["YEARLY", "Anual"],
 ] as const;
+type Frequency = (typeof frequencies)[number][0];
 
 function normalizeDescription(value: string) {
   return value
@@ -85,8 +86,8 @@ function normalizeDescription(value: string) {
     .toLocaleLowerCase("pt-BR");
 }
 
-function nextDueDate(value: string, frequency: string) {
-  const intervals: Record<string, number> = {
+function nextDueDate(value: string, frequency: Frequency) {
+  const intervals: Record<Frequency, number> = {
     WEEKLY: 7,
     BIWEEKLY: 14,
     MONTHLY: 1,
@@ -96,7 +97,7 @@ function nextDueDate(value: string, frequency: string) {
     YEARLY: 12,
   };
   const [year, month, day] = value.split("-").map(Number);
-  const interval = intervals[frequency] ?? 1;
+  const interval = intervals[frequency];
   if (frequency === "WEEKLY" || frequency === "BIWEEKLY") {
     const date = new Date(Date.UTC(year, month - 1, day + interval));
     return date.toISOString().slice(0, 10);
@@ -142,7 +143,7 @@ export function FinancialEntryDialog({
   const [quickCategories, setQuickCategories] = useState<Category[]>([]);
   const [createRecurrence, setCreateRecurrence] = useState(false);
   const [essential, setEssential] = useState(false);
-  const [frequency, setFrequency] = useState("MONTHLY");
+  const [frequency, setFrequency] = useState<Frequency>("MONTHLY");
   const [manualNextOccurrence, setManualNextOccurrence] = useState<
     string | null
   >(null);
@@ -229,12 +230,10 @@ export function FinancialEntryDialog({
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      setCreateRecurrence(false);
-      setEssential(false);
-      setFrequency("MONTHLY");
-      setManualNextOccurrence(null);
-    }
+    setCreateRecurrence(false);
+    setEssential(false);
+    setFrequency("MONTHLY");
+    setManualNextOccurrence(null);
     onOpenChange(nextOpen);
   }
 
@@ -436,7 +435,12 @@ export function FinancialEntryDialog({
                   )}
                   <div className="space-y-2">
                     <Label>Periodicidade</Label>
-                    <Select value={frequency} onValueChange={setFrequency}>
+                    <Select
+                      value={frequency}
+                      onValueChange={(value) =>
+                        setFrequency(value as Frequency)
+                      }
+                    >
                       <SelectTrigger aria-label="Periodicidade da recorrência">
                         <SelectValue />
                       </SelectTrigger>

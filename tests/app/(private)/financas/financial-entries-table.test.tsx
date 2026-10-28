@@ -337,6 +337,26 @@ describe("FinancialEntriesTable", () => {
       }),
     );
     expect(
+      screen
+        .getByRole("checkbox", { name: "Selecionar Aluguel" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    await user.click(
+      screen.getByRole("button", {
+        name: "Desmarcar todos os lançamentos avulsos do mês",
+      }),
+    );
+    expect(
+      screen
+        .getByRole("checkbox", { name: "Selecionar Aluguel" })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
+    await user.click(
+      screen.getByRole("button", {
+        name: "Selecionar todos os lançamentos avulsos do mês",
+      }),
+    );
+    expect(
       (
         screen.getByRole("checkbox", {
           name: "Selecionar Aluguel",
@@ -425,5 +445,71 @@ describe("FinancialEntriesTable", () => {
         }) as HTMLButtonElement
       ).getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  it("selects and deselects individual rows and reports multiple deletion failures", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockRejectedValueOnce("offline")
+      .mockRejectedValueOnce(new Error("Falha segura."));
+    render(
+      <FinancialEntriesTable
+        entries={[entry, { ...entry, id: "entry-2", description: "Internet" }]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: "Selecionar Aluguel",
+    });
+    await user.click(checkbox);
+    expect(checkbox.getAttribute("aria-checked")).toBe("true");
+    await user.click(checkbox);
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    await user.click(
+      screen.getByRole("button", {
+        name: "Selecionar todos os lançamentos avulsos do mês",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir selecionados (2)" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir 2 lançamentos" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível excluir 2 lançamentos. Tente novamente.",
+      ),
+    );
+  });
+
+  it("uses a safe fallback for one rejected deletion without an Error", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue("offline");
+    render(
+      <FinancialEntriesTable
+        entries={[entry]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Aluguel" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Excluir lançamento" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível excluir o lançamento. Tente novamente.",
+      ),
+    );
   });
 });

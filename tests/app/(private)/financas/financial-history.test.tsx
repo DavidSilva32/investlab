@@ -78,7 +78,7 @@ describe("FinancialHistory", () => {
             month: "2026-09",
             realizedIncome: "5000.00",
             realizedExpenses: "3200.00",
-            recordedBalance: "1800.00",
+            recordedBalance: "-1800.00",
           },
           {
             month: "2026-10",
@@ -105,6 +105,11 @@ describe("FinancialHistory", () => {
       ).getByText(/5\.000,00/),
     ).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
+    expect(
+      screen
+        .getAllByText(/1\.800,00/)
+        .some((value) => value.className.includes("text-status-danger")),
+    ).toBe(true);
     expect(
       screen.queryByText(
         "Ainda não há dados realizados para comparar no histórico.",
