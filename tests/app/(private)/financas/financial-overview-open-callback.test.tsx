@@ -94,7 +94,10 @@ describe("FinancialOverview controlled entry dialog callback", () => {
       </QueryClientProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Editar" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Ações para Aluguel" }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: /Editar/ }));
     const editDialog = await screen.findByRole("dialog", {
       name: "Editar lançamento",
     });

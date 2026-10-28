@@ -130,10 +130,11 @@ describe("FinancialOverview", () => {
     await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
-    await user.type(
-      screen.getByLabelText("Valor (R$)", { selector: "#actual-amount" }),
-      "200",
-    );
+    const actualAmount = screen.getByLabelText("Valor (R$)", {
+      selector: "#actual-amount",
+    }) as HTMLInputElement;
+    await user.type(actualAmount, "20000");
+    expect(actualAmount.value).toBe("R$ 200,00");
     await user.type(screen.getByLabelText("Data realizada"), "10/10/2026");
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
