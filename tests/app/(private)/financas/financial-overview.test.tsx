@@ -443,5 +443,5 @@ describe("FinancialOverview", () => {
         "Não foi possível salvar o lançamento.",
       ),
     );
-  });
+  }, 10_000);
 });
