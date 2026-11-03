@@ -40,17 +40,17 @@ describe("FinancialEntriesTable", () => {
     );
 
     const selectAll = screen.getByRole("checkbox", {
-      name: "Selecionar todos os lançamentos avulsos do mês",
+      name: "Selecionar todos os registros do mês",
     });
     expect(selectAll.closest("th")).toBeTruthy();
     expect(
       screen.queryByRole("button", {
-        name: "Selecionar todos os lançamentos avulsos do mês",
+        name: "Selecionar todos os registros do mês",
       }),
     ).toBeNull();
 
     const deleteSelected = screen.getByRole("button", {
-      name: "Excluir selecionados (0)",
+      name: "Remover selecionados (0)",
     });
     expect(deleteSelected.textContent).toBe("");
     expect((deleteSelected as HTMLButtonElement).disabled).toBe(true);
@@ -65,6 +65,7 @@ describe("FinancialEntriesTable", () => {
         occurrences={[
           {
             id: "rec-1:2026-10-12",
+            recurrenceId: "rec-1",
             kind: "INCOME",
             description: "Salário",
             category: "Renda",
@@ -419,11 +420,11 @@ describe("FinancialEntriesTable", () => {
     );
     await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
     expect(
-      screen.getByRole("alertdialog", { name: "Excluir lançamento?" }),
+      screen.getByRole("alertdialog", {
+        name: "Remover registro selecionado?",
+      }),
     ).toBeTruthy();
-    await user.click(
-      screen.getByRole("button", { name: "Excluir lançamento" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(api.request).toHaveBeenCalledWith(
       "/api/financial-entries?id=entry-1",
@@ -437,15 +438,13 @@ describe("FinancialEntriesTable", () => {
       screen.getByRole("button", { name: "Ações para Aluguel" }),
     );
     await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
-    await user.click(
-      screen.getByRole("button", { name: "Excluir lançamento" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Falha segura."),
     );
   });
 
-  it("selects all manual entries for the month and excludes generated occurrences from batch deletion", async () => {
+  it("selects every row in the month and removes the matching entries and recurring models", async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
     const secondEntry = { ...entry, id: "entry-2", description: "Internet" };
@@ -456,6 +455,7 @@ describe("FinancialEntriesTable", () => {
         occurrences={[
           {
             id: "rec-1:2026-10-12",
+            recurrenceId: "rec-1",
             kind: "INCOME",
             description: "Salário",
             category: "Renda",
@@ -475,10 +475,10 @@ describe("FinancialEntriesTable", () => {
     const recurringCheckbox = screen.getByRole("checkbox", {
       name: "Selecionar Salário",
     }) as HTMLButtonElement;
-    expect(recurringCheckbox.disabled).toBe(true);
+    expect(recurringCheckbox.disabled).toBe(false);
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Selecionar todos os lançamentos avulsos do mês",
+        name: "Selecionar todos os registros do mês",
       }),
     );
     expect(
@@ -488,7 +488,7 @@ describe("FinancialEntriesTable", () => {
     ).toBe("true");
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Desmarcar todos os lançamentos avulsos do mês",
+        name: "Desmarcar todos os registros do mês",
       }),
     );
     expect(
@@ -498,7 +498,7 @@ describe("FinancialEntriesTable", () => {
     ).toBe("false");
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Selecionar todos os lançamentos avulsos do mês",
+        name: "Selecionar todos os registros do mês",
       }),
     );
     expect(
@@ -515,17 +515,17 @@ describe("FinancialEntriesTable", () => {
         }) as HTMLButtonElement
       ).getAttribute("aria-checked"),
     ).toBe("true");
-    expect(recurringCheckbox.getAttribute("aria-checked")).toBe("false");
+    expect(recurringCheckbox.getAttribute("aria-checked")).toBe("true");
     await user.click(
-      screen.getByRole("button", { name: "Excluir selecionados (2)" }),
+      screen.getByRole("button", { name: "Remover selecionados (3)" }),
     );
     expect(
-      screen.getByRole("alertdialog", { name: "Excluir 2 lançamentos?" }),
+      screen.getByRole("alertdialog", {
+        name: "Remover 3 registros selecionados?",
+      }),
     ).toBeTruthy();
-    await user.click(
-      screen.getByRole("button", { name: "Excluir 2 lançamentos" }),
-    );
-    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(3));
     expect(api.request).toHaveBeenNthCalledWith(
       1,
       "/api/financial-entries?id=entry-1",
@@ -538,8 +538,16 @@ describe("FinancialEntriesTable", () => {
       { method: "DELETE" },
       "Não foi possível excluir o lançamento.",
     );
+    expect(api.request).toHaveBeenNthCalledWith(
+      3,
+      "/api/financial-recurrences?id=rec-1",
+      { method: "DELETE" },
+      "Não foi possível remover a recorrência.",
+    );
     expect(onSaved).toHaveBeenCalledOnce();
-    expect(toast.success).toHaveBeenCalledWith("2 lançamentos excluídos.");
+    expect(toast.success).toHaveBeenCalledWith(
+      "3 ações concluídas. O histórico realizado das recorrências foi mantido.",
+    );
   });
 
   it("retains failed selections when only some batch deletions succeed", async () => {
@@ -557,23 +565,23 @@ describe("FinancialEntriesTable", () => {
     );
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Selecionar todos os lançamentos avulsos do mês",
+        name: "Selecionar todos os registros do mês",
       }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Excluir selecionados (2)" }),
+      screen.getByRole("button", { name: "Remover selecionados (2)" }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Excluir 2 lançamentos" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "1 lançamento excluído; 1 não pôde ser excluído. Tente novamente.",
+        "1 ação concluída; 1 registro não pôde ser removido. Tente novamente.",
       ),
     );
     expect(
-      screen.getByRole("alertdialog", { name: "Excluir lançamento?" }),
+      screen.getByRole("alertdialog", {
+        name: "Remover registro selecionado?",
+      }),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(
@@ -615,19 +623,17 @@ describe("FinancialEntriesTable", () => {
     expect(checkbox.getAttribute("aria-checked")).toBe("false");
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Selecionar todos os lançamentos avulsos do mês",
+        name: "Selecionar todos os registros do mês",
       }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Excluir selecionados (2)" }),
+      screen.getByRole("button", { name: "Remover selecionados (2)" }),
     );
-    await user.click(
-      screen.getByRole("button", { name: "Excluir 2 lançamentos" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Não foi possível excluir 2 lançamentos. Tente novamente.",
+        "Não foi possível remover 2 registros selecionados. Tente novamente.",
       ),
     );
   });
@@ -647,9 +653,7 @@ describe("FinancialEntriesTable", () => {
       screen.getByRole("button", { name: "Ações para Aluguel" }),
     );
     await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
-    await user.click(
-      screen.getByRole("button", { name: "Excluir lançamento" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
