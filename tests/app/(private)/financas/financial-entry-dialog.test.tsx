@@ -161,6 +161,23 @@ describe("FinancialEntryDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("shows the category icon beside its name in the launch selector", async () => {
+    const user = userEvent.setup();
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    const option = await screen.findByRole("option", { name: "Moradia" });
+    expect(option.querySelector("svg")).toBeTruthy();
+  });
+
   it("saves an expected-only expense with its due date", async () => {
     const user = userEvent.setup();
     api.request.mockResolvedValue({});
@@ -473,10 +490,12 @@ describe("FinancialEntryDialog", () => {
     const help = screen.getByRole("button", {
       name: "Ajuda sobre despesa essencial",
     });
-    await user.hover(help);
-    expect((await screen.findByRole("tooltip")).textContent).toContain(
-      "Marque gastos necessários para manter suas necessidades básicas. Eles compõem a base mensal da sua reserva de emergência.",
-    );
+    await user.click(help);
+    expect(
+      await screen.findByText(
+        "Marque gastos necessários para manter suas necessidades básicas. Eles compõem a base mensal da sua reserva de emergência.",
+      ),
+    ).toBeTruthy();
 
     await user.click(essential);
     expect(essential.getAttribute("aria-checked")).toBe("true");

@@ -40,6 +40,8 @@ type PortfolioTableColumnBase<Row> = {
   width: string;
   searchValue?: (row: Row) => string | number | null;
   filterOptions?: PortfolioTableFilterOption[];
+  filterType?: "date" | "currency";
+  filterable?: boolean;
   render: (row: Row) => ReactNode;
 };
 
@@ -102,11 +104,14 @@ export function PortfolioTable<Row extends { id: string }>({
   const sortableColumns = columns.filter(isSortableColumn);
   const activeSortColumn =
     sortableColumns.find((item) => item.id === sort.id) ?? sortableColumns[0];
-  const filterColumns = columns.filter(isSortableColumn).map((column) => ({
-    id: column.id,
-    label: column.label,
-    options: column.filterOptions,
-  }));
+  const filterColumns = columns
+    .filter((column) => isSortableColumn(column) && column.filterable !== false)
+    .map((column) => ({
+      id: column.id,
+      label: column.label,
+      options: column.filterOptions,
+      filterType: column.filterType,
+    }));
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
       return appliedFilters.every((filter) => {
@@ -115,6 +120,17 @@ export function PortfolioTable<Row extends { id: string }>({
         const rowValue = (column.searchValue ?? column.value)(row);
         if (rowValue === null) return false;
         if (column.filterOptions) return String(rowValue) === filter.value;
+        if (column.filterType === "date")
+          return String(rowValue) === filter.value;
+        if (column.filterType === "currency") {
+          const amount = Number(rowValue);
+          const filterAmount = Number(filter.value);
+          return (
+            Number.isFinite(amount) &&
+            Number.isFinite(filterAmount) &&
+            Math.round(amount * 100) === Math.round(filterAmount * 100)
+          );
+        }
         const valueTerms = normalize(filter.value).split(/\s+/).filter(Boolean);
         const normalizedRowValue = normalize(String(rowValue));
         return valueTerms.every((term) => normalizedRowValue.includes(term));

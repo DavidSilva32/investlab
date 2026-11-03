@@ -62,6 +62,29 @@ describe("FinancialEntriesTable", () => {
     expect((deleteSelected as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("keeps Previsto and Realizado as Situação values, not filter columns", async () => {
+    const user = userEvent.setup();
+    render(
+      <FinancialEntriesTable
+        entries={[entry]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    expect(screen.queryByRole("option", { name: "Previsto" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Realizado" })).toBeNull();
+    await user.click(screen.getByRole("option", { name: "Situação" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    expect(
+      await screen.findByRole("option", { name: "Previsto" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Realizado" })).toBeTruthy();
+  });
+
   it("combines manual and recurring items and opens only manual entries for editing", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();

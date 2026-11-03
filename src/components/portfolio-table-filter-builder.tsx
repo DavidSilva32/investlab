@@ -1,11 +1,12 @@
 "use client";
 
 import { Filter, Plus, X } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import {
   Popover,
   PopoverContent,
@@ -18,6 +19,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
+import { formatCurrency } from "@/lib/utils";
 
 export type PortfolioTableFilterOption = {
   value: string;
@@ -28,6 +38,7 @@ export type PortfolioTableFilterColumn = {
   id: string;
   label: string;
   options?: PortfolioTableFilterOption[];
+  filterType?: "date" | "currency";
 };
 
 export type PortfolioTableFilter = {
@@ -47,6 +58,60 @@ const isValidFilterDraft = (filters: PortfolioTableFilter[]) =>
   filters.every(
     (filter) => filter.columnId !== "" && filter.value.trim() !== "",
   );
+
+function CurrencyFilterInput({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pendingSelection = useRef<CurrencyInputSelection | null>(null);
+  const formattedValue = formatBrazilianAmountValue(value);
+
+  useLayoutEffect(() => {
+    const selection = pendingSelection.current;
+    const input = inputRef.current;
+    if (!selection || !input) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    pendingSelection.current = null;
+  }, [value]);
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        ref={inputRef}
+        id={id}
+        aria-label={label}
+        inputMode="numeric"
+        placeholder="R$ 0,00"
+        value={formattedValue}
+        onChange={(event) => {
+          const nextValue = formatAmountInput(event.target.value);
+          const start =
+            event.target.selectionStart ?? event.target.value.length;
+          const end = event.target.selectionEnd ?? start;
+          pendingSelection.current = getCurrencyInputSelection(
+            event.target.value,
+            nextValue,
+            start,
+            end,
+            event.target.selectionDirection,
+          );
+          const parsed = parseBrazilianAmount(nextValue);
+          onChange(Number.isFinite(parsed) ? parsed.toFixed(2) : "");
+        }}
+      />
+    </div>
+  );
+}
 
 export function applyPortfolioTableFilterDraft(
   filters: PortfolioTableFilter[],
@@ -123,7 +188,15 @@ export function PortfolioTableFilterBuilder({
     const valueLabel = column?.options?.find(
       (option) => option.value === filter.value,
     )?.label;
-    return `${column?.label ?? filter.columnId}: ${valueLabel ?? filter.value}`;
+    const formattedValue =
+      column?.filterType === "date" && /^\d{4}-\d{2}-\d{2}$/.test(filter.value)
+        ? new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(
+            new Date(`${filter.value}T00:00:00Z`),
+          )
+        : column?.filterType === "currency"
+          ? formatCurrency(Number(filter.value))
+          : filter.value;
+    return `${column?.label ?? filter.columnId}: ${valueLabel ?? formattedValue}`;
   });
 
   return (
@@ -262,6 +335,20 @@ export function PortfolioTableFilterBuilder({
                         </SelectContent>
                       </Select>
                     </div>
+                  ) : column?.filterType === "date" ? (
+                    <DatePickerField
+                      id={valueId}
+                      label={`Valor ${index + 1}`}
+                      value={filter.value}
+                      onChange={(value) => updateFilter(index, { value })}
+                    />
+                  ) : column?.filterType === "currency" ? (
+                    <CurrencyFilterInput
+                      id={valueId}
+                      label={`Valor ${index + 1}`}
+                      value={filter.value}
+                      onChange={(value) => updateFilter(index, { value })}
+                    />
                   ) : (
                     <div className="space-y-1.5">
                       <Label htmlFor={valueId}>Valor {index + 1}</Label>
