@@ -120,28 +120,32 @@ describe("EmergencyReserveSummary", () => {
       <EmergencyReserveSummary calculation={data} />,
     );
 
-    expect(html).toContain("Cenários de cobertura da reserva");
-    expect(html).toContain("3 meses");
-    expect(html).toContain("6 meses");
-    expect(html).toContain("9 meses");
-    expect(html).toContain("12 meses");
+    expect(html).toContain("Comparar metas de 3, 6, 9 e 12 meses");
     expect(html).not.toContain("R$ 850,00 por mês");
 
     render(<EmergencyReserveSummary calculation={data} />);
+    const comparisonTrigger = screen.getByRole("button", {
+      name: "Comparar metas de 3, 6, 9 e 12 meses",
+    });
+    expect(comparisonTrigger.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.setup().click(comparisonTrigger);
+    expect(comparisonTrigger.getAttribute("aria-expanded")).toBe("true");
     await userEvent
       .setup()
       .click(
         screen.getByRole("button", { name: "Origem, cálculo e limitações" }),
       );
-    expect(screen.getByText(/mínimo estimado pelas recorrências/)).toBeTruthy();
+    expect(
+      screen.getByText(/Referência das recorrências essenciais ativas/),
+    ).toBeTruthy();
     expect(screen.getByText(/Aluguel \(Mensal\)/)).toBeTruthy();
     expect(
-      screen.getByText(/não projetam aportes ou rendimentos/),
+      screen.getByText(/não estimam aportes nem rendimentos/),
     ).toBeTruthy();
   });
 
-  it("renders all horizon difference states and unavailable references", () => {
-    const html = renderToStaticMarkup(
+  it("renders all horizon difference states and unavailable references on demand", async () => {
+    render(
       <EmergencyReserveSummary
         calculation={{
           ...calculation,
@@ -186,10 +190,13 @@ describe("EmergencyReserveSummary", () => {
       />,
     );
 
-    expect(html).toContain("Sem referência");
-    expect(html).toContain("Faltam R$ 500,00");
-    expect(html).toContain("R$ 500,00 acima");
-    expect(html).toContain("Valor atingido");
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /Comparar metas/ }));
+    expect(screen.getByText("Sem referência")).toBeTruthy();
+    expect(screen.getByText(/Faltam R\$\s*500,00/)).toBeTruthy();
+    expect(screen.getByText(/R\$\s*500,00 acima/)).toBeTruthy();
+    expect(screen.getByText("Valor atingido")).toBeTruthy();
   });
 
   it("describes coverage above the configured personal target", () => {
@@ -241,11 +248,11 @@ describe("EmergencyReserveSummary", () => {
     await user.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(
-      screen.getByText(/divide o valor conhecido das posições/),
+      screen.getByText(/valor das posições marcadas como reserva/),
     ).toBeTruthy();
-    expect(screen.getByText(/ponto de partida é 6 meses/)).toBeTruthy();
+    expect(screen.getByText(/começamos por 6 meses/)).toBeTruthy();
     expect(
-      screen.getByText(/não verifica carência, resgate ou prazo/),
+      screen.getByText(/não considera carência, prazo de resgate/),
     ).toBeTruthy();
     expect(
       screen.getByText(/Data-base dos valores: 01\/09\/2026/),
@@ -277,8 +284,8 @@ describe("EmergencyReserveSummary", () => {
     expect(html).not.toContain("Informe suas despesas mensais");
   });
 
-  it("preserves the limitation when selected positions have incomplete values", () => {
-    const html = renderToStaticMarkup(
+  it("preserves the limitation when selected positions have incomplete values", async () => {
+    const { container } = render(
       <EmergencyReserveSummary
         calculation={{
           ...calculation,
@@ -304,15 +311,23 @@ describe("EmergencyReserveSummary", () => {
       />,
     );
 
-    expect(html).toContain("Estimativa parcial: 2,5 meses de despesas");
-    expect(html).toContain("A comparação com sua meta está incompleta");
-    expect(html).not.toContain('role="progressbar"');
-    expect(html).not.toContain("% da sua meta pessoal");
-    expect(html).toContain("Origem, cálculo e limitações");
-    expect(html).toContain("R$ 3.000,00");
-    expect(html).not.toContain("Faltam R$ 500,00");
-    expect(html).not.toContain("R$ 500,00 acima");
-    expect(html).not.toContain("contêm posições sem valor");
+    expect(container.innerHTML).toContain(
+      "Estimativa parcial: 2,5 meses de despesas",
+    );
+    expect(container.innerHTML).toContain(
+      "A comparação com sua meta está incompleta",
+    );
+    expect(container.innerHTML).not.toContain('role="progressbar"');
+    expect(container.innerHTML).not.toContain("% da sua meta pessoal");
+    expect(container.innerHTML).not.toContain("R$ 3.000,00");
+    expect(container.innerHTML).not.toContain("contêm posições sem valor");
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /Comparar metas/ }));
+    expect(screen.getByText(/R\$\s*3.000,00/)).toBeTruthy();
+    expect(screen.queryByText(/Faltam R\$\s*500,00/)).toBeNull();
+    expect(screen.queryByText(/R\$\s*500,00 acima/)).toBeNull();
   });
 
   it("reveals incomplete-selection reasons when details are opened", async () => {

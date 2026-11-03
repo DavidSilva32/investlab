@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const repositories = vi.hoisted(() => ({
   listCategories: vi.fn(),
@@ -160,6 +160,8 @@ function occurrence(
 
 describe("FinancialService", () => {
   const service = new FinancialService();
+
+  afterEach(() => vi.useRealTimers());
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -706,6 +708,8 @@ describe("FinancialService", () => {
   });
 
   it("forecasts active recurring expenses when no occurrence has been realized", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-15T12:00:00.000Z"));
     repositories.listRecurrences.mockResolvedValue([recurringExpense()]);
     await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
       summary: {

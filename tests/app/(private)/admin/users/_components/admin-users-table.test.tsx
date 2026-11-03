@@ -115,6 +115,20 @@ describe("AdminUsersTable", () => {
     expect(screen.getByText("Data indisponível")).toBeTruthy();
   });
 
+  it("shows the expiry date for an active beta", () => {
+    const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
+    render(
+      <AdminUsersTable
+        users={[{ ...users[0]!, betaExpiresAt: expiresAt }]}
+        invitations={[]}
+        onUpdate={vi.fn().mockResolvedValue(true)}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
+    );
+
+    expect(screen.getByText(/Beta até/)).toBeTruthy();
+  });
+
   it("filters by email and role using the shared table filter", async () => {
     const user = userEvent.setup();
     render(

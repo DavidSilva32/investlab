@@ -30,6 +30,27 @@ describe("DatePickerField", () => {
     expect(onChange).toHaveBeenLastCalledWith("2026-09-21");
   });
 
+  it("adds the Brazilian date mask while typing digits", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DatePickerField
+        id="date"
+        label="Primeiro vencimento"
+        value=""
+        onChange={onChange}
+      />,
+    );
+
+    const input = screen.getByLabelText(
+      "Primeiro vencimento",
+    ) as HTMLInputElement;
+    await user.type(input, "01022026");
+
+    expect(input.value).toBe("01/02/2026");
+    expect(onChange).toHaveBeenLastCalledWith("2026-02-01");
+  });
+
   it("rejects impossible typed dates and exposes an accessible error", () => {
     const onChange = vi.fn();
     render(

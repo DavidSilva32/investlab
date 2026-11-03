@@ -256,7 +256,7 @@ export function FinancialEntryDialog({
         { method: entry ? "PATCH" : "POST", body: JSON.stringify(payload) },
         "Não foi possível salvar o lançamento.",
       );
-      if (!entry && createRecurrence) {
+      if (createRecurrence) {
         try {
           await apiRequest(
             "/api/financial-recurrences",
@@ -274,7 +274,11 @@ export function FinancialEntryDialog({
             },
             "Não foi possível criar a recorrência.",
           );
-          toast.success("Lançamento e recorrência cadastrados.");
+          toast.success(
+            entry
+              ? "Lançamento atualizado e recorrência cadastrada."
+              : "Lançamento e recorrência cadastrados.",
+          );
         } catch (error) {
           toast.error(
             `O lançamento foi salvo, mas a recorrência não foi criada${error instanceof Error ? `: ${error.message}` : ". Você pode cadastrá-la em Recorrências."}`,
@@ -370,125 +374,122 @@ export function FinancialEntryDialog({
               </SelectContent>
             </Select>
           </div>
-          {!entry && (
-            <section className="space-y-3 rounded-xl border p-4">
-              <label className="flex cursor-pointer items-start gap-3">
-                <Checkbox
-                  checked={createRecurrence}
-                  onCheckedChange={(checked) =>
-                    toggleRecurrence(checked === true)
-                  }
-                  aria-label="Criar recorrência para este lançamento"
-                />
-                <span className="space-y-0.5">
-                  <span className="flex items-center gap-2 text-sm font-medium">
-                    <CalendarClock
-                      aria-hidden="true"
-                      className="size-4 text-muted-foreground"
-                    />
-                    Criar recorrência
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    Este lançamento será salvo agora. A próxima ocorrência
-                    seguirá a data e a periodicidade escolhidas abaixo.
-                  </span>
-                </span>
-              </label>
-              {createRecurrence && (
-                <div className="space-y-3 pl-7">
-                  {kind === "EXPENSE" && (
-                    <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
-                      <label className="flex cursor-pointer items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={essential}
-                          onCheckedChange={(checked) =>
-                            setEssential(checked === true)
-                          }
-                          aria-label="Marcar recorrência como despesa essencial"
-                        />
-                        Despesa essencial
-                      </label>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-7 shrink-0"
-                              aria-label="Ajuda sobre despesa essencial"
-                            >
-                              <CircleHelp
-                                aria-hidden="true"
-                                className="size-4 text-muted-foreground"
-                              />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-64 text-center">
-                            Marque gastos necessários para manter suas
-                            necessidades básicas. Eles compõem a base mensal da
-                            sua reserva de emergência.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <Label>Periodicidade</Label>
-                    <Select
-                      value={frequency}
-                      onValueChange={(value) =>
-                        setFrequency(value as Frequency)
-                      }
-                    >
-                      <SelectTrigger aria-label="Periodicidade da recorrência">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {frequencies.map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <DatePickerField
-                    id="next-recurrence-date"
-                    label="Próxima ocorrência"
-                    value={nextOccurrence}
-                    onChange={(value) => {
-                      setManualNextOccurrence(value);
-                    }}
-                    required
+          <section className="space-y-3 rounded-xl border p-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <Checkbox
+                checked={createRecurrence}
+                onCheckedChange={(checked) =>
+                  toggleRecurrence(checked === true)
+                }
+                aria-label="Criar recorrência para este lançamento"
+              />
+              <span className="space-y-0.5">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <CalendarClock
+                    aria-hidden="true"
+                    className="size-4 text-muted-foreground"
                   />
-                  {recurrencesLoading && (
-                    <p role="status" className="text-xs text-muted-foreground">
-                      Verificando recorrências existentes…
-                    </p>
-                  )}
-                  {recurrencesError && !recurrencesLoading && (
-                    <p
-                      role="status"
-                      className="text-xs text-amber-700 dark:text-amber-300"
-                    >
-                      Não foi possível verificar possíveis duplicidades.
-                    </p>
-                  )}
-                  {duplicateRecurrence && !recurrencesLoading && (
-                    <p
-                      role="status"
-                      className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
-                    >
-                      Já existe uma recorrência ativa parecida:{" "}
-                      {duplicateRecurrence.description}. Confira antes de
-                      continuar.
-                    </p>
-                  )}
+                  Criar recorrência
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {entry
+                    ? "O lançamento atual permanece como está. A recorrência começa na próxima data, conforme a periodicidade escolhida."
+                    : "Este lançamento será salvo agora. A próxima ocorrência seguirá a data e a periodicidade escolhidas abaixo."}
+                </span>
+              </span>
+            </label>
+            {createRecurrence && (
+              <div className="space-y-3 pl-7">
+                {kind === "EXPENSE" && (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={essential}
+                        onCheckedChange={(checked) =>
+                          setEssential(checked === true)
+                        }
+                        aria-label="Marcar recorrência como despesa essencial"
+                      />
+                      Despesa essencial
+                    </label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 shrink-0"
+                            aria-label="Ajuda sobre despesa essencial"
+                          >
+                            <CircleHelp
+                              aria-hidden="true"
+                              className="size-4 text-muted-foreground"
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-64 text-center">
+                          Marque gastos necessários para manter suas
+                          necessidades básicas. Eles compõem a base mensal da
+                          sua reserva de emergência.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Periodicidade</Label>
+                  <Select
+                    value={frequency}
+                    onValueChange={(value) => setFrequency(value as Frequency)}
+                  >
+                    <SelectTrigger aria-label="Periodicidade da recorrência">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {frequencies.map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-            </section>
-          )}
+                <DatePickerField
+                  id="next-recurrence-date"
+                  label="Próxima ocorrência"
+                  value={nextOccurrence}
+                  onChange={(value) => {
+                    setManualNextOccurrence(value);
+                  }}
+                  required
+                />
+                {recurrencesLoading && (
+                  <p role="status" className="text-xs text-muted-foreground">
+                    Verificando recorrências existentes…
+                  </p>
+                )}
+                {recurrencesError && !recurrencesLoading && (
+                  <p
+                    role="status"
+                    className="text-xs text-amber-700 dark:text-amber-300"
+                  >
+                    Não foi possível verificar possíveis duplicidades.
+                  </p>
+                )}
+                {duplicateRecurrence && !recurrencesLoading && (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+                  >
+                    Já existe uma recorrência ativa parecida:{" "}
+                    {duplicateRecurrence.description}. Confira antes de
+                    continuar.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-3 rounded-xl border p-4">
               <p className="text-sm font-medium">Previsto</p>

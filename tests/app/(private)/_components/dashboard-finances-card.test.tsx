@@ -43,10 +43,11 @@ describe("DashboardFinancesCard", () => {
   it("loads a compact summary independently and links to Finanças", async () => {
     api.request.mockResolvedValue({
       summary: {
-        expectedIncome: null,
+        expectedIncome: "3800.00",
         realizedIncome: "3400.00",
-        expectedExpenses: null,
+        expectedExpenses: "1300.00",
         realizedExpenses: "1200.00",
+        expectedBalance: "-2500.00",
         recordedBalance: "-2200.00",
         completeness: "recorded_only",
       },
@@ -55,8 +56,20 @@ describe("DashboardFinancesCard", () => {
 
     expect(await screen.findByText(/Entradas/)).toBeTruthy();
     expect(
-      screen.getByText("Saldo registrado").parentElement?.textContent,
-    ).toContain("2.200,00");
+      screen.getByText("Entradas").parentElement?.parentElement?.textContent,
+    ).toContain("3.800,00");
+    expect(
+      screen.getByText("Saídas").parentElement?.parentElement?.textContent,
+    ).toContain("1.300,00");
+    expect(screen.getByText("Saldo").parentElement?.textContent).toContain(
+      "2.500,00",
+    );
+    expect(screen.getByText(/2\.500,00/).className).toContain(
+      "text-status-danger",
+    );
+    expect(screen.getByText("Saldo").parentElement?.textContent).toContain(
+      "2.200,00",
+    );
     expect(screen.getByText(/2\.200,00/).className).toContain(
       "text-status-danger",
     );
@@ -79,6 +92,7 @@ describe("DashboardFinancesCard", () => {
         realizedIncome: "900.00",
         expectedExpenses: null,
         realizedExpenses: null,
+        expectedBalance: null,
         recordedBalance: null,
         completeness: "recorded_only",
       },
@@ -99,6 +113,7 @@ describe("DashboardFinancesCard", () => {
         realizedIncome: null,
         expectedExpenses: null,
         realizedExpenses: null,
+        expectedBalance: null,
         recordedBalance: null,
         completeness: "no_data",
       },
@@ -123,6 +138,7 @@ describe("DashboardFinancesCard", () => {
         realizedIncome: null,
         expectedExpenses: "1200.00",
         realizedExpenses: null,
+        expectedBalance: "1800.00",
         recordedBalance: null,
         completeness: "recorded_only",
       },

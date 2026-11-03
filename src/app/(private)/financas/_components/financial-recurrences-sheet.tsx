@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +12,14 @@ import {
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency } from "@/lib/utils";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 import { Button } from "@/components/ui/button";
 import {
   DatePickerField,
@@ -90,6 +98,8 @@ export function FinancialRecurrencesSheet({
   categories,
   onSaved,
   readOnly,
+  editRecurrenceId,
+  onEditRecurrenceHandled,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -101,6 +111,8 @@ export function FinancialRecurrencesSheet({
   categories: Category[];
   onSaved: () => void;
   readOnly: boolean;
+  editRecurrenceId?: string | null;
+  onEditRecurrenceHandled?: () => void;
 }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState<Recurrence | null>(null);
@@ -110,7 +122,34 @@ export function FinancialRecurrencesSheet({
   const [realizing, setRealizing] = useState<Occurrence | null>(null);
   const [realizedAmount, setRealizedAmount] = useState("");
   const [actualDate, setActualDate] = useState("");
+  const realizedAmountInputRef = useRef<HTMLInputElement>(null);
+  const realizedAmountSelectionRef = useRef<CurrencyInputSelection | null>(
+    null,
+  );
   const occurrences = data?.recurrenceOccurrences ?? [];
+  useEffect(() => {
+    if (!open || !editRecurrenceId || readOnly || !data?.recurrences) return;
+    const recurrence = data.recurrences.find(
+      (item) => item.id === editRecurrenceId,
+    );
+    if (!recurrence) return;
+    startEditingRecurrence(recurrence);
+    onEditRecurrenceHandled?.();
+  }, [
+    data?.recurrences,
+    editRecurrenceId,
+    onEditRecurrenceHandled,
+    open,
+    readOnly,
+  ]);
+  useLayoutEffect(() => {
+    const input = realizedAmountInputRef.current;
+    const selection = realizedAmountSelectionRef.current;
+    if (!input || !selection) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    realizedAmountSelectionRef.current = null;
+  }, [realizedAmount]);
   function startNewRecurrence() {
     setEditing(null);
     setFormVersion((version) => version + 1);
@@ -119,6 +158,24 @@ export function FinancialRecurrencesSheet({
   function startEditingRecurrence(item: Recurrence) {
     setEditing(item);
     setFormOpen(true);
+  }
+  function handleRealizedAmountChange(
+    value: string,
+    selectionStart: number | null,
+    selectionEnd: number | null,
+    selectionDirection: "forward" | "backward" | "none" | null,
+  ) {
+    const nextAmount = formatAmountInput(value);
+    const start = selectionStart ?? value.length;
+    const end = selectionEnd ?? start;
+    realizedAmountSelectionRef.current = getCurrencyInputSelection(
+      value,
+      nextAmount,
+      start,
+      end,
+      selectionDirection,
+    );
+    setRealizedAmount(nextAmount);
   }
   async function saveRecurrence(values: RecurrenceFormValues) {
     await apiRequest(
@@ -179,7 +236,7 @@ export function FinancialRecurrencesSheet({
             recurrenceId: realizing.recurrenceId,
             dueDate: realizing.dueDate,
             actualDate,
-            actualAmount: Number(realizedAmount),
+            actualAmount: parseBrazilianAmount(realizedAmount),
           }),
         },
         "Não foi possível registrar a realização.",
@@ -334,7 +391,9 @@ export function FinancialRecurrencesSheet({
                         onClick={() => {
                           setRealizing(item);
                           setRealizedAmount(
-                            item.actualAmount ?? item.expectedAmount ?? "",
+                            formatBrazilianAmountValue(
+                              item.actualAmount ?? item.expectedAmount ?? "",
+                            ),
                           );
                           setActualDate(item.actualDate ?? getTodayDateIso());
                         }}
@@ -408,12 +467,20 @@ export function FinancialRecurrencesSheet({
                 <Label htmlFor="realized-amount">Valor realizado (R$)</Label>
                 <Input
                   id="realized-amount"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  ref={realizedAmountInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   required
                   value={realizedAmount}
-                  onChange={(event) => setRealizedAmount(event.target.value)}
+                  onChange={(event) =>
+                    handleRealizedAmountChange(
+                      event.target.value,
+                      event.target.selectionStart,
+                      event.target.selectionEnd,
+                      event.target.selectionDirection,
+                    )
+                  }
                 />
               </div>
               <DatePickerField
@@ -431,7 +498,14 @@ export function FinancialRecurrencesSheet({
                 >
                   Cancelar
                 </Button>
-                <Button disabled={busy || !actualDate}>
+                <Button
+                  disabled={
+                    busy ||
+                    !actualDate ||
+                    !Number.isFinite(parseBrazilianAmount(realizedAmount)) ||
+                    parseBrazilianAmount(realizedAmount) <= 0
+                  }
+                >
                   {busy ? "Registrando…" : "Confirmar"}
                 </Button>
               </DialogFooter>

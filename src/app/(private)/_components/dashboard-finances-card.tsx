@@ -16,6 +16,7 @@ type FinanceSummary = {
     realizedIncome: string | null;
     expectedExpenses: string | null;
     realizedExpenses: string | null;
+    expectedBalance: string | null;
     recordedBalance: string | null;
     completeness: "recorded_only" | "no_data";
   };
@@ -77,33 +78,68 @@ export function DashboardFinancesCard() {
               </Button>
             </div>
           ) : data?.summary.completeness === "no_data" ? null : (
-            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-              <span className="inline-flex items-center gap-1 text-status-success">
-                <ArrowUp aria-hidden="true" className="size-3.5" />
-                Entradas{" "}
-                <strong>
-                  {formatAmount(data?.summary.realizedIncome ?? null)}
-                </strong>
-              </span>
-              <span className="inline-flex items-center gap-1 text-status-danger">
-                <ArrowDown aria-hidden="true" className="size-3.5" />
-                Saídas{" "}
-                <strong>
-                  {formatAmount(data?.summary.realizedExpenses ?? null)}
-                </strong>
-              </span>
-              <span className="text-muted-foreground">
-                Saldo registrado{" "}
-                <strong
-                  className={
-                    Number(data?.summary.recordedBalance) < 0
-                      ? "text-status-danger"
-                      : "text-foreground"
-                  }
-                >
-                  {formatAmount(data?.summary.recordedBalance ?? null)}
-                </strong>
-              </span>
+            <div className="mt-3 grid gap-x-5 gap-y-2 text-sm sm:grid-cols-3">
+              <div className="min-w-0">
+                <p className="mb-1 inline-flex items-center gap-1 text-status-success">
+                  <ArrowUp aria-hidden="true" className="size-3.5" /> Entradas
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Previstas{" "}
+                  <strong className="text-foreground">
+                    {formatAmount(data?.summary.expectedIncome ?? null)}
+                  </strong>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Realizadas{" "}
+                  <strong className="text-foreground">
+                    {formatAmount(data?.summary.realizedIncome ?? null)}
+                  </strong>
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="mb-1 inline-flex items-center gap-1 text-status-danger">
+                  <ArrowDown aria-hidden="true" className="size-3.5" /> Saídas
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Previstas{" "}
+                  <strong className="text-foreground">
+                    {formatAmount(data?.summary.expectedExpenses ?? null)}
+                  </strong>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Realizadas{" "}
+                  <strong className="text-foreground">
+                    {formatAmount(data?.summary.realizedExpenses ?? null)}
+                  </strong>
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="mb-1 text-muted-foreground">Saldo</p>
+                <p className="text-xs text-muted-foreground">
+                  Previsto{" "}
+                  <strong
+                    className={
+                      Number(data?.summary.expectedBalance) < 0
+                        ? "text-status-danger"
+                        : "text-foreground"
+                    }
+                  >
+                    {formatAmount(data?.summary.expectedBalance ?? null)}
+                  </strong>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Realizado{" "}
+                  <strong
+                    className={
+                      Number(data?.summary.recordedBalance) < 0
+                        ? "text-status-danger"
+                        : "text-foreground"
+                    }
+                  >
+                    {formatAmount(data?.summary.recordedBalance ?? null)}
+                  </strong>
+                </p>
+              </div>
             </div>
           )}
           {supportView === true && (

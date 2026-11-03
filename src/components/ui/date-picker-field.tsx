@@ -51,6 +51,23 @@ function toInputDate(value: string) {
   return date ? format(date, inputDateFormat) : "";
 }
 
+function formatDateInput(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4);
+  return [day, month, year].filter(Boolean).join("/");
+}
+
+function getDateCaretPosition(value: string, digitsBefore: number) {
+  if (digitsBefore <= 0) return 0;
+  let seen = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (/\d/.test(value[index]) && ++seen === digitsBefore) return index + 1;
+  }
+  return value.length;
+}
+
 export function getTodayDateIso() {
   return toIsoDate(new Date());
 }
@@ -65,6 +82,7 @@ export function DatePickerField({
   errorMessage = null,
 }: DatePickerFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const pendingCaretPosition = useRef<number | null>(null);
   const lastPropValue = useRef(value);
   const [inputValue, setInputValue] = useState(() => toInputDate(value));
   const [formatError, setFormatError] = useState(false);
@@ -88,10 +106,26 @@ export function DatePickerField({
     );
   }, [inputValue, selectedDate, invalidDateMessage]);
 
-  const handleInputChange = (nextValue: string) => {
-    setInputValue(nextValue);
+  useEffect(() => {
+    const position = pendingCaretPosition.current;
+    if (position === null || !inputRef.current) return;
+    const nextPosition = getDateCaretPosition(inputValue, position);
+    inputRef.current.setSelectionRange(nextPosition, nextPosition);
+    pendingCaretPosition.current = null;
+  }, [inputValue]);
+
+  const handleInputChange = (
+    nextValue: string,
+    selectionStart: number | null,
+  ) => {
+    const digitsBefore = (
+      nextValue.slice(0, selectionStart ?? nextValue.length).match(/\d/g) ?? []
+    ).length;
+    const formattedValue = formatDateInput(nextValue);
+    pendingCaretPosition.current = digitsBefore;
+    setInputValue(formattedValue);
     setFormatError(false);
-    const parsed = parseInputDate(nextValue);
+    const parsed = parseInputDate(formattedValue);
     const nextIsoValue = parsed ? toIsoDate(parsed) : "";
     if (parsed) setCalendarMonth(parsed);
     lastPropValue.current = nextIsoValue;
@@ -124,7 +158,9 @@ export function DatePickerField({
           id={id}
           className="w-full pr-11"
           value={inputValue}
-          onChange={(event) => handleInputChange(event.target.value)}
+          onChange={(event) =>
+            handleInputChange(event.target.value, event.target.selectionStart)
+          }
           onBlur={() => setFormatError(invalidInput)}
           placeholder="dd/mm/aaaa"
           inputMode="numeric"
