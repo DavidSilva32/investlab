@@ -6,3 +6,4 @@ playwright-report/
 test-results/
 pnpm-lock.yaml
 *.tsbuildinfo
+src/infrastructure/database/migrations/meta/*_snapshot.json

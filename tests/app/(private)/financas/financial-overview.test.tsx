@@ -239,7 +239,7 @@ describe("FinancialOverview", () => {
 
     await user.click(screen.getByRole("button", { name: "Recorrências" }));
     expect(
-      await screen.findByRole("dialog", { name: "Compromissos recorrentes" }),
+      await screen.findByRole("dialog", { name: "Gerenciar recorrências" }),
     ).toBeTruthy();
     expect(api.request).toHaveBeenCalledWith(
       expect.stringMatching(
@@ -250,7 +250,7 @@ describe("FinancialOverview", () => {
     );
   });
 
-  it("retries recurring data and invalidates the overview after saving a model", async () => {
+  it("retries recurring data and creates a model from a launch", async () => {
     const user = userEvent.setup();
     state.searchParams = "gerenciar=recorrencias";
     let recurrenceAttempts = 0;
@@ -266,8 +266,6 @@ describe("FinancialOverview", () => {
           ? Promise.reject(new Error("Falha ao carregar recorrências."))
           : Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
       }
-      if (url === "/api/financial-recurrences" && options?.method === "POST")
-        return Promise.resolve({});
       return Promise.resolve({});
     });
     renderFinance();
@@ -277,20 +275,50 @@ describe("FinancialOverview", () => {
       ),
     ).toBe(true);
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    await user.click(screen.getByRole("button", { name: "Novo" }));
-    await user.type(screen.getByLabelText("Descrição"), "Salário");
-    await user.type(screen.getByLabelText("Valor esperado (R$)"), "5000");
-    await user.click(
-      screen.getByRole("button", { name: "Adicionar recorrência" }),
+    expect(
+      await screen.findByText(
+        "Nenhuma recorrência cadastrada. Ative a opção de recorrência ao criar um lançamento.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Novo" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    await user.click(screen.getByRole("button", { name: "Lançamento" }));
+    await user.type(screen.getByLabelText("Descrição"), "Aluguel");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+      "500000",
     );
+    await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Criar recorrência para este lançamento",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
     await waitFor(() => expect(recurrenceAttempts).toBeGreaterThanOrEqual(2));
     await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
     expect(api.request).toHaveBeenCalledWith(
-      "/api/financial-recurrences",
+      "/api/financial-entries",
       expect.objectContaining({ method: "POST" }),
-      "Não foi possível salvar a recorrência.",
+      "Não foi possível salvar o lançamento.",
     );
+    const postCall = api.request.mock.calls.find(
+      ([url, options]) =>
+        url === "/api/financial-entries" && options?.method === "POST",
+    );
+    expect(JSON.parse(postCall?.[1]?.body as string)).toMatchObject({
+      description: "Aluguel",
+      categoryId,
+      recurrence: {
+        frequency: "MONTHLY",
+        firstDueDate: "2026-11-10",
+        essential: false,
+      },
+    });
   });
 
   it("opens recurring management from its route query and keeps support view read-only", async () => {
@@ -304,7 +332,7 @@ describe("FinancialOverview", () => {
     renderFinance();
 
     expect(
-      await screen.findByRole("dialog", { name: "Compromissos recorrentes" }),
+      await screen.findByRole("dialog", { name: "Gerenciar recorrências" }),
     ).toBeTruthy();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Close" }));
@@ -496,9 +524,7 @@ describe("FinancialOverview", () => {
       screen.getByRole("button", { name: "Ações para Conta de teste" }),
     );
     await user.click(await screen.findByRole("menuitem", { name: /Excluir/ }));
-    await user.click(
-      screen.getByRole("button", { name: "Excluir lançamento" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
 
     await waitFor(() =>
       expect(
