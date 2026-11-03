@@ -60,9 +60,15 @@ export function FinancialHistory({
   return (
     <section aria-labelledby="finance-history-title">
       <div className="mb-3 flex items-end justify-between">
-        <h2 id="finance-history-title" className="text-lg font-semibold">
-          Evolução registrada
-        </h2>
+        <div>
+          <h2 id="finance-history-title" className="text-lg font-semibold">
+            Histórico realizado
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Mostra entradas e saídas realizadas; previsões não entram neste
+            histórico.
+          </p>
+        </div>
       </div>
       {hasRecordedAmounts ? (
         <Card className="mb-4">
