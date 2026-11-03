@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -292,6 +293,51 @@ describe("FinancialEntriesTable", () => {
     expect(toast.success).toHaveBeenCalledWith("Realização registrada.");
   });
 
+  it("keeps the amount mask usable when the cursor position is unavailable", async () => {
+    const user = userEvent.setup();
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Registrar realizado" }),
+    );
+    const amount = screen.getByLabelText("Valor realizado (R$)");
+    Object.defineProperty(amount, "selectionStart", {
+      configurable: true,
+      get: () => null,
+    });
+    Object.defineProperty(amount, "selectionEnd", {
+      configurable: true,
+      get: () => null,
+    });
+    fireEvent.change(amount, { target: { value: "R$ 123,45" } });
+
+    expect((amount as HTMLInputElement).value).toBe("R$ 123,45");
+  });
+
   it("closes the realization form and cancels ending a recurring model", async () => {
     const user = userEvent.setup();
     render(
@@ -518,6 +564,44 @@ describe("FinancialEntriesTable", () => {
       expectedDate: "2026-10-10",
       actualAmount: 600,
       actualDate: expect.any(String),
+    });
+  });
+
+  it("records a realized-only entry without a forecast amount", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({});
+    render(
+      <FinancialEntriesTable
+        entries={[
+          {
+            ...entry,
+            expectedAmount: null,
+            expectedDate: null,
+            actualAmount: null,
+            actualDate: null,
+          },
+        ]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Aluguel" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Registrar realizado" }),
+    );
+    await user.clear(screen.getByLabelText("Valor realizado (R$)"));
+    await user.type(screen.getByLabelText("Valor realizado (R$)"), "60000");
+    await user.click(screen.getByRole("button", { name: "Salvar realização" }));
+
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    expect(JSON.parse(api.request.mock.calls[0][1].body)).toMatchObject({
+      expectedAmount: null,
+      expectedDate: null,
+      actualAmount: 600,
     });
   });
 
