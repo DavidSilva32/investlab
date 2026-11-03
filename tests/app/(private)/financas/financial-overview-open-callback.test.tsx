@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,11 +48,13 @@ vi.mock(
       onOpenChange,
       editRecurrenceId,
       onEditRecurrenceHandled,
+      onSaved,
     }: {
       open: boolean;
       onOpenChange: (open: boolean) => void;
       editRecurrenceId?: string | null;
       onEditRecurrenceHandled?: () => void;
+      onSaved?: () => void;
     }) =>
       open ? (
         <div role="dialog" aria-label="Editar recorrência">
@@ -58,6 +66,7 @@ vi.mock(
           <button onClick={onEditRecurrenceHandled}>
             Consumir pedido de edição
           </button>
+          <button onClick={onSaved}>Salvar recorrência</button>
         </div>
       ) : null,
   }),
@@ -243,5 +252,32 @@ describe("FinancialOverview controlled entry dialog callback", () => {
       }),
     );
     expect(dialog).toBeTruthy();
+  });
+
+  it("refreshes finance data after a recurrence is saved", async () => {
+    const user = userEvent.setup();
+    let overviewReads = 0;
+    api.request.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance-overview")) overviewReads += 1;
+      return Promise.resolve(
+        url.startsWith("/api/finance-overview")
+          ? overview
+          : { recurrences: [], recurrenceOccurrences: [] },
+      );
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialOverview />
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "Recorrências" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Salvar recorrência" }),
+    );
+
+    await waitFor(() => expect(overviewReads).toBeGreaterThan(1));
   });
 });
