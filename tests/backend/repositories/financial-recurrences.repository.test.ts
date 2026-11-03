@@ -8,6 +8,8 @@ const database = vi.hoisted(() => ({
   selectDistinctOn: vi.fn(),
   insert: vi.fn(),
   update: vi.fn(),
+  delete: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("@/infrastructure/database/client", () => ({
@@ -378,6 +380,85 @@ describe("FinancialRecurrencesRepository", () => {
         repository.updateRecurrence("missing-id", input),
       ),
     ).resolves.toBeNull();
+  });
+
+  it.each([
+    {
+      description: "deletes an unused recurrence inside its row lock",
+      realized: false,
+      expectedAction: "deleted",
+    },
+    {
+      description:
+        "ends a recurrence with realized history inside its row lock",
+      realized: true,
+      expectedAction: "ended",
+    },
+  ])("$description", async ({ realized, expectedAction }) => {
+    const recurrenceId = "recurrence";
+    const firstLimit = vi.fn().mockResolvedValue([{ id: recurrenceId }]);
+    const forUpdate = vi.fn().mockReturnValue({ limit: firstLimit });
+    const firstWhere = vi.fn().mockReturnValue({ for: forUpdate });
+    const firstFrom = vi.fn().mockReturnValue({ where: firstWhere });
+    const secondLimit = vi
+      .fn()
+      .mockResolvedValue(realized ? [{ id: "occurrence" }] : []);
+    const secondWhere = vi.fn().mockReturnValue({ limit: secondLimit });
+    const secondFrom = vi.fn().mockReturnValue({ where: secondWhere });
+    const transactionSelect = vi
+      .fn()
+      .mockReturnValueOnce({ from: firstFrom })
+      .mockReturnValueOnce({ from: secondFrom });
+    const updateWhere = vi.fn().mockResolvedValue(undefined);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    const transactionUpdate = vi.fn().mockReturnValue({ set: updateSet });
+    const deleteWhere = vi.fn().mockResolvedValue(undefined);
+    const transactionDelete = vi.fn().mockReturnValue({ where: deleteWhere });
+    const transaction = {
+      select: transactionSelect,
+      update: transactionUpdate,
+      delete: transactionDelete,
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-e", () =>
+        repository.removeRecurrenceSafely(recurrenceId),
+      ),
+    ).resolves.toEqual({ id: recurrenceId, action: expectedAction });
+    expect(database.transaction).toHaveBeenCalledOnce();
+    expect(forUpdate).toHaveBeenCalledWith("update");
+    expectOwnerScopedWhere(firstWhere, "owner-e");
+    expectOwnerScopedWhere(secondWhere, "owner-e");
+    expect(transactionDelete).toHaveBeenCalledTimes(realized ? 0 : 1);
+    expect(transactionUpdate).toHaveBeenCalledTimes(realized ? 1 : 0);
+    if (realized) {
+      expect(updateSet).toHaveBeenCalledWith({
+        active: false,
+        updatedAt: expect.any(Date),
+      });
+    }
+  });
+
+  it("returns null when the requested recurrence is not owned", async () => {
+    const limit = vi.fn().mockResolvedValue([]);
+    const forUpdate = vi.fn().mockReturnValue({ limit });
+    const where = vi.fn().mockReturnValue({ for: forUpdate });
+    const from = vi.fn().mockReturnValue({ where });
+    const transaction = { select: vi.fn().mockReturnValue({ from }) };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-e", () =>
+        repository.removeRecurrenceSafely("missing"),
+      ),
+    ).resolves.toBeNull();
+    expect(transaction.select).toHaveBeenCalledOnce();
+    expect(database.delete).not.toHaveBeenCalled();
   });
 
   it("upserts a realized occurrence while retaining its first expected amount", async () => {

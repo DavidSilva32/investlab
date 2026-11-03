@@ -547,6 +547,7 @@ describe("withApiRequestLogging", () => {
     ["DELETE", "/api/financial-categories"],
     ["POST", "/api/financial-recurrences"],
     ["PATCH", "/api/financial-recurrences"],
+    ["DELETE", "/api/financial-recurrences"],
     ["PUT", "/api/financial-recurrences/occurrences"],
   ])("keeps %s %s blocked during support mode", async (method, route) => {
     support.token = "a".repeat(43);

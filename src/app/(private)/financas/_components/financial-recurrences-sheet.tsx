@@ -1,40 +1,32 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { CircleStop, Pencil, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import {
   FinancialRecurrenceForm,
   type RecurrenceFormValues,
   type RecurrenceFormModel,
 } from "@/app/(private)/financas/_components/financial-recurrence-form";
-import { apiRequest } from "@/lib/api-client";
-import { queryKeys } from "@/lib/query-keys";
-import { formatCurrency } from "@/lib/utils";
 import {
-  formatAmountInput,
-  formatBrazilianAmountValue,
-  getCurrencyInputSelection,
-  parseBrazilianAmount,
-  resolveCurrencyInputSelection,
-  type CurrencyInputSelection,
-} from "@/lib/currency-input";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  DatePickerField,
-  getTodayDateIso,
-} from "@/components/ui/date-picker-field";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -42,41 +34,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { apiRequest } from "@/lib/api-client";
+import { queryKeys } from "@/lib/query-keys";
+import { formatCurrency } from "@/lib/utils";
 
 type Kind = "INCOME" | "EXPENSE";
 type Category = { id: string; kind: Kind; name: string; active: boolean };
-type Occurrence = {
-  id: string;
-  recurrenceId: string;
-  kind: Kind;
-  description: string;
-  category: string | null;
-  essential: boolean;
-  dueDate: string;
-  expectedAmount: string | null;
-  actualAmount: string | null;
-  actualDate: string | null;
-  status: "planned" | "realized";
-};
 type Recurrence = RecurrenceFormModel;
-type RecurrenceOverview = {
-  recurrences: Recurrence[];
-  recurrenceOccurrences: Occurrence[];
-};
-const money = (value: string | null) =>
-  value === null ? "Sem registro" : formatCurrency(Number(value));
-const dateLabel = (value: string | null) =>
-  value
-    ? new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(
-        new Date(`${value}T00:00:00Z`),
-      )
-    : "Sem data";
-const monthLabel = (value: string) =>
-  new Intl.DateTimeFormat("pt-BR", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}-01T00:00:00Z`));
+type RecurrenceOverview = { recurrences: Recurrence[] };
 const frequencyLabel = (frequency: string) =>
   ({
     WEEKLY: "Semanal",
@@ -87,6 +52,7 @@ const frequencyLabel = (frequency: string) =>
     SEMIANNUALLY: "Semestral",
     YEARLY: "Anual",
   })[frequency] ?? "Periodicidade cadastrada";
+
 export function FinancialRecurrencesSheet({
   open,
   onOpenChange,
@@ -116,85 +82,73 @@ export function FinancialRecurrencesSheet({
 }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState<Recurrence | null>(null);
-  const [formVersion, setFormVersion] = useState(0);
-  const [formOpen, setFormOpen] = useState(false);
+  const [removing, setRemoving] = useState<Recurrence | null>(null);
   const [busy, setBusy] = useState(false);
-  const [realizing, setRealizing] = useState<Occurrence | null>(null);
-  const [realizedAmount, setRealizedAmount] = useState("");
-  const [actualDate, setActualDate] = useState("");
-  const realizedAmountInputRef = useRef<HTMLInputElement>(null);
-  const realizedAmountSelectionRef = useRef<CurrencyInputSelection | null>(
-    null,
+  const requestedEditing = data?.recurrences?.find(
+    (item) => item.id === editRecurrenceId,
   );
-  const occurrences = data?.recurrenceOccurrences ?? [];
+  const activeEditing =
+    editing ??
+    (open && !readOnly && requestedEditing ? requestedEditing : null);
+
   useEffect(() => {
     if (!open || !editRecurrenceId || readOnly || !data?.recurrences) return;
-    const recurrence = data.recurrences.find(
-      (item) => item.id === editRecurrenceId,
-    );
-    if (!recurrence) return;
-    startEditingRecurrence(recurrence);
+    if (!requestedEditing) return;
     onEditRecurrenceHandled?.();
   }, [
     data?.recurrences,
     editRecurrenceId,
     onEditRecurrenceHandled,
     open,
+    requestedEditing,
     readOnly,
   ]);
-  useLayoutEffect(() => {
-    const input = realizedAmountInputRef.current;
-    const selection = realizedAmountSelectionRef.current;
-    if (!input || !selection) return;
-    const resolved = resolveCurrencyInputSelection(input.value, selection);
-    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
-    realizedAmountSelectionRef.current = null;
-  }, [realizedAmount]);
-  function startNewRecurrence() {
-    setEditing(null);
-    setFormVersion((version) => version + 1);
-    setFormOpen(true);
-  }
-  function startEditingRecurrence(item: Recurrence) {
-    setEditing(item);
-    setFormOpen(true);
-  }
-  function handleRealizedAmountChange(
-    value: string,
-    selectionStart: number | null,
-    selectionEnd: number | null,
-    selectionDirection: "forward" | "backward" | "none" | null,
-  ) {
-    const nextAmount = formatAmountInput(value);
-    const start = selectionStart ?? value.length;
-    const end = selectionEnd ?? start;
-    realizedAmountSelectionRef.current = getCurrencyInputSelection(
-      value,
-      nextAmount,
-      start,
-      end,
-      selectionDirection,
-    );
-    setRealizedAmount(nextAmount);
-  }
+
   async function saveRecurrence(values: RecurrenceFormValues) {
     await apiRequest(
       "/api/financial-recurrences",
-      { method: values.id ? "PATCH" : "POST", body: JSON.stringify(values) },
+      { method: "PATCH", body: JSON.stringify(values) },
       "Não foi possível salvar a recorrência.",
     );
-    toast.success(
-      values.id ? "Recorrência atualizada." : "Recorrência cadastrada.",
-    );
-    setFormOpen(false);
+    toast.success("Recorrência atualizada.");
     setEditing(null);
-    setFormVersion((version) => version + 1);
     onSaved();
     void client.invalidateQueries({
       queryKey: queryKeys.finances.recurrences(month),
     });
   }
-  async function pause(item: Recurrence) {
+
+  async function removeRecurrence() {
+    if (!removing) return;
+    setBusy(true);
+    try {
+      const result = await apiRequest<{ action: "deleted" | "ended" }>(
+        `/api/financial-recurrences?id=${encodeURIComponent(removing.id)}`,
+        { method: "DELETE" },
+        "Não foi possível remover a recorrência.",
+      );
+      toast.success(
+        result.action === "deleted"
+          ? "Recorrência excluída."
+          : "Recorrência encerrada. O histórico foi mantido.",
+      );
+      setRemoving(null);
+      onSaved();
+      void client.invalidateQueries({
+        queryKey: queryKeys.finances.recurrences(month),
+      });
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível remover a recorrência.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reactivate(item: Recurrence) {
     try {
       await apiRequest(
         "/api/financial-recurrences",
@@ -202,61 +156,26 @@ export function FinancialRecurrencesSheet({
           method: "PATCH",
           body: JSON.stringify({
             ...item,
-            active: !item.active,
             categoryId: item.categoryId,
+            active: true,
           }),
         },
-        "Não foi possível atualizar a recorrência.",
+        "Não foi possível reativar a recorrência.",
       );
-      toast.success(
-        item.active ? "Recorrência pausada." : "Recorrência reativada.",
-      );
+      toast.success("Recorrência reativada.");
       onSaved();
       void client.invalidateQueries({
         queryKey: queryKeys.finances.recurrences(month),
       });
-    } catch (error) {
+    } catch (cause) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível atualizar a recorrência.",
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível reativar a recorrência.",
       );
     }
   }
-  async function realize(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!realizing) return;
-    setBusy(true);
-    try {
-      await apiRequest(
-        "/api/financial-recurrences/occurrences",
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            recurrenceId: realizing.recurrenceId,
-            dueDate: realizing.dueDate,
-            actualDate,
-            actualAmount: parseBrazilianAmount(realizedAmount),
-          }),
-        },
-        "Não foi possível registrar a realização.",
-      );
-      toast.success("Realização registrada.");
-      setRealizing(null);
-      onSaved();
-      void client.invalidateQueries({
-        queryKey: queryKeys.finances.recurrences(month),
-      });
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível registrar a realização.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
+
   return (
     <Sheet
       open={open}
@@ -264,7 +183,7 @@ export function FinancialRecurrencesSheet({
         onOpenChange(value);
         if (!value) {
           setEditing(null);
-          setFormOpen(false);
+          setRemoving(null);
         }
       }}
     >
@@ -273,245 +192,166 @@ export function FinancialRecurrencesSheet({
         className="w-full overflow-y-auto sm:max-w-2xl"
       >
         <SheetHeader className="pr-8">
-          <SheetTitle>Compromissos recorrentes</SheetTitle>
+          <SheetTitle>Gerenciar recorrências</SheetTitle>
           <SheetDescription>
-            Cadastre entradas e saídas que se repetem. As ocorrências previstas
-            aparecem no fluxo do mês.
+            Crie recorrências junto com o lançamento. Aqui você pode editar ou
+            remover as existentes.
           </SheetDescription>
         </SheetHeader>
-        <div className="mt-6 space-y-6">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">Modelos cadastrados</h3>
-              {!readOnly && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={startNewRecurrence}
-                >
-                  <Plus className="mr-1 size-4" />
-                  Novo
-                </Button>
-              )}
-            </div>
-            {error ? (
-              <div className="rounded-lg border border-destructive/30 p-4">
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-                <Button
-                  className="mt-2"
-                  size="sm"
-                  variant="outline"
-                  onClick={retry}
-                >
-                  Tentar novamente
-                </Button>
-              </div>
-            ) : loading ? (
-              <p
-                className="rounded-lg border p-4 text-sm text-muted-foreground"
-                role="status"
-              >
-                Carregando recorrências…
-              </p>
-            ) : data?.recurrences?.length ? (
-              data.recurrences.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{item.description}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {item.kind === "INCOME" ? "Entrada" : "Saída"} ·{" "}
-                      {formatCurrency(Number(item.amount))} ·{" "}
-                      {frequencyLabel(item.frequency)}
-                      {item.essential ? " · Essencial" : ""}
-                      {!item.active ? " · Pausada" : ""}
-                    </p>
-                  </div>
-                  {!readOnly && (
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => startEditingRecurrence(item)}
-                      >
-                        Editar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void pause(item)}
-                      >
-                        {item.active ? "Pausar" : "Reativar"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                Nenhum modelo recorrente cadastrado.
-              </p>
-            )}
-          </section>
-          <section className="space-y-3">
-            <h3 className="font-semibold">
-              Ocorrências de {monthLabel(month)}
-            </h3>
-            {error ? (
+        <section className="mt-6 space-y-3">
+          <h3 className="font-semibold">Recorrências cadastradas</h3>
+          {error ? (
+            <div className="rounded-lg border border-destructive/30 p-4">
               <p role="alert" className="text-sm text-destructive">
                 {error}
               </p>
-            ) : occurrences.length ? (
-              occurrences.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-3"
-                >
-                  <div>
-                    <p className="font-medium">{item.description}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Vence {dateLabel(item.dueDate)} ·{" "}
-                      {money(item.expectedAmount)}
-                      {item.actualAmount
-                        ? ` · Realizado ${money(item.actualAmount)} ${item.actualDate ? `em ${dateLabel(item.actualDate)}` : "(sem data)"}`
-                        : ""}
-                    </p>
-                  </div>
-                  {!readOnly &&
-                    (item.status === "planned" ||
-                      (item.actualAmount !== null &&
-                        item.actualDate === null)) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setRealizing(item);
-                          setRealizedAmount(
-                            formatBrazilianAmountValue(
-                              item.actualAmount ?? item.expectedAmount ?? "",
-                            ),
-                          );
-                          setActualDate(item.actualDate ?? getTodayDateIso());
-                        }}
-                      >
-                        {item.status === "planned"
-                          ? "Registrar realização"
-                          : "Informar data realizada"}
-                      </Button>
-                    )}
+              <Button
+                className="mt-2"
+                size="sm"
+                variant="outline"
+                onClick={retry}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          ) : loading ? (
+            <p
+              className="rounded-lg border p-4 text-sm text-muted-foreground"
+              role="status"
+            >
+              Carregando recorrências…
+            </p>
+          ) : data?.recurrences?.length ? (
+            data.recurrences.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{item.description}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {item.kind === "INCOME" ? "Entrada" : "Saída"} ·{" "}
+                    {formatCurrency(Number(item.amount))} ·{" "}
+                    {frequencyLabel(item.frequency)}
+                    {item.essential ? " · Essencial" : ""}
+                    {!item.active ? " · Encerrada" : ""}
+                  </p>
                 </div>
-              ))
-            ) : (
-              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                {loading
-                  ? "Carregando ocorrências…"
-                  : "Nenhuma ocorrência prevista neste mês."}
-              </p>
-            )}
-          </section>
-        </div>{" "}
+                {!readOnly && (
+                  <div className="flex gap-1">
+                    {item.active ? (
+                      <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Editar ${item.description}`}
+                          onClick={() => setEditing(item)}
+                        >
+                          <Pencil aria-hidden="true" className="size-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Excluir ${item.description}`}
+                          onClick={() => setRemoving(item)}
+                        >
+                          <CircleStop
+                            aria-hidden="true"
+                            className="size-4 text-status-danger"
+                          />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Reativar ${item.description}`}
+                          onClick={() => void reactivate(item)}
+                        >
+                          <RotateCcw aria-hidden="true" className="size-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Excluir ${item.description}`}
+                          onClick={() => setRemoving(item)}
+                        >
+                          <CircleStop
+                            aria-hidden="true"
+                            className="size-4 text-status-danger"
+                          />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              Nenhuma recorrência cadastrada. Ative a opção de recorrência ao
+              criar um lançamento.
+            </p>
+          )}
+        </section>
         {!readOnly && (
           <Dialog
-            open={formOpen}
+            open={Boolean(activeEditing)}
             onOpenChange={(value) => {
-              setFormOpen(value);
-              if (!value) setEditing(null);
+              if (!value) {
+                setEditing(null);
+                onEditRecurrenceHandled?.();
+              }
             }}
           >
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
               <DialogHeader>
-                <DialogTitle>
-                  {editing ? "Editar recorrência" : "Nova recorrência"}
-                </DialogTitle>
+                <DialogTitle>Editar recorrência</DialogTitle>
                 <DialogDescription>
-                  Informe o tipo, valor e periodicidade do compromisso.
+                  Atualize os dados das próximas ocorrências.
                 </DialogDescription>
               </DialogHeader>
-              <FinancialRecurrenceForm
-                key={`${editing?.id ?? "new"}-${formVersion}`}
-                month={month}
-                categories={categories}
-                editing={editing}
-                onSave={saveRecurrence}
-                onCancelEdit={() => {
-                  setFormOpen(false);
-                  setEditing(null);
-                }}
-              />
+              {activeEditing && (
+                <FinancialRecurrenceForm
+                  key={activeEditing.id}
+                  month={month}
+                  categories={categories}
+                  editing={activeEditing}
+                  onSave={saveRecurrence}
+                  onCancelEdit={() => setEditing(null)}
+                />
+              )}
             </DialogContent>
           </Dialog>
         )}
-        <Dialog
-          open={Boolean(realizing)}
-          onOpenChange={(value) => {
-            if (!value) setRealizing(null);
-          }}
+        <AlertDialog
+          open={Boolean(removing)}
+          onOpenChange={(value) => !value && setRemoving(null)}
         >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Registrar realização</DialogTitle>
-              <DialogDescription>
-                {realizing?.description} · vencimento{" "}
-                {dateLabel(realizing?.dueDate ?? null)}
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              onSubmit={(event) => void realize(event)}
-              className="space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="realized-amount">Valor realizado (R$)</Label>
-                <Input
-                  id="realized-amount"
-                  ref={realizedAmountInputRef}
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  required
-                  value={realizedAmount}
-                  onChange={(event) =>
-                    handleRealizedAmountChange(
-                      event.target.value,
-                      event.target.selectionStart,
-                      event.target.selectionEnd,
-                      event.target.selectionDirection,
-                    )
-                  }
-                />
-              </div>
-              <DatePickerField
-                id="realized-date"
-                label="Data do pagamento/recebimento"
-                value={actualDate}
-                onChange={setActualDate}
-                required
-              />
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setRealizing(null)}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  disabled={
-                    busy ||
-                    !actualDate ||
-                    !Number.isFinite(parseBrazilianAmount(realizedAmount)) ||
-                    parseBrazilianAmount(realizedAmount) <= 0
-                  }
-                >
-                  {busy ? "Registrando…" : "Confirmar"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir recorrência?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {removing?.description}. Sem valores realizados, o modelo será
+                excluído. Se houver histórico realizado, ele será encerrado e o
+                histórico será mantido.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={busy}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void removeRecurrence();
+                }}
+              >
+                {busy ? "Removendo…" : "Excluir recorrência"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   );

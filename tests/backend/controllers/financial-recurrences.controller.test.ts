@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   getMonthlyOverview: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  remove: vi.fn(),
   realizeOccurrence: vi.fn(),
   info: vi.fn(),
 }));
@@ -13,6 +14,7 @@ vi.mock("@/backend/services/financial-recurrences.service", () => ({
     getMonthlyOverview: state.getMonthlyOverview,
     create: state.create,
     update: state.update,
+    remove: state.remove,
     realizeOccurrence: state.realizeOccurrence,
   },
 }));
@@ -126,5 +128,33 @@ describe("FinancialRecurrencesController", () => {
         dueDate: "2026-10-10",
       }),
     );
+  });
+
+  it("reports recurrence deletion or safe ending and logs the chosen action", async () => {
+    state.remove.mockResolvedValue({
+      action: "ended",
+      recurrenceId: "recurrence",
+    });
+    const response = await controller.remove("recurrence", "request-8");
+    expect(await response.json()).toEqual({
+      action: "ended",
+      recurrenceId: "recurrence",
+      message: "Recorrência encerrada. O histórico realizado foi mantido.",
+    });
+    expect(state.info).toHaveBeenCalledWith(
+      "financial_recurrence_removed",
+      expect.objectContaining({ action: "ended", recurrenceId: "recurrence" }),
+    );
+
+    state.remove.mockResolvedValue({
+      action: "deleted",
+      recurrenceId: "unused",
+    });
+    const deleted = await controller.remove("unused", "request-9");
+    expect(await deleted.json()).toEqual({
+      action: "deleted",
+      recurrenceId: "unused",
+      message: "Recorrência excluída.",
+    });
   });
 });

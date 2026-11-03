@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   get: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  remove: vi.fn(),
   realize: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("@/backend/controllers/financial-recurrences.controller", () => ({
     get: state.get,
     create: state.create,
     update: state.update,
+    remove: state.remove,
     realize: state.realize,
   },
 }));
@@ -27,7 +29,12 @@ vi.mock("@/infrastructure/logging/api-request", () => ({
     handler,
 }));
 
-import { GET, PATCH, POST } from "@/app/api/financial-recurrences/route";
+import {
+  DELETE,
+  GET,
+  PATCH,
+  POST,
+} from "@/app/api/financial-recurrences/route";
 import { PUT } from "@/app/api/financial-recurrences/occurrences/route";
 
 describe("financial recurrences routes", () => {
@@ -110,6 +117,44 @@ describe("financial recurrences routes", () => {
     expect(failed.status).toBe(500);
     expect(await failed.json()).toEqual({
       message: "Não foi possível salvar a recorrência financeira.",
+    });
+  });
+
+  it("removes recurrence definitions through the guarded controller", async () => {
+    state.remove.mockResolvedValue(
+      Response.json({ action: "ended", recurrenceId: "recurrence" }),
+    );
+    const response = await DELETE(
+      new Request(
+        "http://localhost/api/financial-recurrences?id=recurrence-id",
+        { method: "DELETE" },
+      ),
+    );
+    expect(state.remove).toHaveBeenCalledWith("recurrence-id", "request-test");
+    expect(response.status).toBe(200);
+
+    state.remove.mockRejectedValueOnce(
+      new ApplicationError("Recorrência não encontrada.", 404),
+    );
+    const missing = await DELETE(
+      new Request("http://localhost/api/financial-recurrences?id=missing", {
+        method: "DELETE",
+      }),
+    );
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({
+      message: "Recorrência não encontrada.",
+    });
+
+    state.remove.mockRejectedValueOnce(new Error("private failure"));
+    const failed = await DELETE(
+      new Request("http://localhost/api/financial-recurrences", {
+        method: "DELETE",
+      }),
+    );
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toEqual({
+      message: "Não foi possível remover a recorrência financeira.",
     });
   });
 

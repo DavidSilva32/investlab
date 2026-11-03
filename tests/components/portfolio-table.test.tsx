@@ -106,6 +106,40 @@ describe("PortfolioTable", () => {
     expect(screen.getByText("Editar")).toBeTruthy();
   });
 
+  it("renders a caller-provided header in a non-sortable column", () => {
+    const header = (
+      <input aria-label="Selecionar todos os registros" type="checkbox" />
+    );
+    const columnsWithHeader: PortfolioTableColumn<Row>[] = [
+      {
+        id: "selection",
+        label: "",
+        width: "48px",
+        sortable: false,
+        header,
+        render: () => null,
+      },
+      ...columns,
+    ];
+
+    render(
+      <PortfolioTable
+        columns={columnsWithHeader}
+        rows={[{ id: "1", name: "Alfa", value: 1 }]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: "Selecionar todos os registros",
+    });
+    expect(checkbox.closest("th")).toBeTruthy();
+    expect(
+      screen.queryByRole("columnheader", { name: /selection/i }),
+    ).toBeNull();
+  });
+
   it("renders rows when every column is non-sortable", () => {
     const staticColumns: PortfolioTableColumn<Row>[] = [
       {

@@ -7,6 +7,7 @@ const repository = vi.hoisted(() => ({
   findRecurrence: vi.fn(),
   createRecurrence: vi.fn(),
   updateRecurrence: vi.fn(),
+  removeRecurrenceSafely: vi.fn(),
   realizeOccurrence: vi.fn(),
   findOrCreateCategory: vi.fn(),
   findCategoryForUser: vi.fn(),
@@ -83,6 +84,10 @@ describe("FinancialRecurrencesService", () => {
     repository.findRecurrence.mockResolvedValue(expense());
     repository.createRecurrence.mockImplementation(async (value) => value);
     repository.updateRecurrence.mockImplementation(async (_id, value) => value);
+    repository.removeRecurrenceSafely.mockImplementation(async (id) => ({
+      id,
+      action: "deleted" as const,
+    }));
     repository.realizeOccurrence.mockImplementation(async (value) => value);
     repository.findOrCreateCategory.mockResolvedValue(null);
     repository.findCategoryForUser.mockImplementation(async (id) => id);
@@ -105,6 +110,38 @@ describe("FinancialRecurrencesService", () => {
     await expect(service.getMonthlyOverview("2026-13")).rejects.toMatchObject({
       statusCode: 400,
     });
+  });
+
+  it("deletes an unused recurrence but ends one with realized history", async () => {
+    const id = "e1e1e1e1-1111-4111-8111-111111111111";
+    repository.removeRecurrenceSafely.mockResolvedValueOnce({
+      id,
+      action: "deleted",
+    });
+    await expect(service.remove(id)).resolves.toEqual({
+      action: "deleted",
+      recurrenceId: id,
+    });
+
+    repository.removeRecurrenceSafely.mockResolvedValueOnce({
+      id,
+      action: "ended",
+    });
+    await expect(service.remove(id)).resolves.toEqual({
+      action: "ended",
+      recurrenceId: id,
+    });
+    expect(repository.removeRecurrenceSafely).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects invalid or missing recurrence identifiers when removing", async () => {
+    await expect(service.remove("invalid")).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    repository.removeRecurrenceSafely.mockResolvedValueOnce(null);
+    await expect(
+      service.remove("e1e1e1e1-1111-4111-8111-111111111111"),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("combines active forecasts and saved realized occurrences without duplicating dates", async () => {

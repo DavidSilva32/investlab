@@ -28,6 +28,7 @@ import {
 type PortfolioTableColumnBase<Row> = {
   id: string;
   label: string;
+  header?: ReactNode;
   className?: string;
   width: string;
   searchValue?: (row: Row) => string | number | null;
@@ -246,15 +247,17 @@ export function PortfolioTable<Row extends { id: string }>({
                     key={column.id}
                     className={cn(column.className, "px-3")}
                   >
-                    <span
-                      className={cn(
-                        "block py-1 font-normal",
-                        column.className?.includes("text-right") &&
-                          "text-right",
-                      )}
-                    >
-                      {column.label}
-                    </span>
+                    {column.header ?? (
+                      <span
+                        className={cn(
+                          "block py-1 font-normal",
+                          column.className?.includes("text-right") &&
+                            "text-right",
+                        )}
+                      >
+                        {column.label}
+                      </span>
+                    )}
                   </TableHead>
                 );
               }

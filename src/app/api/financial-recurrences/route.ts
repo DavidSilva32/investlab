@@ -21,7 +21,9 @@ function failure(error: unknown, requestId: string, operation: string) {
         ? error.message
         : operation === "read"
           ? "Não foi possível carregar as recorrências financeiras."
-          : "Não foi possível salvar a recorrência financeira.",
+          : operation === "remove"
+            ? "Não foi possível remover a recorrência financeira."
+            : "Não foi possível salvar a recorrência financeira.",
     },
     { status: expected ? error.statusCode : 500 },
   );
@@ -69,6 +71,20 @@ export const PATCH = withApiRequestLogging(
       );
     } catch (error) {
       return failure(error, requestId, "update");
+    }
+  },
+);
+
+export const DELETE = withApiRequestLogging(
+  "DELETE",
+  "/api/financial-recurrences",
+  async function DELETE(request: Request) {
+    const requestId = getApiRequestId(request);
+    try {
+      const id = new URL(request.url).searchParams.get("id");
+      return await financialRecurrencesController.remove(id, requestId);
+    } catch (error) {
+      return failure(error, requestId, "remove");
     }
   },
 );

@@ -42,6 +42,7 @@ const realizedSchema = z.object({
   actualDate: dateSchema.optional(),
   actualAmount: amountSchema,
 });
+const endRecurrenceSchema = z.string().uuid();
 
 function validateIsoDate(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -262,6 +263,20 @@ export class FinancialRecurrencesService {
       ...asRecurrenceInput(recurrenceInput, categoryId),
       active: parsed.data.active ?? current.active,
     });
+  }
+
+  async remove(id: unknown) {
+    const parsed = endRecurrenceSchema.safeParse(id);
+    if (!parsed.success) {
+      throw new ApplicationError("Recorrência não encontrada.", 404);
+    }
+    const result = await financialRecurrencesRepository.removeRecurrenceSafely(
+      parsed.data,
+    );
+    if (!result) {
+      throw new ApplicationError("Recorrência não encontrada.", 404);
+    }
+    return { action: result.action, recurrenceId: result.id };
   }
 
   async realizeOccurrence(body: unknown, now = new Date()) {

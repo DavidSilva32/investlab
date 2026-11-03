@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
-  ListChecks,
+  CalendarCheck,
   MoreHorizontal,
   Pencil,
+  CircleStop,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -40,6 +41,28 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatCurrency } from "@/lib/utils";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
+import {
+  DatePickerField,
+  getTodayDateIso,
+} from "@/components/ui/date-picker-field";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type Kind = "INCOME" | "EXPENSE";
 export type FinancialEntryRow = {
@@ -115,8 +138,24 @@ export function FinancialEntriesTable({
   const [entriesToDelete, setEntriesToDelete] = useState<FinancialEntryRow[]>(
     [],
   );
+  const [recurrenceToEnd, setRecurrenceToEnd] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
+  const [endingRecurrence, setEndingRecurrence] = useState(false);
+  const [realizing, setRealizing] = useState<TableRow | null>(null);
+  const [realizedAmount, setRealizedAmount] = useState("");
+  const [actualDate, setActualDate] = useState("");
+  const [realizingBusy, setRealizingBusy] = useState(false);
+  const realizedInputRef = useRef<HTMLInputElement>(null);
+  const realizedSelectionRef = useRef<CurrencyInputSelection | null>(null);
+  useLayoutEffect(() => {
+    const input = realizedInputRef.current;
+    const selection = realizedSelectionRef.current;
+    if (!input || !selection) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    realizedSelectionRef.current = null;
+  }, [realizedAmount]);
   async function deleteEntries(targetEntries: FinancialEntryRow[]) {
     setDeleting(true);
     const results = await Promise.allSettled(
@@ -168,6 +207,7 @@ export function FinancialEntriesTable({
   const selectedEntries = entries.filter((entry) => selectedIds.has(entry.id));
   const allEntriesSelected =
     entries.length > 0 && selectedEntries.length === entries.length;
+  const someEntriesSelected = selectedEntries.length > 0 && !allEntriesSelected;
 
   function toggleEntry(entry: FinancialEntryRow, selected: boolean) {
     setSelectedIds((current) => {
@@ -178,12 +218,92 @@ export function FinancialEntriesTable({
     });
   }
 
-  function toggleAllEntries() {
-    setSelectedIds(
-      allEntriesSelected
-        ? new Set()
-        : new Set(entries.map((entry) => entry.id)),
+  async function endRecurrence() {
+    if (!recurrenceToEnd) return;
+    setEndingRecurrence(true);
+    try {
+      const result = await apiRequest<{ action: "deleted" | "ended" }>(
+        `/api/financial-recurrences?id=${encodeURIComponent(recurrenceToEnd)}`,
+        { method: "DELETE" },
+        "Não foi possível encerrar a recorrência.",
+      );
+      toast.success(
+        result.action === "deleted"
+          ? "Recorrência excluída."
+          : "Recorrência encerrada. O histórico foi mantido.",
+      );
+      setRecurrenceToEnd(null);
+      onSaved?.();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível encerrar a recorrência.",
+      );
+    } finally {
+      setEndingRecurrence(false);
+    }
+  }
+  function openRealization(row: TableRow) {
+    setRealizing(row);
+    setRealizedAmount(
+      formatBrazilianAmountValue(row.realAmount ?? row.amount ?? ""),
     );
+    setActualDate(row.realDate ?? getTodayDateIso());
+  }
+  function handleRealizedAmountChange(
+    value: string,
+    selectionStart: number | null,
+    selectionEnd: number | null,
+    selectionDirection: "forward" | "backward" | "none" | null,
+  ) {
+    const nextAmount = formatAmountInput(value);
+    const start = selectionStart ?? value.length;
+    realizedSelectionRef.current = getCurrencyInputSelection(
+      value,
+      nextAmount,
+      start,
+      selectionEnd ?? start,
+      selectionDirection,
+    );
+    setRealizedAmount(nextAmount);
+  }
+  async function saveRealization(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !realizing ||
+      realizing.source !== "Recorrente" ||
+      !realizing.recurrenceId ||
+      !realizing.due
+    )
+      return;
+    setRealizingBusy(true);
+    try {
+      await apiRequest(
+        "/api/financial-recurrences/occurrences",
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            recurrenceId: realizing.recurrenceId,
+            dueDate: realizing.due,
+            actualDate,
+            actualAmount: parseBrazilianAmount(realizedAmount),
+          }),
+        },
+        "Não foi possível registrar a realização.",
+      );
+      toast.success("Realização registrada.");
+      setRealizing(null);
+      onSaved?.();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível registrar a realização.",
+      );
+    } finally {
+      setRealizingBusy(false);
+    }
   }
   const rows: TableRow[] = [
     ...entries.map((entry) => ({
@@ -219,6 +339,32 @@ export function FinancialEntriesTable({
       width: "48px",
       className: "text-center",
       sortable: false,
+      header: (
+        <div className="flex justify-center">
+          <Checkbox
+            checked={
+              allEntriesSelected
+                ? true
+                : someEntriesSelected
+                  ? "indeterminate"
+                  : false
+            }
+            disabled={readOnly || entries.length === 0}
+            aria-label={
+              allEntriesSelected
+                ? "Desmarcar todos os lançamentos avulsos do mês"
+                : "Selecionar todos os lançamentos avulsos do mês"
+            }
+            onCheckedChange={(checked) =>
+              setSelectedIds(
+                checked === true
+                  ? new Set(entries.map((entry) => entry.id))
+                  : new Set(),
+              )
+            }
+          />
+        </div>
+      ),
       render: (row) => (
         <div className="flex justify-center">
           <Checkbox
@@ -329,7 +475,7 @@ export function FinancialEntriesTable({
         if (readOnly) return null;
         if (row.source === "Recorrente") {
           const recurrenceId = row.recurrenceId;
-          if (!onEditRecurrence || !recurrenceId) return null;
+          if (!recurrenceId) return null;
           return (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -342,10 +488,27 @@ export function FinancialEntriesTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {onEditRecurrence && (
+                  <DropdownMenuItem
+                    onSelect={() => onEditRecurrence(recurrenceId)}
+                  >
+                    <Pencil aria-hidden="true" /> Editar recorrência
+                  </DropdownMenuItem>
+                )}
+                {(row.state === "Previsto" ||
+                  (row.realAmount !== null && row.realDate === null)) && (
+                  <DropdownMenuItem onSelect={() => openRealization(row)}>
+                    <CalendarCheck aria-hidden="true" />
+                    {row.state === "Previsto"
+                      ? "Registrar realizado"
+                      : "Informar data realizada"}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
-                  onSelect={() => onEditRecurrence(recurrenceId)}
+                  className="text-status-danger focus:text-status-danger"
+                  onSelect={() => setRecurrenceToEnd(recurrenceId)}
                 >
-                  <Pencil aria-hidden="true" /> Editar recorrência
+                  <CircleStop aria-hidden="true" /> Excluir recorrência
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -396,29 +559,6 @@ export function FinancialEntriesTable({
                 >
                   {selectedEntries.length} selecionado(s)
                 </span>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      aria-label={
-                        allEntriesSelected
-                          ? "Desmarcar todos os lançamentos avulsos do mês"
-                          : "Selecionar todos os lançamentos avulsos do mês"
-                      }
-                      aria-pressed={allEntriesSelected}
-                      onClick={toggleAllEntries}
-                    >
-                      <ListChecks aria-hidden="true" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {allEntriesSelected
-                      ? "Desmarcar todos os lançamentos avulsos do mês"
-                      : "Selecionar todos os lançamentos avulsos do mês"}
-                  </TooltipContent>
-                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -481,6 +621,102 @@ export function FinancialEntriesTable({
           </AlertDialogContent>
         </AlertDialog>
       )}
+      <AlertDialog
+        open={Boolean(recurrenceToEnd)}
+        onOpenChange={(open) => !open && setRecurrenceToEnd(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir recorrência?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Sem valores realizados, a recorrência será excluída. Se houver
+              histórico realizado, ela será encerrada para parar as próximas
+              previsões e manter esse histórico.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={endingRecurrence}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={endingRecurrence}
+              onClick={(event) => {
+                event.preventDefault();
+                void endRecurrence();
+              }}
+            >
+              {endingRecurrence ? "Removendo…" : "Excluir recorrência"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog
+        open={Boolean(realizing)}
+        onOpenChange={(open) => !open && setRealizing(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar realização</DialogTitle>
+            <DialogDescription>
+              {realizing?.description} · vencimento{" "}
+              {dateLabel(realizing?.due ?? null)}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => void saveRealization(event)}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="recurring-realized-amount">
+                Valor realizado (R$)
+              </Label>
+              <Input
+                id="recurring-realized-amount"
+                ref={realizedInputRef}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                required
+                value={realizedAmount}
+                onChange={(event) =>
+                  handleRealizedAmountChange(
+                    event.target.value,
+                    event.target.selectionStart,
+                    event.target.selectionEnd,
+                    event.target.selectionDirection,
+                  )
+                }
+              />
+            </div>
+            <DatePickerField
+              id="recurring-realized-date"
+              label="Data do pagamento/recebimento"
+              value={actualDate}
+              onChange={setActualDate}
+              required
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRealizing(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                disabled={
+                  realizingBusy ||
+                  !actualDate ||
+                  !Number.isFinite(parseBrazilianAmount(realizedAmount)) ||
+                  parseBrazilianAmount(realizedAmount) <= 0
+                }
+              >
+                {realizingBusy ? "Salvando…" : "Salvar realização"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

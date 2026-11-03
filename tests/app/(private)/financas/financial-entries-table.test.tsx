@@ -29,8 +29,7 @@ afterEach(() => {
 });
 
 describe("FinancialEntriesTable", () => {
-  it("uses compact accessible icon actions with tooltips for month selection", async () => {
-    const user = userEvent.setup();
+  it("places select-all in the selection column header and keeps delete action compact", async () => {
     render(
       <FinancialEntriesTable
         entries={[entry]}
@@ -40,16 +39,15 @@ describe("FinancialEntriesTable", () => {
       />,
     );
 
-    const selectAll = screen.getByRole("button", {
+    const selectAll = screen.getByRole("checkbox", {
       name: "Selecionar todos os lançamentos avulsos do mês",
     });
-    expect(selectAll.textContent).toBe("");
-    await user.hover(selectAll);
+    expect(selectAll.closest("th")).toBeTruthy();
     expect(
-      await screen.findByRole("tooltip", {
+      screen.queryByRole("button", {
         name: "Selecionar todos os lançamentos avulsos do mês",
       }),
-    ).toBeTruthy();
+    ).toBeNull();
 
     const deleteSelected = screen.getByRole("button", {
       name: "Excluir selecionados (0)",
@@ -128,6 +126,115 @@ describe("FinancialEntriesTable", () => {
     );
 
     expect(onEditRecurrence).toHaveBeenCalledWith("rec-1");
+  });
+
+  it("quickly records a recurring realization from its table row", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    api.request.mockResolvedValue({});
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Registrar realizado" }),
+    );
+    expect(screen.getByLabelText("Valor realizado (R$)")).toHaveProperty(
+      "value",
+      "R$ 550,00",
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar realização" }));
+
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, request] = api.request.mock.calls[0];
+    expect(request.method).toBe("PUT");
+    expect(JSON.parse(request.body)).toEqual({
+      recurrenceId: "rec-1",
+      dueDate: "2026-10-10",
+      actualDate: expect.any(String),
+      actualAmount: 550,
+    });
+    expect(onSaved).toHaveBeenCalledOnce();
+    expect(toast.success).toHaveBeenCalledWith("Realização registrada.");
+  });
+
+  it("deletes or ends a recurrence from its row action and keeps history copy clear", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    api.request.mockResolvedValue({ action: "ended" });
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: "550.00",
+            actualDate: "2026-10-10",
+            status: "realized",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Excluir recorrência" }),
+    );
+    expect(
+      screen.getByText(/histórico realizado, ela será encerrada/),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        "/api/financial-recurrences?id=rec-1",
+        { method: "DELETE" },
+        "Não foi possível encerrar a recorrência.",
+      ),
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      "Recorrência encerrada. O histórico foi mantido.",
+    );
+    expect(onSaved).toHaveBeenCalledOnce();
   });
 
   it("keeps view-only rows free of action controls", () => {
@@ -370,7 +477,7 @@ describe("FinancialEntriesTable", () => {
     }) as HTMLButtonElement;
     expect(recurringCheckbox.disabled).toBe(true);
     await user.click(
-      screen.getByRole("button", {
+      screen.getByRole("checkbox", {
         name: "Selecionar todos os lançamentos avulsos do mês",
       }),
     );
@@ -380,7 +487,7 @@ describe("FinancialEntriesTable", () => {
         .getAttribute("aria-checked"),
     ).toBe("true");
     await user.click(
-      screen.getByRole("button", {
+      screen.getByRole("checkbox", {
         name: "Desmarcar todos os lançamentos avulsos do mês",
       }),
     );
@@ -390,7 +497,7 @@ describe("FinancialEntriesTable", () => {
         .getAttribute("aria-checked"),
     ).toBe("false");
     await user.click(
-      screen.getByRole("button", {
+      screen.getByRole("checkbox", {
         name: "Selecionar todos os lançamentos avulsos do mês",
       }),
     );
@@ -449,7 +556,7 @@ describe("FinancialEntriesTable", () => {
       />,
     );
     await user.click(
-      screen.getByRole("button", {
+      screen.getByRole("checkbox", {
         name: "Selecionar todos os lançamentos avulsos do mês",
       }),
     );
@@ -507,7 +614,7 @@ describe("FinancialEntriesTable", () => {
     await user.click(checkbox);
     expect(checkbox.getAttribute("aria-checked")).toBe("false");
     await user.click(
-      screen.getByRole("button", {
+      screen.getByRole("checkbox", {
         name: "Selecionar todos os lançamentos avulsos do mês",
       }),
     );

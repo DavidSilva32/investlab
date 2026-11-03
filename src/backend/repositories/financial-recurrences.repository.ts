@@ -248,6 +248,63 @@ export class FinancialRecurrencesRepository {
     return recurrence ?? null;
   }
 
+  async removeRecurrenceSafely(id: string) {
+    const userId = requireDataOwnerId();
+    const database = getDatabaseClient();
+    return database.transaction(async (transaction) => {
+      const [recurrence] = await transaction
+        .select({ id: financialRecurrences.id })
+        .from(financialRecurrences)
+        .where(
+          and(
+            eq(financialRecurrences.id, id),
+            eq(financialRecurrences.userId, userId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!recurrence) return null;
+
+      const [realizedOccurrence] = await transaction
+        .select({ id: recurringFinancialOccurrences.id })
+        .from(recurringFinancialOccurrences)
+        .where(
+          and(
+            eq(recurringFinancialOccurrences.userId, userId),
+            eq(recurringFinancialOccurrences.recurrenceId, recurrence.id),
+            or(
+              isNotNull(recurringFinancialOccurrences.actualAmount),
+              isNotNull(recurringFinancialOccurrences.realizedAt),
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (realizedOccurrence) {
+        await transaction
+          .update(financialRecurrences)
+          .set({ active: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(financialRecurrences.id, recurrence.id),
+              eq(financialRecurrences.userId, userId),
+            ),
+          );
+        return { id: recurrence.id, action: "ended" as const };
+      }
+
+      await transaction
+        .delete(financialRecurrences)
+        .where(
+          and(
+            eq(financialRecurrences.id, recurrence.id),
+            eq(financialRecurrences.userId, userId),
+          ),
+        );
+      return { id: recurrence.id, action: "deleted" as const };
+    });
+  }
+
   async realizeOccurrence(input: {
     recurrenceId: string;
     dueDate: string;
