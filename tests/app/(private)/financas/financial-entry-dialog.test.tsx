@@ -99,7 +99,7 @@ describe("FinancialEntryDialog", () => {
     ).toBe("text");
     expect(
       screen.getByText(
-        "Este lançamento será salvo agora. A próxima ocorrência seguirá a data e a periodicidade escolhidas abaixo.",
+        "Este lançamento será a primeira ocorrência. A próxima será calculada pela periodicidade.",
       ),
     ).toBeTruthy();
     expect(
@@ -645,9 +645,7 @@ describe("FinancialEntryDialog", () => {
         name: "Criar recorrência para este lançamento",
       }),
     );
-    expect(
-      (screen.getByLabelText("Próxima ocorrência") as HTMLInputElement).value,
-    ).toBe("10/11/2026");
+    expect(screen.getByText("Próximo vencimento: 10/11/2026")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
@@ -705,9 +703,7 @@ describe("FinancialEntryDialog", () => {
       screen.getByRole("combobox", { name: "Periodicidade da recorrência" }),
     );
     await user.click(await screen.findByRole("option", { name: "Semanal" }));
-    expect(
-      (screen.getByLabelText("Próxima ocorrência") as HTMLInputElement).value,
-    ).toBe("12/10/2026");
+    expect(screen.getByText("Próximo vencimento: 12/10/2026")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
@@ -718,7 +714,7 @@ describe("FinancialEntryDialog", () => {
       firstDueDate: "2026-10-12",
     });
     expect(toast.error).toHaveBeenCalledWith(
-      "O lançamento foi salvo, mas a recorrência não foi criada. Você pode cadastrá-la em Recorrências.",
+      "O lançamento foi salvo, mas a recorrência não foi criada. Edite o lançamento e tente novamente.",
     );
   });
 
@@ -731,7 +727,7 @@ describe("FinancialEntryDialog", () => {
 
     await user.click(recurrenceCheckbox);
     expect(recurrenceCheckbox.getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByLabelText("Próxima ocorrência")).toBeTruthy();
+    expect(screen.queryByText(/Próximo vencimento:/)).toBeNull();
     const essentialCheckbox = screen.getByRole("checkbox", {
       name: "Marcar recorrência como despesa essencial",
     });
@@ -744,7 +740,7 @@ describe("FinancialEntryDialog", () => {
       name: "Criar recorrência para este lançamento",
     });
     expect(reopenedCheckbox.getAttribute("aria-checked")).toBe("false");
-    expect(screen.queryByLabelText("Próxima ocorrência")).toBeNull();
+    expect(screen.queryByText(/Próximo vencimento:/)).toBeNull();
     expect(
       screen.queryByRole("checkbox", {
         name: "Marcar recorrência como despesa essencial",
@@ -760,7 +756,7 @@ describe("FinancialEntryDialog", () => {
     ).toBe("false");
   });
 
-  it("updates the suggested recurrence date when launch dates change but preserves a manual override", async () => {
+  it("derives the next recurrence date from the launch date and selected frequency", async () => {
     const user = userEvent.setup();
     api.request.mockResolvedValue({});
     renderDialog(
@@ -787,32 +783,26 @@ describe("FinancialEntryDialog", () => {
     );
     await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
 
-    const nextOccurrence = screen.getByLabelText(
-      "Próxima ocorrência",
-    ) as HTMLInputElement;
-    expect(nextOccurrence.value).toBe("10/11/2026");
+    expect(screen.getByText("Próximo vencimento: 10/11/2026")).toBeTruthy();
     await user.click(
       screen.getByRole("combobox", {
         name: "Periodicidade da recorrência",
       }),
     );
     await user.click(await screen.findByRole("option", { name: "Trimestral" }));
-    expect(nextOccurrence.value).toBe("10/01/2027");
-
-    await user.clear(nextOccurrence);
-    await user.type(nextOccurrence, "15/12/2026");
+    expect(screen.getByText("Próximo vencimento: 10/01/2027")).toBeTruthy();
     const expectedDate = screen.getByLabelText(
       "Data prevista",
     ) as HTMLInputElement;
     await user.clear(expectedDate);
     await user.type(expectedDate, "11/11/2026");
-    expect(nextOccurrence.value).toBe("15/12/2026");
+    expect(screen.getByText("Próximo vencimento: 11/02/2027")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
     const [, recurrenceOptions] = api.request.mock.calls[1];
     expect(JSON.parse(recurrenceOptions.body as string).firstDueDate).toBe(
-      "2026-12-15",
+      "2027-02-11",
     );
   });
 });

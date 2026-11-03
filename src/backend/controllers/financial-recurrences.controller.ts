@@ -46,6 +46,22 @@ export class FinancialRecurrencesController {
     });
   }
 
+  async remove(id: string | null, requestId: string) {
+    const result = await financialRecurrencesService.remove(id);
+    logger.info("financial_recurrence_removed", {
+      requestId,
+      recurrenceId: result.recurrenceId,
+      action: result.action,
+    });
+    return Response.json({
+      ...result,
+      message:
+        result.action === "deleted"
+          ? "Recorrência excluída."
+          : "Recorrência encerrada. O histórico realizado foi mantido.",
+    });
+  }
+
   async realize(body: unknown, requestId: string) {
     const occurrence =
       await financialRecurrencesService.realizeOccurrence(body);

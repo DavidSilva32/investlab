@@ -5,10 +5,7 @@ import { CalendarClock, CircleHelp, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
-import {
-  DatePickerField,
-  getTodayDateIso,
-} from "@/components/ui/date-picker-field";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -144,18 +141,13 @@ export function FinancialEntryDialog({
   const [createRecurrence, setCreateRecurrence] = useState(false);
   const [essential, setEssential] = useState(false);
   const [frequency, setFrequency] = useState<Frequency>("MONTHLY");
-  const [manualNextOccurrence, setManualNextOccurrence] = useState<
-    string | null
-  >(null);
   const expectedAmountInputRef = useRef<HTMLInputElement>(null);
   const actualAmountInputRef = useRef<HTMLInputElement>(null);
   const expectedSelectionRef = useRef<CurrencyInputSelection | null>(null);
   const actualSelectionRef = useRef<CurrencyInputSelection | null>(null);
+  const launchDate = expectedDate || actualDate;
   const nextOccurrence =
-    manualNextOccurrence ??
-    (createRecurrence
-      ? nextDueDate(expectedDate || actualDate || getTodayDateIso(), frequency)
-      : "");
+    createRecurrence && launchDate ? nextDueDate(launchDate, frequency) : "";
   const expectedPairValid = Boolean(expectedAmount) === Boolean(expectedDate);
   const actualPairValid = Boolean(actualAmount) === Boolean(actualDate);
   const hasAmount = Boolean(expectedAmount || actualAmount);
@@ -226,14 +218,12 @@ export function FinancialEntryDialog({
   function toggleRecurrence(checked: boolean) {
     setCreateRecurrence(checked);
     if (!checked) setEssential(false);
-    setManualNextOccurrence(null);
   }
 
   function handleOpenChange(nextOpen: boolean) {
     setCreateRecurrence(false);
     setEssential(false);
     setFrequency("MONTHLY");
-    setManualNextOccurrence(null);
     onOpenChange(nextOpen);
   }
 
@@ -281,7 +271,7 @@ export function FinancialEntryDialog({
           );
         } catch (error) {
           toast.error(
-            `O lançamento foi salvo, mas a recorrência não foi criada${error instanceof Error ? `: ${error.message}` : ". Você pode cadastrá-la em Recorrências."}`,
+            `O lançamento foi salvo, mas a recorrência não foi criada${error instanceof Error ? `: ${error.message}` : ". Edite o lançamento e tente novamente."}`,
           );
         }
       } else {
@@ -393,8 +383,8 @@ export function FinancialEntryDialog({
                 </span>
                 <span className="block text-xs text-muted-foreground">
                   {entry
-                    ? "O lançamento atual permanece como está. A recorrência começa na próxima data, conforme a periodicidade escolhida."
-                    : "Este lançamento será salvo agora. A próxima ocorrência seguirá a data e a periodicidade escolhidas abaixo."}
+                    ? "O lançamento atual será preservado. A próxima ocorrência será calculada pela periodicidade."
+                    : "Este lançamento será a primeira ocorrência. A próxima será calculada pela periodicidade."}
                 </span>
               </span>
             </label>
@@ -455,15 +445,14 @@ export function FinancialEntryDialog({
                     </SelectContent>
                   </Select>
                 </div>
-                <DatePickerField
-                  id="next-recurrence-date"
-                  label="Próxima ocorrência"
-                  value={nextOccurrence}
-                  onChange={(value) => {
-                    setManualNextOccurrence(value);
-                  }}
-                  required
-                />
+                {nextOccurrence && (
+                  <p className="text-xs text-muted-foreground">
+                    Próximo vencimento:{" "}
+                    {new Intl.DateTimeFormat("pt-BR", {
+                      timeZone: "UTC",
+                    }).format(new Date(`${nextOccurrence}T00:00:00Z`))}
+                  </p>
+                )}
                 {recurrencesLoading && (
                   <p role="status" className="text-xs text-muted-foreground">
                     Verificando recorrências existentes…

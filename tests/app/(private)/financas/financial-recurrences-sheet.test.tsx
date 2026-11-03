@@ -1,15 +1,7 @@
 // @vitest-environment jsdom
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
@@ -19,30 +11,55 @@ vi.mock("sonner", () => ({ toast }));
 import { FinancialRecurrencesSheet } from "@/app/(private)/financas/_components/financial-recurrences-sheet";
 import { queryKeys } from "@/lib/query-keys";
 
-const occurrence = {
-  id: "recurrence-id:2026-10-10",
-  recurrenceId: "recurrence-id",
+const activeRecurrence = {
+  id: "rent-id",
   kind: "EXPENSE" as const,
   description: "Aluguel",
-  category: "Moradia",
-  essential: true,
-  dueDate: "2026-10-10",
-  expectedAmount: "550.00",
-  actualAmount: null,
-  actualDate: null,
-  status: "planned" as const,
-};
-const recurrence = {
-  id: "salary-id",
-  kind: "INCOME" as const,
-  description: "Salário",
   categoryId: null,
-  amount: "5000.00",
+  amount: "550.00",
   frequency: "MONTHLY",
-  firstDueDate: "2026-10-05",
-  essential: false,
+  firstDueDate: "2026-10-10",
+  essential: true,
   active: true,
 };
+const endedRecurrence = { ...activeRecurrence, id: "ended-id", active: false };
+
+function renderSheet({
+  recurrences = [activeRecurrence],
+  loading = false,
+  error = null,
+  readOnly = false,
+  retry = vi.fn(),
+  onSaved = vi.fn(),
+}: {
+  recurrences?: (typeof activeRecurrence)[];
+  loading?: boolean;
+  error?: string | null;
+  readOnly?: boolean;
+  retry?: () => void;
+  onSaved?: () => void;
+} = {}) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const result = render(
+    <QueryClientProvider client={client}>
+      <FinancialRecurrencesSheet
+        open
+        onOpenChange={() => {}}
+        month="2026-10"
+        data={{ recurrences }}
+        loading={loading}
+        error={error}
+        retry={retry}
+        categories={[]}
+        onSaved={onSaved}
+        readOnly={readOnly}
+      />
+    </QueryClientProvider>,
+  );
+  return { ...result, client, onSaved, retry };
+}
 
 afterEach(() => {
   cleanup();
@@ -50,861 +67,167 @@ afterEach(() => {
 });
 
 describe("FinancialRecurrencesSheet", () => {
-  it("opens the selected recurrence editor when requested from a monthly occurrence", async () => {
-    const onEditRecurrenceHandled = vi.fn();
-    render(
-      <QueryClientProvider client={new QueryClient()}>
+  it("keeps the manager compact and provides access to ended templates", () => {
+    renderSheet({ recurrences: [activeRecurrence, endedRecurrence] });
+    expect(screen.getByText("Gerenciar recorrências")).toBeTruthy();
+    const rentEntries = screen.getAllByText("Aluguel");
+    expect(rentEntries).toHaveLength(2);
+    expect(rentEntries[0].parentElement?.parentElement?.textContent).toContain(
+      "Mensal · Essencial",
+    );
+    expect(screen.getByText(/Encerrada/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Novo" })).toBeNull();
+    expect(screen.queryByText(/Ocorrências de/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Editar Aluguel" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Reativar Aluguel" }),
+    ).toBeTruthy();
+  });
+
+  it("shows loading, retryable error, and empty states", async () => {
+    const retry = vi.fn();
+    const { rerender, client } = renderSheet({ loading: true });
+    expect(screen.getByRole("status").textContent).toContain("Carregando");
+
+    rerender(
+      <QueryClientProvider client={client}>
         <FinancialRecurrencesSheet
           open
           onOpenChange={() => {}}
           month="2026-10"
-          data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
+          data={{ recurrences: [] }}
+          loading={false}
+          error="Falha ao carregar."
+          retry={retry}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Falha ao carregar.",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    );
+    expect(retry).toHaveBeenCalledOnce();
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [] }}
           loading={false}
           error={null}
           retry={() => {}}
           categories={[]}
           onSaved={() => {}}
           readOnly={false}
-          editRecurrenceId="salary-id"
-          onEditRecurrenceHandled={onEditRecurrenceHandled}
         />
       </QueryClientProvider>,
     );
+    expect(screen.getByText(/Nenhuma recorrência cadastrada/)).toBeTruthy();
+  });
 
+  it("edits an existing template using the established recurrence form", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    api.request.mockResolvedValue({});
+    renderSheet({ onSaved });
+    await user.click(screen.getByRole("button", { name: "Editar Aluguel" }));
     const dialog = await screen.findByRole("dialog", {
       name: "Editar recorrência",
     });
-    expect(within(dialog).getByLabelText("Descrição")).toHaveProperty(
+    expect(dialog).toBeTruthy();
+    expect(screen.getByLabelText("Descrição")).toHaveProperty(
       "value",
-      "Salário",
+      "Aluguel",
     );
-    expect(onEditRecurrenceHandled).toHaveBeenCalledOnce();
-  });
-
-  it("keeps an edit request pending until its recurrence is available", async () => {
-    const onEditRecurrenceHandled = vi.fn();
-    const { rerender } = render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [], recurrenceOccurrences: [] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-          editRecurrenceId="salary-id"
-          onEditRecurrenceHandled={onEditRecurrenceHandled}
-        />
-      </QueryClientProvider>,
-    );
-
-    expect(
-      screen.queryByRole("dialog", { name: "Editar recorrência" }),
-    ).toBeNull();
-    expect(onEditRecurrenceHandled).not.toHaveBeenCalled();
-
-    rerender(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-          editRecurrenceId="salary-id"
-          onEditRecurrenceHandled={onEditRecurrenceHandled}
-        />
-      </QueryClientProvider>,
-    );
-
-    expect(
-      await screen.findByRole("dialog", { name: "Editar recorrência" }),
-    ).toBeTruthy();
-    expect(onEditRecurrenceHandled).toHaveBeenCalledOnce();
-  });
-
-  it("uses the end of the text when the input cannot report a caret position", async () => {
-    const user = userEvent.setup();
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [], recurrenceOccurrences: [occurrence] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-    const amount = screen.getByLabelText("Valor realizado (R$)");
-    Object.defineProperty(amount, "selectionStart", {
-      configurable: true,
-      get: () => null,
-    });
-    Object.defineProperty(amount, "selectionEnd", {
-      configurable: true,
-      get: () => null,
-    });
-
-    fireEvent.change(amount, { target: { value: "123" } });
-
-    expect((amount as HTMLInputElement).value).toBe("R$ 1,23");
-  });
-
-  it("opens the model form in a dialog only after choosing Novo", async () => {
-    const user = userEvent.setup();
-    const client = new QueryClient();
-    render(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [], recurrenceOccurrences: [] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    expect(
-      screen.queryByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Novo" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
-    expect(
-      screen.queryByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "Novo" }));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Nova recorrência",
-    });
-    await user.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(
-      screen.queryByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeNull();
-  });
-
-  it("saves a new recurrence model, invalidates its query, and resets the form", async () => {
-    const user = userEvent.setup();
-    const client = new QueryClient();
-    const invalidateQueries = vi.spyOn(client, "invalidateQueries");
-    const onSaved = vi.fn();
-    api.request.mockResolvedValue({});
-    const { rerender } = render(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [], recurrenceOccurrences: [] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={onSaved}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Novo" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeTruthy();
-    await user.type(screen.getByLabelText("Descrição"), "Salário");
-    await user.type(screen.getByLabelText("Valor esperado (R$)"), "500000");
-    await user.click(
-      screen.getByRole("button", { name: "Adicionar recorrência" }),
-    );
-
-    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
-    expect(api.request).toHaveBeenCalledWith(
-      "/api/financial-recurrences",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining('"description":"Salário"'),
-      }),
-      "Não foi possível salvar a recorrência.",
-    );
-    const request = api.request.mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(request.body as string)).toMatchObject({
-      kind: "EXPENSE",
-      description: "Salário",
-      categoryId: null,
-      amount: 5000,
-      frequency: "MONTHLY",
-      firstDueDate: "2026-10-01",
-      essential: false,
-    });
-    expect(toast.success).toHaveBeenCalledWith("Recorrência cadastrada.");
-    expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: queryKeys.finances.recurrences("2026-10"),
-    });
-    expect(
-      screen.queryByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "Novo" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeTruthy();
-    expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe(
-      "",
-    );
-
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
-    rerender(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={onSaved}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-    await user.click(await screen.findByRole("button", { name: "Editar" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Editar recorrência" }),
-    ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
-
-    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(2));
-    expect(api.request).toHaveBeenLastCalledWith(
-      "/api/financial-recurrences",
-      expect.objectContaining({
-        method: "PATCH",
-        body: expect.stringContaining('"id":"salary-id"'),
-      }),
-      "Não foi possível salvar a recorrência.",
-    );
-    expect(toast.success).toHaveBeenLastCalledWith("Recorrência atualizada.");
-    expect(invalidateQueries).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    expect(api.request.mock.calls[0][0]).toBe("/api/financial-recurrences");
+    expect(JSON.parse(api.request.mock.calls[0][1].body)).toMatchObject({
+      id: "rent-id",
+      description: "Aluguel",
+      amount: 550,
+    });
+    expect(onSaved).toHaveBeenCalledOnce();
+    expect(toast.success).toHaveBeenCalledWith("Recorrência atualizada.");
   });
 
-  it("requires an explicit realized date when recording a due occurrence", async () => {
-    const user = userEvent.setup();
-    const client = new QueryClient();
-    render(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [], recurrenceOccurrences: [occurrence] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-
-    expect(
-      screen.getByRole("dialog", { name: "Registrar realização" }),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByLabelText("Data do pagamento/recebimento")
-        .hasAttribute("required"),
-    ).toBe(true);
-    expect(
-      screen
-        .getByRole("button", { name: "Confirmar" })
-        .hasAttribute("disabled"),
-    ).toBe(false);
-  });
-
-  it("does not register an occurrence with a zero realized amount", async () => {
-    const user = userEvent.setup();
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{
-            recurrences: [],
-            recurrenceOccurrences: [{ ...occurrence, expectedAmount: "0.00" }],
-          }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-
-    expect(
-      (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
-    ).toBe("R$ 0,00");
-    expect(
-      screen
-        .getByRole("button", { name: "Confirmar" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    expect(api.request).not.toHaveBeenCalled();
-  });
-
-  it("closes a realization dialog with Cancel without saving", async () => {
-    const user = userEvent.setup();
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [], recurrenceOccurrences: [occurrence] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
-
-    expect(
-      screen.queryByRole("dialog", { name: "Registrar realização" }),
-    ).toBeNull();
-    expect(api.request).not.toHaveBeenCalled();
-  });
-
-  it("lets a realized occurrence without a date add one using its recorded amount", async () => {
-    const user = userEvent.setup();
-    const undatedRealized = {
-      ...occurrence,
-      id: "recurrence-id:2026-10-10-realized",
-      status: "realized" as const,
-      actualAmount: "575.00",
-      actualDate: null,
-    };
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [], recurrenceOccurrences: [undatedRealized] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Informar data realizada" }),
-    );
-    expect(
-      (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
-    ).toBe("R$ 575,00");
-    expect(
-      (
-        screen.getByLabelText(
-          "Data do pagamento/recebimento",
-        ) as HTMLInputElement
-      ).value,
-    ).not.toBe("");
-  });
-
-  it("handles a due occurrence without a known amount and displays dated realization", async () => {
-    const user = userEvent.setup();
-    const undatedAmount = {
-      ...occurrence,
-      id: "recurrence-empty:2026-10-10",
-      expectedAmount: null,
-    };
-    const datedRealization = {
-      ...occurrence,
-      id: "recurrence-dated:2026-10-11",
-      status: "realized" as const,
-      actualAmount: "575.00",
-      actualDate: "2026-10-12",
-    };
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{
-            recurrences: [],
-            recurrenceOccurrences: [undatedAmount, datedRealization],
-          }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByText(/Realizado.*575,00.*em 12\/10\/2026/)).toBeTruthy();
-    await user.click(
-      screen.getAllByRole("button", { name: "Registrar realização" })[0],
-    );
-    expect(
-      (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
-    ).toBe("");
-  });
-
-  it("handles non-Error pause and realization failures and closes the realization dialog", async () => {
-    const user = userEvent.setup();
-    const onOpenChange = vi.fn();
-    api.request.mockRejectedValue("offline");
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={onOpenChange}
-          month="2026-10"
-          data={{
-            recurrences: [recurrence],
-            recurrenceOccurrences: [occurrence],
-          }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Pausar" }));
-    await vi.waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        "Não foi possível atualizar a recorrência.",
-      ),
-    );
-    expect(api.request).toHaveBeenCalledWith(
-      "/api/financial-recurrences",
-      expect.objectContaining({ method: "PATCH" }),
-      "Não foi possível atualizar a recorrência.",
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-    const dialog = screen.getByRole("dialog", { name: "Registrar realização" });
-    await user.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(
-      screen.queryByRole("dialog", { name: "Registrar realização" }),
-    ).toBeNull();
-
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Confirmar" }));
-    await vi.waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        "Não foi possível registrar a realização.",
-      ),
-    );
-    expect(api.request).toHaveBeenLastCalledWith(
-      "/api/financial-recurrences/occurrences",
-      expect.objectContaining({ method: "PUT" }),
-      "Não foi possível registrar a realização.",
-    );
-  });
-
-  it("opens the edit dialog and pauses a recurring model through the API", async () => {
+  it("confirms removal and preserves realized history when ending a template", async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
-    const client = new QueryClient();
-    api.request.mockResolvedValue({});
-    render(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={onSaved}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Editar" }));
+    api.request.mockResolvedValue({ action: "ended" });
+    renderSheet({ onSaved });
+    await user.click(screen.getByRole("button", { name: "Excluir Aluguel" }));
     expect(
-      await screen.findByRole("dialog", { name: "Editar recorrência" }),
+      screen.getByRole("alertdialog", { name: "Excluir recorrência?" }),
     ).toBeTruthy();
-    expect((screen.getByLabelText("Descrição") as HTMLInputElement).value).toBe(
-      "Salário",
-    );
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(
-      screen.queryByRole("dialog", { name: "Editar recorrência" }),
-    ).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "Pausar" }));
-    expect(api.request).toHaveBeenCalledWith(
-      "/api/financial-recurrences",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({
-          ...recurrence,
-          active: false,
-          categoryId: null,
-        }),
-      }),
-      "Não foi possível atualizar a recorrência.",
+      screen.getByText(/histórico realizado, ele será encerrado/),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
     );
-    expect(onSaved).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        "/api/financial-recurrences?id=rent-id",
+        { method: "DELETE" },
+        "Não foi possível remover a recorrência.",
+      ),
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      "Recorrência encerrada. O histórico foi mantido.",
+    );
+    expect(onSaved).toHaveBeenCalledOnce();
   });
 
-  it("shows essential paused models and reactivates them from the list", async () => {
+  it("reports a failed removal without closing the manager or losing the template", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue(new Error("Ação indisponível."));
+    renderSheet();
+    await user.click(screen.getByRole("button", { name: "Excluir Aluguel" }));
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Ação indisponível."),
+    );
+    expect(screen.getByText("Aluguel")).toBeTruthy();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+  });
+
+  it("reactivates an ended template and refreshes recurrence data", async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();
     api.request.mockResolvedValue({});
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{
-            recurrences: [{ ...recurrence, essential: true, active: false }],
-            recurrenceOccurrences: [],
-          }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={onSaved}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByText(/Essencial · Pausada/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Reativar" }));
-    expect(api.request).toHaveBeenCalledWith(
-      "/api/financial-recurrences",
-      expect.objectContaining({
-        method: "PATCH",
-        body: expect.stringContaining('"active":true'),
-      }),
-      "Não foi possível atualizar a recorrência.",
+    const { client } = renderSheet({ recurrences: [endedRecurrence], onSaved });
+    client.setQueryData(queryKeys.finances.recurrences("2026-10"), {});
+    await user.click(screen.getByRole("button", { name: "Reativar Aluguel" }));
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        "/api/financial-recurrences",
+        {
+          method: "PATCH",
+          body: JSON.stringify({ ...endedRecurrence, active: true }),
+        },
+        "Não foi possível reativar a recorrência.",
+      ),
     );
     expect(toast.success).toHaveBeenCalledWith("Recorrência reativada.");
     expect(onSaved).toHaveBeenCalledOnce();
+    expect(client.getQueryCache().getAll()).toHaveLength(1);
   });
 
-  it("preserves Error messages when pausing or realizing a recurrence fails", async () => {
-    const user = userEvent.setup();
-    api.request
-      .mockRejectedValueOnce(new Error("Falha ao pausar."))
-      .mockRejectedValueOnce(new Error("Falha ao registrar o pagamento."));
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{
-            recurrences: [recurrence],
-            recurrenceOccurrences: [occurrence],
-          }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Pausar" }));
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Falha ao pausar."),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Confirmar" }));
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        "Falha ao registrar o pagamento.",
-      ),
-    );
-  });
-
-  it("labels an expense recurrence as an exit in the model list", () => {
-    const expense = {
-      ...recurrence,
-      id: "rent-id",
-      kind: "EXPENSE" as const,
-      description: "Aluguel",
-      amount: "550.00",
-      essential: true,
-    };
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{ recurrences: [expense], recurrenceOccurrences: [] }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly
-        />
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByText(/Saída/)).toBeTruthy();
-  });
-
-  it("clears an open recurrence editor when the parent closes and reopens the sheet", async () => {
-    function Harness() {
-      const [open, setOpen] = useState(true);
-      return (
-        <>
-          <button type="button" onClick={() => setOpen(true)}>
-            Abrir recorrências
-          </button>
-          <QueryClientProvider client={new QueryClient()}>
-            <FinancialRecurrencesSheet
-              open={open}
-              onOpenChange={setOpen}
-              month="2026-10"
-              data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
-              loading={false}
-              error={null}
-              retry={() => {}}
-              categories={[]}
-              onSaved={() => {}}
-              readOnly={false}
-            />
-          </QueryClientProvider>
-        </>
-      );
-    }
-    const user = userEvent.setup();
-    render(<Harness />);
-
-    await user.click(screen.getByRole("button", { name: "Editar" }));
+  it("hides edit and removal controls in read-only mode", () => {
+    renderSheet({ readOnly: true });
+    expect(screen.queryByRole("button", { name: "Editar Aluguel" })).toBeNull();
     expect(
-      await screen.findByRole("dialog", { name: "Editar recorrência" }),
-    ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
-    await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(
-      screen.queryByRole("dialog", { name: "Compromissos recorrentes" }),
-    ).toBeNull();
-
-    await user.click(
-      screen.getByRole("button", { name: "Abrir recorrências" }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Novo" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Nova recorrência" }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("dialog", { name: "Editar recorrência" }),
-    ).toBeNull();
-  });
-
-  it("shows loading and errors with a retry action", async () => {
-    const user = userEvent.setup();
-    const retry = vi.fn();
-    const client = new QueryClient();
-    const props = {
-      open: true,
-      onOpenChange: () => {},
-      month: "2026-10",
-      data: undefined,
-      loading: true,
-      error: null,
-      retry,
-      categories: [],
-      onSaved: () => {},
-      readOnly: false,
-    };
-    const { rerender } = render(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet {...props} />
-      </QueryClientProvider>,
-    );
-    expect((await screen.findByRole("status")).textContent).toContain(
-      "Carregando recorrências",
-    );
-
-    rerender(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet
-          {...props}
-          loading={false}
-          error="Falha ao carregar."
-        />
-      </QueryClientProvider>,
-    );
-    expect(
-      (await screen.findAllByRole("alert")).some((alert) =>
-        alert.textContent?.includes("Falha ao carregar."),
-      ),
-    ).toBe(true);
-    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(retry).toHaveBeenCalledOnce();
-  });
-
-  it("records an occurrence using separate actual amount and date", async () => {
-    const user = userEvent.setup();
-    const onSaved = vi.fn();
-    const client = new QueryClient();
-    api.request.mockResolvedValue({});
-    render(
-      <QueryClientProvider client={client}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{
-            recurrences: [recurrence],
-            recurrenceOccurrences: [occurrence],
-          }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={onSaved}
-          readOnly={false}
-        />
-      </QueryClientProvider>,
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Registrar realização" }),
-    );
-    await user.clear(screen.getByLabelText("Valor realizado (R$)"));
-    await user.type(screen.getByLabelText("Valor realizado (R$)"), "57500");
-    expect(
-      (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
-    ).toBe("R$ 575,00");
-    await user.clear(screen.getByLabelText("Data do pagamento/recebimento"));
-    await user.type(
-      screen.getByLabelText("Data do pagamento/recebimento"),
-      "12/10/2026",
-    );
-    await user.click(screen.getByRole("button", { name: "Confirmar" }));
-
-    expect(api.request).toHaveBeenCalledWith(
-      "/api/financial-recurrences/occurrences",
-      expect.objectContaining({
-        method: "PUT",
-        body: JSON.stringify({
-          recurrenceId: occurrence.recurrenceId,
-          dueDate: occurrence.dueDate,
-          actualDate: "2026-10-12",
-          actualAmount: 575,
-        }),
-      }),
-      "Não foi possível registrar a realização.",
-    );
-    expect(onSaved).toHaveBeenCalledOnce();
-  });
-
-  it("shows recurrence fallbacks and hides mutation actions in support view", () => {
-    const paused = { ...recurrence, active: false, frequency: "LEGACY" };
-    const realizedWithoutDate = {
-      ...occurrence,
-      id: "recurrence-id:2026-10-10-realized",
-      status: "realized" as const,
-      actualAmount: "540.00",
-      actualDate: null,
-    };
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialRecurrencesSheet
-          open
-          onOpenChange={() => {}}
-          month="2026-10"
-          data={{
-            recurrences: [paused],
-            recurrenceOccurrences: [realizedWithoutDate],
-          }}
-          loading={false}
-          error={null}
-          retry={() => {}}
-          categories={[]}
-          onSaved={() => {}}
-          readOnly
-        />
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByText(/Periodicidade cadastrada · Pausada/)).toBeTruthy();
-    expect(screen.getByText(/Realizado.*540,00.*sem data/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Reativar" })).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Informar data realizada" }),
+      screen.queryByRole("button", { name: "Excluir Aluguel" }),
     ).toBeNull();
   });
 });
