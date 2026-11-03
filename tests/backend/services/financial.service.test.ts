@@ -595,8 +595,8 @@ describe("FinancialService", () => {
         kind: "INCOME",
         description: "Salário",
         categoryId: defaultCategory.id,
-        expectedAmount: 5000,
-        expectedDate: "2026-10-10",
+        actualAmount: 5000,
+        actualDate: "2026-10-10",
         recurrence: {
           frequency: "MONTHLY",
           firstDueDate: "2026-11-10",

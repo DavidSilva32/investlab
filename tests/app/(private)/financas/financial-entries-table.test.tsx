@@ -162,7 +162,8 @@ describe("FinancialEntriesTable", () => {
     expect(categoryCell.querySelector("svg")).toBeTruthy();
   });
 
-  it("labels occurrences without a category", () => {
+  it("labels and filters occurrences without a category", async () => {
+    const user = userEvent.setup();
     render(
       <FinancialEntriesTable
         entries={[]}
@@ -188,6 +189,15 @@ describe("FinancialEntriesTable", () => {
     expect(
       screen.getByRole("row", { name: /Receita sem categoria/ }).textContent,
     ).toContain("Sem categoria");
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(await screen.findByRole("option", { name: "Categoria" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Sem categoria" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("Receita sem categoria")).toBeTruthy();
   });
 
   it("opens the recurrence model editor from a recurring occurrence", async () => {
@@ -347,6 +357,88 @@ describe("FinancialEntriesTable", () => {
       expect(
         screen.queryByRole("alertdialog", { name: "Excluir recorrência?" }),
       ).toBeNull(),
+    );
+  });
+
+  it("reports a safe fallback when a recurring model cannot be ended", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue("offline");
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Excluir recorrência" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível encerrar a recorrência.",
+      ),
+    );
+  });
+
+  it("reports the result of deleting a single recurring model", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({ action: "deleted" });
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Selecionar Aluguel" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Remover selecionados (1)" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Recorrência excluída."),
     );
   });
 
