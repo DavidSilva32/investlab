@@ -11,8 +11,10 @@ const repositories = vi.hoisted(() => ({
   findEntry: vi.fn(),
   createEntry: vi.fn(),
   updateEntry: vi.fn(),
+  saveEntryWithRecurrence: vi.fn(),
   deleteEntry: vi.fn(),
   listRecurrences: vi.fn(),
+  findRecurrence: vi.fn(),
   listOccurrencesForFinancialPeriod: vi.fn(),
 }));
 
@@ -28,6 +30,7 @@ vi.mock("@/backend/repositories/financial.repository", () => ({
     findEntry: repositories.findEntry,
     createEntry: repositories.createEntry,
     updateEntry: repositories.updateEntry,
+    saveEntryWithRecurrence: repositories.saveEntryWithRecurrence,
     deleteEntry: repositories.deleteEntry,
   },
 }));
@@ -35,6 +38,7 @@ vi.mock("@/backend/repositories/financial.repository", () => ({
 vi.mock("@/backend/repositories/financial-recurrences.repository", () => ({
   financialRecurrencesRepository: {
     listRecurrences: repositories.listRecurrences,
+    findRecurrence: repositories.findRecurrence,
     listOccurrencesForFinancialPeriod:
       repositories.listOccurrencesForFinancialPeriod,
   },
@@ -187,8 +191,16 @@ describe("FinancialService", () => {
     repositories.findEntry.mockResolvedValue(entry());
     repositories.createEntry.mockImplementation(async (value) => value);
     repositories.updateEntry.mockImplementation(async (_id, value) => value);
+    repositories.saveEntryWithRecurrence.mockImplementation(
+      async (_id, input, recurrence) => ({
+        ...input,
+        recurrenceId: "77777777-7777-4777-8777-777777777777",
+        recurrence,
+      }),
+    );
     repositories.deleteEntry.mockImplementation(async (id) => ({ id }));
     repositories.listRecurrences.mockResolvedValue([]);
+    repositories.findRecurrence.mockResolvedValue(recurringExpense());
     repositories.listOccurrencesForFinancialPeriod.mockResolvedValue([]);
   });
 
@@ -421,6 +433,142 @@ describe("FinancialService", () => {
         actualDate: "2026-10-12",
       }),
     );
+  });
+
+  it("validates and persists an explicit recurrence link on a financial entry", async () => {
+    const recurrence = {
+      ...recurringExpense(),
+      categoryId: ownedCategory.id,
+    };
+    repositories.findRecurrence.mockResolvedValue(recurrence);
+    const expectedDate = "2026-10-10";
+    const categoryId = ownedCategory.id;
+    await expect(
+      service.createEntry({
+        kind: "EXPENSE",
+        description: "Aluguel",
+        categoryId,
+        recurrenceId: recurrence.id,
+        expectedAmount: 550,
+        expectedDate,
+      }),
+    ).resolves.toMatchObject({ recurrenceId: recurrence.id });
+    expect(repositories.findRecurrence).toHaveBeenCalledWith(recurrence.id);
+    expect(repositories.createEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ recurrenceId: recurrence.id }),
+    );
+
+    await expect(
+      service.createEntry({
+        kind: "INCOME",
+        description: "Aluguel",
+        categoryId: ownedCategory.id,
+        recurrenceId: recurrence.id,
+        expectedAmount: 550,
+        expectedDate,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    repositories.findCategory.mockResolvedValueOnce(defaultExpenseCategory);
+    await expect(
+      service.updateEntry({
+        id: entry().id,
+        kind: "EXPENSE",
+        description: "Aluguel",
+        categoryId: defaultExpenseCategory.id,
+        recurrenceId: recurrence.id,
+        expectedAmount: 550,
+        expectedDate,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    repositories.findRecurrence.mockResolvedValueOnce(null);
+    await expect(
+      service.createEntry({
+        kind: "EXPENSE",
+        description: "Aluguel",
+        categoryId,
+        recurrenceId: recurrence.id,
+        expectedAmount: 550,
+        expectedDate,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("saves launch and recurrence together and validates recurrence configuration", async () => {
+    const body = {
+      kind: "EXPENSE",
+      description: "Aluguel",
+      categoryId: ownedCategory.id,
+      expectedAmount: 550,
+      expectedDate: "2026-10-10",
+      recurrence: {
+        frequency: "MONTHLY",
+        firstDueDate: "2026-11-10",
+        essential: true,
+      },
+    };
+
+    await expect(service.createEntry(body)).resolves.toMatchObject({
+      recurrenceId: "77777777-7777-4777-8777-777777777777",
+    });
+    expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ expectedAmount: "550.00" }),
+      {
+        amount: "550.00",
+        categoryId: ownedCategory.id,
+        description: "Aluguel",
+        essential: true,
+        firstDueDate: "2026-11-10",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+      },
+    );
+
+    repositories.findEntry.mockResolvedValueOnce(entry());
+    await expect(
+      service.updateEntry({
+        ...body,
+        id: entry().id,
+      }),
+    ).resolves.toMatchObject({
+      recurrenceId: "77777777-7777-4777-8777-777777777777",
+    });
+    expect(repositories.saveEntryWithRecurrence).toHaveBeenLastCalledWith(
+      entry().id,
+      expect.objectContaining({ expectedAmount: "550.00" }),
+      expect.objectContaining({ frequency: "MONTHLY" }),
+    );
+
+    await expect(
+      service.createEntry({
+        ...body,
+        actualAmount: 540,
+        actualDate: "2026-11-10",
+        recurrence: { ...body.recurrence, firstDueDate: "2026-11-10" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledTimes(2);
+
+    repositories.findEntry.mockResolvedValueOnce(entry());
+    await expect(
+      service.updateEntry({
+        ...body,
+        id: entry().id,
+        recurrenceId: recurringExpense().id,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledTimes(2);
+
+    repositories.findEntry.mockResolvedValueOnce(entry());
+    await expect(
+      service.updateEntry({
+        ...body,
+        id: entry().id,
+        recurrence: { ...body.recurrence, firstDueDate: "2026-02-30" },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledTimes(2);
   });
 
   it("rejects invalid or missing entry updates and deletions", async () => {

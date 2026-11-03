@@ -71,6 +71,7 @@ export type FinancialEntryRow = {
   description: string;
   categoryId: string;
   categoryName: string;
+  recurrenceId?: string | null;
   expectedAmount: string | null;
   expectedDate: string | null;
   actualAmount: string | null;
@@ -101,11 +102,13 @@ type TableRow = {
   state: "Previsto" | "Realizado";
 } & (
   | {
-      source: "Avulso";
+      recordType: "entry";
+      source: "Avulso" | "Recorrente";
       categoryId: string;
       entry: FinancialEntryRow;
     }
   | {
+      recordType: "occurrence";
       source: "Recorrente";
       recurrenceId?: string;
     }
@@ -159,7 +162,7 @@ export function FinancialEntriesTable({
     const tasks: { rowIds: string[]; run: () => Promise<unknown> }[] = [];
     const recurrenceRows = new Map<string, string[]>();
     targetRows.forEach((row) => {
-      if (row.source === "Avulso") {
+      if (row.recordType === "entry") {
         tasks.push({
           rowIds: [row.id],
           run: () =>
@@ -208,7 +211,7 @@ export function FinancialEntriesTable({
           result.value !== null &&
           "action" in result.value,
       );
-      if (targetRows.length === 1 && targetRows[0].source === "Avulso") {
+      if (targetRows.length === 1 && targetRows[0].recordType === "entry") {
         toast.success("Lançamento excluído.");
       } else if (targetRows.length === 1 && recurrenceResults.length === 1) {
         const result = recurrenceResults[0];
@@ -250,7 +253,7 @@ export function FinancialEntriesTable({
               targetRows.length === 1
             ? singleFailure.reason instanceof Error
               ? singleFailure.reason.message
-              : targetRows[0].source === "Avulso"
+              : targetRows[0].recordType === "entry"
                 ? "Não foi possível excluir o lançamento. Tente novamente."
                 : "Não foi possível remover a recorrência. Tente novamente."
             : `Não foi possível remover ${failedActionCount} registros selecionados. Tente novamente.`,
@@ -322,7 +325,7 @@ export function FinancialEntriesTable({
     event.preventDefault();
     if (
       !realizing ||
-      realizing.source !== "Recorrente" ||
+      realizing.recordType !== "occurrence" ||
       !realizing.recurrenceId ||
       !realizing.due
     )
@@ -359,7 +362,10 @@ export function FinancialEntriesTable({
     ...entries.map((entry) => ({
       ...entry,
       entry,
-      source: "Avulso" as const,
+      recordType: "entry" as const,
+      source: entry.recurrenceId
+        ? ("Recorrente" as const)
+        : ("Avulso" as const),
       due: entry.expectedDate ?? entry.actualDate,
       amount: entry.expectedAmount,
       realAmount: entry.actualAmount,
@@ -371,6 +377,7 @@ export function FinancialEntriesTable({
     })),
     ...occurrences.map((item) => ({
       ...item,
+      recordType: "occurrence" as const,
       source: "Recorrente" as const,
       due: item.dueDate,
       amount: item.expectedAmount,
@@ -424,7 +431,7 @@ export function FinancialEntriesTable({
           <Checkbox
             checked={selectedIds.has(row.id)}
             disabled={
-              readOnly || (row.source === "Recorrente" && !row.recurrenceId)
+              readOnly || (row.recordType === "occurrence" && !row.recurrenceId)
             }
             aria-label={`Selecionar ${row.description}`}
             onCheckedChange={(checked) => toggleRow(row, checked === true)}
@@ -525,7 +532,7 @@ export function FinancialEntriesTable({
       sortable: false,
       render: (row) => {
         if (readOnly) return null;
-        if (row.source === "Recorrente") {
+        if (row.recordType === "occurrence") {
           const recurrenceId = row.recurrenceId;
           if (!recurrenceId) return null;
           return (
@@ -643,12 +650,15 @@ export function FinancialEntriesTable({
                   : `Remover ${rowsToDelete.length} registros selecionados?`}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {rowsToDelete.filter((row) => row.source === "Avulso").length}{" "}
+                {
+                  rowsToDelete.filter((row) => row.recordType === "entry")
+                    .length
+                }{" "}
                 lançamentos avulsos serão excluídos.{" "}
                 {
                   new Set(
                     rowsToDelete.flatMap((row) =>
-                      row.source === "Recorrente" && row.recurrenceId
+                      row.recordType === "occurrence" && row.recurrenceId
                         ? [row.recurrenceId]
                         : [],
                     ),

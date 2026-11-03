@@ -47,6 +47,7 @@ type Entry = {
   kind: Kind;
   description: string;
   categoryId: string;
+  recurrenceId?: string | null;
   categoryName: string;
   expectedAmount: string | null;
   expectedDate: string | null;
@@ -145,7 +146,8 @@ export function FinancialEntryDialog({
   const actualAmountInputRef = useRef<HTMLInputElement>(null);
   const expectedSelectionRef = useRef<CurrencyInputSelection | null>(null);
   const actualSelectionRef = useRef<CurrencyInputSelection | null>(null);
-  const launchDate = expectedDate || actualDate;
+  const launchDate =
+    [expectedDate, actualDate].filter(Boolean).sort().at(-1) ?? "";
   const nextOccurrence =
     createRecurrence && launchDate ? nextDueDate(launchDate, frequency) : "";
   const expectedPairValid = Boolean(expectedAmount) === Boolean(expectedDate);
@@ -236,49 +238,35 @@ export function FinancialEntryDialog({
         kind,
         description,
         categoryId,
+        recurrenceId: entry?.recurrenceId ?? null,
         expectedAmount: expectedAmount ? parsedExpectedAmount : null,
         expectedDate: expectedDate || null,
         actualAmount: actualAmount ? parsedActualAmount : null,
         actualDate: actualDate || null,
+        ...(createRecurrence
+          ? {
+              recurrence: {
+                frequency,
+                firstDueDate: nextOccurrence,
+                essential: kind === "EXPENSE" && essential,
+              },
+            }
+          : {}),
       };
       await apiRequest(
         "/api/financial-entries",
         { method: entry ? "PATCH" : "POST", body: JSON.stringify(payload) },
         "Não foi possível salvar o lançamento.",
       );
-      if (createRecurrence) {
-        try {
-          await apiRequest(
-            "/api/financial-recurrences",
-            {
-              method: "POST",
-              body: JSON.stringify({
-                kind,
-                description: description.trim(),
-                categoryId,
-                amount: parseBrazilianAmount(expectedAmount || actualAmount),
-                frequency,
-                firstDueDate: nextOccurrence,
-                essential: kind === "EXPENSE" && essential,
-              }),
-            },
-            "Não foi possível criar a recorrência.",
-          );
-          toast.success(
-            entry
-              ? "Lançamento atualizado e recorrência cadastrada."
-              : "Lançamento e recorrência cadastrados.",
-          );
-        } catch (error) {
-          toast.error(
-            `O lançamento foi salvo, mas a recorrência não foi criada${error instanceof Error ? `: ${error.message}` : ". Edite o lançamento e tente novamente."}`,
-          );
-        }
-      } else {
-        toast.success(
-          entry ? "Lançamento atualizado." : "Lançamento cadastrado.",
-        );
-      }
+      toast.success(
+        createRecurrence
+          ? entry
+            ? "Lançamento atualizado e vinculado à recorrência."
+            : "Lançamento cadastrado e vinculado à recorrência."
+          : entry
+            ? "Lançamento atualizado."
+            : "Lançamento cadastrado.",
+      );
       onSaved();
       handleOpenChange(false);
     } catch (error) {
@@ -308,6 +296,7 @@ export function FinancialEntryDialog({
               <Label>Movimento</Label>
               <Select
                 value={kind}
+                disabled={Boolean(entry?.recurrenceId)}
                 onValueChange={(value: Kind) => {
                   setKind(value);
                   setCategoryId("");
@@ -342,13 +331,19 @@ export function FinancialEntryDialog({
                 variant="link"
                 size="sm"
                 className="h-auto px-1 py-0 text-xs"
+                disabled={Boolean(entry?.recurrenceId)}
                 onClick={() => setQuickCategoryOpen(true)}
               >
                 <Plus aria-hidden="true" className="mr-1 size-3.5" />
                 Criar categoria
               </Button>
             </div>
-            <Select value={categoryId} onValueChange={setCategoryId} required>
+            <Select
+              value={categoryId}
+              onValueChange={setCategoryId}
+              disabled={Boolean(entry?.recurrenceId)}
+              required
+            >
               <SelectTrigger
                 id="financial-entry-category"
                 aria-label="Categoria"
@@ -367,7 +362,8 @@ export function FinancialEntryDialog({
           <section className="space-y-3 rounded-xl border p-4">
             <label className="flex cursor-pointer items-start gap-3">
               <Checkbox
-                checked={createRecurrence}
+                checked={createRecurrence || Boolean(entry?.recurrenceId)}
+                disabled={Boolean(entry?.recurrenceId)}
                 onCheckedChange={(checked) =>
                   toggleRecurrence(checked === true)
                 }
@@ -382,9 +378,11 @@ export function FinancialEntryDialog({
                   Criar recorrência
                 </span>
                 <span className="block text-xs text-muted-foreground">
-                  {entry
-                    ? "O lançamento atual será preservado. A próxima ocorrência será calculada pela periodicidade."
-                    : "Este lançamento será a primeira ocorrência. A próxima será calculada pela periodicidade."}
+                  {entry?.recurrenceId
+                    ? "Este lançamento já está vinculado a uma recorrência."
+                    : entry
+                      ? "O lançamento atual será preservado. A próxima ocorrência será calculada pela periodicidade."
+                      : "Este lançamento será a primeira ocorrência. A próxima será calculada pela periodicidade."}
                 </span>
               </span>
             </label>

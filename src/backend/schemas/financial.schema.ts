@@ -15,10 +15,28 @@ const amountSchema = z
     "Use no máximo duas casas decimais.",
   );
 
+export const financialRecurrenceFrequencies = [
+  "WEEKLY",
+  "BIWEEKLY",
+  "MONTHLY",
+  "BIMONTHLY",
+  "QUARTERLY",
+  "SEMIANNUALLY",
+  "YEARLY",
+] as const;
+
+export const financialRecurrenceConfigSchema = z.object({
+  frequency: z.enum(financialRecurrenceFrequencies),
+  firstDueDate: dateSchema,
+  essential: z.boolean().default(false),
+});
+
 const financialEntryFields = z.object({
   kind: z.enum(financialKinds),
   description: z.string().trim().min(1).max(120),
   categoryId: z.string().uuid(),
+  recurrenceId: z.string().uuid().nullable().optional(),
+  recurrence: financialRecurrenceConfigSchema.optional(),
   expectedAmount: amountSchema.nullable().optional(),
   expectedDate: dateSchema.nullable().optional(),
   actualAmount: amountSchema.nullable().optional(),

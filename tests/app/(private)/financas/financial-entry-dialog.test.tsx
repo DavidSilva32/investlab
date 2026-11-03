@@ -517,9 +517,9 @@ describe("FinancialEntryDialog", () => {
     ).toBe("false");
   });
 
-  it("creates a recurrence after the current launch and warns about normalized duplicates", async () => {
+  it("sends recurrence configuration with the launch and warns about duplicates", async () => {
     const user = userEvent.setup();
-    api.request.mockResolvedValue({});
+    api.request.mockResolvedValueOnce({ id: "entry-created" });
     renderDialog(
       <FinancialEntryDialog
         open
@@ -564,26 +564,67 @@ describe("FinancialEntryDialog", () => {
       screen.getByText(/Já existe uma recorrência ativa parecida/),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
-    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
-    const [, recurrenceOptions] = api.request.mock.calls[1];
-    expect(JSON.parse(recurrenceOptions.body as string)).toMatchObject({
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, entryOptions] = api.request.mock.calls[0];
+    expect(api.request.mock.calls[0][0]).toBe("/api/financial-entries");
+    expect(JSON.parse(entryOptions.body as string)).toMatchObject({
       kind: "EXPENSE",
       description: "Aluguel",
       categoryId: categories[0].id,
-      amount: 550,
-      frequency: "MONTHLY",
-      firstDueDate: expect.stringMatching(/^2026-11-01$/),
-      essential: true,
+      expectedAmount: 550,
+      recurrence: {
+        frequency: "MONTHLY",
+        firstDueDate: "2026-11-01",
+        essential: true,
+      },
     });
   });
 
-  it("reports when the launch succeeds but recurrence creation fails", async () => {
+  it("starts recurrence after the latest expected or realized launch date", async () => {
     const user = userEvent.setup();
-    api.request
-      .mockResolvedValueOnce({})
-      .mockRejectedValueOnce(
-        new Error("Não foi possível criar a recorrência."),
-      );
+    api.request.mockResolvedValueOnce({ id: "entry-created" });
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={null}
+        onSaved={() => {}}
+      />,
+    );
+    await user.type(screen.getByLabelText("Descrição"), "Aluguel");
+    await user.click(screen.getByRole("combobox", { name: "Categoria" }));
+    await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+      "55000",
+    );
+    await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
+    await user.type(
+      screen.getByLabelText("Valor (R$)", { selector: "#actual-amount" }),
+      "54000",
+    );
+    await user.type(screen.getByLabelText("Data realizada"), "20/10/2026");
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Criar recorrência para este lançamento",
+      }),
+    );
+
+    expect(screen.getByText("Próximo vencimento: 20/11/2026")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, options] = api.request.mock.calls[0];
+    expect(JSON.parse(options.body as string).recurrence.firstDueDate).toBe(
+      "2026-11-20",
+    );
+  });
+
+  it("reports failure when the combined launch and recurrence save fails", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValueOnce(
+      new Error("Não foi possível salvar o lançamento."),
+    );
     renderDialog(
       <FinancialEntryDialog
         open
@@ -609,11 +650,10 @@ describe("FinancialEntryDialog", () => {
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "O lançamento foi salvo, mas a recorrência não foi criada",
-        ),
+        "Não foi possível salvar o lançamento.",
       ),
     );
+    expect(api.request).toHaveBeenCalledOnce();
   });
 
   it("creates a recurrence while editing without moving the current launch into the recurring series", async () => {
@@ -629,7 +669,7 @@ describe("FinancialEntryDialog", () => {
       actualAmount: null,
       actualDate: null,
     };
-    api.request.mockResolvedValue({});
+    api.request.mockResolvedValueOnce({ id: "entry-existing" });
     renderDialog(
       <FinancialEntryDialog
         open
@@ -648,7 +688,7 @@ describe("FinancialEntryDialog", () => {
     expect(screen.getByText("Próximo vencimento: 10/11/2026")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
-    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
     expect(api.request).toHaveBeenNthCalledWith(
       1,
       "/api/financial-entries",
@@ -660,23 +700,71 @@ describe("FinancialEntryDialog", () => {
       id: "entry-existing",
       expectedAmount: 550,
       expectedDate: "2026-10-10",
-    });
-    const recurrenceOptions = api.request.mock.calls[1]?.[1] as RequestInit;
-    expect(JSON.parse(recurrenceOptions.body as string)).toMatchObject({
-      description: "Aluguel",
-      amount: 550,
-      frequency: "MONTHLY",
-      firstDueDate: "2026-11-10",
-      essential: false,
+      recurrence: {
+        frequency: "MONTHLY",
+        firstDueDate: "2026-11-10",
+        essential: false,
+      },
     });
     expect(toast.success).toHaveBeenCalledWith(
-      "Lançamento atualizado e recorrência cadastrada.",
+      "Lançamento atualizado e vinculado à recorrência.",
     );
+  });
+
+  it("keeps an existing recurrence link when editing its first launch", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({});
+    const existingEntry = {
+      id: "entry-linked",
+      kind: "EXPENSE" as const,
+      description: "Aluguel",
+      categoryId: categories[0].id,
+      categoryName: "Moradia",
+      recurrenceId: "rec-linked",
+      expectedAmount: "550.00",
+      expectedDate: "2026-10-10",
+      actualAmount: null,
+      actualDate: null,
+    };
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={existingEntry}
+        onSaved={() => {}}
+      />,
+    );
+
+    const recurrenceCheckbox = screen.getByRole("checkbox", {
+      name: "Criar recorrência para este lançamento",
+    });
+    expect(recurrenceCheckbox.getAttribute("aria-checked")).toBe("true");
+    expect((recurrenceCheckbox as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (
+        screen.getByRole("combobox", {
+          name: "Tipo de lançamento",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("combobox", { name: "Categoria" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, options] = api.request.mock.calls[0];
+    expect(JSON.parse(options.body as string)).toMatchObject({
+      id: "entry-linked",
+      recurrenceId: "rec-linked",
+    });
   });
 
   it("creates a weekly recurrence from a realized-only amount and uses a safe failure fallback", async () => {
     const user = userEvent.setup();
-    api.request.mockResolvedValueOnce({}).mockRejectedValueOnce("offline");
+    api.request.mockRejectedValueOnce("offline");
     renderDialog(
       <FinancialEntryDialog
         open
@@ -706,15 +794,14 @@ describe("FinancialEntryDialog", () => {
     expect(screen.getByText("Próximo vencimento: 12/10/2026")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
-    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
-    const [, recurrenceOptions] = api.request.mock.calls[1];
-    expect(JSON.parse(recurrenceOptions.body as string)).toMatchObject({
-      amount: 400,
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, entryOptions] = api.request.mock.calls[0];
+    expect(JSON.parse(entryOptions.body as string).recurrence).toMatchObject({
       frequency: "WEEKLY",
       firstDueDate: "2026-10-12",
     });
     expect(toast.error).toHaveBeenCalledWith(
-      "O lançamento foi salvo, mas a recorrência não foi criada. Edite o lançamento e tente novamente.",
+      "Não foi possível salvar o lançamento.",
     );
   });
 
@@ -758,7 +845,7 @@ describe("FinancialEntryDialog", () => {
 
   it("derives the next recurrence date from the launch date and selected frequency", async () => {
     const user = userEvent.setup();
-    api.request.mockResolvedValue({});
+    api.request.mockResolvedValueOnce({ id: "entry-created" });
     renderDialog(
       <FinancialEntryDialog
         open
@@ -799,9 +886,9 @@ describe("FinancialEntryDialog", () => {
     expect(screen.getByText("Próximo vencimento: 11/02/2027")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
-    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
-    const [, recurrenceOptions] = api.request.mock.calls[1];
-    expect(JSON.parse(recurrenceOptions.body as string).firstDueDate).toBe(
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [, options] = api.request.mock.calls[0];
+    expect(JSON.parse(options.body as string).recurrence.firstDueDate).toBe(
       "2027-02-11",
     );
   });

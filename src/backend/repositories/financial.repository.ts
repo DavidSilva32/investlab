@@ -5,6 +5,7 @@ import {
   financialCategories,
   financialCategoryPreferences,
   financialEntries,
+  financialRecurrences,
 } from "@/infrastructure/database/schema";
 
 export type FinancialCategoryRecord = {
@@ -31,10 +32,21 @@ export type FinancialEntryInput = {
   kind: string;
   description: string;
   categoryId: string;
+  recurrenceId?: string | null;
   expectedAmount: string | null;
   expectedDate: string | null;
   actualAmount: string | null;
   actualDate: string | null;
+};
+
+export type FinancialEntryRecurrenceInput = {
+  amount: string;
+  categoryId: string;
+  description: string;
+  essential: boolean;
+  firstDueDate: string;
+  frequency: string;
+  kind: "INCOME" | "EXPENSE";
 };
 
 export class FinancialRepository {
@@ -142,6 +154,7 @@ export class FinancialRepository {
         kind: financialEntries.kind,
         description: financialEntries.description,
         categoryId: financialEntries.categoryId,
+        recurrenceId: financialEntries.recurrenceId,
         categoryName,
         expectedAmount: financialEntries.expectedAmount,
         expectedDate: financialEntries.expectedDate,
@@ -219,6 +232,48 @@ export class FinancialRepository {
       )
       .returning();
     return entry ?? null;
+  }
+
+  async saveEntryWithRecurrence(
+    id: string | null,
+    input: FinancialEntryInput,
+    recurrence: FinancialEntryRecurrenceInput,
+  ) {
+    const userId = requireDataOwnerId();
+    const database = getDatabaseClient();
+    return database.transaction(async (transaction) => {
+      const [createdRecurrence] = await transaction
+        .insert(financialRecurrences)
+        .values({ ...recurrence, userId })
+        .returning({ id: financialRecurrences.id });
+      if (!createdRecurrence) {
+        throw new Error("The recurrence could not be created.");
+      }
+
+      const values = {
+        ...input,
+        recurrenceId: createdRecurrence.id,
+      };
+      const [entry] = id
+        ? await transaction
+            .update(financialEntries)
+            .set({ ...values, updatedAt: new Date() })
+            .where(
+              and(
+                eq(financialEntries.id, id),
+                eq(financialEntries.userId, userId),
+              ),
+            )
+            .returning()
+        : await transaction
+            .insert(financialEntries)
+            .values({ ...values, userId })
+            .returning();
+      if (!entry) {
+        throw new Error("The linked financial entry could not be saved.");
+      }
+      return entry;
+    });
   }
 
   async deleteEntry(id: string) {
