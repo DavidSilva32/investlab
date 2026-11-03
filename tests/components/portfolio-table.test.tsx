@@ -362,6 +362,140 @@ describe("PortfolioTable", () => {
     ).toHaveProperty("disabled", true);
   });
 
+  it("allows changing the shared page size and resets pagination after changes", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+      configurable: true,
+      value: vi.fn(() => false),
+    });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const rows = Array.from({ length: 51 }, (_, index) => ({
+      id: String(index),
+      name: `Ativo ${String(index + 1).padStart(2, "0")}`,
+      value: index,
+    }));
+    const { rerender } = render(
+      <PortfolioTable
+        columns={columns}
+        rows={rows}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    const pageSize = screen.getByRole("combobox", {
+      name: "Registros por página",
+    });
+    expect(pageSize.textContent).toBe("10");
+    expect(screen.getByText("Mostrando 1–10 de 51")).toBeTruthy();
+    await user.click(pageSize);
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["10", "25", "50"]);
+    await user.click(screen.getByRole("option", { name: "25" }));
+    expect(screen.getByText("Mostrando 1–25 de 51")).toBeTruthy();
+    expect(screen.getByText("Ativo 25")).toBeTruthy();
+    expect(screen.queryByText("Ativo 26")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    expect(screen.getByText("Mostrando 26–50 de 51")).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "Registros por página" }),
+    );
+    await user.click(screen.getByRole("option", { name: "50" }));
+    expect(screen.getByText("Mostrando 1–50 de 51")).toBeTruthy();
+    expect(screen.getByText("Página 1 de 2")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    expect(screen.getByText("Mostrando 51–51 de 51")).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "Registros por página" }),
+    );
+    await user.click(screen.getByRole("option", { name: "10" }));
+    expect(screen.getByText("Mostrando 1–10 de 51")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    expect(screen.getByText("Mostrando 41–50 de 51")).toBeTruthy();
+    rerender(
+      <PortfolioTable
+        columns={columns}
+        rows={rows.slice(0, 3)}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+    expect(screen.getByText("Mostrando 1–3 de 3")).toBeTruthy();
+    expect(screen.getByText("Página 1 de 1")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Próxima página" }),
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("keeps filtered counts and page limits consistent with the selected size", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+      configurable: true,
+      value: vi.fn(() => false),
+    });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const rows = Array.from({ length: 51 }, (_, index) => ({
+      id: String(index),
+      name: `${index < 35 ? "Alvo" : "Outro"} ${String(index + 1).padStart(2, "0")}`,
+      value: index,
+    }));
+    render(
+      <PortfolioTable
+        columns={columns}
+        rows={rows}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Registros por página" }),
+    );
+    await user.click(screen.getByRole("option", { name: "25" }));
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor para Nome" }),
+      "Alvo",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    expect(screen.getByText("35 de 51 registros")).toBeTruthy();
+    expect(screen.getByText("Mostrando 1–25 de 35")).toBeTruthy();
+    expect(screen.queryByText("Alvo 26")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Próxima página" }));
+    expect(screen.getByText("Mostrando 26–35 de 35")).toBeTruthy();
+    expect(screen.getByText("Página 2 de 2")).toBeTruthy();
+  });
+
   it("keeps criteria in draft until apply, combines columns with AND, and resets pagination", async () => {
     const user = userEvent.setup();
     const rows = Array.from({ length: 23 }, (_, index) => ({
