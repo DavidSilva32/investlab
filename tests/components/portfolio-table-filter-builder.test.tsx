@@ -172,6 +172,21 @@ describe("PortfolioTableFilterBuilder", () => {
     expect(onClear).toHaveBeenCalledOnce();
   });
 
+  it("formats valid ISO dates in the active filter summary", () => {
+    render(
+      <PortfolioTableFilterBuilder
+        columns={[{ id: "date", label: "Data", filterType: "date" }]}
+        activeFilters={[{ columnId: "date", value: "2026-02-01" }]}
+        onApply={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("group", { name: "Filtros ativos" }).textContent,
+    ).toContain("Data: 01/02/2026");
+  });
+
   it("reopens active criteria, clears a value when its column changes, and removes criteria", async () => {
     const user = userEvent.setup();
     const onApply = vi.fn();

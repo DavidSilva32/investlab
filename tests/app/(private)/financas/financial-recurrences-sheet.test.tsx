@@ -158,6 +158,25 @@ describe("FinancialRecurrencesSheet", () => {
     expect(toast.success).toHaveBeenCalledWith("Recorrência atualizada.");
   });
 
+  it("closes the edit form and cancels a pending recurrence removal", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.click(screen.getByRole("button", { name: "Editar Aluguel" }));
+    await screen.findByRole("dialog", { name: "Editar recorrência" });
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Editar recorrência" }),
+      ).toBeNull(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Excluir Aluguel" }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
   it("confirms removal and preserves realized history when ending a template", async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();

@@ -548,6 +548,22 @@ describe("FinancialService", () => {
         recurrence: { ...body.recurrence, firstDueDate: "2026-11-10" },
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
+
+    repositories.findCategory.mockResolvedValueOnce(defaultCategory);
+    await expect(
+      service.createEntry({
+        ...body,
+        kind: "INCOME",
+        recurrence: { ...body.recurrence, essential: true },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    await expect(
+      service.createEntry({
+        ...body,
+        recurrenceId: recurringExpense().id,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
     expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledTimes(2);
 
     repositories.findEntry.mockResolvedValueOnce(entry());
