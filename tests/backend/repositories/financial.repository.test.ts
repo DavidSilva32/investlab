@@ -8,6 +8,7 @@ const database = vi.hoisted(() => ({
   insert: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock("@/infrastructure/database/client", () => ({
@@ -262,6 +263,104 @@ describe("FinancialRepository", () => {
         repository.updateEntry("missing", input),
       ),
     ).resolves.toBeNull();
+  });
+
+  it("creates a recurrence and linked entry in one transaction and rolls back failures", async () => {
+    const recurrenceId = "77777777-7777-4777-8777-777777777777";
+    const recurrence = {
+      amount: "550.00",
+      categoryId: "category-id",
+      description: "Aluguel",
+      essential: true,
+      firstDueDate: "2026-11-10",
+      frequency: "MONTHLY",
+      kind: "EXPENSE" as const,
+    };
+    const input = {
+      kind: "EXPENSE",
+      description: "Aluguel",
+      categoryId: "category-id",
+      recurrenceId: null,
+      expectedAmount: "550.00",
+      expectedDate: "2026-10-10",
+      actualAmount: null,
+      actualDate: null,
+    };
+    const insertedValues: Array<{ table: string; values: unknown }> = [];
+    const updatedValues: Array<{ table: string; values: unknown }> = [];
+    const returning = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: recurrenceId }])
+      .mockResolvedValueOnce([{ id: "entry-id", recurrenceId }]);
+    const transaction = {
+      insert: vi.fn((table) => ({
+        values: vi.fn((values) => {
+          insertedValues.push({ table: getTableName(table), values });
+          return { returning };
+        }),
+      })),
+      update: vi.fn((table) => ({
+        set: vi.fn((values) => {
+          updatedValues.push({ table: getTableName(table), values });
+          return { where: vi.fn(() => ({ returning })) };
+        }),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-transaction", () =>
+        repository.saveEntryWithRecurrence(null, input, recurrence),
+      ),
+    ).resolves.toMatchObject({ id: "entry-id", recurrenceId });
+    expect(database.transaction).toHaveBeenCalledOnce();
+    expect(insertedValues).toEqual([
+      {
+        table: "financial_recurrences",
+        values: { ...recurrence, userId: "owner-transaction" },
+      },
+      {
+        table: "financial_entries",
+        values: {
+          ...input,
+          recurrenceId,
+          userId: "owner-transaction",
+        },
+      },
+    ]);
+
+    returning
+      .mockReset()
+      .mockResolvedValueOnce([{ id: recurrenceId }])
+      .mockResolvedValueOnce([{ id: "existing-entry", recurrenceId }]);
+    await expect(
+      runWithDataOwner("owner-transaction", () =>
+        repository.saveEntryWithRecurrence("existing-entry", input, recurrence),
+      ),
+    ).resolves.toMatchObject({ id: "existing-entry", recurrenceId });
+    expect(updatedValues).toEqual([
+      {
+        table: "financial_entries",
+        values: {
+          ...input,
+          recurrenceId,
+          updatedAt: expect.any(Date),
+        },
+      },
+    ]);
+
+    returning
+      .mockReset()
+      .mockResolvedValueOnce([{ id: recurrenceId }])
+      .mockRejectedValueOnce(new Error("entry insert failed"));
+    await expect(
+      runWithDataOwner("owner-transaction", () =>
+        repository.saveEntryWithRecurrence(null, input, recurrence),
+      ),
+    ).rejects.toThrow("entry insert failed");
+    expect(database.transaction).toHaveBeenCalledTimes(3);
   });
 
   it("deletes only an entry belonging to the active owner", async () => {

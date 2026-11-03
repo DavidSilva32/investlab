@@ -1,0 +1,3 @@
+ALTER TABLE "financial_entries" ADD COLUMN "recurrenceId" uuid;--> statement-breakpoint
+ALTER TABLE "financial_entries" ADD CONSTRAINT "financial_entries_recurrenceId_financial_recurrences_id_fk" FOREIGN KEY ("recurrenceId") REFERENCES "public"."financial_recurrences"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "financial_entries_recurrence_idx" ON "financial_entries" USING btree ("recurrenceId");

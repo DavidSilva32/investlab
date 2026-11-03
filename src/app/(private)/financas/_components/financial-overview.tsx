@@ -24,6 +24,7 @@ type Entry = {
   description: string;
   categoryId: string;
   categoryName: string;
+  recurrenceId?: string | null;
   expectedAmount: string | null;
   expectedDate: string | null;
   actualAmount: string | null;

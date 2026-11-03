@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   financialRepository,
+  type FinancialEntryRecurrenceInput as RepositoryFinancialEntryRecurrenceInput,
   type FinancialEntryInput as RepositoryFinancialEntryInput,
 } from "@/backend/repositories/financial.repository";
 import { financialRecurrencesRepository } from "@/backend/repositories/financial-recurrences.repository";
@@ -121,10 +122,53 @@ function amountDateInput(
     kind: input.kind,
     description: input.description,
     categoryId: input.categoryId,
+    recurrenceId: input.recurrenceId ?? null,
     expectedAmount: input.expectedAmount?.toFixed(2) ?? null,
     expectedDate: expectedDate ? validateIsoDate(expectedDate) : null,
     actualAmount: input.actualAmount?.toFixed(2) ?? null,
     actualDate: actualDate ? validateIsoDate(actualDate) : null,
+  };
+}
+
+function recurrenceInput(
+  input: z.infer<typeof financialEntryCreateSchema>,
+): RepositoryFinancialEntryRecurrenceInput {
+  const recurrence = input.recurrence;
+  if (!recurrence) {
+    throw new ApplicationError("Informe os dados da recorrência.", 400);
+  }
+  if (input.kind === "INCOME" && recurrence.essential) {
+    throw new ApplicationError(
+      "Receitas recorrentes não podem ser marcadas como essenciais.",
+      400,
+    );
+  }
+  const amount = input.expectedAmount ?? input.actualAmount;
+  if (amount === null || amount === undefined) {
+    throw new ApplicationError(
+      "Informe um valor para criar a recorrência.",
+      400,
+    );
+  }
+  const firstDueDate = validateIsoDate(recurrence.firstDueDate);
+  const latestEntryDate = [input.expectedDate, input.actualDate]
+    .filter((date): date is string => date !== null && date !== undefined)
+    .sort()
+    .at(-1);
+  if (latestEntryDate && firstDueDate <= latestEntryDate) {
+    throw new ApplicationError(
+      "A primeira ocorrência precisa ser posterior às datas do lançamento.",
+      400,
+    );
+  }
+  return {
+    amount: amount.toFixed(2),
+    categoryId: input.categoryId,
+    description: input.description.trim(),
+    essential: recurrence.essential,
+    firstDueDate,
+    frequency: recurrence.frequency,
+    kind: input.kind,
   };
 }
 
@@ -240,6 +284,24 @@ export class FinancialService {
         400,
       );
     }
+    if (parsed.recurrence) {
+      if (parsed.recurrenceId) {
+        throw new ApplicationError(
+          "O lançamento já está vinculado a uma recorrência.",
+          409,
+        );
+      }
+      return financialRepository.saveEntryWithRecurrence(
+        null,
+        amountDateInput(parsed),
+        recurrenceInput(parsed),
+      );
+    }
+    await this.assertRecurrenceLink(
+      parsed.recurrenceId,
+      parsed.kind,
+      parsed.categoryId,
+    );
     return financialRepository.createEntry(amountDateInput(parsed));
   }
 
@@ -262,12 +324,48 @@ export class FinancialService {
         400,
       );
     }
+    if (parsed.recurrence) {
+      if (parsed.recurrenceId || current.recurrenceId) {
+        throw new ApplicationError(
+          "O lançamento já está vinculado a uma recorrência.",
+          409,
+        );
+      }
+      return financialRepository.saveEntryWithRecurrence(
+        parsed.id,
+        amountDateInput(parsed),
+        recurrenceInput(parsed),
+      );
+    }
+    await this.assertRecurrenceLink(
+      parsed.recurrenceId,
+      parsed.kind,
+      parsed.categoryId,
+    );
     const updated = await financialRepository.updateEntry(
       parsed.id,
       amountDateInput(parsed),
     );
     if (!updated) throw new ApplicationError("Lançamento não encontrado.", 404);
     return updated;
+  }
+
+  private async assertRecurrenceLink(
+    recurrenceId: string | null | undefined,
+    kind: string,
+    categoryId: string,
+  ) {
+    if (recurrenceId == null) return;
+    const recurrence =
+      await financialRecurrencesRepository.findRecurrence(recurrenceId);
+    if (!recurrence)
+      throw new ApplicationError("Recorrência não encontrada.", 404);
+    if (recurrence.kind !== kind || recurrence.categoryId !== categoryId) {
+      throw new ApplicationError(
+        "O tipo e a categoria do lançamento devem corresponder à recorrência.",
+        400,
+      );
+    }
   }
 
   async deleteEntry(id: string | null) {

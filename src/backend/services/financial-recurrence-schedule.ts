@@ -1,12 +1,6 @@
-export const financialRecurrenceFrequencies = [
-  "WEEKLY",
-  "BIWEEKLY",
-  "MONTHLY",
-  "BIMONTHLY",
-  "QUARTERLY",
-  "SEMIANNUALLY",
-  "YEARLY",
-] as const;
+import { financialRecurrenceFrequencies } from "@/backend/schemas/financial.schema";
+
+export { financialRecurrenceFrequencies };
 
 export type FinancialRecurrenceFrequency =
   (typeof financialRecurrenceFrequencies)[number];

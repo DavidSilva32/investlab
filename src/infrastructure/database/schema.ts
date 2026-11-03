@@ -891,6 +891,9 @@ export const financialEntries = pgTable(
     categoryId: uuid()
       .notNull()
       .references(() => financialCategories.id, { onDelete: "restrict" }),
+    recurrenceId: uuid().references(() => financialRecurrences.id, {
+      onDelete: "set null",
+    }),
     expectedAmount: numeric({ precision: 14, scale: 2 }),
     expectedDate: date(),
     actualAmount: numeric({ precision: 14, scale: 2 }),
@@ -923,6 +926,7 @@ export const financialEntries = pgTable(
       table.userId,
       table.actualDate,
     ),
+    index("financial_entries_recurrence_idx").on(table.recurrenceId),
   ],
 );
 /* v8 ignore stop */

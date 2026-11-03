@@ -91,6 +91,29 @@ describe("FinancialEntriesTable", () => {
     expect(onEdit).toHaveBeenCalledWith(entry);
   });
 
+  it("shows a launch linked to a recurrence as recurring and keeps launch actions", async () => {
+    const user = userEvent.setup();
+    render(
+      <FinancialEntriesTable
+        entries={[{ ...entry, recurrenceId: "rec-1" }]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Recorrente · Moradia")).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Aluguel" }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: "Editar" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("menuitem", { name: "Editar recorrência" }),
+    ).toBeNull();
+  });
+
   it("opens the recurrence model editor from a recurring occurrence", async () => {
     const user = userEvent.setup();
     const onEditRecurrence = vi.fn();
