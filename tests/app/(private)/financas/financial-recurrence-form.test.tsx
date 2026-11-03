@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -39,7 +39,7 @@ describe("FinancialRecurrenceForm", () => {
     );
     await user.click(await screen.findByRole("option", { name: "Entrada" }));
     await user.type(screen.getByLabelText("Descrição"), "Salário");
-    await user.type(screen.getByLabelText("Valor esperado (R$)"), "3200");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "320000");
     await user.click(
       screen.getByRole("button", { name: "Adicionar recorrência" }),
     );
@@ -53,6 +53,85 @@ describe("FinancialRecurrenceForm", () => {
       firstDueDate: "2026-10-01",
       essential: false,
     });
+  });
+
+  it("formats recurring values as Brazilian currency and parses cents when saving", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <FinancialRecurrenceForm
+        month="2026-10"
+        categories={[]}
+        editing={null}
+        onSave={onSave}
+        onCancelEdit={() => {}}
+      />,
+    );
+
+    const amount = screen.getByLabelText(
+      "Valor esperado (R$)",
+    ) as HTMLInputElement;
+    await user.type(amount, "960000");
+    expect(amount.value).toBe("R$ 9.600,00");
+    await user.type(screen.getByLabelText("Descrição"), "Aluguel");
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar recorrência" }),
+    );
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 9600 }),
+    );
+  });
+
+  it("blocks a zero recurring amount with feedback beside the field", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <FinancialRecurrenceForm
+        month="2026-10"
+        categories={[]}
+        editing={null}
+        onSave={onSave}
+        onCancelEdit={() => {}}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Descrição"), "Aluguel");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "0");
+
+    expect(screen.getByText("Informe um valor maior que zero.")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Adicionar recorrência" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("uses the end of the text when the input cannot report a caret position", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <FinancialRecurrenceForm
+        month="2026-10"
+        categories={[]}
+        editing={null}
+        onSave={onSave}
+        onCancelEdit={() => {}}
+      />,
+    );
+    const amount = screen.getByLabelText("Valor esperado (R$)");
+    Object.defineProperty(amount, "selectionStart", {
+      configurable: true,
+      get: () => null,
+    });
+    Object.defineProperty(amount, "selectionEnd", {
+      configurable: true,
+      get: () => null,
+    });
+
+    fireEvent.change(amount, { target: { value: "123" } });
+
+    expect((amount as HTMLInputElement).value).toBe("R$ 1,23");
   });
 
   it("submits an essential expense with only active expense categories", async () => {
@@ -80,7 +159,7 @@ describe("FinancialRecurrenceForm", () => {
     expect(screen.queryByRole("option", { name: "Oculta" })).toBeNull();
     await user.click(screen.getByRole("option", { name: "Moradia" }));
     await user.type(screen.getByLabelText("Descrição"), "Aluguel");
-    await user.type(screen.getByLabelText("Valor esperado (R$)"), "550");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "55000");
     await user.click(screen.getByText("Despesa essencial"));
     await user.click(
       screen.getByRole("button", { name: "Adicionar recorrência" }),
@@ -111,7 +190,7 @@ describe("FinancialRecurrenceForm", () => {
     );
 
     await user.type(screen.getByLabelText("Descrição"), "Internet");
-    await user.type(screen.getByLabelText("Valor esperado (R$)"), "120");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "12000");
     await user.click(
       screen.getByRole("button", { name: "Adicionar recorrência" }),
     );

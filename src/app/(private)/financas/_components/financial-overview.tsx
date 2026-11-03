@@ -5,7 +5,7 @@ import { FinancialEntriesTable } from "@/app/(private)/financas/_components/fina
 import { FinancialCategoryManager } from "@/app/(private)/financas/_components/financial-category-manager";
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
 import { FinancialRecurrencesSheet as RecurrencesSheet } from "@/app/(private)/financas/_components/financial-recurrences-sheet";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, CalendarClock, Plus, Tags } from "lucide-react";
@@ -124,6 +124,13 @@ export function FinancialOverview() {
   );
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const [editingRecurrenceId, setEditingRecurrenceId] = useState<string | null>(
+    null,
+  );
+  const clearEditingRecurrenceRequest = useCallback(
+    () => setEditingRecurrenceId(null),
+    [],
+  );
   const overview = useQuery({
     queryKey: queryKeys.finances.overview(month),
     queryFn: () =>
@@ -314,6 +321,10 @@ export function FinancialOverview() {
                   setEditingEntry(entry);
                   setEntryOpen(true);
                 }}
+                onEditRecurrence={(recurrenceId) => {
+                  setEditingRecurrenceId(recurrenceId);
+                  setRecurrencesOpen(true);
+                }}
               />
             </CardContent>
           </Card>
@@ -341,7 +352,10 @@ export function FinancialOverview() {
       />
       <RecurrencesSheet
         open={recurrencesOpen}
-        onOpenChange={setRecurrencesOpen}
+        onOpenChange={(open) => {
+          setRecurrencesOpen(open);
+          if (!open) setEditingRecurrenceId(null);
+        }}
         month={month}
         data={recurrences.data}
         loading={recurrences.isPending}
@@ -354,6 +368,8 @@ export function FinancialOverview() {
           void invalidateFinances(client);
         }}
         readOnly={!canEdit}
+        editRecurrenceId={editingRecurrenceId}
+        onEditRecurrenceHandled={clearEditingRecurrenceRequest}
       />
       <FinancialCategoryManager
         open={categoriesOpen}

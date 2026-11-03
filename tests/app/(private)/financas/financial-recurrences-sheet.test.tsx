@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -49,6 +50,124 @@ afterEach(() => {
 });
 
 describe("FinancialRecurrencesSheet", () => {
+  it("opens the selected recurrence editor when requested from a monthly occurrence", async () => {
+    const onEditRecurrenceHandled = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+          editRecurrenceId="salary-id"
+          onEditRecurrenceHandled={onEditRecurrenceHandled}
+        />
+      </QueryClientProvider>,
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Editar recorrência",
+    });
+    expect(within(dialog).getByLabelText("Descrição")).toHaveProperty(
+      "value",
+      "Salário",
+    );
+    expect(onEditRecurrenceHandled).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an edit request pending until its recurrence is available", async () => {
+    const onEditRecurrenceHandled = vi.fn();
+    const { rerender } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [], recurrenceOccurrences: [] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+          editRecurrenceId="salary-id"
+          onEditRecurrenceHandled={onEditRecurrenceHandled}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      screen.queryByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeNull();
+    expect(onEditRecurrenceHandled).not.toHaveBeenCalled();
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [recurrence], recurrenceOccurrences: [] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+          editRecurrenceId="salary-id"
+          onEditRecurrenceHandled={onEditRecurrenceHandled}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeTruthy();
+    expect(onEditRecurrenceHandled).toHaveBeenCalledOnce();
+  });
+
+  it("uses the end of the text when the input cannot report a caret position", async () => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [], recurrenceOccurrences: [occurrence] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Registrar realização" }),
+    );
+    const amount = screen.getByLabelText("Valor realizado (R$)");
+    Object.defineProperty(amount, "selectionStart", {
+      configurable: true,
+      get: () => null,
+    });
+    Object.defineProperty(amount, "selectionEnd", {
+      configurable: true,
+      get: () => null,
+    });
+
+    fireEvent.change(amount, { target: { value: "123" } });
+
+    expect((amount as HTMLInputElement).value).toBe("R$ 1,23");
+  });
+
   it("opens the model form in a dialog only after choosing Novo", async () => {
     const user = userEvent.setup();
     const client = new QueryClient();
@@ -119,7 +238,7 @@ describe("FinancialRecurrencesSheet", () => {
       await screen.findByRole("dialog", { name: "Nova recorrência" }),
     ).toBeTruthy();
     await user.type(screen.getByLabelText("Descrição"), "Salário");
-    await user.type(screen.getByLabelText("Valor esperado (R$)"), "5000");
+    await user.type(screen.getByLabelText("Valor esperado (R$)"), "500000");
     await user.click(
       screen.getByRole("button", { name: "Adicionar recorrência" }),
     );
@@ -234,6 +353,43 @@ describe("FinancialRecurrencesSheet", () => {
     ).toBe(false);
   });
 
+  it("does not register an occurrence with a zero realized amount", async () => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{
+            recurrences: [],
+            recurrenceOccurrences: [{ ...occurrence, expectedAmount: "0.00" }],
+          }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Registrar realização" }),
+    );
+
+    expect(
+      (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
+    ).toBe("R$ 0,00");
+    expect(
+      screen
+        .getByRole("button", { name: "Confirmar" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(api.request).not.toHaveBeenCalled();
+  });
+
   it("closes a realization dialog with Cancel without saving", async () => {
     const user = userEvent.setup();
     render(
@@ -294,7 +450,7 @@ describe("FinancialRecurrencesSheet", () => {
     );
     expect(
       (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
-    ).toBe("575.00");
+    ).toBe("R$ 575,00");
     expect(
       (
         screen.getByLabelText(
@@ -687,7 +843,10 @@ describe("FinancialRecurrencesSheet", () => {
       screen.getByRole("button", { name: "Registrar realização" }),
     );
     await user.clear(screen.getByLabelText("Valor realizado (R$)"));
-    await user.type(screen.getByLabelText("Valor realizado (R$)"), "575");
+    await user.type(screen.getByLabelText("Valor realizado (R$)"), "57500");
+    expect(
+      (screen.getByLabelText("Valor realizado (R$)") as HTMLInputElement).value,
+    ).toBe("R$ 575,00");
     await user.clear(screen.getByLabelText("Data do pagamento/recebimento"));
     await user.type(
       screen.getByLabelText("Data do pagamento/recebimento"),

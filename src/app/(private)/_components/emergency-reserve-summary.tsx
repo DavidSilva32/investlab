@@ -117,40 +117,46 @@ export function EmergencyReserveSummary({
             {calculation.horizons?.some(
               (horizon) => horizon.targetValue !== null,
             ) && (
-              <section
-                aria-label="Cenários de cobertura da reserva"
-                className="space-y-2 border-t pt-3"
-              >
-                <h3 className="text-sm font-medium">
-                  Referência por horizonte
-                </h3>
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  {calculation.horizons.map((horizon) => (
-                    <div
-                      key={horizon.months}
-                      className="rounded-lg border bg-muted/20 p-3"
-                    >
-                      <p className="text-xs text-muted-foreground">
-                        {horizon.months} meses
-                      </p>
-                      <p className="mt-1 font-semibold tabular-nums">
-                        {horizon.targetValue === null
-                          ? "Sem referência"
-                          : formatCurrency(horizon.targetValue)}
-                      </p>
-                      {!incomplete && horizon.difference !== null && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {horizon.difference > 0
-                            ? `Faltam ${formatCurrency(horizon.difference)}`
-                            : horizon.difference < 0
-                              ? `${formatCurrency(Math.abs(horizon.difference))} acima`
-                              : "Valor atingido"}
+              <Collapsible className="border-t pt-3">
+                <CollapsibleTrigger className="group flex min-h-10 w-fit cursor-pointer items-center gap-2 text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Comparar metas de 3, 6, 9 e 12 meses
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                  />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <section
+                    aria-label="Cenários de cobertura da reserva"
+                    className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+                  >
+                    {calculation.horizons.map((horizon) => (
+                      <div
+                        key={horizon.months}
+                        className="rounded-lg border bg-muted/20 p-3"
+                      >
+                        <p className="text-xs text-muted-foreground">
+                          {horizon.months} meses
                         </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </section>
+                        <p className="mt-1 font-semibold tabular-nums">
+                          {horizon.targetValue === null
+                            ? "Sem referência"
+                            : formatCurrency(horizon.targetValue)}
+                        </p>
+                        {!incomplete && horizon.difference !== null && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {horizon.difference > 0
+                              ? `Faltam ${formatCurrency(horizon.difference)}`
+                              : horizon.difference < 0
+                                ? `${formatCurrency(Math.abs(horizon.difference))} acima`
+                                : "Valor atingido"}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </section>
+                </CollapsibleContent>
+              </Collapsible>
             )}
             {hasPersonalTarget && incomplete ? (
               <p className="text-sm font-medium text-status-warning">
@@ -194,25 +200,20 @@ export function EmergencyReserveSummary({
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-3 space-y-2">
               <p>
-                A cobertura divide o valor conhecido das posições que você
-                selecionou como reserva pelo custo mensal considerado. Se ainda
-                não houver prazo salvo, o ponto de partida é 6 meses; você pode
-                ajustar esse prazo na configuração da Reserva. Os cenários de 3,
-                6, 9 e 12 meses usam o custo mensal selecionado e não projetam
-                aportes ou rendimentos.
+                Cobertura = valor das posições marcadas como reserva ÷ despesa
+                mensal escolhida. Sem uma meta salva, começamos por 6 meses;
+                você pode alterar esse prazo na Reserva.
               </p>
               <p>
-                Para a referência essencial, as recorrências são convertidas em
-                custo anual e divididas por 12 para chegar à média mensal.
+                Os cenários usam essa despesa mensal e não estimam aportes nem
+                rendimentos futuros.
               </p>
               {calculation.essentialMonthlyExpenses !== null &&
                 calculation.essentialMonthlyExpenses !== undefined && (
                   <p>
-                    O mínimo estimado pelas recorrências de despesas essenciais
-                    ativas é de{" "}
-                    {formatCurrency(calculation.essentialMonthlyExpenses)} por
-                    mês. Você pode escolher outra meta na configuração da
-                    Reserva.
+                    Referência das recorrências essenciais ativas: cerca de{" "}
+                    {formatCurrency(calculation.essentialMonthlyExpenses)}/mês.
+                    Você pode definir outra meta na Reserva.
                   </p>
                 )}
               {calculation.essentialExpenseSources?.length ? (
@@ -227,8 +228,8 @@ export function EmergencyReserveSummary({
                 </ul>
               ) : null}
               <p>
-                Este cálculo não verifica carência, resgate ou prazo para o
-                dinheiro ficar disponível; ele não confirma liquidez efetiva.
+                A cobertura não considera carência, prazo de resgate ou
+                disponibilidade imediata dos ativos.
               </p>
               {calculation.referenceDate && (
                 <p>

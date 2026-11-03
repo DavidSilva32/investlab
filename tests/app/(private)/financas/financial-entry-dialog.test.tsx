@@ -616,6 +616,66 @@ describe("FinancialEntryDialog", () => {
     );
   });
 
+  it("creates a recurrence while editing without moving the current launch into the recurring series", async () => {
+    const user = userEvent.setup();
+    const existingEntry = {
+      id: "entry-existing",
+      kind: "EXPENSE" as const,
+      description: "Aluguel",
+      categoryId: categories[0].id,
+      categoryName: "Moradia",
+      expectedAmount: "550.00",
+      expectedDate: "2026-10-10",
+      actualAmount: null,
+      actualDate: null,
+    };
+    api.request.mockResolvedValue({});
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={existingEntry}
+        onSaved={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Criar recorrência para este lançamento",
+      }),
+    );
+    expect(
+      (screen.getByLabelText("Próxima ocorrência") as HTMLInputElement).value,
+    ).toBe("10/11/2026");
+    await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
+
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    expect(api.request).toHaveBeenNthCalledWith(
+      1,
+      "/api/financial-entries",
+      expect.objectContaining({ method: "PATCH" }),
+      "Não foi possível salvar o lançamento.",
+    );
+    const entryOptions = api.request.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(entryOptions.body as string)).toMatchObject({
+      id: "entry-existing",
+      expectedAmount: 550,
+      expectedDate: "2026-10-10",
+    });
+    const recurrenceOptions = api.request.mock.calls[1]?.[1] as RequestInit;
+    expect(JSON.parse(recurrenceOptions.body as string)).toMatchObject({
+      description: "Aluguel",
+      amount: 550,
+      frequency: "MONTHLY",
+      firstDueDate: "2026-11-10",
+      essential: false,
+    });
+    expect(toast.success).toHaveBeenCalledWith(
+      "Lançamento atualizado e recorrência cadastrada.",
+    );
+  });
+
   it("creates a weekly recurrence from a realized-only amount and uses a safe failure fallback", async () => {
     const user = userEvent.setup();
     api.request.mockResolvedValueOnce({}).mockRejectedValueOnce("offline");

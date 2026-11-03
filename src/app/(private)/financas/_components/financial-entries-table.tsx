@@ -55,6 +55,7 @@ export type FinancialEntryRow = {
 };
 type OccurrenceRow = {
   id: string;
+  recurrenceId?: string;
   kind: Kind;
   description: string;
   category: string | null;
@@ -83,6 +84,7 @@ type TableRow = {
     }
   | {
       source: "Recorrente";
+      recurrenceId?: string;
     }
 );
 
@@ -100,12 +102,14 @@ export function FinancialEntriesTable({
   occurrences,
   readOnly,
   onEdit,
+  onEditRecurrence,
   onSaved,
 }: {
   entries: FinancialEntryRow[];
   occurrences: OccurrenceRow[];
   readOnly: boolean;
   onEdit: (entry: FinancialEntryRow) => void;
+  onEditRecurrence?: (recurrenceId: string) => void;
   onSaved?: () => void;
 }) {
   const [entriesToDelete, setEntriesToDelete] = useState<FinancialEntryRow[]>(
@@ -322,7 +326,31 @@ export function FinancialEntriesTable({
       width: "90px",
       sortable: false,
       render: (row) => {
-        if (readOnly || row.source === "Recorrente") return null;
+        if (readOnly) return null;
+        if (row.source === "Recorrente") {
+          const recurrenceId = row.recurrenceId;
+          if (!onEditRecurrence || !recurrenceId) return null;
+          return (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Ações para ${row.description} em ${dateLabel(row.due)}`}
+                >
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => onEditRecurrence(recurrenceId)}
+                >
+                  <Pencil aria-hidden="true" /> Editar recorrência
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          );
+        }
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

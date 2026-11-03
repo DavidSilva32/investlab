@@ -92,6 +92,44 @@ describe("FinancialEntriesTable", () => {
     expect(onEdit).toHaveBeenCalledWith(entry);
   });
 
+  it("opens the recurrence model editor from a recurring occurrence", async () => {
+    const user = userEvent.setup();
+    const onEditRecurrence = vi.fn();
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+        onEditRecurrence={onEditRecurrence}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Editar recorrência" }),
+    );
+
+    expect(onEditRecurrence).toHaveBeenCalledWith("rec-1");
+  });
+
   it("keeps view-only rows free of action controls", () => {
     render(
       <FinancialEntriesTable

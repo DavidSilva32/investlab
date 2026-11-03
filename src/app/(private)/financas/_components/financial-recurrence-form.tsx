@@ -1,12 +1,20 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  formatAmountInput,
+  formatBrazilianAmountValue,
+  getCurrencyInputSelection,
+  parseBrazilianAmount,
+  resolveCurrencyInputSelection,
+  type CurrencyInputSelection,
+} from "@/lib/currency-input";
 import {
   Select,
   SelectContent,
@@ -66,13 +74,47 @@ export function FinancialRecurrenceForm({
   const [kind, setKind] = useState<Kind>(editing?.kind ?? "EXPENSE");
   const [description, setDescription] = useState(editing?.description ?? "");
   const [categoryId, setCategoryId] = useState(editing?.categoryId ?? "");
-  const [amount, setAmount] = useState(editing?.amount ?? "");
+  const [amount, setAmount] = useState(
+    formatBrazilianAmountValue(editing?.amount ?? ""),
+  );
   const [frequency, setFrequency] = useState(editing?.frequency ?? "MONTHLY");
   const [firstDueDate, setFirstDueDate] = useState(
     editing?.firstDueDate ?? `${month}-01`,
   );
   const [essential, setEssential] = useState(editing?.essential ?? false);
   const [busy, setBusy] = useState(false);
+  const amountInputRef = useRef<HTMLInputElement>(null);
+  const amountSelectionRef = useRef<CurrencyInputSelection | null>(null);
+
+  useLayoutEffect(() => {
+    const input = amountInputRef.current;
+    const selection = amountSelectionRef.current;
+    if (!input || !selection) return;
+    const resolved = resolveCurrencyInputSelection(input.value, selection);
+    input.setSelectionRange(resolved.start, resolved.end, resolved.direction);
+    amountSelectionRef.current = null;
+  }, [amount]);
+
+  const parsedAmount = parseBrazilianAmount(amount);
+
+  function handleAmountChange(
+    value: string,
+    selectionStart: number | null,
+    selectionEnd: number | null,
+    selectionDirection: "forward" | "backward" | "none" | null,
+  ) {
+    const nextAmount = formatAmountInput(value);
+    const start = selectionStart ?? value.length;
+    const end = selectionEnd ?? start;
+    amountSelectionRef.current = getCurrencyInputSelection(
+      value,
+      nextAmount,
+      start,
+      end,
+      selectionDirection,
+    );
+    setAmount(nextAmount);
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -83,7 +125,7 @@ export function FinancialRecurrenceForm({
         kind,
         description,
         categoryId: categoryId || null,
-        amount: Number(amount),
+        amount: parsedAmount,
         frequency,
         firstDueDate,
         essential: kind === "EXPENSE" && essential,
@@ -166,14 +208,28 @@ export function FinancialRecurrenceForm({
         <div className="space-y-2">
           <Label htmlFor="rec-amount">Valor esperado (R$)</Label>
           <Input
+            ref={amountInputRef}
             id="rec-amount"
-            type="number"
-            min="0.01"
-            step="0.01"
+            inputMode="decimal"
             required
+            aria-describedby={
+              amount && parsedAmount <= 0 ? "rec-amount-error" : undefined
+            }
             value={amount}
-            onChange={(event) => setAmount(event.target.value)}
+            onChange={(event) =>
+              handleAmountChange(
+                event.target.value,
+                event.target.selectionStart,
+                event.target.selectionEnd,
+                event.target.selectionDirection,
+              )
+            }
           />
+          {amount && parsedAmount <= 0 && (
+            <p id="rec-amount-error" className="text-sm text-destructive">
+              Informe um valor maior que zero.
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label>Periodicidade</Label>
@@ -212,7 +268,9 @@ export function FinancialRecurrenceForm({
           Cancelar
         </Button>
         <Button
-          disabled={busy || !firstDueDate || !description.trim() || !amount}
+          disabled={
+            busy || !firstDueDate || !description.trim() || parsedAmount <= 0
+          }
         >
           {busy
             ? "Salvando…"

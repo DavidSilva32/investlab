@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const repository = vi.hoisted(() => ({
   listRecurrences: vi.fn(),
@@ -71,6 +71,8 @@ function occurrence(
 
 describe("FinancialRecurrencesService", () => {
   const service = new FinancialRecurrencesService();
+
+  afterEach(() => vi.useRealTimers());
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -158,6 +160,8 @@ describe("FinancialRecurrencesService", () => {
   });
 
   it("returns generated planned dates for active expenses only", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-15T12:00:00.000Z"));
     repository.listRecurrences.mockResolvedValue([
       expense({ frequency: "WEEKLY", firstDueDate: "2026-10-01" }),
       expense({
@@ -193,6 +197,8 @@ describe("FinancialRecurrencesService", () => {
   });
 
   it("attaches the latest earlier realized value for each recurrence", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-15T12:00:00.000Z"));
     repository.listRecurrences.mockResolvedValue([
       expense({ frequency: "WEEKLY", firstDueDate: "2026-10-01" }),
     ]);
