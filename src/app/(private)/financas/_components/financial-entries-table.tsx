@@ -5,10 +5,25 @@ import {
   ArrowDown,
   ArrowUp,
   CalendarCheck,
+  CarFront,
+  CircleEllipsis,
+  FolderOpen,
+  Gift,
+  GraduationCap,
+  House,
+  Landmark,
+  ReceiptText,
+  ShieldCheck,
+  Utensils,
+  WalletCards,
+  HeartPulse,
+  BriefcaseBusiness,
+  PartyPopper,
   MoreHorizontal,
   Pencil,
   CircleStop,
   Trash2,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
@@ -122,6 +137,43 @@ const dateLabel = (value: string | null) =>
         new Date(`${value}T00:00:00Z`),
       )
     : "Sem data";
+const categoryIcons: Record<string, LucideIcon> = {
+  salario: WalletCards,
+  "trabalho autonomo": BriefcaseBusiness,
+  beneficios: Gift,
+  "renda de aluguel": House,
+  "outras entradas": CircleEllipsis,
+  moradia: House,
+  alimentacao: Utensils,
+  transporte: CarFront,
+  saude: HeartPulse,
+  educacao: GraduationCap,
+  "contas e servicos": ReceiptText,
+  lazer: PartyPopper,
+  "impostos e taxas": Landmark,
+  seguros: ShieldCheck,
+  "outras despesas": CircleEllipsis,
+};
+const categoryIcon = (name: string) => {
+  const normalized = name
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+  return categoryIcons[normalized] ?? FolderOpen;
+};
+const movementFilterOptions = [
+  { value: "INCOME", label: "Entrada" },
+  { value: "EXPENSE", label: "Saída" },
+];
+const stateFilterOptions = [
+  { value: "Previsto", label: "Previsto" },
+  { value: "Realizado", label: "Realizado" },
+];
+const sourceFilterOptions = [
+  { value: "Avulso", label: "Avulso" },
+  { value: "Recorrente", label: "Recorrente" },
+];
 
 export function FinancialEntriesTable({
   entries,
@@ -323,28 +375,47 @@ export function FinancialEntriesTable({
   }
   async function saveRealization(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (
-      !realizing ||
-      realizing.recordType !== "occurrence" ||
-      !realizing.recurrenceId ||
-      !realizing.due
-    )
-      return;
+    if (!realizing) return;
     setRealizingBusy(true);
     try {
-      await apiRequest(
-        "/api/financial-recurrences/occurrences",
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            recurrenceId: realizing.recurrenceId,
-            dueDate: realizing.due,
-            actualDate,
-            actualAmount: parseBrazilianAmount(realizedAmount),
-          }),
-        },
-        "Não foi possível registrar a realização.",
-      );
+      if (realizing.recordType === "entry") {
+        await apiRequest(
+          "/api/financial-entries",
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              id: realizing.entry.id,
+              kind: realizing.entry.kind,
+              description: realizing.entry.description,
+              categoryId: realizing.entry.categoryId,
+              recurrenceId: realizing.entry.recurrenceId ?? null,
+              expectedAmount:
+                realizing.entry.expectedAmount === null
+                  ? null
+                  : Number(realizing.entry.expectedAmount),
+              expectedDate: realizing.entry.expectedDate,
+              actualAmount: parseBrazilianAmount(realizedAmount),
+              actualDate,
+            }),
+          },
+          "Não foi possível registrar a realização.",
+        );
+      } else {
+        if (!realizing.recurrenceId || !realizing.due) return;
+        await apiRequest(
+          "/api/financial-recurrences/occurrences",
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              recurrenceId: realizing.recurrenceId,
+              dueDate: realizing.due,
+              actualDate,
+              actualAmount: parseBrazilianAmount(realizedAmount),
+            }),
+          },
+          "Não foi possível registrar a realização.",
+        );
+      }
       toast.success("Realização registrada.");
       setRealizing(null);
       onSaved?.();
@@ -452,12 +523,35 @@ export function FinancialEntriesTable({
       width: "minmax(180px, 1fr)",
       value: (row) => row.description,
       render: (row) => (
-        <div className="min-w-0">
-          <span className="block truncate font-medium">{row.description}</span>
-          <span className="text-xs text-muted-foreground">
-            {row.source} · {row.categoryName ?? row.category ?? "Sem categoria"}
+        <span className="block truncate font-medium">{row.description}</span>
+      ),
+    },
+    {
+      id: "category",
+      label: "Categoria",
+      width: "160px",
+      value: (row) => row.categoryName ?? row.category ?? "Sem categoria",
+      render: (row) => {
+        const name = row.categoryName ?? row.category ?? "Sem categoria";
+        const Icon = categoryIcon(name);
+        return (
+          <span className="inline-flex items-center gap-2">
+            <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
+            <span className="truncate">{name}</span>
           </span>
-        </div>
+        );
+      },
+    },
+    {
+      id: "source",
+      label: "Origem",
+      width: "115px",
+      value: (row) => row.source,
+      filterOptions: sourceFilterOptions,
+      render: (row) => (
+        <span className="rounded-full bg-muted px-2.5 py-1 text-xs">
+          {row.source}
+        </span>
       ),
     },
     {
@@ -465,6 +559,7 @@ export function FinancialEntriesTable({
       label: "Tipo",
       width: "110px",
       value: (row) => row.kind,
+      filterOptions: movementFilterOptions,
       render: (row) => (
         <span className="inline-flex items-center gap-1.5">
           {row.kind === "INCOME" ? (
@@ -502,6 +597,7 @@ export function FinancialEntriesTable({
       label: "Situação",
       width: "120px",
       value: (row) => row.state,
+      filterOptions: stateFilterOptions,
       render: (row) => (
         <span className="rounded-full bg-muted px-2.5 py-1 text-xs">
           {row.state}
@@ -585,6 +681,15 @@ export function FinancialEntriesTable({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {(row.state === "Previsto" ||
+                (row.realAmount !== null && row.realDate === null)) && (
+                <DropdownMenuItem onSelect={() => openRealization(row)}>
+                  <CalendarCheck aria-hidden="true" />
+                  {row.state === "Previsto"
+                    ? "Registrar realizado"
+                    : "Informar data realizada"}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={() => onEdit(row.entry)}>
                 <Pencil aria-hidden="true" /> Editar
               </DropdownMenuItem>
@@ -724,7 +829,8 @@ export function FinancialEntriesTable({
           <DialogHeader>
             <DialogTitle>Registrar realização</DialogTitle>
             <DialogDescription>
-              {realizing?.description} · vencimento{" "}
+              {realizing?.description} ·{" "}
+              {realizing?.recordType === "entry" ? "previsão" : "vencimento"}{" "}
               {dateLabel(realizing?.due ?? null)}
             </DialogDescription>
           </DialogHeader>

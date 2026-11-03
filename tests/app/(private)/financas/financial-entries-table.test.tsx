@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -102,7 +108,12 @@ describe("FinancialEntriesTable", () => {
       />,
     );
 
-    expect(screen.getByText("Recorrente · Moradia")).toBeTruthy();
+    const row = screen.getByRole("row", { name: /Aluguel/ });
+    expect(within(row).getByRole("cell", { name: "Aluguel" })).toBeTruthy();
+    expect(within(row).getByRole("cell", { name: "Recorrente" })).toBeTruthy();
+    expect(
+      within(row).getByRole("cell", { name: "Moradia" }).querySelector("svg"),
+    ).toBeTruthy();
     await user.click(
       screen.getByRole("button", { name: "Ações para Aluguel" }),
     );
@@ -112,6 +123,20 @@ describe("FinancialEntriesTable", () => {
     expect(
       screen.queryByRole("menuitem", { name: "Editar recorrência" }),
     ).toBeNull();
+  });
+
+  it("renders a generic icon for a personalized category", () => {
+    render(
+      <FinancialEntriesTable
+        entries={[{ ...entry, categoryName: "Veterinário" }]}
+        occurrences={[]}
+        readOnly
+        onEdit={() => {}}
+      />,
+    );
+
+    const categoryCell = screen.getByRole("cell", { name: "Veterinário" });
+    expect(categoryCell.querySelector("svg")).toBeTruthy();
   });
 
   it("opens the recurrence model editor from a recurring occurrence", async () => {
@@ -204,6 +229,98 @@ describe("FinancialEntriesTable", () => {
     });
     expect(onSaved).toHaveBeenCalledOnce();
     expect(toast.success).toHaveBeenCalledWith("Realização registrada.");
+  });
+
+  it("records an avulso realization without changing its forecast", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({});
+    const plannedEntry = { ...entry, actualAmount: null, actualDate: null };
+    render(
+      <FinancialEntriesTable
+        entries={[plannedEntry]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Ações para Aluguel" }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Registrar realizado" }),
+    );
+    await user.clear(screen.getByLabelText("Valor realizado (R$)"));
+    await user.type(screen.getByLabelText("Valor realizado (R$)"), "60000");
+    await user.click(screen.getByRole("button", { name: "Salvar realização" }));
+
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const [url, request] = api.request.mock.calls[0];
+    expect(url).toBe("/api/financial-entries");
+    expect(request.method).toBe("PATCH");
+    expect(JSON.parse(request.body)).toMatchObject({
+      id: "entry-1",
+      recurrenceId: null,
+      expectedAmount: 550,
+      expectedDate: "2026-10-10",
+      actualAmount: 600,
+      actualDate: expect.any(String),
+    });
+  });
+
+  it("uses option selectors for fixed type and origin filters", async () => {
+    const user = userEvent.setup();
+    render(
+      <FinancialEntriesTable
+        entries={[entry]}
+        occurrences={[
+          {
+            id: "rec-income",
+            recurrenceId: "rec-income",
+            kind: "INCOME",
+            description: "Salário",
+            category: "Salário",
+            dueDate: "2026-10-12",
+            expectedAmount: "3000.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(await screen.findByRole("option", { name: "Tipo" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 1" }));
+    expect(await screen.findByRole("option", { name: "Entrada" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Saída" })).toBeTruthy();
+    await user.click(screen.getByRole("option", { name: "Saída" }));
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.click(screen.getByRole("combobox", { name: "Coluna 2" }));
+    await user.click(await screen.findByRole("option", { name: "Origem" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 2" }));
+    expect(await screen.findByRole("option", { name: "Avulso" })).toBeTruthy();
+    await user.click(screen.getByRole("option", { name: "Avulso" }));
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar critério" }),
+    );
+    await user.click(screen.getByRole("combobox", { name: "Coluna 3" }));
+    await user.click(await screen.findByRole("option", { name: "Situação" }));
+    await user.click(screen.getByRole("combobox", { name: "Valor 3" }));
+    expect(
+      await screen.findByRole("option", { name: "Realizado" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("option", { name: "Realizado" }));
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    expect(screen.getByText("Aluguel")).toBeTruthy();
+    expect(screen.queryByText("Salário")).toBeNull();
   });
 
   it("deletes or ends a recurrence from its row action and keeps history copy clear", async () => {
@@ -358,7 +475,7 @@ describe("FinancialEntriesTable", () => {
     expect(screen.getByText("Reembolso sem data")).toBeTruthy();
     expect(screen.getByText("Conta variável")).toBeTruthy();
     expect(screen.getByText("Salário recebido")).toBeTruthy();
-    expect(screen.getByText(/Recorrente · Sem categoria/)).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Origem" })).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Sem data").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Realizado").length).toBeGreaterThan(1);

@@ -63,6 +63,14 @@ describe("FinancialHistory", () => {
         "Ainda não há dados realizados para comparar no histórico.",
       ),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Histórico realizado" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Mostra entradas e saídas realizadas; previsões não entram neste histórico.",
+      ),
+    ).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBe(3);
     expect(
       screen.queryByText(/meses sem registros não representam valores zero/),
