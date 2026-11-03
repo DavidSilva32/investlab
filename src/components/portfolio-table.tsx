@@ -7,7 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -18,6 +18,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   PortfolioTableFilterBuilder,
@@ -72,7 +79,8 @@ const collator = new Intl.Collator("pt-BR", {
   numeric: true,
   sensitivity: "base",
 });
-const PAGE_SIZE = 10;
+const PAGE_SIZES = [10, 25, 50] as const;
+const DEFAULT_PAGE_SIZE = PAGE_SIZES[0];
 
 export function PortfolioTable<Row extends { id: string }>({
   columns,
@@ -82,8 +90,10 @@ export function PortfolioTable<Row extends { id: string }>({
   toolbar,
   toolbarSummary,
 }: PortfolioTableProps<Row>) {
+  const pageSizeSelectId = `portfolio-table-page-size-${useId()}`;
   const [sort, setSort] = useState(initialSort);
   const [pagination, setPagination] = useState({ rows, page: 0 });
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [appliedFilters, setAppliedFilters] = useState<PortfolioTableFilter[]>(
     [],
   );
@@ -161,7 +171,7 @@ export function PortfolioTable<Row extends { id: string }>({
     );
   }
 
-  const pageCount = Math.ceil(sortedRows.length / PAGE_SIZE);
+  const pageCount = Math.ceil(sortedRows.length / pageSize);
   const hasActiveFilters = appliedFilters.length > 0;
   const filterControls = (
     <PortfolioTableFilterBuilder
@@ -194,11 +204,11 @@ export function PortfolioTable<Row extends { id: string }>({
   }
   const currentPage = Math.min(page, pageCount - 1);
   const pageRows = sortedRows.slice(
-    currentPage * PAGE_SIZE,
-    (currentPage + 1) * PAGE_SIZE,
+    currentPage * pageSize,
+    (currentPage + 1) * pageSize,
   );
-  const firstRow = currentPage * PAGE_SIZE + 1;
-  const lastRow = Math.min((currentPage + 1) * PAGE_SIZE, sortedRows.length);
+  const firstRow = currentPage * pageSize + 1;
+  const lastRow = Math.min((currentPage + 1) * pageSize, sortedRows.length);
 
   return (
     <div className="min-w-0">
@@ -312,36 +322,68 @@ export function PortfolioTable<Row extends { id: string }>({
                 <p aria-live="polite" className="text-sm text-muted-foreground">
                   Mostrando {firstRow}–{lastRow} de {sortedRows.length}
                 </p>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label="Página anterior"
-                    onClick={() =>
-                      setPagination({ rows, page: currentPage - 1 })
-                    }
-                    disabled={currentPage === 0}
-                  >
-                    <ChevronLeft aria-hidden="true" className="size-4" />
-                    Anterior
-                  </Button>
-                  <span className="min-w-16 text-center text-sm tabular-nums text-muted-foreground">
-                    Página {currentPage + 1} de {pageCount}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label="Próxima página"
-                    onClick={() =>
-                      setPagination({ rows, page: currentPage + 1 })
-                    }
-                    disabled={currentPage >= pageCount - 1}
-                  >
-                    Próxima
-                    <ChevronRight aria-hidden="true" className="size-4" />
-                  </Button>
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor={pageSizeSelectId}
+                      className="whitespace-nowrap text-sm text-muted-foreground"
+                    >
+                      Registros por página
+                    </label>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(value) => {
+                        setPageSize(Number(value));
+                        setPagination({ rows, page: 0 });
+                      }}
+                    >
+                      <SelectTrigger
+                        id={pageSizeSelectId}
+                        aria-label="Registros por página"
+                        className="h-8 w-[4.5rem]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAGE_SIZES.map((size) => (
+                          <SelectItem key={size} value={String(size)}>
+                            {size}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label="Página anterior"
+                      onClick={() =>
+                        setPagination({ rows, page: currentPage - 1 })
+                      }
+                      disabled={currentPage === 0}
+                    >
+                      <ChevronLeft aria-hidden="true" className="size-4" />
+                      Anterior
+                    </Button>
+                    <span className="min-w-16 text-center text-sm tabular-nums text-muted-foreground">
+                      Página {currentPage + 1} de {pageCount}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label="Próxima página"
+                      onClick={() =>
+                        setPagination({ rows, page: currentPage + 1 })
+                      }
+                      disabled={currentPage >= pageCount - 1}
+                    >
+                      Próxima
+                      <ChevronRight aria-hidden="true" className="size-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </TableCell>
