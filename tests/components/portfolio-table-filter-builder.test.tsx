@@ -103,6 +103,56 @@ describe("PortfolioTableFilterBuilder", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  it("masks and validates dates before applying date criteria", async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    render(
+      <PortfolioTableFilterBuilder
+        columns={[{ id: "date", label: "Data", filterType: "date" }]}
+        activeFilters={[]}
+        onApply={onApply}
+        onClear={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    const date = screen.getByRole("textbox", { name: "Valor 1" });
+    await user.type(date, "abc");
+    expect((date as HTMLInputElement).value).toBe("");
+    expect(
+      (screen.getByRole("button", { name: "Filtrar" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    await user.type(date, "01022026");
+    expect((date as HTMLInputElement).value).toBe("01/02/2026");
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(onApply).toHaveBeenCalledWith([
+      { columnId: "date", value: "2026-02-01" },
+    ]);
+  });
+
+  it("formats monetary values and stores a numeric amount", async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    render(
+      <PortfolioTableFilterBuilder
+        columns={[{ id: "amount", label: "Valor", filterType: "currency" }]}
+        activeFilters={[]}
+        onApply={onApply}
+        onClear={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    const amount = screen.getByRole("textbox", { name: "Valor 1" });
+    await user.type(amount, "12345");
+    expect((amount as HTMLInputElement).value).toBe("R$ 123,45");
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(onApply).toHaveBeenCalledWith([
+      { columnId: "amount", value: "123.45" },
+    ]);
+  });
+
   it("shows active criteria and clears applied filters explicitly", async () => {
     const user = userEvent.setup();
     const onClear = vi.fn();

@@ -904,4 +904,47 @@ describe("PortfolioTable", () => {
     );
     expect(screen.getByText("Nenhum resultado encontrado.")).toBeTruthy();
   });
+
+  it("filters currency columns by the exact masked amount", async () => {
+    const user = userEvent.setup();
+    type AmountRow = { id: string; name: string; amount: number };
+    const amountColumns: PortfolioTableColumn<AmountRow>[] = [
+      {
+        id: "name",
+        label: "Lançamento",
+        width: "50%",
+        value: (row) => row.name,
+        render: (row) => row.name,
+      },
+      {
+        id: "amount",
+        label: "Valor",
+        width: "50%",
+        value: (row) => row.amount,
+        filterType: "currency",
+        render: (row) => row.amount,
+      },
+    ];
+    render(
+      <PortfolioTable
+        columns={amountColumns}
+        rows={[
+          { id: "1", name: "Aluguel", amount: 550 },
+          { id: "2", name: "Energia", amount: 200 },
+        ]}
+        initialSort={{ id: "name", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.click(screen.getByRole("combobox", { name: "Coluna 1" }));
+    await user.click(screen.getByRole("option", { name: "Valor" }));
+    const amount = screen.getByRole("textbox", { name: "Valor 1" });
+    await user.type(amount, "55000");
+    expect((amount as HTMLInputElement).value).toBe("R$ 550,00");
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+    expect(screen.getByText("Aluguel")).toBeTruthy();
+    expect(screen.queryByText("Energia")).toBeNull();
+  });
 });

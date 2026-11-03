@@ -5,25 +5,10 @@ import {
   ArrowDown,
   ArrowUp,
   CalendarCheck,
-  CarFront,
-  CircleEllipsis,
-  FolderOpen,
-  Gift,
-  GraduationCap,
-  House,
-  Landmark,
-  ReceiptText,
-  ShieldCheck,
-  Utensils,
-  WalletCards,
-  HeartPulse,
-  BriefcaseBusiness,
-  PartyPopper,
   MoreHorizontal,
   Pencil,
   CircleStop,
   Trash2,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
@@ -70,6 +55,7 @@ import {
 } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getFinancialCategoryIcon } from "@/app/(private)/financas/_components/financial-category-icons";
 import {
   Dialog,
   DialogContent,
@@ -137,31 +123,6 @@ const dateLabel = (value: string | null) =>
         new Date(`${value}T00:00:00Z`),
       )
     : "Sem data";
-const categoryIcons: Record<string, LucideIcon> = {
-  salario: WalletCards,
-  "trabalho autonomo": BriefcaseBusiness,
-  beneficios: Gift,
-  "renda de aluguel": House,
-  "outras entradas": CircleEllipsis,
-  moradia: House,
-  alimentacao: Utensils,
-  transporte: CarFront,
-  saude: HeartPulse,
-  educacao: GraduationCap,
-  "contas e servicos": ReceiptText,
-  lazer: PartyPopper,
-  "impostos e taxas": Landmark,
-  seguros: ShieldCheck,
-  "outras despesas": CircleEllipsis,
-};
-const categoryIcon = (name: string) => {
-  const normalized = name
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .trim()
-    .toLocaleLowerCase("pt-BR");
-  return categoryIcons[normalized] ?? FolderOpen;
-};
 const movementFilterOptions = [
   { value: "INCOME", label: "Entrada" },
   { value: "EXPENSE", label: "Saída" },
@@ -464,6 +425,15 @@ export function FinancialEntriesTable({
   const allRowsSelected =
     rows.length > 0 && selectedRows.length === rows.length;
   const someRowsSelected = selectedRows.length > 0 && !allRowsSelected;
+  const categoryFilterOptions = Array.from(
+    new Set(
+      rows
+        .map((row) => row.categoryName ?? row.category ?? "Sem categoria")
+        .filter(Boolean),
+    ),
+  )
+    .sort((left, right) => left.localeCompare(right, "pt-BR"))
+    .map((category) => ({ value: category, label: category }));
   const columns: PortfolioTableColumn<TableRow>[] = [
     {
       id: "selection",
@@ -515,6 +485,7 @@ export function FinancialEntriesTable({
       label: "Data",
       width: "110px",
       value: (row) => row.due,
+      filterType: "date",
       render: (row) => dateLabel(row.due),
     },
     {
@@ -531,9 +502,10 @@ export function FinancialEntriesTable({
       label: "Categoria",
       width: "160px",
       value: (row) => row.categoryName ?? row.category ?? "Sem categoria",
+      filterOptions: categoryFilterOptions,
       render: (row) => {
         const name = row.categoryName ?? row.category ?? "Sem categoria";
-        const Icon = categoryIcon(name);
+        const Icon = getFinancialCategoryIcon(name);
         return (
           <span className="inline-flex items-center gap-2">
             <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
@@ -590,6 +562,7 @@ export function FinancialEntriesTable({
       label: "Previsto",
       width: "130px",
       value: (row) => (row.amount === null ? null : Number(row.amount)),
+      filterable: false,
       render: (row) => money(row.amount),
     },
     {
@@ -609,6 +582,7 @@ export function FinancialEntriesTable({
       label: "Realizado",
       width: "150px",
       value: (row) => (row.realAmount === null ? null : Number(row.realAmount)),
+      filterable: false,
       render: (row) =>
         row.realAmount ? (
           <span>

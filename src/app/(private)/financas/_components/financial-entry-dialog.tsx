@@ -18,11 +18,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { FinancialCategoryQuickCreateDialog } from "@/app/(private)/financas/_components/financial-category-quick-create-dialog";
 import {
   formatAmountInput,
@@ -39,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getFinancialCategoryIcon } from "@/app/(private)/financas/_components/financial-category-icons";
 
 type Kind = "INCOME" | "EXPENSE";
 type Category = { id: string; kind: Kind; name: string; active: boolean };
@@ -351,11 +351,20 @@ export function FinancialEntryDialog({
                 <SelectValue placeholder="Selecione uma categoria" />
               </SelectTrigger>
               <SelectContent>
-                {availableCategories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
-                  </SelectItem>
-                ))}
+                {availableCategories.map((category) => {
+                  const Icon = getFinancialCategoryIcon(category.name);
+                  return (
+                    <SelectItem key={category.id} value={category.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <Icon
+                          aria-hidden="true"
+                          className="size-4 text-muted-foreground"
+                        />
+                        {category.name}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -400,29 +409,27 @@ export function FinancialEntryDialog({
                       />
                       Despesa essencial
                     </label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 shrink-0"
-                            aria-label="Ajuda sobre despesa essencial"
-                          >
-                            <CircleHelp
-                              aria-hidden="true"
-                              className="size-4 text-muted-foreground"
-                            />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-64 text-center">
-                          Marque gastos necessários para manter suas
-                          necessidades básicas. Eles compõem a base mensal da
-                          sua reserva de emergência.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 shrink-0"
+                          aria-label="Ajuda sobre despesa essencial"
+                        >
+                          <CircleHelp
+                            aria-hidden="true"
+                            className="size-4 text-muted-foreground"
+                          />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="max-w-64 text-sm">
+                        Marque gastos necessários para manter suas necessidades
+                        básicas. Eles compõem a base mensal da sua reserva de
+                        emergência.
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 )}
                 <div className="space-y-2">
