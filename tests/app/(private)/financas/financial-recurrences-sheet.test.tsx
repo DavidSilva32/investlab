@@ -31,6 +31,8 @@ function renderSheet({
   readOnly = false,
   retry = vi.fn(),
   onSaved = vi.fn(),
+  editRecurrenceId,
+  onEditRecurrenceHandled = vi.fn(),
 }: {
   recurrences?: (typeof activeRecurrence)[];
   loading?: boolean;
@@ -38,6 +40,8 @@ function renderSheet({
   readOnly?: boolean;
   retry?: () => void;
   onSaved?: () => void;
+  editRecurrenceId?: string;
+  onEditRecurrenceHandled?: () => void;
 } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -55,6 +59,8 @@ function renderSheet({
         categories={[]}
         onSaved={onSaved}
         readOnly={readOnly}
+        editRecurrenceId={editRecurrenceId}
+        onEditRecurrenceHandled={onEditRecurrenceHandled}
       />
     </QueryClientProvider>,
   );
@@ -158,6 +164,19 @@ describe("FinancialRecurrencesSheet", () => {
     expect(toast.success).toHaveBeenCalledWith("Recorrência atualizada.");
   });
 
+  it("opens and consumes a requested recurrence edit", async () => {
+    const onEditRecurrenceHandled = vi.fn();
+    renderSheet({
+      editRecurrenceId: activeRecurrence.id,
+      onEditRecurrenceHandled,
+    });
+
+    expect(
+      await screen.findByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeTruthy();
+    await waitFor(() => expect(onEditRecurrenceHandled).toHaveBeenCalledOnce());
+  });
+
   it("closes the edit form and cancels a pending recurrence removal", async () => {
     const user = userEvent.setup();
     renderSheet();
@@ -240,6 +259,20 @@ describe("FinancialRecurrencesSheet", () => {
     expect(toast.success).toHaveBeenCalledWith("Recorrência reativada.");
     expect(onSaved).toHaveBeenCalledOnce();
     expect(client.getQueryCache().getAll()).toHaveLength(1);
+  });
+
+  it("uses a safe fallback when reactivating a template fails without an error", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue("offline");
+    renderSheet({ recurrences: [endedRecurrence] });
+
+    await user.click(screen.getByRole("button", { name: "Reativar Aluguel" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível reativar a recorrência.",
+      ),
+    );
   });
 
   it("hides edit and removal controls in read-only mode", () => {

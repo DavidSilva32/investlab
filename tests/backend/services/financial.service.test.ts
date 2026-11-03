@@ -587,6 +587,27 @@ describe("FinancialService", () => {
     expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledTimes(2);
   });
 
+  it("allows an income recurrence when it is not marked essential", async () => {
+    repositories.findCategory.mockResolvedValueOnce(defaultCategory);
+
+    await expect(
+      service.createEntry({
+        kind: "INCOME",
+        description: "Salário",
+        categoryId: defaultCategory.id,
+        expectedAmount: 5000,
+        expectedDate: "2026-10-10",
+        recurrence: {
+          frequency: "MONTHLY",
+          firstDueDate: "2026-11-10",
+          essential: false,
+        },
+      }),
+    ).resolves.toMatchObject({
+      recurrenceId: "77777777-7777-4777-8777-777777777777",
+    });
+  });
+
   it("rejects invalid or missing entry updates and deletions", async () => {
     await expect(service.updateEntry({ id: "bad" })).rejects.toMatchObject({
       statusCode: 400,

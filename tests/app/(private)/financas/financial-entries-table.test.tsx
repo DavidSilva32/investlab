@@ -162,6 +162,34 @@ describe("FinancialEntriesTable", () => {
     expect(categoryCell.querySelector("svg")).toBeTruthy();
   });
 
+  it("labels occurrences without a category", () => {
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-12",
+            recurrenceId: "rec-1",
+            kind: "INCOME",
+            description: "Receita sem categoria",
+            category: null,
+            dueDate: "2026-10-12",
+            expectedAmount: "3000.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly
+        onEdit={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("row", { name: /Receita sem categoria/ }).textContent,
+    ).toContain("Sem categoria");
+  });
+
   it("opens the recurrence model editor from a recurring occurrence", async () => {
     const user = userEvent.setup();
     const onEditRecurrence = vi.fn();
@@ -299,6 +327,19 @@ describe("FinancialEntriesTable", () => {
       }),
     );
     await user.click(
+      await screen.findByRole("menuitem", { name: "Registrar realizado" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Registrar realização" }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
       await screen.findByRole("menuitem", { name: "Excluir recorrência" }),
     );
     await user.keyboard("{Escape}");
@@ -306,6 +347,48 @@ describe("FinancialEntriesTable", () => {
       expect(
         screen.queryByRole("alertdialog", { name: "Excluir recorrência?" }),
       ).toBeNull(),
+    );
+  });
+
+  it("uses the safe fallback when recording a recurring realization fails", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue("offline");
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Registrar realizado" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar realização" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível registrar a realização.",
+      ),
     );
   });
 
