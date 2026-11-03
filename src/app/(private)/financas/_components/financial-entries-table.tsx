@@ -334,27 +334,29 @@ export function FinancialEntriesTable({
     );
     setRealizedAmount(nextAmount);
   }
-  async function saveRealization(event: React.FormEvent<HTMLFormElement>) {
+  async function saveRealization(
+    event: React.FormEvent<HTMLFormElement>,
+    row: TableRow,
+  ) {
     event.preventDefault();
-    if (!realizing) return;
     setRealizingBusy(true);
     try {
-      if (realizing.recordType === "entry") {
+      if (row.recordType === "entry") {
         await apiRequest(
           "/api/financial-entries",
           {
             method: "PATCH",
             body: JSON.stringify({
-              id: realizing.entry.id,
-              kind: realizing.entry.kind,
-              description: realizing.entry.description,
-              categoryId: realizing.entry.categoryId,
-              recurrenceId: realizing.entry.recurrenceId ?? null,
+              id: row.entry.id,
+              kind: row.entry.kind,
+              description: row.entry.description,
+              categoryId: row.entry.categoryId,
+              recurrenceId: row.entry.recurrenceId ?? null,
               expectedAmount:
-                realizing.entry.expectedAmount === null
+                row.entry.expectedAmount === null
                   ? null
-                  : Number(realizing.entry.expectedAmount),
-              expectedDate: realizing.entry.expectedDate,
+                  : Number(row.entry.expectedAmount),
+              expectedDate: row.entry.expectedDate,
               actualAmount: parseBrazilianAmount(realizedAmount),
               actualDate,
             }),
@@ -362,14 +364,13 @@ export function FinancialEntriesTable({
           "Não foi possível registrar a realização.",
         );
       } else {
-        if (!realizing.recurrenceId || !realizing.due) return;
         await apiRequest(
           "/api/financial-recurrences/occurrences",
           {
             method: "PUT",
             body: JSON.stringify({
-              recurrenceId: realizing.recurrenceId,
-              dueDate: realizing.due,
+              recurrenceId: row.recurrenceId!,
+              dueDate: row.due!,
               actualDate,
               actualAmount: parseBrazilianAmount(realizedAmount),
             }),
@@ -809,7 +810,7 @@ export function FinancialEntriesTable({
             </DialogDescription>
           </DialogHeader>
           <form
-            onSubmit={(event) => void saveRealization(event)}
+            onSubmit={(event) => void saveRealization(event, realizing!)}
             className="space-y-4"
           >
             <div className="space-y-2">

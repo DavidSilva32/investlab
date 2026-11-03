@@ -450,6 +450,62 @@ describe("FinancialEntriesTable", () => {
     );
   });
 
+  it("shows API messages when ending a model or recording a realization fails", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue(new Error("Falha temporária."));
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Excluir recorrência" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Falha temporária."),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Registrar realizado" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar realização" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenLastCalledWith("Falha temporária."),
+    );
+  });
+
   it("reports the result of deleting a single recurring model", async () => {
     const user = userEvent.setup();
     api.request.mockResolvedValue({ action: "deleted" });

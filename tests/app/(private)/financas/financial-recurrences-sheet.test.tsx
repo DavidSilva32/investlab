@@ -224,6 +224,17 @@ describe("FinancialRecurrencesSheet", () => {
     expect(onSaved).toHaveBeenCalledOnce();
   });
 
+  it("opens the removal confirmation from the template action", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.click(screen.getByRole("button", { name: "Excluir Aluguel" }));
+
+    expect(
+      screen.getByRole("alertdialog", { name: "Excluir recorrência?" }),
+    ).toBeTruthy();
+  });
+
   it("reports a failed removal without closing the manager or losing the template", async () => {
     const user = userEvent.setup();
     api.request.mockRejectedValue(new Error("Ação indisponível."));

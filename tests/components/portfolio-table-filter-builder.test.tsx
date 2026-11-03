@@ -177,6 +177,8 @@ describe("PortfolioTableFilterBuilder", () => {
     fireEvent.change(amount, { target: { value: "12345" } });
 
     expect((amount as HTMLInputElement).value).toBe("R$ 123,45");
+    fireEvent.change(amount, { target: { value: "9".repeat(400) } });
+    expect((amount as HTMLInputElement).value).toBe("");
   });
 
   it("shows active criteria and clears applied filters explicitly", async () => {
