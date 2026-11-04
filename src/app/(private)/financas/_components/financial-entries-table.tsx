@@ -80,7 +80,7 @@ export type FinancialEntryRow = {
 };
 type OccurrenceRow = {
   id: string;
-  recurrenceId?: string;
+  recurrenceId: string;
   kind: Kind;
   description: string;
   category: string | null;
@@ -111,7 +111,7 @@ type TableRow = {
   | {
       recordType: "occurrence";
       source: "Recorrente";
-      recurrenceId?: string;
+      recurrenceId: string;
     }
 );
 
@@ -185,7 +185,7 @@ export function FinancialEntriesTable({
               "Não foi possível excluir o lançamento.",
             ),
         });
-      } else if (row.recurrenceId) {
+      } else {
         recurrenceRows.set(row.recurrenceId, [
           ...(recurrenceRows.get(row.recurrenceId) ?? []),
           row.id,
@@ -217,24 +217,16 @@ export function FinancialEntriesTable({
     setSelectedIds(new Set(failedRows.map((row) => row.id)));
     onSaved?.();
     if (failedRows.length === 0) {
-      const recurrenceResults = results.filter(
-        (result) =>
-          result.status === "fulfilled" &&
-          typeof result.value === "object" &&
-          result.value !== null &&
-          "action" in result.value,
-      );
       if (targetRows.length === 1 && targetRows[0].recordType === "entry") {
         toast.success("Lançamento excluído.");
-      } else if (targetRows.length === 1 && recurrenceResults.length === 1) {
-        const result = recurrenceResults[0];
-        const action =
-          result.status === "fulfilled" &&
-          typeof result.value === "object" &&
-          result.value !== null &&
-          "action" in result.value
-            ? result.value.action
-            : "deleted";
+      } else if (
+        targetRows.length === 1 &&
+        targetRows[0].recordType === "occurrence"
+      ) {
+        const result = results[0] as PromiseFulfilledResult<{
+          action?: "deleted" | "ended";
+        } | null>;
+        const action = result.value?.action ?? "deleted";
         toast.success(
           action === "ended"
             ? "Recorrência encerrada. O histórico foi mantido."

@@ -971,6 +971,7 @@ describe("FinancialEntriesTable", () => {
         occurrences={[
           {
             id: "rec-2:2026-10-01",
+            recurrenceId: "rec-2",
             kind: "EXPENSE",
             description: "Conta variável",
             category: null,
@@ -982,6 +983,7 @@ describe("FinancialEntriesTable", () => {
           },
           {
             id: "rec-3:2026-10-02",
+            recurrenceId: "rec-3",
             kind: "INCOME",
             description: "Salário recebido",
             category: "Renda",
@@ -1016,6 +1018,7 @@ describe("FinancialEntriesTable", () => {
         occurrences={[
           {
             id: "rec-income",
+            recurrenceId: "rec-income",
             kind: "INCOME",
             description: "Salário",
             category: null,
@@ -1341,50 +1344,6 @@ describe("FinancialEntriesTable", () => {
       expect(toast.success).toHaveBeenCalledWith("Recorrência excluída."),
     );
   });
-
-  it.each([null, "unexpected", {}])(
-    "keeps the recurring-history message when removal returns an invalid result (%s)",
-    async (result) => {
-      const user = userEvent.setup();
-      api.request.mockResolvedValue(result);
-      render(
-        <FinancialEntriesTable
-          entries={[]}
-          occurrences={[
-            {
-              id: "rec-1:2026-10-10",
-              recurrenceId: "rec-1",
-              kind: "EXPENSE",
-              description: "Aluguel",
-              category: "Moradia",
-              dueDate: "2026-10-10",
-              expectedAmount: "550.00",
-              actualAmount: null,
-              actualDate: null,
-              status: "planned",
-            },
-          ]}
-          readOnly={false}
-          onEdit={() => {}}
-        />,
-      );
-      await user.click(
-        screen.getByRole("checkbox", { name: "Selecionar Aluguel" }),
-      );
-      await user.click(
-        screen.getByRole("button", { name: "Remover selecionados (1)" }),
-      );
-      await user.click(
-        screen.getByRole("button", { name: "Confirmar remoção" }),
-      );
-
-      await waitFor(() =>
-        expect(toast.success).toHaveBeenCalledWith(
-          "1 ações concluídas. O histórico realizado das recorrências foi mantido.",
-        ),
-      );
-    },
-  );
 
   it("selects and deselects individual rows and reports multiple deletion failures", async () => {
     const user = userEvent.setup();

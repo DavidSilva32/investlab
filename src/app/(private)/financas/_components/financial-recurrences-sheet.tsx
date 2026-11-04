@@ -298,11 +298,9 @@ export function FinancialRecurrencesSheet({
         {!readOnly && (
           <Dialog
             open={Boolean(activeEditing)}
-            onOpenChange={(value) => {
-              if (!value) {
-                setEditing(null);
-                onEditRecurrenceHandled?.();
-              }
+            onOpenChange={() => {
+              setEditing(null);
+              onEditRecurrenceHandled?.();
             }}
           >
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">

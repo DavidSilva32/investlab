@@ -13,7 +13,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 const activeRecurrence = {
   id: "rent-id",
-  kind: "EXPENSE" as const,
+  kind: "EXPENSE" as "EXPENSE" | "INCOME",
   description: "Aluguel",
   categoryId: null,
   amount: "550.00",
@@ -88,6 +88,25 @@ describe("FinancialRecurrencesSheet", () => {
     expect(
       screen.getByRole("button", { name: "Reativar Aluguel" }),
     ).toBeTruthy();
+  });
+
+  it("labels income and nonessential recurring templates", () => {
+    renderSheet({
+      recurrences: [
+        {
+          ...activeRecurrence,
+          id: "salary-id",
+          kind: "INCOME",
+          description: "Salário",
+          essential: false,
+        },
+        { ...endedRecurrence, essential: false },
+      ],
+    });
+
+    expect(screen.getByText(/Entrada/)).toBeTruthy();
+    expect(screen.getByText(/Saída/).textContent).not.toContain("Essencial");
+    expect(screen.getByText(/Encerrada/)).toBeTruthy();
   });
 
   it("shows loading, retryable error, and empty states", async () => {
