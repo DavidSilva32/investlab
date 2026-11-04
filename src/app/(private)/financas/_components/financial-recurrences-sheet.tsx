@@ -119,11 +119,10 @@ export function FinancialRecurrencesSheet({
   }
 
   async function removeRecurrence() {
-    if (!removing) return;
     setBusy(true);
     try {
       const result = await apiRequest<{ action: "deleted" | "ended" }>(
-        `/api/financial-recurrences?id=${encodeURIComponent(removing.id)}`,
+        `/api/financial-recurrences?id=${encodeURIComponent(removing!.id)}`,
         { method: "DELETE" },
         "Não foi possível remover a recorrência.",
       );

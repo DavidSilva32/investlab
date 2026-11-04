@@ -99,12 +99,14 @@ describe("FinancialRecurrencesSheet", () => {
           kind: "INCOME",
           description: "Salário",
           essential: false,
+          frequency: "UNKNOWN",
         },
         { ...endedRecurrence, essential: false },
       ],
     });
 
     expect(screen.getByText(/Entrada/)).toBeTruthy();
+    expect(screen.getByText(/Periodicidade cadastrada/)).toBeTruthy();
     expect(screen.getByText(/Saída/).textContent).not.toContain("Essencial");
     expect(screen.getByText(/Encerrada/)).toBeTruthy();
   });
@@ -196,6 +198,41 @@ describe("FinancialRecurrencesSheet", () => {
     await waitFor(() => expect(onEditRecurrenceHandled).toHaveBeenCalledOnce());
   });
 
+  it("does not open or consume a recurrence edit when it is missing or read-only", () => {
+    const onEditRecurrenceHandled = vi.fn();
+    const { rerender, client } = renderSheet({
+      editRecurrenceId: "missing-id",
+      onEditRecurrenceHandled,
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeNull();
+    expect(onEditRecurrenceHandled).not.toHaveBeenCalled();
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <FinancialRecurrencesSheet
+          open
+          onOpenChange={() => {}}
+          month="2026-10"
+          data={{ recurrences: [activeRecurrence] }}
+          loading={false}
+          error={null}
+          retry={() => {}}
+          categories={[]}
+          onSaved={() => {}}
+          readOnly
+          editRecurrenceId={activeRecurrence.id}
+          onEditRecurrenceHandled={onEditRecurrenceHandled}
+        />
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeNull();
+    expect(onEditRecurrenceHandled).not.toHaveBeenCalled();
+  });
+
   it("closes the edit form and cancels a pending recurrence removal", async () => {
     const user = userEvent.setup();
     renderSheet();
@@ -267,6 +304,22 @@ describe("FinancialRecurrencesSheet", () => {
     );
     expect(screen.getByText("Aluguel")).toBeTruthy();
     expect(screen.getByRole("alertdialog")).toBeTruthy();
+  });
+
+  it("uses a safe fallback when removing a template fails without an Error", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue("offline");
+    renderSheet();
+    await user.click(screen.getByRole("button", { name: "Excluir Aluguel" }));
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível remover a recorrência.",
+      ),
+    );
   });
 
   it("reactivates an ended template and refreshes recurrence data", async () => {
