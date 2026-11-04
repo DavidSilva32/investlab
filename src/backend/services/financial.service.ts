@@ -131,25 +131,21 @@ function amountDateInput(
 }
 
 function recurrenceInput(
-  input: z.infer<typeof financialEntryCreateSchema>,
+  input: z.infer<typeof financialEntryCreateSchema> & {
+    recurrence: NonNullable<
+      z.infer<typeof financialEntryCreateSchema>["recurrence"]
+    >;
+  },
 ): RepositoryFinancialEntryRecurrenceInput {
   const recurrence = input.recurrence;
-  if (!recurrence) {
-    throw new ApplicationError("Informe os dados da recorrência.", 400);
-  }
   if (input.kind === "INCOME" && recurrence.essential) {
     throw new ApplicationError(
       "Receitas recorrentes não podem ser marcadas como essenciais.",
       400,
     );
   }
-  const amount = input.expectedAmount ?? input.actualAmount;
-  if (amount === null || amount === undefined) {
-    throw new ApplicationError(
-      "Informe um valor para criar a recorrência.",
-      400,
-    );
-  }
+  // financialEntryCreateSchema requires at least one amount before this helper runs.
+  const amount = (input.expectedAmount ?? input.actualAmount)!;
   const firstDueDate = validateIsoDate(recurrence.firstDueDate);
   const latestEntryDate = [input.expectedDate, input.actualDate]
     .filter((date): date is string => date !== null && date !== undefined)
@@ -294,7 +290,7 @@ export class FinancialService {
       return financialRepository.saveEntryWithRecurrence(
         null,
         amountDateInput(parsed),
-        recurrenceInput(parsed),
+        recurrenceInput({ ...parsed, recurrence: parsed.recurrence }),
       );
     }
     await this.assertRecurrenceLink(
@@ -334,7 +330,7 @@ export class FinancialService {
       return financialRepository.saveEntryWithRecurrence(
         parsed.id,
         amountDateInput(parsed),
-        recurrenceInput(parsed),
+        recurrenceInput({ ...parsed, recurrence: parsed.recurrence }),
       );
     }
     await this.assertRecurrenceLink(

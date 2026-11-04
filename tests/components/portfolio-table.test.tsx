@@ -905,6 +905,49 @@ describe("PortfolioTable", () => {
     expect(screen.getByText("Nenhum resultado encontrado.")).toBeTruthy();
   });
 
+  it("filters date columns by their ISO value", async () => {
+    const user = userEvent.setup();
+    type DatedRow = { id: string; date: string; label: string };
+    const dateColumns: PortfolioTableColumn<DatedRow>[] = [
+      {
+        id: "date",
+        label: "Data",
+        width: "50%",
+        filterType: "date",
+        value: (row) => row.date,
+        render: (row) => row.date,
+      },
+      {
+        id: "label",
+        label: "Descrição",
+        width: "50%",
+        value: (row) => row.label,
+        render: (row) => row.label,
+      },
+    ];
+    render(
+      <PortfolioTable
+        columns={dateColumns}
+        rows={[
+          { id: "1", date: "2026-02-01", label: "Vencimento correto" },
+          { id: "2", date: "2026-02-02", label: "Outro vencimento" },
+        ]}
+        initialSort={{ id: "date", direction: "asc" }}
+        emptyMessage="Vazio"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Valor 1" }),
+      "01022026",
+    );
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    expect(screen.getByText("Vencimento correto")).toBeTruthy();
+    expect(screen.queryByText("Outro vencimento")).toBeNull();
+  });
+
   it("filters currency columns by the exact masked amount", async () => {
     const user = userEvent.setup();
     type AmountRow = { id: string; name: string; amount: number };

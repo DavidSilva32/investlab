@@ -80,7 +80,7 @@ export type FinancialEntryRow = {
 };
 type OccurrenceRow = {
   id: string;
-  recurrenceId?: string;
+  recurrenceId: string;
   kind: Kind;
   description: string;
   category: string | null;
@@ -111,7 +111,7 @@ type TableRow = {
   | {
       recordType: "occurrence";
       source: "Recorrente";
-      recurrenceId?: string;
+      recurrenceId: string;
     }
 );
 
@@ -185,7 +185,7 @@ export function FinancialEntriesTable({
               "Não foi possível excluir o lançamento.",
             ),
         });
-      } else if (row.recurrenceId) {
+      } else {
         recurrenceRows.set(row.recurrenceId, [
           ...(recurrenceRows.get(row.recurrenceId) ?? []),
           row.id,
@@ -217,24 +217,16 @@ export function FinancialEntriesTable({
     setSelectedIds(new Set(failedRows.map((row) => row.id)));
     onSaved?.();
     if (failedRows.length === 0) {
-      const recurrenceResults = results.filter(
-        (result) =>
-          result.status === "fulfilled" &&
-          typeof result.value === "object" &&
-          result.value !== null &&
-          "action" in result.value,
-      );
       if (targetRows.length === 1 && targetRows[0].recordType === "entry") {
         toast.success("Lançamento excluído.");
-      } else if (targetRows.length === 1 && recurrenceResults.length === 1) {
-        const result = recurrenceResults[0];
-        const action =
-          result.status === "fulfilled" &&
-          typeof result.value === "object" &&
-          result.value !== null &&
-          "action" in result.value
-            ? result.value.action
-            : "deleted";
+      } else if (
+        targetRows.length === 1 &&
+        targetRows[0].recordType === "occurrence"
+      ) {
+        const result = results[0] as PromiseFulfilledResult<{
+          action?: "deleted" | "ended";
+        } | null>;
+        const action = result.value?.action ?? "deleted";
         toast.success(
           action === "ended"
             ? "Recorrência encerrada. O histórico foi mantido."
@@ -285,11 +277,10 @@ export function FinancialEntriesTable({
   }
 
   async function endRecurrence() {
-    if (!recurrenceToEnd) return;
     setEndingRecurrence(true);
     try {
       const result = await apiRequest<{ action: "deleted" | "ended" }>(
-        `/api/financial-recurrences?id=${encodeURIComponent(recurrenceToEnd)}`,
+        `/api/financial-recurrences?id=${encodeURIComponent(recurrenceToEnd!)}`,
         { method: "DELETE" },
         "Não foi possível encerrar a recorrência.",
       );
@@ -334,27 +325,29 @@ export function FinancialEntriesTable({
     );
     setRealizedAmount(nextAmount);
   }
-  async function saveRealization(event: React.FormEvent<HTMLFormElement>) {
+  async function saveRealization(
+    event: React.FormEvent<HTMLFormElement>,
+    row: TableRow,
+  ) {
     event.preventDefault();
-    if (!realizing) return;
     setRealizingBusy(true);
     try {
-      if (realizing.recordType === "entry") {
+      if (row.recordType === "entry") {
         await apiRequest(
           "/api/financial-entries",
           {
             method: "PATCH",
             body: JSON.stringify({
-              id: realizing.entry.id,
-              kind: realizing.entry.kind,
-              description: realizing.entry.description,
-              categoryId: realizing.entry.categoryId,
-              recurrenceId: realizing.entry.recurrenceId ?? null,
+              id: row.entry.id,
+              kind: row.entry.kind,
+              description: row.entry.description,
+              categoryId: row.entry.categoryId,
+              recurrenceId: row.entry.recurrenceId ?? null,
               expectedAmount:
-                realizing.entry.expectedAmount === null
+                row.entry.expectedAmount === null
                   ? null
-                  : Number(realizing.entry.expectedAmount),
-              expectedDate: realizing.entry.expectedDate,
+                  : Number(row.entry.expectedAmount),
+              expectedDate: row.entry.expectedDate,
               actualAmount: parseBrazilianAmount(realizedAmount),
               actualDate,
             }),
@@ -362,14 +355,13 @@ export function FinancialEntriesTable({
           "Não foi possível registrar a realização.",
         );
       } else {
-        if (!realizing.recurrenceId || !realizing.due) return;
         await apiRequest(
           "/api/financial-recurrences/occurrences",
           {
             method: "PUT",
             body: JSON.stringify({
-              recurrenceId: realizing.recurrenceId,
-              dueDate: realizing.due,
+              recurrenceId: row.recurrenceId!,
+              dueDate: row.due!,
               actualDate,
               actualAmount: parseBrazilianAmount(realizedAmount),
             }),
@@ -604,7 +596,6 @@ export function FinancialEntriesTable({
         if (readOnly) return null;
         if (row.recordType === "occurrence") {
           const recurrenceId = row.recurrenceId;
-          if (!recurrenceId) return null;
           return (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -809,7 +800,7 @@ export function FinancialEntriesTable({
             </DialogDescription>
           </DialogHeader>
           <form
-            onSubmit={(event) => void saveRealization(event)}
+            onSubmit={(event) => void saveRealization(event, realizing!)}
             className="space-y-4"
           >
             <div className="space-y-2">

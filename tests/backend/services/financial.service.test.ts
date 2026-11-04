@@ -548,6 +548,22 @@ describe("FinancialService", () => {
         recurrence: { ...body.recurrence, firstDueDate: "2026-11-10" },
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
+
+    repositories.findCategory.mockResolvedValueOnce(defaultCategory);
+    await expect(
+      service.createEntry({
+        ...body,
+        kind: "INCOME",
+        recurrence: { ...body.recurrence, essential: true },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    await expect(
+      service.createEntry({
+        ...body,
+        recurrenceId: recurringExpense().id,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
     expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledTimes(2);
 
     repositories.findEntry.mockResolvedValueOnce(entry());
@@ -569,6 +585,27 @@ describe("FinancialService", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(repositories.saveEntryWithRecurrence).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows an income recurrence when it is not marked essential", async () => {
+    repositories.findCategory.mockResolvedValueOnce(defaultCategory);
+
+    await expect(
+      service.createEntry({
+        kind: "INCOME",
+        description: "Salário",
+        categoryId: defaultCategory.id,
+        actualAmount: 5000,
+        actualDate: "2026-10-10",
+        recurrence: {
+          frequency: "MONTHLY",
+          firstDueDate: "2026-11-10",
+          essential: false,
+        },
+      }),
+    ).resolves.toMatchObject({
+      recurrenceId: "77777777-7777-4777-8777-777777777777",
+    });
   });
 
   it("rejects invalid or missing entry updates and deletions", async () => {

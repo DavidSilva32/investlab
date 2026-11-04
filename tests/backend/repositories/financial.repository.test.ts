@@ -360,7 +360,24 @@ describe("FinancialRepository", () => {
         repository.saveEntryWithRecurrence(null, input, recurrence),
       ),
     ).rejects.toThrow("entry insert failed");
-    expect(database.transaction).toHaveBeenCalledTimes(3);
+
+    returning.mockReset().mockResolvedValueOnce([]);
+    await expect(
+      runWithDataOwner("owner-transaction", () =>
+        repository.saveEntryWithRecurrence(null, input, recurrence),
+      ),
+    ).rejects.toThrow("The recurrence could not be created.");
+
+    returning
+      .mockReset()
+      .mockResolvedValueOnce([{ id: recurrenceId }])
+      .mockResolvedValueOnce([]);
+    await expect(
+      runWithDataOwner("owner-transaction", () =>
+        repository.saveEntryWithRecurrence(null, input, recurrence),
+      ),
+    ).rejects.toThrow("The linked financial entry could not be saved.");
+    expect(database.transaction).toHaveBeenCalledTimes(5);
   });
 
   it("deletes only an entry belonging to the active owner", async () => {

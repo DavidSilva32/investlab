@@ -119,11 +119,10 @@ export function FinancialRecurrencesSheet({
   }
 
   async function removeRecurrence() {
-    if (!removing) return;
     setBusy(true);
     try {
       const result = await apiRequest<{ action: "deleted" | "ended" }>(
-        `/api/financial-recurrences?id=${encodeURIComponent(removing.id)}`,
+        `/api/financial-recurrences?id=${encodeURIComponent(removing!.id)}`,
         { method: "DELETE" },
         "Não foi possível remover a recorrência.",
       );
@@ -181,10 +180,8 @@ export function FinancialRecurrencesSheet({
       open={open}
       onOpenChange={(value) => {
         onOpenChange(value);
-        if (!value) {
-          setEditing(null);
-          setRemoving(null);
-        }
+        setEditing(null);
+        setRemoving(null);
       }}
     >
       <SheetContent
@@ -298,11 +295,9 @@ export function FinancialRecurrencesSheet({
         {!readOnly && (
           <Dialog
             open={Boolean(activeEditing)}
-            onOpenChange={(value) => {
-              if (!value) {
-                setEditing(null);
-                onEditRecurrenceHandled?.();
-              }
+            onOpenChange={() => {
+              setEditing(null);
+              onEditRecurrenceHandled?.();
             }}
           >
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">

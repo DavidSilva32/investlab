@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -153,6 +153,34 @@ describe("PortfolioTableFilterBuilder", () => {
     ]);
   });
 
+  it("uses a safe selection range when a currency input has no cursor position", async () => {
+    const user = userEvent.setup();
+    render(
+      <PortfolioTableFilterBuilder
+        columns={[{ id: "amount", label: "Valor", filterType: "currency" }]}
+        activeFilters={[]}
+        onApply={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    const amount = screen.getByRole("textbox", { name: "Valor 1" });
+    Object.defineProperty(amount, "selectionStart", {
+      configurable: true,
+      get: () => null,
+    });
+    Object.defineProperty(amount, "selectionEnd", {
+      configurable: true,
+      get: () => null,
+    });
+    fireEvent.change(amount, { target: { value: "12345" } });
+
+    expect((amount as HTMLInputElement).value).toBe("R$ 123,45");
+    fireEvent.change(amount, { target: { value: "9".repeat(400) } });
+    expect((amount as HTMLInputElement).value).toBe("");
+  });
+
   it("shows active criteria and clears applied filters explicitly", async () => {
     const user = userEvent.setup();
     const onClear = vi.fn();
@@ -170,6 +198,21 @@ describe("PortfolioTableFilterBuilder", () => {
     ).toContain("Origem: Manual");
     await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
     expect(onClear).toHaveBeenCalledOnce();
+  });
+
+  it("formats valid ISO dates in the active filter summary", () => {
+    render(
+      <PortfolioTableFilterBuilder
+        columns={[{ id: "date", label: "Data", filterType: "date" }]}
+        activeFilters={[{ columnId: "date", value: "2026-02-01" }]}
+        onApply={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("group", { name: "Filtros ativos" }).textContent,
+    ).toContain("Data: 01/02/2026");
   });
 
   it("reopens active criteria, clears a value when its column changes, and removes criteria", async () => {
