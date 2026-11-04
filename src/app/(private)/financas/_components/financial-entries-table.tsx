@@ -596,7 +596,6 @@ export function FinancialEntriesTable({
         if (readOnly) return null;
         if (row.recordType === "occurrence") {
           const recurrenceId = row.recurrenceId;
-          if (!recurrenceId) return null;
           return (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

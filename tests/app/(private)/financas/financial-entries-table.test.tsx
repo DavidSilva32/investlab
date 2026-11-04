@@ -1304,46 +1304,49 @@ describe("FinancialEntriesTable", () => {
     );
   });
 
-  it("shows the deleted result when a recurrence has no realized history", async () => {
-    const user = userEvent.setup();
-    api.request.mockResolvedValue({ action: "deleted" });
-    render(
-      <FinancialEntriesTable
-        entries={[]}
-        occurrences={[
-          {
-            id: "rec-1:2026-10-10",
-            recurrenceId: "rec-1",
-            kind: "EXPENSE",
-            description: "Aluguel",
-            category: "Moradia",
-            dueDate: "2026-10-10",
-            expectedAmount: "550.00",
-            actualAmount: null,
-            actualDate: null,
-            status: "planned",
-          },
-        ]}
-        readOnly={false}
-        onEdit={() => {}}
-      />,
-    );
-    await user.click(
-      screen.getByRole("button", {
-        name: "Ações para Aluguel em 10/10/2026",
-      }),
-    );
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Excluir recorrência" }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Excluir recorrência" }),
-    );
+  it.each([
+    [null, "Recorrência excluída."],
+    [{ action: "deleted" }, "Recorrência excluída."],
+    [{ action: "ended" }, "Recorrência encerrada. O histórico foi mantido."],
+  ])(
+    "shows the recurrence removal result when deleting a selected occurrence",
+    async (result, message) => {
+      const user = userEvent.setup();
+      api.request.mockResolvedValue(result);
+      render(
+        <FinancialEntriesTable
+          entries={[]}
+          occurrences={[
+            {
+              id: "rec-1:2026-10-10",
+              recurrenceId: "rec-1",
+              kind: "EXPENSE",
+              description: "Aluguel",
+              category: "Moradia",
+              dueDate: "2026-10-10",
+              expectedAmount: "550.00",
+              actualAmount: null,
+              actualDate: null,
+              status: "planned",
+            },
+          ]}
+          readOnly={false}
+          onEdit={() => {}}
+        />,
+      );
+      await user.click(
+        screen.getByRole("checkbox", { name: "Selecionar Aluguel" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Remover selecionados (1)" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Confirmar remoção" }),
+      );
 
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith("Recorrência excluída."),
-    );
-  });
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith(message));
+    },
+  );
 
   it("selects and deselects individual rows and reports multiple deletion failures", async () => {
     const user = userEvent.setup();
