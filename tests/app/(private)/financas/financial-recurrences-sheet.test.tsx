@@ -31,6 +31,7 @@ function renderSheet({
   readOnly = false,
   retry = vi.fn(),
   onSaved = vi.fn(),
+  onOpenChange = vi.fn(),
   editRecurrenceId,
   onEditRecurrenceHandled = vi.fn(),
 }: {
@@ -40,6 +41,7 @@ function renderSheet({
   readOnly?: boolean;
   retry?: () => void;
   onSaved?: () => void;
+  onOpenChange?: (open: boolean) => void;
   editRecurrenceId?: string;
   onEditRecurrenceHandled?: () => void;
 } = {}) {
@@ -50,7 +52,7 @@ function renderSheet({
     <QueryClientProvider client={client}>
       <FinancialRecurrencesSheet
         open
-        onOpenChange={() => {}}
+        onOpenChange={onOpenChange}
         month="2026-10"
         data={{ recurrences }}
         loading={loading}
@@ -375,6 +377,28 @@ describe("FinancialRecurrencesSheet", () => {
         "Não foi possível reativar a recorrência.",
       ),
     );
+  });
+
+  it("shows the API error when reactivating a template fails", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue(new Error("Falha ao reativar."));
+    renderSheet({ recurrences: [endedRecurrence] });
+
+    await user.click(screen.getByRole("button", { name: "Reativar Aluguel" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Falha ao reativar."),
+    );
+  });
+
+  it("clears pending state when the manager closes", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    renderSheet({ onOpenChange });
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
   it("hides edit and removal controls in read-only mode", () => {

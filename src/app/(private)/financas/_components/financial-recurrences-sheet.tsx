@@ -180,10 +180,8 @@ export function FinancialRecurrencesSheet({
       open={open}
       onOpenChange={(value) => {
         onOpenChange(value);
-        if (!value) {
-          setEditing(null);
-          setRemoving(null);
-        }
+        setEditing(null);
+        setRemoving(null);
       }}
     >
       <SheetContent
