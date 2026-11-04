@@ -272,6 +272,25 @@ describe("FinancialRecurrencesSheet", () => {
     expect(client.getQueryCache().getAll()).toHaveLength(1);
   });
 
+  it("allows removing an ended recurrence template", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({ action: "deleted" });
+    renderSheet({ recurrences: [endedRecurrence] });
+
+    await user.click(screen.getByRole("button", { name: "Excluir Aluguel" }));
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        "/api/financial-recurrences?id=rent-id",
+        { method: "DELETE" },
+        "Não foi possível remover a recorrência.",
+      ),
+    );
+  });
+
   it("uses a safe fallback when reactivating a template fails without an error", async () => {
     const user = userEvent.setup();
     api.request.mockRejectedValue("offline");

@@ -1266,6 +1266,126 @@ describe("FinancialEntriesTable", () => {
     ).toBe("true");
   });
 
+  it("summarizes multiple successful actions when a batch removal is partial", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("Falha segura."));
+    render(
+      <FinancialEntriesTable
+        entries={[
+          entry,
+          { ...entry, id: "entry-2", description: "Internet" },
+          { ...entry, id: "entry-3", description: "Mercado" },
+        ]}
+        occurrences={[]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Selecionar todos os registros do mês",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Remover selecionados (3)" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "2 ações concluídas; 1 registro não pôde ser removido. Tente novamente.",
+      ),
+    );
+  });
+
+  it("shows the deleted result when a recurrence has no realized history", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValue({ action: "deleted" });
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Excluir recorrência" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Recorrência excluída."),
+    );
+  });
+
+  it.each([null, "unexpected", {}])(
+    "keeps the recurring-history message when removal returns an invalid result (%s)",
+    async (result) => {
+      const user = userEvent.setup();
+      api.request.mockResolvedValue(result);
+      render(
+        <FinancialEntriesTable
+          entries={[]}
+          occurrences={[
+            {
+              id: "rec-1:2026-10-10",
+              recurrenceId: "rec-1",
+              kind: "EXPENSE",
+              description: "Aluguel",
+              category: "Moradia",
+              dueDate: "2026-10-10",
+              expectedAmount: "550.00",
+              actualAmount: null,
+              actualDate: null,
+              status: "planned",
+            },
+          ]}
+          readOnly={false}
+          onEdit={() => {}}
+        />,
+      );
+      await user.click(
+        screen.getByRole("checkbox", { name: "Selecionar Aluguel" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Remover selecionados (1)" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Confirmar remoção" }),
+      );
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith(
+          "1 ações concluídas. O histórico realizado das recorrências foi mantido.",
+        ),
+      );
+    },
+  );
+
   it("selects and deselects individual rows and reports multiple deletion failures", async () => {
     const user = userEvent.setup();
     api.request
