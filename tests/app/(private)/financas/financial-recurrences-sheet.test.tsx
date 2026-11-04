@@ -284,7 +284,7 @@ describe("FinancialRecurrencesSheet", () => {
 
     await waitFor(() =>
       expect(api.request).toHaveBeenCalledWith(
-        "/api/financial-recurrences?id=rent-id",
+        "/api/financial-recurrences?id=ended-id",
         { method: "DELETE" },
         "Não foi possível remover a recorrência.",
       ),
