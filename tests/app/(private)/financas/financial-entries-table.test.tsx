@@ -506,6 +506,53 @@ describe("FinancialEntriesTable", () => {
     );
   });
 
+  it("shows the outcome when a recurring occurrence ends its model", async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    api.request.mockResolvedValue({ action: "ended" });
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Ações para Aluguel em 10/10/2026",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Excluir recorrência" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Recorrência encerrada. O histórico foi mantido.",
+      ),
+    );
+    expect(onSaved).toHaveBeenCalledOnce();
+  });
+
   it("reports the result of deleting a single recurring model", async () => {
     const user = userEvent.setup();
     api.request.mockResolvedValue({ action: "deleted" });
@@ -541,6 +588,92 @@ describe("FinancialEntriesTable", () => {
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Recorrência excluída."),
+    );
+  });
+
+  it("reports a partial result when deleting selected rows has mixed outcomes", async () => {
+    const user = userEvent.setup();
+    api.request.mockImplementation((url: string) =>
+      url.startsWith("/api/financial-entries")
+        ? Promise.resolve({})
+        : Promise.reject("offline"),
+    );
+    render(
+      <FinancialEntriesTable
+        entries={[entry]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Internet",
+            category: "Contas e serviços",
+            dueDate: "2026-10-10",
+            expectedAmount: "100.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Selecionar todos os registros do mês",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Remover selecionados (2)" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "1 ação concluída; 1 registro não pôde ser removido. Tente novamente.",
+      ),
+    );
+  });
+
+  it("uses the recurrence-specific fallback for a rejected recurring deletion", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValue("offline");
+    render(
+      <FinancialEntriesTable
+        entries={[]}
+        occurrences={[
+          {
+            id: "rec-1:2026-10-10",
+            recurrenceId: "rec-1",
+            kind: "EXPENSE",
+            description: "Aluguel",
+            category: "Moradia",
+            dueDate: "2026-10-10",
+            expectedAmount: "550.00",
+            actualAmount: null,
+            actualDate: null,
+            status: "planned",
+          },
+        ]}
+        readOnly={false}
+        onEdit={() => {}}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Selecionar Aluguel" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Remover selecionados (1)" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar remoção" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível remover a recorrência. Tente novamente.",
+      ),
     );
   });
 

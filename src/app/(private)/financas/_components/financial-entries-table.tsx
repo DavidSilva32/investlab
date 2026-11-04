@@ -285,11 +285,10 @@ export function FinancialEntriesTable({
   }
 
   async function endRecurrence() {
-    if (!recurrenceToEnd) return;
     setEndingRecurrence(true);
     try {
       const result = await apiRequest<{ action: "deleted" | "ended" }>(
-        `/api/financial-recurrences?id=${encodeURIComponent(recurrenceToEnd)}`,
+        `/api/financial-recurrences?id=${encodeURIComponent(recurrenceToEnd!)}`,
         { method: "DELETE" },
         "Não foi possível encerrar a recorrência.",
       );
