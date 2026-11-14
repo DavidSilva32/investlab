@@ -1911,8 +1911,24 @@ describe("EmergencyReserveService", () => {
     mocks.listCurrentEnriched.mockResolvedValue([hundred, sixty, forty]);
     mocks.listObjectives.mockResolvedValue({
       objectives: [
-        { id: reserveObjectiveId, name: "Reserva", kind: "RESERVE" },
-        { id: tripId, name: "Viagem", kind: "CUSTOM" },
+        {
+          id: reserveObjectiveId,
+          name: "Reserva",
+          kind: "RESERVE",
+          purpose: null,
+          targetAmount: "55800.00",
+          createdAt: new Date("2026-01-01"),
+          updatedAt: new Date("2026-11-14"),
+        },
+        {
+          id: tripId,
+          name: "Viagem",
+          kind: "CUSTOM",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: "20000.00",
+          createdAt: new Date("2026-01-02"),
+          updatedAt: new Date("2026-11-13"),
+        },
       ],
       assignments: [
         { assetKey: getEmergencyReserveAssetKey(hundred), objectiveId: tripId },
@@ -1934,6 +1950,24 @@ describe("EmergencyReserveService", () => {
       [getEmergencyReserveAssetKey(forty)]: null,
     });
     expect(result.expectedSourceFingerprint).toBe("a".repeat(64));
+    expect(mocks.createAllocationSourceFingerprint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objectives: [
+          {
+            id: reserveObjectiveId,
+            name: "Reserva",
+            kind: "RESERVE",
+            purpose: null,
+          },
+          {
+            id: tripId,
+            name: "Viagem",
+            kind: "CUSTOM",
+            purpose: "PERSONAL_GOAL",
+          },
+        ],
+      }),
+    );
   });
 
   it("prefers the existing reserve combination when other exact choices tie", async () => {

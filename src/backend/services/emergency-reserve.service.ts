@@ -284,7 +284,9 @@ export class EmergencyReserveService {
         valuationDate: observedOn,
         positions: positions as Position[],
         assignments: objectives.assignments,
-        objectives: objectives.objectives,
+        objectives: objectives.objectives.map(
+          ({ id, name, kind, purpose }) => ({ id, name, kind, purpose }),
+        ),
       }),
       transferredPositionCount: selectedAssetKeys.filter((key) => {
         const owner = ownerByAssetKey.get(key)?.id;
