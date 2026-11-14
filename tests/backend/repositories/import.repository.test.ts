@@ -1894,8 +1894,8 @@ describe("import repository", () => {
         containsSqlParameter(condition, "trip"),
       ),
     ).toBe(true);
-    expect(transaction.delete.invocationCallOrder[0]).toBeLessThan(
-      transaction.insert.invocationCallOrder[0],
+    expect(transaction.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.insert.mock.invocationCallOrder[0],
     );
     expect(
       transaction.delete.mock.calls.some(

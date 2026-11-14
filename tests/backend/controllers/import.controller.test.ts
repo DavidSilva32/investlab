@@ -397,6 +397,7 @@ describe("ImportController reference date handling", () => {
       "request-1",
       "2026-09-18",
       undefined,
+      undefined,
     );
   });
 });
@@ -434,6 +435,7 @@ describe("ImportController reconciliation transport", () => {
       "r",
       null,
       decisions,
+      undefined,
     );
   });
 });
