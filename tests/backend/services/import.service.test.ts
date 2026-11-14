@@ -345,6 +345,56 @@ const persistenceFile = {
 };
 
 describe("ImportService persistence", () => {
+  it("rejects malformed retired objective assignments before any write", async () => {
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [],
+    });
+
+    await expect(
+      importService.confirm(
+        persistenceFile,
+        "invalid-retirement-decision",
+        "2026-09-30",
+        [],
+        [{ assetKey: "invalid", objectiveId: "not-a-uuid" }],
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(repository.existsByHash).not.toHaveBeenCalled();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects retired objective assignments when reprocessing an identical import", async () => {
+    const assignment = {
+      assetKey: "v1:" + "a".repeat(64),
+      objectiveId: "00000000-0000-4000-8000-000000000001",
+    };
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [],
+    });
+    repository.existsByHash.mockResolvedValue(true);
+
+    await expect(
+      importService.confirm(
+        persistenceFile,
+        "duplicate-retirement-decision",
+        "2026-09-30",
+        [],
+        [assignment],
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("já importado"),
+    });
+
+    expect(
+      repository.getPositionImportReferenceDateByHash,
+    ).not.toHaveBeenCalled();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
   it("rejects identical files even with a new date without rewriting historical references", async () => {
     parser.mockReturnValue({ documentType: "B3_POSITION_XLSX", positions: [] });
     repository.existsByHash.mockResolvedValue(true);

@@ -608,6 +608,15 @@ describe("PortfolioImport", () => {
       screen.getByText(/O mesmo nome não confirma que seja o mesmo ativo/),
     ).toBeTruthy();
     expect(screen.getByText(/instituição: Banco A → Banco B/)).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Ocultar diferenças de identidade de CDB Banco A/,
+      }),
+    );
+    expect(
+      screen.queryByText(/O mesmo nome não confirma que seja o mesmo ativo/),
+    ).toBeNull();
+    expect(screen.queryByText(/instituição: Banco A → Banco B/)).toBeNull();
     const confirmButton = screen.getByRole("button", {
       name: /Confirmar 1 arquivo/,
     });
