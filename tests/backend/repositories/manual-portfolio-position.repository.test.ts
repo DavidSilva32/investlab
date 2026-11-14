@@ -35,6 +35,7 @@ import {
   manualPortfolioAdjustmentEvents,
   manualPortfolioPositionSnapshots,
   manualPortfolioPositions,
+  portfolioAssetClassifications,
 } from "@/infrastructure/database/schema";
 
 const id = "0fefb48f-b6d9-4b8e-890d-95fe4fe7b305";
@@ -368,6 +369,10 @@ describe("ManualPortfolioPositionRepository", () => {
     });
     expect(database.query.onConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
+        target: [
+          portfolioAssetClassifications.userId,
+          portfolioAssetClassifications.assetKey,
+        ],
         set: expect.objectContaining({
           assetClass: expect.anything(),
           subClass: expect.anything(),
@@ -456,6 +461,10 @@ describe("ManualPortfolioPositionRepository", () => {
     });
     expect(database.query.onConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
+        target: [
+          portfolioAssetClassifications.userId,
+          portfolioAssetClassifications.assetKey,
+        ],
         set: expect.objectContaining({
           assetClass: expect.anything(),
           subClass: expect.anything(),

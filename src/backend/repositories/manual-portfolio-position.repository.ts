@@ -157,7 +157,10 @@ export class ManualPortfolioPositionRepository {
               ...classification,
             })
             .onConflictDoUpdate({
-              target: portfolioAssetClassifications.assetKey,
+              target: [
+                portfolioAssetClassifications.userId,
+                portfolioAssetClassifications.assetKey,
+              ],
               set: {
                 assetClass: sql.raw('excluded."assetClass"'),
                 subClass: sql.raw('excluded."subClass"'),
@@ -299,7 +302,10 @@ export class ManualPortfolioPositionRepository {
               ...classification,
             })
             .onConflictDoUpdate({
-              target: portfolioAssetClassifications.assetKey,
+              target: [
+                portfolioAssetClassifications.userId,
+                portfolioAssetClassifications.assetKey,
+              ],
               set: {
                 assetClass: sql.raw('excluded."assetClass"'),
                 subClass: sql.raw('excluded."subClass"'),
