@@ -186,6 +186,23 @@ describe("ImportController", () => {
     );
   });
 
+  it("rejects malformed retired objective assignment form fields", async () => {
+    for (const value of [new File(["[]"], "assignments.json"), "{"]) {
+      const form = new FormData();
+      form.append("file", new File(["content"], "b3.xlsx"));
+      form.append("retiredObjectiveAssignments", value);
+
+      await expect(
+        importController.confirm(
+          new Request("http://test/import", { method: "POST", body: form }),
+          "request-invalid-retirement",
+        ),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+
+    expect(service.confirm).not.toHaveBeenCalled();
+  });
+
   it("counts and confirms negotiation rows with a document-specific message", async () => {
     const tradePreview = {
       hash: "d".repeat(64),

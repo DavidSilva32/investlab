@@ -570,6 +570,19 @@ describe("PortfolioImport", () => {
               },
               changedFields: ["instituição: Banco A → Banco B"],
             },
+            {
+              position: {
+                product: "CDB Banco A",
+                institution: "Banco C",
+                assetCode: "CDB3",
+                quantity: "1",
+                totalValue: "100",
+                indexer: "CDI",
+                unitPrice: "100",
+                valuationSource: "CURVA" as const,
+              },
+              changedFields: ["código: CDB1 → CDB3"],
+            },
           ],
         },
         {
@@ -601,7 +614,7 @@ describe("PortfolioImport", () => {
     });
     expect(await screen.findByText(/CDB Banco A — Viagem/)).toBeTruthy();
     const detailsButton = screen.getByRole("button", {
-      name: /Mostrar 1 posição com nome parecido e identidade diferente de CDB Banco A/,
+      name: /Mostrar 2 posições com nome parecido e identidade diferente de CDB Banco A/,
     });
     fireEvent.click(detailsButton);
     expect(
@@ -681,8 +694,8 @@ describe("PortfolioImport", () => {
               objectiveName: "Reserva",
               position: {
                 product: "CDB antigo",
-                institution: "Banco A",
-                assetCode: "CDB1",
+                institution: null,
+                assetCode: null,
                 quantity: "1",
                 totalValue: "100",
                 indexer: "CDI",
@@ -702,10 +715,67 @@ describe("PortfolioImport", () => {
     });
 
     expect(await screen.findByText(/CDB antigo — Reserva/)).toBeTruthy();
+    expect(screen.getByText("Identidade adicional não informada")).toBeTruthy();
     expect(screen.queryByText(/Possível posição correspondente/)).toBeNull();
     expect(
       screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
     ).toHaveProperty("disabled", true);
+  });
+
+  it("updates the reviewed file without changing another file's preview", async () => {
+    const identityPreview = {
+      ...positionPreview,
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB antigo",
+            institution: "Banco A",
+            assetCode: "CDB1",
+            quantity: "1",
+            totalValue: "100",
+            indexer: "CDI",
+            unitPrice: "100",
+            valuationSource: "CURVA" as const,
+          },
+          possibleIncomingDifferences: [],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => identityPreview,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => positionPreview,
+        }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          spreadsheet("posicoes.xlsx"),
+          spreadsheet("outra-posicao.xlsx"),
+        ],
+      },
+    });
+
+    const checkbox = await screen.findByRole("checkbox", {
+      name: /posição CDB antigo do objetivo Viagem não está mais na carteira/,
+    });
+    expect(await screen.findByText("outra-posicao.xlsx")).toBeTruthy();
+    fireEvent.click(checkbox);
+
+    expect(checkbox.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("outra-posicao.xlsx")).toBeTruthy();
   });
 
   it("keeps a preview visible when confirmation fails and can cancel it", async () => {

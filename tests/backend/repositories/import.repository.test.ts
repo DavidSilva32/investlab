@@ -1964,6 +1964,83 @@ describe("import repository", () => {
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
+  it("rejects a stale retirement decision when there is no prior snapshot", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn().mockReturnValue({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: async () => [] }),
+          }),
+        }),
+      }),
+      delete: vi.fn(),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "new.xlsx",
+        fileHash: "no-prior-snapshot",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-11-13",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: "v1:" + "a".repeat(64), objectiveId: "objective-a" },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale retirement decision when the latest snapshot is empty", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "snapshot-empty" }],
+              }),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [] }),
+        }),
+      delete: vi.fn(),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "new.xlsx",
+        fileHash: "empty-prior-snapshot",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-11-13",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: "v1:" + "a".repeat(64), objectiveId: "objective-a" },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
   it("allows import when the latest snapshot contains no positions", async () => {
     const transaction = {
       execute: vi.fn().mockResolvedValue(undefined),
