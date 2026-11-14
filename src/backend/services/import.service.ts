@@ -28,16 +28,6 @@ const documentTypes = new Set<B3DocumentType>([
   "B3_MOVEMENT_XLSX",
   "B3_TRADING_XLSX",
 ]);
-const identityFields = [
-  ["product", "produto"],
-  ["assetCode", "código"],
-  ["institution", "instituição"],
-  ["issuer", "emissor"],
-  ["indexer", "indexador"],
-  ["regimeType", "regime"],
-  ["issuedAt", "data de emissão"],
-  ["maturityAt", "vencimento"],
-] as const;
 type PositionIdentity = {
   product: string;
   assetCode: string | null;
@@ -50,6 +40,10 @@ type PositionIdentity = {
 };
 const normalized = (value: string | null | undefined) =>
   value?.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR") ?? "";
+const normalizedMovementText = (value: string | null | undefined) =>
+  normalized(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
 export class ImportService {
   async reconciliationSummary(requestId: string) {
@@ -192,16 +186,18 @@ export class ImportService {
       manualPortfolioPositionRepository.list(requestId),
       positionReconciliationRepository.listEvents(requestId),
     ]);
+    const identityReview = await this.findAssignedPositionsMissingFromImport(
+      preview.positions,
+      requestId,
+    );
     return {
       ...preview,
+      latestPositionReferenceDate: identityReview.latestPositionReferenceDate,
       reconciliationCandidates: unresolvedReconciliationCandidates(
         getReconciliationCandidates(preview.positions, manualPositions),
         reconciliationEvents,
       ),
-      identityConflicts: await this.findAssignedPositionsMissingFromImport(
-        preview.positions,
-        requestId,
-      ),
+      identityConflicts: identityReview.conflicts,
       ...(duplicateImport
         ? {
             duplicateImportMessage:
@@ -365,50 +361,18 @@ export class ImportService {
     const reconcileExistingImport =
       reprocessExistingImport && parsedDecisions.data.length > 0;
     this.assertCanBeConfirmed(duplicate && !reprocessExistingImport);
+    let retiredAssignmentsForImport = parsedRetiredAssignments.data;
     if (
       preview.documentType === "B3_POSITION_XLSX" &&
       !reprocessExistingImport
     ) {
-      const conflicts = await this.findAssignedPositionsMissingFromImport(
+      const { conflicts } = await this.findAssignedPositionsMissingFromImport(
         preview.positions,
         requestId,
       );
-      const confirmedAssignments = parsedRetiredAssignments.data;
-      const assignmentKey = ({
-        assetKey,
-        objectiveId,
-      }: {
-        assetKey: string;
-        objectiveId: string;
-      }) => JSON.stringify([assetKey, objectiveId]);
-      const currentConflictPairs = conflicts
-        .map(({ assetKey, objectiveId }) =>
-          assignmentKey({ assetKey, objectiveId }),
-        )
-        .sort();
-      const confirmedPairs = confirmedAssignments.map(assignmentKey).sort();
-      const assignmentsMatch =
-        confirmedPairs.length === currentConflictPairs.length &&
-        confirmedPairs.every(
-          (pair, index) => pair === currentConflictPairs[index],
-        );
-      if (conflicts.length && !confirmedAssignments.length) {
-        const affected = conflicts
-          .map(
-            ({ objectiveName, position }) =>
-              `${position.product} (${objectiveName})`,
-          )
-          .join(", ");
-        throw new ApplicationError(
-          `A importação não contém as identidades atuais de posições atribuídas: ${affected}. Investigue as diferenças de identidade antes de confirmar.`,
-          409,
-        );
-      }
-      if (!assignmentsMatch)
-        throw new ApplicationError(
-          "As posições atribuídas mudaram ou ainda não foram revisadas. Atualize a prévia e confirme cada vínculo que deve ser removido.",
-          409,
-        );
+      retiredAssignmentsForImport = conflicts.map(
+        ({ assetKey, objectiveId }) => ({ assetKey, objectiveId }),
+      );
     }
     const importData =
       preview.documentType === "B3_MOVEMENT_XLSX"
@@ -427,7 +391,7 @@ export class ImportService {
           : {
               ...this.buildPositionImportData(preview, effectiveReferenceDate),
               reconciliationDecisions: parsedDecisions.data,
-              retiredObjectiveAssignments: parsedRetiredAssignments.data,
+              retiredObjectiveAssignments: retiredAssignmentsForImport,
               reconcileExistingImport,
               reprocessExistingImport,
             };
@@ -499,10 +463,6 @@ export class ImportService {
         objectiveId: string;
         objectiveName: string;
         position: PositionIdentity;
-        possibleIncomingDifferences: Array<{
-          position: PositionIdentity;
-          changedFields: string[];
-        }>;
       }
     >();
     for (const position of currentPositions as PositionIdentity[]) {
@@ -515,34 +475,49 @@ export class ImportService {
         conflicts.has(assetKey)
       )
         continue;
-      const possibleIncomingDifferences = incoming.flatMap((candidate) => {
-        const changedFields = identityFields.flatMap(([field, label]) =>
-          normalized(position[field]) === normalized(candidate[field])
-            ? []
-            : [
-                `${label}: ${position[field] ?? "—"} → ${candidate[field] ?? "—"}`,
-              ],
-        );
-        const hasStableAnchor =
-          (position.assetCode &&
-            normalized(position.assetCode) ===
-              normalized(candidate.assetCode)) ||
-          normalized(position.product) === normalized(candidate.product);
-        return changedFields.length > 0 && hasStableAnchor
-          ? [{ position: candidate, changedFields }]
-          : [];
-      });
       conflicts.set(assetKey, {
         assetKey,
         objectiveId: objectiveId!,
         objectiveName,
         position,
-        possibleIncomingDifferences,
       });
     }
-    return [...conflicts.values()].sort((left, right) =>
+    const missingPositions = [...conflicts.values()].sort((left, right) =>
       left.assetKey.localeCompare(right.assetKey),
     );
+    const latestPositionReferenceDate =
+      (
+        currentPositions[0] as
+          (PositionIdentity & { referenceDate?: string | null }) | undefined
+      )?.referenceDate ?? null;
+    if (!missingPositions.length)
+      return { conflicts: [], latestPositionReferenceDate };
+    const movements = await importRepository.listMovements(requestId);
+    const conflictsWithRedemptions = missingPositions.map((conflict) => {
+      const assetCode = conflict.position.assetCode;
+      const matchingRedemptions = assetCode
+        ? movements
+            .filter(
+              (candidate) =>
+                normalized(candidate.assetCode) === normalized(assetCode) &&
+                candidate.direction === "DEBITO" &&
+                normalizedMovementText(candidate.movementType).includes(
+                  "RESGATE",
+                ),
+            )
+            .map((movement) => ({
+              occurredAt: movement.occurredAt,
+              movementType: movement.movementType,
+              quantity: movement.quantity,
+              operationValue: movement.operationValue,
+            }))
+        : [];
+      return {
+        ...conflict,
+        matchingRedemptions,
+      };
+    });
+    return { conflicts: conflictsWithRedemptions, latestPositionReferenceDate };
   }
 
   async delete(

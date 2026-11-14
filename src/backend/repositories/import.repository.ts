@@ -236,6 +236,7 @@ export class ImportRepository {
       ParsedB3Import,
       { documentType: "B3_POSITION_XLSX" }
     >["positions"],
+    referenceDate: string,
     userId: string,
     retiredObjectiveAssignments: Array<{
       assetKey: string;
@@ -246,7 +247,10 @@ export class ImportRepository {
       sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions} IN SHARE ROW EXCLUSIVE MODE`,
     );
     const [latestSnapshot] = await transaction
-      .select({ id: positionSnapshots.id })
+      .select({
+        id: positionSnapshots.id,
+        referenceDate: positionSnapshots.referenceDate,
+      })
       .from(positionSnapshots)
       .where(eq(positionSnapshots.userId, userId))
       .orderBy(
@@ -263,6 +267,15 @@ export class ImportRepository {
         );
       return;
     }
+
+    // A historical snapshot can be imported for history, but it cannot prove
+    // that a position disappeared from the current portfolio. If the current
+    // snapshot has no date, preserve assignments for the same reason.
+    if (
+      latestSnapshot.referenceDate === null ||
+      referenceDate < latestSnapshot.referenceDate
+    )
+      return;
 
     const currentPositions = await transaction
       .select()
@@ -655,6 +668,7 @@ export class ImportRepository {
             await this.lockAndValidateAssignedPositionIdentities(
               transaction,
               input.positions,
+              input.referenceDate,
               userId,
               input.retiredObjectiveAssignments ?? [],
             );

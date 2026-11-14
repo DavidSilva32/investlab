@@ -17,6 +17,7 @@ import { PortfolioImport } from "@/components/portfolio-import";
 const spreadsheet = (name: string) => new File(["xlsx"], name);
 const positionPreview = {
   documentType: "B3_POSITION_XLSX",
+  latestPositionReferenceDate: "2026-09-17",
   count: 1,
   positions: [
     {
@@ -538,7 +539,7 @@ describe("PortfolioImport", () => {
     expect(confirmBody.has("estimationBaseDate")).toBe(false);
   });
 
-  it("requires explicit confirmation for every disappeared assigned position and sends exact keys", async () => {
+  it("explains automatic retirement with an exact redemption and does not send manual decisions", async () => {
     const preview = {
       ...positionPreview,
       identityConflicts: [
@@ -556,32 +557,12 @@ describe("PortfolioImport", () => {
             unitPrice: "100",
             valuationSource: "CURVA" as const,
           },
-          possibleIncomingDifferences: [
+          matchingRedemptions: [
             {
-              position: {
-                product: "CDB Banco A",
-                institution: "Banco B",
-                assetCode: "CDB1",
-                quantity: "1",
-                totalValue: "100",
-                indexer: "CDI",
-                unitPrice: "100",
-                valuationSource: "CURVA" as const,
-              },
-              changedFields: ["instituição: Banco A → Banco B"],
-            },
-            {
-              position: {
-                product: "CDB Banco A",
-                institution: "Banco C",
-                assetCode: "CDB3",
-                quantity: "1",
-                totalValue: "100",
-                indexer: "CDI",
-                unitPrice: "100",
-                valuationSource: "CURVA" as const,
-              },
-              changedFields: ["código: CDB1 → CDB3"],
+              occurredAt: "2026-10-29",
+              movementType: "RESGATE ANTECIPADO/",
+              quantity: "35",
+              operationValue: "445.42",
             },
           ],
         },
@@ -599,7 +580,7 @@ describe("PortfolioImport", () => {
             unitPrice: "100",
             valuationSource: "CURVA" as const,
           },
-          possibleIncomingDifferences: [],
+          matchingRedemptions: [],
         },
       ],
     };
@@ -613,74 +594,31 @@ describe("PortfolioImport", () => {
       target: { files: [spreadsheet("posicoes.xlsx")] },
     });
     expect(await screen.findByText(/CDB Banco A — Viagem/)).toBeTruthy();
-    const detailsButton = screen.getByRole("button", {
-      name: /Mostrar 2 posições com nome parecido e identidade diferente de CDB Banco A/,
-    });
-    fireEvent.click(detailsButton);
-    expect(
-      screen.getByText(/O mesmo nome não confirma que seja o mesmo ativo/),
-    ).toBeTruthy();
-    expect(screen.getByText(/instituição: Banco A → Banco B/)).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /Ocultar diferenças de identidade de CDB Banco A/,
-      }),
-    );
-    expect(
-      screen.queryByText(/O mesmo nome não confirma que seja o mesmo ativo/),
-    ).toBeNull();
-    expect(screen.queryByText(/instituição: Banco A → Banco B/)).toBeNull();
-    const confirmButton = screen.getByRole("button", {
-      name: /Confirmar 1 arquivo/,
-    });
-    expect(confirmButton).toHaveProperty("disabled", true);
-
     fireEvent.change(
       await screen.findByRole("textbox", {
         name: /^Data exibida na B3/,
       }),
-      { target: { value: "18/09/2026" } },
+      { target: { value: "13/11/2026" } },
     );
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /posição CDB Banco A do objetivo Viagem não está mais na carteira/,
-      }),
+    expect(screen.getByRole("status").textContent).toContain(
+      "Ativos ausentes serão encerrados",
     );
-    expect(confirmButton).toHaveProperty("disabled", true);
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /posição CDB Banco B do objetivo Reserva não está mais na carteira/,
-      }),
-    );
-    expect(confirmButton).toHaveProperty("disabled", false);
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /posição CDB Banco A do objetivo Viagem não está mais na carteira/,
-      }),
-    );
-    expect(confirmButton).toHaveProperty("disabled", true);
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /posição CDB Banco A do objetivo Viagem não está mais na carteira/,
-      }),
-    );
+    expect(
+      screen.getByText(/RESGATE ANTECIPADO.*29\/10\/2026.*R\$ 445,42/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    const confirmButton = screen.getByRole("button", {
+      name: /Confirmar 1 arquivo/,
+    });
     expect(confirmButton).toHaveProperty("disabled", false);
     fireEvent.click(confirmButton);
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     const confirmBody = fetch.mock.calls[1]?.[1]?.body as FormData;
-    expect(
-      JSON.parse(confirmBody.get("retiredObjectiveAssignments") as string),
-    ).toEqual([
-      { assetKey: "v1:assigned-position", objectiveId: "goal-trip" },
-      {
-        assetKey: "v1:second-assigned-position",
-        objectiveId: "goal-reserve",
-      },
-    ]);
+    expect(confirmBody.has("retiredObjectiveAssignments")).toBe(false);
   });
 
-  it("shows an identity conflict without suggesting an unanchored replacement", async () => {
+  it("shows a missing assignment without blocking after the snapshot date is set", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -702,7 +640,7 @@ describe("PortfolioImport", () => {
                 unitPrice: "100",
                 valuationSource: "CURVA",
               },
-              possibleIncomingDifferences: [],
+              matchingRedemptions: [],
             },
           ],
         }),
@@ -715,14 +653,243 @@ describe("PortfolioImport", () => {
     });
 
     expect(await screen.findByText(/CDB antigo — Reserva/)).toBeTruthy();
-    expect(screen.getByText("Identidade adicional não informada")).toBeTruthy();
+    expect(screen.getByText("Código não informado")).toBeTruthy();
     expect(screen.queryByText(/Possível posição correspondente/)).toBeNull();
+    const confirmButton = screen.getByRole("button", {
+      name: /Confirmar 1 arquivo/,
+    });
+    expect(confirmButton).toHaveProperty("disabled", true);
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: /^Data exibida na B3/ }),
+      { target: { value: "18/09/2026" } },
+    );
+    expect(confirmButton).toHaveProperty("disabled", false);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("preserves links for historical snapshots and hides later redemption evidence", async () => {
+    const preview = {
+      ...positionPreview,
+      latestPositionReferenceDate: "2026-11-12",
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB antigo",
+            institution: "Banco A",
+            assetCode: "CDB1",
+          },
+          matchingRedemptions: [
+            {
+              occurredAt: "2026-11-12",
+              movementType: "RESGATE ANTIGO",
+              quantity: "1",
+              operationValue: "90",
+            },
+            {
+              occurredAt: "2026-11-14",
+              movementType: "RESGATE",
+              quantity: "1",
+              operationValue: null,
+            },
+            {
+              occurredAt: "2026-11-16",
+              movementType: "RESGATE FUTURO",
+              quantity: "1",
+              operationValue: "110",
+            },
+          ],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => preview }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("historico.xlsx")] },
+    });
+    expect(await screen.findByText(/CDB antigo — Viagem/)).toBeTruthy();
+    const dateInput = await screen.findByRole("textbox", {
+      name: /^Data exibida na B3/,
+    });
+    fireEvent.change(dateInput, { target: { value: "10/11/2026" } });
+    expect(screen.getByRole("status").textContent).toContain(
+      "Snapshot histórico: vínculos preservados",
+    );
+    expect(screen.queryByText(/RESGATE em/)).toBeNull();
+    fireEvent.change(dateInput, { target: { value: "15/11/2026" } });
+    expect(screen.getByRole("status").textContent).toContain(
+      "Ativos ausentes serão encerrados",
+    );
+    expect(screen.getByText(/RESGATE em 14\/11\/2026/)).toBeTruthy();
+    expect(screen.queryByText(/RESGATE FUTURO/)).toBeNull();
+  });
+
+  it("keeps links when a duplicate import has no selected snapshot date", async () => {
+    const preview = {
+      ...positionPreview,
+      latestPositionReferenceDate: null,
+      duplicateImportMessage: "Este arquivo já foi importado.",
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB antigo",
+            institution: "Banco A",
+            assetCode: "CDB1",
+          },
+          matchingRedemptions: [],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => preview }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("duplicado.xlsx")] },
+    });
+    expect(await screen.findByText(/CDB antigo — Viagem/)).toBeTruthy();
+    expect(screen.getByText("Data exibida na B3: não informada")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Arquivo já importado: vínculos preservados",
+    );
+    expect(screen.getByRole("status").textContent).toContain(
+      "A confirmação deste arquivo não encerra vínculos de objetivos.",
+    );
     expect(
       screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
     ).toHaveProperty("disabled", true);
   });
 
-  it("keeps identity acknowledgements isolated between file previews", async () => {
+  it("explains that assignments are preserved when the latest snapshot is undated", async () => {
+    const preview = {
+      ...positionPreview,
+      latestPositionReferenceDate: null,
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB antigo",
+            institution: "Banco A",
+            assetCode: "CDB1",
+          },
+          matchingRedemptions: [],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => preview }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("sem-data.xlsx")] },
+    });
+    expect(await screen.findByText(/CDB antigo — Viagem/)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Vínculos preservados: data atual indisponível",
+    );
+    expect(screen.getByRole("status").textContent).toContain(
+      "A data do snapshot atual não está disponível para comparação.",
+    );
+  });
+
+  it("correlates an exact redemption from another file in the uploaded batch", async () => {
+    const preview = {
+      ...positionPreview,
+      latestPositionReferenceDate: "2026-11-12",
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB antigo",
+            institution: "Banco A",
+            assetCode: "CDB1",
+          },
+          matchingRedemptions: [
+            {
+              occurredAt: "2026-11-14",
+              movementType: "RESGATE ANTECIPADO",
+              quantity: "1",
+              operationValue: "100",
+            },
+          ],
+        },
+      ],
+    };
+    const batchMovementPreview = {
+      documentType: "B3_MOVEMENT_XLSX",
+      count: 3,
+      movements: [
+        {
+          occurredAt: "2026-11-14",
+          movementType: "RESGATE ANTECIPADO",
+          product: "CDB - CDB1",
+          assetCode: "CDB1",
+          direction: "DEBITO",
+          quantity: "1",
+          operationValue: "100",
+        },
+        {
+          occurredAt: "2026-11-14",
+          movementType: null,
+          product: "Movimento sem tipo",
+          assetCode: "CDB1",
+          direction: "DEBITO",
+          quantity: "1",
+          operationValue: "100",
+        },
+        {
+          occurredAt: "2026-11-15",
+          movementType: "RESGATE TOTAL",
+          product: "CDB - CDB1",
+          assetCode: "CDB1",
+          direction: "DEBITO",
+          quantity: "1",
+          operationValue: "200",
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => preview })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => batchMovementPreview,
+        }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: {
+        files: [spreadsheet("posicao.xlsx"), spreadsheet("movimentacao.xlsx")],
+      },
+    });
+    expect(await screen.findByText(/CDB antigo — Viagem/)).toBeTruthy();
+    const dateInput = await screen.findByRole("textbox", {
+      name: /^Data exibida na B3/,
+    });
+    fireEvent.change(dateInput, { target: { value: "13/11/2026" } });
+    expect(screen.queryByText(/RESGATE ANTECIPADO em/)).toBeNull();
+    fireEvent.change(dateInput, { target: { value: "15/11/2026" } });
+    expect(screen.getByText(/RESGATE TOTAL em 15\/11\/2026/)).toBeTruthy();
+    expect(screen.queryByText(/RESGATE ANTECIPADO em/)).toBeNull();
+  });
+
+  it("confirms multiple snapshots without per-position retirement acknowledgements", async () => {
     const firstIdentityPreview = {
       ...positionPreview,
       identityConflicts: [
@@ -835,35 +1002,11 @@ describe("PortfolioImport", () => {
       .forEach((dateInput) =>
         fireEvent.change(dateInput, { target: { value: "18/09/2026" } }),
       );
-    const firstCheckbox = await screen.findByRole("checkbox", {
-      name: /posição CDB antigo do objetivo Viagem não está mais na carteira/,
-    });
-    const secondCheckbox = await screen.findByRole("checkbox", {
-      name: /posição LCI antiga do objetivo Reserva não está mais na carteira/,
-    });
     expect(await screen.findByText("outra-posicao.xlsx")).toBeTruthy();
-    expect(
-      screen.getByRole("button", {
-        name: /Mostrar 2 posições com nome parecido e identidade diferente de CDB antigo/,
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", {
-        name: /Mostrar 1 posição com nome parecido e identidade diferente de LCI antiga/,
-      }),
-    ).toBeTruthy();
+    expect(screen.queryByRole("checkbox")).toBeNull();
     const confirmButton = screen.getByRole("button", {
       name: /Confirmar 2 arquivo/,
     });
-    expect(confirmButton).toHaveProperty("disabled", true);
-
-    fireEvent.click(firstCheckbox);
-    expect(firstCheckbox.getAttribute("aria-checked")).toBe("true");
-    expect(secondCheckbox.getAttribute("aria-checked")).toBe("false");
-    expect(confirmButton).toHaveProperty("disabled", true);
-
-    fireEvent.click(secondCheckbox);
-    expect(secondCheckbox.getAttribute("aria-checked")).toBe("true");
     expect(confirmButton).toHaveProperty("disabled", false);
     fireEvent.click(confirmButton);
 
@@ -871,26 +1014,11 @@ describe("PortfolioImport", () => {
     const confirmationRequests = fetch.mock.calls.filter(
       ([url]) => url === "/api/imports/confirm",
     );
-    const submittedAssignments = Object.fromEntries(
-      confirmationRequests.map(([, init]) => {
-        const body = init?.body as FormData;
-        return [
-          (body.get("file") as File).name,
-          JSON.parse(body.get("retiredObjectiveAssignments") as string),
-        ];
-      }),
-    );
-
-    expect(submittedAssignments).toEqual({
-      "posicoes.xlsx": [
-        { assetKey: "v1:first-assigned-position", objectiveId: "goal-trip" },
-      ],
-      "outra-posicao.xlsx": [
-        {
-          assetKey: "v1:second-assigned-position",
-          objectiveId: "goal-reserve",
-        },
-      ],
+    expect(confirmationRequests).toHaveLength(2);
+    confirmationRequests.forEach(([, init]) => {
+      expect((init?.body as FormData).has("retiredObjectiveAssignments")).toBe(
+        false,
+      );
     });
   });
 

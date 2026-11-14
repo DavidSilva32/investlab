@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import {
   Building2,
@@ -25,14 +25,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -72,15 +70,11 @@ type IdentityConflict = {
         "issuer" | "indexer" | "regimeType" | "issuedAt" | "maturityAt"
       >
     >;
-  possibleIncomingDifferences: Array<{
-    position: Pick<Position, "product" | "assetCode" | "institution"> &
-      Partial<
-        Pick<
-          Position,
-          "issuer" | "indexer" | "regimeType" | "issuedAt" | "maturityAt"
-        >
-      >;
-    changedFields: string[];
+  matchingRedemptions?: Array<{
+    occurredAt: string;
+    movementType: string;
+    quantity: string;
+    operationValue: string | null;
   }>;
 };
 type Movement = {
@@ -151,6 +145,7 @@ type Preview =
       count: number;
       duplicateImportMessage?: string;
       existingReferenceDate?: string | null;
+      latestPositionReferenceDate?: string | null;
       referenceDateNeedsSelection?: boolean;
       referenceDateConflict?: boolean;
       identityConflicts?: IdentityConflict[];
@@ -181,7 +176,6 @@ type Item = {
   error?: string;
   referenceDate?: string;
   reconciliationDecisions?: ReconciliationDecision[];
-  retiredAssignedAssetKeys?: string[];
 };
 type MutationResponse = { message?: string };
 type ConfirmationItem = Item & { preview: Preview };
@@ -202,6 +196,15 @@ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 function formatMoney(value: string | null) {
   return value === null ? "—" : money.format(Number(value));
+}
+
+function normalizeMovementText(value: string | null | undefined) {
+  return (value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("pt-BR");
 }
 
 function groupReconciliationCandidates(
@@ -246,10 +249,6 @@ export function PortfolioImport({
     endpoint: string,
     referenceDate?: string,
     reconciliationDecisions?: ReconciliationDecision[],
-    retiredObjectiveAssignments?: Array<{
-      assetKey: string;
-      objectiveId: string;
-    }>,
   ) {
     const form = new FormData();
     form.append("file", file);
@@ -258,11 +257,6 @@ export function PortfolioImport({
       form.append(
         "reconciliationDecisions",
         JSON.stringify(reconciliationDecisions),
-      );
-    if (retiredObjectiveAssignments?.length)
-      form.append(
-        "retiredObjectiveAssignments",
-        JSON.stringify(retiredObjectiveAssignments),
       );
     const response = await fetch(endpoint, { method: "POST", body: form });
     const body = (await response.json()) as MutationResponse & Preview;
@@ -309,11 +303,81 @@ export function PortfolioImport({
         }
       }),
     );
-    const previewFailures = results.flatMap((result) =>
+    const uploadedMovements = results.flatMap((result) =>
+      result.preview?.documentType === "B3_MOVEMENT_XLSX"
+        ? result.preview.movements
+        : [],
+    );
+    const previewsWithBatchMovements = results.map((result) => {
+      if (result.preview?.documentType !== "B3_POSITION_XLSX") return result;
+      return {
+        ...result,
+        preview: {
+          ...result.preview,
+          identityConflicts: result.preview.identityConflicts?.map(
+            (conflict) => {
+              const batchEvidence = uploadedMovements
+                .filter(
+                  (movement) =>
+                    movement.assetCode &&
+                    conflict.position.assetCode &&
+                    normalizeMovementText(movement.assetCode) ===
+                      normalizeMovementText(conflict.position.assetCode) &&
+                    movement.direction === "DEBITO" &&
+                    normalizeMovementText(movement.movementType).includes(
+                      "RESGATE",
+                    ),
+                )
+                .map(
+                  ({ occurredAt, movementType, quantity, operationValue }) => ({
+                    occurredAt,
+                    movementType,
+                    quantity,
+                    operationValue,
+                  }),
+                );
+              const existingEvidence = conflict.matchingRedemptions ?? [];
+              const seen = new Set(
+                existingEvidence.map((event) =>
+                  JSON.stringify([
+                    event.occurredAt,
+                    event.movementType,
+                    event.quantity,
+                    event.operationValue,
+                  ]),
+                ),
+              );
+              return {
+                ...conflict,
+                matchingRedemptions: [
+                  ...existingEvidence,
+                  ...batchEvidence.filter((event) => {
+                    const key = JSON.stringify([
+                      event.occurredAt,
+                      event.movementType,
+                      event.quantity,
+                      event.operationValue,
+                    ]);
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  }),
+                ],
+              };
+            },
+          ),
+        },
+      };
+    });
+    const previewFailures = previewsWithBatchMovements.flatMap((result) =>
       "notification" in result ? [result.notification] : [],
     );
     if (previewFailures.length > 0) toast.error(previewFailures.join(" · "));
-    setItems(results.map(({ notification: _notification, ...item }) => item));
+    setItems(
+      previewsWithBatchMovements.map(
+        ({ notification: _notification, ...item }) => item,
+      ),
+    );
     setLoading(false);
   }
 
@@ -332,16 +396,6 @@ export function PortfolioImport({
               ? item.referenceDate
               : undefined,
             item.reconciliationDecisions,
-            item.preview.documentType === "B3_POSITION_XLSX"
-              ? item.preview.identityConflicts
-                  ?.filter(({ assetKey }) =>
-                    item.retiredAssignedAssetKeys?.includes(assetKey),
-                  )
-                  .map(({ assetKey, objectiveId }) => ({
-                    assetKey,
-                    objectiveId,
-                  }))
-              : undefined,
           );
           return {
             status: "success" as const,
@@ -408,14 +462,6 @@ export function PortfolioImport({
       item.preview?.documentType === "B3_POSITION_XLSX" &&
       Boolean(item.preview.referenceDateConflict),
   );
-  const hasUnreviewedIdentityConflicts = items.some(
-    (item) =>
-      item.preview?.documentType === "B3_POSITION_XLSX" &&
-      item.preview.identityConflicts?.some(
-        ({ assetKey }) => !item.retiredAssignedAssetKeys?.includes(assetKey),
-      ),
-  );
-
   const hasUnresolvedReconciliation = items.some(
     (item) =>
       item.preview?.documentType === "B3_POSITION_XLSX" &&
@@ -465,22 +511,6 @@ export function PortfolioImport({
       current.map((item) =>
         item.file === file ? { ...item, referenceDate } : item,
       ),
-    );
-  }
-
-  function updateRetiredAssignedAsset(
-    file: File,
-    assetKey: string,
-    retired: boolean,
-  ) {
-    setItems((current) =>
-      current.map((item) => {
-        if (item.file !== file) return item;
-        const selected = new Set(item.retiredAssignedAssetKeys ?? []);
-        if (retired) selected.add(assetKey);
-        else selected.delete(assetKey);
-        return { ...item, retiredAssignedAssetKeys: [...selected] };
-      }),
     );
   }
 
@@ -591,7 +621,6 @@ export function PortfolioImport({
                 readOnly={readOnly}
                 onReferenceDateChange={updateReferenceDate}
                 onReconciliationChange={updateReconciliation}
-                onRetiredAssignedAssetChange={updateRetiredAssignedAsset}
               />
             ))}
           </div>
@@ -627,7 +656,6 @@ export function PortfolioImport({
                 loading ||
                 hasMissingPositionReferenceDate ||
                 hasReferenceDateConflict ||
-                hasUnreviewedIdentityConflicts ||
                 hasUnresolvedReconciliation
               }
               onClick={confirm}
@@ -648,7 +676,6 @@ function PreviewItem({
   readOnly,
   onReferenceDateChange,
   onReconciliationChange,
-  onRetiredAssignedAssetChange,
 }: {
   item: Item;
   readOnly: boolean;
@@ -657,11 +684,6 @@ function PreviewItem({
     file: File,
     group: ReconciliationGroup,
     selectedImportedAssetKey: string | null,
-  ) => void;
-  onRetiredAssignedAssetChange: (
-    file: File,
-    assetKey: string,
-    retired: boolean,
   ) => void;
 }) {
   if (item.error)
@@ -682,16 +704,12 @@ function PreviewItem({
             item.preview.reconciliationCandidates ?? [],
           )}
           reconciliationDecisions={item.reconciliationDecisions ?? []}
-          retiredAssignedAssetKeys={item.retiredAssignedAssetKeys ?? []}
           readOnly={readOnly}
           onReconciliationChange={(group, selectedImportedAssetKey) =>
             onReconciliationChange(item.file, group, selectedImportedAssetKey)
           }
           onReferenceDateChange={(referenceDate) =>
             onReferenceDateChange(item.file, referenceDate)
-          }
-          onRetiredAssignedAssetChange={(assetKey, retired) =>
-            onRetiredAssignedAssetChange(item.file, assetKey, retired)
           }
         />
       </div>
@@ -949,30 +967,22 @@ function PositionPreview({
   referenceDate,
   reconciliationGroups,
   reconciliationDecisions,
-  retiredAssignedAssetKeys,
   readOnly,
   onReconciliationChange,
   onReferenceDateChange,
-  onRetiredAssignedAssetChange,
 }: {
   fileName: string;
   preview: Extract<Preview, { documentType: "B3_POSITION_XLSX" }>;
   referenceDate: string;
   reconciliationGroups: ReconciliationGroup[];
   reconciliationDecisions: ReconciliationDecision[];
-  retiredAssignedAssetKeys: string[];
   readOnly: boolean;
   onReconciliationChange: (
     group: ReconciliationGroup,
     selectedImportedAssetKey: string | null,
   ) => void;
   onReferenceDateChange: (referenceDate: string) => void;
-  onRetiredAssignedAssetChange: (assetKey: string, retired: boolean) => void;
 }) {
-  const identityConflictId = useId();
-  const [expandedIdentityConflicts, setExpandedIdentityConflicts] = useState<
-    string[]
-  >([]);
   const [expandedCandidates, setExpandedCandidates] = useState<string[]>([]);
   const valuedPositions = preview.positions.filter(
     (position) => position.totalValue !== null,
@@ -985,6 +995,17 @@ function PositionPreview({
     preview.positions
       .map((position) => position.institution)
       .filter((institution): institution is string => Boolean(institution)),
+  );
+  const canRetireMissingAssignments = Boolean(
+    !preview.duplicateImportMessage &&
+    referenceDate &&
+    preview.latestPositionReferenceDate &&
+    referenceDate >= preview.latestPositionReferenceDate,
+  );
+  const isHistoricalSnapshot = Boolean(
+    referenceDate &&
+    preview.latestPositionReferenceDate &&
+    referenceDate < preview.latestPositionReferenceDate,
   );
 
   return (
@@ -1257,122 +1278,76 @@ function PositionPreview({
           </section>
         )}
         {preview.identityConflicts?.length ? (
-          <Alert variant="destructive" role="alert">
+          <Alert role="status" aria-live="polite" className="border-primary/30">
             <AlertTitle>
-              Posições atribuídas ausentes no arquivo atual
+              {canRetireMissingAssignments
+                ? `Ativos ausentes serão encerrados (${preview.identityConflicts.length})`
+                : isHistoricalSnapshot
+                  ? "Snapshot histórico: vínculos preservados"
+                  : preview.duplicateImportMessage
+                    ? "Arquivo já importado: vínculos preservados"
+                    : !preview.latestPositionReferenceDate
+                      ? "Vínculos preservados: data atual indisponível"
+                      : "Ativos ausentes da posição atual"}
             </AlertTitle>
             <AlertDescription>
               <p>
-                Estas posições não aparecem na posição atual da B3. Revise cada
-                uma antes de importar. Ativos com nome parecido e identidade
-                diferente não serão vinculados automaticamente.
+                {canRetireMissingAssignments
+                  ? "Estes ativos não aparecem no snapshot enviado. Ao confirmar, os vínculos com os objetivos serão encerrados; o histórico dos extratos será mantido e nenhum vínculo será passado a outro ativo por semelhança de nome."
+                  : isHistoricalSnapshot
+                    ? `Este arquivo é anterior ao snapshot atual de ${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}. Ele será importado como histórico e manterá os vínculos atuais.`
+                    : preview.duplicateImportMessage
+                      ? "A confirmação deste arquivo não encerra vínculos de objetivos."
+                      : !preview.latestPositionReferenceDate
+                        ? "A data do snapshot atual não está disponível para comparação. A importação manterá os vínculos atuais."
+                        : `Selecione a data exibida na B3. Vínculos só serão encerrados quando o snapshot enviado for da mesma data ou posterior ao snapshot atual (${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}).`}
               </p>
-              <div className="mt-3 space-y-3">
-                {preview.identityConflicts.map((conflict, index) => {
-                  const checkboxId = `${identityConflictId}-retired-${index}`;
-                  const detailsExpanded = expandedIdentityConflicts.includes(
-                    conflict.assetKey,
-                  );
-                  return (
-                    <div
-                      key={conflict.assetKey}
-                      className="space-y-2 rounded-md border border-destructive/20 bg-background/70 p-3"
-                    >
-                      <div className="space-y-1">
-                        <p className="font-medium">
-                          {conflict.position.product} — {conflict.objectiveName}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {[
-                            conflict.position.assetCode,
-                            conflict.position.institution,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") ||
-                            "Identidade adicional não informada"}
-                        </p>
-                      </div>
-                      {conflict.possibleIncomingDifferences.length > 0 && (
-                        <Collapsible
-                          open={detailsExpanded}
-                          onOpenChange={(open) =>
-                            setExpandedIdentityConflicts((current) =>
-                              open
-                                ? [...new Set([...current, conflict.assetKey])]
-                                : current.filter(
-                                    (key) => key !== conflict.assetKey,
-                                  ),
-                            )
-                          }
-                        >
-                          <CollapsibleTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="group h-auto min-h-9 px-2 text-primary"
-                              aria-label={
-                                detailsExpanded
-                                  ? `Ocultar diferenças de identidade de ${conflict.position.product}`
-                                  : `Mostrar ${conflict.possibleIncomingDifferences.length} ${conflict.possibleIncomingDifferences.length === 1 ? "posição com nome parecido" : "posições com nome parecido"} e identidade diferente de ${conflict.position.product}`
-                              }
-                            >
-                              <ChevronDown
-                                aria-hidden="true"
-                                className="size-4 transition-transform group-data-[state=open]:rotate-180"
-                              />
-                              {detailsExpanded
-                                ? "Ocultar diferenças"
-                                : `Ver ${conflict.possibleIncomingDifferences.length} diferenças de identidade`}
-                            </Button>
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            <div className="mt-1 rounded-md border bg-muted/20 p-3">
-                              <p className="text-xs font-medium">
-                                O mesmo nome não confirma que seja o mesmo
-                                ativo:
-                              </p>
-                              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
-                                {conflict.possibleIncomingDifferences.map(
-                                  (candidate, candidateIndex) => (
-                                    <li key={candidateIndex}>
-                                      {candidate.changedFields.join("; ")}
-                                    </li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      )}
-                      <div className="flex items-start gap-2 rounded-md border p-3">
-                        <Checkbox
-                          id={checkboxId}
-                          checked={retiredAssignedAssetKeys.includes(
-                            conflict.assetKey,
-                          )}
-                          disabled={readOnly}
-                          onCheckedChange={(checked) =>
-                            onRetiredAssignedAssetChange(
-                              conflict.assetKey,
-                              checked === true,
-                            )
-                          }
-                          aria-label={`Confirmar que a posição ${conflict.position.product} do objetivo ${conflict.objectiveName} não está mais na carteira`}
-                        />
-                        <Label
-                          htmlFor={checkboxId}
-                          className="cursor-pointer text-sm font-normal leading-relaxed"
-                        >
-                          Confirmo que esta posição não está mais na carteira e
-                          autorizo remover seu vínculo com o objetivo{" "}
-                          {conflict.objectiveName} ao importar.
-                        </Label>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <ul className="mt-3 space-y-2">
+                {preview.identityConflicts.map((conflict) => (
+                  <li
+                    key={conflict.assetKey}
+                    className="rounded-md border bg-background/70 p-3"
+                  >
+                    <p className="font-medium">
+                      {conflict.position.product} — {conflict.objectiveName}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {[
+                        conflict.position.assetCode,
+                        conflict.position.institution,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "Código não informado"}
+                    </p>
+                    {referenceDate && conflict.matchingRedemptions?.length
+                      ? (() => {
+                          const matchingRedemption =
+                            conflict.matchingRedemptions
+                              .filter(
+                                (event) => event.occurredAt <= referenceDate,
+                              )
+                              .sort((left, right) =>
+                                right.occurredAt.localeCompare(left.occurredAt),
+                              )[0];
+                          if (!matchingRedemption) return null;
+                          return (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {matchingRedemption.movementType} em{" "}
+                              {date.format(
+                                new Date(
+                                  `${matchingRedemption.occurredAt}T00:00:00Z`,
+                                ),
+                              )}
+                              {matchingRedemption.operationValue !== null
+                                ? ` · ${formatMoney(matchingRedemption.operationValue)}`
+                                : ""}
+                            </p>
+                          );
+                        })()
+                      : null}
+                  </li>
+                ))}
+              </ul>
             </AlertDescription>
           </Alert>
         ) : null}

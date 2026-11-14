@@ -1751,7 +1751,9 @@ describe("import repository", () => {
           from: () => ({
             where: () => ({
               orderBy: () => ({
-                limit: async () => [{ id: "snapshot-latest" }],
+                limit: async () => [
+                  { id: "snapshot-latest", referenceDate: "2026-11-12" },
+                ],
               }),
             }),
           }),
@@ -1784,7 +1786,7 @@ describe("import repository", () => {
         fileName: "new.xlsx",
         fileHash: "new-hash",
         documentType: "B3_POSITION_XLSX",
-        referenceDate: "2026-09-30",
+        referenceDate: "2026-11-13",
         positions: [],
       }),
     ).rejects.toMatchObject({
@@ -1804,7 +1806,7 @@ describe("import repository", () => {
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
-  it("removes only explicitly confirmed stale assignment rows in the snapshot transaction", async () => {
+  it("retires missing assignments for a snapshot on or after the current date", async () => {
     const currentPosition = {
       product: "CDB Viagem",
       assetCode: "CDB-TRIP",
@@ -1825,7 +1827,9 @@ describe("import repository", () => {
           from: () => ({
             where: () => ({
               orderBy: () => ({
-                limit: async () => [{ id: "snapshot-latest" }],
+                limit: async () => [
+                  { id: "snapshot-latest", referenceDate: "2026-11-12" },
+                ],
               }),
             }),
           }),
@@ -1904,6 +1908,108 @@ describe("import repository", () => {
     ).toBe(false);
   });
 
+  it("imports an older snapshot without deleting current objective assignments", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn().mockImplementation(() => ({
+        from: (table: unknown) =>
+          table === positionSnapshots
+            ? {
+                where: () => ({
+                  orderBy: () => ({
+                    limit: async () => [
+                      { id: "snapshot-latest", referenceDate: "2026-11-12" },
+                    ],
+                  }),
+                }),
+              }
+            : { where: async () => [] },
+      })),
+      delete: vi.fn(),
+      insert: vi.fn(),
+    };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-import" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({
+          returning: async () => [{ id: "historical-snapshot" }],
+        }),
+      })
+      .mockReturnValueOnce({ values: () => ({ returning: async () => [] }) });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "historical.xlsx",
+        fileHash: "historical-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-09-30",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: "v1:" + "a".repeat(64), objectiveId: "trip" },
+        ],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "historical-snapshot" });
+
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.insert).toHaveBeenCalled();
+  });
+
+  it("preserves objective assignments when the current snapshot date is unknown", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn().mockImplementation(() => ({
+        from: (table: unknown) =>
+          table === positionSnapshots
+            ? {
+                where: () => ({
+                  orderBy: () => ({
+                    limit: async () => [
+                      { id: "snapshot-undated", referenceDate: null },
+                    ],
+                  }),
+                }),
+              }
+            : { where: async () => [] },
+      })),
+      delete: vi.fn(),
+      insert: vi.fn(),
+    };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-import" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-snapshot" }] }),
+      })
+      .mockReturnValueOnce({ values: () => ({ returning: async () => [] }) });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "snapshot.xlsx",
+        fileHash: "undated-latest-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-11-13",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: "v1:" + "a".repeat(64), objectiveId: "trip" },
+        ],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "new-snapshot" });
+
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.insert).toHaveBeenCalled();
+  });
+
   it("keeps a reassigned objective link when the confirmed pair became stale", async () => {
     const currentPosition = {
       product: "CDB Viagem",
@@ -1924,7 +2030,9 @@ describe("import repository", () => {
           from: () => ({
             where: () => ({
               orderBy: () => ({
-                limit: async () => [{ id: "snapshot-latest" }],
+                limit: async () => [
+                  { id: "snapshot-latest", referenceDate: "2026-11-12" },
+                ],
               }),
             }),
           }),

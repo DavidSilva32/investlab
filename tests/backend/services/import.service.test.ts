@@ -710,7 +710,7 @@ describe("ImportService persistence", () => {
     },
   );
 
-  it("blocks confirmation when an assigned B3 identity disappears and reports field differences", async () => {
+  it("matches a disappeared position to its exact B3 redemption and confirms without manual retirement choices", async () => {
     const objectiveId = "00000000-0000-4000-8000-000000000001";
     const previous = {
       product: "CDB Banco A",
@@ -723,6 +723,7 @@ describe("ImportService persistence", () => {
       maturityAt: "2027-01-01",
       quantity: "1",
       totalValue: "100",
+      referenceDate: "2026-11-12",
     };
     const incoming = { ...previous, institution: "Banco B" };
     parser.mockReturnValue({
@@ -739,6 +740,38 @@ describe("ImportService persistence", () => {
         },
       ],
     });
+    repository.listMovements.mockResolvedValue([
+      {
+        id: "redemption-cdb1",
+        direction: "DEBITO",
+        occurredAt: "2026-10-29",
+        movementType: "RESGATE ANTECIPADO/",
+        product: "CDB - CDB1 - BANCO A",
+        assetCode: "CDB1",
+        quantity: "35",
+        operationValue: "445.42",
+      },
+      {
+        id: "redemption-similar-name",
+        direction: "DEBITO",
+        occurredAt: "2026-10-30",
+        movementType: "RESGATE ANTECIPADO/",
+        product: "CDB Banco A",
+        assetCode: "CDB2",
+        quantity: "35",
+        operationValue: "445.42",
+      },
+      {
+        id: "redemption-without-code",
+        direction: "DEBITO",
+        occurredAt: "2026-10-31",
+        movementType: "RESGATE ANTECIPADO/",
+        product: "CDB Banco A",
+        assetCode: null,
+        quantity: "35",
+        operationValue: "445.42",
+      },
+    ]);
 
     const preview = await importService.previewWithIdentityConflicts(
       persistenceFile,
@@ -746,31 +779,40 @@ describe("ImportService persistence", () => {
     );
 
     expect(preview).toMatchObject({
+      latestPositionReferenceDate: "2026-11-12",
       identityConflicts: [
         {
           objectiveId,
           objectiveName: "Viagem",
           position: expect.objectContaining({ product: "CDB Banco A" }),
-          possibleIncomingDifferences: [
+          matchingRedemptions: [
             {
-              position: expect.objectContaining({ institution: "Banco B" }),
-              changedFields: ["instituição: Banco A → Banco B"],
+              occurredAt: "2026-10-29",
+              movementType: "RESGATE ANTECIPADO/",
+              quantity: "35",
+              operationValue: "445.42",
             },
           ],
         },
       ],
     });
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockResolvedValue({ importId: "new-import" });
     await expect(
       importService.confirm(persistenceFile, "request-confirm", "2026-09-28"),
-    ).rejects.toMatchObject({
-      statusCode: 409,
-      message: expect.stringContaining("Viagem"),
-    });
+    ).resolves.toMatchObject({ duplicate: false });
     expect(repository.existsByHash).toHaveBeenCalledTimes(2);
-    expect(repository.create).not.toHaveBeenCalled();
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retiredObjectiveAssignments: [
+          { assetKey: getEmergencyReserveAssetKey(previous), objectiveId },
+        ],
+      }),
+      "request-confirm",
+    );
   });
 
-  it("accepts only explicit confirmation of each disappeared assigned position", async () => {
+  it("automatically retires every disappeared assigned position when confirming a new snapshot", async () => {
     const objectiveId = "00000000-0000-4000-8000-000000000001";
     const previous = {
       product: "CDB Banco A",
@@ -803,8 +845,6 @@ describe("ImportService persistence", () => {
         persistenceFile,
         "request-retired-position",
         "2026-09-28",
-        [],
-        [{ assetKey: staleAssetKey, objectiveId }],
       ),
     ).resolves.toMatchObject({ duplicate: false });
 
@@ -816,7 +856,7 @@ describe("ImportService persistence", () => {
     );
   });
 
-  it("rejects confirmation when the stale asset was reassigned to another objective after preview", async () => {
+  it("uses the current objective assignment when automatically retiring a disappeared position", async () => {
     const previous = {
       product: "CDB Banco A",
       institution: "Banco A",
@@ -851,14 +891,19 @@ describe("ImportService persistence", () => {
         persistenceFile,
         "request-reassigned-position",
         "2026-09-28",
-        [],
-        [{ assetKey: staleAssetKey, objectiveId: objectiveA }],
       ),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(repository.create).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ duplicate: false });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retiredObjectiveAssignments: [
+          { assetKey: staleAssetKey, objectiveId: objectiveB },
+        ],
+      }),
+      "request-reassigned-position",
+    );
   });
 
-  it("rejects stale or partial disappeared-position decisions after preview changes", async () => {
+  it("does not depend on client-supplied retirement choices", async () => {
     const objectiveId = "00000000-0000-4000-8000-000000000001";
     const assigned = {
       product: "CDB Banco A",
@@ -892,11 +937,19 @@ describe("ImportService persistence", () => {
         persistenceFile,
         "request-stale-retirement-decision",
         "2026-09-28",
-        [],
-        [{ assetKey: "v1:" + "a".repeat(64), objectiveId }],
       ),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(repository.create).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ duplicate: false });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retiredObjectiveAssignments: [
+          {
+            assetKey: getEmergencyReserveAssetKey(assigned),
+            objectiveId,
+          },
+        ],
+      }),
+      "request-stale-retirement-decision",
+    );
   });
 
   it("keeps objective assignments when a new snapshot retains the same position identity", async () => {
@@ -974,7 +1027,7 @@ describe("ImportService persistence", () => {
     ).resolves.toMatchObject({ identityConflicts: [] });
   });
 
-  it("sorts assigned identity conflicts and reports only anchored candidates", async () => {
+  it("sorts disappeared assignments and leaves redemptions unmatched without an exact asset code", async () => {
     const previousA = {
       product: "CDB A",
       assetCode: "CDB-A",
@@ -1053,17 +1106,11 @@ describe("ImportService persistence", () => {
       identityConflicts: [
         {
           assetKey: getEmergencyReserveAssetKey(previousB),
-          possibleIncomingDifferences: [],
+          matchingRedemptions: [],
         },
         {
           assetKey: getEmergencyReserveAssetKey(previousA),
-          possibleIncomingDifferences: [
-            {
-              changedFields: expect.arrayContaining([
-                "instituição: Banco A → Banco novo",
-              ]),
-            },
-          ],
+          matchingRedemptions: [],
         },
       ],
     });
