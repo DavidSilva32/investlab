@@ -118,7 +118,12 @@ const hashAllocationInputs = (input: {
     id?: string;
     assignedAt?: Date;
   }>;
-  objectives: Array<{ id: string; name: string; kind: string }>;
+  objectives: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    purpose?: string | null;
+  }>;
 }) => {
   const cdiInputs = input.imported
     .flatMap((position) => {
@@ -168,7 +173,12 @@ export function createAllocationSourceFingerprint(input: {
     id?: string;
     assignedAt?: Date;
   }>;
-  objectives: Array<{ id: string; name: string; kind: string }>;
+  objectives: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    purpose?: string | null;
+  }>;
 }) {
   return hashAllocationInputs({
     valuationDate: input.valuationDate,
@@ -290,7 +300,8 @@ export class PortfolioObjectivesRepository {
     await transaction.execute(sql`
       LOCK TABLE "position_snapshots", "position_items",
         "manual_portfolio_positions", "cdb_rate_configurations",
-        "cdi_daily_rates", "portfolio_objectives",
+        "cdi_daily_rates", "position_reconciliation_events",
+        "portfolio_objectives",
         "portfolio_objective_positions" IN SHARE ROW EXCLUSIVE MODE
     `);
     return true;
@@ -336,16 +347,31 @@ export class PortfolioObjectivesRepository {
       .from(manualPortfolioPositions)
       .where(eq(manualPortfolioPositions.userId, userId))
       .orderBy(manualPortfolioPositions.id);
-    const manual = manualRows.map((position) => ({
-      ...position,
-      source: "MANUAL",
-      reportedTotalValue: position.totalValue,
-      totalValue:
-        position.currency === "BRL"
-          ? position.totalValue
-          : position.convertedValueBrl,
-      referenceDate: position.positionDate,
-    })) as AllocationValuationPosition[];
+    const reconciliationEvents = await transaction
+      .select()
+      .from(positionReconciliationEvents)
+      .where(eq(positionReconciliationEvents.userId, userId))
+      .orderBy(
+        positionReconciliationEvents.recordedAt,
+        positionReconciliationEvents.id,
+      );
+    const linkedManualKeys = new Set(
+      activeReconciliationLinks(reconciliationEvents, todayInSaoPaulo()).map(
+        (event) => event.manualAssetKey,
+      ),
+    );
+    const manual = manualRows
+      .filter((position) => !linkedManualKeys.has(position.assetKey))
+      .map((position) => ({
+        ...position,
+        source: "MANUAL",
+        reportedTotalValue: position.totalValue,
+        totalValue:
+          position.currency === "BRL"
+            ? position.totalValue
+            : position.convertedValueBrl,
+        referenceDate: position.positionDate,
+      })) as AllocationValuationPosition[];
     const cdbs = imported.filter(
       (position) =>
         Boolean(position.assetCode) &&

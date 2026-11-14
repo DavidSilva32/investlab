@@ -20,6 +20,8 @@ import {
 } from "@/backend/repositories/portfolio-objectives.repository";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { importedReconciliationKey } from "@/backend/services/position-reconciliation";
+import { todayInSaoPaulo } from "@/lib/valuation-date";
 
 const sqlChunksText = (chunks: unknown[]) =>
   chunks
@@ -766,6 +768,185 @@ describe("PortfolioObjectivesRepository", () => {
     expect(database.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "serializable",
     });
+  });
+
+  it("matches the service fingerprint when a linked manual position is replaced by its imported position", async () => {
+    const snapshotIdKey = Symbol.for("investlab.positionSnapshotId");
+    const valuationDate = todayInSaoPaulo();
+    const snapshotId = "snapshot-linked";
+    const manualKey = "manual:00000000-0000-4000-8000-000000000123";
+    const imported = {
+      id: "position-b3-linked",
+      source: "B3",
+      product: "Tesouro Selic",
+      institution: "Banco Inter",
+      issuer: null,
+      assetCode: "LFT-2029",
+      indexer: null,
+      regimeType: null,
+      issuedAt: null,
+      maturityAt: null,
+      quantity: "1.00000000",
+      availableQuantity: null,
+      unavailableQuantity: null,
+      unitPrice: null,
+      totalValue: "100.00",
+      valuationSource: "B3",
+      mtmUnitPrice: null,
+      mtmTotalValue: null,
+      curveUnitPrice: null,
+      curveTotalValue: null,
+      closingUnitPrice: null,
+      closingTotalValue: null,
+      referenceDate: "2026-11-13",
+      estimationBaseDate: "2026-11-13",
+    };
+    const expectedPosition = { ...imported };
+    Object.defineProperty(expectedPosition, snapshotIdKey, {
+      value: snapshotId,
+    });
+    const expectedSourceFingerprint = createAllocationSourceFingerprint({
+      valuationDate,
+      positions: [expectedPosition],
+      assignments: [{ assetKey: manualKey, objectiveId: reserveObjectiveId }],
+      objectives: [
+        {
+          id: reserveObjectiveId,
+          name: "Reserva",
+          kind: "RESERVE",
+          purpose: null,
+        },
+      ],
+    });
+    const manual = {
+      id: "manual-linked",
+      assetKey: manualKey,
+      product: "Tesouro Selic",
+      assetCode: "LFT-2029",
+      institution: "Banco Inter",
+      quantity: "1.00000000",
+      currency: "BRL",
+      unitPrice: null,
+      totalValue: "100.00",
+      reportedTotalValue: "100.00",
+      valueBasis: "total_value",
+      positionDate: "2026-11-13",
+      convertedValueBrl: null,
+      conversionDate: null,
+      updatedAt: new Date("2026-11-13T12:00:00Z"),
+    };
+    const reconciliation = {
+      id: "00000000-0000-4000-8000-000000000777",
+      manualAssetKey: manualKey,
+      importedAssetKey: importedReconciliationKey(imported),
+      status: "LINK" as const,
+      effectiveFrom: valuationDate,
+      recordedAt: new Date("2026-11-13T12:00:00Z"),
+      importId: snapshotId,
+    };
+    const rows = new Map<string, unknown[]>([
+      [
+        "position_snapshots",
+        [
+          {
+            id: snapshotId,
+            referenceDate: "2026-11-13",
+            estimationBaseDate: "2026-11-13",
+            createdAt: new Date("2026-11-13T12:00:00Z"),
+          },
+        ],
+      ],
+      ["position_items", [{ ...imported, snapshotId }]],
+      ["manual_portfolio_positions", [manual]],
+      ["position_reconciliation_events", [reconciliation]],
+      [
+        "portfolio_objective_positions",
+        [{ assetKey: manualKey, objectiveId: reserveObjectiveId }],
+      ],
+      [
+        "portfolio_objectives",
+        [
+          {
+            id: reserveObjectiveId,
+            name: "Reserva",
+            kind: "RESERVE",
+            purpose: null,
+          },
+        ],
+      ],
+      ["cdb_rate_configurations", []],
+      ["cdi_daily_rates", []],
+    ]);
+    const queryFor = (result: unknown[]) => {
+      const query = {
+        where: () => query,
+        orderBy: () => query,
+        limit: () => query,
+        for: async () => result,
+        then: (
+          resolve: (value: unknown[]) => unknown,
+          reject: (reason: unknown) => unknown,
+        ) => Promise.resolve(result).then(resolve, reject),
+      };
+      return query;
+    };
+    const insertedValues: unknown[] = [];
+    const insertedResults = [
+      [{ id: "batch-linked" }],
+      [
+        {
+          id: "reference-linked",
+          batchId: "batch-linked",
+          objectiveId: reserveObjectiveId,
+          amountCents: "10000",
+          cdiPercentage: null,
+        },
+      ],
+    ];
+    let insertIndex = 0;
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: (table: Record<PropertyKey, unknown>) =>
+          queryFor(rows.get(String(table[Symbol.for("drizzle:Name")])) ?? []),
+      })),
+      delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })),
+      insert: vi.fn(() => {
+        const result = insertedResults[insertIndex++];
+        return {
+          values: (values: unknown) => {
+            insertedValues.push(values);
+            return { returning: async () => result };
+          },
+        };
+      }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+        amountCents: "10000",
+        observedOn: valuationDate,
+        cdiPercentage: null,
+        selectedAssetKeys: [manualKey],
+        expectedOwners: { [manualKey]: reserveObjectiveId },
+        expectedSourceFingerprint,
+      }),
+    ).resolves.toMatchObject({
+      objectiveId: reserveObjectiveId,
+      amountCents: "10000",
+      observedDate: valuationDate,
+    });
+    expect(insertedValues).toHaveLength(2);
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    expect(
+      sqlChunksText(
+        (transaction.execute.mock.calls[0][0] as { queryChunks: unknown[] })
+          .queryChunks,
+      ),
+    ).toContain("position_reconciliation_events");
   });
 
   it("does not write a reserve balance or assignments after a stale owner conflict", async () => {
