@@ -264,6 +264,7 @@ export class ImportService {
     requestId: string,
     referenceDate?: string | null,
     decisions?: unknown,
+    retiredObjectiveAssignments?: unknown,
   ) {
     const decisionSchema = z
       .array(
@@ -280,10 +281,36 @@ export class ImportService {
     const parsedDecisions = decisionSchema.safeParse(decisions ?? []);
     if (!parsedDecisions.success)
       throw new ApplicationError("Revise as decisões de conciliação.", 400);
+    const retiredAssignmentsSchema = z
+      .array(
+        z
+          .object({
+            assetKey: z.string().regex(/^v1:[a-f0-9]{64}$/),
+            objectiveId: z.string().uuid(),
+          })
+          .strict(),
+      )
+      .max(1000)
+      .refine(
+        (assignments) =>
+          new Set(
+            assignments.map(({ assetKey, objectiveId }) =>
+              JSON.stringify([assetKey, objectiveId]),
+            ),
+          ).size === assignments.length,
+      );
+    const parsedRetiredAssignments = retiredAssignmentsSchema.safeParse(
+      retiredObjectiveAssignments ?? [],
+    );
+    if (!parsedRetiredAssignments.success)
+      throw new ApplicationError(
+        "Confirmações de posições removidas inválidas.",
+        400,
+      );
     const preview = this.preview(file);
     if (
       preview.documentType !== "B3_POSITION_XLSX" &&
-      parsedDecisions.data.length
+      (parsedDecisions.data.length || parsedRetiredAssignments.data.length)
     ) {
       throw new ApplicationError(
         "Conciliação disponível apenas para posições.",
@@ -296,6 +323,11 @@ export class ImportService {
     );
     const reprocessExistingImport =
       duplicate && preview.documentType === "B3_POSITION_XLSX";
+    if (reprocessExistingImport && parsedRetiredAssignments.data.length)
+      throw new ApplicationError(
+        "A revisão de arquivo já importado não pode remover vínculos de posições. Envie um novo snapshot da B3.",
+        409,
+      );
     const existingReference = reprocessExistingImport
       ? await importRepository.getPositionImportReferenceDateByHash(
           preview.hash,
@@ -341,7 +373,26 @@ export class ImportService {
         preview.positions,
         requestId,
       );
-      if (conflicts.length) {
+      const confirmedAssignments = parsedRetiredAssignments.data;
+      const assignmentKey = ({
+        assetKey,
+        objectiveId,
+      }: {
+        assetKey: string;
+        objectiveId: string;
+      }) => JSON.stringify([assetKey, objectiveId]);
+      const currentConflictPairs = conflicts
+        .map(({ assetKey, objectiveId }) =>
+          assignmentKey({ assetKey, objectiveId }),
+        )
+        .sort();
+      const confirmedPairs = confirmedAssignments.map(assignmentKey).sort();
+      const assignmentsMatch =
+        confirmedPairs.length === currentConflictPairs.length &&
+        confirmedPairs.every(
+          (pair, index) => pair === currentConflictPairs[index],
+        );
+      if (conflicts.length && !confirmedAssignments.length) {
         const affected = conflicts
           .map(
             ({ objectiveName, position }) =>
@@ -353,6 +404,11 @@ export class ImportService {
           409,
         );
       }
+      if (!assignmentsMatch)
+        throw new ApplicationError(
+          "As posições atribuídas mudaram ou ainda não foram revisadas. Atualize a prévia e confirme cada vínculo que deve ser removido.",
+          409,
+        );
     }
     const importData =
       preview.documentType === "B3_MOVEMENT_XLSX"
@@ -371,6 +427,7 @@ export class ImportService {
           : {
               ...this.buildPositionImportData(preview, effectiveReferenceDate),
               reconciliationDecisions: parsedDecisions.data,
+              retiredObjectiveAssignments: parsedRetiredAssignments.data,
               reconcileExistingImport,
               reprocessExistingImport,
             };
@@ -439,6 +496,7 @@ export class ImportService {
       string,
       {
         assetKey: string;
+        objectiveId: string;
         objectiveName: string;
         position: PositionIdentity;
         possibleIncomingDifferences: Array<{
@@ -476,6 +534,7 @@ export class ImportService {
       });
       conflicts.set(assetKey, {
         assetKey,
+        objectiveId: objectiveId!,
         objectiveName,
         position,
         possibleIncomingDifferences,

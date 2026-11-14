@@ -661,6 +661,7 @@ describe("ImportService persistence", () => {
   );
 
   it("blocks confirmation when an assigned B3 identity disappears and reports field differences", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000001";
     const previous = {
       product: "CDB Banco A",
       institution: "Banco A",
@@ -680,11 +681,11 @@ describe("ImportService persistence", () => {
     });
     repository.listLatestPositions.mockResolvedValue([previous]);
     objectives.list.mockResolvedValue({
-      objectives: [{ id: "trip", name: "Viagem" }],
+      objectives: [{ id: objectiveId, name: "Viagem" }],
       assignments: [
         {
           assetKey: getEmergencyReserveAssetKey(previous),
-          objectiveId: "trip",
+          objectiveId,
         },
       ],
     });
@@ -697,6 +698,7 @@ describe("ImportService persistence", () => {
     expect(preview).toMatchObject({
       identityConflicts: [
         {
+          objectiveId,
           objectiveName: "Viagem",
           position: expect.objectContaining({ product: "CDB Banco A" }),
           possibleIncomingDifferences: [
@@ -715,6 +717,135 @@ describe("ImportService persistence", () => {
       message: expect.stringContaining("Viagem"),
     });
     expect(repository.existsByHash).toHaveBeenCalledTimes(2);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts only explicit confirmation of each disappeared assigned position", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000001";
+    const previous = {
+      product: "CDB Banco A",
+      institution: "Banco A",
+      issuer: "Banco A",
+      assetCode: "CDB1",
+      indexer: "CDI",
+      regimeType: "PÓS",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+      quantity: "1",
+      totalValue: "100",
+    };
+    const incoming = { ...previous, institution: "Banco B" };
+    const staleAssetKey = getEmergencyReserveAssetKey(previous);
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [incoming],
+    });
+    repository.listLatestPositions.mockResolvedValue([previous]);
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockResolvedValue({ importId: "new-import" });
+    objectives.list.mockResolvedValue({
+      objectives: [{ id: objectiveId, name: "Viagem" }],
+      assignments: [{ assetKey: staleAssetKey, objectiveId }],
+    });
+
+    await expect(
+      importService.confirm(
+        persistenceFile,
+        "request-retired-position",
+        "2026-09-28",
+        [],
+        [{ assetKey: staleAssetKey, objectiveId }],
+      ),
+    ).resolves.toMatchObject({ duplicate: false });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retiredObjectiveAssignments: [{ assetKey: staleAssetKey, objectiveId }],
+      }),
+      "request-retired-position",
+    );
+  });
+
+  it("rejects confirmation when the stale asset was reassigned to another objective after preview", async () => {
+    const previous = {
+      product: "CDB Banco A",
+      institution: "Banco A",
+      issuer: "Banco A",
+      assetCode: "CDB1",
+      indexer: "CDI",
+      regimeType: "PÓS",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+      quantity: "1",
+      totalValue: "100",
+    };
+    const staleAssetKey = getEmergencyReserveAssetKey(previous);
+    const objectiveA = "00000000-0000-4000-8000-000000000001";
+    const objectiveB = "00000000-0000-4000-8000-000000000002";
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [{ ...previous, institution: "Banco B" }],
+    });
+    repository.listLatestPositions.mockResolvedValue([previous]);
+    repository.existsByHash.mockResolvedValue(false);
+    objectives.list.mockResolvedValue({
+      objectives: [
+        { id: objectiveA, name: "Viagem" },
+        { id: objectiveB, name: "Reserva" },
+      ],
+      assignments: [{ assetKey: staleAssetKey, objectiveId: objectiveB }],
+    });
+
+    await expect(
+      importService.confirm(
+        persistenceFile,
+        "request-reassigned-position",
+        "2026-09-28",
+        [],
+        [{ assetKey: staleAssetKey, objectiveId: objectiveA }],
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale or partial disappeared-position decisions after preview changes", async () => {
+    const objectiveId = "00000000-0000-4000-8000-000000000001";
+    const assigned = {
+      product: "CDB Banco A",
+      institution: "Banco A",
+      issuer: "Banco A",
+      assetCode: "CDB1",
+      indexer: "CDI",
+      regimeType: "PÓS",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+      quantity: "1",
+      totalValue: "100",
+    };
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: [{ ...assigned, institution: "Banco B" }],
+    });
+    repository.listLatestPositions.mockResolvedValue([assigned]);
+    objectives.list.mockResolvedValue({
+      objectives: [{ id: objectiveId, name: "Viagem" }],
+      assignments: [
+        {
+          assetKey: getEmergencyReserveAssetKey(assigned),
+          objectiveId,
+        },
+      ],
+    });
+
+    await expect(
+      importService.confirm(
+        persistenceFile,
+        "request-stale-retirement-decision",
+        "2026-09-28",
+        [],
+        [{ assetKey: "v1:" + "a".repeat(64), objectiveId }],
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
     expect(repository.create).not.toHaveBeenCalled();
   });
 

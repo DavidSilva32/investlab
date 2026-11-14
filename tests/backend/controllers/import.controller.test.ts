@@ -149,6 +149,43 @@ describe("ImportController", () => {
     expect(service.confirm).toHaveBeenCalled();
   });
 
+  it("passes explicit disappeared-position confirmations to the service", async () => {
+    const form = new FormData();
+    form.append(
+      "file",
+      new File(["content"], "b3.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    form.append(
+      "retiredObjectiveAssignments",
+      JSON.stringify([
+        {
+          assetKey: "v1:" + "a".repeat(64),
+          objectiveId: "00000000-0000-4000-8000-000000000001",
+        },
+      ]),
+    );
+
+    await importController.confirm(
+      new Request("http://test/import", { method: "POST", body: form }),
+      "request-retired-position",
+    );
+
+    expect(service.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "b3.xlsx" }),
+      "request-retired-position",
+      null,
+      undefined,
+      [
+        {
+          assetKey: "v1:" + "a".repeat(64),
+          objectiveId: "00000000-0000-4000-8000-000000000001",
+        },
+      ],
+    );
+  });
+
   it("counts and confirms negotiation rows with a document-specific message", async () => {
     const tradePreview = {
       hash: "d".repeat(64),

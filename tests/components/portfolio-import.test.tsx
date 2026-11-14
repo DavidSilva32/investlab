@@ -538,12 +538,13 @@ describe("PortfolioImport", () => {
     expect(confirmBody.has("estimationBaseDate")).toBe(false);
   });
 
-  it("shows identity differences and blocks confirmation for an assigned position missing from the import", async () => {
+  it("requires explicit confirmation for every disappeared assigned position and sends exact keys", async () => {
     const preview = {
       ...positionPreview,
       identityConflicts: [
         {
           assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
           objectiveName: "Viagem",
           position: {
             product: "CDB Banco A",
@@ -571,22 +572,90 @@ describe("PortfolioImport", () => {
             },
           ],
         },
+        {
+          assetKey: "v1:second-assigned-position",
+          objectiveId: "goal-reserve",
+          objectiveName: "Reserva",
+          position: {
+            product: "CDB Banco B",
+            institution: "Banco B",
+            assetCode: "CDB2",
+            quantity: "1",
+            totalValue: "100",
+            indexer: "CDI",
+            unitPrice: "100",
+            valuationSource: "CURVA" as const,
+          },
+          possibleIncomingDifferences: [],
+        },
       ],
     };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => preview }),
-    );
+    const fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => preview });
+    vi.stubGlobal("fetch", fetch);
     const { container } = render(<PortfolioImport />);
 
     fireEvent.change(container.querySelector('input[type="file"]')!, {
       target: { files: [spreadsheet("posicoes.xlsx")] },
     });
     expect(await screen.findByText(/CDB Banco A — Viagem/)).toBeTruthy();
-    expect(screen.getByText(/instituição: Banco A → Banco B/)).toBeTruthy();
+    const detailsButton = screen.getByRole("button", {
+      name: /Mostrar 1 posição com nome parecido e identidade diferente de CDB Banco A/,
+    });
+    fireEvent.click(detailsButton);
     expect(
-      screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
-    ).toHaveProperty("disabled", true);
+      screen.getByText(/O mesmo nome não confirma que seja o mesmo ativo/),
+    ).toBeTruthy();
+    expect(screen.getByText(/instituição: Banco A → Banco B/)).toBeTruthy();
+    const confirmButton = screen.getByRole("button", {
+      name: /Confirmar 1 arquivo/,
+    });
+    expect(confirmButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(
+      await screen.findByRole("textbox", {
+        name: /^Data exibida na B3/,
+      }),
+      { target: { value: "18/09/2026" } },
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /posição CDB Banco A do objetivo Viagem não está mais na carteira/,
+      }),
+    );
+    expect(confirmButton).toHaveProperty("disabled", true);
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /posição CDB Banco B do objetivo Reserva não está mais na carteira/,
+      }),
+    );
+    expect(confirmButton).toHaveProperty("disabled", false);
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /posição CDB Banco A do objetivo Viagem não está mais na carteira/,
+      }),
+    );
+    expect(confirmButton).toHaveProperty("disabled", true);
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /posição CDB Banco A do objetivo Viagem não está mais na carteira/,
+      }),
+    );
+    expect(confirmButton).toHaveProperty("disabled", false);
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    const confirmBody = fetch.mock.calls[1]?.[1]?.body as FormData;
+    expect(
+      JSON.parse(confirmBody.get("retiredObjectiveAssignments") as string),
+    ).toEqual([
+      { assetKey: "v1:assigned-position", objectiveId: "goal-trip" },
+      {
+        assetKey: "v1:second-assigned-position",
+        objectiveId: "goal-reserve",
+      },
+    ]);
   });
 
   it("shows an identity conflict without suggesting an unanchored replacement", async () => {
@@ -599,6 +668,7 @@ describe("PortfolioImport", () => {
           identityConflicts: [
             {
               assetKey: "v1:assigned-position",
+              objectiveId: "goal-reserve",
               objectiveName: "Reserva",
               position: {
                 product: "CDB antigo",

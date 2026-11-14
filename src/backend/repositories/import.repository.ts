@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, inArray, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, inArray, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -44,6 +44,10 @@ type ImportCreateInput =
       estimationBaseDate?: string | null;
       liquidityFacts?: Array<TreasurySelicLiquidityFact | null>;
       reconciliationDecisions?: ReconciliationDecision[];
+      retiredObjectiveAssignments?: Array<{
+        assetKey: string;
+        objectiveId: string;
+      }>;
       reconcileExistingImport?: boolean;
       reprocessExistingImport?: boolean;
     } & Extract<ParsedB3Import, { documentType: "B3_POSITION_XLSX" }>)
@@ -233,6 +237,10 @@ export class ImportRepository {
       { documentType: "B3_POSITION_XLSX" }
     >["positions"],
     userId: string,
+    retiredObjectiveAssignments: Array<{
+      assetKey: string;
+      objectiveId: string;
+    }>,
   ) {
     await transaction.execute(
       sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions} IN SHARE ROW EXCLUSIVE MODE`,
@@ -247,7 +255,14 @@ export class ImportRepository {
         desc(positionSnapshots.id),
       )
       .limit(1);
-    if (!latestSnapshot) return;
+    if (!latestSnapshot) {
+      if (retiredObjectiveAssignments.length)
+        throw new ApplicationError(
+          "As posições mudaram. Atualize a prévia antes de confirmar a remoção dos vínculos.",
+          409,
+        );
+      return;
+    }
 
     const currentPositions = await transaction
       .select()
@@ -264,7 +279,14 @@ export class ImportRepository {
         position,
       ]),
     );
-    if (positionByAssetKey.size === 0) return;
+    if (positionByAssetKey.size === 0) {
+      if (retiredObjectiveAssignments.length)
+        throw new ApplicationError(
+          "As posições mudaram. Atualize a prévia antes de confirmar a remoção dos vínculos.",
+          409,
+        );
+      return;
+    }
 
     const assignments = await transaction
       .select()
@@ -283,29 +305,68 @@ export class ImportRepository {
     const conflicts = assignments.filter(
       (assignment) => !incomingAssetKeys.has(assignment.assetKey),
     );
-    if (!conflicts.length) return;
-
-    const affectedObjectiveIds = [
-      ...new Set(conflicts.map(({ objectiveId }) => objectiveId)),
-    ];
-    const affectedObjectives = await transaction
-      .select({ id: portfolioObjectives.id, name: portfolioObjectives.name })
-      .from(portfolioObjectives)
-      .where(
-        and(
-          eq(portfolioObjectives.userId, userId),
-          inArray(portfolioObjectives.id, affectedObjectiveIds),
-        ),
+    const pairKey = ({
+      assetKey,
+      objectiveId,
+    }: {
+      assetKey: string;
+      objectiveId: string;
+    }) => JSON.stringify([assetKey, objectiveId]);
+    const conflictPairs = conflicts.map(pairKey).sort();
+    const confirmedPairs = retiredObjectiveAssignments.map(pairKey).sort();
+    const assignmentsMatch =
+      conflictPairs.length === confirmedPairs.length &&
+      conflictPairs.every((pair, index) => pair === confirmedPairs[index]);
+    if (!assignmentsMatch) {
+      if (!conflicts.length && !retiredObjectiveAssignments.length) return;
+      if (!retiredObjectiveAssignments.length && conflicts.length) {
+        const affectedObjectiveIds = [
+          ...new Set(conflicts.map(({ objectiveId }) => objectiveId)),
+        ];
+        const affectedObjectives = await transaction
+          .select({
+            id: portfolioObjectives.id,
+            name: portfolioObjectives.name,
+          })
+          .from(portfolioObjectives)
+          .where(
+            and(
+              eq(portfolioObjectives.userId, userId),
+              inArray(portfolioObjectives.id, affectedObjectiveIds),
+            ),
+          );
+        const objectiveNameById = new Map(
+          affectedObjectives.map((objective) => [objective.id, objective.name]),
+        );
+        const conflict = conflicts[0]!;
+        const position = positionByAssetKey.get(conflict.assetKey)!;
+        throw new ApplicationError(
+          `A posição ${position.product} atribuída a ${objectiveNameById.get(conflict.objectiveId) ?? "um objetivo"} mudou enquanto a importação era preparada. Atualize a prévia e investigue a identidade antes de confirmar.`,
+          409,
+        );
+      }
+      throw new ApplicationError(
+        "As posições atribuídas mudaram. Atualize a prévia antes de confirmar a remoção dos vínculos.",
+        409,
       );
-    const objectiveNameById = new Map(
-      affectedObjectives.map((objective) => [objective.id, objective.name]),
-    );
-    const conflict = conflicts[0]!;
-    const position = positionByAssetKey.get(conflict.assetKey)!;
-    throw new ApplicationError(
-      `A posição ${position.product} atribuída a ${objectiveNameById.get(conflict.objectiveId) ?? "um objetivo"} mudou enquanto a importação era preparada. Atualize a prévia e investigue a identidade antes de confirmar.`,
-      409,
-    );
+    }
+
+    if (retiredObjectiveAssignments.length)
+      await transaction
+        .delete(portfolioObjectivePositions)
+        .where(
+          and(
+            eq(portfolioObjectivePositions.userId, userId),
+            or(
+              ...retiredObjectiveAssignments.map(({ assetKey, objectiveId }) =>
+                and(
+                  eq(portfolioObjectivePositions.assetKey, assetKey),
+                  eq(portfolioObjectivePositions.objectiveId, objectiveId),
+                ),
+              ),
+            ),
+          ),
+        );
   }
 
   private async enrichExistingB3PositionImport(
@@ -596,6 +657,7 @@ export class ImportRepository {
               transaction,
               input.positions,
               userId,
+              input.retiredObjectiveAssignments ?? [],
             );
           const manual = await transaction
             .select()
