@@ -1804,6 +1804,243 @@ describe("import repository", () => {
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
+  it("removes only explicitly confirmed stale assignment rows in the snapshot transaction", async () => {
+    const currentPosition = {
+      product: "CDB Viagem",
+      assetCode: "CDB-TRIP",
+      institution: "Banco A",
+      issuer: "Banco A",
+      indexer: "CDI",
+      regimeType: "PÓS",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+    };
+    const staleAssetKey = getEmergencyReserveAssetKey(currentPosition);
+    const assignmentWhere: unknown[] = [];
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "snapshot-latest" }],
+              }),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [currentPosition] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: async () => [
+              { assetKey: staleAssetKey, objectiveId: "trip" },
+            ],
+          }),
+        }),
+      delete: vi.fn().mockReturnValue({
+        where: (...conditions: unknown[]) => {
+          assignmentWhere.push(...conditions);
+          return Promise.resolve();
+        },
+      }),
+      insert: vi.fn(),
+    };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-import" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-snapshot" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [] }),
+      });
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "new.xlsx",
+        fileHash: "new-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-11-13",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: staleAssetKey, objectiveId: "trip" },
+        ],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "new-snapshot" });
+
+    expect(transaction.delete).toHaveBeenCalledWith(
+      portfolioObjectivePositions,
+    );
+    expect(
+      assignmentWhere.some((condition) =>
+        containsSqlParameter(condition, "owner-1"),
+      ),
+    ).toBe(true);
+    expect(
+      assignmentWhere.some((condition) =>
+        containsSqlParameter(condition, staleAssetKey),
+      ),
+    ).toBe(true);
+    expect(
+      assignmentWhere.some((condition) =>
+        containsSqlParameter(condition, "trip"),
+      ),
+    ).toBe(true);
+    expect(transaction.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.insert.mock.invocationCallOrder[0],
+    );
+    expect(
+      transaction.delete.mock.calls.some(
+        ([table]) => table === positionItems || table === positionSnapshots,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps a reassigned objective link when the confirmed pair became stale", async () => {
+    const currentPosition = {
+      product: "CDB Viagem",
+      assetCode: "CDB-TRIP",
+      institution: "Banco A",
+      issuer: "Banco A",
+      indexer: "CDI",
+      regimeType: "PÓS",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+    };
+    const staleAssetKey = getEmergencyReserveAssetKey(currentPosition);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "snapshot-latest" }],
+              }),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [currentPosition] }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: async () => [
+              { assetKey: staleAssetKey, objectiveId: "objective-b" },
+            ],
+          }),
+        }),
+      delete: vi.fn(),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "new.xlsx",
+        fileHash: "reassigned-hash",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-11-13",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: staleAssetKey, objectiveId: "objective-a" },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale retirement decision when there is no prior snapshot", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn().mockReturnValue({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: async () => [] }),
+          }),
+        }),
+      }),
+      delete: vi.fn(),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "new.xlsx",
+        fileHash: "no-prior-snapshot",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-11-13",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: "v1:" + "a".repeat(64), objectiveId: "objective-a" },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale retirement decision when the latest snapshot is empty", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: async () => [{ id: "snapshot-empty" }],
+              }),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: async () => [] }),
+        }),
+      delete: vi.fn(),
+      insert: vi.fn(),
+    };
+    mocks.client.transaction.mockImplementation(
+      (callback: (tx: typeof transaction) => unknown) =>
+        callback(withManualRead(transaction)),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "new.xlsx",
+        fileHash: "empty-prior-snapshot",
+        documentType: "B3_POSITION_XLSX",
+        referenceDate: "2026-11-13",
+        positions: [] as never,
+        retiredObjectiveAssignments: [
+          { assetKey: "v1:" + "a".repeat(64), objectiveId: "objective-a" },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
   it("allows import when the latest snapshot contains no positions", async () => {
     const transaction = {
       execute: vi.fn().mockResolvedValue(undefined),

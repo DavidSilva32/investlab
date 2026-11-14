@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Building2,
@@ -25,12 +25,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { DatePickerField } from "@/components/ui/date-picker-field";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -61,6 +63,7 @@ type Position = {
 };
 type IdentityConflict = {
   assetKey: string;
+  objectiveId: string;
   objectiveName: string;
   position: Pick<Position, "product" | "assetCode" | "institution"> &
     Partial<
@@ -178,6 +181,7 @@ type Item = {
   error?: string;
   referenceDate?: string;
   reconciliationDecisions?: ReconciliationDecision[];
+  retiredAssignedAssetKeys?: string[];
 };
 type MutationResponse = { message?: string };
 type ConfirmationItem = Item & { preview: Preview };
@@ -242,6 +246,10 @@ export function PortfolioImport({
     endpoint: string,
     referenceDate?: string,
     reconciliationDecisions?: ReconciliationDecision[],
+    retiredObjectiveAssignments?: Array<{
+      assetKey: string;
+      objectiveId: string;
+    }>,
   ) {
     const form = new FormData();
     form.append("file", file);
@@ -250,6 +258,11 @@ export function PortfolioImport({
       form.append(
         "reconciliationDecisions",
         JSON.stringify(reconciliationDecisions),
+      );
+    if (retiredObjectiveAssignments?.length)
+      form.append(
+        "retiredObjectiveAssignments",
+        JSON.stringify(retiredObjectiveAssignments),
       );
     const response = await fetch(endpoint, { method: "POST", body: form });
     const body = (await response.json()) as MutationResponse & Preview;
@@ -319,6 +332,16 @@ export function PortfolioImport({
               ? item.referenceDate
               : undefined,
             item.reconciliationDecisions,
+            item.preview.documentType === "B3_POSITION_XLSX"
+              ? item.preview.identityConflicts
+                  ?.filter(({ assetKey }) =>
+                    item.retiredAssignedAssetKeys?.includes(assetKey),
+                  )
+                  .map(({ assetKey, objectiveId }) => ({
+                    assetKey,
+                    objectiveId,
+                  }))
+              : undefined,
           );
           return {
             status: "success" as const,
@@ -385,10 +408,12 @@ export function PortfolioImport({
       item.preview?.documentType === "B3_POSITION_XLSX" &&
       Boolean(item.preview.referenceDateConflict),
   );
-  const hasIdentityConflicts = items.some(
+  const hasUnreviewedIdentityConflicts = items.some(
     (item) =>
       item.preview?.documentType === "B3_POSITION_XLSX" &&
-      Boolean(item.preview.identityConflicts?.length),
+      item.preview.identityConflicts?.some(
+        ({ assetKey }) => !item.retiredAssignedAssetKeys?.includes(assetKey),
+      ),
   );
 
   const hasUnresolvedReconciliation = items.some(
@@ -440,6 +465,22 @@ export function PortfolioImport({
       current.map((item) =>
         item.file === file ? { ...item, referenceDate } : item,
       ),
+    );
+  }
+
+  function updateRetiredAssignedAsset(
+    file: File,
+    assetKey: string,
+    retired: boolean,
+  ) {
+    setItems((current) =>
+      current.map((item) => {
+        if (item.file !== file) return item;
+        const selected = new Set(item.retiredAssignedAssetKeys ?? []);
+        if (retired) selected.add(assetKey);
+        else selected.delete(assetKey);
+        return { ...item, retiredAssignedAssetKeys: [...selected] };
+      }),
     );
   }
 
@@ -550,6 +591,7 @@ export function PortfolioImport({
                 readOnly={readOnly}
                 onReferenceDateChange={updateReferenceDate}
                 onReconciliationChange={updateReconciliation}
+                onRetiredAssignedAssetChange={updateRetiredAssignedAsset}
               />
             ))}
           </div>
@@ -585,7 +627,7 @@ export function PortfolioImport({
                 loading ||
                 hasMissingPositionReferenceDate ||
                 hasReferenceDateConflict ||
-                hasIdentityConflicts ||
+                hasUnreviewedIdentityConflicts ||
                 hasUnresolvedReconciliation
               }
               onClick={confirm}
@@ -606,6 +648,7 @@ function PreviewItem({
   readOnly,
   onReferenceDateChange,
   onReconciliationChange,
+  onRetiredAssignedAssetChange,
 }: {
   item: Item;
   readOnly: boolean;
@@ -614,6 +657,11 @@ function PreviewItem({
     file: File,
     group: ReconciliationGroup,
     selectedImportedAssetKey: string | null,
+  ) => void;
+  onRetiredAssignedAssetChange: (
+    file: File,
+    assetKey: string,
+    retired: boolean,
   ) => void;
 }) {
   if (item.error)
@@ -634,12 +682,16 @@ function PreviewItem({
             item.preview.reconciliationCandidates ?? [],
           )}
           reconciliationDecisions={item.reconciliationDecisions ?? []}
+          retiredAssignedAssetKeys={item.retiredAssignedAssetKeys ?? []}
           readOnly={readOnly}
           onReconciliationChange={(group, selectedImportedAssetKey) =>
             onReconciliationChange(item.file, group, selectedImportedAssetKey)
           }
           onReferenceDateChange={(referenceDate) =>
             onReferenceDateChange(item.file, referenceDate)
+          }
+          onRetiredAssignedAssetChange={(assetKey, retired) =>
+            onRetiredAssignedAssetChange(item.file, assetKey, retired)
           }
         />
       </div>
@@ -897,22 +949,30 @@ function PositionPreview({
   referenceDate,
   reconciliationGroups,
   reconciliationDecisions,
+  retiredAssignedAssetKeys,
   readOnly,
   onReconciliationChange,
   onReferenceDateChange,
+  onRetiredAssignedAssetChange,
 }: {
   fileName: string;
   preview: Extract<Preview, { documentType: "B3_POSITION_XLSX" }>;
   referenceDate: string;
   reconciliationGroups: ReconciliationGroup[];
   reconciliationDecisions: ReconciliationDecision[];
+  retiredAssignedAssetKeys: string[];
   readOnly: boolean;
   onReconciliationChange: (
     group: ReconciliationGroup,
     selectedImportedAssetKey: string | null,
   ) => void;
   onReferenceDateChange: (referenceDate: string) => void;
+  onRetiredAssignedAssetChange: (assetKey: string, retired: boolean) => void;
 }) {
+  const identityConflictId = useId();
+  const [expandedIdentityConflicts, setExpandedIdentityConflicts] = useState<
+    string[]
+  >([]);
   const [expandedCandidates, setExpandedCandidates] = useState<string[]>([]);
   const valuedPositions = preview.positions.filter(
     (position) => position.totalValue !== null,
@@ -1199,37 +1259,120 @@ function PositionPreview({
         {preview.identityConflicts?.length ? (
           <Alert variant="destructive" role="alert">
             <AlertTitle>
-              Importação bloqueada por divergência de identidade
+              Posições atribuídas ausentes no arquivo atual
             </AlertTitle>
             <AlertDescription>
               <p>
-                As posições atribuídas abaixo não aparecem com a mesma
-                identidade no arquivo. Revise as diferenças antes de importar;
-                nenhuma atribuição será transferida automaticamente.
+                Estas posições não aparecem na posição atual da B3. Revise cada
+                uma antes de importar. Ativos com nome parecido e identidade
+                diferente não serão vinculados automaticamente.
               </p>
-              <ul className="mt-2 list-disc space-y-2 pl-5">
-                {preview.identityConflicts.map((conflict) => (
-                  <li key={conflict.assetKey}>
-                    <span className="font-medium">
-                      {conflict.position.product} — {conflict.objectiveName}
-                    </span>
-                    {conflict.possibleIncomingDifferences.length ? (
-                      <ul className="mt-1 list-[circle] pl-5">
-                        {conflict.possibleIncomingDifferences.map(
-                          (candidate, index) => (
-                            <li key={index}>
-                              Possível posição correspondente (não vinculada):{" "}
-                              {candidate.changedFields.join("; ")}
-                            </li>
-                          ),
-                        )}
-                      </ul>
-                    ) : (
-                      <span> — sem identidade correspondente no arquivo.</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-3 space-y-3">
+                {preview.identityConflicts.map((conflict, index) => {
+                  const checkboxId = `${identityConflictId}-retired-${index}`;
+                  const detailsExpanded = expandedIdentityConflicts.includes(
+                    conflict.assetKey,
+                  );
+                  return (
+                    <div
+                      key={conflict.assetKey}
+                      className="space-y-2 rounded-md border border-destructive/20 bg-background/70 p-3"
+                    >
+                      <div className="space-y-1">
+                        <p className="font-medium">
+                          {conflict.position.product} — {conflict.objectiveName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {[
+                            conflict.position.assetCode,
+                            conflict.position.institution,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") ||
+                            "Identidade adicional não informada"}
+                        </p>
+                      </div>
+                      {conflict.possibleIncomingDifferences.length > 0 && (
+                        <Collapsible
+                          open={detailsExpanded}
+                          onOpenChange={(open) =>
+                            setExpandedIdentityConflicts((current) =>
+                              open
+                                ? [...new Set([...current, conflict.assetKey])]
+                                : current.filter(
+                                    (key) => key !== conflict.assetKey,
+                                  ),
+                            )
+                          }
+                        >
+                          <CollapsibleTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="group h-auto min-h-9 px-2 text-primary"
+                              aria-label={
+                                detailsExpanded
+                                  ? `Ocultar diferenças de identidade de ${conflict.position.product}`
+                                  : `Mostrar ${conflict.possibleIncomingDifferences.length} ${conflict.possibleIncomingDifferences.length === 1 ? "posição com nome parecido" : "posições com nome parecido"} e identidade diferente de ${conflict.position.product}`
+                              }
+                            >
+                              <ChevronDown
+                                aria-hidden="true"
+                                className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                              />
+                              {detailsExpanded
+                                ? "Ocultar diferenças"
+                                : `Ver ${conflict.possibleIncomingDifferences.length} diferenças de identidade`}
+                            </Button>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="mt-1 rounded-md border bg-muted/20 p-3">
+                              <p className="text-xs font-medium">
+                                O mesmo nome não confirma que seja o mesmo
+                                ativo:
+                              </p>
+                              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
+                                {conflict.possibleIncomingDifferences.map(
+                                  (candidate, candidateIndex) => (
+                                    <li key={candidateIndex}>
+                                      {candidate.changedFields.join("; ")}
+                                    </li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                      <div className="flex items-start gap-2 rounded-md border p-3">
+                        <Checkbox
+                          id={checkboxId}
+                          checked={retiredAssignedAssetKeys.includes(
+                            conflict.assetKey,
+                          )}
+                          disabled={readOnly}
+                          onCheckedChange={(checked) =>
+                            onRetiredAssignedAssetChange(
+                              conflict.assetKey,
+                              checked === true,
+                            )
+                          }
+                          aria-label={`Confirmar que a posição ${conflict.position.product} do objetivo ${conflict.objectiveName} não está mais na carteira`}
+                        />
+                        <Label
+                          htmlFor={checkboxId}
+                          className="cursor-pointer text-sm font-normal leading-relaxed"
+                        >
+                          Confirmo que esta posição não está mais na carteira e
+                          autorizo remover seu vínculo com o objetivo{" "}
+                          {conflict.objectiveName} ao importar.
+                        </Label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </AlertDescription>
           </Alert>
         ) : null}

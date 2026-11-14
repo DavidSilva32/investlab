@@ -34,6 +34,7 @@ export class ImportController {
       buffer: Buffer.from(await file.arrayBuffer()),
       referenceDate: formData.get("referenceDate"),
       reconciliationDecisions: formData.get("reconciliationDecisions"),
+      retiredObjectiveAssignments: formData.get("retiredObjectiveAssignments"),
     };
   }
 
@@ -42,6 +43,7 @@ export class ImportController {
     const {
       referenceDate: _referenceDate,
       reconciliationDecisions: _decisions,
+      retiredObjectiveAssignments: _retiredObjectiveAssignments,
       ...file
     } = await this.readFile(request);
     const preview = await importService.previewWithIdentityConflicts(
@@ -64,8 +66,12 @@ export class ImportController {
 
   async confirm(request: Request, requestId: string) {
     logger.info("b3_import_confirm_started", { requestId });
-    const { referenceDate, reconciliationDecisions, ...file } =
-      await this.readFile(request);
+    const {
+      referenceDate,
+      reconciliationDecisions,
+      retiredObjectiveAssignments,
+      ...file
+    } = await this.readFile(request);
     let decisions: unknown;
     if (reconciliationDecisions !== null) {
       if (typeof reconciliationDecisions !== "string")
@@ -74,6 +80,22 @@ export class ImportController {
         decisions = JSON.parse(reconciliationDecisions);
       } catch {
         throw new ApplicationError("Decisões de conciliação inválidas.", 400);
+      }
+    }
+    let retiredAssignments: unknown;
+    if (retiredObjectiveAssignments !== null) {
+      if (typeof retiredObjectiveAssignments !== "string")
+        throw new ApplicationError(
+          "Confirmações de posições removidas inválidas.",
+          400,
+        );
+      try {
+        retiredAssignments = JSON.parse(retiredObjectiveAssignments);
+      } catch {
+        throw new ApplicationError(
+          "Confirmações de posições removidas inválidas.",
+          400,
+        );
       }
     }
     const {
@@ -87,6 +109,7 @@ export class ImportController {
       requestId,
       typeof referenceDate === "string" ? referenceDate : null,
       decisions,
+      retiredAssignments,
     );
     if (duplicate)
       logger.warn("b3_import_duplicate_detected", {

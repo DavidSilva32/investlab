@@ -149,6 +149,60 @@ describe("ImportController", () => {
     expect(service.confirm).toHaveBeenCalled();
   });
 
+  it("passes explicit disappeared-position confirmations to the service", async () => {
+    const form = new FormData();
+    form.append(
+      "file",
+      new File(["content"], "b3.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    form.append(
+      "retiredObjectiveAssignments",
+      JSON.stringify([
+        {
+          assetKey: "v1:" + "a".repeat(64),
+          objectiveId: "00000000-0000-4000-8000-000000000001",
+        },
+      ]),
+    );
+
+    await importController.confirm(
+      new Request("http://test/import", { method: "POST", body: form }),
+      "request-retired-position",
+    );
+
+    expect(service.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "b3.xlsx" }),
+      "request-retired-position",
+      null,
+      undefined,
+      [
+        {
+          assetKey: "v1:" + "a".repeat(64),
+          objectiveId: "00000000-0000-4000-8000-000000000001",
+        },
+      ],
+    );
+  });
+
+  it("rejects malformed retired objective assignment form fields", async () => {
+    for (const value of [new File(["[]"], "assignments.json"), "{"]) {
+      const form = new FormData();
+      form.append("file", new File(["content"], "b3.xlsx"));
+      form.append("retiredObjectiveAssignments", value);
+
+      await expect(
+        importController.confirm(
+          new Request("http://test/import", { method: "POST", body: form }),
+          "request-invalid-retirement",
+        ),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    }
+
+    expect(service.confirm).not.toHaveBeenCalled();
+  });
+
   it("counts and confirms negotiation rows with a document-specific message", async () => {
     const tradePreview = {
       hash: "d".repeat(64),
@@ -360,6 +414,7 @@ describe("ImportController reference date handling", () => {
       "request-1",
       "2026-09-18",
       undefined,
+      undefined,
     );
   });
 });
@@ -397,6 +452,7 @@ describe("ImportController reconciliation transport", () => {
       "r",
       null,
       decisions,
+      undefined,
     );
   });
 });
