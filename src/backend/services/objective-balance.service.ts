@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
-import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { cdbRateRepository } from "@/backend/repositories/cdb-rate.repository";
 import { bcbCdiService } from "@/backend/services/bcb-cdi.service";
 import { buildEffectiveCdiRateSeries } from "@/backend/services/cdb-estimate.service";
@@ -63,6 +62,17 @@ type RateSeries = {
   officialRates: CachedRate[];
   latestPriorOfficial: CachedRate | null;
 };
+type ReserveAssignmentService = {
+  findAutomaticAssignment(
+    targetAmount: number,
+    observedOn: string,
+    requestId?: string,
+  ): Promise<{
+    selectedAssetKeys: string[];
+    expectedOwners: Record<string, string | null>;
+    expectedSourceFingerprint: string;
+  }>;
+};
 
 function centsToDecimal(cents: string) {
   const value = BigInt(cents);
@@ -84,7 +94,7 @@ export class ObjectiveBalanceService {
     private readonly fetchOfficialRates = (from: string, to: string) =>
       bcbCdiService.fetchRates(from, to),
     private readonly getEvaluationDate = todayInSaoPaulo,
-    private readonly reserveAssignment = emergencyReserveService,
+    private readonly reserveAssignment?: ReserveAssignmentService,
   ) {}
 
   async save(input: unknown, requestId?: string) {
@@ -123,7 +133,11 @@ export class ObjectiveBalanceService {
     cdiPercentage: string | null;
     requestId?: string;
   }) {
-    const assignment = await this.reserveAssignment.findAutomaticAssignment(
+    const reserveAssignment =
+      this.reserveAssignment ??
+      (await import("@/backend/services/emergency-reserve.service"))
+        .emergencyReserveService;
+    const assignment = await reserveAssignment.findAutomaticAssignment(
       input.amount,
       input.observedOn,
       input.requestId,
