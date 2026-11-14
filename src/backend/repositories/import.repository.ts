@@ -318,7 +318,6 @@ export class ImportRepository {
       conflictPairs.length === confirmedPairs.length &&
       conflictPairs.every((pair, index) => pair === confirmedPairs[index]);
     if (!assignmentsMatch) {
-      if (!conflicts.length && !retiredObjectiveAssignments.length) return;
       if (!retiredObjectiveAssignments.length && conflicts.length) {
         const affectedObjectiveIds = [
           ...new Set(conflicts.map(({ objectiveId }) => objectiveId)),

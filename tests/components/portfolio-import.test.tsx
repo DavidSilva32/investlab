@@ -740,7 +740,34 @@ describe("PortfolioImport", () => {
             unitPrice: "100",
             valuationSource: "CURVA" as const,
           },
-          possibleIncomingDifferences: [],
+          possibleIncomingDifferences: [
+            {
+              position: {
+                product: "CDB antigo",
+                institution: "Banco C",
+                assetCode: "CDB3",
+                quantity: "1",
+                totalValue: "100",
+                indexer: "CDI",
+                unitPrice: "100",
+                valuationSource: "CURVA" as const,
+              },
+              changedFields: ["código: CDB1 → CDB3"],
+            },
+            {
+              position: {
+                product: "CDB antigo",
+                institution: "Banco D",
+                assetCode: "CDB4",
+                quantity: "1",
+                totalValue: "100",
+                indexer: "CDI",
+                unitPrice: "100",
+                valuationSource: "CURVA" as const,
+              },
+              changedFields: ["código: CDB1 → CDB4"],
+            },
+          ],
         },
       ],
     };
@@ -761,7 +788,21 @@ describe("PortfolioImport", () => {
             unitPrice: "200",
             valuationSource: "CURVA" as const,
           },
-          possibleIncomingDifferences: [],
+          possibleIncomingDifferences: [
+            {
+              position: {
+                product: "LCI antiga",
+                institution: "Banco C",
+                assetCode: "LCI3",
+                quantity: "1",
+                totalValue: "200",
+                indexer: "CDI",
+                unitPrice: "200",
+                valuationSource: "CURVA" as const,
+              },
+              changedFields: ["código: LCI2 → LCI3"],
+            },
+          ],
         },
       ],
     };
@@ -801,6 +842,16 @@ describe("PortfolioImport", () => {
       name: /posição LCI antiga do objetivo Reserva não está mais na carteira/,
     });
     expect(await screen.findByText("outra-posicao.xlsx")).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: /Mostrar 2 posições com nome parecido e identidade diferente de CDB antigo/,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: /Mostrar 1 posição com nome parecido e identidade diferente de LCI antiga/,
+      }),
+    ).toBeTruthy();
     const confirmButton = screen.getByRole("button", {
       name: /Confirmar 2 arquivo/,
     });
