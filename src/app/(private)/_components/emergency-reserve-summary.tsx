@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronDown, Shield } from "lucide-react";
+import { ArrowRight, ChevronDown, Shield, Upload } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
+import { formatCurrencyCents } from "@/lib/portfolio-money";
 import { formatCurrency } from "@/lib/utils";
 
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
@@ -15,11 +16,18 @@ const months = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 
 export function EmergencyReserveSummary({
   calculation,
+  reserveObservation,
   onOpenReserve = () => {},
+  onOpenImport,
   readOnly = false,
 }: {
   calculation?: EmergencyReserveCalculation;
+  reserveObservation?: {
+    observedAmountCents: string;
+    observedOn: string;
+  } | null;
   onOpenReserve?: () => void;
+  onOpenImport?: () => void;
   readOnly?: boolean;
 }) {
   const canCalculateCoverage =
@@ -48,25 +56,65 @@ export function EmergencyReserveSummary({
             </h2>
           </div>
           {!readOnly && (
-            <Button
-              type="button"
-              variant="link"
-              onClick={onOpenReserve}
-              className="min-h-10 gap-2 p-0 text-sm font-medium text-primary"
-            >
-              Ver reserva <ArrowRight aria-hidden="true" className="size-4" />
-            </Button>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {onOpenImport && (
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={onOpenImport}
+                  className="min-h-10 gap-2 p-0 text-sm font-medium text-primary"
+                >
+                  <Upload aria-hidden="true" className="size-4" />
+                  Atualizar dados da B3
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="link"
+                onClick={onOpenReserve}
+                className="min-h-10 gap-2 p-0 text-sm font-medium text-primary"
+              >
+                Ver reserva <ArrowRight aria-hidden="true" className="size-4" />
+              </Button>
+            </div>
           )}
         </div>
+
+        {reserveObservation && (
+          <div className="mt-4 rounded-lg border bg-muted/20 px-4 py-3">
+            <p className="text-xs text-muted-foreground">
+              Saldo informado no banco
+            </p>
+            <p className="mt-1 text-lg font-semibold tabular-nums">
+              {formatCurrencyCents(reserveObservation.observedAmountCents)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Informado em{" "}
+              {date.format(
+                new Date(`${reserveObservation.observedOn}T00:00:00Z`),
+              )}
+            </p>
+          </div>
+        )}
 
         {canCalculateCoverage ? (
           <div className="mt-4 space-y-3">
             <div className="grid gap-0 sm:grid-cols-2 lg:grid-cols-4">
               <div className="border-t py-3 sm:pr-4 lg:border-r lg:border-t-0 lg:pr-5">
-                <p className="text-xs text-muted-foreground">Valor conhecido</p>
+                <p className="text-xs text-muted-foreground">
+                  Posições vinculadas
+                </p>
                 <p className="mt-1 text-lg font-semibold tabular-nums">
                   {formatCurrency(calculation.selectedValue)}
                 </p>
+                {calculation.referenceDate ? (
+                  <p className="text-xs text-muted-foreground">
+                    B3 em{" "}
+                    {date.format(
+                      new Date(`${calculation.referenceDate}T00:00:00Z`),
+                    )}
+                  </p>
+                ) : null}
               </div>
               <div className="border-t py-3 sm:pl-4 lg:border-r lg:border-t-0 lg:px-5">
                 <p className="text-xs text-muted-foreground">
@@ -93,6 +141,9 @@ export function EmergencyReserveSummary({
                 <p className="mt-1 text-lg font-semibold tabular-nums">
                   {incomplete ? "Estimativa parcial: " : ""}
                   {months.format(calculation.coveredMonths!)} meses de despesas
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Calculada pelas posições vinculadas
                 </p>
                 {hasPersonalTarget &&
                   !incomplete &&
@@ -200,9 +251,10 @@ export function EmergencyReserveSummary({
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-3 space-y-2">
               <p>
-                Cobertura = valor das posições marcadas como reserva ÷ despesa
-                mensal escolhida. Sem uma meta salva, começamos por 6 meses;
-                você pode alterar esse prazo na Reserva.
+                Cobertura = valor das posições vinculadas à reserva ÷ despesa
+                mensal escolhida. O saldo informado no banco aparece separado e
+                não altera a soma da carteira. Sem uma meta salva, começamos por
+                6 meses; você pode alterar esse prazo na Reserva.
               </p>
               <p>
                 Os cenários usam essa despesa mensal e não estimam aportes nem

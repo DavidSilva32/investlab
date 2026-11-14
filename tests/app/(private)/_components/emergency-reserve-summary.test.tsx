@@ -56,11 +56,56 @@ describe("EmergencyReserveSummary", () => {
     expect(onOpenReserve).toHaveBeenCalledOnce();
   });
 
+  it("separates the observed bank balance from linked positions and their dates", () => {
+    const html = renderToStaticMarkup(
+      <EmergencyReserveSummary
+        calculation={calculation}
+        reserveObservation={{
+          observedAmountCents: "5604248",
+          observedOn: "2026-11-14",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Saldo informado no banco");
+    expect(html).toContain("R$ 56.042,48");
+    expect(html).toContain("Informado em 14/11/2026");
+    expect(html).toContain("Posições vinculadas");
+    expect(html).toContain("R$ 2.500,00");
+    expect(html).toContain("Calculada pelas posições vinculadas");
+    expect(html).toContain("B3 em 01/09/2026");
+  });
+
+  it("opens the existing B3 importer from the reserve summary", () => {
+    const onOpenImport = vi.fn();
+    render(
+      <EmergencyReserveSummary
+        calculation={calculation}
+        onOpenImport={onOpenImport}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Atualizar dados da B3" }),
+    );
+
+    expect(onOpenImport).toHaveBeenCalledOnce();
+  });
+
   it("keeps configured reserve information visible without an edit action in read-only mode", () => {
-    render(<EmergencyReserveSummary calculation={calculation} readOnly />);
+    render(
+      <EmergencyReserveSummary
+        calculation={calculation}
+        onOpenImport={vi.fn()}
+        readOnly
+      />,
+    );
 
     expect(screen.getByText("6 meses")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Ver reserva" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Atualizar dados da B3" }),
+    ).toBeNull();
   });
 
   it("keeps the reserve link safe when no dashboard panel action is provided", () => {
@@ -248,7 +293,7 @@ describe("EmergencyReserveSummary", () => {
     await user.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(
-      screen.getByText(/valor das posições marcadas como reserva/),
+      screen.getByText(/valor das posições vinculadas à reserva/),
     ).toBeTruthy();
     expect(screen.getByText(/começamos por 6 meses/)).toBeTruthy();
     expect(

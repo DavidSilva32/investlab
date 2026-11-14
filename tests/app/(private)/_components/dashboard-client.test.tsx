@@ -28,8 +28,10 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     destinationsUnavailable,
     destinationsLoading,
     importOpen,
+    reserveObservation,
     objectivesNavigation,
     onOpenReserve,
+    onOpenImport,
     onRetryDestinations,
     onObjectivesOpenChange,
     onObjectivesNavigationChange,
@@ -45,8 +47,13 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     destinationsUnavailable?: boolean;
     destinationsLoading?: boolean;
     importOpen?: boolean;
+    reserveObservation?: {
+      observedAmountCents: string;
+      observedOn: string;
+    } | null;
     objectivesNavigation?: { objectiveId: string | null };
     onOpenReserve?: () => void;
+    onOpenImport?: () => void;
     onRetryDestinations?: () => void;
     onObjectivesOpenChange?: (open: boolean) => void;
     onObjectivesNavigationChange?: (
@@ -71,6 +78,15 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
       <p>Posições visíveis: {manualPositions?.length ?? 0}</p>
       <button type="button" onClick={onOpenReserve}>
         Ver reserva
+      </button>
+      {reserveObservation && (
+        <p>
+          Saldo observado: {reserveObservation.observedAmountCents} em{" "}
+          {reserveObservation.observedOn}
+        </p>
+      )}
+      <button type="button" onClick={onOpenImport}>
+        Importar pela reserva
       </button>
       <button type="button" onClick={() => onObjectivesOpenChange?.(false)}>
         Fechar objetivos
@@ -188,6 +204,43 @@ describe("DashboardClient", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
     expect(fetchMock).toHaveBeenCalledWith("/api/learning/progress");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("passes the reserve observation to the summary and opens its B3 importer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        dashboardResponse(url, overview, {
+          destinationSummary,
+          objectives: [
+            {
+              kind: "PERSONAL_GOAL",
+              balanceTracking: {
+                observedAmountCents: "12300",
+                observedOn: "2026-11-13",
+              },
+            },
+            {
+              kind: "RESERVE",
+              balanceTracking: {
+                observedAmountCents: "5604248",
+                observedOn: "2026-11-14",
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderDashboard();
+
+    expect(
+      await screen.findByText("Saldo observado: 5604248 em 2026-11-14"),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar pela reserva" }),
+    );
+    expect(await screen.findByText("Importação lateral aberta")).toBeTruthy();
   });
 
   it("passes support mode to the empty dashboard so onboarding stays read only", async () => {

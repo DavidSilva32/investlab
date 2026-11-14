@@ -51,8 +51,13 @@ export function DashboardClient({
     destinationSummary?: DashboardDestinationSummary;
     positions?: DashboardDestinationPosition[];
     objectives?: Array<{
+      kind?: string;
       purpose?: string | null;
       missingPositionCount?: number;
+      balanceTracking?: {
+        observedAmountCents: string;
+        observedOn: string;
+      } | null;
     }>;
   }>();
   const overview = overviewQuery.data;
@@ -137,6 +142,7 @@ export function DashboardClient({
             screen: null,
           })
         }
+        onOpenImport={() => setImportOpen(true)}
         importOpen={effectiveImportOpen}
         onImportOpenChange={(open) => {
           if (!open && openImportOnLoad) setDeepLinkDismissed(true);
@@ -147,6 +153,11 @@ export function DashboardClient({
         supportCheckError={supportCheckError}
         destinationSummary={objectivesQuery.data?.destinationSummary}
         destinationPositions={objectivesQuery.data?.positions}
+        reserveObservation={
+          objectivesQuery.data?.objectives?.find(
+            (objective) => objective.kind === "RESERVE",
+          )?.balanceTracking
+        }
         longTermMissingPositionCount={
           objectivesQuery.data?.objectives
             ?.filter(

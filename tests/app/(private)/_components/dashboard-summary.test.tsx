@@ -127,6 +127,23 @@ describe("DashboardSummary", () => {
     expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
   });
 
+  it("shows an observed reserve balance before any positions are registered", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={[]}
+        reserveObservation={{
+          observedAmountCents: "5604248",
+          observedOn: "2026-11-14",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Reserva de emergência");
+    expect(html).toContain("Saldo informado no banco");
+    expect(html).toContain("R$ 56.042,48");
+    expect(html).toContain("Informado em 14/11/2026");
+  });
+
   it("shows the destination loading state during first access", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary positions={[]} destinationsLoading />,
@@ -220,6 +237,23 @@ describe("DashboardSummary", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
 
     expect(onOpenReserve).toHaveBeenCalledOnce();
+  });
+
+  it("opens the existing import and reconciliation sheet from the reserve", () => {
+    const onOpenImport = vi.fn();
+    render(
+      <DashboardSummary
+        positions={positions}
+        emergencyReserve={reserve}
+        onOpenImport={onOpenImport}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Atualizar dados da B3" }),
+    );
+
+    expect(onOpenImport).toHaveBeenCalledOnce();
   });
 
   it("keeps the reserve action safe when the dashboard does not provide a handler", () => {

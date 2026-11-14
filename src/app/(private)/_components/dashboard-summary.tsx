@@ -18,6 +18,7 @@ export function DashboardSummary({
   manualPositions = [],
   insights,
   emergencyReserve,
+  reserveObservation,
   destinationSummary,
   destinationPositions,
   longTermMissingPositionCount = 0,
@@ -30,6 +31,7 @@ export function DashboardSummary({
   objectivesNavigation,
   onObjectivesNavigationChange,
   onOpenReserve = () => {},
+  onOpenImport,
   importOpen = false,
   onImportOpenChange = () => {},
   supportReadOnly = false,
@@ -40,6 +42,10 @@ export function DashboardSummary({
   manualPositions?: PortfolioPosition[];
   insights: PortfolioInsights;
   emergencyReserve?: EmergencyReserveCalculation;
+  reserveObservation?: {
+    observedAmountCents: string;
+    observedOn: string;
+  } | null;
   destinationSummary?: DashboardDestinationSummary | null;
   destinationPositions?: DashboardDestinationPosition[];
   longTermMissingPositionCount?: number;
@@ -59,6 +65,7 @@ export function DashboardSummary({
     screen?: string | null,
   ) => void;
   onOpenReserve?: () => void;
+  onOpenImport?: () => void;
   importOpen?: boolean;
   onImportOpenChange?: (open: boolean) => void;
   supportReadOnly?: boolean;
@@ -91,12 +98,13 @@ export function DashboardSummary({
     destinationsLoading;
   const showEmergencyReserve = firstAccess
     ? Boolean(
-        emergencyReserve &&
-        (emergencyReserve.monthlyExpenses !== null ||
-          emergencyReserve.targetMonths !== null ||
-          emergencyReserve.selectedGroups > 0 ||
-          emergencyReserve.unvaluedGroups > 0 ||
-          (emergencyReserve.missingSelectionCount ?? 0) > 0),
+        reserveObservation ||
+        (emergencyReserve &&
+          (emergencyReserve.monthlyExpenses !== null ||
+            emergencyReserve.targetMonths !== null ||
+            emergencyReserve.selectedGroups > 0 ||
+            emergencyReserve.unvaluedGroups > 0 ||
+            (emergencyReserve.missingSelectionCount ?? 0) > 0)),
       )
     : true;
 
@@ -122,7 +130,9 @@ export function DashboardSummary({
               <section aria-labelledby="dashboard-reserve-title">
                 <EmergencyReserveSummary
                   calculation={emergencyReserve}
+                  reserveObservation={reserveObservation}
                   onOpenReserve={onOpenReserve}
+                  onOpenImport={onOpenImport}
                   readOnly={readOnly}
                 />
               </section>
@@ -151,7 +161,9 @@ export function DashboardSummary({
         <section aria-labelledby="dashboard-reserve-title">
           <EmergencyReserveSummary
             calculation={emergencyReserve}
+            reserveObservation={reserveObservation}
             onOpenReserve={onOpenReserve}
+            onOpenImport={onOpenImport}
             readOnly={readOnly}
           />
         </section>
