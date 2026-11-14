@@ -219,6 +219,12 @@ export class PortfolioObjectivesService {
     const objectives = stored.objectives.map((objective) => {
       const assignedAssetKeys = assignedByObjective.get(objective.id) ?? [];
       const current = calculateObjectiveValue(assignedAssetKeys, positions);
+      const observedReserveBalance =
+        objective.kind === "RESERVE"
+          ? balanceReferences.find(
+              (reference) => reference.objectiveId === objective.id,
+            )
+          : undefined;
       const targetAmountCents =
         objective.kind === "RESERVE"
           ? reserveTargetCents
@@ -227,7 +233,12 @@ export class PortfolioObjectivesService {
             : decimalToCents(objective.targetAmount);
       const targetAmount =
         targetAmountCents === null ? null : centsToNumber(targetAmountCents);
-      const currentValueCents = current.currentValueCents;
+      const currentValueCents = observedReserveBalance
+        ? observedReserveBalance.amountCents
+        : current.currentValueCents;
+      const currentValue = observedReserveBalance
+        ? centsToNumber(BigInt(observedReserveBalance.amountCents))
+        : current.currentValue;
       const remainingAmountCents =
         targetAmountCents === null || currentValueCents === null
           ? null
@@ -253,21 +264,19 @@ export class PortfolioObjectivesService {
             ? null
             : (decimalToCents(objective.monthlyPlannedAmount)?.toString() ??
               null),
-        currentValue: current.currentValue,
+        currentValue,
         currentValueCents,
         knownValue: current.knownValue,
         knownValueCents: current.knownValueCents,
         remainingAmount:
-          targetAmount === null || current.currentValue === null
+          targetAmount === null || currentValue === null
             ? null
-            : Math.max(targetAmount - current.currentValue, 0),
+            : Math.max(targetAmount - currentValue, 0),
         remainingAmountCents,
         progressPercent:
-          targetAmount === null ||
-          targetAmount <= 0 ||
-          current.currentValue === null
+          targetAmount === null || targetAmount <= 0 || currentValue === null
             ? null
-            : Math.min((current.currentValue / targetAmount) * 100, 100),
+            : Math.min((currentValue / targetAmount) * 100, 100),
         assignedPositionCount: assignedAssetKeys.reduce(
           (total, assetKey) =>
             total +

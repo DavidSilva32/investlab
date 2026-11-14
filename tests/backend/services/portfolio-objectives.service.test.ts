@@ -168,6 +168,72 @@ describe("PortfolioObjectivesService", () => {
     });
   });
 
+  it("uses the observed reserve balance for goal progress without changing portfolio totals", async () => {
+    const reservePosition = imported({
+      assetCode: "RESERVE-CDB",
+      canonicalValueCents: "5045911",
+      estimatedValue: 50459.11,
+      referenceDate: "2026-11-13",
+    });
+    const reserveAssetKey = getEmergencyReserveAssetKey(reservePosition);
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "4650.00",
+      targetMonths: 12,
+      selectedAssetKeys: [reserveAssetKey],
+    });
+    mocks.list.mockResolvedValue({
+      objectives: [
+        {
+          id: reserveObjectiveId,
+          kind: "RESERVE",
+          purpose: "RESERVE",
+          name: "Reserva",
+          targetAmount: null,
+          monthlyPlannedAmount: null,
+          createdAt: new Date("2026-01-01"),
+          updatedAt: new Date("2026-01-01"),
+        },
+      ],
+      assignments: [
+        { objectiveId: reserveObjectiveId, assetKey: reserveAssetKey },
+      ],
+    });
+    mocks.listLatestBalanceReferences.mockResolvedValue([
+      {
+        objectiveId: reserveObjectiveId,
+        amountCents: "5604248",
+        observedDate: "2026-11-14",
+        cdiPercentage: null,
+      },
+    ]);
+
+    const result = await new PortfolioObjectivesService().getOverview(
+      undefined,
+      "2026-11-14",
+      [reservePosition],
+    );
+    const reserve = result.objectives[0];
+
+    expect(reserve).toMatchObject({
+      currentValue: 56042.48,
+      currentValueCents: "5604248",
+      knownValue: 50459.11,
+      knownValueCents: "5045911",
+      targetAmount: 55800,
+      remainingAmount: 0,
+      remainingAmountCents: "0",
+      progressPercent: 100,
+      balanceTracking: {
+        observedAmountCents: "5604248",
+        observedOn: "2026-11-14",
+      },
+    });
+    expect(
+      result.destinationSummary.categories.find(({ key }) => key === "reserve"),
+    ).toMatchObject({ value: 50459.11, valueCents: "5045911" });
+    expect(result.destinationSummary.knownTotalCents).toBe("5045911");
+  });
+
   it("does not report one reference date for grouped values from different dates", async () => {
     const result = await new PortfolioObjectivesService().getOverview(
       undefined,

@@ -71,7 +71,7 @@ export function PortfolioObjectivesOverview({
   onOrganize = () => {},
 }: Props) {
   const labels = {
-    reserve: "Reserva",
+    reserve: "Posições vinculadas à Reserva",
     personal: "Objetivos pessoais",
     long_term: "Investimento de longo prazo",
     purpose_unknown: "Finalidade não definida",
@@ -99,13 +99,19 @@ export function PortfolioObjectivesOverview({
         <CardHeader className="flex flex-col gap-4 pb-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="space-y-1">
-              <CardTitle className="text-base">
-                Patrimônio por destino
-              </CardTitle>
+              <CardTitle className="text-base">Posições por objetivo</CardTitle>
             </div>
-            <Badge className="w-fit" variant="outline">
-              {incompleteCount > 0 ? "Conhecido · parcial" : "Valor conhecido"}
-            </Badge>
+            <div className="space-y-1.5">
+              <Badge className="w-fit" variant="outline">
+                {incompleteCount > 0
+                  ? "Valores conhecidos · parcial"
+                  : "Valores conhecidos"}
+              </Badge>
+              <p className="text-xs text-muted-foreground">
+                A meta da Reserva usa o saldo informado; este gráfico soma
+                apenas posições.
+              </p>
+            </div>
           </div>
           <div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row sm:items-center">
             {onOrganize && (
@@ -136,7 +142,7 @@ export function PortfolioObjectivesOverview({
               <ChartContainer
                 config={destinationChartConfig}
                 className="mx-auto h-47.5 max-w-55"
-                aria-label="Gráfico de rosca dos valores conhecidos por destino"
+                aria-label="Gráfico de rosca dos valores conhecidos por objetivo"
                 role="img"
               >
                 <PieChart>
@@ -184,7 +190,7 @@ export function PortfolioObjectivesOverview({
             )}
           </div>
           <ul
-            aria-label="Valores e proporções por destino"
+            aria-label="Valores e proporções por objetivo"
             className="space-y-3"
           >
             {chartData.map((category) => {
@@ -230,6 +236,10 @@ export function PortfolioObjectivesOverview({
               <p>
                 Cada posição inteira pode pertencer a apenas um destino. O
                 gráfico soma apenas os valores conhecidos da carteira atual.
+              </p>
+              <p>
+                A meta da Reserva usa o saldo informado. Esse valor não é somado
+                novamente às posições do gráfico.
               </p>
               <p>
                 {data.unassignedPositionCount} posição(ões) ainda sem destino.

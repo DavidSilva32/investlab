@@ -118,9 +118,20 @@ export function PortfolioObjectiveCard({
             </span>
             <span className="col-span-2 flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-left">
               <span className="block font-semibold tabular-nums">
+                {isReserve && objective.balanceTracking ? (
+                  <span className="mb-0.5 block text-xs font-normal text-muted-foreground">
+                    Saldo atual da Reserva
+                  </span>
+                ) : null}
                 {objective.currentValue === null
                   ? "Indisponível"
                   : formatCurrency(objective.currentValue)}
+                {isReserve && objective.balanceTracking ? (
+                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                    Informado em{" "}
+                    {formatDisplayDate(objective.balanceTracking.observedOn)}
+                  </span>
+                ) : null}
               </span>
               {objective.currentValue === null && objective.knownValue > 0 && (
                 <span className="block text-xs font-normal text-muted-foreground tabular-nums">
@@ -151,7 +162,9 @@ export function PortfolioObjectiveCard({
               <span className="flex justify-between text-xs font-normal text-muted-foreground">
                 <span>{Math.round(progress)}% acompanhado</span>
                 <span>
-                  Falta {formatCurrency(objective.remainingAmount as number)}
+                  {objective.remainingAmount === 0
+                    ? "Meta atingida"
+                    : `Falta ${formatCurrency(objective.remainingAmount as number)}`}
                 </span>
               </span>
             </span>
@@ -160,7 +173,7 @@ export function PortfolioObjectiveCard({
               Progresso indisponível com os dados atuais
             </span>
           ) : null}
-          {objective.balanceTracking && (
+          {objective.balanceTracking && !isReserve && (
             <span className="grid gap-1 border-t pt-3 text-xs font-normal sm:grid-cols-2">
               <span className="text-muted-foreground">
                 Saldo observado:{" "}

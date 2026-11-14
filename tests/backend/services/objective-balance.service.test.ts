@@ -4,6 +4,7 @@ import {
   ObjectiveBalanceService,
   type ObjectiveBalanceReference,
 } from "@/backend/services/objective-balance.service";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 const reference = (
   overrides: Partial<ObjectiveBalanceReference> = {},
@@ -50,14 +51,41 @@ function createService(options?: {
       ...input,
       id: "balance-1",
     })),
+    saveReserveBalanceWithAssignments: vi.fn(async (input) => ({
+      ...input,
+      objectiveId: reserveObjectiveId,
+      observedDate: input.observedOn,
+      id: "reserve-balance-1",
+      changedPositionCount: 2,
+      newlyLinkedPositionCount: 1,
+      transferredPositionCount: 1,
+    })),
+  };
+  const reserveAssignment = {
+    findAutomaticAssignment: vi.fn(async () => ({
+      selectedAssetKeys: ["v1:key"],
+      expectedOwners: { "v1:key": "goal-1" },
+      expectedSourceFingerprint: "a".repeat(64),
+      differenceCents: "0",
+      transferredPositionCount: 1,
+      linkedPositionCount: 1,
+    })),
   };
   const service = new ObjectiveBalanceService(
     repository as never,
     rates as never,
     fetchOfficialRates,
     () => "2026-10-06",
+    reserveAssignment as never,
   );
-  return { service, rates, repository, fetchOfficialRates, persisted };
+  return {
+    service,
+    rates,
+    repository,
+    reserveAssignment,
+    fetchOfficialRates,
+    persisted,
+  };
 }
 
 describe("ObjectiveBalanceService", () => {
@@ -109,6 +137,51 @@ describe("ObjectiveBalanceService", () => {
         observedOn: "2026-10-01",
       }),
     ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("automatically finds the reserve combination and saves balance with its assignments", async () => {
+    const { service, repository, reserveAssignment } = createService();
+    const saved = await service.save(
+      {
+        objectiveId: reserveObjectiveId,
+        amount: "56042.48",
+        observedOn: "2026-11-14",
+      },
+      "request-1",
+    );
+
+    expect(reserveAssignment.findAutomaticAssignment).toHaveBeenCalledWith(
+      56042.48,
+      "2026-11-14",
+      "request-1",
+    );
+    expect(repository.saveReserveBalanceWithAssignments).toHaveBeenCalledWith({
+      amountCents: "5604248",
+      observedOn: "2026-11-14",
+      cdiPercentage: null,
+      selectedAssetKeys: ["v1:key"],
+      expectedOwners: { "v1:key": "goal-1" },
+      expectedSourceFingerprint: "a".repeat(64),
+    });
+    expect(repository.saveObservedBalance).not.toHaveBeenCalled();
+    expect(saved).toMatchObject({ changedPositionCount: 2 });
+  });
+
+  it("does not save a reserve balance when automatic matching is unavailable", async () => {
+    const { service, repository, reserveAssignment } = createService();
+    reserveAssignment.findAutomaticAssignment.mockRejectedValueOnce(
+      new Error("limited search"),
+    );
+
+    await expect(
+      service.save({
+        objectiveId: reserveObjectiveId,
+        amount: "56042.48",
+        observedOn: "2026-11-14",
+      }),
+    ).rejects.toThrow("limited search");
+    expect(repository.saveReserveBalanceWithAssignments).not.toHaveBeenCalled();
+    expect(repository.saveObservedBalance).not.toHaveBeenCalled();
   });
 
   it("does not project balances saved without explicit CDI conditions", async () => {

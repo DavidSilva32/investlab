@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
+import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { cdbRateRepository } from "@/backend/repositories/cdb-rate.repository";
 import { bcbCdiService } from "@/backend/services/bcb-cdi.service";
 import { buildEffectiveCdiRateSeries } from "@/backend/services/cdb-estimate.service";
@@ -11,6 +12,7 @@ import {
   todayInSaoPaulo,
 } from "@/lib/valuation-date";
 import { decimalToCents } from "@/lib/portfolio-money";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 const maximumAmount = 1_000_000_000_000;
 const saveSchema = z.object({
@@ -82,25 +84,58 @@ export class ObjectiveBalanceService {
     private readonly fetchOfficialRates = (from: string, to: string) =>
       bcbCdiService.fetchRates(from, to),
     private readonly getEvaluationDate = todayInSaoPaulo,
+    private readonly reserveAssignment = emergencyReserveService,
   ) {}
 
-  async save(input: unknown) {
+  async save(input: unknown, requestId?: string) {
     const parsed = saveSchema.safeParse(input);
     if (!parsed.success)
       throw new ApplicationError("Revise os dados do saldo informado.", 400);
     const amountCents = decimalToCents(parsed.data.amount)!.toString();
-    const saved = await this.repository.saveObservedBalance({
-      objectiveId: parsed.data.objectiveId,
-      amountCents,
-      observedOn: parsed.data.observedOn,
-      cdiPercentage:
-        parsed.data.cdiPercentage === undefined ||
-        parsed.data.cdiPercentage === null
-          ? null
-          : parsed.data.cdiPercentage.toFixed(4),
-    });
+    const cdiPercentage =
+      parsed.data.cdiPercentage === undefined ||
+      parsed.data.cdiPercentage === null
+        ? null
+        : parsed.data.cdiPercentage.toFixed(4);
+    const saved =
+      parsed.data.objectiveId === reserveObjectiveId
+        ? await this.saveReserveBalance({
+            amountCents,
+            amount: Number(parsed.data.amount),
+            observedOn: parsed.data.observedOn,
+            cdiPercentage,
+            requestId,
+          })
+        : await this.repository.saveObservedBalance({
+            objectiveId: parsed.data.objectiveId,
+            amountCents,
+            observedOn: parsed.data.observedOn,
+            cdiPercentage,
+          });
     if (!saved) throw new ApplicationError("Objetivo não encontrado.", 404);
     return saved;
+  }
+
+  private async saveReserveBalance(input: {
+    amountCents: string;
+    amount: number;
+    observedOn: string;
+    cdiPercentage: string | null;
+    requestId?: string;
+  }) {
+    const assignment = await this.reserveAssignment.findAutomaticAssignment(
+      input.amount,
+      input.observedOn,
+      input.requestId,
+    );
+    return this.repository.saveReserveBalanceWithAssignments({
+      amountCents: input.amountCents,
+      observedOn: input.observedOn,
+      cdiPercentage: input.cdiPercentage,
+      selectedAssetKeys: assignment.selectedAssetKeys,
+      expectedOwners: assignment.expectedOwners,
+      expectedSourceFingerprint: assignment.expectedSourceFingerprint,
+    });
   }
 
   async projectLatest(

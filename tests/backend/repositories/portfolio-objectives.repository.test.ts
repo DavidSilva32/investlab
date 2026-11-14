@@ -19,6 +19,7 @@ import {
   PortfolioObjectivesRepository,
 } from "@/backend/repositories/portfolio-objectives.repository";
 import { ApplicationError } from "@/backend/errors/application-error";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 const sqlChunksText = (chunks: unknown[]) =>
   chunks
@@ -34,6 +35,7 @@ const sqlChunksText = (chunks: unknown[]) =>
 
 describe("PortfolioObjectivesRepository", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.spyOn(
       PortfolioObjectivesRepository.prototype as unknown as {
@@ -579,6 +581,241 @@ describe("PortfolioObjectivesRepository", () => {
       }),
     ).resolves.toBeNull();
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("saves the reserve observation and selected position transfers in one serializable transaction", async () => {
+    const tripId = "00000000-0000-4000-8000-000000000011";
+    const oldReserveKey = "v1:old-reserve";
+    const transferKey = "v1:transfer";
+    const objectiveRows = [{ id: reserveObjectiveId }, { id: tripId }];
+    const assignmentRows = [
+      { assetKey: oldReserveKey, objectiveId: reserveObjectiveId },
+      { assetKey: transferKey, objectiveId: tripId },
+    ];
+    const queryResults = [objectiveRows, assignmentRows];
+    let selectIndex = 0;
+    const select = vi.fn(() => {
+      const result = queryResults[selectIndex++];
+      return {
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ for: async () => result }),
+          }),
+        }),
+      };
+    });
+    const deleteWhere = vi.fn().mockResolvedValue([]);
+    const updateWhere = vi.fn().mockResolvedValue([]);
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const insertRows = [
+      [{ id: "batch-1" }],
+      [
+        {
+          id: "reference-1",
+          batchId: "batch-1",
+          objectiveId: reserveObjectiveId,
+          amountCents: "50000",
+          cdiPercentage: null,
+        },
+      ],
+    ];
+    let insertIndex = 0;
+    const insert = vi.fn(() => {
+      const result = insertRows[insertIndex++];
+      return {
+        values: () => ({ returning: async () => result }),
+      };
+    });
+    const transaction = {
+      select,
+      delete: vi.fn(() => ({ where: deleteWhere })),
+      update: vi.fn(() => ({ set: updateSet })),
+      insert,
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        currentAllocationSourceFingerprint: (
+          transaction: unknown,
+          valuationDate: string,
+        ) => Promise<string | null>;
+      },
+      "currentAllocationSourceFingerprint",
+    ).mockResolvedValue("a".repeat(64));
+
+    const result =
+      await new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments(
+        {
+          amountCents: "50000",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+          selectedAssetKeys: [transferKey],
+          expectedOwners: {
+            [oldReserveKey]: reserveObjectiveId,
+            [transferKey]: tripId,
+          },
+          expectedSourceFingerprint: "a".repeat(64),
+        },
+      );
+
+    expect(result).toMatchObject({
+      objectiveId: reserveObjectiveId,
+      observedDate: "2026-11-14",
+      changedPositionCount: 2,
+      newlyLinkedPositionCount: 0,
+      transferredPositionCount: 1,
+    });
+    expect(deleteWhere).toHaveBeenCalledOnce();
+    expect(updateWhere).toHaveBeenCalledOnce();
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(database.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "serializable",
+    });
+  });
+
+  it("saves a zero reserve balance and clears reserve assignments in one serializable transaction", async () => {
+    const reserveKey = "v1:reserve-position";
+    let selectIndex = 0;
+    const queryResults = [
+      [{ id: reserveObjectiveId }],
+      [{ assetKey: reserveKey, objectiveId: reserveObjectiveId }],
+    ];
+    const select = vi.fn(() => {
+      const result = queryResults[selectIndex++];
+      return {
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({ for: async () => result }),
+          }),
+        }),
+      };
+    });
+    const deleteWhere = vi.fn().mockResolvedValue([]);
+    const insertedValues: unknown[] = [];
+    const insertResults = [
+      [{ id: "batch-zero" }],
+      [
+        {
+          id: "reference-zero",
+          batchId: "batch-zero",
+          objectiveId: reserveObjectiveId,
+          amountCents: "0",
+          cdiPercentage: null,
+        },
+      ],
+    ];
+    let insertIndex = 0;
+    const insert = vi.fn(() => {
+      const result = insertResults[insertIndex++];
+      return {
+        values: (values: unknown) => {
+          insertedValues.push(values);
+          return { returning: async () => result };
+        },
+      };
+    });
+    const transaction = {
+      select,
+      delete: vi.fn(() => ({ where: deleteWhere })),
+      update: vi.fn(),
+      insert,
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        currentAllocationSourceFingerprint: (
+          transaction: unknown,
+          valuationDate: string,
+        ) => Promise<string | null>;
+      },
+      "currentAllocationSourceFingerprint",
+    ).mockResolvedValue("b".repeat(64));
+
+    const result =
+      await new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments(
+        {
+          amountCents: "0",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+          selectedAssetKeys: [],
+          expectedOwners: { [reserveKey]: reserveObjectiveId },
+          expectedSourceFingerprint: "b".repeat(64),
+        },
+      );
+
+    expect(result).toMatchObject({
+      objectiveId: reserveObjectiveId,
+      amountCents: "0",
+      observedDate: "2026-11-14",
+      changedPositionCount: 1,
+      newlyLinkedPositionCount: 0,
+      transferredPositionCount: 0,
+    });
+    expect(deleteWhere).toHaveBeenCalledOnce();
+    expect(transaction.update).not.toHaveBeenCalled();
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(insertedValues[1]).toMatchObject({
+      objectiveId: reserveObjectiveId,
+      amountCents: "0",
+      cdiPercentage: null,
+    });
+    expect(database.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "serializable",
+    });
+  });
+
+  it("does not write a reserve balance or assignments after a stale owner conflict", async () => {
+    const key = "v1:position";
+    let selectIndex = 0;
+    const queryResults = [
+      [{ id: reserveObjectiveId }],
+      [{ assetKey: key, objectiveId: "changed-objective" }],
+    ];
+    const transaction = {
+      select: vi.fn(() => {
+        const result = queryResults[selectIndex++];
+        return {
+          from: () => ({
+            where: () => ({
+              orderBy: () => ({ for: async () => result }),
+            }),
+          }),
+        };
+      }),
+      delete: vi.fn(),
+      update: vi.fn(),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    vi.spyOn(
+      PortfolioObjectivesRepository.prototype as unknown as {
+        currentAllocationSourceFingerprint: (
+          transaction: unknown,
+          valuationDate: string,
+        ) => Promise<string | null>;
+      },
+      "currentAllocationSourceFingerprint",
+    ).mockResolvedValue("a".repeat(64));
+
+    await expect(
+      new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+        amountCents: "50000",
+        observedOn: "2026-11-14",
+        cdiPercentage: null,
+        selectedAssetKeys: [key],
+        expectedOwners: { [key]: null },
+        expectedSourceFingerprint: "a".repeat(64),
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.delete).not.toHaveBeenCalled();
+    expect(transaction.update).not.toHaveBeenCalled();
+    expect(transaction.insert).not.toHaveBeenCalled();
   });
 
   it("updates only objective details", async () => {

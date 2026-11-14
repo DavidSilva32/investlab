@@ -14,6 +14,11 @@ import {
   type ObjectiveBalanceTrackingData,
 } from "./portfolio-objective-balance-tracking";
 
+function formatDisplayDate(value: string) {
+  const [year, month, day] = value.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
 type Props = {
   objective: PortfolioObjective;
   onEdit: () => void;
@@ -67,7 +72,7 @@ export function PortfolioObjectiveDetail({
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {isReserve
-                    ? "A reserva mantém a configuração e os critérios próprios atuais."
+                    ? "O saldo total informado acompanha a meta da Reserva; as posições da carteira continuam no patrimônio por destino."
                     : objective.purpose === "LONG_TERM_INVESTMENT"
                       ? "Ativos da carteira separados pela sua estratégia de longo prazo."
                       : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
@@ -119,12 +124,22 @@ export function PortfolioObjectiveDetail({
         <CardContent className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <p className="text-xs text-muted-foreground">Valor conhecido</p>
+              <p className="text-xs text-muted-foreground">
+                {isReserve && objective.balanceTracking
+                  ? "Saldo atual da Reserva"
+                  : "Valor conhecido"}
+              </p>
               <p className="text-xl font-semibold tabular-nums">
                 {objective.currentValue === null
                   ? "Indisponível"
                   : formatCurrency(objective.currentValue)}
               </p>
+              {isReserve && objective.balanceTracking && (
+                <p className="text-xs text-muted-foreground">
+                  Informado em{" "}
+                  {formatDisplayDate(objective.balanceTracking.observedOn)}
+                </p>
+              )}
               {objective.currentValue === null && objective.knownValue > 0 && (
                 <p className="text-xs text-muted-foreground">
                   Subtotal conhecido: {formatCurrency(objective.knownValue)}
@@ -150,7 +165,9 @@ export function PortfolioObjectiveDetail({
               )}
               {objective.remainingAmount !== null && (
                 <p className="text-xs text-muted-foreground">
-                  Falta {formatCurrency(objective.remainingAmount)}
+                  {objective.remainingAmount === 0
+                    ? "Meta atingida"
+                    : `Falta ${formatCurrency(objective.remainingAmount)}`}
                 </p>
               )}
             </div>
@@ -168,7 +185,7 @@ export function PortfolioObjectiveDetail({
                 }
               />
               <p className="text-xs text-muted-foreground">
-                {Math.round(objective.progressPercent)}% da meta acompanhada
+                {Math.round(objective.progressPercent)}% da meta
               </p>
             </div>
           )}

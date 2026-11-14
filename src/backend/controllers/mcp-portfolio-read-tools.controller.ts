@@ -50,7 +50,7 @@ export class McpPortfolioReadToolsController {
       "get_my_emergency_reserve",
       {
         description:
-          "Consulta o resumo da reserva de emergência configurada para a conta conectada, incluindo cobertura e progresso da meta.",
+          "Consulta o resumo da Reserva. Se houver saldo observado, a cobertura e a meta usam esse valor e retornam sua fonte e data; sem observação, usam as posições vinculadas.",
         inputSchema: z.object({}),
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
@@ -70,7 +70,7 @@ export class McpPortfolioReadToolsController {
       "get_my_objectives",
       {
         description:
-          "Consulta objetivos financeiros da conta conectada, com metas, valores conhecidos, progresso e valores sem destino. Não retorna posições detalhadas.",
+          "Consulta objetivos financeiros. Na Reserva, currentValue é o saldo observado mais recente e knownValue é o subtotal das posições vinculadas; os totais da carteira continuam baseados nas posições. Para os demais objetivos, currentValue e knownValue são valores conhecidos das posições. Não retorna posições detalhadas.",
         inputSchema: z.object({}),
         annotations: { readOnlyHint: true, openWorldHint: false },
       },

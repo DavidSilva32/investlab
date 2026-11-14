@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCurrencyCents } from "@/lib/portfolio-money";
 import { decimalToCents } from "@/lib/portfolio-money";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import {
   formatAmountInput,
   getCurrencyInputSelection,
@@ -40,6 +41,7 @@ export type ObjectiveBalanceTrackingData = {
 type Props = {
   objectiveId: string;
   objectiveName: string;
+  isReserve?: boolean;
   tracking: ObjectiveBalanceTrackingData;
   saving: boolean;
   onSave: (input: {
@@ -68,6 +70,7 @@ export function PortfolioObjectiveBalanceTracking({
   saving,
   onSave,
 }: Props) {
+  const isReserve = objectiveId === reserveObjectiveId;
   const editorKey = JSON.stringify([
     objectiveId,
     tracking?.observedAmountCents,
@@ -79,6 +82,7 @@ export function PortfolioObjectiveBalanceTracking({
       key={editorKey}
       objectiveId={objectiveId}
       objectiveName={objectiveName}
+      isReserve={isReserve}
       tracking={tracking}
       saving={saving}
       onSave={onSave}
@@ -89,6 +93,7 @@ export function PortfolioObjectiveBalanceTracking({
 function BalanceTrackingEditor({
   objectiveId,
   objectiveName,
+  isReserve = false,
   tracking,
   saving,
   onSave,
@@ -138,6 +143,7 @@ function BalanceTrackingEditor({
         : null;
     const parsedCdi = Number(cdiPercentage);
     const nextCdiError =
+      !isReserve &&
       cdiPercentage.trim() &&
       (!/^\d+(?:\.\d+)?$/.test(cdiPercentage) ||
         !Number.isFinite(parsedCdi) ||
@@ -153,7 +159,8 @@ function BalanceTrackingEditor({
       objectiveId,
       amount: canonicalAmount,
       observedOn,
-      cdiPercentage: cdiPercentage.trim() ? cdiPercentage.trim() : null,
+      cdiPercentage:
+        !isReserve && cdiPercentage.trim() ? cdiPercentage.trim() : null,
     });
   }
 
@@ -162,16 +169,20 @@ function BalanceTrackingEditor({
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle id="objective-balance-title" className="text-base">
-            Saldo observado no banco
+            {isReserve ? "Saldo total da Reserva" : "Saldo observado no banco"}
           </CardTitle>
-          <Badge variant="outline">Acompanhamento separado</Badge>
+          <Badge variant="outline">
+            {isReserve ? "Usado na meta" : "Acompanhamento separado"}
+          </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          Informe o saldo total do objetivo. Ele não é somado à carteira.
+          {isReserve
+            ? "Informe o saldo total. Ao salvar, o sistema ajusta os vínculos das posições de renda fixa para aproximá-los desse valor e informa se transferiu posições de outros objetivos."
+            : "Informe o saldo total do objetivo. Ele não é somado à carteira."}
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {tracking && (
+        {tracking && !isReserve && (
           <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
             <div>
               <p className="text-xs text-muted-foreground">Saldo observado</p>
@@ -217,7 +228,7 @@ function BalanceTrackingEditor({
             </div>
           </div>
         )}
-        {tracking?.projection && (
+        {tracking?.projection && !isReserve && (
           <p className="text-xs text-muted-foreground">
             A projeção não inclui impostos, aportes ou resgates que não foram
             informados.
@@ -226,10 +237,16 @@ function BalanceTrackingEditor({
         <form
           noValidate
           onSubmit={submit}
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(10rem,auto)] lg:items-end"
+          className={`grid gap-3 sm:grid-cols-2 ${
+            isReserve
+              ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(10rem,auto)]"
+              : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(10rem,auto)]"
+          } lg:items-end`}
         >
           <div className="space-y-1.5">
-            <Label htmlFor="objective-observed-amount">Saldo total (R$)</Label>
+            <Label htmlFor="objective-observed-amount">
+              {isReserve ? "Saldo atual (R$)" : "Saldo total (R$)"}
+            </Label>
             <Input
               id="objective-observed-amount"
               ref={amountInputRef}
@@ -281,34 +298,36 @@ function BalanceTrackingEditor({
             required
             errorMessage={dateError}
           />
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-            <Label htmlFor="objective-cdi-percentage">
-              Rendimento contratado (% do CDI, opcional)
-            </Label>
-            <Input
-              id="objective-cdi-percentage"
-              inputMode="decimal"
-              placeholder="Ex.: 100"
-              value={cdiPercentage}
-              onChange={(event) => {
-                setCdiPercentage(event.target.value.replace(",", "."));
-                setCdiError(null);
-              }}
-              type="text"
-              pattern="\d+(?:\.\d+)?"
-              aria-invalid={Boolean(cdiError)}
-              aria-describedby={cdiError ? "objective-cdi-error" : undefined}
-            />
-            {cdiError && (
-              <p
-                id="objective-cdi-error"
-                className="text-sm text-destructive"
-                role="alert"
-              >
-                {cdiError}
-              </p>
-            )}
-          </div>
+          {!isReserve && (
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+              <Label htmlFor="objective-cdi-percentage">
+                Rendimento contratado (% do CDI, opcional)
+              </Label>
+              <Input
+                id="objective-cdi-percentage"
+                inputMode="decimal"
+                placeholder="Ex.: 100"
+                value={cdiPercentage}
+                onChange={(event) => {
+                  setCdiPercentage(event.target.value.replace(",", "."));
+                  setCdiError(null);
+                }}
+                type="text"
+                pattern="\d+(?:\.\d+)?"
+                aria-invalid={Boolean(cdiError)}
+                aria-describedby={cdiError ? "objective-cdi-error" : undefined}
+              />
+              {cdiError && (
+                <p
+                  id="objective-cdi-error"
+                  className="text-sm text-destructive"
+                  role="alert"
+                >
+                  {cdiError}
+                </p>
+              )}
+            </div>
+          )}
           <div className="sm:col-span-2 lg:col-span-1">
             <Button className="w-full" type="submit" disabled={saving}>
               {saving ? "Salvando…" : "Salvar saldo observado"}

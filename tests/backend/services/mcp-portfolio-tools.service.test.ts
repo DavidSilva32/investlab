@@ -72,6 +72,7 @@ describe("McpPortfolioToolsService read tools", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
   });
 
   it("reads portfolio value, positions, and movements inside the token owner's context", async () => {
@@ -131,8 +132,13 @@ describe("McpPortfolioToolsService read tools", () => {
   it("returns only the connected owner's emergency reserve summary", async () => {
     const calculation = {
       monthlyExpenses: 4200,
+      monthlyExpensesCents: "420000",
       targetMonths: 12,
       selectedValue: 50642.41,
+      selectedValueCents: "5064241",
+      selectedGroups: 1,
+      unvaluedGroups: 0,
+      referenceDate: "2026-11-13",
       targetValue: 50400,
       coveredMonths: 12.05,
       progressPercentage: 100,
@@ -142,14 +148,65 @@ describe("McpPortfolioToolsService read tools", () => {
       calculation,
       holdings: [{ ticker: "CDB-PRIVATE" }],
     });
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
 
     await expect(
       service.getMyEmergencyReserve("owner-from-sub", "req-reserve"),
-    ).resolves.toEqual(calculation);
+    ).resolves.toMatchObject({
+      ...calculation,
+      balanceSource: "linked_positions",
+      balanceDate: "2026-11-13",
+    });
     expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("owner-from-sub");
     expect(mocks.getEmergencyReserveEditorData).toHaveBeenCalledWith(
       "req-reserve",
     );
+    expect(mocks.getObjectivesOverview).toHaveBeenCalledWith("req-reserve");
+  });
+
+  it("uses the observed reserve balance and date for its MCP coverage", async () => {
+    mocks.getEmergencyReserveEditorData.mockResolvedValue({
+      calculation: {
+        monthlyExpenses: 4200,
+        monthlyExpensesCents: "420000",
+        targetMonths: 12,
+        selectedValue: 50642.41,
+        selectedValueCents: "5064241",
+        selectedGroups: 1,
+        unvaluedGroups: 0,
+        referenceDate: "2026-11-13",
+        targetValue: 50400,
+        coveredMonths: 12.05,
+        progressPercentage: 100,
+        status: "above_target",
+      },
+    });
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [
+        {
+          kind: "RESERVE",
+          balanceTracking: {
+            observedAmountCents: "5604248",
+            observedOn: "2026-11-14",
+          },
+        },
+      ],
+    });
+
+    const result = await service.getMyEmergencyReserve(
+      "owner-from-sub",
+      "req-reserve-observed",
+    );
+
+    expect(result).toMatchObject({
+      selectedValue: 56042.48,
+      selectedValueCents: "5604248",
+      difference: -5642.48,
+      status: "above_target",
+      balanceSource: "observed_balance",
+      balanceDate: "2026-11-14",
+    });
+    expect(result.coveredMonths).toBeCloseTo(13.3434, 4);
   });
 
   it("preserves an unconfigured empty reserve and propagates data errors", async () => {
@@ -166,7 +223,11 @@ describe("McpPortfolioToolsService read tools", () => {
       holdings: [],
     });
     await expect(service.getMyEmergencyReserve("owner-empty")).resolves.toEqual(
-      unconfiguredCalculation,
+      {
+        ...unconfiguredCalculation,
+        balanceSource: "linked_positions",
+        balanceDate: null,
+      },
     );
     expect(mocks.getEmergencyReserveEditorData).toHaveBeenCalledWith(
       expect.stringMatching(/^[\da-f-]{36}$/i),

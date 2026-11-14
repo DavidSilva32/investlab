@@ -119,6 +119,7 @@ const holdingCents = (holding: ReserveSuggestionHolding) => {
 export function suggestEmergencyReservePositions(
   targetAmount: number,
   holdings: ReserveSuggestionHolding[],
+  compareCandidates?: (left: string[], right: string[]) => number,
 ): EmergencyReservePositionSuggestions {
   if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
     return { status: "invalid_target" };
@@ -229,7 +230,7 @@ export function suggestEmergencyReservePositions(
   }
 
   if (valued.length <= MAX_EXACT_GROUPS) {
-    const exact = findExactCandidates(valued, targetCents);
+    const exact = findExactCandidates(valued, targetCents, compareCandidates);
     const bucket = exact.distance === 0n ? exactCandidates : nearestCandidates;
     nearestDifference = exact.distance;
     bucket.push(
@@ -250,10 +251,11 @@ export function suggestEmergencyReservePositions(
 
   const candidates = (
     exactCandidates.length ? exactCandidates : nearestCandidates
-  ).sort(
-    (left, right) =>
-      left.assetKeys.length - right.assetKeys.length ||
-      compareText(left.assetKeys.join("|"), right.assetKeys.join("|")),
+  ).sort((left, right) =>
+    compareCandidates
+      ? compareCandidates(left.assetKeys, right.assetKeys)
+      : left.assetKeys.length - right.assetKeys.length ||
+        compareText(left.assetKeys.join("|"), right.assetKeys.join("|")),
   );
   const holdingsByKey = new Map(
     holdings.map((holding) => [holding.assetKey, holding]),
@@ -311,6 +313,7 @@ type SearchCandidate = {
 function findExactCandidates(
   holdings: { assetKey: string; cents: bigint }[],
   target: bigint,
+  compareCandidates?: (left: string[], right: string[]) => number,
 ): {
   distance: bigint;
   candidates: SearchCandidate[];
@@ -323,12 +326,15 @@ function findExactCandidates(
   const leftHoldings = keyOrdered.slice(0, midpoint);
   const rightHoldings = keyOrdered.slice(midpoint);
   const left = enumerateSearchSubsets(leftHoldings);
-  const right = enumerateSearchSubsets(rightHoldings).sort(
-    (a, b) =>
-      compareBigint(a.total, b.total) ||
-      a.count - b.count ||
-      compareMasksLex(a.mask, b.mask),
-  );
+  const right = enumerateSearchSubsets(rightHoldings).sort((a, b) => {
+    const amountOrder = compareBigint(a.total, b.total);
+    if (amountOrder !== 0) return amountOrder;
+    if (!compareCandidates)
+      return a.count - b.count || compareMasksLex(a.mask, b.mask);
+    const aKeys = buildMaskedCombination([], 0, rightHoldings, a.mask);
+    const bKeys = buildMaskedCombination([], 0, rightHoldings, b.mask);
+    return compareCandidates(aKeys, bKeys);
+  });
   let distance: bigint | null = null;
 
   for (const subset of left) {
@@ -357,35 +363,21 @@ function findExactCandidates(
         const other = right[index];
         const total = subset.total + other.total;
         if (total === 0n) continue;
-        const selectedCount = subset.count + other.count;
-        const worst = selected[selected.length - 1];
+        const candidateKeys = buildMaskedCombination(
+          leftHoldings,
+          subset.mask,
+          rightHoldings,
+          other.mask,
+        );
         if (
-          selected.length >= MAX_CANDIDATES &&
-          (selectedCount > worst.assetKeys.length ||
-            (selectedCount === worst.assetKeys.length &&
-              compareMaskPairs(
-                subset.mask,
-                other.mask,
-                worst.leftMask,
-                worst.rightMask,
-              ) >= 0))
+          selected.some((candidate) =>
+            sameKeys(candidate.assetKeys, candidateKeys),
+          )
         ) {
-          alternativesLimited = true;
-        } else {
-          const candidateKeys = buildMaskedCombination(
-            leftHoldings,
-            subset.mask,
-            rightHoldings,
-            other.mask,
-          );
-          if (
-            selected.some((candidate) =>
-              sameKeys(candidate.assetKeys, candidateKeys),
-            )
-          ) {
-            foundAtSum += 1;
-            continue;
-          }
+          foundAtSum += 1;
+          continue;
+        }
+        {
           selected.push({
             assetKeys: candidateKeys,
             totalCents: total.toString(),
@@ -395,15 +387,16 @@ function findExactCandidates(
             leftMask: subset.mask,
             rightMask: other.mask,
           });
-          selected.sort(
-            (a, b) =>
-              a.assetKeys.length - b.assetKeys.length ||
-              compareMaskPairs(
-                a.leftMask,
-                a.rightMask,
-                b.leftMask,
-                b.rightMask,
-              ),
+          selected.sort((a, b) =>
+            compareCandidates
+              ? compareCandidates(a.assetKeys, b.assetKeys)
+              : a.assetKeys.length - b.assetKeys.length ||
+                compareMaskPairs(
+                  a.leftMask,
+                  a.rightMask,
+                  b.leftMask,
+                  b.rightMask,
+                ),
           );
           if (selected.length > MAX_CANDIDATES) {
             selected.pop();

@@ -61,19 +61,53 @@ function render(ui: ReactElement) {
 }
 
 describe("PositionCombinationSuggestions", () => {
+  it("keeps an explanatory position-only search closed until requested", async () => {
+    const user = userEvent.setup();
+    rtlRender(
+      <PositionCombinationSuggestions
+        endpoint="/api/emergency-reserve/suggestions"
+        title="Encontrar grupos pelo valor"
+        description="O valor serve apenas para localizar combinações de posições e não altera o saldo da Reserva."
+        collapsedDescription="Só compara posições; não atualiza o saldo da Reserva."
+        amountLabel="Valor para comparar posições"
+        holdings={holdings}
+        onApply={vi.fn()}
+      />,
+      { wrapper: QueryClientWrapper },
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: /Encontrar grupos pelo valor/,
+    });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.getByText("Só compara posições; não atualiza o saldo da Reserva."),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Valor para comparar posições")).toBeNull();
+
+    await user.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Valor para comparar posições")).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "O valor serve apenas para localizar combinações de posições e não altera o saldo da Reserva.",
+      ),
+    ).toBeNull();
+  });
+
   it("keeps the amount, date, and search controls in a wrapping layout", () => {
     render(
       <PositionCombinationSuggestions
         endpoint="/api/emergency-reserve/suggestions"
         title="Encontrar grupos pelo valor"
         description="Digite o valor para comparar."
-        amountLabel="Saldo atual da Reserva no banco"
+        amountLabel="Valor para comparar posições"
         holdings={holdings}
         onApply={vi.fn()}
       />,
     );
 
-    const amount = screen.getByLabelText("Saldo atual da Reserva no banco");
+    const amount = screen.getByLabelText("Valor para comparar posições");
     const controls = amount.parentElement?.parentElement;
 
     expect(controls?.className).toContain("flex-wrap");

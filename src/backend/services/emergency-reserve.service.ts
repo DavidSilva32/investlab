@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
+import {
+  createAllocationSourceFingerprint,
+  portfolioObjectivesRepository,
+} from "@/backend/repositories/portfolio-objectives.repository";
 import { financialRecurrencesRepository } from "@/backend/repositories/financial-recurrences.repository";
-import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
@@ -167,6 +170,130 @@ function getPositionAssetKey(position: Position) {
 }
 
 export class EmergencyReserveService {
+  async findAutomaticAssignment(
+    targetAmount: number,
+    observedOn: string,
+    requestId?: string,
+  ) {
+    const enrichedPositions =
+      await portfolioPositionService.listCurrentEnriched(requestId, observedOn);
+    const positions = await portfolioAllocationService.classifyPositions(
+      enrichedPositions,
+      requestId,
+    );
+    const objectives = await portfolioObjectivesRepository.list();
+    const objectiveNameById = new Map(
+      objectives.objectives.map((objective) => [objective.id, objective.name]),
+    );
+    const ownerByAssetKey = new Map(
+      objectives.assignments.map((assignment) => [
+        assignment.assetKey,
+        {
+          id: assignment.objectiveId,
+          name:
+            objectiveNameById.get(assignment.objectiveId) ?? "Outro objetivo",
+        },
+      ]),
+    );
+    const holdings = this.buildData(
+      positions,
+      { monthlyExpenses: null, targetMonths: null, selectedAssetKeys: [] },
+      ownerByAssetKey,
+    ).holdings;
+    const currentReserveKeys = new Set(
+      objectives.assignments
+        .filter((assignment) => assignment.objectiveId === reserveObjectiveId)
+        .map((assignment) => assignment.assetKey),
+    );
+    const compareCandidates = (left: string[], right: string[]) => {
+      const transferCount = (keys: string[]) =>
+        keys.filter((key) => {
+          const owner = ownerByAssetKey.get(key)?.id;
+          return owner !== undefined && owner !== reserveObjectiveId;
+        }).length;
+      const leftTransfers = transferCount(left);
+      const rightTransfers = transferCount(right);
+      if (leftTransfers !== rightTransfers)
+        return leftTransfers - rightTransfers;
+      const symmetricDifferenceCount = (keys: string[]) => {
+        const selected = new Set(keys);
+        return (
+          keys.filter((key) => !currentReserveKeys.has(key)).length +
+          [...currentReserveKeys].filter((key) => !selected.has(key)).length
+        );
+      };
+      const leftDifference = symmetricDifferenceCount(left);
+      const rightDifference = symmetricDifferenceCount(right);
+      if (leftDifference !== rightDifference)
+        return leftDifference - rightDifference;
+      const leftSignature = left.join("|");
+      const rightSignature = right.join("|");
+      return leftSignature < rightSignature
+        ? -1
+        : leftSignature > rightSignature
+          ? 1
+          : 0;
+    };
+    let selectedAssetKeys: string[];
+    if (targetAmount === 0) {
+      // An empty combination is exactly zero; unknown position values cannot
+      // make a positive combination closer than this result.
+      selectedAssetKeys = [];
+    } else {
+      if (holdings.some((holding) => holding.valueCents === null)) {
+        throw new ApplicationError(
+          "Não foi possível comparar todas as posições de renda fixa. O saldo não foi salvo; atualize os dados da carteira e tente novamente.",
+          409,
+        );
+      }
+      const result = suggestEmergencyReservePositions(
+        targetAmount,
+        holdings,
+        compareCandidates,
+      );
+      if (result.status !== "suggestions") {
+        throw new ApplicationError(
+          "Não foi possível encontrar uma combinação segura para a Reserva. O saldo não foi salvo; confira se há posições de renda fixa avaliadas.",
+          409,
+        );
+      }
+      if (result.searchLimited) {
+        throw new ApplicationError(
+          "Há posições demais para confirmar automaticamente a melhor combinação. O saldo não foi salvo; atualize os dados ou ajuste os vínculos em Gerenciar posições.",
+          409,
+        );
+      }
+      const candidate = result.candidates[0];
+      if (!candidate) {
+        throw new ApplicationError(
+          "Não foi possível encontrar uma combinação segura para a Reserva. O saldo não foi salvo.",
+          409,
+        );
+      }
+      selectedAssetKeys = candidate.assetKeys;
+    }
+    return {
+      selectedAssetKeys,
+      expectedOwners: Object.fromEntries(
+        holdings.map((holding) => [
+          holding.assetKey,
+          ownerByAssetKey.get(holding.assetKey)?.id ?? null,
+        ]),
+      ),
+      expectedSourceFingerprint: createAllocationSourceFingerprint({
+        valuationDate: observedOn,
+        positions: positions as Position[],
+        assignments: objectives.assignments,
+        objectives: objectives.objectives,
+      }),
+      transferredPositionCount: selectedAssetKeys.filter((key) => {
+        const owner = ownerByAssetKey.get(key)?.id;
+        return owner !== undefined && owner !== reserveObjectiveId;
+      }).length,
+      linkedPositionCount: selectedAssetKeys.length,
+    };
+  }
+
   async preview(body: unknown, requestId?: string) {
     const parsed = previewSchema.safeParse(body);
     if (!parsed.success) {

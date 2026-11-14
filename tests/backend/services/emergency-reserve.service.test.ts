@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   enrich: vi.fn(),
   classifyPositions: vi.fn(),
   listObjectives: vi.fn(),
+  createAllocationSourceFingerprint: vi.fn(),
   replaceReserveAssignments: vi.fn(),
   getObjectivesOverview: vi.fn(),
 }));
@@ -33,6 +34,7 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
     listReserveAssignments: vi.fn().mockResolvedValue([]),
     replaceReserveAssignments: mocks.replaceReserveAssignments,
   },
+  createAllocationSourceFingerprint: mocks.createAllocationSourceFingerprint,
 }));
 vi.mock("@/backend/services/cdb-estimate.service", () => ({
   cdbEstimateService: { enrich: mocks.enrich },
@@ -53,6 +55,7 @@ import { ApplicationError } from "@/backend/errors/application-error";
 import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
 import { EmergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { resolvePositionMoney } from "@/lib/portfolio-money";
 
 const position = (overrides: Record<string, unknown> = {}) => {
@@ -141,6 +144,7 @@ describe("EmergencyReserveService", () => {
     mocks.saveSettings.mockResolvedValue(undefined);
     mocks.saveAssignments.mockResolvedValue(undefined);
     mocks.listObjectives.mockResolvedValue({ objectives: [], assignments: [] });
+    mocks.createAllocationSourceFingerprint.mockReturnValue("a".repeat(64));
     mocks.replaceReserveAssignments.mockResolvedValue(undefined);
     mocks.getObjectivesOverview.mockResolvedValue({
       objectives: [],
@@ -340,6 +344,30 @@ describe("EmergencyReserveService", () => {
     expect(result.selectedAssetKeys).toEqual([]);
     expect(result.calculation.status).toBe("not_configured");
     expect(result.calculation.missingSelectionCount).toBe(0);
+  });
+
+  it("rebuilds the reserve editor selection from the persisted position assignments", async () => {
+    const cdb = position({
+      assetCode: "AUTO-ASSIGNED",
+      totalValue: "56042.48",
+    });
+    const assetKey = getEmergencyReserveAssetKey(cdb);
+    mocks.listCurrentEnriched.mockResolvedValue([cdb]);
+    mocks.getSettings.mockResolvedValue({
+      monthlyExpenses: "4650.00",
+      targetMonths: 12,
+      selectedAssetKeys: [assetKey],
+    });
+
+    const data = await new EmergencyReserveService().getEditorData();
+
+    expect(data.selectedAssetKeys).toEqual([assetKey]);
+    expect(data.holdings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ assetKey, selected: true }),
+      ]),
+    );
+    expect(data.calculation.selectedValue).toBe(56042.48);
   });
 
   it("preserves configured reserve settings for the aporte calculation", async () => {
@@ -1861,6 +1889,147 @@ describe("EmergencyReserveService", () => {
       selectedAssetKeys: [getEmergencyReserveAssetKey(cdb)],
     });
     expect(mocks.listLatestPositions).toHaveBeenCalledWith("request-3");
+  });
+
+  it("prefers the closest exact combination without transfers", async () => {
+    const hundred = position({
+      id: "p100",
+      assetCode: "CDB100",
+      totalValue: "100",
+    });
+    const sixty = position({
+      id: "p60",
+      assetCode: "CDB060",
+      totalValue: "60",
+    });
+    const forty = position({
+      id: "p40",
+      assetCode: "CDB040",
+      totalValue: "40",
+    });
+    const tripId = "00000000-0000-4000-8000-000000000011";
+    mocks.listCurrentEnriched.mockResolvedValue([hundred, sixty, forty]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        { id: reserveObjectiveId, name: "Reserva", kind: "RESERVE" },
+        { id: tripId, name: "Viagem", kind: "CUSTOM" },
+      ],
+      assignments: [
+        { assetKey: getEmergencyReserveAssetKey(hundred), objectiveId: tripId },
+      ],
+    });
+
+    const result = await new EmergencyReserveService().findAutomaticAssignment(
+      100,
+      "2026-11-14",
+    );
+
+    expect(result.selectedAssetKeys).toEqual(
+      [sixty, forty].map(getEmergencyReserveAssetKey).sort(),
+    );
+    expect(result.transferredPositionCount).toBe(0);
+    expect(result.expectedOwners).toEqual({
+      [getEmergencyReserveAssetKey(hundred)]: tripId,
+      [getEmergencyReserveAssetKey(sixty)]: null,
+      [getEmergencyReserveAssetKey(forty)]: null,
+    });
+    expect(result.expectedSourceFingerprint).toBe("a".repeat(64));
+  });
+
+  it("prefers the existing reserve combination when other exact choices tie", async () => {
+    const existing = position({
+      id: "p50a",
+      assetCode: "CDB050A",
+      totalValue: "50",
+    });
+    const alternative = position({
+      id: "p50b",
+      assetCode: "CDB050B",
+      totalValue: "50",
+    });
+    mocks.listCurrentEnriched.mockResolvedValue([existing, alternative]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        { id: reserveObjectiveId, name: "Reserva", kind: "RESERVE" },
+      ],
+      assignments: [
+        {
+          assetKey: getEmergencyReserveAssetKey(existing),
+          objectiveId: reserveObjectiveId,
+        },
+      ],
+    });
+
+    const result = await new EmergencyReserveService().findAutomaticAssignment(
+      50,
+      "2026-11-14",
+    );
+
+    expect(result.selectedAssetKeys).toEqual([
+      getEmergencyReserveAssetKey(existing),
+    ]);
+    expect(result.transferredPositionCount).toBe(0);
+    expect(result.linkedPositionCount).toBe(1);
+  });
+
+  it("clears position links when a zero reserve balance is observed", async () => {
+    const cdb = position({
+      assetCode: "CDBZERO-CHECK",
+      totalValue: null,
+      canonicalValueCents: null,
+    });
+    mocks.listCurrentEnriched.mockResolvedValue([cdb]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        { id: reserveObjectiveId, name: "Reserva", kind: "RESERVE" },
+      ],
+      assignments: [
+        {
+          assetKey: getEmergencyReserveAssetKey(cdb),
+          objectiveId: reserveObjectiveId,
+        },
+      ],
+    });
+
+    const result = await new EmergencyReserveService().findAutomaticAssignment(
+      0,
+      "2026-11-14",
+    );
+
+    expect(result.selectedAssetKeys).toEqual([]);
+    expect(result.transferredPositionCount).toBe(0);
+  });
+
+  it("does not recommend an automatic assignment when any fixed income value is unknown", async () => {
+    mocks.listCurrentEnriched.mockResolvedValue([
+      position({ id: "p100", assetCode: "CDB100", totalValue: "100" }),
+      position({
+        id: "unknown",
+        assetCode: "CDBUNK",
+        totalValue: null,
+        canonicalValueCents: null,
+      }),
+    ]);
+
+    await expect(
+      new EmergencyReserveService().findAutomaticAssignment(100, "2026-11-14"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("does not recommend a candidate when combination search is truncated", async () => {
+    mocks.listCurrentEnriched.mockResolvedValue(
+      Array.from({ length: 37 }, (_, index) =>
+        position({
+          id: `p${index}`,
+          assetCode: `CDB${String(index).padStart(3, "0")}`,
+          totalValue: "1",
+        }),
+      ),
+    );
+
+    await expect(
+      new EmergencyReserveService().findAutomaticAssignment(10, "2026-11-14"),
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 });
 

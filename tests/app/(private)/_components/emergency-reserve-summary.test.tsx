@@ -30,7 +30,7 @@ describe("EmergencyReserveSummary", () => {
 
     expect(html).toContain("Reserva de emergência");
     expect(html).toContain("Cobertura em meses");
-    expect(html).toContain("lg:grid-cols-4");
+    expect(html).toContain("lg:grid-cols-3");
     expect(html).toContain("2,5 meses de despesas");
     expect(html).toContain("Sua meta pessoal");
     expect(html).toContain("6 meses");
@@ -56,10 +56,22 @@ describe("EmergencyReserveSummary", () => {
     expect(onOpenReserve).toHaveBeenCalledOnce();
   });
 
-  it("separates the observed bank balance from linked positions and their dates", () => {
+  it("uses the observed reserve balance for coverage and confirms the reached target", () => {
     const html = renderToStaticMarkup(
       <EmergencyReserveSummary
-        calculation={calculation}
+        calculation={{
+          ...calculation,
+          monthlyExpenses: 4650,
+          monthlyExpensesCents: "465000",
+          targetMonths: 12,
+          selectedValue: 50459.11,
+          selectedValueCents: "5045911",
+          selectedGroups: 11,
+          targetValue: 55800,
+          coveredMonths: 10.8514,
+          difference: 5340.89,
+          progressPercentage: 90.43,
+        }}
         reserveObservation={{
           observedAmountCents: "5604248",
           observedOn: "2026-11-14",
@@ -67,13 +79,42 @@ describe("EmergencyReserveSummary", () => {
       />,
     );
 
-    expect(html).toContain("Saldo informado no banco");
+    expect(html).toContain("Saldo atual da reserva");
     expect(html).toContain("R$ 56.042,48");
     expect(html).toContain("Informado em 14/11/2026");
-    expect(html).toContain("Posições vinculadas");
-    expect(html).toContain("R$ 2.500,00");
-    expect(html).toContain("Calculada pelas posições vinculadas");
-    expect(html).toContain("B3 em 01/09/2026");
+    expect(html).toContain("12,1 meses de despesas");
+    expect(html).toContain("Calculada pelo saldo informado");
+    expect(html).toContain("Sua meta está atingida.");
+    expect(html).toContain("100% da sua meta pessoal");
+    expect(html).not.toContain("Faltam R$ 5.340,89");
+    expect(html).not.toContain("Posições vinculadas");
+  });
+
+  it("keeps the single observed balance visible when monthly expenses are missing", () => {
+    const html = renderToStaticMarkup(
+      <EmergencyReserveSummary
+        calculation={{
+          ...calculation,
+          monthlyExpenses: null,
+          coveredMonths: null,
+          targetValue: null,
+          difference: null,
+          progressPercentage: null,
+          status: "not_configured",
+        }}
+        reserveObservation={{
+          observedAmountCents: "5604248",
+          observedOn: "2026-11-14",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Saldo atual da reserva");
+    expect(html).toContain("R$ 56.042,48");
+    expect(html).toContain("Informado em 14/11/2026");
+    expect(html).toContain("Informe suas despesas mensais");
+    expect(html).not.toContain("Cobertura em meses");
+    expect(html.match(/R\$ 56\.042,48/gu)).toHaveLength(1);
   });
 
   it("opens the existing B3 importer from the reserve summary", () => {

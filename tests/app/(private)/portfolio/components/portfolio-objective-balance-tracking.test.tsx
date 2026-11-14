@@ -3,9 +3,66 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PortfolioObjectiveBalanceTracking } from "@/app/(private)/portfolio/_components/portfolio-objective-balance-tracking";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 describe("PortfolioObjectiveBalanceTracking", () => {
   afterEach(cleanup);
+
+  it("explains that an observed reserve balance drives its goal without duplicating portfolio value", () => {
+    render(
+      <PortfolioObjectiveBalanceTracking
+        objectiveId={reserveObjectiveId}
+        objectiveName="Reserva"
+        saving={false}
+        onSave={vi.fn()}
+        tracking={{
+          observedAmountCents: "5604248",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+          projection: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Saldo total da Reserva")).toBeTruthy();
+    expect(screen.getByText("Usado na meta")).toBeTruthy();
+    expect(
+      screen.getByText(/ajusta os vínculos das posições de renda fixa/u),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Saldo atual (R$)")).toBeTruthy();
+    expect(screen.getByLabelText("Data-base")).toBeTruthy();
+    expect(screen.queryByLabelText(/Rendimento contratado/u)).toBeNull();
+    expect(screen.queryByText("Saldo observado")).toBeNull();
+  });
+
+  it("saves a reserve total without exposing CDI or position selection", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(
+      <PortfolioObjectiveBalanceTracking
+        objectiveId={reserveObjectiveId}
+        objectiveName="Reserva"
+        saving={false}
+        onSave={onSave}
+        tracking={null}
+      />,
+    );
+    await user.type(
+      screen.getByLabelText("Saldo observado de Reserva"),
+      "56042,48",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Salvar saldo observado" }),
+    );
+    expect(onSave).toHaveBeenCalledWith({
+      objectiveId: reserveObjectiveId,
+      amount: "56042.48",
+      observedOn: expect.any(String),
+      cdiPercentage: null,
+    });
+    expect(screen.queryByText(/combinação de posições/u)).toBeNull();
+    expect(screen.queryByLabelText(/Rendimento contratado/u)).toBeNull();
+  });
 
   it("separates the observed amount from its gross CDI projection and saves the observation", async () => {
     const user = userEvent.setup();

@@ -672,10 +672,10 @@ export function EmergencyReserveEditor({
                 <PositionCombinationSuggestions
                   endpoint="/api/emergency-reserve/suggestions"
                   title="Encontrar grupos pelo valor"
-                  defaultOpen
                   draftSaveLabel="as posições"
-                  description="Digite os números do saldo conhecido; os centavos são preenchidos automaticamente."
-                  amountLabel="Saldo atual da Reserva no banco"
+                  description="O valor serve apenas para localizar combinações de posições e não altera o saldo da Reserva."
+                  collapsedDescription="Só compara posições; não atualiza o saldo da Reserva."
+                  amountLabel="Valor para comparar posições"
                   comparisonDetails="Compara o total com valores atuais: estimativa de CDB DI/CDI quando disponível ou valor importado. Não identifica finalidade, titularidade, liquidez ou condições de resgate."
                   requestBody={{
                     reserveTargetAmount: hasValidReserveTarget

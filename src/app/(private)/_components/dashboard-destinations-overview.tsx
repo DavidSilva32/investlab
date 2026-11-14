@@ -76,7 +76,10 @@ export function DashboardDestinationsOverview({
         .filter((category) => category.value > 0)
         .map((category) => ({
           ...category,
-          label: destinationChartConfig[category.key].label,
+          label:
+            category.key === "reserve"
+              ? "Posições vinculadas à Reserva"
+              : destinationChartConfig[category.key].label,
         }))
     : [];
   const longTermCategory = summary?.categories.find(
@@ -120,7 +123,7 @@ export function DashboardDestinationsOverview({
             <Target aria-hidden="true" className="size-4 text-primary" />
             {showLongTerm
               ? "Investimento de longo prazo"
-              : "Destinos da carteira"}
+              : "Posições por objetivo"}
           </h2>
           {!readOnly && (
             <Button
@@ -133,6 +136,11 @@ export function DashboardDestinationsOverview({
             </Button>
           )}
         </div>
+        {!showLongTerm && summary && !unavailable && (
+          <p className="text-xs text-muted-foreground">
+            Valores das posições da carteira atribuídas a cada objetivo.
+          </p>
+        )}
         {showLongTerm ? (
           <DashboardLongTermAllocation
             positions={positions.filter(
@@ -166,7 +174,7 @@ export function DashboardDestinationsOverview({
                 config={destinationChartConfig}
                 className="mx-auto aspect-square w-full max-w-56 @lg:max-w-none"
                 role="img"
-                aria-label="Distribuição dos valores conhecidos por destino"
+                aria-label="Distribuição do valor das posições da carteira por objetivo"
               >
                 <PieChart>
                   <ChartTooltip

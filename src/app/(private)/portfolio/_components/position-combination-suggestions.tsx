@@ -105,6 +105,7 @@ type Props = {
   amountLabel: string;
   title: string;
   description: string;
+  collapsedDescription?: string;
   requestFilter?: {
     label: string;
     key: string;
@@ -127,6 +128,7 @@ export function PositionCombinationSuggestions({
   amountLabel,
   title,
   description,
+  collapsedDescription,
   requestFilter,
   selectionActionLabel,
   applyButtonLabel = "Usar esta combinação",
@@ -224,7 +226,7 @@ export function PositionCombinationSuggestions({
             <span className="space-y-1">
               <span className="block font-semibold">{title}</span>
               <span className="block text-sm font-normal text-muted-foreground">
-                Buscar uma combinação pelo valor
+                {collapsedDescription ?? "Buscar uma combinação pelo valor"}
               </span>
             </span>
             <ChevronDown
@@ -234,7 +236,9 @@ export function PositionCombinationSuggestions({
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-4">
-          <p className="text-sm text-muted-foreground">{description}</p>
+          {!collapsedDescription && (
+            <p className="text-sm text-muted-foreground">{description}</p>
+          )}
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-0 flex-[1_1_14rem] space-y-2">

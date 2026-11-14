@@ -36,7 +36,10 @@ describe("McpPortfolioReadToolsController", () => {
   const tools = new Map<string, (...args: never[]) => Promise<unknown>>();
   const schemas = new Map<
     string,
-    { inputSchema: { safeParse: (value: unknown) => { success: boolean } } }
+    {
+      description?: string;
+      inputSchema: { safeParse: (value: unknown) => { success: boolean } };
+    }
   >();
 
   beforeEach(() => {
@@ -53,6 +56,7 @@ describe("McpPortfolioReadToolsController", () => {
         schemas.set(
           name,
           schema as {
+            description?: string;
             inputSchema: {
               safeParse: (value: unknown) => { success: boolean };
             };
@@ -128,6 +132,12 @@ describe("McpPortfolioReadToolsController", () => {
       "simulate_objective_projection",
       "get_b3_market_quotes",
     ]);
+    expect(schemas.get("get_my_emergency_reserve")?.description).toMatch(
+      /saldo observado.*fonte e data.*posições vinculadas/u,
+    );
+    expect(schemas.get("get_my_objectives")?.description).toMatch(
+      /currentValue é o saldo observado mais recente e knownValue é o subtotal das posições vinculadas/u,
+    );
     expect(mocks.getMyPortfolio).toHaveBeenCalledWith("owner-1", "req-1");
     expect(mocks.listMyManualPositions).toHaveBeenCalledWith(
       "owner-1",

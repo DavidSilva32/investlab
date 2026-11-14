@@ -851,6 +851,218 @@ export class PortfolioObjectivesRepository {
     });
   }
 
+  async saveReserveBalanceWithAssignments(input: {
+    amountCents: string;
+    observedOn: string;
+    cdiPercentage: string | null;
+    selectedAssetKeys: string[];
+    expectedOwners: Record<string, string | null>;
+    expectedSourceFingerprint: string;
+  }) {
+    const userId = requireDataOwnerId();
+    const selectedAssetKeys = [...new Set(input.selectedAssetKeys)].sort();
+    const expectedAssetKeys = Object.keys(input.expectedOwners).sort();
+    if (
+      selectedAssetKeys.length !== input.selectedAssetKeys.length ||
+      selectedAssetKeys.some((assetKey) => !(assetKey in input.expectedOwners))
+    ) {
+      throw new ApplicationError(
+        "A combinação de posições mudou. Atualize a carteira e tente novamente.",
+        409,
+      );
+    }
+    try {
+      return await getDatabaseClient().transaction(
+        async (transaction) => {
+          const currentFingerprint =
+            await this.currentAllocationSourceFingerprint(
+              transaction,
+              input.observedOn,
+            );
+          if (
+            currentFingerprint === null ||
+            currentFingerprint !== input.expectedSourceFingerprint
+          ) {
+            throw new ApplicationError(
+              "As posições ou os vínculos mudaram durante a atualização. O saldo não foi salvo; atualize a carteira e tente novamente.",
+              409,
+            );
+          }
+          const objectiveIds = [
+            ...new Set([
+              reserveObjectiveId,
+              ...new Set(
+                Object.values(input.expectedOwners).filter(
+                  (objectiveId): objectiveId is string => objectiveId !== null,
+                ),
+              ),
+            ]),
+          ].sort();
+          const lockedObjectives = await transaction
+            .select({ id: portfolioObjectives.id })
+            .from(portfolioObjectives)
+            .where(
+              and(
+                inArray(portfolioObjectives.id, objectiveIds),
+                eq(portfolioObjectives.userId, userId),
+              ),
+            )
+            .orderBy(portfolioObjectives.id)
+            .for("update");
+          if (lockedObjectives.length !== objectiveIds.length) {
+            throw new ApplicationError(
+              "Um objetivo não está mais disponível. O saldo não foi salvo; atualize e tente novamente.",
+              409,
+            );
+          }
+          await this.assertOwnedAssetKeys(transaction, selectedAssetKeys);
+          const currentAssignments = await transaction
+            .select()
+            .from(portfolioObjectivePositions)
+            .where(eq(portfolioObjectivePositions.userId, userId))
+            .orderBy(portfolioObjectivePositions.assetKey)
+            .for("update");
+          const currentOwners = Object.fromEntries(
+            currentAssignments.map((assignment) => [
+              assignment.assetKey,
+              assignment.objectiveId,
+            ]),
+          );
+          if (
+            expectedAssetKeys.some(
+              (assetKey) =>
+                (currentOwners[assetKey] ?? null) !==
+                input.expectedOwners[assetKey],
+            )
+          ) {
+            throw new ApplicationError(
+              "Os vínculos das posições mudaram durante a atualização. O saldo não foi salvo; atualize e tente novamente.",
+              409,
+            );
+          }
+          const assignmentByKey = new Map(
+            currentAssignments.map((assignment) => [
+              assignment.assetKey,
+              assignment,
+            ]),
+          );
+          const reserveAssignments = currentAssignments
+            .filter(
+              (assignment) => assignment.objectiveId === reserveObjectiveId,
+            )
+            .map((assignment) => assignment.assetKey);
+          const selected = new Set(selectedAssetKeys);
+          const changedPositionCount =
+            reserveAssignments.filter((assetKey) => !selected.has(assetKey))
+              .length +
+            selectedAssetKeys.filter(
+              (assetKey) => !reserveAssignments.includes(assetKey),
+            ).length;
+          const transferredPositionCount = selectedAssetKeys.filter(
+            (assetKey) => {
+              const owner = assignmentByKey.get(assetKey)?.objectiveId;
+              return owner !== undefined && owner !== reserveObjectiveId;
+            },
+          ).length;
+          const newlyLinkedPositionCount = selectedAssetKeys.filter(
+            (assetKey) => !assignmentByKey.has(assetKey),
+          ).length;
+          if (selectedAssetKeys.length) {
+            await transaction
+              .delete(portfolioObjectivePositions)
+              .where(
+                and(
+                  eq(
+                    portfolioObjectivePositions.objectiveId,
+                    reserveObjectiveId,
+                  ),
+                  eq(portfolioObjectivePositions.userId, userId),
+                  notInArray(
+                    portfolioObjectivePositions.assetKey,
+                    selectedAssetKeys,
+                  ),
+                ),
+              );
+          } else {
+            await transaction
+              .delete(portfolioObjectivePositions)
+              .where(
+                and(
+                  eq(
+                    portfolioObjectivePositions.objectiveId,
+                    reserveObjectiveId,
+                  ),
+                  eq(portfolioObjectivePositions.userId, userId),
+                ),
+              );
+          }
+          for (const assetKey of selectedAssetKeys) {
+            const owner = assignmentByKey.get(assetKey)?.objectiveId;
+            if (owner === reserveObjectiveId) continue;
+            if (owner) {
+              await transaction
+                .update(portfolioObjectivePositions)
+                .set({
+                  objectiveId: reserveObjectiveId,
+                  assignedAt: new Date(),
+                })
+                .where(
+                  and(
+                    eq(portfolioObjectivePositions.assetKey, assetKey),
+                    eq(portfolioObjectivePositions.objectiveId, owner),
+                    eq(portfolioObjectivePositions.userId, userId),
+                  ),
+                );
+            } else {
+              await transaction.insert(portfolioObjectivePositions).values({
+                assetKey,
+                objectiveId: reserveObjectiveId,
+                userId,
+              });
+            }
+          }
+          const [batch] = await transaction
+            .insert(portfolioObjectiveReferenceBatches)
+            .values({ userId, observedOn: input.observedOn })
+            .returning({ id: portfolioObjectiveReferenceBatches.id });
+          const [reference] = await transaction
+            .insert(portfolioObjectiveBalanceReferences)
+            .values({
+              batchId: batch.id,
+              userId,
+              objectiveId: reserveObjectiveId,
+              amountCents: input.amountCents,
+              cdiPercentage: input.cdiPercentage,
+            })
+            .returning();
+          return {
+            ...reference,
+            observedDate: input.observedOn,
+            changedPositionCount,
+            newlyLinkedPositionCount,
+            transferredPositionCount,
+          };
+        },
+        { isolationLevel: "serializable" },
+      );
+    } catch (error) {
+      const postgresError = error as { code?: string; constraint?: string };
+      if (
+        postgresError.code === "40001" ||
+        postgresError.code === "40P01" ||
+        (postgresError.code === "23505" &&
+          postgresError.constraint ===
+            "portfolio_objective_positions_user_asset_uidx")
+      ) {
+        throw new ApplicationError(
+          "Uma posição ou vínculo mudou durante a atualização. O saldo não foi salvo; atualize e tente novamente.",
+          409,
+        );
+      }
+      throw error;
+    }
+  }
+
   async saveGlobalAllocation(input: {
     observedOn: string;
     expectedSourceFingerprint: string;

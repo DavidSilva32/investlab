@@ -51,10 +51,16 @@ describe("DashboardDestinationsOverview", () => {
       />,
     );
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
-      "valores conhecidos",
+      "posições da carteira",
     );
+    expect(
+      screen.getByText(
+        "Valores das posições da carteira atribuídas a cada objetivo.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("70%")).toBeTruthy();
     expect(screen.getByText("30%")).toBeTruthy();
+    expect(screen.getByText("Posições vinculadas à Reserva")).toBeTruthy();
     expect(screen.getByText(/R\$\s700,00/)).toBeTruthy();
     expect(screen.getByTestId("tooltip").textContent).toBe(
       formatCurrency(1234.56),
@@ -75,7 +81,7 @@ describe("DashboardDestinationsOverview", () => {
     render(<DashboardDestinationsOverview summary={summary} readOnly />);
 
     expect(
-      screen.getByRole("heading", { name: "Destinos da carteira" }),
+      screen.getByRole("heading", { name: "Posições por objetivo" }),
     ).toBeTruthy();
     expect(screen.getByText("70%")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Objetivos" })).toBeNull();

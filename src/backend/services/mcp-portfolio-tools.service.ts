@@ -8,6 +8,7 @@ import { portfolioAllocationService } from "@/backend/services/portfolio-allocat
 import { portfolioOperationService } from "@/backend/services/portfolio-operation.service";
 import { objectiveProjectionService } from "@/backend/services/objective-projection.service";
 import { stockAnalysisService } from "@/backend/services/stock-analysis.service";
+import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 import type { ObjectiveProjectionInput } from "@/lib/objective-projection";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 
@@ -180,10 +181,40 @@ export class McpPortfolioToolsService {
 
   async getMyEmergencyReserve(userId: string, requestId?: string) {
     return runWithDataOwner(userId, async () => {
-      const data = await emergencyReserveService.getEditorData(
-        requestId ?? randomUUID(),
-      );
-      return data.calculation;
+      const id = requestId ?? randomUUID();
+      const [data, objectives] = await Promise.all([
+        emergencyReserveService.getEditorData(id),
+        portfolioObjectivesService.getOverview(id),
+      ]);
+      const observedBalance = objectives.objectives.find(
+        (objective) => objective.kind === "RESERVE",
+      )?.balanceTracking;
+      if (!observedBalance) {
+        return {
+          ...data.calculation,
+          balanceSource: "linked_positions" as const,
+          balanceDate: data.calculation.referenceDate ?? null,
+        };
+      }
+
+      const calculation = calculateEmergencyReserve({
+        monthlyExpenses: data.calculation.monthlyExpenses,
+        monthlyExpensesCents: data.calculation.monthlyExpensesCents,
+        essentialMonthlyExpenses: data.calculation.essentialMonthlyExpenses,
+        essentialExpenseSources: data.calculation.essentialExpenseSources,
+        targetMonths: data.calculation.targetMonths,
+        selectedValue:
+          Number(BigInt(observedBalance.observedAmountCents)) / 100,
+        selectedValueCents: observedBalance.observedAmountCents,
+        selectedGroups: data.calculation.selectedGroups,
+        unvaluedGroups: 0,
+        referenceDate: observedBalance.observedOn,
+      });
+      return {
+        ...calculation,
+        balanceSource: "observed_balance" as const,
+        balanceDate: observedBalance.observedOn,
+      };
     });
   }
 

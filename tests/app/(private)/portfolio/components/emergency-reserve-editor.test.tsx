@@ -184,9 +184,14 @@ describe("EmergencyReserveEditor", () => {
     const layout = screen.getByTestId("reserve-editor-layout");
     expect(layout.className).toContain("space-y-5");
     expect(screen.getByText(/1 grupo selecionado/)).toBeTruthy();
+    const compareTrigger = screen.getByRole("button", {
+      name: /Encontrar grupos pelo valor/,
+    });
+    expect(compareTrigger.getAttribute("aria-expanded")).toBe("false");
     expect(
-      screen.getByRole("button", { name: /Encontrar grupos pelo valor/ }),
+      screen.getByText("Só compara posições; não atualiza o saldo da Reserva."),
     ).toBeTruthy();
+    expect(screen.queryByLabelText("Valor para comparar posições")).toBeNull();
     await openReservePositions();
     const saveFooter = screen.getByTestId("reserve-save-footer");
     expect(saveFooter.className).toContain("w-full min-w-0");
@@ -1069,7 +1074,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     );
 
     await user.type(
-      screen.getByLabelText("Saldo atual da Reserva no banco"),
+      screen.getByLabelText("Valor para comparar posições"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
@@ -1144,7 +1149,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
     await openReserveSuggestions(user);
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
     await user.type(
-      screen.getByLabelText("Saldo atual da Reserva no banco"),
+      screen.getByLabelText("Valor para comparar posições"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
@@ -1237,7 +1242,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
 
     await openReserveSuggestions(user);
     await user.type(
-      screen.getByLabelText("Saldo atual da Reserva no banco"),
+      screen.getByLabelText("Valor para comparar posições"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
@@ -1336,7 +1341,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
 
     await openReserveSuggestions(user);
     await user.type(
-      screen.getByLabelText("Saldo atual da Reserva no banco"),
+      screen.getByLabelText("Valor para comparar posições"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));
@@ -1417,7 +1422,7 @@ describe("EmergencyReserveEditor suggestion application", () => {
 
     await openReserveSuggestions(user);
     await user.type(
-      screen.getByLabelText("Saldo atual da Reserva no banco"),
+      screen.getByLabelText("Valor para comparar posições"),
       "100000",
     );
     await user.click(screen.getByRole("button", { name: /^Buscar combina/ }));

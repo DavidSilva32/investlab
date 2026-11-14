@@ -81,15 +81,15 @@ const toolGroups = [
       {
         name: "get_my_emergency_reserve",
         description:
-          "Consulta o resumo da reserva configurada, incluindo cobertura e progresso da meta.",
+          "Consulta o resumo da Reserva. Quando há saldo observado, cobertura e progresso usam esse valor; sem observação, usam as posições vinculadas.",
         input: "Sem parâmetros.",
         output:
-          "Valor conhecido, despesas mensais, meta configurada e cobertura disponível.",
+          "Valor usado, fonte e data, despesas mensais, meta e cobertura disponível.",
       },
       {
         name: "get_my_objectives",
         description:
-          "Consulta objetivos financeiros, metas, valores conhecidos, progresso e valores sem destino.",
+          "Consulta objetivos financeiros. Na Reserva, currentValue é o saldo observado mais recente e knownValue é o subtotal das posições vinculadas; os totais da carteira continuam baseados nas posições. Para outros objetivos, currentValue e knownValue são valores conhecidos das posições.",
         input: "Sem parâmetros.",
         output:
           "Resumo dos objetivos. Não retorna posições detalhadas por objetivo.",

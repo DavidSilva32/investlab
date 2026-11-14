@@ -132,14 +132,19 @@ describe("PortfolioObjectivesOverview", () => {
       />,
     );
 
-    expect(screen.getByText("Conhecido · parcial")).toBeTruthy();
+    expect(screen.getByText("Valores conhecidos · parcial")).toBeTruthy();
+    expect(screen.getByText("Posições por objetivo")).toBeTruthy();
+    expect(screen.getByText("Posições vinculadas à Reserva")).toBeTruthy();
+    expect(
+      screen.getByText(/A meta da Reserva usa o saldo informado/u),
+    ).toBeTruthy();
     expect(container.querySelector("[class*='xl:grid-cols-3']")).toBeNull();
     expect(container.innerHTML).toMatch(
       /<span class="text-sm font-semibold text-primary tabular-nums">R\$/,
     );
     expect(screen.getAllByText(/R\$\s*1\.000,00/)).toHaveLength(2);
     const chart = screen.getByRole("img", {
-      name: "Gráfico de rosca dos valores conhecidos por destino",
+      name: "Gráfico de rosca dos valores conhecidos por objetivo",
     });
     expect(chart.getAttribute("data-chart-colors")).toBe(
       "var(--destination-reserve)|var(--destination-personal)|var(--destination-long-term)|var(--destination-purpose-unknown)|var(--destination-unassigned)",
@@ -158,7 +163,7 @@ describe("PortfolioObjectivesOverview", () => {
       "R$ 250,00",
     );
     const distribution = within(
-      screen.getByRole("list", { name: "Valores e proporções por destino" }),
+      screen.getByRole("list", { name: "Valores e proporções por objetivo" }),
     );
     const distributionRows = distribution.getAllByRole("listitem");
     expect(distributionRows[0].textContent).toContain("25");
@@ -180,7 +185,7 @@ describe("PortfolioObjectivesOverview", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("img", {
-        name: "Gráfico de rosca dos valores conhecidos por destino",
+        name: "Gráfico de rosca dos valores conhecidos por objetivo",
       }),
     ).toBeTruthy();
 

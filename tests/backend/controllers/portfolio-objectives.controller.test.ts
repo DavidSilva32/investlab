@@ -95,9 +95,33 @@ describe("PortfolioObjectivesController", () => {
     await expect(response.json()).resolves.toEqual({
       message: "Saldo observado salvo.",
     });
-    expect(balanceService.save).toHaveBeenCalledWith({
-      objectiveId: "goal-1",
-      amount: "10.00",
+    expect(balanceService.save).toHaveBeenCalledWith(
+      {
+        objectiveId: "goal-1",
+        amount: "10.00",
+      },
+      "r-balance",
+    );
+  });
+
+  it("summarizes automatic reserve position transfers after saving", async () => {
+    balanceService.save.mockResolvedValue({
+      objectiveId: "reserve",
+      observedDate: "2026-11-14",
+      changedPositionCount: 2,
+      newlyLinkedPositionCount: 1,
+      transferredPositionCount: 1,
+    });
+
+    const response =
+      await new PortfolioObjectivesController().saveObservedBalance(
+        { objectiveId: "reserve", amount: "56042.48" },
+        "r-reserve",
+      );
+
+    await expect(response.json()).resolves.toEqual({
+      message:
+        "Saldo salvo. 2 vínculos atualizados; 1 posição transferida de outro objetivo para a Reserva.",
     });
   });
 

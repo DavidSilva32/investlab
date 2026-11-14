@@ -109,6 +109,43 @@ describe("PortfolioObjectiveDetail", () => {
     ).toBeNull();
   });
 
+  it("shows the observed reserve balance as current and marks its meta as reached", () => {
+    render(
+      <PortfolioObjectiveDetail
+        objective={{
+          ...objective,
+          id: reserveObjectiveId,
+          kind: "RESERVE",
+          name: "Reserva",
+          targetAmount: 55800,
+          currentValue: 56042.48,
+          knownValue: 50459.11,
+          remainingAmount: 0,
+          progressPercent: 100,
+          missingPositionCount: 0,
+          unvaluedPositionCount: 0,
+          balanceTracking: {
+            observedAmountCents: "5604248",
+            observedOn: "2026-11-14",
+            cdiPercentage: null,
+            projection: null,
+          },
+        }}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Saldo atual da Reserva")).toBeTruthy();
+    expect(screen.getByText(/R\$\s*56\.042,48/u)).toBeTruthy();
+    expect(screen.getByText("Informado em 14/11/2026")).toBeTruthy();
+    expect(screen.getByText("Meta atingida")).toBeTruthy();
+    expect(screen.getByText("Usado na meta")).toBeTruthy();
+    expect(screen.queryByText(/Falta R\$/)).toBeNull();
+    expect(screen.queryByText(/R\$\s*50\.459,11/u)).toBeNull();
+  });
+
   it("explains when an objective has no configured financial target", () => {
     render(
       <PortfolioObjectiveDetail
