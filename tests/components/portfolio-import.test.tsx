@@ -722,12 +722,12 @@ describe("PortfolioImport", () => {
     ).toHaveProperty("disabled", true);
   });
 
-  it("updates the reviewed file without changing another file's preview", async () => {
-    const identityPreview = {
+  it("keeps identity acknowledgements isolated between file previews", async () => {
+    const firstIdentityPreview = {
       ...positionPreview,
       identityConflicts: [
         {
-          assetKey: "v1:assigned-position",
+          assetKey: "v1:first-assigned-position",
           objectiveId: "goal-trip",
           objectiveName: "Viagem",
           position: {
@@ -744,19 +744,39 @@ describe("PortfolioImport", () => {
         },
       ],
     };
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => identityPreview,
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => positionPreview,
-        }),
-    );
+    const secondIdentityPreview = {
+      ...positionPreview,
+      identityConflicts: [
+        {
+          assetKey: "v1:second-assigned-position",
+          objectiveId: "goal-reserve",
+          objectiveName: "Reserva",
+          position: {
+            product: "LCI antiga",
+            institution: "Banco B",
+            assetCode: "LCI2",
+            quantity: "1",
+            totalValue: "200",
+            indexer: "CDI",
+            unitPrice: "200",
+            valuationSource: "CURVA" as const,
+          },
+          possibleIncomingDifferences: [],
+        },
+      ],
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => firstIdentityPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => secondIdentityPreview,
+      })
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetch);
     const { container } = render(<PortfolioImport />);
 
     fireEvent.change(container.querySelector('input[type="file"]')!, {
@@ -768,14 +788,59 @@ describe("PortfolioImport", () => {
       },
     });
 
-    const checkbox = await screen.findByRole("checkbox", {
+    await screen.findAllByRole("textbox", { name: /^Data exibida na B3/ });
+    screen
+      .getAllByRole("textbox", { name: /^Data exibida na B3/ })
+      .forEach((dateInput) =>
+        fireEvent.change(dateInput, { target: { value: "18/09/2026" } }),
+      );
+    const firstCheckbox = await screen.findByRole("checkbox", {
       name: /posição CDB antigo do objetivo Viagem não está mais na carteira/,
     });
+    const secondCheckbox = await screen.findByRole("checkbox", {
+      name: /posição LCI antiga do objetivo Reserva não está mais na carteira/,
+    });
     expect(await screen.findByText("outra-posicao.xlsx")).toBeTruthy();
-    fireEvent.click(checkbox);
+    const confirmButton = screen.getByRole("button", {
+      name: /Confirmar 2 arquivo/,
+    });
+    expect(confirmButton).toHaveProperty("disabled", true);
 
-    expect(checkbox.getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText("outra-posicao.xlsx")).toBeTruthy();
+    fireEvent.click(firstCheckbox);
+    expect(firstCheckbox.getAttribute("aria-checked")).toBe("true");
+    expect(secondCheckbox.getAttribute("aria-checked")).toBe("false");
+    expect(confirmButton).toHaveProperty("disabled", true);
+
+    fireEvent.click(secondCheckbox);
+    expect(secondCheckbox.getAttribute("aria-checked")).toBe("true");
+    expect(confirmButton).toHaveProperty("disabled", false);
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    const confirmationRequests = fetch.mock.calls.filter(
+      ([url]) => url === "/api/imports/confirm",
+    );
+    const submittedAssignments = Object.fromEntries(
+      confirmationRequests.map(([, init]) => {
+        const body = init?.body as FormData;
+        return [
+          (body.get("file") as File).name,
+          JSON.parse(body.get("retiredObjectiveAssignments") as string),
+        ];
+      }),
+    );
+
+    expect(submittedAssignments).toEqual({
+      "posicoes.xlsx": [
+        { assetKey: "v1:first-assigned-position", objectiveId: "goal-trip" },
+      ],
+      "outra-posicao.xlsx": [
+        {
+          assetKey: "v1:second-assigned-position",
+          objectiveId: "goal-reserve",
+        },
+      ],
+    });
   });
 
   it("keeps a preview visible when confirmation fails and can cancel it", async () => {
