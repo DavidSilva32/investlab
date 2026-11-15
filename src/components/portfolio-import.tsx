@@ -1409,32 +1409,67 @@ function PositionPreview({
                           : `Selecione a data exibida na B3. Snapshots anteriores à posição atual (${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}) manterão os vínculos.`}
               </p>
               <ul className="mt-3 space-y-2">
-                {preview.identityConflicts.map((conflict) => (
-                  <li
-                    key={conflict.assetKey}
-                    className="rounded-md border bg-background/70 p-3"
-                  >
-                    <p className="font-medium">
-                      {conflict.position.product} — {conflict.objectiveName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {[
-                        conflict.position.assetCode,
-                        conflict.position.institution,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "Código não informado"}
-                    </p>
-                    {referenceDate && canRetireMissingAssignments ? (
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        A posição não aparece neste snapshot. O sistema vai
-                        conferir as saídas compatíveis e só encerrará este
-                        vínculo se a quantidade total resgatada estiver
-                        comprovada.
+                {preview.identityConflicts.map((conflict) => {
+                  const relevantRedemption =
+                    referenceDate &&
+                    preview.latestPositionReferenceDate &&
+                    canRetireMissingAssignments
+                      ? conflict.matchingRedemptions
+                          ?.filter(
+                            (movement) =>
+                              movement.occurredAt >
+                                preview.latestPositionReferenceDate! &&
+                              movement.occurredAt <= referenceDate &&
+                              (!movement.institution ||
+                                !conflict.position.institution ||
+                                normalizeMovementText(movement.institution) ===
+                                  normalizeMovementText(
+                                    conflict.position.institution,
+                                  )),
+                          )
+                          .sort((left, right) =>
+                            right.occurredAt.localeCompare(left.occurredAt),
+                          )[0]
+                      : undefined;
+                  return (
+                    <li
+                      key={conflict.assetKey}
+                      className="rounded-md border bg-background/70 p-3"
+                    >
+                      <p className="font-medium">
+                        {conflict.position.product} — {conflict.objectiveName}
                       </p>
-                    ) : null}
-                  </li>
-                ))}
+                      <p className="text-xs text-muted-foreground">
+                        {[
+                          conflict.position.assetCode,
+                          conflict.position.institution,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "Código não informado"}
+                      </p>
+                      {referenceDate && canRetireMissingAssignments ? (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {relevantRedemption ? (
+                            <>
+                              O extrato registra{" "}
+                              {relevantRedemption.movementType ?? "uma saída"}{" "}
+                              em{" "}
+                              {date.format(
+                                new Date(
+                                  `${relevantRedemption.occurredAt}T00:00:00Z`,
+                                ),
+                              )}
+                              . O sistema só encerra o vínculo se comprovar o
+                              resgate total.
+                            </>
+                          ) : (
+                            "A posição não aparece neste snapshot. O sistema vai conferir as saídas compatíveis e só encerrará este vínculo se a quantidade total resgatada estiver comprovada."
+                          )}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </AlertDescription>
           </Alert>

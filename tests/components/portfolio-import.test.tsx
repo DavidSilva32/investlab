@@ -801,7 +801,7 @@ describe("PortfolioImport", () => {
       "Vínculos sob revisão automática",
     );
     expect(screen.getByRole("status").textContent).toContain(
-      "só encerrará este vínculo",
+      "O sistema só encerra o vínculo se comprovar o resgate total",
     );
     expect(screen.queryByText(/RESGATE ANTIGO/)).toBeNull();
     expect(screen.queryByText(/RESGATE FUTURO/)).toBeNull();
@@ -975,7 +975,7 @@ describe("PortfolioImport", () => {
     );
     fireEvent.change(dateInput, { target: { value: "15/11/2026" } });
     expect(screen.getByRole("status").textContent).toContain(
-      "O sistema vai conferir as saídas compatíveis",
+      "O extrato registra RESGATE TOTAL em 15/11/2026",
     );
     fireEvent.click(
       screen.getByRole("button", { name: /Confirmar 2 arquivo/ }),
