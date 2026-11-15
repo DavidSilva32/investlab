@@ -1,10 +1,15 @@
 "use client";
 
-import { ArrowRight, Info, PiggyBank, Target } from "lucide-react";
+import { ArrowRight, ChevronDown, Info, PiggyBank, Target } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -80,26 +85,7 @@ export function PortfolioObjectiveDetail({
               </div>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end">
-              {isReserve ? (
-                <>
-                  <Button
-                    className="w-full sm:w-auto"
-                    type="button"
-                    variant="outline"
-                    onClick={onManagePositions}
-                  >
-                    Gerenciar posições
-                  </Button>
-                  <Button
-                    className="w-full sm:w-auto"
-                    type="button"
-                    onClick={onConfigureReserve}
-                  >
-                    Editar reserva
-                    <ArrowRight aria-hidden="true" className="ml-2 size-4" />
-                  </Button>
-                </>
-              ) : (
+              {isReserve ? null : (
                 <>
                   <Button
                     className="w-full sm:w-auto"
@@ -223,6 +209,41 @@ export function PortfolioObjectiveDetail({
         saving={balanceSaving}
         onSave={onSaveBalance}
       />
+      {isReserve && (
+        <Collapsible className="rounded-lg border px-3">
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="group h-11 w-full justify-between px-1 text-sm"
+            >
+              Opções avançadas
+              <ChevronDown
+                aria-hidden="true"
+                className="size-4 transition-transform group-data-[state=open]:rotate-180"
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="flex flex-col gap-2 pb-3 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={onConfigureReserve}
+            >
+              Editar despesas e meta
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={onManagePositions}
+            >
+              Ajustar posições manualmente
+            </Button>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
       {!isReserve && (
         <Button asChild variant="outline" className="w-full justify-between">
           <Link

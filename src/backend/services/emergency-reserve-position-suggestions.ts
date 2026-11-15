@@ -99,6 +99,7 @@ const MAX_GROUPS = 40;
 const MAX_EXACT_GROUPS = 36;
 const MAX_VISITED_NODES = 50_000;
 const MAX_CANDIDATES = 3;
+const MAX_EQUIVALENT_SUBSETS_TO_ENUMERATE = 10_000;
 
 const compareText = (left: string, right: string) =>
   left < right ? -1 : left > right ? 1 : 0;
@@ -329,11 +330,7 @@ function findExactCandidates(
   const right = enumerateSearchSubsets(rightHoldings).sort((a, b) => {
     const amountOrder = compareBigint(a.total, b.total);
     if (amountOrder !== 0) return amountOrder;
-    if (!compareCandidates)
-      return a.count - b.count || compareMasksLex(a.mask, b.mask);
-    const aKeys = buildMaskedCombination([], 0, rightHoldings, a.mask);
-    const bKeys = buildMaskedCombination([], 0, rightHoldings, b.mask);
-    return compareCandidates(aKeys, bKeys);
+    return a.count - b.count || compareMasksLex(a.mask, b.mask);
   });
   let distance: bigint | null = null;
 
@@ -352,7 +349,9 @@ function findExactCandidates(
   let alternativesLimited = false;
   const desiredDistances =
     bestDistance === 0n ? [0n] : [bestDistance, -bestDistance];
-  for (const subset of left) {
+  let enumeratedEquivalentSubsets = 0;
+  let enumerationTruncated = false;
+  candidateEnumeration: for (const subset of left) {
     for (const signedDistance of desiredDistances) {
       const wanted = target + signedDistance - subset.total;
       if (wanted < 0n) continue;
@@ -360,6 +359,13 @@ function findExactCandidates(
       const end = searchUpperBound(right, wanted);
       let foundAtSum = 0;
       for (let index = start; index < end; index += 1) {
+        if (
+          enumeratedEquivalentSubsets >= MAX_EQUIVALENT_SUBSETS_TO_ENUMERATE
+        ) {
+          enumerationTruncated = true;
+          break candidateEnumeration;
+        }
+        enumeratedEquivalentSubsets += 1;
         const other = right[index];
         const total = subset.total + other.total;
         if (total === 0n) continue;
@@ -413,7 +419,11 @@ function findExactCandidates(
       }
     }
   }
-  return { distance: bestDistance, candidates: selected, alternativesLimited };
+  return {
+    distance: bestDistance,
+    candidates: selected,
+    alternativesLimited: alternativesLimited || enumerationTruncated,
+  };
 }
 
 function enumerateSearchSubsets(

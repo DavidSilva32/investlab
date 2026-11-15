@@ -42,6 +42,17 @@ describe("EmergencyReserveSummary", () => {
     expect(html).not.toContain('href="/carteira?panel=objectives');
   });
 
+  it("does not show a position date when the snapshot date is unavailable", () => {
+    const html = renderToStaticMarkup(
+      <EmergencyReserveSummary
+        calculation={{ ...calculation, referenceDate: null }}
+      />,
+    );
+
+    expect(html).toContain("Posições vinculadas");
+    expect(html).not.toContain("B3 em");
+  });
+
   it("opens the reserve panel through the provided dashboard action", () => {
     const onOpenReserve = vi.fn();
     render(
