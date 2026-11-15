@@ -153,7 +153,9 @@ export class PortfolioObjectivesController {
                   : `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo atualizado" : "vínculos atualizados"} automaticamente para ${objectiveName ?? "o objetivo"}; os demais objetivos foram preservados.`
                 : isReserve
                   ? "Saldo salvo. Os vínculos da Reserva já correspondiam às posições mais próximas."
-                  : `Saldo salvo. Os vínculos de ${objectiveName ?? "o objetivo"} já correspondiam às posições mais próximas.`
+                  : objectiveName
+                    ? `Saldo salvo. Os vínculos de ${objectiveName} já correspondiam às posições mais próximas.`
+                    : "Saldo salvo. Os vínculos desse objetivo já correspondiam ao valor informado."
             : "Saldo observado salvo.";
     return Response.json({ message }, { status: 201 });
   }

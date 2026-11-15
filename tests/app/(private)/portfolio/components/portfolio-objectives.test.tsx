@@ -316,11 +316,12 @@ describe("PortfolioObjectives", () => {
   });
 
   it.each([
-    ["reserve", null, "Gerenciar posições", "Reserva"],
+    ["reserve", null, "Ajustar posições manualmente", "Reserva"],
     ["objective-trip", null, "Gerenciar posições", "Viagem"],
   ])(
     "opens the deep-linked objective %s",
     async (objectiveId, routeScreen, action, heading) => {
+      const user = userEvent.setup();
       vi.stubGlobal("fetch", fetchMock);
       const navigation = { open: true, objectiveId, screen: routeScreen };
 
@@ -334,6 +335,11 @@ describe("PortfolioObjectives", () => {
       expect(
         await screen.findByRole("heading", { name: heading }),
       ).toBeTruthy();
+      if (objectiveId === "reserve") {
+        await user.click(
+          screen.getByRole("button", { name: "Opções avançadas" }),
+        );
+      }
       expect(screen.getByRole("button", { name: action })).toBeTruthy();
     },
   );
@@ -620,15 +626,16 @@ describe("PortfolioObjectives", () => {
     expect(screen.getByRole("heading", { name: "Viagem" })).toBeTruthy();
   });
 
-  it("routes Reserve position management and settings to separate editors", async () => {
+  it("routes reserve position management from advanced options and returns to its detail", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
     await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Reserva" }),
     );
+    await user.click(screen.getByRole("button", { name: "Opções avançadas" }));
     await user.click(
-      screen.getByRole("button", { name: "Gerenciar posições" }),
+      screen.getByRole("button", { name: "Ajustar posições manualmente" }),
     );
     expect(screen.getByText("Editor da reserva: positions")).toBeTruthy();
     expect(
@@ -645,7 +652,10 @@ describe("PortfolioObjectives", () => {
     );
     await user.click(screen.getByRole("button", { name: "Voltar" }));
     expect(screen.getByRole("heading", { name: "Reserva" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Editar reserva" }));
+    await user.click(screen.getByRole("button", { name: "Opções avançadas" }));
+    await user.click(
+      screen.getByRole("button", { name: "Editar despesas e meta" }),
+    );
     expect(screen.getByText("Editor da reserva: settings")).toBeTruthy();
     expect(
       screen.getByRole("heading", { name: "Editar reserva" }),

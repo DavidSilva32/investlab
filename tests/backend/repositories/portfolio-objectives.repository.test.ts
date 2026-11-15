@@ -35,6 +35,74 @@ const sqlChunksText = (chunks: unknown[]) =>
     })
     .join("");
 
+function prepareReserveAssignmentTransaction(options?: {
+  fingerprint?: string | null;
+  lockedObjectives?: Array<{ id: string }>;
+  assignments?: Array<{ assetKey: string; objectiveId: string }>;
+}) {
+  const queryResults = [
+    options?.lockedObjectives ?? [{ id: reserveObjectiveId }],
+    options?.assignments ?? [],
+  ];
+  let queryIndex = 0;
+  const select = vi.fn(() => {
+    const result = queryResults[queryIndex++];
+    return {
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({ for: async () => result }),
+        }),
+      }),
+    };
+  });
+  const insertedValues: unknown[] = [];
+  const insert = vi.fn(() => {
+    const callIndex = insert.mock.calls.length - 1;
+    return {
+      values: (values: unknown) => {
+        insertedValues.push(values);
+        return {
+          returning: async () =>
+            callIndex === 1
+              ? [{ id: "batch-coverage" }]
+              : [
+                  {
+                    id: "reference-coverage",
+                    batchId: "batch-coverage",
+                    objectiveId: reserveObjectiveId,
+                    amountCents: "10000",
+                    cdiPercentage: null,
+                  },
+                ],
+        };
+      },
+    };
+  });
+  const deleteWhere = vi.fn().mockResolvedValue(undefined);
+  const updateWhere = vi.fn().mockResolvedValue(undefined);
+  const transaction = {
+    select,
+    delete: vi.fn(() => ({ where: deleteWhere })),
+    update: vi.fn(() => ({ set: () => ({ where: updateWhere }) })),
+    insert,
+  };
+  database.transaction.mockImplementation(async (callback) =>
+    callback(transaction),
+  );
+  vi.spyOn(
+    PortfolioObjectivesRepository.prototype as unknown as {
+      currentAllocationSourceFingerprint: (
+        transaction: unknown,
+        valuationDate: string,
+      ) => Promise<string | null>;
+    },
+    "currentAllocationSourceFingerprint",
+  ).mockResolvedValue(
+    options && "fingerprint" in options ? options.fingerprint! : "a".repeat(64),
+  );
+  return { transaction, insertedValues, deleteWhere, updateWhere };
+}
+
 describe("PortfolioObjectivesRepository", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -768,6 +836,156 @@ describe("PortfolioObjectivesRepository", () => {
     expect(database.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "serializable",
     });
+  });
+
+  const invalidReserveSelections: Array<{
+    title: string;
+    selectedAssetKeys: string[];
+    expectedOwners: Record<string, string | null>;
+  }> = [
+    {
+      title: "duplicate selected keys",
+      selectedAssetKeys: ["v1:position", "v1:position"],
+      expectedOwners: { "v1:position": null },
+    },
+    {
+      title: "a selected key absent from the owner snapshot",
+      selectedAssetKeys: ["v1:position"],
+      expectedOwners: {},
+    },
+  ];
+  it.each(invalidReserveSelections)(
+    "rejects $title before opening a transaction",
+    async (input) => {
+      await expect(
+        new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+          amountCents: "10000",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+          ...input,
+          expectedSourceFingerprint: "a".repeat(64),
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(database.transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [null, "a".repeat(64)],
+    ["b".repeat(64), "a".repeat(64)],
+  ])(
+    "rejects a missing or stale source fingerprint before writing",
+    async (fingerprint, expectedSourceFingerprint) => {
+      prepareReserveAssignmentTransaction({ fingerprint });
+
+      await expect(
+        new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+          amountCents: "10000",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+          selectedAssetKeys: [],
+          expectedOwners: {},
+          expectedSourceFingerprint,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+    },
+  );
+
+  it("rejects an objective that disappeared before the reserve update", async () => {
+    const { transaction } = prepareReserveAssignmentTransaction({
+      lockedObjectives: [],
+    });
+
+    await expect(
+      new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+        amountCents: "10000",
+        observedOn: "2026-11-14",
+        cdiPercentage: null,
+        selectedAssetKeys: [],
+        expectedOwners: {},
+        expectedSourceFingerprint: "a".repeat(64),
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
+  it("links an unassigned position and records its balance atomically", async () => {
+    const assetKey = "v1:new-reserve-position";
+    const { transaction, insertedValues, deleteWhere, updateWhere } =
+      prepareReserveAssignmentTransaction();
+
+    await expect(
+      new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+        amountCents: "10000",
+        observedOn: "2026-11-14",
+        cdiPercentage: null,
+        selectedAssetKeys: [assetKey],
+        expectedOwners: { [assetKey]: null },
+        expectedSourceFingerprint: "a".repeat(64),
+      }),
+    ).resolves.toMatchObject({
+      objectiveId: reserveObjectiveId,
+      amountCents: "10000",
+      newlyLinkedPositionCount: 1,
+      changedPositionCount: 1,
+    });
+
+    expect(transaction.insert).toHaveBeenCalledTimes(3);
+    expect(insertedValues[0]).toMatchObject({
+      assetKey,
+      objectiveId: reserveObjectiveId,
+      userId: "user-1",
+    });
+    expect(insertedValues[2]).toMatchObject({
+      objectiveId: reserveObjectiveId,
+      amountCents: "10000",
+    });
+    expect(deleteWhere).toHaveBeenCalledOnce();
+    expect(updateWhere).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ code: "40001" }, "serialization failure"],
+    [{ code: "40P01" }, "deadlock"],
+    [
+      {
+        code: "23505",
+        constraint: "portfolio_objective_positions_user_asset_uidx",
+      },
+      "concurrent duplicate assignment",
+    ],
+  ])(
+    "maps a %s into a retryable conflict (%s)",
+    async (error, _description) => {
+      database.transaction.mockRejectedValue(error);
+
+      await expect(
+        new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+          amountCents: "10000",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+          selectedAssetKeys: [],
+          expectedOwners: {},
+          expectedSourceFingerprint: "a".repeat(64),
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+    },
+  );
+
+  it("preserves unrelated database errors from the reserve transaction", async () => {
+    const error = { code: "23505", constraint: "another_unique_constraint" };
+    database.transaction.mockRejectedValue(error);
+
+    await expect(
+      new PortfolioObjectivesRepository().saveReserveBalanceWithAssignments({
+        amountCents: "10000",
+        observedOn: "2026-11-14",
+        cdiPercentage: null,
+        selectedAssetKeys: [],
+        expectedOwners: {},
+        expectedSourceFingerprint: "a".repeat(64),
+      }),
+    ).rejects.toBe(error);
   });
 
   it("matches the service fingerprint when a linked manual position is replaced by its imported position", async () => {

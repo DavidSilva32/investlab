@@ -6,6 +6,25 @@ import {
 } from "@/backend/services/objective-balance.service";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
+const defaultAssignmentMocks = vi.hoisted(() => ({
+  findReserveAssignment: vi.fn(),
+  findObjectiveAssignment: vi.fn(),
+  saveObjectiveAssignment: vi.fn(),
+}));
+vi.mock("@/backend/services/emergency-reserve.service", () => ({
+  emergencyReserveService: {
+    findAutomaticAssignment: defaultAssignmentMocks.findReserveAssignment,
+  },
+}));
+vi.mock("@/backend/services/portfolio-objectives.service", () => ({
+  portfolioObjectivesService: {
+    findAutomaticObjectiveAssignment:
+      defaultAssignmentMocks.findObjectiveAssignment,
+    saveAutomaticObjectiveAssignment:
+      defaultAssignmentMocks.saveObjectiveAssignment,
+  },
+}));
+
 const reference = (
   overrides: Partial<ObjectiveBalanceReference> = {},
 ): ObjectiveBalanceReference => ({
@@ -108,6 +127,113 @@ function createService(options?: {
 }
 
 describe("ObjectiveBalanceService", () => {
+  it("returns not found when a historical balance has no owning objective", async () => {
+    const { service, repository } = createService();
+    repository.saveObservedBalance.mockResolvedValueOnce(null);
+
+    await expect(
+      service.save({
+        objectiveId: reference().objectiveId,
+        amount: "100.00",
+        observedOn: "2026-11-13",
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("uses the default reserve assignment service when none is injected", async () => {
+    const { repository, rates, fetchOfficialRates } = createService();
+    defaultAssignmentMocks.findReserveAssignment.mockResolvedValueOnce({
+      selectedAssetKeys: ["v1:default-reserve"],
+      expectedOwners: { "v1:default-reserve": null },
+      expectedSourceFingerprint: "c".repeat(64),
+    });
+    const service = new ObjectiveBalanceService(
+      repository as never,
+      rates as never,
+      fetchOfficialRates,
+      () => "2026-11-14",
+    );
+
+    await service.save({
+      objectiveId: reserveObjectiveId,
+      amount: "100.00",
+      observedOn: "2026-11-14",
+    });
+
+    expect(defaultAssignmentMocks.findReserveAssignment).toHaveBeenCalledWith(
+      100,
+      "2026-11-14",
+      undefined,
+    );
+    expect(repository.saveReserveBalanceWithAssignments).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedAssetKeys: ["v1:default-reserve"] }),
+    );
+  });
+
+  it("uses the default objective assignment service when none is injected", async () => {
+    const { repository, rates, fetchOfficialRates } = createService();
+    const input = {
+      objectiveId: reference().objectiveId,
+      amountCents: "10000",
+      observedOn: "2026-11-14",
+      expectedOwners: { "v1:default-objective": null },
+      allocation: { "v1:default-objective": reference().objectiveId },
+      expectedSourceFingerprint: "d".repeat(64),
+      changedPositionCount: 1,
+    };
+    defaultAssignmentMocks.findObjectiveAssignment.mockResolvedValueOnce({
+      ...input,
+      objectiveName: "Viagem",
+    });
+    defaultAssignmentMocks.saveObjectiveAssignment.mockResolvedValueOnce({
+      batchId: "default-batch",
+      objectiveName: "Viagem",
+      changedPositionCount: 1,
+      transferredPositionCount: 0,
+    });
+    const service = new ObjectiveBalanceService(
+      repository as never,
+      rates as never,
+      fetchOfficialRates,
+      () => "2026-11-14",
+    );
+
+    await expect(
+      service.save({
+        objectiveId: reference().objectiveId,
+        amount: "100.00",
+        observedOn: "2026-11-14",
+      }),
+    ).resolves.toMatchObject({ assignmentStatus: "updated" });
+    expect(defaultAssignmentMocks.findObjectiveAssignment).toHaveBeenCalledWith(
+      {
+        objectiveId: reference().objectiveId,
+        amountCents: "10000",
+        observedOn: "2026-11-14",
+        requestId: undefined,
+      },
+    );
+    expect(defaultAssignmentMocks.saveObjectiveAssignment).toHaveBeenCalledWith(
+      expect.objectContaining({ objectiveName: "Viagem", cdiPercentage: null }),
+    );
+  });
+
+  it("returns not found when failed reserve matching also cannot save the observed balance", async () => {
+    const { service, repository, reserveAssignment } = createService();
+    reserveAssignment.findAutomaticAssignment.mockRejectedValueOnce(
+      new Error("combination unavailable"),
+    );
+    repository.saveObservedBalance.mockResolvedValueOnce(null);
+
+    await expect(
+      service.save({
+        objectiveId: reserveObjectiveId,
+        amount: "100.00",
+        observedOn: "2026-11-14",
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("saves canonical cents and appends each observed balance", async () => {
     const { service, repository, objectiveAssignment } = createService();
     const first = await service.save({
