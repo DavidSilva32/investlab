@@ -8,8 +8,10 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  updateWithMcpReplay: vi.fn(),
   delete: vi.fn(),
   getObjective: vi.fn(),
+  findMcpMutationReplay: vi.fn(),
   replaceAssignments: vi.fn(),
   replaceAssignmentsWithTransfers: vi.fn(),
   listLatestBalanceReferences: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
     list: mocks.list,
     create: mocks.create,
     update: mocks.update,
+    updateWithMcpReplay: mocks.updateWithMcpReplay,
     delete: mocks.delete,
     getObjective: mocks.getObjective,
     replaceAssignments: mocks.replaceAssignments,
@@ -48,6 +51,9 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
     listLatestBalanceReferences: mocks.listLatestBalanceReferences,
     saveGlobalAllocation: mocks.saveGlobalAllocation,
   },
+}));
+vi.mock("@/backend/repositories/mcp-mutation-replays.repository", () => ({
+  mcpMutationReplaysRepository: { find: mocks.findMcpMutationReplay },
 }));
 
 import { ApplicationError } from "@/backend/errors/application-error";
@@ -87,6 +93,7 @@ const customObjective = {
 describe("PortfolioObjectivesService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.findMcpMutationReplay.mockResolvedValue(null);
     mocks.listCurrentEnriched.mockResolvedValue([]);
     mocks.classifyPositions.mockImplementation(async (positions) => positions);
     mocks.getSettings.mockResolvedValue(null);
@@ -906,6 +913,60 @@ describe("PortfolioObjectivesService", () => {
     });
   });
 
+  it("passes normalized objective creation idempotency to its repository transaction", async () => {
+    const service = new PortfolioObjectivesService();
+    const body = {
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL" as const,
+      targetAmount: 12000,
+      monthlyPlannedAmount: 500,
+    };
+    mocks.create.mockResolvedValueOnce(customObjective);
+
+    await expect(
+      service.create(body, { idempotencyKey: "create-objective-key" }),
+    ).resolves.toBe(customObjective);
+    const inserted = mocks.create.mock.calls[0]?.[0];
+    expect(inserted).toMatchObject({
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL",
+      mcpIdempotency: {
+        key: "create-objective-key",
+        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+  });
+
+  it("rejects objective create key reuse with a different normalized payload", async () => {
+    const service = new PortfolioObjectivesService();
+    mocks.create.mockRejectedValueOnce(
+      new ApplicationError(
+        "Esta chave de repetição já foi usada com outros dados.",
+        409,
+      ),
+    );
+
+    await expect(
+      service.create(
+        {
+          name: "Reserva de viagem",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: 12000,
+        },
+        { idempotencyKey: "create-objective-key" },
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Reserva de viagem",
+        mcpIdempotency: expect.objectContaining({
+          key: "create-objective-key",
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      }),
+    );
+  });
+
   it("stores an omitted monthly plan as null", async () => {
     await new PortfolioObjectivesService().create({
       name: "Longo prazo",
@@ -919,6 +980,68 @@ describe("PortfolioObjectivesService", () => {
       targetAmount: "5000.00",
       monthlyPlannedAmount: null,
     });
+  });
+
+  it("replays objective updates by key before checking the now-stale version", async () => {
+    const service = new PortfolioObjectivesService();
+    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    const idempotencyKey = "f1d92f3e-9168-493f-905b-30726d292aa7";
+    const objective = {
+      ...customObjective,
+      id: objectiveId,
+      updatedAt: new Date("2026-11-14T15:00:00.001Z"),
+    };
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id: objectiveId,
+      updatedAt: new Date(expectedUpdatedAt),
+    });
+    mocks.findMcpMutationReplay.mockResolvedValueOnce(null);
+    mocks.updateWithMcpReplay.mockResolvedValueOnce({ mcpUpdated: objective });
+
+    await expect(
+      service.update(
+        objectiveId,
+        {
+          name: "Viagem revisada",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: 18000,
+          monthlyPlannedAmount: 1000,
+        },
+        { expectedUpdatedAt, idempotencyKey },
+      ),
+    ).resolves.toBe(objective);
+    expect(mocks.updateWithMcpReplay).toHaveBeenCalledWith(
+      objectiveId,
+      expect.objectContaining({ name: "Viagem revisada" }),
+      new Date(expectedUpdatedAt),
+      expect.objectContaining({
+        operation: "update_objective",
+        key: idempotencyKey,
+        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+
+    mocks.findMcpMutationReplay.mockResolvedValueOnce({
+      ...objective,
+      createdAt: objective.createdAt.toISOString(),
+      updatedAt: objective.updatedAt.toISOString(),
+    });
+    mocks.getObjective.mockClear();
+    await expect(
+      service.update(
+        objectiveId,
+        {
+          name: "Viagem revisada",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: 18000,
+          monthlyPlannedAmount: 1000,
+        },
+        { expectedUpdatedAt, idempotencyKey },
+      ),
+    ).resolves.toMatchObject({ updatedAt: objective.updatedAt });
+    expect(mocks.getObjective).not.toHaveBeenCalled();
   });
 
   it("creates a destination without a target or monthly plan", async () => {
@@ -980,6 +1103,29 @@ describe("PortfolioObjectivesService", () => {
       monthlyPlannedAmount: null,
     });
     expect(mocks.replaceAssignments).not.toHaveBeenCalled();
+  });
+
+  it("rejects an objective update when its expected version is stale", async () => {
+    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id,
+      updatedAt: new Date("2026-11-15T10:00:00.000Z"),
+    });
+
+    await expect(
+      new PortfolioObjectivesService().update(
+        id,
+        {
+          name: "Viagem",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: 12000,
+          monthlyPlannedAmount: null,
+        },
+        { expectedUpdatedAt: "2026-11-14T15:00:00.000Z" },
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("classifies an existing goal in place without changing its financial details or assignments", async () => {
@@ -1078,6 +1224,24 @@ describe("PortfolioObjectivesService", () => {
     await expect(
       new PortfolioObjectivesService().delete(id, { objectiveId: id }),
     ).resolves.toMatchObject({ id });
+  });
+
+  it("rejects objective deletion when the expected version is stale", async () => {
+    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id,
+      updatedAt: new Date("2026-11-15T10:00:00.000Z"),
+    });
+
+    await expect(
+      new PortfolioObjectivesService().delete(
+        id,
+        { objectiveId: id },
+        { expectedUpdatedAt: "2026-11-14T15:00:00.000Z" },
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.delete).not.toHaveBeenCalled();
   });
 
   it("searches only unassigned positions and limits confident CDB search by classification and product", async () => {

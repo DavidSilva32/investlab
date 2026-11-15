@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { mcpMutationReplaysRepository } from "@/backend/repositories/mcp-mutation-replays.repository";
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { emergencyReserveRepository } from "@/backend/repositories/emergency-reserve.repository";
@@ -10,6 +12,7 @@ import {
 import {
   createAllocationSourceFingerprint,
   portfolioObjectivesRepository,
+  type PortfolioObjectiveRecord,
 } from "@/backend/repositories/portfolio-objectives.repository";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
@@ -248,6 +251,7 @@ export class PortfolioObjectivesService {
             })();
       return {
         id: objective.id,
+        updatedAt: objective.updatedAt.toISOString(),
         kind: objective.kind,
         purpose: objective.purpose ?? null,
         name: objective.name,
@@ -428,7 +432,7 @@ export class PortfolioObjectivesService {
     };
   }
 
-  async create(body: unknown) {
+  async create(body: unknown, options?: { idempotencyKey?: string }) {
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
       throw new ApplicationError(
@@ -437,14 +441,30 @@ export class PortfolioObjectivesService {
       );
     }
     const { name, purpose, targetAmount, monthlyPlannedAmount } = parsed.data;
-    const objective = await portfolioObjectivesRepository.create({
+    const normalizedInput = {
       name,
       purpose,
       targetAmount: targetAmount == null ? null : targetAmount.toFixed(2),
       monthlyPlannedAmount:
         monthlyPlannedAmount == null ? null : monthlyPlannedAmount.toFixed(2),
+    };
+    const idempotencyKey = options?.idempotencyKey;
+    if (!idempotencyKey) {
+      return portfolioObjectivesRepository.create(normalizedInput);
+    }
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 128) {
+      throw new ApplicationError("Informe uma chave de repetição válida.", 400);
+    }
+    const mcpIdempotency = {
+      key: idempotencyKey,
+      payloadHash: createHash("sha256")
+        .update(JSON.stringify(normalizedInput))
+        .digest("hex"),
+    };
+    return portfolioObjectivesRepository.create({
+      ...normalizedInput,
+      mcpIdempotency,
     });
-    return objective;
   }
 
   async previewGlobalAllocation(body: unknown, requestId?: string) {
@@ -707,6 +727,7 @@ export class PortfolioObjectivesService {
     allocation: Record<string, string | null>;
     expectedSourceFingerprint: string;
     changedPositionCount: number;
+    mcpIdempotency?: import("@/backend/repositories/portfolio-objectives.repository").McpBalanceIdempotency;
   }) {
     const saved = await portfolioObjectivesRepository.saveGlobalAllocation({
       observedOn: input.observedOn,
@@ -720,6 +741,7 @@ export class PortfolioObjectivesService {
           cdiPercentage: input.cdiPercentage,
         },
       ],
+      mcpIdempotency: input.mcpIdempotency,
     });
     return {
       ...saved,
@@ -1078,7 +1100,11 @@ export class PortfolioObjectivesService {
     return { ...result, valuationDate };
   }
 
-  async update(objectiveId: string, body: unknown) {
+  async update(
+    objectiveId: string,
+    body: unknown,
+    options?: { expectedUpdatedAt?: string; idempotencyKey?: string },
+  ) {
     const parsed = updateSchema.safeParse({
       ...(body as object),
       objectiveId,
@@ -1089,16 +1115,58 @@ export class PortfolioObjectivesService {
         400,
       );
     }
+    const expectedUpdatedAt = this.parseExpectedUpdatedAt(
+      options?.expectedUpdatedAt,
+    );
+    const idempotencyKey = options?.idempotencyKey;
+    const idempotency = idempotencyKey
+      ? {
+          operation: "update_objective" as const,
+          key: idempotencyKey,
+          payloadHash: createHash("sha256")
+            .update(
+              JSON.stringify({
+                objectiveId,
+                input: parsed.data,
+                expectedUpdatedAt: options.expectedUpdatedAt,
+              }),
+            )
+            .digest("hex"),
+        }
+      : undefined;
+    if (idempotency) {
+      if (!expectedUpdatedAt) {
+        throw new ApplicationError(
+          "Informe a versão atual do objetivo junto com a chave de repetição.",
+          400,
+        );
+      }
+      const replay = await mcpMutationReplaysRepository.find(idempotency);
+      if (replay) return this.hydrateObjectiveReplay(replay);
+    }
     const objective =
       await portfolioObjectivesRepository.getObjective(objectiveId);
     if (!objective) throw new ApplicationError("Objetivo não encontrado.", 404);
+    if (
+      expectedUpdatedAt &&
+      objective.updatedAt.getTime() !== expectedUpdatedAt.getTime()
+    ) {
+      if (idempotency) {
+        const replay = await mcpMutationReplaysRepository.find(idempotency);
+        if (replay) return this.hydrateObjectiveReplay(replay);
+      }
+      throw new ApplicationError(
+        "O objetivo mudou desde a última consulta. Atualize a lista e tente novamente.",
+        409,
+      );
+    }
     if (objective.id === reserveObjectiveId) {
       throw new ApplicationError(
         "A configuração da reserva deve ser alterada em Configurar reserva.",
         400,
       );
     }
-    const updated = await portfolioObjectivesRepository.update(objectiveId, {
+    const updateInput = {
       name: parsed.data.name,
       purpose:
         parsed.data.purpose ??
@@ -1114,23 +1182,149 @@ export class PortfolioObjectivesService {
         parsed.data.monthlyPlannedAmount == null
           ? null
           : parsed.data.monthlyPlannedAmount.toFixed(2),
-    });
-    if (!updated) throw new ApplicationError("Objetivo não encontrado.", 404);
+    };
+    const updated = idempotency
+      ? await portfolioObjectivesRepository.updateWithMcpReplay(
+          objectiveId,
+          updateInput,
+          expectedUpdatedAt!,
+          idempotency,
+        )
+      : expectedUpdatedAt
+        ? await portfolioObjectivesRepository.update(
+            objectiveId,
+            updateInput,
+            expectedUpdatedAt,
+          )
+        : await portfolioObjectivesRepository.update(objectiveId, updateInput);
+    if (updated && "mcpReplayResult" in updated) {
+      return this.hydrateObjectiveReplay(updated.mcpReplayResult);
+    }
+    if (updated && "mcpUpdated" in updated) {
+      return updated.mcpUpdated;
+    }
+    if (!updated) {
+      if (
+        expectedUpdatedAt &&
+        (await portfolioObjectivesRepository.getObjective(objectiveId))
+      ) {
+        throw new ApplicationError(
+          "O objetivo mudou durante a atualização. Atualize a lista e tente novamente.",
+          409,
+        );
+      }
+      throw new ApplicationError("Objetivo não encontrado.", 404);
+    }
     return updated;
   }
 
-  async delete(objectiveId: string, body: unknown) {
+  private hydrateObjectiveReplay(value: unknown): PortfolioObjectiveRecord {
+    const result = value as Record<string, unknown> & {
+      createdAt: string | Date;
+      updatedAt: string | Date;
+    };
+    return {
+      ...result,
+      createdAt: new Date(result.createdAt),
+      updatedAt: new Date(result.updatedAt),
+    } as PortfolioObjectiveRecord;
+  }
+
+  async delete(
+    objectiveId: string,
+    body: unknown,
+    options: {
+      expectedUpdatedAt?: string;
+      mcpMutation: {
+        key: string;
+        payloadHash: string;
+        replayResult: unknown;
+      };
+    },
+  ): Promise<PortfolioObjectiveRecord | { mcpReplay: unknown }>;
+  async delete(
+    objectiveId: string,
+    body: unknown,
+    options?: { expectedUpdatedAt?: string },
+  ): Promise<PortfolioObjectiveRecord>;
+  async delete(
+    objectiveId: string,
+    body: unknown,
+    options?: {
+      expectedUpdatedAt?: string;
+      mcpMutation?: {
+        key: string;
+        payloadHash: string;
+        replayResult: unknown;
+      };
+    },
+  ) {
     const parsed = deleteSchema.safeParse({ ...(body as object), objectiveId });
     if (!parsed.success) throw new ApplicationError("Objetivo inválido.", 400);
     const objective =
       await portfolioObjectivesRepository.getObjective(objectiveId);
     if (!objective) throw new ApplicationError("Objetivo não encontrado.", 404);
+    const expectedUpdatedAt = this.parseExpectedUpdatedAt(
+      options?.expectedUpdatedAt,
+    );
+    if (
+      expectedUpdatedAt &&
+      objective.updatedAt.getTime() !== expectedUpdatedAt.getTime()
+    ) {
+      throw new ApplicationError(
+        "O objetivo mudou desde a última consulta. Atualize a lista antes de excluir.",
+        409,
+      );
+    }
     if (objective.id === reserveObjectiveId) {
       throw new ApplicationError("A Reserva não pode ser excluída.", 400);
     }
-    const deleted = await portfolioObjectivesRepository.delete(objectiveId);
-    if (!deleted) throw new ApplicationError("Objetivo não encontrado.", 404);
+    const deleted =
+      options?.mcpMutation && expectedUpdatedAt
+        ? await portfolioObjectivesRepository.deleteWithMcpReplay(
+            objectiveId,
+            expectedUpdatedAt,
+            {
+              operation: "delete_objective",
+              key: options.mcpMutation.key,
+              payloadHash: options.mcpMutation.payloadHash,
+            },
+            options.mcpMutation.replayResult,
+          )
+        : expectedUpdatedAt
+          ? await portfolioObjectivesRepository.delete(
+              objectiveId,
+              expectedUpdatedAt,
+            )
+          : await portfolioObjectivesRepository.delete(objectiveId);
+    if (deleted && "mcpReplayResult" in deleted) {
+      return { mcpReplay: deleted.mcpReplayResult };
+    }
+    if (deleted && "mcpDeleted" in deleted) {
+      return deleted.mcpDeleted;
+    }
+    if (!deleted) {
+      if (
+        expectedUpdatedAt &&
+        (await portfolioObjectivesRepository.getObjective(objectiveId))
+      ) {
+        throw new ApplicationError(
+          "O objetivo mudou durante a exclusão. Atualize a lista antes de tentar novamente.",
+          409,
+        );
+      }
+      throw new ApplicationError("Objetivo não encontrado.", 404);
+    }
     return deleted;
+  }
+
+  private parseExpectedUpdatedAt(value?: string) {
+    if (value === undefined) return undefined;
+    const parsed = new Date(value);
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) {
+      throw new ApplicationError("A versão do objetivo é inválida.", 400);
+    }
+    return parsed;
   }
 
   private groupPositions(rawPositions: RawPosition[]): ObjectivePosition[] {

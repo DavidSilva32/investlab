@@ -1,5 +1,7 @@
 export function scopeLabel(scope: string): string {
   if (scope === "mcp:read") return "Consultar sua carteira e posições.";
+  if (scope === "mcp:write")
+    return "Criar, editar ou excluir objetivos e posições manuais, e informar saldos. Um saldo de hoje pode atualizar automaticamente vínculos de posições, sem executar compras ou vendas.";
   if (scope === "mcp:admin:read")
     return "Buscar dados básicos de contas e consultar a carteira escolhida; disponível somente para ADMIN.";
   if (scope === "openid") return "Confirmar sua identidade para esta conexão.";

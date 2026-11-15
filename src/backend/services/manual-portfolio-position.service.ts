@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   manualPortfolioPositionRepository,
   type ManualPortfolioPositionClassification,
   type ManualPortfolioPositionInput,
+  type ManualPositionReplayResult,
 } from "@/backend/repositories/manual-portfolio-position.repository";
 import { portfolioClassificationRepository } from "@/backend/repositories/portfolio-classification.repository";
 import { logger } from "@/infrastructure/logging/logger";
@@ -25,7 +26,7 @@ const dateSchema = z
       parsed.toISOString().slice(0, 10) === value
     );
   });
-const positionInputSchema = z
+export const manualPortfolioPositionInputSchema = z
   .object({
     product: z.string().trim().min(1).max(160),
     assetCode: z.string().trim().max(24).optional().nullable(),
@@ -118,7 +119,7 @@ function decimalValue(value: number) {
 }
 
 const getClassification = (
-  value: z.infer<typeof positionInputSchema>,
+  value: z.infer<typeof manualPortfolioPositionInputSchema>,
 ): ManualPortfolioPositionClassification | undefined => {
   if (
     value.assetClass === undefined &&
@@ -206,8 +207,12 @@ export class ManualPortfolioPositionService {
     }));
   }
 
-  async create(body: unknown, requestId?: string) {
-    const parsed = positionInputSchema.safeParse(body);
+  async create(
+    body: unknown,
+    requestId?: string,
+    options?: { idempotencyKey?: string },
+  ) {
+    const parsed = manualPortfolioPositionInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new ApplicationError(
         "Revise os dados informados para a posição.",
@@ -215,6 +220,15 @@ export class ManualPortfolioPositionService {
       );
     }
     const value = parsed.data;
+    const idempotency = options?.idempotencyKey
+      ? {
+          operation: "create_manual_position" as const,
+          key: options.idempotencyKey,
+          payloadHash: createHash("sha256")
+            .update(JSON.stringify(value))
+            .digest("hex"),
+        }
+      : undefined;
     const id = randomUUID();
     const totalValue =
       value.valueBasis === "unit_price"
@@ -248,11 +262,26 @@ export class ManualPortfolioPositionService {
           ? null
           : value.informationalCdiPercentage.toFixed(4),
     };
-    const saved = await manualPortfolioPositionRepository.create(
-      input,
-      requestId,
-      getClassification(value),
-    );
+    const created = idempotency
+      ? await manualPortfolioPositionRepository.create(
+          input,
+          requestId,
+          getClassification(value),
+          idempotency,
+        )
+      : await manualPortfolioPositionRepository.create(
+          input,
+          requestId,
+          getClassification(value),
+        );
+    if ("mcpReplayResult" in created) {
+      const replay = created.mcpReplayResult as ManualPositionReplayResult;
+      return this.toPositionResult(
+        this.hydrateReplayPosition(replay.position),
+        replay.classification,
+      );
+    }
+    const saved = created;
     logger.info("manual_portfolio_position_created", {
       requestId,
       positionId: saved.id,
@@ -264,11 +293,16 @@ export class ManualPortfolioPositionService {
           requestId,
         )
       )[0] ?? { assetClass: null, subClass: null, geography: null };
-    return { ...toPortfolioPosition(saved), classification };
+    return this.toPositionResult(saved, classification);
   }
 
-  async update(id: string, body: unknown, requestId?: string) {
-    const parsed = positionInputSchema.safeParse(body);
+  async update(
+    id: string,
+    body: unknown,
+    requestId?: string,
+    options?: { expectedUpdatedAt?: string; idempotencyKey?: string },
+  ) {
+    const parsed = manualPortfolioPositionInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new ApplicationError(
         "Revise os dados informados para a posição.",
@@ -310,12 +344,61 @@ export class ManualPortfolioPositionService {
           }
         : {}),
     };
-    const saved = await manualPortfolioPositionRepository.update(
-      id,
-      input,
-      requestId,
-      getClassification(value),
-    );
+    const expectedUpdatedAt = options?.expectedUpdatedAt
+      ? this.parseExpectedUpdatedAt(options.expectedUpdatedAt)
+      : undefined;
+    const idempotency = options?.idempotencyKey
+      ? {
+          operation: "update_manual_position" as const,
+          key: options.idempotencyKey,
+          payloadHash: createHash("sha256")
+            .update(
+              JSON.stringify({
+                positionId: id,
+                input,
+                expectedUpdatedAt: options.expectedUpdatedAt,
+              }),
+            )
+            .digest("hex"),
+        }
+      : undefined;
+    if (idempotency && !expectedUpdatedAt) {
+      throw new ApplicationError(
+        "Informe a versão atual da posição junto com a chave de repetição.",
+        400,
+      );
+    }
+    const updated = idempotency
+      ? await manualPortfolioPositionRepository.update(
+          id,
+          input,
+          requestId,
+          getClassification(value),
+          expectedUpdatedAt,
+          idempotency,
+        )
+      : expectedUpdatedAt
+        ? await manualPortfolioPositionRepository.update(
+            id,
+            input,
+            requestId,
+            getClassification(value),
+            expectedUpdatedAt,
+          )
+        : await manualPortfolioPositionRepository.update(
+            id,
+            input,
+            requestId,
+            getClassification(value),
+          );
+    if (updated && "mcpReplayResult" in updated) {
+      const replay = updated.mcpReplayResult as ManualPositionReplayResult;
+      return this.toPositionResult(
+        this.hydrateReplayPosition(replay.position),
+        replay.classification,
+      );
+    }
+    const saved = updated;
     if (!saved)
       throw new ApplicationError("Esta posição não existe mais.", 404);
     logger.info("manual_portfolio_position_updated", {
@@ -329,14 +412,51 @@ export class ManualPortfolioPositionService {
           requestId,
         )
       )[0] ?? { assetClass: null, subClass: null, geography: null };
-    return { ...toPortfolioPosition(saved), classification };
+    return this.toPositionResult(saved, classification);
   }
 
-  async delete(id: string, requestId?: string) {
-    const deleted = await manualPortfolioPositionRepository.delete(
-      id,
-      requestId,
-    );
+  async delete(
+    id: string,
+    requestId?: string,
+    options?: {
+      expectedUpdatedAt?: string;
+      mcpMutation?: {
+        key: string;
+        payloadHash: string;
+        replayResult: unknown;
+      };
+    },
+  ) {
+    const expectedUpdatedAt = options?.expectedUpdatedAt
+      ? this.parseExpectedUpdatedAt(options.expectedUpdatedAt)
+      : undefined;
+    const mcpMutation = options?.mcpMutation
+      ? {
+          key: {
+            operation: "delete_manual_position" as const,
+            key: options.mcpMutation.key,
+            payloadHash: options.mcpMutation.payloadHash,
+          },
+          replayResult: options.mcpMutation.replayResult,
+        }
+      : undefined;
+    const deleted = mcpMutation
+      ? await manualPortfolioPositionRepository.delete(
+          id,
+          requestId,
+          expectedUpdatedAt,
+          mcpMutation,
+        )
+      : expectedUpdatedAt
+        ? await manualPortfolioPositionRepository.delete(
+            id,
+            requestId,
+            expectedUpdatedAt,
+          )
+        : await manualPortfolioPositionRepository.delete(id, requestId);
+    if (deleted && "mcpReplayResult" in deleted) {
+      return deleted.mcpReplayResult;
+    }
     if (!deleted)
       throw new ApplicationError("Esta posição não existe mais.", 404);
     logger.info("manual_portfolio_position_deleted", {
@@ -344,6 +464,37 @@ export class ManualPortfolioPositionService {
       positionId: deleted.id,
     });
     return { id: deleted.id };
+  }
+
+  private toPositionResult(
+    saved: Awaited<
+      ReturnType<typeof manualPortfolioPositionRepository.list>
+    >[number],
+    classification: ManualPortfolioPositionClassification,
+  ) {
+    return {
+      ...toPortfolioPosition(saved),
+      classification,
+      lastUpdatedAt: saved.updatedAt.toISOString(),
+    };
+  }
+
+  private hydrateReplayPosition(value: Record<string, unknown>) {
+    return {
+      ...value,
+      createdAt: new Date(value.createdAt as string | Date),
+      updatedAt: new Date(value.updatedAt as string | Date),
+    } as Awaited<
+      ReturnType<typeof manualPortfolioPositionRepository.list>
+    >[number];
+  }
+
+  private parseExpectedUpdatedAt(value: string) {
+    const parsed = new Date(value);
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) {
+      throw new ApplicationError("Informe uma versão válida da posição.", 400);
+    }
+    return parsed;
   }
 }
 

@@ -48,6 +48,9 @@ function createService(options?: {
   };
   const fetchOfficialRates = vi.fn(async () => options?.fetched ?? []);
   const repository = {
+    findMcpBalanceReplay: vi.fn(
+      async (): Promise<Record<string, unknown> | null> => null,
+    ),
     saveObservedBalance: vi.fn(async (input) => ({
       ...input,
       id: "balance-1",
@@ -108,6 +111,144 @@ function createService(options?: {
 }
 
 describe("ObjectiveBalanceService", () => {
+  it("persists a stable replay result for historical balance calls", async () => {
+    const { service, repository } = createService();
+    const input = {
+      objectiveId: reference().objectiveId,
+      amount: "100.00",
+      observedOn: "2026-10-01",
+    };
+    const first = await service.save(input, "request", {
+      idempotencyKey: "idempotency-key-123",
+    });
+
+    expect(first).toMatchObject({
+      objectiveId: input.objectiveId,
+      amountCents: "10000",
+      observedDate: input.observedOn,
+      assignmentReason: "historical_balance",
+    });
+    expect(repository.saveObservedBalance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpIdempotency: expect.objectContaining({
+          operation: "save_observed_balance",
+          key: "idempotency-key-123",
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          replayResult: first,
+        }),
+      }),
+    );
+  });
+
+  it("returns the stored response without writing again after a completed retry", async () => {
+    const { service, repository, reserveAssignment } = createService();
+    const savedResponse = {
+      objectiveId: reserveObjectiveId,
+      amountCents: "5604248",
+      observedDate: "2026-11-14",
+      assignmentStatus: "updated",
+      changedPositionCount: 2,
+    };
+    repository.findMcpBalanceReplay.mockResolvedValueOnce(savedResponse);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "56042.48",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+        },
+        "request",
+        { idempotencyKey: "idempotency-key-123" },
+      ),
+    ).resolves.toEqual(savedResponse);
+    expect(reserveAssignment.findAutomaticAssignment).not.toHaveBeenCalled();
+    expect(repository.saveReserveBalanceWithAssignments).not.toHaveBeenCalled();
+  });
+
+  it("persists a replay payload with automatic objective position assignment", async () => {
+    const { service, objectiveAssignment } = createService();
+    const result = await service.save(
+      {
+        objectiveId: reference().objectiveId,
+        amount: "10000.00",
+        observedOn: "2026-11-14",
+        cdiPercentage: null,
+      },
+      "request",
+      { idempotencyKey: "objective-idempotency-key" },
+    );
+
+    expect(result).toMatchObject({
+      objectiveId: reference().objectiveId,
+      amountCents: "1000000",
+      assignmentStatus: "updated",
+      objectiveName: "Viagem",
+    });
+    expect(
+      objectiveAssignment.saveAutomaticObjectiveAssignment,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpIdempotency: expect.objectContaining({
+          operation: "save_observed_balance",
+          key: "objective-idempotency-key",
+          replayResult: result,
+        }),
+      }),
+    );
+  });
+
+  it("rejects a reused idempotency key when the stored payload differs", async () => {
+    const { service, repository, reserveAssignment } = createService();
+    repository.findMcpBalanceReplay.mockRejectedValueOnce(
+      Object.assign(new Error("payload mismatch"), { status: 409 }),
+    );
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "56042.48",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+        },
+        "request",
+        { idempotencyKey: "same-idempotency-key" },
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(reserveAssignment.findAutomaticAssignment).not.toHaveBeenCalled();
+  });
+
+  it("recovers a concurrent duplicate from the persisted transaction result", async () => {
+    const { service, repository } = createService();
+    const savedResponse = {
+      objectiveId: reserveObjectiveId,
+      amountCents: "5604248",
+      observedDate: "2026-11-14",
+      assignmentStatus: "updated",
+    };
+    repository.findMcpBalanceReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(savedResponse);
+    repository.saveReserveBalanceWithAssignments.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate idempotency key"), { code: "23505" }),
+    );
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "56042.48",
+          observedOn: "2026-11-14",
+          cdiPercentage: null,
+        },
+        "request",
+        { idempotencyKey: "idempotency-key-123" },
+      ),
+    ).resolves.toEqual(savedResponse);
+  });
+
   it("saves canonical cents and appends each observed balance", async () => {
     const { service, repository, objectiveAssignment } = createService();
     const first = await service.save({

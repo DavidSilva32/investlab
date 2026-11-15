@@ -79,6 +79,48 @@ describe("ManualPortfolioPositionService", () => {
     expect(result.assetKey).toMatch(/^manual:/);
   });
 
+  it("passes normalized payload idempotency to the transactional create", async () => {
+    const service = new ManualPortfolioPositionService();
+    repository.create.mockImplementation(async (value) => ({
+      ...saved(),
+      ...value,
+    }));
+    const options = { idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7" };
+    await service.create(input, "req", options);
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ product: input.product }),
+      "req",
+      undefined,
+      expect.objectContaining({
+        operation: "create_manual_position",
+        key: options.idempotencyKey,
+        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+  });
+
+  it("reconstructs the original MCP create response from a ledger replay", async () => {
+    const service = new ManualPortfolioPositionService();
+    repository.create.mockResolvedValueOnce({
+      mcpReplayResult: {
+        position: {
+          ...saved(),
+          createdAt: timestamp.toISOString(),
+          updatedAt: timestamp.toISOString(),
+        },
+        classification: { assetClass: null, subClass: null, geography: null },
+      },
+    });
+    await expect(
+      service.create(input, "req", {
+        idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7",
+      }),
+    ).resolves.toMatchObject({
+      id: saved().id,
+      lastUpdatedAt: timestamp.toISOString(),
+    });
+  });
+
   it("round trips an informative CDB CDI percentage without estimating returns", async () => {
     repository.create.mockImplementation(async (value) => ({
       ...saved(),
@@ -388,6 +430,52 @@ describe("ManualPortfolioPositionService", () => {
     );
   });
 
+  it("passes the expected version to an MCP position update", async () => {
+    repository.update.mockResolvedValue(saved());
+    const expectedUpdatedAt = timestamp.toISOString();
+    await new ManualPortfolioPositionService().update(
+      "position-id",
+      input,
+      "req",
+      { expectedUpdatedAt },
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      "position-id",
+      expect.any(Object),
+      "req",
+      undefined,
+      timestamp,
+    );
+  });
+
+  it("hashes manual position updates with their ID and expected version", async () => {
+    const replay = {
+      position: { ...saved(), updatedAt: timestamp.toISOString() },
+      classification: { assetClass: null, subClass: null, geography: null },
+    };
+    repository.update.mockResolvedValueOnce({ mcpReplayResult: replay });
+    const expectedUpdatedAt = timestamp.toISOString();
+    const idempotencyKey = "f1d92f3e-9168-493f-905b-30726d292aa7";
+    await expect(
+      new ManualPortfolioPositionService().update("position-id", input, "req", {
+        expectedUpdatedAt,
+        idempotencyKey,
+      }),
+    ).resolves.toMatchObject({ id: saved().id });
+    expect(repository.update).toHaveBeenCalledWith(
+      "position-id",
+      expect.any(Object),
+      "req",
+      undefined,
+      timestamp,
+      expect.objectContaining({
+        operation: "update_manual_position",
+        key: idempotencyKey,
+        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+  });
+
   it("preserves an existing informational CDI percentage when an edit omits it", async () => {
     repository.update.mockImplementation(async (_id, value) => ({
       ...saved({ product: "CDB", informationalCdiPercentage: "100.0000" }),
@@ -442,6 +530,45 @@ describe("ManualPortfolioPositionService", () => {
     await expect(service.delete("missing")).rejects.toMatchObject({
       statusCode: 404,
     });
+  });
+
+  it("passes the expected version to an MCP position delete", async () => {
+    repository.delete.mockResolvedValue({ id: "position-id" });
+    await new ManualPortfolioPositionService().delete("position-id", "req", {
+      expectedUpdatedAt: timestamp.toISOString(),
+    });
+    expect(repository.delete).toHaveBeenCalledWith(
+      "position-id",
+      "req",
+      timestamp,
+    );
+  });
+
+  it("forwards the durable manual delete receipt in the same ledger mutation", async () => {
+    const receipt = { deleted: true, positionId: "position-id" };
+    repository.delete.mockResolvedValueOnce({ mcpReplayResult: receipt });
+    await expect(
+      new ManualPortfolioPositionService().delete("position-id", "req", {
+        expectedUpdatedAt: timestamp.toISOString(),
+        mcpMutation: {
+          key: "f1d92f3e-9168-493f-905b-30726d292aa7",
+          payloadHash: "a".repeat(64),
+          replayResult: receipt,
+        },
+      }),
+    ).resolves.toBe(receipt);
+    expect(repository.delete).toHaveBeenCalledWith(
+      "position-id",
+      "req",
+      timestamp,
+      expect.objectContaining({
+        key: expect.objectContaining({
+          operation: "delete_manual_position",
+          payloadHash: "a".repeat(64),
+        }),
+        replayResult: receipt,
+      }),
+    );
   });
 
   it("marks unrecognized or missing asset codes as not duplicated", async () => {

@@ -636,6 +636,28 @@ export const manualPortfolioPositions = pgTable(
     ),
   ],
 );
+
+export const mcpMutationReplays = pgTable(
+  "mcp_mutation_replays",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    operation: varchar({ length: 80 }).notNull(),
+    idempotencyKey: varchar({ length: 128 }).notNull(),
+    payloadHash: varchar({ length: 64 }).notNull(),
+    result: jsonb(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("mcp_mutation_replays_user_operation_key_uidx").on(
+      table.userId,
+      table.operation,
+      table.idempotencyKey,
+    ),
+  ],
+);
 export const manualPortfolioPositionSnapshots = pgTable(
   "manual_portfolio_position_snapshots",
   {
@@ -996,6 +1018,10 @@ export const portfolioObjectiveBalanceReferences = pgTable(
       .references(() => portfolioObjectives.id, { onDelete: "cascade" }),
     amountCents: numeric({ precision: 20, scale: 0 }).notNull(),
     cdiPercentage: numeric({ precision: 9, scale: 4 }),
+    mcpOperation: text(),
+    mcpIdempotencyKey: text(),
+    mcpPayloadHash: text(),
+    mcpReplayResult: jsonb(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -1010,6 +1036,9 @@ export const portfolioObjectiveBalanceReferences = pgTable(
       table.objectiveId,
       table.createdAt,
     ),
+    uniqueIndex("portfolio_objective_balance_reference_mcp_replay_uidx")
+      .on(table.userId, table.mcpOperation, table.mcpIdempotencyKey)
+      .where(sql`${table.mcpIdempotencyKey} IS NOT NULL`),
   ],
 );
 /* v8 ignore stop */

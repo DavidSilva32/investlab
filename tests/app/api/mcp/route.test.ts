@@ -78,6 +78,48 @@ describe("MCP POST route", () => {
     });
   });
 
+  it.each([
+    "write_update_objective",
+    "write_create_objective",
+    "write_delete_objective",
+    "write_save_observed_balance",
+    "write_create_manual_position",
+    "write_update_manual_position",
+    "write_delete_manual_position",
+  ])("requires the separate write grant before forwarding %s", async (name) => {
+    const writeRequest = new Request("https://investlab.example/api/mcp", {
+      method: "POST",
+      body: JSON.stringify({ method: "tools/call", params: { name } }),
+    });
+    await expect(POST(writeRequest)).rejects.toMatchObject({
+      scopes: ["mcp:write"],
+    });
+    expect(mocks.handle).not.toHaveBeenCalled();
+
+    mocks.claims = { sub: "user-1", scope: "mcp:read mcp:write" };
+    mocks.handle.mockResolvedValue(new Response(null, { status: 202 }));
+    await expect(POST(writeRequest)).resolves.toMatchObject({ status: 202 });
+    expect(mocks.handle).toHaveBeenCalledWith(writeRequest, mocks.claims);
+  });
+
+  it("matches registered write tool names rather than trusting a name prefix", async () => {
+    const unknownToolRequest = new Request(
+      "https://investlab.example/api/mcp",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          method: "tools/call",
+          params: { name: "write_unregistered_tool" },
+        }),
+      },
+    );
+    mocks.handle.mockResolvedValue(new Response(null, { status: 202 }));
+    await expect(POST(unknownToolRequest)).resolves.toMatchObject({
+      status: 202,
+    });
+    expect(mocks.handle).toHaveBeenCalledWith(unknownToolRequest, mocks.claims);
+  });
+
   it("forwards authorized read calls and verified claims to the controller", async () => {
     const response = new Response(null, { status: 202 });
     mocks.handle.mockResolvedValue(response);

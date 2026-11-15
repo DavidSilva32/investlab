@@ -1,5 +1,9 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
+import {
+  mcpMutationReplaysRepository,
+  type McpMutationKey,
+} from "@/backend/repositories/mcp-mutation-replays.repository";
 import { activeReconciliationLinks } from "@/backend/services/position-reconciliation";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -54,6 +58,11 @@ export type ManualPortfolioPositionInput = Pick<
   | "conversionDate"
   | "informationalCdiPercentage"
 >;
+
+export type ManualPositionReplayResult = {
+  position: Record<string, unknown>;
+  classification: ManualPortfolioPositionClassification;
+};
 
 export class ManualPortfolioPositionRepository {
   private async recordSnapshot(
@@ -131,10 +140,22 @@ export class ManualPortfolioPositionRepository {
     input: ManualPortfolioPositionInput,
     requestId?: string,
     classification?: ManualPortfolioPositionClassification,
+    idempotency?: McpMutationKey,
   ) {
     const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        if (idempotency) {
+          const reservation = await mcpMutationReplaysRepository.reserve(
+            transaction,
+            idempotency,
+          );
+          if (reservation.replayed) {
+            return {
+              mcpReplayResult: reservation.result as ManualPositionReplayResult,
+            };
+          }
+        }
         await transaction.execute(
           sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
         );
@@ -170,6 +191,24 @@ export class ManualPortfolioPositionRepository {
               setWhere: eq(portfolioAssetClassifications.userId, userId),
             });
         }
+        if (idempotency) {
+          const replayResult = {
+            position,
+            classification: classification ?? {
+              assetClass: null,
+              subClass: null,
+              geography: null,
+            },
+          };
+          await mcpMutationReplaysRepository.complete(
+            transaction,
+            idempotency,
+            {
+              ...replayResult,
+            },
+          );
+          return { mcpReplayResult: replayResult };
+        }
         return position;
       });
     } catch (error) {
@@ -186,10 +225,23 @@ export class ManualPortfolioPositionRepository {
     input: Omit<ManualPortfolioPositionInput, "id" | "assetKey">,
     requestId?: string,
     classification?: ManualPortfolioPositionClassification,
+    expectedUpdatedAt?: Date,
+    idempotency?: McpMutationKey,
   ) {
     const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        if (idempotency) {
+          const reservation = await mcpMutationReplaysRepository.reserve(
+            transaction,
+            idempotency,
+          );
+          if (reservation.replayed) {
+            return {
+              mcpReplayResult: reservation.result as ManualPositionReplayResult,
+            };
+          }
+        }
         await transaction.execute(
           sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
         );
@@ -204,7 +256,21 @@ export class ManualPortfolioPositionRepository {
           )
           .for("update")
           .limit(1);
-        if (!previous) return null;
+        if (!previous) {
+          if (idempotency) {
+            throw new ApplicationError("Esta posição não existe mais.", 404);
+          }
+          return null;
+        }
+        if (
+          expectedUpdatedAt &&
+          previous.updatedAt.getTime() !== expectedUpdatedAt.getTime()
+        ) {
+          throw new ApplicationError(
+            "A posição mudou desde a última consulta. Atualize a lista antes de salvar.",
+            409,
+          );
+        }
         const reconciliationEvents = await transaction
           .select()
           .from(positionReconciliationEvents)
@@ -261,7 +327,12 @@ export class ManualPortfolioPositionRepository {
             ),
           )
           .returning();
-        if (!position) return null;
+        if (!position) {
+          if (idempotency) {
+            throw new ApplicationError("Esta posição não existe mais.", 404);
+          }
+          return null;
+        }
         await this.recordSnapshot(
           transaction,
           position,
@@ -315,6 +386,33 @@ export class ManualPortfolioPositionRepository {
               setWhere: eq(portfolioAssetClassifications.userId, userId),
             });
         }
+        if (idempotency) {
+          const [savedClassification] = await transaction
+            .select()
+            .from(portfolioAssetClassifications)
+            .where(
+              and(
+                eq(portfolioAssetClassifications.userId, userId),
+                eq(portfolioAssetClassifications.assetKey, position.assetKey),
+              ),
+            )
+            .limit(1);
+          const replayResult = {
+            position,
+            classification: classification ??
+              savedClassification ?? {
+                assetClass: null,
+                subClass: null,
+                geography: null,
+              },
+          };
+          await mcpMutationReplaysRepository.complete(
+            transaction,
+            idempotency,
+            replayResult,
+          );
+          return { mcpReplayResult: replayResult };
+        }
         return position;
       });
     } catch (error) {
@@ -326,10 +424,27 @@ export class ManualPortfolioPositionRepository {
     }
   }
 
-  async delete(id: string, requestId?: string) {
+  async delete(
+    id: string,
+    requestId?: string,
+    expectedUpdatedAt?: Date,
+    mcpMutation?: {
+      key: McpMutationKey;
+      replayResult: unknown;
+    },
+  ) {
     const userId = requireDataOwnerId();
     try {
       return await getDatabaseClient().transaction(async (transaction) => {
+        if (mcpMutation) {
+          const reservation = await mcpMutationReplaysRepository.reserve(
+            transaction,
+            mcpMutation.key,
+          );
+          if (reservation.replayed) {
+            return { mcpReplayResult: reservation.result };
+          }
+        }
         await transaction.execute(
           sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents} IN SHARE ROW EXCLUSIVE MODE`,
         );
@@ -344,7 +459,21 @@ export class ManualPortfolioPositionRepository {
           )
           .for("update")
           .limit(1);
-        if (!position) return null;
+        if (!position) {
+          if (mcpMutation) {
+            throw new ApplicationError("Esta posição não existe mais.", 404);
+          }
+          return null;
+        }
+        if (
+          expectedUpdatedAt &&
+          position.updatedAt.getTime() !== expectedUpdatedAt.getTime()
+        ) {
+          throw new ApplicationError(
+            "A posição mudou desde a última consulta. Atualize a lista antes de excluir.",
+            409,
+          );
+        }
         await this.recordSnapshot(
           transaction,
           position,
@@ -372,6 +501,13 @@ export class ManualPortfolioPositionRepository {
             ),
           )
           .returning({ id: manualPortfolioPositions.id });
+        if (deleted && mcpMutation) {
+          await mcpMutationReplaysRepository.complete(
+            transaction,
+            mcpMutation.key,
+            mcpMutation.replayResult,
+          );
+        }
         return deleted ?? null;
       });
     } catch (error) {
