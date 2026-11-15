@@ -113,8 +113,7 @@ function exactQuantityUnits(value: string | null | undefined) {
   const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(value?.trim() ?? "");
   if (!match) return null;
   return (
-    BigInt(match[1]!) * 100_000_000n +
-    BigInt((match[2] ?? "").padEnd(8, "0") || "0")
+    BigInt(match[1]!) * 100_000_000n + BigInt((match[2] ?? "").padEnd(8, "0"))
   );
 }
 
@@ -586,10 +585,12 @@ export class ImportRepository {
         ),
       );
       const baselinePositions = baselineSnapshot
-        ? (positionRowsBySnapshot.get(baselineSnapshot.id) ?? []).filter(
-            (position) =>
-              getEmergencyReserveAssetKey(position) === assignment.assetKey,
-          )
+        ? positionRowsBySnapshot
+            .get(baselineSnapshot.id)!
+            .filter(
+              (position) =>
+                getEmergencyReserveAssetKey(position) === assignment.assetKey,
+            )
         : [];
       const baseline = baselinePositions[0];
       let reason: MovementRetirementReview["reason"] = "incomplete_evidence";

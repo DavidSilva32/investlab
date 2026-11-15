@@ -181,6 +181,10 @@ type Item = {
 };
 type MutationResponse = { message?: string };
 type ConfirmationItem = Item & { preview: Preview };
+type ConfirmationOrderItem = {
+  preview: { documentType: Preview["documentType"] };
+  referenceDate?: string;
+};
 type ConfirmationResult =
   | { status: "success"; item: ConfirmationItem; message: string }
   | {
@@ -195,6 +199,25 @@ const money = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 });
 const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
+
+export function compareImportConfirmationOrder(
+  left: ConfirmationOrderItem,
+  right: ConfirmationOrderItem,
+) {
+  const importPriority = (item: ConfirmationOrderItem) =>
+    item.preview.documentType === "B3_MOVEMENT_XLSX"
+      ? 0
+      : item.preview.documentType === "B3_TRADING_XLSX"
+        ? 1
+        : 2;
+  return (
+    importPriority(left) - importPriority(right) ||
+    (left.preview.documentType === "B3_POSITION_XLSX" &&
+    right.preview.documentType === "B3_POSITION_XLSX"
+      ? (left.referenceDate ?? "").localeCompare(right.referenceDate ?? "")
+      : 0)
+  );
+}
 
 function formatMoney(value: string | null) {
   return value === null ? "—" : money.format(Number(value));
@@ -406,20 +429,7 @@ export function PortfolioImport({
     );
     setConfirmationSummary(null);
     setLoading(true);
-    const importPriority = (item: (typeof ready)[number]) =>
-      item.preview.documentType === "B3_MOVEMENT_XLSX"
-        ? 0
-        : item.preview.documentType === "B3_TRADING_XLSX"
-          ? 1
-          : 2;
-    const ordered = [...ready].sort(
-      (left, right) =>
-        importPriority(left) - importPriority(right) ||
-        (left.preview.documentType === "B3_POSITION_XLSX" &&
-        right.preview.documentType === "B3_POSITION_XLSX"
-          ? (left.referenceDate ?? "").localeCompare(right.referenceDate ?? "")
-          : 0),
-    );
+    const ordered = [...ready].sort(compareImportConfirmationOrder);
     const results: ConfirmationResult[] = [];
     for (const item of ordered) {
       try {

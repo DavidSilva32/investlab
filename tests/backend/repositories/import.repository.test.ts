@@ -159,6 +159,48 @@ const retirementCandidate = (assetKey: string, objectiveId: string) => ({
   evidenceFingerprints: ["total-redemption-fingerprint"],
 });
 
+function movementRetirementTransaction(input: {
+  snapshots?: Array<{ id: string; referenceDate: string | null }>;
+  positions?: Array<Record<string, unknown>>;
+  assignments?: Array<{ assetKey: string; objectiveId: string }>;
+  movements?: Array<Record<string, unknown>>;
+  objectives?: Array<{ id: string; name: string }>;
+}) {
+  const transaction = {
+    execute: vi.fn().mockResolvedValue(undefined),
+    select: vi.fn().mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: () =>
+          table === positionSnapshots
+            ? { orderBy: async () => input.snapshots ?? [] }
+            : Promise.resolve(
+                table === positionItems
+                  ? (input.positions ?? [])
+                  : table === portfolioObjectivePositions
+                    ? (input.assignments ?? [])
+                    : table === movementItems
+                      ? (input.movements ?? [])
+                      : table === portfolioObjectives
+                        ? (input.objectives ?? [])
+                        : [],
+              ),
+      }),
+    })),
+    delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    insert: vi.fn(),
+  };
+  transaction.insert
+    .mockReturnValueOnce({
+      values: () => ({ returning: async () => [{ id: "movement-import" }] }),
+    })
+    .mockReturnValueOnce({ values: vi.fn().mockResolvedValue(undefined) });
+  mocks.client.transaction.mockImplementation(
+    (callback: (tx: typeof transaction) => unknown) =>
+      callback(withManualRead(transaction)),
+  );
+  return transaction;
+}
+
 describe("import repository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2141,6 +2183,55 @@ describe("import repository", () => {
     expect(transaction.insert).toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      name: "current snapshot has no date",
+      latest: { id: "snapshot-undated", referenceDate: null },
+      message: "A posição mudou.",
+    },
+    {
+      name: "incoming snapshot is not newer than current snapshot",
+      latest: { id: "snapshot-current", referenceDate: "2026-11-14" },
+      message: "O snapshot não é mais recente",
+    },
+  ])(
+    "rejects stale retirement confirmations when $name",
+    async ({ latest, message }) => {
+      const transaction = {
+        execute: vi.fn().mockResolvedValue(undefined),
+        select: vi.fn().mockReturnValue({
+          from: () => ({
+            where: () => ({ orderBy: () => ({ limit: async () => [latest] }) }),
+          }),
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+      };
+      mocks.client.transaction.mockImplementation((callback) =>
+        callback(withManualRead(transaction)),
+      );
+
+      await expect(
+        importRepository.create({
+          fileName: "new.xlsx",
+          fileHash: `stale-retirement-${latest.id}`,
+          documentType: "B3_POSITION_XLSX",
+          referenceDate: "2026-11-13",
+          positions: [] as never,
+          retiredObjectiveAssignments: [
+            retirementCandidate("v1:" + "a".repeat(64), "objective-a"),
+          ],
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: expect.stringContaining(message),
+      });
+
+      expect(transaction.delete).not.toHaveBeenCalled();
+      expect(transaction.insert).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps a reassigned objective link when the confirmed pair became stale", async () => {
     const currentPosition = {
       product: "CDB Viagem",
@@ -3051,6 +3142,265 @@ describe("import repository", () => {
     });
     expect(transaction.delete).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      name: "no objective positions are linked",
+      assignments: [],
+      reason: null,
+    },
+    {
+      name: "the assigned position remains in the latest snapshot",
+      latestPosition: true,
+      reason: null,
+    },
+    {
+      name: "the assigned objective no longer exists",
+      objectiveExists: false,
+      reason: null,
+    },
+    {
+      name: "there is no dated baseline snapshot",
+      baseline: false,
+      reason: null,
+    },
+    {
+      name: "the prior snapshot has no position rows",
+      noPriorRows: true,
+      reason: null,
+    },
+    {
+      name: "the baseline contains duplicate identities",
+      duplicateBaseline: true,
+      reason: "incomplete_evidence",
+    },
+    {
+      name: "a different current position reuses its asset code",
+      identityConflict: true,
+      reason: "identity_conflict",
+    },
+    {
+      name: "a different current position reuses its product identity",
+      productIdentityConflict: true,
+      reason: "identity_conflict",
+    },
+    {
+      name: "the prior position has no asset code",
+      missingAssetCode: true,
+      noRedemption: true,
+      reason: "no_matching_redemption",
+    },
+    {
+      name: "the prior position has no institution",
+      missingInstitution: true,
+      reason: "institution_mismatch",
+    },
+    {
+      name: "an unrelated movement has no asset code",
+      movementWithoutAssetCode: true,
+      reason: "no_matching_redemption",
+    },
+    {
+      name: "a redemption comes from another institution",
+      movementInstitution: "Banco B",
+      reason: "institution_mismatch",
+    },
+    {
+      name: "a credit makes the interval ambiguous",
+      movementDirection: "CREDITO",
+      movementType: "APLICAÇÃO",
+      reason: "incomplete_evidence",
+    },
+    {
+      name: "a movement with no type makes the interval ambiguous",
+      movementType: null,
+      reason: "incomplete_evidence",
+    },
+    {
+      name: "redemption fingerprints are duplicated",
+      duplicateRedemption: true,
+      reason: "duplicate_evidence",
+    },
+    {
+      name: "the redemption predates the baseline snapshot",
+      previousRedemption: true,
+      reason: "movement_before_previous_snapshot",
+    },
+    {
+      name: "the interval has no matching redemption",
+      noRedemption: true,
+      reason: "no_matching_redemption",
+    },
+    {
+      name: "the redemption quantity is invalid",
+      movementQuantity: "1.000000001",
+      reason: "incomplete_evidence",
+    },
+    {
+      name: "the redemption quantity is unavailable",
+      movementQuantity: null,
+      reason: "incomplete_evidence",
+    },
+    {
+      name: "the redemption is partial",
+      movementQuantity: "0.5",
+      reason: "partial_redemption",
+    },
+    {
+      name: "the redemption is exact",
+      movementQuantity: "1",
+      reason: "total_redemption",
+    },
+    {
+      name: "the redemption exceeds the baseline quantity",
+      movementQuantity: "2",
+      reason: "incomplete_evidence",
+    },
+  ])(
+    "reviews assigned positions after a movement import: $name",
+    async (scenario) => {
+      const baseline = {
+        product: "CDB Viagem",
+        quantity: "1",
+        assetCode: scenario.missingAssetCode ? null : "CDB-TRIP",
+        institution: scenario.missingInstitution ? null : "Banco A",
+        issuer: "Banco A",
+        indexer: "CDI",
+        regimeType: "PÓS",
+        issuedAt: "2025-01-01",
+        maturityAt: "2027-01-01",
+      };
+      const assetKey = getEmergencyReserveAssetKey(baseline);
+      const snapshots = [
+        { id: "snapshot-current", referenceDate: "2026-11-13" },
+        ...(scenario.baseline === false
+          ? []
+          : [{ id: "snapshot-baseline", referenceDate: "2026-11-12" }]),
+      ];
+      const positions = [
+        ...(scenario.baseline === false || scenario.noPriorRows
+          ? []
+          : [
+              { ...baseline, snapshotId: "snapshot-baseline" },
+              ...(scenario.duplicateBaseline
+                ? [{ ...baseline, snapshotId: "snapshot-baseline" }]
+                : []),
+            ]),
+        ...(scenario.latestPosition
+          ? [{ ...baseline, snapshotId: "snapshot-current" }]
+          : []),
+        ...(scenario.identityConflict || scenario.productIdentityConflict
+          ? [
+              {
+                ...baseline,
+                product: scenario.productIdentityConflict
+                  ? baseline.product
+                  : "Outro CDB com código reutilizado",
+                assetCode: scenario.productIdentityConflict
+                  ? "CDB-OTHER"
+                  : baseline.assetCode,
+                issuedAt: "2026-01-01",
+                snapshotId: "snapshot-current",
+              },
+            ]
+          : []),
+      ];
+      const movements = scenario.noRedemption
+        ? []
+        : scenario.previousRedemption
+          ? [
+              {
+                assetCode: "CDB-TRIP",
+                institution: "Banco A",
+                direction: "DEBITO",
+                movementType: "RESGATE TOTAL",
+                occurredAt: "2026-11-11",
+                quantity: "1",
+                eventFingerprint: "prior-redemption",
+              },
+            ]
+          : scenario.reason === null
+            ? []
+            : [
+                {
+                  assetCode: scenario.movementWithoutAssetCode
+                    ? null
+                    : "CDB-TRIP",
+                  institution: scenario.movementInstitution ?? "Banco A",
+                  direction: scenario.movementDirection ?? "DEBITO",
+                  movementType:
+                    scenario.movementType === null
+                      ? null
+                      : (scenario.movementType ?? "RESGATE TOTAL"),
+                  occurredAt: "2026-11-13",
+                  quantity:
+                    scenario.movementQuantity === null
+                      ? null
+                      : (scenario.movementQuantity ?? "1"),
+                  eventFingerprint: "redemption-1",
+                },
+                ...(scenario.duplicateRedemption
+                  ? [
+                      {
+                        assetCode: "CDB-TRIP",
+                        institution: "Banco A",
+                        direction: "DEBITO",
+                        movementType: "RESGATE TOTAL",
+                        occurredAt: "2026-11-13",
+                        quantity: "1",
+                        eventFingerprint: "redemption-1",
+                      },
+                    ]
+                  : []),
+              ];
+      const transaction = movementRetirementTransaction({
+        snapshots,
+        positions,
+        assignments: scenario.assignments ?? [
+          { assetKey, objectiveId: "objective-trip" },
+        ],
+        movements,
+        objectives:
+          scenario.objectiveExists === false
+            ? []
+            : [{ id: "objective-trip", name: "Viagem" }],
+      });
+
+      const result = await importRepository.create({
+        fileName: "movements.xlsx",
+        fileHash: `movement-review-${scenario.name}`,
+        documentType: "B3_MOVEMENT_XLSX",
+        movements: [
+          {
+            eventFingerprint: "imported-movement",
+            direction: "DEBITO",
+            occurredAt: "2026-11-13",
+            movementType: "RESGATE TOTAL",
+            assetCode: "CDB-TRIP",
+            quantity: "1",
+          },
+        ] as never,
+      });
+
+      if (scenario.reason === null) {
+        expect(result).toMatchObject({ retirementReview: [] });
+      } else {
+        expect(result).toMatchObject({
+          retirementReview: [
+            expect.objectContaining({ assetKey, reason: scenario.reason }),
+          ],
+        });
+      }
+      expect(transaction.insert).toHaveBeenCalledTimes(2);
+      if (scenario.reason === "total_redemption") {
+        expect(transaction.delete).toHaveBeenCalledWith(
+          portfolioObjectivePositions,
+        );
+      } else {
+        expect(transaction.delete).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("persists negotiation rows as source records without creating snapshots", async () => {
     const persistedTrades = vi.fn().mockResolvedValue(undefined);

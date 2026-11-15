@@ -492,6 +492,55 @@ describe("ImportController reference date handling", () => {
       undefined,
     );
   });
+
+  it.each([
+    {
+      review: [
+        { reason: "total_redemption" },
+        { reason: "partial_redemption" },
+      ],
+      suffix:
+        "1 vínculo encerrado após resgate total. 1 resgate parcial — os vínculos foram mantidos.",
+    },
+    {
+      review: [
+        { reason: "total_redemption" },
+        { reason: "total_redemption" },
+        { reason: "partial_redemption" },
+        { reason: "partial_redemption" },
+      ],
+      suffix:
+        "2 vínculos encerrados após resgate total. 2 resgates parciais — os vínculos foram mantidos.",
+    },
+    {
+      review: [{ reason: "future_reason" }],
+      suffix: "1 evidência incompleta — os vínculos foram mantidos.",
+    },
+  ])(
+    "summarizes automatic position retirement safely",
+    async ({ review, suffix }) => {
+      const movementPreview = {
+        hash: "b".repeat(64),
+        documentType: "B3_MOVEMENT_XLSX" as const,
+        movements: [{ product: "CDB", quantity: "1" }],
+      };
+      service.confirm.mockResolvedValue({
+        preview: movementPreview,
+        result: { importId: "movement-import" },
+        duplicate: false,
+        retirementReview: review,
+      });
+
+      const response = await importController.confirm(
+        requestWithFile(),
+        "request-1",
+      );
+
+      await expect(response.json()).resolves.toMatchObject({
+        message: expect.stringContaining(suffix),
+      });
+    },
+  );
 });
 
 describe("ImportController reconciliation transport", () => {

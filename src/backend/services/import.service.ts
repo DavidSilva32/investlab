@@ -55,7 +55,7 @@ const quantityUnits = (value: string | null | undefined) => {
   if (!match) return null;
   return (
     BigInt(match[1]!) * 10n ** BigInt(QUANTITY_SCALE) +
-    BigInt((match[2] ?? "").padEnd(QUANTITY_SCALE, "0") || "0")
+    BigInt((match[2] ?? "").padEnd(QUANTITY_SCALE, "0"))
   );
 };
 type PositionRetirementReason =

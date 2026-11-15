@@ -1265,6 +1265,26 @@ describe("ImportService persistence", () => {
       closes: false,
     },
     {
+      title: "a position with an unavailable quantity cannot be retired",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      previousQuantity: "",
+      movements: [
+        makeRedemption("missing-position-quantity", "2026-11-13", "1"),
+      ],
+      reason: "incomplete_evidence",
+      closes: false,
+    },
+    {
+      title: "fractional quantities are compared exactly",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      previousQuantity: "0.5",
+      movements: [makeRedemption("fractional-quantity", "2026-11-13", "0.5")],
+      reason: "total_redemption",
+      closes: true,
+    },
+    {
       title: "a redemption dated before the previous snapshot",
       incomingDate: "2026-11-13",
       incomingPositions: [],
@@ -1313,7 +1333,7 @@ describe("ImportService persistence", () => {
       regimeType: "PÓS",
       issuedAt: "2025-01-01",
       maturityAt: "2027-01-01",
-      quantity: "1",
+      quantity: scenario.previousQuantity ?? "1",
       totalValue: "100",
       referenceDate: "2026-11-12",
     };

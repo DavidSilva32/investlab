@@ -16,7 +16,55 @@ const toast = vi.hoisted(() => ({
 }));
 vi.mock("sonner", () => ({ toast }));
 
-import { PortfolioImport } from "@/components/portfolio-import";
+import {
+  compareImportConfirmationOrder,
+  PortfolioImport,
+} from "@/components/portfolio-import";
+
+describe("compareImportConfirmationOrder", () => {
+  it("imports movements before positions and positions in date order", () => {
+    const movement = {
+      preview: { documentType: "B3_MOVEMENT_XLSX" as const },
+    };
+    const newerPosition = {
+      preview: { documentType: "B3_POSITION_XLSX" as const },
+      referenceDate: "2026-11-14",
+    };
+    const olderPosition = {
+      preview: { documentType: "B3_POSITION_XLSX" as const },
+      referenceDate: "2026-11-13",
+    };
+
+    expect(
+      compareImportConfirmationOrder(movement, olderPosition),
+    ).toBeLessThan(0);
+    expect(
+      compareImportConfirmationOrder(olderPosition, newerPosition),
+    ).toBeLessThan(0);
+  });
+
+  it("keeps incomparable file types and positions without dates stable", () => {
+    const positionWithoutDate = {
+      preview: { documentType: "B3_POSITION_XLSX" as const },
+    };
+    const anotherPositionWithoutDate = {
+      preview: { documentType: "B3_POSITION_XLSX" as const },
+    };
+    const trade = {
+      preview: { documentType: "B3_TRADING_XLSX" as const },
+    };
+
+    expect(
+      compareImportConfirmationOrder(
+        positionWithoutDate,
+        anotherPositionWithoutDate,
+      ),
+    ).toBe(0);
+    expect(
+      compareImportConfirmationOrder(trade, positionWithoutDate),
+    ).toBeLessThan(0);
+  });
+});
 
 const spreadsheet = (name: string) => new File(["xlsx"], name);
 const positionPreview = {
@@ -579,6 +627,92 @@ describe("PortfolioImport", () => {
     );
   });
 
+  it("confirms same-type position snapshots from oldest to newest", async () => {
+    const firstPreview = {
+      ...positionPreview,
+      latestPositionReferenceDate: null,
+      identityConflicts: [],
+    };
+    const secondPreview = {
+      ...positionPreview,
+      latestPositionReferenceDate: null,
+      identityConflicts: [],
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => firstPreview })
+      .mockResolvedValueOnce({ ok: true, json: async () => secondPreview })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          spreadsheet("mais-recente.xlsx"),
+          spreadsheet("mais-antigo.xlsx"),
+        ],
+      },
+    });
+
+    const dateInputs = await screen.findAllByRole("textbox", {
+      name: /^Data exibida na B3/,
+    });
+    fireEvent.change(dateInputs[0]!, { target: { value: "18/09/2026" } });
+    fireEvent.change(dateInputs[1]!, { target: { value: "17/09/2026" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar 2 arquivo/ }),
+    );
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    const confirmedNames = fetch.mock.calls.slice(2).map(([, init]) => {
+      const body = init?.body as FormData;
+      return (body.get("file") as File).name;
+    });
+    expect(confirmedNames).toEqual(["mais-antigo.xlsx", "mais-recente.xlsx"]);
+  });
+
+  it("imports batch movements before position snapshots", async () => {
+    const datedPositionPreview = {
+      ...positionPreview,
+      latestPositionReferenceDate: null,
+      identityConflicts: [],
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => datedPositionPreview,
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => movementPreview })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          spreadsheet("posicoes.xlsx"),
+          spreadsheet("movimentacoes.xlsx"),
+        ],
+      },
+    });
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: /^Data exibida na B3/ }),
+      { target: { value: "18/09/2026" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar 2 arquivo/ }),
+    );
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    const confirmedNames = fetch.mock.calls.slice(2).map(([, init]) => {
+      const body = init?.body as FormData;
+      return (body.get("file") as File).name;
+    });
+    expect(confirmedNames).toEqual(["movimentacoes.xlsx", "posicoes.xlsx"]);
+  });
+
   it("uses the one B3 date for the import and does not send a separate base date", async () => {
     const fetch = vi
       .fn()
@@ -693,6 +827,79 @@ describe("PortfolioImport", () => {
     expect(confirmBody.has("retiredObjectiveAssignments")).toBe(false);
   });
 
+  it("deduplicates redemption evidence shared by a position preview and its movement batch", async () => {
+    const redemption = {
+      occurredAt: "2026-10-29",
+      movementType: "RESGATE TOTAL",
+      quantity: "1",
+      operationValue: "100",
+      institution: "Banco A",
+    };
+    const positionWithConflict = {
+      ...positionPreview,
+      latestPositionReferenceDate: "2026-10-28",
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB Banco A",
+            institution: "Banco A",
+            assetCode: "CDB1",
+            quantity: "1",
+            totalValue: "100",
+            unitPrice: "100",
+            valuationSource: "CURVA" as const,
+          },
+          matchingRedemptions: [redemption],
+        },
+      ],
+    };
+    const movementBatch = {
+      ...movementPreview,
+      movements: [
+        {
+          direction: "DEBITO",
+          occurredAt: redemption.occurredAt,
+          movementType: redemption.movementType,
+          product: "CDB Banco A",
+          assetCode: "CDB1",
+          institution: "Banco A",
+          quantity: redemption.quantity,
+          operationValue: redemption.operationValue,
+        },
+      ],
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => positionWithConflict,
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => movementBatch });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          spreadsheet("posicoes.xlsx"),
+          spreadsheet("movimentacoes.xlsx"),
+        ],
+      },
+    });
+
+    expect(await screen.findByText(/CDB Banco A — Viagem/)).toBeTruthy();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /^Data exibida na B3/ }),
+      { target: { value: "30/10/2026" } },
+    );
+    expect(
+      screen.getAllByText(/O extrato registra RESGATE TOTAL em/),
+    ).toHaveLength(1);
+  });
+
   it("shows a missing assignment without blocking after the snapshot date is set", async () => {
     vi.stubGlobal(
       "fetch",
@@ -805,6 +1012,47 @@ describe("PortfolioImport", () => {
     );
     expect(screen.queryByText(/RESGATE ANTIGO/)).toBeNull();
     expect(screen.queryByText(/RESGATE FUTURO/)).toBeNull();
+  });
+
+  it("explains why a snapshot from the same date preserves objective links", async () => {
+    const preview = {
+      ...positionPreview,
+      latestPositionReferenceDate: "2026-09-17",
+      identityConflicts: [
+        {
+          assetKey: "v1:assigned-position",
+          objectiveId: "goal-trip",
+          objectiveName: "Viagem",
+          position: {
+            product: "CDB antigo",
+            institution: "Banco A",
+            assetCode: "CDB1",
+          },
+          matchingRedemptions: [],
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => preview }),
+    );
+    const { container } = render(<PortfolioImport />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("mesma-data.xlsx")] },
+    });
+
+    expect(await screen.findByText(/CDB antigo — Viagem/)).toBeTruthy();
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: /^Data exibida na B3/ }),
+      { target: { value: "17/09/2026" } },
+    );
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "Snapshot da mesma data: vínculos preservados",
+    );
+    expect(screen.getByRole("status").textContent).toContain(
+      "não é mais recente que a posição atual",
+    );
   });
 
   it("keeps links when a duplicate import has no selected snapshot date", async () => {
