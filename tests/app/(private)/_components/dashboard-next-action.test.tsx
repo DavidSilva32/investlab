@@ -55,6 +55,32 @@ describe("DashboardNextAction", () => {
     ).toBe("/carteira?view=positions");
   });
 
+  it("prioritizes missing current values over objective identity gaps", () => {
+    expect(
+      getDashboardNextAction({
+        positionCount: 2,
+        missingValueCount: 1,
+        reserveIncomplete: false,
+        objectiveIncomplete: true,
+      })?.kind,
+    ).toBe("missing-values");
+  });
+
+  it("offers one direct action when an objective references missing positions", () => {
+    expect(
+      getDashboardNextAction({
+        positionCount: 2,
+        missingValueCount: 0,
+        reserveIncomplete: false,
+        objectiveIncomplete: true,
+      }),
+    ).toMatchObject({
+      kind: "objective-incomplete",
+      href: "/carteira?panel=objectives",
+      label: "Revisar objetivos",
+    });
+  });
+
   it("offers reserve setup when monthly expenses are not configured", () => {
     expect(
       getDashboardNextAction({

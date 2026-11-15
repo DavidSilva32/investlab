@@ -19,6 +19,7 @@ import {
   CalendarDays,
   ChartNoAxesColumnIncreasing,
   ChartSpline,
+  ChevronDown,
   Minus,
 } from "lucide-react";
 import type {
@@ -33,6 +34,11 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -167,6 +173,14 @@ export function MonthlyPortfolioReview({
             <span className="text-base font-semibold tabular-nums tracking-tight">
               {formatCurrencyCents(review.current.knownValueCents)}
             </span>
+            {showPartialWarning && review && (
+              <span
+                role="status"
+                className="text-xs font-medium text-status-warning"
+              >
+                Comparação parcial: {partialExplanation(review)}
+              </span>
+            )}
             {review.history.length > 1 &&
               review.observedChangeCents !== null && (
                 <span
@@ -275,13 +289,21 @@ export function MonthlyPortfolioReview({
           />
         )}
         {!loading && !error && showPartialWarning && review && (
-          <p
-            className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300"
-            role="status"
-          >
-            <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
-            {partialExplanation(review)}
-          </p>
+          <Collapsible className="border-t pt-2 text-sm text-muted-foreground">
+            <CollapsibleTrigger className="group flex min-h-10 cursor-pointer items-center gap-2 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Por que a comparação é parcial?
+              <ChevronDown
+                aria-hidden="true"
+                className="size-4 transition-transform group-data-[state=open]:rotate-180"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-2 pb-2">
+              {partialDetails(review).map((detail) => (
+                <p key={detail}>{detail}</p>
+              ))}
+              <p>{review.flowSeparation.explanation}</p>
+            </CollapsibleContent>
+          </Collapsible>
         )}
         {!loading && !error && review?.status === "insufficient_values" && (
           <p
@@ -639,4 +661,39 @@ function partialExplanation(review: MonthlyPortfolioReviewData) {
   if (review.valuationMethodCoverage === "unknown")
     return "Não foi possível confirmar o método de avaliação.";
   return "Comparação parcial.";
+}
+
+function partialDetails(review: MonthlyPortfolioReviewData) {
+  const details: string[] = [];
+  if (review.untrackedManualPositionCount > 0)
+    details.push(
+      "Há posições manuais que não foram acompanhadas em todos os fechamentos.",
+    );
+  if (
+    (review.current && review.current.unvaluedPositionCount > 0) ||
+    (review.previous && review.previous.unvaluedPositionCount > 0)
+  )
+    details.push(
+      "Um ou mais fechamentos incluem posições sem valor conhecido.",
+    );
+  if (review.dateAlignment === "unavailable")
+    details.push("Falta a data usada para converter valores em outra moeda.");
+  else if (
+    review.dateAlignment === "outdated" ||
+    review.dateAlignment === "different_dates"
+  )
+    details.push(
+      "Os valores comparados usam datas de avaliação diferentes ou desatualizadas.",
+    );
+  if (review.compositionCoverage === "changed")
+    details.push("A composição da carteira mudou entre os fechamentos.");
+  else if (review.compositionCoverage === "unknown")
+    details.push("Não foi possível confirmar a composição da carteira.");
+  if (review.gapMonths > 0)
+    details.push("Há meses sem fechamento no intervalo exibido.");
+  if (review.valuationMethodCoverage === "changed")
+    details.push("O método de avaliação mudou entre os fechamentos.");
+  else if (review.valuationMethodCoverage === "unknown")
+    details.push("Não foi possível confirmar o método de avaliação.");
+  return details.length ? details : [partialExplanation(review)];
 }
