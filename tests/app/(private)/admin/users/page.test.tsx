@@ -17,7 +17,7 @@ vi.mock("@/app/(private)/admin/users/_components/admin-users-client", () => ({
 describe("AdminUsersPage", () => {
   it("renders the minimal user administration inside the application shell", () => {
     const html = renderToStaticMarkup(<AdminUsersPage />);
-    expect(html).toContain('data-title="Usuários e acessos"');
+    expect(html).toContain('data-title="Pessoas e acessos"');
     expect(html).toContain("Gestão de usuários");
   });
 });

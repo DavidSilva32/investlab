@@ -81,6 +81,14 @@ describe("PrivacyCenter", () => {
     expect(
       screen.getByRole("heading", { name: "Privacidade e dados" }),
     ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "O InvestLab ainda não registra solicitações por esta página.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/fale com o administrador que enviou seu convite/),
+    ).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByText(/versão rascunho-2026-10-17.1/)).toBeTruthy(),
     );

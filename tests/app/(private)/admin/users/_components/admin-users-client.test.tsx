@@ -33,7 +33,9 @@ describe("AdminUsersClient remaining action states", () => {
 
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-    expect(await screen.findAllByText("Nenhum registro.")).toHaveLength(2);
+    expect(
+      await screen.findByText("Nenhum usuário ou convite aguardando ativação."),
+    ).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -47,7 +49,7 @@ describe("AdminUsersClient remaining action states", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<AdminUsersClient />);
-    await screen.findAllByText("Nenhum registro.");
+    await screen.findByText("Nenhum usuário ou convite aguardando ativação.");
     await user.type(
       screen.getByLabelText("E-mail da pessoa convidada"),
       "person@example.com",
@@ -81,6 +83,9 @@ describe("AdminUsersClient remaining action states", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<AdminUsersClient />);
+    await user.click(
+      screen.getByRole("button", { name: "Ferramentas de suporte" }),
+    );
     await screen.findAllByText("person@example.com");
     await user.click(screen.getByRole("button", { name: "Revogar" }));
     await waitFor(() =>
@@ -93,7 +98,9 @@ describe("AdminUsersClient remaining action states", () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Link revogado."),
     );
-    expect(await screen.findAllByText("Nenhum registro.")).toHaveLength(2);
+    await waitFor(() =>
+      expect(screen.queryByText("person@example.com")).toBeNull(),
+    );
   });
 
   it("shows fallback feedback when a revocation rejects with a non-Error value", async () => {
@@ -181,6 +188,7 @@ describe("AdminUsersClient error and link operations", () => {
       }),
     );
     expect(await screen.findByText("Administrador")).toBeTruthy();
+    expect(screen.getAllByText("pending@example.com")).toHaveLength(1);
     expect(screen.getByText(/custom status/)).toBeTruthy();
     await user.type(
       screen.getByLabelText("E-mail da pessoa convidada"),
@@ -220,7 +228,7 @@ describe("AdminUsersClient error and link operations", () => {
       value: { writeText },
     });
     render(<AdminUsersClient />);
-    await screen.findAllByText("Nenhum registro.");
+    await screen.findByText("Nenhum usuário ou convite aguardando ativação.");
     await user.type(
       screen.getByLabelText("E-mail da pessoa convidada"),
       "person@example.com",
@@ -249,14 +257,11 @@ describe("AdminUsersClient administration overview", () => {
 
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(
-      screen.getByText("Contas cadastradas").parentElement?.textContent,
-    ).toContain("—");
-    expect(
-      screen.getByText("Acesso beta vencido").parentElement?.textContent,
-    ).toContain("—");
+      screen.getByText("Os indicadores de acesso não estão disponíveis."),
+    ).toBeTruthy();
   });
 
-  it("shows source-backed account and beta metrics and opens people management", async () => {
+  it("shows source-backed account and beta metrics with a direct link to people management", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -276,17 +281,19 @@ describe("AdminUsersClient administration overview", () => {
         }),
       ),
     );
-    const user = userEvent.setup();
     render(<AdminUsersClient initialTab="overview" />);
 
-    expect(await screen.findByText("Central de operação")).toBeTruthy();
-    expect(screen.getByText("Acesso beta vencido")).toBeTruthy();
-    expect(screen.getByText("Contas cadastradas")).toBeTruthy();
-    expect(screen.getByText("JORNADA DO PARTICIPANTE")).toBeTruthy();
+    expect(await screen.findByText("Visão geral")).toBeTruthy();
+    expect(screen.getByText("Acessos beta")).toBeTruthy();
+    expect(screen.getByText("Pessoas cadastradas")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Gerenciar pessoas e acessos" })
+        .getAttribute("href"),
+    ).toBe("/admin/usuarios");
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(screen.queryByText("JORNADA DO PARTICIPANTE")).toBeNull();
     expect(screen.queryByText(/assinantes pagos/i)).toBeNull();
-
-    await user.click(screen.getByRole("tab", { name: "Pessoas e acessos" }));
-    expect(await screen.findByText("Convidar participante")).toBeTruthy();
   });
 });
 describe("AdminUsersClient", () => {
@@ -298,7 +305,7 @@ describe("AdminUsersClient", () => {
     const user = userEvent.setup();
     const { container } = render(<AdminUsersClient />);
 
-    await screen.findAllByText("Nenhum registro.");
+    await screen.findByText("Nenhum usuário ou convite aguardando ativação.");
     expect(container.firstElementChild?.className).toContain("w-full");
     expect(container.firstElementChild?.className).not.toContain("max-w-5xl");
     await user.click(
@@ -355,6 +362,9 @@ describe("AdminUsersClient", () => {
     ).toBeGreaterThan(0);
     expect(screen.getByText(/Pendente/)).toBeTruthy();
     expect(screen.getByText(/Utilizado/)).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Ferramentas de suporte" }));
     expect(screen.getByText(/Expirado/)).toBeTruthy();
     expect(screen.queryByText(/tokenHash|secret/i)).toBeNull();
   });
@@ -374,7 +384,7 @@ describe("AdminUsersClient", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<AdminUsersClient />);
-    await screen.findAllByText("Nenhum registro.");
+    await screen.findByText("Nenhum usuário ou convite aguardando ativação.");
     await user.type(
       screen.getByLabelText("E-mail da pessoa convidada"),
       "person@example.com",
@@ -424,7 +434,10 @@ describe("AdminUsersClient", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<AdminUsersClient />);
-    await screen.findAllByText("Nenhum registro.");
+    await screen.findByText("Nenhum usuário ou convite aguardando ativação.");
+    await user.click(
+      screen.getByRole("button", { name: "Ferramentas de suporte" }),
+    );
     await user.type(
       screen.getByLabelText(/E-mail da conta cuja identidade foi confirmada/),
       "person@example.com",

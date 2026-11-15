@@ -14,7 +14,6 @@ import {
   CalendarClock,
   LayoutDashboard,
   Menu,
-  Settings,
   UserRoundCog,
   WalletCards,
 } from "lucide-react";
@@ -89,14 +88,13 @@ const navigation = [
   { href: "/estrategia", label: "Estratégia", Icon: Compass },
   { href: "/aprender", label: "Aprender", Icon: BookOpen },
   { href: "/analises", label: "Análises", Icon: BarChart3 },
-  { href: "/configuracoes", label: "Configurações", Icon: Settings },
 ];
 
 const adminNavigation = [
   { href: "/admin", label: "Visão geral" },
   { href: "/admin/usuarios", label: "Pessoas e acessos" },
+  { href: "/configuracoes", label: "Fontes de dados" },
   { href: "/apresentacao", label: "Landing page" },
-  { href: "/demonstracao", label: "Demonstração" },
 ];
 
 function Brand() {
@@ -121,9 +119,7 @@ function Navigation({
   closeOnSelect?: boolean;
 }) {
   const isAdmin = user.role === "ADMIN";
-  const visibleNavigation = isAdmin
-    ? navigation
-    : navigation.filter((item) => item.href !== "/configuracoes");
+  const visibleNavigation = navigation;
   const primaryNavigation = visibleNavigation.filter(
     (item) => item.href === "/dashboard" || item.href === "/financas",
   );
@@ -135,13 +131,10 @@ function Navigation({
   const learningNavigation = visibleNavigation.filter(
     (item) => item.href === "/aprender",
   );
-  const settingsNavigation = visibleNavigation.filter(
-    (item) => item.href === "/configuracoes",
-  );
   const isAdministrationRoute =
     pathname.startsWith("/admin") ||
     pathname === "/apresentacao" ||
-    pathname === "/demonstracao";
+    pathname === "/configuracoes";
   const [adminOpen, setAdminOpen] = useState(isAdministrationRoute);
   const [investmentOpen, setInvestmentOpen] = useState(
     investmentNavigation.some((item) => pathname.startsWith(item.href)),
@@ -214,7 +207,6 @@ function Navigation({
         setInvestmentOpen,
       )}
       {renderLinks(learningNavigation)}
-      {renderLinks(settingsNavigation)}
       {isAdmin && (
         <Collapsible
           open={adminOpen || isAdministrationRoute}

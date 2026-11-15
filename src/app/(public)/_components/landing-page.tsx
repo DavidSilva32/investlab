@@ -1,6 +1,4 @@
-import Link from "next/link";
 import {
-  ArrowRight,
   ChartNoAxesCombined,
   CircleHelp,
   GraduationCap,
@@ -12,7 +10,6 @@ import { LandingHeroSection } from "@/app/(public)/_components/landing-hero-sect
 import { LandingLearningSection } from "@/app/(public)/_components/landing-learning-section";
 import { LandingPlansSection } from "@/app/(public)/_components/landing-plans-section";
 import { LandingProductPreview } from "@/app/(public)/_components/landing-product-preview";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 const benefits = [
@@ -68,17 +65,6 @@ export function LandingPage() {
             </p>
           </div>
           <LandingProductPreview />
-          <div className="mt-7 text-center">
-            <Button asChild size="lg" className="group min-h-12">
-              <Link href="/demonstracao">
-                Abrir a demonstração interativa
-                <ArrowRight
-                  aria-hidden="true"
-                  className="transition-transform group-hover:translate-x-0.5"
-                />
-              </Link>
-            </Button>
-          </div>
         </div>
       </section>
 
@@ -255,32 +241,6 @@ export function LandingPage() {
               </Card>
             ))}
           </div>
-        </div>
-      </section>
-
-      <section className="px-4 pb-16 sm:px-6 sm:pb-20 lg:px-8">
-        <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-6 rounded-2xl border border-primary/20 bg-primary/5 p-6 sm:flex-row sm:items-center sm:p-9">
-          <div className="max-w-2xl">
-            <p className="text-sm font-semibold text-primary">
-              Dê uma olhada por dentro
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              Seu próximo passo pode ser só conhecer.
-            </h2>
-            <p className="mt-2 leading-7 text-muted-foreground">
-              Explore a demonstração com dados fictícios, sem criar conta nem
-              conectar seus dados.
-            </p>
-          </div>
-          <Button asChild size="lg" className="group min-h-12 shrink-0">
-            <Link href="/demonstracao">
-              Explorar a demonstração{" "}
-              <ArrowRight
-                aria-hidden="true"
-                className="transition-transform group-hover:translate-x-0.5"
-              />
-            </Link>
-          </Button>
         </div>
       </section>
     </main>

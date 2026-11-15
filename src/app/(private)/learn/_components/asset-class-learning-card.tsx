@@ -19,12 +19,16 @@ export function AssetClassLearningCard({
 }) {
   const assetClass = strategyAssetClassById[id];
   const content = assetClassLearningContent[id];
+  const courseSummary =
+    content.availability === "available"
+      ? `${content.courseLessons.length} aulas · vídeo e prova final`
+      : "Conteúdo em breve";
 
   return (
     <Link
       href={getLearningClassHref(id)}
       aria-current={selected ? "location" : undefined}
-      aria-label={`Abrir conteúdo sobre ${assetClass.label}`}
+      aria-label={`Abrir conteúdo sobre ${assetClass.label}. ${courseSummary}`}
       className={`group relative flex min-w-[230px] items-center gap-3 rounded-2xl border bg-card p-2.5 transition-all motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-w-0 ${selected ? "border-primary/50 bg-primary/[0.04] shadow-sm ring-1 ring-primary/15" : "border-border/60 hover:border-border hover:bg-muted/30"}`}
       style={{
         borderColor: selected
@@ -51,10 +55,8 @@ export function AssetClassLearningCard({
           >
             {assetClass.label}
           </h3>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {content.availability === "available"
-              ? `${content.courseLessons.length} aulas · prova final`
-              : "Vídeo em breve"}
+          <p className="mt-1 text-xs leading-tight text-muted-foreground">
+            {courseSummary}
           </p>
         </div>
       </div>

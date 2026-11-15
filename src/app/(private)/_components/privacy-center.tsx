@@ -171,37 +171,19 @@ export function PrivacyCenter() {
           <CardHeader>
             <CardTitle>Solicitações e direitos</CardTitle>
             <CardDescription>
-              Você pode solicitar informações ou exercer direitos relacionados
-              aos seus dados pessoais.
+              O InvestLab ainda não registra solicitações por esta página.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
             <p>
-              O canal direto de privacidade e a identidade institucional
-              responsável ainda aguardam confirmação. Até a publicação desses
-              dados, entre em contato com o administrador que enviou seu convite
-              para encaminhar uma solicitação. Esta página não executa
-              automaticamente exportação ou exclusão de dados.
+              Para pedir acesso ou correção de dados, ou encaminhar um pedido de
+              exportação ou exclusão, fale com o administrador que enviou seu
+              convite. Esta página não envia nem acompanha esses pedidos.
             </p>
             <div>
               <p className="font-medium text-foreground">
-                Como encaminhar uma solicitação
+                Não envie senha, token nem extrato financeiro ao pedir ajuda.
               </p>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>
-                  Para acesso ou correção, contate o administrador que enviou
-                  seu convite e informe qual dado precisa ser verificado.
-                </li>
-                <li>
-                  Para exportação ou exclusão, faça o mesmo pedido; a equipe
-                  responsável ainda precisa confirmar a identidade, avaliar
-                  retenção e tratar dados derivados e cópias de segurança.
-                </li>
-                <li>
-                  Não envie senha, token ou extrato financeiro por um canal cuja
-                  identidade ainda não tenha sido confirmada.
-                </li>
-              </ul>
             </div>
             <Link
               href="https://www.gov.br/anpd/pt-br/assuntos/titular-de-dados/direito-dos-titulares"

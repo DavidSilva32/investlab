@@ -49,6 +49,11 @@ describe("LandingPage", () => {
     ).toBe(true);
     expect(
       screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("href") === "/demonstracao"),
+    ).toHaveLength(2);
+    expect(
+      screen
         .getByRole("link", { name: "Entre na sua conta" })
         .getAttribute("href"),
     ).toBe("/entrar");

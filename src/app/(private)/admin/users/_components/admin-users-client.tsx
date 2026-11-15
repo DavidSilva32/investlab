@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Link2, RefreshCw, UserPlus, X } from "lucide-react";
+import { ChevronDown, Copy, Link2, RefreshCw, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   AdminOverview,
@@ -17,7 +17,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   AdminUsersTable,
   type ManagedUser,
@@ -228,19 +232,10 @@ export function AdminUsersClient({
           </Button>
         </div>
       )}
-      <Tabs defaultValue={initialTab} className="space-y-5">
-        <TabsList className="grid h-auto w-full max-w-md grid-cols-2 rounded-xl bg-muted/70 p-1">
-          <TabsTrigger value="overview" className="rounded-lg py-2.5">
-            Visão geral
-          </TabsTrigger>
-          <TabsTrigger value="people" className="rounded-lg py-2.5">
-            Pessoas e acessos
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview" className="mt-0 space-y-5">
-          <AdminOverview stats={data?.stats} />
-        </TabsContent>
-        <TabsContent value="people" className="mt-0 space-y-6">
+      {initialTab === "overview" ? (
+        <AdminOverview stats={data?.stats} loading={loading} />
+      ) : (
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Acessos</CardTitle>
@@ -286,53 +281,78 @@ export function AdminUsersClient({
                 </form>
               </section>
 
-              <section
-                id="password-reset"
-                aria-labelledby="reset-heading"
-                className="space-y-3 border-t pt-5"
-              >
-                <div>
-                  <h2 id="reset-heading" className="text-sm font-semibold">
-                    Redefinição assistida de senha
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Confirme a identidade da pessoa por um canal confiável antes
-                    de gerar o link. Ele permite que ela escolha uma nova senha
-                    e encerra as sessões anteriores.
-                  </p>
-                </div>
-                <form
-                  className="flex flex-col gap-3 sm:flex-row"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void issueLink(
-                      "/api/admin/password-resets",
-                      resetEmail,
-                      "Link para redefinir senha",
-                    );
-                  }}
-                >
-                  <label className="sr-only" htmlFor="reset-email">
-                    E-mail da conta cuja identidade foi confirmada
-                  </label>
-                  <Input
-                    id="reset-email"
-                    type="email"
-                    required
-                    value={resetEmail}
-                    onChange={(event) => setResetEmail(event.target.value)}
-                    placeholder="E-mail da conta após confirmar a identidade"
-                  />
+              <Collapsible className="border-t pt-3">
+                <CollapsibleTrigger asChild>
                   <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={actionLoading}
+                    type="button"
+                    variant="ghost"
+                    className="group w-full justify-between px-2"
                   >
-                    <Link2 aria-hidden="true" className="size-4" />
-                    Gerar link para redefinir senha
+                    Ferramentas de suporte
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="size-4 transition-transform group-data-[state=open]:rotate-180"
+                    />
                   </Button>
-                </form>
-              </section>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3 pt-3">
+                  <section
+                    id="password-reset"
+                    aria-labelledby="reset-heading"
+                    className="space-y-3"
+                  >
+                    <div>
+                      <h3 id="reset-heading" className="text-sm font-semibold">
+                        Redefinir senha
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        Confirme a identidade da pessoa por um canal confiável
+                        antes de gerar o link. O link encerra as sessões
+                        anteriores.
+                      </p>
+                    </div>
+                    <form
+                      className="flex flex-col gap-3 sm:flex-row"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void issueLink(
+                          "/api/admin/password-resets",
+                          resetEmail,
+                          "Link para redefinir senha",
+                        );
+                      }}
+                    >
+                      <label className="sr-only" htmlFor="reset-email">
+                        E-mail da conta cuja identidade foi confirmada
+                      </label>
+                      <Input
+                        id="reset-email"
+                        type="email"
+                        required
+                        value={resetEmail}
+                        onChange={(event) => setResetEmail(event.target.value)}
+                        placeholder="E-mail da conta após confirmar a identidade"
+                      />
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        disabled={actionLoading}
+                      >
+                        <Link2 aria-hidden="true" className="size-4" />
+                        Gerar link para redefinir senha
+                      </Button>
+                    </form>
+                  </section>
+                  <AccessLinkList
+                    title="Links de redefinição de senha"
+                    items={data?.passwordResets ?? []}
+                    onRevoke={(id) =>
+                      void revoke("/api/admin/password-resets/" + id)
+                    }
+                    loading={loading}
+                  />
+                </CollapsibleContent>
+              </Collapsible>
 
               {issuedLink && (
                 <div
@@ -398,7 +418,7 @@ export function AdminUsersClient({
               ) : !data ? null : (
                 <AdminUsersTable
                   users={data.users}
-                  invitations={data.invitations}
+                  invitations={[]}
                   onUpdate={updateUser}
                   onDelete={deleteUser}
                 />
@@ -414,18 +434,10 @@ export function AdminUsersClient({
                 onRevoke={(id) => void revoke(`/api/admin/invitations/${id}`)}
                 loading={loading}
               />
-              <AccessLinkList
-                title="Links de redefinição de senha"
-                items={data?.passwordResets ?? []}
-                onRevoke={(id) =>
-                  void revoke(`/api/admin/password-resets/${id}`)
-                }
-                loading={loading}
-              />
             </>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 }
@@ -441,6 +453,8 @@ function AccessLinkList({
   onRevoke: (id: string) => void;
   loading: boolean;
 }) {
+  if (!loading && items.length === 0) return null;
+
   return (
     <Card>
       <CardHeader>

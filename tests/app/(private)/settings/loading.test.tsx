@@ -14,7 +14,7 @@ describe("SettingsLoading", () => {
   it("uses the placeholder skeleton", () => {
     renderToStaticMarkup(<Loading />);
     expect(pageLoading).toHaveBeenCalledWith(
-      { title: "Configurações", variant: "settings" },
+      { title: "Fontes de dados", variant: "settings" },
       undefined,
     );
   });

@@ -30,7 +30,7 @@ describe("public presentation route", () => {
       screen
         .getAllByRole("link", { name: /Explorar a demonstração/ })
         .map((link) => link.getAttribute("href")),
-    ).toEqual(["/demonstracao", "/demonstracao"]);
+    ).toEqual(["/demonstracao"]);
     expect(
       screen
         .getByRole("link", { name: /Entre na sua conta/ })

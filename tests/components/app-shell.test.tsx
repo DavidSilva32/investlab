@@ -210,12 +210,10 @@ describe("AppShell", () => {
     expect(
       screen.getAllByRole("link", { name: "Landing page" }).length,
     ).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Demonstração" })).toBeNull();
     expect(
-      screen.getAllByRole("link", { name: "Demonstração" }).length,
-    ).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: "Configurações" })).toHaveLength(
-      1,
-    );
+      screen.getAllByRole("link", { name: "Fontes de dados" }),
+    ).toHaveLength(1);
     expect(
       screen
         .getAllByRole("link", { name: "Pessoas e acessos" })

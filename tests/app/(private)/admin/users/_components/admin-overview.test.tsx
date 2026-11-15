@@ -19,93 +19,78 @@ const stats: AdminStats = {
 };
 
 describe("AdminOverview", () => {
-  it("renders metrics and account states from the server summary", () => {
-    render(<AdminOverview stats={stats} />);
+  it("shows only useful account totals and directs the admin to the people list", () => {
+    render(<AdminOverview stats={stats} loading={false} />);
 
-    expect(screen.getByText("Central de operação")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Visão geral" })).toBeTruthy();
     expect(
-      screen.getByText("Contas cadastradas").parentElement?.textContent,
+      screen.getByRole("region", { name: "Resumo de pessoas e acessos" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Pessoas cadastradas").parentElement?.textContent,
     ).toContain("12");
     expect(
-      screen.getByText("Aguardando ativação").parentElement?.textContent,
-    ).toContain("2");
+      screen.getByText("Contas ativas").parentElement?.textContent,
+    ).toContain("8");
     expect(
-      screen.getByRole("img", { name: "Ativas: 8 de 12 contas" }),
-    ).toBeTruthy();
-  });
-
-  it("marks missing metrics unavailable rather than reporting zero", () => {
-    render(<AdminOverview stats={undefined} />);
-
+      screen.getByText("Convites aguardando").parentElement?.textContent,
+    ).toContain("4");
     expect(
-      screen.getByText("Contas cadastradas").parentElement?.textContent,
-    ).toContain("—");
-    expect(
-      screen.getByRole("img", { name: "Ativas: dados indisponíveis" }),
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent?.replace(/\s+/g, " ").trim() ===
+            "3 acessos vencem em 7 dias · 1 acesso vencido",
+      ),
     ).toBeTruthy();
     expect(
-      screen.getByText("Vencem em 7 dias").parentElement?.textContent,
-    ).toContain("—");
+      screen
+        .getByRole("link", { name: "Gerenciar pessoas e acessos" })
+        .getAttribute("href"),
+    ).toBe("/admin/usuarios");
+    expect(screen.queryByText("JORNADA DO PARTICIPANTE")).toBeNull();
+    expect(screen.queryByText("Estado das contas")).toBeNull();
   });
 
-  it("renders empty account metrics without inventing progress", () => {
-    render(
+  it("distinguishes loading, unavailable metrics, and no access attention", () => {
+    const { rerender } = render(
+      <AdminOverview stats={undefined} loading={true} />,
+    );
+    expect(screen.getByText("Consultando acessos…")).toBeTruthy();
+
+    rerender(<AdminOverview stats={undefined} loading={false} />);
+    expect(
+      screen.getByText("Os indicadores de acesso não estão disponíveis."),
+    ).toBeTruthy();
+
+    rerender(
       <AdminOverview
         stats={{
-          totalUsers: 0,
-          activeUsers: 0,
-          pendingUsers: 0,
-          disabledUsers: 0,
+          ...stats,
           expiringTrials: 0,
           expiredTrials: 0,
-          invitationsPending: 0,
         }}
+        loading={false}
       />,
     );
-
     expect(
-      screen.getByRole("img", { name: "Ativas: 0 de 0 contas" }),
+      screen.getByText("Nenhum acesso precisa de atenção agora."),
     ).toBeTruthy();
-  });
 
-  it("uses zero fallbacks when an older summary omits access counts", () => {
-    render(
+    rerender(
       <AdminOverview
-        stats={
-          {
-            ...stats,
-            activeUsers: undefined,
-            pendingUsers: undefined,
-            disabledUsers: undefined,
-          } as unknown as AdminStats
-        }
+        stats={{ ...stats, invitationsPending: 0 }}
+        loading={false}
       />,
     );
+    expect(screen.queryByText("Convites aguardando")).toBeNull();
 
-    expect(
-      screen.getByRole("img", { name: "Ativas: 0 de 0 contas" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("img", { name: "Aguardando ativação: 0 de 0 contas" }),
-    ).toBeTruthy();
-  });
-
-  it("calculates an omitted state as zero when other accounts are counted", () => {
-    render(
+    rerender(
       <AdminOverview
-        stats={
-          {
-            ...stats,
-            activeUsers: undefined,
-            pendingUsers: 2,
-            disabledUsers: 0,
-          } as unknown as AdminStats
-        }
+        stats={{ ...stats, invitationsPending: 1 }}
+        loading={false}
       />,
     );
-
-    expect(
-      screen.getByRole("img", { name: "Ativas: 0 de 2 contas" }),
-    ).toBeTruthy();
+    expect(screen.getByText("Convites aguardando")).toBeTruthy();
   });
 });

@@ -35,18 +35,20 @@ vi.mock("@/app/(private)/settings/_components/market-data-settings", () => ({
 describe("SettingsPage", () => {
   it("groups both independent data-source panels beneath one page heading", async () => {
     const { container } = render(await SettingsPage());
-    expect(screen.getByRole("heading", { name: /Configura/ })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Fontes de dados" }),
+    ).toBeTruthy();
     expect(container.querySelector("main > div")?.className).toBe(
       "w-full space-y-5",
     );
     expect(
-      screen.getByRole("heading", { name: "Fontes das análises" }),
+      screen.getByRole("heading", { name: "Atualizações das análises" }),
     ).toBeTruthy();
     expect(
       screen.queryByText(
-        "Consulte o estado e atualize as fontes que alimentam as análises.",
+        "Consulte e atualize os dados usados nas análises do InvestLab.",
       ),
-    ).toBeNull();
+    ).toBeTruthy();
     const panels = container.querySelectorAll("main section");
     expect(panels).toHaveLength(2);
     expect(panels[0]?.parentElement?.className).toContain("space-y-5");

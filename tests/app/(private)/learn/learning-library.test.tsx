@@ -29,12 +29,12 @@ describe("LearningLibrary", () => {
     expect(
       screen
         .getByRole("link", {
-          name: "Abrir conteúdo sobre Fundos imobiliários (FIIs)",
+          name: /Abrir conteúdo sobre Fundos imobiliários \(FIIs\)/,
         })
         .getAttribute("href"),
     ).toBe("/aprender?class=fiis#class-content");
     const selectedCard = screen.getByRole("link", {
-      name: "Abrir conteúdo sobre Fundos imobiliários (FIIs)",
+      name: /Abrir conteúdo sobre Fundos imobiliários \(FIIs\)/,
     });
     expect(selectedCard.className).toContain(
       "motion-safe:hover:-translate-y-0.5",
@@ -42,7 +42,7 @@ describe("LearningLibrary", () => {
     expect(
       screen
         .getByRole("link", {
-          name: "Abrir conteúdo sobre Fundos imobiliários (FIIs)",
+          name: /Abrir conteúdo sobre Fundos imobiliários \(FIIs\)/,
         })
         .getAttribute("aria-current"),
     ).toBe("location");
@@ -70,7 +70,7 @@ describe("LearningLibrary", () => {
     expect(
       detail.compareDocumentPosition(
         screen.getByRole("link", {
-          name: "Abrir conteúdo sobre Fundos imobiliários (FIIs)",
+          name: /Abrir conteúdo sobre Fundos imobiliários \(FIIs\)/,
         }),
       ) & Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
@@ -121,30 +121,23 @@ describe("AssetClassLearningCard", () => {
       "international_etfs",
       "fixed_income",
     ] as const) {
-      const card = screen.getByRole("link", {
-        name: `Abrir conteúdo sobre ${
-          id === "fiis"
-            ? "Fundos imobiliários (FIIs)"
-            : id === "brazilian_equities"
-              ? "Ações e BDRs"
-              : id === "international_etfs"
-                ? "ETFs internacionais"
-                : "Renda fixa"
-        }`,
-      });
-      expect(card.getAttribute("href")).toBe(
-        `/aprender?class=${id}#class-content`,
-      );
-      expect(card.textContent).toContain(
+      const href = "/aprender?class=" + id + "#class-content";
+      const card = screen
+        .getAllByRole("link", { name: /Abrir conteúdo sobre/ })
+        .find((link) => link.getAttribute("href") === href);
+      expect(card).toBeTruthy();
+      expect(card?.getAttribute("href")).toBe(href);
+      expect(card?.textContent).toContain(
         assetClassLearningContent[id].availability === "available"
-          ? `${assetClassLearningContent[id].courseLessons.length} aulas · prova final`
-          : "Vídeo em breve",
+          ? assetClassLearningContent[id].courseLessons.length +
+              " aulas · vídeo e prova final"
+          : "Conteúdo em breve",
       );
-      expect(card.querySelector("img")?.getAttribute("src")).toContain(
+      expect(card?.querySelector("img")?.getAttribute("src")).toContain(
         assetClassLearningContent[id].imageSrc,
       );
-      expect(card.querySelectorAll("img")).toHaveLength(1);
-      expect(card.querySelector("video")).toBeNull();
+      expect(card?.querySelectorAll("img")).toHaveLength(1);
+      expect(card?.querySelector("video")).toBeNull();
     }
   });
 });
