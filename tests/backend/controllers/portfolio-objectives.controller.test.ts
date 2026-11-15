@@ -268,6 +268,18 @@ describe("PortfolioObjectivesController", () => {
       message:
         "Saldo salvo. Os vínculos desse objetivo já correspondiam ao valor informado.",
     },
+    {
+      title: "reports a regular objective assignment that already matches",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        changedPositionCount: 0,
+        transferredPositionCount: 0,
+        objectiveName: "Viagem",
+      },
+      message:
+        "Saldo salvo. Os vínculos de Viagem já correspondiam às posições mais próximas.",
+    },
   ])("$title", async ({ value, message }) => {
     balanceService.save.mockResolvedValue(value);
 
