@@ -148,7 +148,13 @@ export class ImportService {
   }
 
   preview(file: { name: string; size: number; type: string; buffer: Buffer }) {
-    importFileSchema.parse(file);
+    const validatedFile = importFileSchema.safeParse(file);
+    if (!validatedFile.success) {
+      throw new ApplicationError(
+        "Selecione um arquivo XLSX válido de até 5 MB.",
+        400,
+      );
+    }
     const parsed = parseB3Xlsx(file.buffer);
     return {
       hash: createHash("sha256").update(file.buffer).digest("hex"),
@@ -700,6 +706,11 @@ export class ImportService {
     if (itemId !== null) {
       if (!z.string().uuid().safeParse(itemId).success)
         throw new ApplicationError("Identificador de registro inválido.", 400);
+      if (documentType === "B3_TRADING_XLSX")
+        throw new ApplicationError(
+          "Exclusão individual não está disponível para arquivos de negociações.",
+          400,
+        );
       if (documentType === "B3_POSITION_XLSX") {
         await importRepository.deleteLatestPosition(itemId, requestId);
         return { message: "Posição removida do fechamento atual." };

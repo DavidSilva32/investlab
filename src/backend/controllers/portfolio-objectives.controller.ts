@@ -30,11 +30,13 @@ export class PortfolioObjectivesController {
 
   async create(body: unknown, requestId: string) {
     const objective = await portfolioObjectivesService.create(body);
+    const { userId, ...responseObjective } = objective;
+    void userId;
     logger.info("portfolio_objective_created", {
       requestId,
       objectiveId: objective.id,
     });
-    return Response.json(objective, { status: 201 });
+    return Response.json(responseObjective, { status: 201 });
   }
 
   async updateAssignments(body: unknown, requestId: string) {
@@ -106,11 +108,13 @@ export class PortfolioObjectivesController {
       input.objectiveId,
       body,
     );
+    const { userId, ...responseObjective } = objective;
+    void userId;
     logger.info("portfolio_objective_updated", {
       requestId,
       objectiveId: objective.id,
     });
-    return Response.json(objective);
+    return Response.json(responseObjective);
   }
 
   async saveObservedBalance(body: unknown, requestId: string) {

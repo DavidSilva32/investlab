@@ -43,6 +43,8 @@ describe("optimistic authentication proxy", () => {
       "/privacidade",
       "/cookies",
       "/mcp",
+      "/docs/api",
+      "/api/openapi.json",
       "/api/auth/public-signup",
       "/mcp/consent",
       "/.well-known/oauth-authorization-server",
