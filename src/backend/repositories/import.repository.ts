@@ -695,11 +695,10 @@ export class ImportRepository {
           );
           if (
             decisionKeys.size !== decisions.length ||
-            decisions.length !== candidates.length ||
-            candidates.some(
-              (candidate) =>
-                !decisions.some(
-                  (decision) =>
+            decisions.some(
+              (decision) =>
+                !candidates.some(
+                  (candidate) =>
                     decision.manualAssetKey === candidate.manualAssetKey &&
                     decision.importedAssetKey === candidate.importedAssetKey &&
                     decision.manualUpdatedAt === candidate.manualUpdatedAt,

@@ -536,19 +536,6 @@ export function PortfolioImport({
       item.preview?.documentType === "B3_POSITION_XLSX" &&
       Boolean(item.preview.referenceDateConflict),
   );
-  const hasUnresolvedReconciliation = items.some(
-    (item) =>
-      item.preview?.documentType === "B3_POSITION_XLSX" &&
-      item.preview.reconciliationCandidates?.some(
-        (candidate) =>
-          !item.reconciliationDecisions?.some(
-            (decision) =>
-              decision.manualAssetKey === candidate.manualAssetKey &&
-              decision.importedAssetKey === candidate.importedAssetKey,
-          ),
-      ),
-  );
-
   function updateReconciliation(
     file: File,
     group: ReconciliationGroup,
@@ -739,8 +726,7 @@ export function PortfolioImport({
               disabled={
                 loading ||
                 hasMissingPositionReferenceDate ||
-                hasReferenceDateConflict ||
-                hasUnresolvedReconciliation
+                hasReferenceDateConflict
               }
               onClick={confirm}
             >
@@ -1184,7 +1170,10 @@ function PositionPreview({
                 Correspondências possíveis
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Escolher uma vincula essa e marca as demais como distintas; a
+                Opcional: confirme somente correspondências entre posições
+                manuais e da B3 quando tiver certeza. Sem escolha, nenhum
+                vínculo entre elas será criado. Vínculos com objetivos de ativos
+                ausentes só serão encerrados se o aviso abaixo informar isso. A
                 ordem não confirma identidade.
               </p>
             </div>

@@ -1026,7 +1026,6 @@ describe("import repository", () => {
   );
   it.each(
     [
-      [],
       [{ ...validDecision, manualUpdatedAt: "stale" }],
       [{ ...validDecision, manualAssetKey: "missing" }],
       [{ ...validDecision, importedAssetKey: "missing" }],
@@ -1045,6 +1044,52 @@ describe("import repository", () => {
       expect(transaction.insert).not.toHaveBeenCalled();
     },
   );
+  it("imports the snapshot without adding reconciliation events when candidates are left unresolved", async () => {
+    const { transaction, audit } = reconciliationTransaction();
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+    expect(audit).toEqual([]);
+    expect(transaction.insert).not.toHaveBeenCalledWith(
+      positionReconciliationEvents,
+    );
+  });
+  it("applies only the explicitly chosen link when other candidates remain ambiguous", async () => {
+    mocks.forcedCandidates = [
+      {
+        manualAssetKey: "manual:1",
+        importedAssetKey: reconciliationKey,
+        manualUpdatedAt: reconciliationManual.updatedAt.toISOString(),
+        status: "probable",
+      },
+      {
+        manualAssetKey: "manual:2",
+        importedAssetKey: `v1:${"b".repeat(64)}`,
+        manualUpdatedAt: "2026-09-01T00:00:00.000Z",
+        status: "conflict",
+      },
+    ];
+    const { audit } = reconciliationTransaction();
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        reconciliationDecisions: [validDecision],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toEqual([
+      expect.objectContaining({
+        manualAssetKey: validDecision.manualAssetKey,
+        importedAssetKey: validDecision.importedAssetKey,
+        status: "LINK",
+      }),
+    ]);
+  });
   it("recomputes and accepts a normalized product candidate when the manual CDB has no certificate code", async () => {
     const manual = {
       ...reconciliationManual,
@@ -1087,48 +1132,65 @@ describe("import repository", () => {
       ],
     ]);
   });
-  it.each(["omitted", "stale"] as const)(
-    "rejects a %s decision for a recomputed missing-code candidate",
-    async (decisionState) => {
-      const manual = {
-        ...reconciliationManual,
-        product: "CDB Banco Inter",
-        assetCode: null,
-        institution: "Banco Inter",
-        updatedAt: new Date("2026-10-01T12:00:00Z"),
-      };
-      const importedPosition = {
-        ...reconciliationPosition,
-        product: "CDB - BANCO INTER S/A",
-        assetCode: "CDBA266ZVZV",
-        institution: "Banco Inter",
-      };
-      const { transaction } = reconciliationTransaction([manual]);
-      const candidateDecision = {
-        ...validDecision,
-        importedAssetKey: getEmergencyReserveAssetKey(importedPosition),
-        manualUpdatedAt: manual.updatedAt.toISOString(),
-      };
-      const suppliedDecisions =
-        decisionState === "omitted"
-          ? []
-          : [
-              {
-                ...candidateDecision,
-                manualUpdatedAt: "2026-09-01T00:00:00.000Z",
-              },
-            ];
+  it("allows a recomputed missing-code candidate to remain unresolved during import", async () => {
+    const manual = {
+      ...reconciliationManual,
+      product: "CDB Banco Inter",
+      assetCode: null,
+      institution: "Banco Inter",
+      updatedAt: new Date("2026-10-01T12:00:00Z"),
+    };
+    const importedPosition = {
+      ...reconciliationPosition,
+      product: "CDB - BANCO INTER S/A",
+      assetCode: "CDBA266ZVZV",
+      institution: "Banco Inter",
+    };
+    const { transaction, audit } = reconciliationTransaction([manual]);
 
-      await expect(
-        importRepository.create({
-          ...reconciliationInput,
-          positions: [importedPosition] as never,
-          reconciliationDecisions: suppliedDecisions,
-        }),
-      ).rejects.toMatchObject({ statusCode: 409 });
-      expect(transaction.insert).not.toHaveBeenCalled();
-    },
-  );
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [importedPosition] as never,
+        reconciliationDecisions: [],
+      }),
+    ).resolves.toMatchObject({ snapshotId: "snapshot" });
+    expect(audit).toEqual([]);
+    expect(transaction.insert).not.toHaveBeenCalledWith(
+      positionReconciliationEvents,
+    );
+  });
+  it("rejects a stale decision for a recomputed missing-code candidate", async () => {
+    const manual = {
+      ...reconciliationManual,
+      product: "CDB Banco Inter",
+      assetCode: null,
+      institution: "Banco Inter",
+      updatedAt: new Date("2026-10-01T12:00:00Z"),
+    };
+    const importedPosition = {
+      ...reconciliationPosition,
+      product: "CDB - BANCO INTER S/A",
+      assetCode: "CDBA266ZVZV",
+      institution: "Banco Inter",
+    };
+    const { transaction } = reconciliationTransaction([manual]);
+
+    await expect(
+      importRepository.create({
+        ...reconciliationInput,
+        positions: [importedPosition] as never,
+        reconciliationDecisions: [
+          {
+            ...validDecision,
+            importedAssetKey: getEmergencyReserveAssetKey(importedPosition),
+            manualUpdatedAt: "2026-09-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
   it.each(["link", "separate"] as const)(
     "atomically appends %s audit events with the B3 snapshot",
     async (action) => {

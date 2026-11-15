@@ -1595,7 +1595,7 @@ describe("PortfolioImport", () => {
   });
 });
 
-it("requires a decision per manual position and submits explicit pair decisions", async () => {
+it("allows importing with unresolved candidates and submits explicit pair decisions", async () => {
   const candidates = ["probable", "unequivocal", "conflict"].map(
     (status, index) => ({
       manualAssetKey: `manual:${index}`,
@@ -1640,7 +1640,7 @@ it("requires a decision per manual position and submits explicit pair decisions"
     { target: { value: "18/09/2026" } },
   );
   const confirm = screen.getByRole("button", { name: /Confirmar 1 arquivo/ });
-  expect(confirm.hasAttribute("disabled")).toBe(true);
+  expect(confirm.hasAttribute("disabled")).toBe(false);
   const candidateHeading = screen.getByRole("heading", {
     name: "Correspondências possíveis",
   });
@@ -1684,6 +1684,59 @@ it("requires a decision per manual position and submits explicit pair decisions"
       action: index === 2 ? "separate" : "link",
     })),
   );
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+it("imports a position snapshot without submitting unresolved reconciliation decisions", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ...positionPreview,
+        reconciliationCandidates: [
+          {
+            manualAssetKey: "manual:1",
+            importedAssetKey: "b3:1",
+            status: "conflict",
+            manualUpdatedAt: "2026-10-01T12:00:00Z",
+            manualProduct: "CDB manual",
+            importedProduct: "CDB B3",
+            manualAssetCode: null,
+            importedAssetCode: "CERT-1",
+            manualInstitution: "Banco",
+            manualValue: "10",
+            importedValue: "11",
+            institution: "Banco",
+            reasons: ["different_values"],
+          },
+        ],
+      }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ message: "Concluído" }),
+    });
+  vi.stubGlobal("fetch", fetch);
+  const { container } = render(<PortfolioImport />);
+  fireEvent.change(container.querySelector('input[type="file"]')!, {
+    target: { files: [spreadsheet("posicoes.xlsx")] },
+  });
+  await screen.findByRole("heading", { name: "Correspondências possíveis" });
+  expect(
+    screen.getByText(
+      /Vínculos com objetivos de ativos ausentes só serão encerrados se o aviso abaixo informar isso\./,
+    ),
+  ).toBeTruthy();
+  fireEvent.change(
+    screen.getByRole("textbox", { name: /^Data exibida na B3/ }),
+    { target: { value: "18/09/2026" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Confirmar 1 arquivo/ }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  const form = fetch.mock.calls[1][1].body as FormData;
+  expect(form.has("reconciliationDecisions")).toBe(false);
   cleanup();
   vi.restoreAllMocks();
 });
