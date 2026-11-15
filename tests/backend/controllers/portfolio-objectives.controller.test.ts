@@ -72,14 +72,17 @@ describe("PortfolioObjectivesController", () => {
   });
 
   it("creates an objective with a 201 response", async () => {
-    const objective = { id: "goal-1", name: "Viagem" };
+    const objective = { id: "goal-1", name: "Viagem", userId: "user-1" };
     service.create.mockResolvedValue(objective);
     const response = await new PortfolioObjectivesController().create(
       { name: "Viagem" },
       "r2",
     );
     expect(response.status).toBe(201);
-    await expect(response.json()).resolves.toEqual(objective);
+    await expect(response.json()).resolves.toEqual({
+      id: "goal-1",
+      name: "Viagem",
+    });
   });
 
   it("saves an observed objective balance and logs its date", async () => {
@@ -383,7 +386,7 @@ describe("PortfolioObjectivesController", () => {
   });
 
   it("updates objective details and deletes a custom objective", async () => {
-    const objective = { id: "goal-1", name: "Carro" };
+    const objective = { id: "goal-1", name: "Carro", userId: "user-1" };
     service.update.mockResolvedValue(objective);
     service.delete.mockResolvedValue(objective);
     const controller = new PortfolioObjectivesController();
@@ -393,7 +396,10 @@ describe("PortfolioObjectivesController", () => {
       "r6",
     );
     expect(updateResponse.status).toBe(200);
-    await expect(updateResponse.json()).resolves.toEqual(objective);
+    await expect(updateResponse.json()).resolves.toEqual({
+      id: "goal-1",
+      name: "Carro",
+    });
     expect(service.update).toHaveBeenCalledWith("goal-1", {
       objectiveId: "goal-1",
       name: "Carro",

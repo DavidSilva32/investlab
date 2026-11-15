@@ -15,6 +15,8 @@ const publicPaths = new Set([
   "/cookies",
   "/mcp",
   "/mcp/consent",
+  "/docs/api",
+  "/api/openapi.json",
   "/api/auth/login",
   "/api/auth/public-signup",
   "/api/auth/logout",

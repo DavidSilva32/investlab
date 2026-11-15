@@ -74,6 +74,26 @@ describe("ImportService", () => {
     });
   });
 
+  it.each([
+    { ...file, name: "b3.csv" },
+    { ...file, size: 5 * 1024 * 1024 + 1 },
+  ])(
+    "rejects unsupported preview files as a client-safe 400",
+    (invalidFile) => {
+      let thrown: unknown;
+      try {
+        importService.preview(invalidFile);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ApplicationError);
+      expect(thrown).toMatchObject({
+        message: "Selecione um arquivo XLSX válido de até 5 MB.",
+        statusCode: 400,
+      });
+    },
+  );
+
   it("keeps the detected movement document in its preview", () => {
     parser.mockReturnValue({
       documentType: "B3_MOVEMENT_XLSX",
@@ -1697,6 +1717,22 @@ describe("individual import deletion", () => {
       validId,
       "request-movement",
     );
+    expect(repository.deleteLatestPosition).not.toHaveBeenCalled();
+  });
+
+  it("rejects individual deletion for B3 trading imports", async () => {
+    let thrown: unknown;
+    try {
+      await importService.delete("B3_TRADING_XLSX", "request-trading", validId);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ApplicationError);
+    expect(thrown).toMatchObject({ statusCode: 400 });
+    expect((thrown as Error).message).toBe(
+      "Exclusão individual não está disponível para arquivos de negociações.",
+    );
+    expect(repository.deleteUnreconciledMovement).not.toHaveBeenCalled();
     expect(repository.deleteLatestPosition).not.toHaveBeenCalled();
   });
 

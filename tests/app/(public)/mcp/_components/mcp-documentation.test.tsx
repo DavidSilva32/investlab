@@ -196,6 +196,18 @@ describe("McpDocumentation", () => {
       },
       { tab: "Simulação e mercado", tools: ["get_b3_market_quotes"] },
       {
+        tab: "Atualização de dados",
+        tools: [
+          "write_create_objective",
+          "write_update_objective",
+          "write_delete_objective",
+          "write_save_observed_balance",
+          "write_create_manual_position",
+          "write_update_manual_position",
+          "write_delete_manual_position",
+        ],
+      },
+      {
         tab: "Administração",
         tools: [
           "admin_list_users",
@@ -232,7 +244,7 @@ describe("McpDocumentation", () => {
     expect(screen.getAllByText(/perfil ADMIN/).length).toBeGreaterThan(0);
   });
 
-  it("explains access scopes, read-only limits, and the generic client guide", () => {
+  it("explains read, write, and admin scopes and the write-tool limits", () => {
     render(<McpDocumentation endpoint={publicMcpEndpoint} />);
     selectTab(/Acesso e limites/);
 
@@ -241,14 +253,16 @@ describe("McpDocumentation", () => {
       within(panel).getByRole("heading", { name: "mcp:read" }),
     ).toBeTruthy();
     expect(
+      within(panel).getByRole("heading", { name: "mcp:write" }),
+    ).toBeTruthy();
+    expect(
       within(panel).getByRole("heading", { name: "mcp:admin:read" }),
     ).toBeTruthy();
     expect(
       within(panel).getByText(
-        /Não há ferramentas para gravar ou excluir dados/,
+        /As ferramentas alteram apenas os dados da conta conectada/,
       ),
     ).toBeTruthy();
-    expect(within(panel).getByText(/use o guia geral da seção/)).toBeTruthy();
     expect(
       within(panel)
         .getByRole("link", { name: "suporte do ChatGPT" })

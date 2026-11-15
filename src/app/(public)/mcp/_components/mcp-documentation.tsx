@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { McpConnectionValues } from "@/app/(public)/mcp/_components/mcp-connection-values";
 import { McpOtherClientGuide } from "@/app/(public)/mcp/_components/mcp-other-client-guide";
+import { mcpToolGroups as toolGroups } from "@/infrastructure/mcp/mcp-tool-catalog";
 
 const connectionSteps = [
   {
@@ -36,172 +37,7 @@ const connectionSteps = [
   {
     title: "Escolha OAuth e autorize",
     description:
-      "Deixe as opções avançadas no modo automático. Entre no InvestLab, revise as permissões de leitura e autorize. Depois, selecione InvestLab em uma conversa nova e faça uma pergunta sobre algo do catálogo abaixo.",
-  },
-];
-
-const toolGroups = [
-  {
-    id: "portfolio",
-    label: "Carteira",
-    description: "Posições, movimentações e distribuição da conta conectada.",
-    permission: "mcp:read",
-    tools: [
-      {
-        name: "get_my_portfolio",
-        description:
-          "Consulta posições importadas e manuais e movimentações registradas da conta conectada.",
-        input: "Sem parâmetros.",
-        output:
-          "Carteira e movimentações disponíveis para a conta autenticada.",
-      },
-      {
-        name: "list_my_manual_positions",
-        description: "Lista as posições manuais da conta conectada.",
-        input: "Sem parâmetros.",
-        output: "Lista de posições manuais; não inclui dados de outras contas.",
-      },
-      {
-        name: "get_my_portfolio_allocation",
-        description:
-          "Consulta distribuição e concentração por ativo, classe, subclasse e geografia, junto das metas cadastradas.",
-        input: "Sem parâmetros.",
-        output:
-          "Distribuição e concentrações disponíveis; não retorna cada posição individual.",
-      },
-    ],
-  },
-  {
-    id: "planning",
-    label: "Planejamento",
-    description:
-      "Reserva de emergência, objetivos e estratégia de longo prazo.",
-    permission: "mcp:read",
-    tools: [
-      {
-        name: "get_my_emergency_reserve",
-        description:
-          "Consulta o resumo da Reserva. Quando há saldo observado, cobertura e progresso usam esse valor; sem observação, usam as posições vinculadas.",
-        input: "Sem parâmetros.",
-        output:
-          "Valor usado, fonte e data, despesas mensais, meta e cobertura disponível.",
-      },
-      {
-        name: "get_my_objectives",
-        description:
-          "Consulta objetivos financeiros. Na Reserva, currentValue é o saldo observado mais recente e knownValue é o subtotal das posições vinculadas; os totais da carteira continuam baseados nas posições. Para outros objetivos, currentValue e knownValue são valores conhecidos das posições.",
-        input: "Sem parâmetros.",
-        output:
-          "Resumo dos objetivos. Não retorna posições detalhadas por objetivo.",
-      },
-      {
-        name: "get_my_long_term_strategy",
-        description:
-          "Consulta patrimônio classificado, alocação, metas e qualidade das datas de avaliação da estratégia de longo prazo.",
-        input: "Sem parâmetros.",
-        output: "Estado e composição disponíveis da estratégia cadastrada.",
-      },
-      {
-        name: "simulate_objective_projection",
-        description:
-          "Calcula saldo futuro ou aporte mensal necessário com as premissas informadas.",
-        input:
-          "mode: project_balance com startingAmount e monthlyContribution; ou required_contribution com targetBasis e targetAmount. Ambos recebem horizonYears (1–100), annualReturnPercent e annualInflationPercent (> -100 e até 1.000), adjustContributionsForInflation. Valores monetários aceitam de zero a R$ 1 trilhão. Não consulta a carteira.",
-        output:
-          "Valores projetados nominais e em poder de compra, total investido e pontos mensais/anuais. No modo de aporte necessário, informa o aporte mensal calculado. Contribuições consideradas no fim do mês. Cenário hipotético; não é previsão nem recomendação financeira.",
-      },
-    ],
-  },
-  {
-    id: "activity",
-    label: "Acompanhamento",
-    description:
-      "Fechamento mensal e janela recente de operações e conciliação.",
-    permission: "mcp:read",
-    tools: [
-      {
-        name: "get_my_monthly_portfolio_review",
-        description:
-          "Compara o fechamento selecionado com o anterior e indica alinhamento, cobertura e limitações.",
-        input:
-          "period: opcional, formato AAAA-MM. Sem período, usa o fechamento mais recente disponível.",
-        output:
-          "Revisão mensal disponível; variação patrimonial não equivale a rentabilidade.",
-      },
-      {
-        name: "get_my_operations_and_reconciliation",
-        description:
-          "Consulta operações manuais, movimentações B3 e eventos recentes de conciliação.",
-        input: "Sem parâmetros.",
-        output:
-          "Até 50 itens por categoria em ordem decrescente, com indicação hasMore. Não calcula candidatos nem altera dados.",
-      },
-    ],
-  },
-  {
-    id: "market",
-    label: "Simulação e mercado",
-    description: "Projeção hipotética e consulta limitada de cotações B3.",
-    permission: "mcp:read",
-    tools: [
-      {
-        name: "get_b3_market_quotes",
-        description: "Consulta cotações informativas de ativos listados na B3.",
-        input:
-          "tickers: de 1 a 10 códigos B3, como PETR4. Letras são normalizadas para maiúsculas.",
-        output:
-          "Nome, preço e horário observado; ativos indisponíveis podem ser sinalizados. Sem histórico, fundamentos ou preço em tempo real.",
-      },
-    ],
-  },
-  {
-    id: "admin",
-    label: "Administração",
-    description:
-      "Leituras adicionais para contas com perfil ADMIN e autorização explícita.",
-    permission: "mcp:admin:read",
-    tools: [
-      {
-        name: "admin_list_users",
-        description: "Lista dados básicos de contas em páginas para navegação.",
-        input:
-          "page: inteiro de 1 a 50.000 (padrão 1); pageSize: inteiro de 1 a 50 (padrão 20).",
-        output:
-          "Uma página de dados básicos. Selecione uma conta antes de abrir seus dados financeiros.",
-      },
-      {
-        name: "admin_search_users",
-        description: "Localiza contas por nome ou e-mail.",
-        input:
-          "query: 2 a 120 caracteres; page: inteiro de 1 a 50.000 (padrão 1); pageSize: inteiro de 1 a 50 (padrão 20).",
-        output:
-          "Resultados paginados com dados básicos para identificar a conta.",
-      },
-      {
-        name: "admin_get_user_portfolio",
-        description:
-          "Consulta carteira e movimentações de uma conta selecionada explicitamente.",
-        input: "targetUserId: identificador explícito, de 1 a 255 caracteres.",
-        output: "Carteira e movimentações da conta selecionada.",
-      },
-      {
-        name: "admin_get_user_operations",
-        description:
-          "Consulta a janela recente de operações, movimentações e eventos de conciliação de uma conta selecionada.",
-        input: "targetUserId: identificador explícito, de 1 a 255 caracteres.",
-        output:
-          "Até 50 itens por categoria e hasMore. Eventos não representam necessariamente vínculos atuais; sem candidatos calculados.",
-      },
-      {
-        name: "admin_get_user_financial_snapshot",
-        description:
-          "Combina leituras de carteira, objetivos, estratégia, alocação, reserva e revisão mensal.",
-        input:
-          "targetUserId: identificador explícito, de 1 a 255 caracteres; period: opcional, formato AAAA-MM.",
-        output:
-          "Resumo financeiro da conta selecionada para o período disponível.",
-      },
-    ],
+      "Deixe as opções avançadas no modo automático. Entre no InvestLab e autorize apenas os escopos de que precisa. mcp:read consulta seus dados; mcp:write também pode alterá-los e deve ser concedido apenas quando necessário.",
   },
 ];
 
@@ -508,7 +344,9 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                           {tool.name}
                         </h3>
                         <span className="rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary">
-                          Somente leitura
+                          {group.permission === "mcp:write"
+                            ? "Pode alterar dados"
+                            : "Somente leitura"}
                         </span>
                       </div>
                       <p className="mt-3 text-sm leading-6 text-muted-foreground">
@@ -578,6 +416,20 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                       aria-hidden="true"
                     />
                     <div>
+                      <h3 className="font-semibold">mcp:write</h3>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        Permite criar, atualizar e excluir objetivos e posições
+                        manuais, além de registrar saldos observados. Exige
+                        autorização explícita e não executa compras nem vendas.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 border-t border-border pt-4">
+                    <ShieldCheck
+                      className="mt-0.5 size-5 shrink-0 text-primary"
+                      aria-hidden="true"
+                    />
+                    <div>
                       <h3 className="font-semibold">mcp:admin:read</h3>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">
                         Permissão adicional e opcional, disponível apenas para
@@ -595,16 +447,16 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
                   />
                   <div>
                     <h3 className="font-semibold text-foreground">
-                      O que ainda não está disponível
+                      Limites das ferramentas
                     </h3>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      Não há ferramentas para gravar ou excluir dados. A
-                      simulação usa somente premissas informadas. As cotações B3
-                      são limitadas a 10 ativos e não incluem histórico,
-                      fundamentos ou preço em tempo real. Para conectar outros
-                      clientes, use o guia geral da seção “Outros clientes MCP”.
-                      A conexão depende de suporte a servidores MCP remotos por
-                      HTTPS e autenticação OAuth.
+                      As ferramentas alteram apenas os dados da conta conectada,
+                      exigem o escopo mcp:write e usam chave idempotente. As
+                      exclusões são permanentes e requerem confirmação
+                      explícita. A simulação usa premissas informadas; as
+                      cotações B3 são limitadas a 10 ativos e não incluem
+                      histórico, fundamentos ou preço em tempo real. A conexão
+                      exige suporte a MCP remoto por HTTPS e autenticação OAuth.
                     </p>
                   </div>
                 </div>
@@ -637,6 +489,17 @@ export function McpDocumentation({ endpoint }: { endpoint: string }) {
           conversa.
         </p>
       </section>
+      <p className="mt-5 text-sm text-muted-foreground">
+        Para a referência OpenAPI dos endpoints REST e o catálogo MCP completo,
+        consulte a{" "}
+        <Link
+          className="font-medium text-primary underline-offset-4 hover:underline"
+          href="/docs/api"
+        >
+          documentação da API
+        </Link>
+        .
+      </p>
     </main>
   );
 }
