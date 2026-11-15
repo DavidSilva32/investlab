@@ -257,26 +257,14 @@ export function PortfolioObjectivesOverview({
         </CardContent>
       </Card>
 
-      {hasLongTermObjective && (
-        <LongTermAllocationBreakdown
-          positions={longTermPositions}
-          missingPositionCount={data.objectives
-            .filter((objective) => objective.purpose === "LONG_TERM_INVESTMENT")
-            .reduce(
-              (count, objective) => count + objective.missingPositionCount,
-              0,
-            )}
-        />
-      )}
-
       <section aria-labelledby="objectives-summary-title" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 id="objectives-summary-title" className="text-sm font-semibold">
-              Seus objetivos
+              Comparar objetivos
             </h3>
             <p className="text-xs text-muted-foreground">
-              Cada posição pertence a no máximo um destino.
+              Compare valor atual, meta e quanto falta em cada objetivo.
             </p>
           </div>
         </div>
@@ -304,6 +292,18 @@ export function PortfolioObjectivesOverview({
           </p>
         )}
       </section>
+
+      {hasLongTermObjective && (
+        <LongTermAllocationBreakdown
+          positions={longTermPositions}
+          missingPositionCount={data.objectives
+            .filter((objective) => objective.purpose === "LONG_TERM_INVESTMENT")
+            .reduce(
+              (count, objective) => count + objective.missingPositionCount,
+              0,
+            )}
+        />
+      )}
     </div>
   );
 }

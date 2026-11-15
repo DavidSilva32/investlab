@@ -134,6 +134,12 @@ describe("PortfolioObjectivesOverview", () => {
 
     expect(screen.getByText("Valores conhecidos · parcial")).toBeTruthy();
     expect(screen.getByText("Posições por objetivo")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Comparar objetivos" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Compare valor atual, meta e quanto falta/u),
+    ).toBeTruthy();
     expect(screen.getByText("Posições vinculadas à Reserva")).toBeTruthy();
     expect(
       screen.getByText(/A meta da Reserva usa o saldo informado/u),
@@ -324,6 +330,13 @@ describe("PortfolioObjectivesOverview", () => {
 
     expect(
       screen.getByText("Composição atual do investimento de longo prazo"),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("heading", { name: "Comparar objetivos" })
+        .compareDocumentPosition(
+          screen.getByText("Composição atual do investimento de longo prazo"),
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByText("ETFs internacionais")).toBeTruthy();
     expect(screen.getByText("Renda fixa")).toBeTruthy();

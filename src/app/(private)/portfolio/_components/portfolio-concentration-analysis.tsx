@@ -70,23 +70,26 @@ export function PortfolioConcentrationAnalysis({ analyses }: Props) {
         </div>
       </div>
 
-      <div
-        className="grid grid-cols-2 gap-1 rounded-lg border bg-muted/40 p-1 sm:grid-cols-4"
-        role="group"
-        aria-label="Dimensão da concentração"
-      >
-        {dimensions.map((item) => (
-          <Button
-            key={item.key}
-            type="button"
-            variant={dimension === item.key ? "default" : "ghost"}
-            className="w-full"
-            aria-pressed={dimension === item.key}
-            onClick={() => setDimension(item.key)}
-          >
-            {item.label}
-          </Button>
-        ))}
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">Agrupar a carteira por</p>
+        <div
+          className="grid grid-cols-2 gap-1 rounded-lg border bg-muted/40 p-1 sm:grid-cols-4"
+          role="group"
+          aria-label="Dimensão da concentração"
+        >
+          {dimensions.map((item) => (
+            <Button
+              key={item.key}
+              type="button"
+              variant={dimension === item.key ? "default" : "ghost"}
+              className="w-full"
+              aria-pressed={dimension === item.key}
+              onClick={() => setDimension(item.key)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {analysis.valuedPositions === 0 ? (

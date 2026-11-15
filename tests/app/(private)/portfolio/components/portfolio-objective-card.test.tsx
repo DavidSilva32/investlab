@@ -49,7 +49,9 @@ describe("PortfolioObjectiveCard", () => {
       document.querySelector("[class*='grid-cols-[2.5rem_minmax(0,1fr)]']"),
     ).toBeTruthy();
 
-    expect(screen.getByText("Subtotal conhecido: R$ 400,00")).toBeTruthy();
+    expect(
+      screen.getByText("Subtotal conhecido das posições: R$ 400,00"),
+    ).toBeTruthy();
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -230,7 +232,7 @@ describe("PortfolioObjectiveCard", () => {
     expect(screen.queryByText("destino sem meta financeira")).toBeNull();
   });
 
-  it("shows the observed balance and projection as separate, dated values", () => {
+  it("compares the bank observation with linked positions without showing projection noise", () => {
     render(
       <PortfolioObjectiveCard
         objective={{
@@ -262,14 +264,19 @@ describe("PortfolioObjectiveCard", () => {
       />,
     );
 
-    expect(screen.getByText(/Saldo observado: R\$ 250,50/)).toBeTruthy();
-    expect(screen.getByText("Em 01/10/2026")).toBeTruthy();
-    expect(screen.getByText(/R\$\s*250,75/)).toBeTruthy();
-    expect(screen.getByText("Avaliada em 02/10/2026")).toBeTruthy();
+    expect(screen.getByText("Valor das posições vinculadas")).toBeTruthy();
+    expect(
+      screen.getByText(/Saldo informado no banco: R\$\s*250,50/u),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Diferença para as posições vinculadas: R\$\s*150,50/u),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Projeção bruta/u)).toBeNull();
+    expect(screen.queryByText("Projeção indisponível")).toBeNull();
     expect(screen.getByText("10% acompanhado")).toBeTruthy();
   });
 
-  it("labels an unprojected observation and preserves an unrecognized date", () => {
+  it("shows the bank observation against the known subtotal without requiring projection data", () => {
     render(
       <PortfolioObjectiveCard
         objective={{
@@ -290,10 +297,71 @@ describe("PortfolioObjectiveCard", () => {
       />,
     );
 
-    expect(screen.getByText("Em data desconhecida")).toBeTruthy();
-    expect(screen.getAllByText(/indispon/).length).toBeGreaterThan(0);
     expect(
-      screen.getByText("Acompanhamento separado da carteira"),
+      screen.getByText(/Saldo informado no banco: R\$\s*250,50/u),
     ).toBeTruthy();
+    expect(screen.getByText(/Em data desconhecida/)).toBeTruthy();
+    expect(
+      screen.getByText(/Diferença para o subtotal conhecido: R\$\s*149,50/u),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Projeção indisponível/u)).toBeNull();
+  });
+
+  it("shows a zero difference when the bank balance matches linked positions", () => {
+    render(
+      <PortfolioObjectiveCard
+        objective={{
+          ...objective,
+          currentValue: 250.5,
+          balanceTracking: {
+            observedAmountCents: "25050",
+            observedOn: "2026-10-01",
+            cdiPercentage: null,
+            projection: null,
+          },
+        }}
+        deleteDialogOpen={false}
+        deleting={false}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Diferença para as posições vinculadas: R\$\s*0,00/u),
+    ).toBeTruthy();
+  });
+
+  it("omits the difference when no linked-position value is known", () => {
+    render(
+      <PortfolioObjectiveCard
+        objective={{
+          ...objective,
+          currentValue: null,
+          knownValue: 0,
+          balanceTracking: {
+            observedAmountCents: "25050",
+            observedOn: "2026-10-01",
+            cdiPercentage: null,
+            projection: null,
+          },
+        }}
+        deleteDialogOpen={false}
+        deleting={false}
+        onOpen={vi.fn()}
+        onEdit={vi.fn()}
+        onDeleteOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Saldo informado no banco: R\$\s*250,50/u),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/Diferença para as posições vinculadas/u),
+    ).toBeNull();
   });
 });

@@ -321,7 +321,7 @@ describe("PortfolioClient", () => {
     expect(objectivesShortcut.className).toContain("justify-between");
     expect(objectivesShortcut.querySelector("svg")).toBeTruthy();
     const detailsShortcut = screen.getByRole("button", {
-      name: "Metas pessoais e detalhes",
+      name: "Análise e classificação da carteira",
     });
     expect(detailsShortcut.className).toContain("rounded-xl");
     expect(detailsShortcut.querySelector("svg")).toBeTruthy();
@@ -350,14 +350,16 @@ describe("PortfolioClient", () => {
       false,
     );
     await user.click(
-      screen.getByRole("button", { name: "Metas pessoais e detalhes" }),
+      screen.getByRole("button", {
+        name: "Análise e classificação da carteira",
+      }),
     );
     expect(
       await screen.findByText("Considere Renda fixa para o próximo aporte"),
     ).toBeTruthy();
     expect(
       screen.getByRole("heading", {
-        name: "Metas pessoais e dados detalhados",
+        name: "Análise e classificação da carteira",
       }),
     ).toBeTruthy();
   });
@@ -368,7 +370,7 @@ describe("PortfolioClient", () => {
     renderPortfolio("overview", { initialClassificationOpen: true });
     expect(
       await screen.findByRole("heading", {
-        name: "Metas pessoais e dados detalhados",
+        name: "Análise e classificação da carteira",
       }),
     ).toBeTruthy();
     const user = userEvent.setup();
@@ -381,7 +383,7 @@ describe("PortfolioClient", () => {
     window.dispatchEvent(new PopStateEvent("popstate"));
     expect(
       await screen.findByRole("heading", {
-        name: "Metas pessoais e dados detalhados",
+        name: "Análise e classificação da carteira",
       }),
     ).toBeTruthy();
     expect(vi.mocked(fetch).mock.calls.every((call) => call.length === 1)).toBe(
@@ -433,7 +435,7 @@ describe("PortfolioClient", () => {
     );
     expect(
       await screen.findByRole("heading", {
-        name: "Metas pessoais e dados detalhados",
+        name: "Análise e classificação da carteira",
       }),
     ).toBeTruthy();
     expect(new URLSearchParams(window.location.search).get("panel")).toBe(

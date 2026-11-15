@@ -81,6 +81,7 @@ describe("PortfolioConcentrationAnalysis", () => {
     render(<PortfolioConcentrationAnalysis positions={positions} />);
 
     expect(screen.getByRole("heading", { name: /Concentra/ })).toBeTruthy();
+    expect(screen.getByText("Agrupar a carteira por")).toBeTruthy();
     expect(
       screen
         .getByRole("button", { name: "Classe" })

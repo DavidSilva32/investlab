@@ -112,7 +112,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Revisar classes" }).click();
     const dialog = page.getByRole("dialog", {
-      name: "Metas pessoais e dados detalhados",
+      name: "Análise e classificação da carteira",
     });
     await expect(dialog).toBeVisible();
     await expect(page).toHaveURL(/panel=classification/);

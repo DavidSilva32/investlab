@@ -277,7 +277,7 @@ export function PortfolioClient({
                   <span className="flex min-w-0 items-center gap-3">
                     <List aria-hidden="true" className="size-5 shrink-0" />
                     <span className="font-medium">
-                      Metas pessoais e detalhes
+                      Análise e classificação da carteira
                     </span>
                   </span>
                   <ArrowRight
@@ -298,10 +298,10 @@ export function PortfolioClient({
                 className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden p-4 sm:max-w-5xl sm:p-6"
               >
                 <SheetHeader className="mb-5 shrink-0 pr-8">
-                  <SheetTitle>Metas pessoais e dados detalhados</SheetTitle>
+                  <SheetTitle>Análise e classificação da carteira</SheetTitle>
                   <SheetDescription className="sr-only">
-                    Metas registradas por você, classificações e análises
-                    detalhadas da carteira.
+                    Concentração observada, orientação de aportes e
+                    classificação das posições da carteira.
                   </SheetDescription>
                 </SheetHeader>
                 <div

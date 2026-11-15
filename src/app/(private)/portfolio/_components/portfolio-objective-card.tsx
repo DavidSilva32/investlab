@@ -14,7 +14,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
-import { formatCurrencyCents } from "@/lib/portfolio-money";
+import { decimalToCents, formatCurrencyCents } from "@/lib/portfolio-money";
 import type { ObjectiveBalanceTrackingData } from "./portfolio-objective-balance-tracking";
 
 export type PortfolioObjective = {
@@ -63,6 +63,21 @@ export function PortfolioObjectiveCard({
   const isReserve =
     objective.kind === "RESERVE" || objective.id === reserveObjectiveId;
   const progress = objective.progressPercent;
+  const linkedPositionValue =
+    objective.currentValue ??
+    (objective.knownValue > 0 ? objective.knownValue : null);
+  const linkedPositionCents = decimalToCents(linkedPositionValue);
+  const balanceDifferenceCents =
+    objective.balanceTracking && !isReserve && linkedPositionCents !== null
+      ? linkedPositionCents -
+        BigInt(objective.balanceTracking.observedAmountCents)
+      : null;
+  const absoluteBalanceDifferenceCents =
+    balanceDifferenceCents === null
+      ? null
+      : balanceDifferenceCents < 0n
+        ? -balanceDifferenceCents
+        : balanceDifferenceCents;
   const purpose = isReserve
     ? "reserve"
     : objective.purpose === "LONG_TERM_INVESTMENT"
@@ -118,6 +133,11 @@ export function PortfolioObjectiveCard({
             </span>
             <span className="col-span-2 flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-left">
               <span className="block font-semibold tabular-nums">
+                {!isReserve && objective.currentValue !== null ? (
+                  <span className="mb-0.5 block text-xs font-normal text-muted-foreground">
+                    Valor das posições vinculadas
+                  </span>
+                ) : null}
                 {isReserve && objective.balanceTracking ? (
                   <span className="mb-0.5 block text-xs font-normal text-muted-foreground">
                     Saldo atual da Reserva
@@ -135,7 +155,8 @@ export function PortfolioObjectiveCard({
               </span>
               {objective.currentValue === null && objective.knownValue > 0 && (
                 <span className="block text-xs font-normal text-muted-foreground tabular-nums">
-                  Subtotal conhecido: {formatCurrency(objective.knownValue)}
+                  Subtotal conhecido das posições:{" "}
+                  {formatCurrency(objective.knownValue)}
                 </span>
               )}
               <span className="block text-xs font-normal text-muted-foreground">
@@ -174,25 +195,24 @@ export function PortfolioObjectiveCard({
             </span>
           ) : null}
           {objective.balanceTracking && !isReserve && (
-            <span className="grid gap-1 border-t pt-3 text-xs font-normal sm:grid-cols-2">
+            <span className="block border-t pt-3 text-xs font-normal text-muted-foreground">
               <span className="text-muted-foreground">
-                Saldo observado:{" "}
+                Saldo informado no banco:{" "}
                 {formatCurrencyCents(
                   objective.balanceTracking.observedAmountCents,
                 )}
-                <span className="block">
-                  Em {formatDisplayDate(objective.balanceTracking.observedOn)}
-                </span>
               </span>
-              <span className="text-muted-foreground">
-                {objective.balanceTracking.projection
-                  ? `Projeção bruta: ${formatCurrencyCents(objective.balanceTracking.projection.projectedAmountCents)}`
-                  : "Projeção indisponível"}
-                <span className="block">
-                  {objective.balanceTracking.projection
-                    ? `Avaliada em ${formatDisplayDate(objective.balanceTracking.projection.projectedOn)}`
-                    : "Acompanhamento separado da carteira"}
-                </span>
+              <span className="mt-1 block">
+                Em {formatDisplayDate(objective.balanceTracking.observedOn)}
+                {absoluteBalanceDifferenceCents !== null && (
+                  <>
+                    {" · "}
+                    {objective.currentValue === null
+                      ? "Diferença para o subtotal conhecido: "
+                      : "Diferença para as posições vinculadas: "}
+                    {formatCurrencyCents(absoluteBalanceDifferenceCents)}
+                  </>
+                )}
               </span>
             </span>
           )}
