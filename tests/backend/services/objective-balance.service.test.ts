@@ -19,6 +19,7 @@ const reference = (
 function createService(options?: {
   rates?: Array<{ rateDate: string; annualRate: string; fetchedAt: Date }>;
   fetched?: Array<{ date: string; annualRate: string }>;
+  evaluationDate?: string;
 }) {
   const persisted = [...(options?.rates ?? [])];
   const rates = {
@@ -71,18 +72,36 @@ function createService(options?: {
       linkedPositionCount: 1,
     })),
   };
+  const objectiveAssignment = {
+    findAutomaticObjectiveAssignment: vi.fn(async (input) => ({
+      ...input,
+      objectiveName: "Viagem",
+      expectedOwners: { "v1:key": "goal-1" },
+      allocation: { "v1:key": input.objectiveId },
+      expectedSourceFingerprint: "b".repeat(64),
+      changedPositionCount: 1,
+    })),
+    saveAutomaticObjectiveAssignment: vi.fn(async (input) => ({
+      batchId: "batch-1",
+      objectiveName: input.objectiveName,
+      changedPositionCount: input.changedPositionCount,
+      transferredPositionCount: 0,
+    })),
+  };
   const service = new ObjectiveBalanceService(
     repository as never,
     rates as never,
     fetchOfficialRates,
-    () => "2026-10-06",
+    () => options?.evaluationDate ?? "2026-11-14",
     reserveAssignment as never,
+    objectiveAssignment as never,
   );
   return {
     service,
     rates,
     repository,
     reserveAssignment,
+    objectiveAssignment,
     fetchOfficialRates,
     persisted,
   };
@@ -90,7 +109,7 @@ function createService(options?: {
 
 describe("ObjectiveBalanceService", () => {
   it("saves canonical cents and appends each observed balance", async () => {
-    const { service, repository } = createService();
+    const { service, repository, objectiveAssignment } = createService();
     const first = await service.save({
       objectiveId: reference().objectiveId,
       amount: "1.005",
@@ -104,14 +123,17 @@ describe("ObjectiveBalanceService", () => {
     });
     expect(first).toMatchObject({
       amountCents: "101",
-      observedOn: "2026-10-01",
+      observedDate: "2026-10-01",
+      assignmentStatus: "preserved",
+      assignmentReason: "historical_balance",
     });
-    expect(repository.saveObservedBalance).toHaveBeenNthCalledWith(2, {
-      objectiveId: reference().objectiveId,
-      amountCents: "1020",
-      observedOn: "2026-10-02",
-      cdiPercentage: null,
-    });
+    expect(repository.saveObservedBalance).toHaveBeenCalledTimes(2);
+    expect(
+      objectiveAssignment.findAutomaticObjectiveAssignment,
+    ).not.toHaveBeenCalled();
+    expect(
+      objectiveAssignment.saveAutomaticObjectiveAssignment,
+    ).not.toHaveBeenCalled();
   });
 
   it("rejects invalid observed amounts before writing history", async () => {
@@ -120,21 +142,24 @@ describe("ObjectiveBalanceService", () => {
       service.save({
         objectiveId: reference().objectiveId,
         amount: "-1.00",
-        observedOn: "2026-10-01",
+        observedOn: "2026-11-14",
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(repository.saveObservedBalance).not.toHaveBeenCalled();
   });
 
   it("returns not found when the objective disappears before saving", async () => {
-    const { service, repository } = createService();
+    const { service, repository, objectiveAssignment } = createService();
+    objectiveAssignment.findAutomaticObjectiveAssignment.mockRejectedValueOnce(
+      new Error("assignment unavailable"),
+    );
     repository.saveObservedBalance.mockResolvedValueOnce(null);
 
     await expect(
       service.save({
         objectiveId: reference().objectiveId,
         amount: "50.00",
-        observedOn: "2026-10-01",
+        observedOn: "2026-11-14",
       }),
     ).rejects.toMatchObject({ statusCode: 404 });
   });
@@ -167,7 +192,7 @@ describe("ObjectiveBalanceService", () => {
     expect(saved).toMatchObject({ changedPositionCount: 2 });
   });
 
-  it("does not save a reserve balance when automatic matching is unavailable", async () => {
+  it("saves the observed reserve balance and preserves links when automatic matching is unavailable", async () => {
     const { service, repository, reserveAssignment } = createService();
     reserveAssignment.findAutomaticAssignment.mockRejectedValueOnce(
       new Error("limited search"),
@@ -179,9 +204,124 @@ describe("ObjectiveBalanceService", () => {
         amount: "56042.48",
         observedOn: "2026-11-14",
       }),
-    ).rejects.toThrow("limited search");
+    ).resolves.toMatchObject({ assignmentStatus: "preserved" });
     expect(repository.saveReserveBalanceWithAssignments).not.toHaveBeenCalled();
+    expect(repository.saveObservedBalance).toHaveBeenCalledWith({
+      objectiveId: reserveObjectiveId,
+      amountCents: "5604248",
+      observedOn: "2026-11-14",
+      cdiPercentage: null,
+    });
+  });
+
+  it("saves a historical reserve balance without recalculating current links", async () => {
+    const { service, repository, reserveAssignment } = createService();
+
+    await expect(
+      service.save({
+        objectiveId: reserveObjectiveId,
+        amount: "56042.48",
+        observedOn: "2026-11-13",
+      }),
+    ).resolves.toMatchObject({
+      assignmentStatus: "preserved",
+      assignmentReason: "historical_balance",
+    });
+    expect(repository.saveObservedBalance).toHaveBeenCalledWith({
+      objectiveId: reserveObjectiveId,
+      amountCents: "5604248",
+      observedOn: "2026-11-13",
+      cdiPercentage: null,
+    });
+    expect(reserveAssignment.findAutomaticAssignment).not.toHaveBeenCalled();
+    expect(repository.saveReserveBalanceWithAssignments).not.toHaveBeenCalled();
+  });
+
+  it("automatically allocates a regular objective when the closest assignment is calculable", async () => {
+    const { service, objectiveAssignment, repository } = createService();
+    const saved = await service.save({
+      objectiveId: reference().objectiveId,
+      amount: "100.00",
+      observedOn: "2026-11-14",
+      cdiPercentage: "100",
+    });
+
+    expect(
+      objectiveAssignment.findAutomaticObjectiveAssignment,
+    ).toHaveBeenCalledWith({
+      objectiveId: reference().objectiveId,
+      amountCents: "10000",
+      observedOn: "2026-11-14",
+      requestId: undefined,
+    });
+    expect(
+      objectiveAssignment.saveAutomaticObjectiveAssignment,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allocation: { "v1:key": reference().objectiveId },
+        cdiPercentage: "100.0000",
+      }),
+    );
     expect(repository.saveObservedBalance).not.toHaveBeenCalled();
+    expect(saved).toMatchObject({
+      assignmentStatus: "updated",
+      changedPositionCount: 1,
+      transferredPositionCount: 0,
+    });
+  });
+
+  it("saves a regular objective balance without changing links when assignment search fails", async () => {
+    const { service, objectiveAssignment, repository } = createService();
+    objectiveAssignment.findAutomaticObjectiveAssignment.mockRejectedValueOnce(
+      new Error("state limit"),
+    );
+
+    const saved = await service.save({
+      objectiveId: reference().objectiveId,
+      amount: "100.00",
+      observedOn: "2026-11-14",
+    });
+
+    expect(repository.saveObservedBalance).toHaveBeenCalledWith({
+      objectiveId: reference().objectiveId,
+      amountCents: "10000",
+      observedOn: "2026-11-14",
+      cdiPercentage: null,
+    });
+    expect(
+      objectiveAssignment.saveAutomaticObjectiveAssignment,
+    ).not.toHaveBeenCalled();
+    expect(saved).toMatchObject({
+      assignmentStatus: "preserved",
+      assignmentReason: "calculation_unavailable",
+    });
+  });
+
+  it("saves a historical regular objective balance without recalculating links", async () => {
+    const { service, objectiveAssignment, repository } = createService();
+
+    await expect(
+      service.save({
+        objectiveId: reference().objectiveId,
+        amount: "100.00",
+        observedOn: "2026-11-13",
+      }),
+    ).resolves.toMatchObject({
+      assignmentStatus: "preserved",
+      assignmentReason: "historical_balance",
+    });
+    expect(repository.saveObservedBalance).toHaveBeenCalledWith({
+      objectiveId: reference().objectiveId,
+      amountCents: "10000",
+      observedOn: "2026-11-13",
+      cdiPercentage: null,
+    });
+    expect(
+      objectiveAssignment.findAutomaticObjectiveAssignment,
+    ).not.toHaveBeenCalled();
+    expect(
+      objectiveAssignment.saveAutomaticObjectiveAssignment,
+    ).not.toHaveBeenCalled();
   });
 
   it("does not project balances saved without explicit CDI conditions", async () => {
@@ -378,6 +518,7 @@ describe("ObjectiveBalanceService", () => {
   it("bootstraps a prior official rate from ten days before a cold observation", async () => {
     const { service, rates, fetchOfficialRates, persisted } = createService({
       fetched: [{ date: "2026-09-30", annualRate: "10" }],
+      evaluationDate: "2026-10-06",
     });
     const result = await service.projectLatest([
       reference({ observedDate: "2026-10-01" }),

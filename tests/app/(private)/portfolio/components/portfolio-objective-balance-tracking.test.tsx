@@ -27,7 +27,10 @@ describe("PortfolioObjectiveBalanceTracking", () => {
     expect(screen.getByText("Saldo total da Reserva")).toBeTruthy();
     expect(screen.getByText("Usado na meta")).toBeTruthy();
     expect(
-      screen.getByText(/ajusta os vínculos das posições de renda fixa/u),
+      screen.getByText(/aproxima esse valor com posições de renda fixa/u),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Em data anterior, só salva o saldo/u),
     ).toBeTruthy();
     expect(screen.getByLabelText("Saldo atual (R$)")).toBeTruthy();
     expect(screen.getByLabelText("Data-base")).toBeTruthy();
@@ -62,6 +65,29 @@ describe("PortfolioObjectiveBalanceTracking", () => {
     });
     expect(screen.queryByText(/combinação de posições/u)).toBeNull();
     expect(screen.queryByLabelText(/Rendimento contratado/u)).toBeNull();
+  });
+
+  it("explains automatic allocation and preserved links for a regular objective", () => {
+    render(
+      <PortfolioObjectiveBalanceTracking
+        objectiveId="goal-1"
+        objectiveName="Viagem"
+        saving={false}
+        onSave={vi.fn()}
+        tracking={null}
+      />,
+    );
+
+    expect(
+      screen.getByText(/escolhe as posições disponíveis mais próximas/u),
+    ).toBeTruthy();
+    expect(screen.getByText(/mantém os outros objetivos/u)).toBeTruthy();
+    expect(
+      screen.getByText(/o banco não confirma a composição do saldo/u),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Em data anterior, só registra o saldo/u),
+    ).toBeTruthy();
   });
 
   it("separates the observed amount from its gross CDI projection and saves the observation", async () => {

@@ -109,7 +109,7 @@ describe("DashboardSummary", () => {
     );
 
     expect(html).toContain("Sua carteira começa aqui");
-    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("Posições por objetivo");
     expect(html).toContain("Reserva de emergência");
     expect(html).toContain("2 meses de despesas");
     expect(html).not.toContain("Patrimônio conhecido");
@@ -139,7 +139,7 @@ describe("DashboardSummary", () => {
     );
 
     expect(html).toContain("Reserva de emergência");
-    expect(html).toContain("Saldo informado no banco");
+    expect(html).toContain("Saldo atual da reserva");
     expect(html).toContain("R$ 56.042,48");
     expect(html).toContain("Informado em 14/11/2026");
   });
@@ -164,7 +164,7 @@ describe("DashboardSummary", () => {
       />,
     );
 
-    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("Posições por objetivo");
     expect(html).toContain("Reserva de emergência");
     expect(html).not.toContain(">Objetivos <");
     expect(html).not.toContain("Ver reserva");
@@ -200,10 +200,12 @@ describe("DashboardSummary", () => {
       />,
     );
 
-    expect(html).toContain("Destinos da carteira");
+    expect(html).toContain("Posições por objetivo");
     expect(html).toContain("Reserva");
     expect(html).toContain("Sem destino");
-    expect(html).toContain("Distribuição dos valores conhecidos por destino");
+    expect(html).toContain(
+      "Distribuição do valor das posições da carteira por objetivo",
+    );
     expect(html).toContain("Reserva de emergência");
     expect(html).toContain("2 meses de despesas");
     expect(html).toMatch(/Faltam R\$\s100,00 para a meta que você escolheu\./);

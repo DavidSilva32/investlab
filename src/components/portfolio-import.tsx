@@ -237,6 +237,9 @@ export function PortfolioImport({
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
   const [importCompleted, setImportCompleted] = useState(false);
+  const [confirmationSummary, setConfirmationSummary] = useState<string | null>(
+    null,
+  );
   const [reconciliationSummary, setReconciliationSummary] =
     useState<B3ReconciliationSummary | null>(null);
   const [
@@ -270,6 +273,7 @@ export function PortfolioImport({
   async function previewFiles(files: File[]) {
     if (files.length === 0) return;
     setImportCompleted(false);
+    setConfirmationSummary(null);
     setLoading(true);
     setItems(files.map((file) => ({ file })));
     const results = await Promise.all(
@@ -385,6 +389,7 @@ export function PortfolioImport({
     const ready = items.filter((item): item is Item & { preview: Preview } =>
       Boolean(item.preview),
     );
+    setConfirmationSummary(null);
     setLoading(true);
     const results = await Promise.all(
       ready.map(async (item) => {
@@ -427,9 +432,78 @@ export function PortfolioImport({
       (result): result is Extract<ConfirmationResult, { status: "failure" }> =>
         result.status === "failure",
     );
+    const importedByType = {
+      positions: successes.filter(
+        ({ item }) => item.preview.documentType === "B3_POSITION_XLSX",
+      ),
+      movements: successes.filter(
+        ({ item }) => item.preview.documentType === "B3_MOVEMENT_XLSX",
+      ),
+      trades: successes.filter(
+        ({ item }) => item.preview.documentType === "B3_TRADING_XLSX",
+      ),
+    };
+    const countRows = (
+      imports: typeof successes,
+      documentType: Preview["documentType"],
+    ) =>
+      imports.reduce((total, result) => {
+        if (result.item.preview.documentType !== documentType) return total;
+        const preview = result.item.preview;
+        return (
+          total +
+          (preview.documentType === "B3_POSITION_XLSX"
+            ? preview.count
+            : preview.documentType === "B3_MOVEMENT_XLSX"
+              ? preview.movements.length
+              : preview.trades.length)
+        );
+      }, 0);
+    const importedParts = [
+      ...(importedByType.positions.length
+        ? [
+            `${importedByType.positions.length} ${importedByType.positions.length === 1 ? "arquivo de posição processado" : "arquivos de posição processados"} (${countRows(importedByType.positions, "B3_POSITION_XLSX")} linhas analisadas)`,
+          ]
+        : []),
+      ...(importedByType.movements.length
+        ? [
+            `${importedByType.movements.length} ${importedByType.movements.length === 1 ? "arquivo de movimentação processado" : "arquivos de movimentação processados"} (${countRows(importedByType.movements, "B3_MOVEMENT_XLSX")} linhas analisadas)`,
+          ]
+        : []),
+      ...(importedByType.trades.length
+        ? [
+            `${importedByType.trades.length} ${importedByType.trades.length === 1 ? "arquivo de negociação processado" : "arquivos de negociação processados"} (${countRows(importedByType.trades, "B3_TRADING_XLSX")} linhas analisadas)`,
+          ]
+        : []),
+    ];
+    const summaryParts = [
+      ...(successes.length
+        ? [`Processamento concluído: ${importedParts.join("; ")}.`]
+        : []),
+      ...(importedByType.movements.length && !importedByType.positions.length
+        ? [
+            "As movimentações foram processadas; as posições atuais continuam vindo do último snapshot B3.",
+          ]
+        : importedByType.positions.length
+          ? [
+              "A carteira usa o snapshot de posição mais recente pela data informada na B3.",
+            ]
+          : []),
+      ...(failures.length
+        ? [
+            `Falha ao importar: ${failures
+              .map(({ notification }) => notification.replace(/[.!?]+$/, ""))
+              .join("; ")}. Você pode tentar novamente esses arquivos.`,
+          ]
+        : []),
+    ];
+    const summary = summaryParts.join(" ");
+    setConfirmationSummary(summary);
     if (successes.length > 0) {
       setImportCompleted(true);
-      toast.success(successes.map((result) => result.message).join(" · "));
+      if (failures.length > 0)
+        toast.warning("Atualização parcial. Veja os detalhes abaixo.");
+      else toast.success("Atualização concluída.");
       window.dispatchEvent(new Event("portfolio:updated"));
       if (
         successes.some(
@@ -448,8 +522,8 @@ export function PortfolioImport({
         }
       }
     }
-    if (failures.length > 0)
-      toast.error(failures.map((result) => result.notification).join(" · "));
+    if (failures.length > 0 && successes.length === 0)
+      toast.error("Importação não concluída. Veja os detalhes abaixo.");
     setItems(failures.map((result) => result.item));
   }
 
@@ -591,6 +665,16 @@ export function PortfolioImport({
           <p role="status" aria-live="polite" className="text-sm text-primary">
             Lendo arquivos...
           </p>
+        )}
+        {confirmationSummary && (
+          <Alert aria-live="polite">
+            <AlertTitle>
+              {items.some((item) => item.error)
+                ? "Atualização parcial"
+                : "Resultado da atualização"}
+            </AlertTitle>
+            <AlertDescription>{confirmationSummary}</AlertDescription>
+          </Alert>
         )}
         {items.length === 0 && !loading && importCompleted ? (
           <p
@@ -1324,7 +1408,13 @@ function PositionPreview({
                           const matchingRedemption =
                             conflict.matchingRedemptions
                               .filter(
-                                (event) => event.occurredAt <= referenceDate,
+                                (event) =>
+                                  Boolean(
+                                    preview.latestPositionReferenceDate,
+                                  ) &&
+                                  event.occurredAt >
+                                    preview.latestPositionReferenceDate! &&
+                                  event.occurredAt <= referenceDate,
                               )
                               .sort((left, right) =>
                                 right.occurredAt.localeCompare(left.occurredAt),
@@ -1332,15 +1422,17 @@ function PositionPreview({
                           if (!matchingRedemption) return null;
                           return (
                             <p className="mt-2 text-sm text-muted-foreground">
-                              {matchingRedemption.movementType} em{" "}
+                              O extrato registra{" "}
+                              {matchingRedemption.movementType ?? "uma saída"}{" "}
+                              em{" "}
                               {date.format(
                                 new Date(
                                   `${matchingRedemption.occurredAt}T00:00:00Z`,
                                 ),
                               )}
-                              {matchingRedemption.operationValue !== null
-                                ? ` · ${formatMoney(matchingRedemption.operationValue)}`
-                                : ""}
+                              . Ao confirmar este snapshot, o vínculo com{" "}
+                              {conflict.objectiveName} será encerrado
+                              automaticamente.
                             </p>
                           );
                         })()

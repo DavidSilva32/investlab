@@ -125,6 +125,47 @@ describe("PortfolioObjectivesController", () => {
     });
   });
 
+  it("explains that a historical balance is saved while current links remain unchanged", async () => {
+    balanceService.save.mockResolvedValue({
+      objectiveId: "goal-1",
+      observedDate: "2026-11-13",
+      assignmentStatus: "preserved",
+      assignmentReason: "historical_balance",
+    });
+
+    const response =
+      await new PortfolioObjectivesController().saveObservedBalance(
+        { objectiveId: "goal-1", amount: "56042.48" },
+        "r-historical-balance",
+      );
+
+    await expect(response.json()).resolves.toEqual({
+      message: "Saldo histórico salvo. Os vínculos atuais foram mantidos.",
+    });
+  });
+
+  it("summarizes automatic regular-objective assignments without exposing the organizer", async () => {
+    balanceService.save.mockResolvedValue({
+      objectiveId: "goal-1",
+      observedDate: "2026-11-14",
+      changedPositionCount: 3,
+      transferredPositionCount: 0,
+      assignmentStatus: "updated",
+      objectiveName: "Viagem",
+    });
+
+    const response =
+      await new PortfolioObjectivesController().saveObservedBalance(
+        { objectiveId: "goal-1", amount: "56042.48" },
+        "r-objective-balance",
+      );
+
+    await expect(response.json()).resolves.toEqual({
+      message:
+        "Saldo salvo. 3 vínculos atualizados automaticamente para Viagem; os demais objetivos foram preservados.",
+    });
+  });
+
   it("rejects an assignment request without an objective id", async () => {
     const response =
       await new PortfolioObjectivesController().updateAssignments(

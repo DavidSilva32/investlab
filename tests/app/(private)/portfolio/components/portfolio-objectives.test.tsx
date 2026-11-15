@@ -389,12 +389,12 @@ describe("PortfolioObjectives", () => {
       />,
     );
 
-    expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
+    expect(await screen.findByText("Posições por objetivo")).toBeTruthy();
   });
 
   it("opens on an answer-first overview and mounts no editing forms until requested", async () => {
     render(<PortfolioObjectives />);
-    expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
+    expect(await screen.findByText("Posições por objetivo")).toBeTruthy();
     expect(screen.getByText("R$ 650,00")).toBeTruthy();
     expect(screen.queryByLabelText("Nome do objetivo")).toBeNull();
     expect(
@@ -402,7 +402,7 @@ describe("PortfolioObjectives", () => {
     ).toBeNull();
     expect(
       screen.getByRole("img", {
-        name: "Gráfico de rosca dos valores conhecidos por destino",
+        name: "Gráfico de rosca dos valores conhecidos por objetivo",
       }),
     ).toBeTruthy();
     expect(screen.getByText("61,5%")).toBeTruthy();
@@ -412,7 +412,7 @@ describe("PortfolioObjectives", () => {
   it("opens the joint organizer from the objectives overview and returns without changing assignments", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Organizar objetivos" }),
     );
@@ -422,14 +422,14 @@ describe("PortfolioObjectives", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getAllByRole("button", { name: "Voltar" })[1]);
-    expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
+    expect(await screen.findByText("Posições por objetivo")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns to the overview after confirming an organized distribution", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Organizar objetivos" }),
     );
@@ -441,7 +441,7 @@ describe("PortfolioObjectives", () => {
     await user.click(
       screen.getByRole("button", { name: "Confirmar distribuição" }),
     );
-    expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
+    expect(await screen.findByText("Posições por objetivo")).toBeTruthy();
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Distribuição confirmada."),
     );
@@ -450,7 +450,7 @@ describe("PortfolioObjectives", () => {
   it("creates an objective only from the requested form and opens its detail", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     expect(screen.getByRole("heading", { name: "Novo objetivo" })).toBeTruthy();
     await user.type(screen.getByLabelText("Nome do objetivo"), "Carro");
@@ -483,7 +483,7 @@ describe("PortfolioObjectives", () => {
   it("separates objective detail, edit, and assignment views", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -524,7 +524,7 @@ describe("PortfolioObjectives", () => {
     ).toBeTruthy();
     expect(
       screen.queryByRole("img", {
-        name: "Gráfico de rosca dos valores conhecidos por destino",
+        name: "Gráfico de rosca dos valores conhecidos por objetivo",
       }),
     ).toBeNull();
   });
@@ -532,18 +532,18 @@ describe("PortfolioObjectives", () => {
   it("returns from an objective detail to the overview", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
     await user.click(screen.getByRole("button", { name: "Voltar" }));
-    expect(screen.getByText("Patrimônio por destino")).toBeTruthy();
+    expect(screen.getByText("Posições por objetivo")).toBeTruthy();
   });
 
   it("offers a contextual planning link from a personal objective", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -566,7 +566,7 @@ describe("PortfolioObjectives", () => {
       })),
     };
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -581,12 +581,12 @@ describe("PortfolioObjectives", () => {
   it("returns a canceled create to the overview and can edit from objective actions", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
 
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     expect(screen.getByRole("heading", { name: "Novo objetivo" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Voltar" }));
-    expect(screen.getByText("Patrimônio por destino")).toBeTruthy();
+    expect(screen.getByText("Posições por objetivo")).toBeTruthy();
 
     await user.click(
       screen.getByRole("button", { name: /A.*es do objetivo Viagem/ }),
@@ -598,13 +598,13 @@ describe("PortfolioObjectives", () => {
       screen.getByRole("heading", { name: "Editar objetivo" }),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
-    expect(screen.getByText("Patrimônio por destino")).toBeTruthy();
+    expect(screen.getByText("Posições por objetivo")).toBeTruthy();
   });
 
   it("returns from position management to the selected objective", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -623,7 +623,7 @@ describe("PortfolioObjectives", () => {
   it("routes Reserve position management and settings to separate editors", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Reserva" }),
     );
@@ -668,7 +668,7 @@ describe("PortfolioObjectives", () => {
       })),
     };
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -683,7 +683,7 @@ describe("PortfolioObjectives", () => {
   it("searches unassigned position combinations, previews selection, then saves from assignment view", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -771,7 +771,7 @@ describe("PortfolioObjectives", () => {
         ],
       };
       render(<PortfolioObjectives />);
-      await screen.findByText("Patrimônio por destino");
+      await screen.findByText("Posições por objetivo");
       await user.click(
         screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
       );
@@ -847,7 +847,7 @@ describe("PortfolioObjectives", () => {
   it("deletes a personal objective through its actions menu and keeps the position in the portfolio", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Ações do objetivo Viagem" }),
     );
@@ -875,7 +875,7 @@ describe("PortfolioObjectives", () => {
   it("shows a form error when objective creation fails with a transport value", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome do objetivo"), "Casa");
     await user.click(
@@ -898,7 +898,7 @@ describe("PortfolioObjectives", () => {
   it("keeps the create form open when a successful response has no objective id", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome do objetivo"), "Casa");
     await user.click(
@@ -922,7 +922,7 @@ describe("PortfolioObjectives", () => {
   it("shows an assignment error when saving fails with a transport value", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -942,7 +942,7 @@ describe("PortfolioObjectives", () => {
   it("can cancel deleting a personal objective without issuing a request", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: /A.*es do objetivo Viagem/ }),
     );
@@ -960,7 +960,7 @@ describe("PortfolioObjectives", () => {
   it("shows a fallback toast when deleting an objective fails due to transport", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     fetchMock.mockRejectedValueOnce("offline");
     await user.click(
       screen.getByRole("button", { name: "Ações do objetivo Viagem" }),
@@ -982,7 +982,7 @@ describe("PortfolioObjectives", () => {
   it("shows the server error when an objective delete is rejected", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     fetchMock.mockImplementationOnce(() =>
       response({ message: "A posição ainda está vinculada." }, false),
     );
@@ -1006,7 +1006,7 @@ describe("PortfolioObjectives", () => {
   it("shows an unavailable state when the selected objective disappears", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -1025,7 +1025,7 @@ describe("PortfolioObjectives", () => {
   it("saves a manual observed balance and reloads the objective overview", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -1055,7 +1055,7 @@ describe("PortfolioObjectives", () => {
   it("shows the API message when saving a manual observed balance fails", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -1078,7 +1078,7 @@ describe("PortfolioObjectives", () => {
   it("shows a safe fallback when saving an observed balance fails in transport", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -1111,7 +1111,7 @@ describe("PortfolioObjectives", () => {
   it("shows an API error toast when creating an objective fails", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(screen.getByRole("button", { name: "Novo objetivo" }));
     await user.type(screen.getByLabelText("Nome do objetivo"), "Casa");
     await user.click(
@@ -1134,7 +1134,7 @@ describe("PortfolioObjectives", () => {
   it("shows an API message when saving objective positions fails", async () => {
     const user = userEvent.setup();
     render(<PortfolioObjectives />);
-    await screen.findByText("Patrimônio por destino");
+    await screen.findByText("Posições por objetivo");
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -1160,6 +1160,6 @@ describe("PortfolioObjectives", () => {
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(await screen.findByText("Patrimônio por destino")).toBeTruthy();
+    expect(await screen.findByText("Posições por objetivo")).toBeTruthy();
   });
 });

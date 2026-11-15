@@ -657,6 +657,78 @@ export class PortfolioObjectivesService {
     };
   }
 
+  async findAutomaticObjectiveAssignment(input: {
+    objectiveId: string;
+    amountCents: string;
+    observedOn: string;
+    requestId?: string;
+  }) {
+    const preview = await this.previewGlobalAllocation(
+      {
+        valuationDate: input.observedOn,
+        balances: [
+          {
+            objectiveId: input.objectiveId,
+            amount: Number(BigInt(input.amountCents)) / 100,
+          },
+        ],
+      },
+      input.requestId,
+    );
+    if (!preview.optimal) {
+      throw new ApplicationError(
+        "A busca de posições ultrapassou o limite seguro.",
+        409,
+      );
+    }
+    const changedPositionCount = Object.keys(preview.expectedOwners).filter(
+      (assetKey) =>
+        preview.expectedOwners[assetKey] !== preview.allocation[assetKey],
+    ).length;
+    return {
+      objectiveId: input.objectiveId,
+      objectiveName: preview.objectives[0]?.name ?? "objetivo",
+      amountCents: input.amountCents,
+      observedOn: input.observedOn,
+      expectedOwners: preview.expectedOwners,
+      allocation: preview.allocation,
+      expectedSourceFingerprint: preview.expectedSourceFingerprint,
+      changedPositionCount,
+    };
+  }
+
+  async saveAutomaticObjectiveAssignment(input: {
+    objectiveId: string;
+    objectiveName: string;
+    amountCents: string;
+    observedOn: string;
+    cdiPercentage: string | null;
+    expectedOwners: Record<string, string | null>;
+    allocation: Record<string, string | null>;
+    expectedSourceFingerprint: string;
+    changedPositionCount: number;
+  }) {
+    const saved = await portfolioObjectivesRepository.saveGlobalAllocation({
+      observedOn: input.observedOn,
+      expectedOwners: input.expectedOwners,
+      allocation: input.allocation,
+      expectedSourceFingerprint: input.expectedSourceFingerprint,
+      references: [
+        {
+          objectiveId: input.objectiveId,
+          amountCents: input.amountCents,
+          cdiPercentage: input.cdiPercentage,
+        },
+      ],
+    });
+    return {
+      ...saved,
+      objectiveName: input.objectiveName,
+      changedPositionCount: input.changedPositionCount,
+      transferredPositionCount: 0,
+    };
+  }
+
   async confirmGlobalAllocation(body: unknown, requestId?: string) {
     const parsed = allocationSchema
       .extend({

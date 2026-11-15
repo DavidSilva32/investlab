@@ -49,6 +49,10 @@ export type ObjectiveBalanceReference = {
   cdiPercentage: string | null;
 };
 
+export type ObjectiveBalanceAssignmentStatus = "updated" | "preserved";
+export type ObjectiveBalanceAssignmentReason =
+  "historical_balance" | "calculation_unavailable";
+
 export type ObjectiveBalanceUnavailableReason =
   "missing_conditions" | "no_eligible_days" | "rates_unavailable";
 
@@ -73,6 +77,32 @@ type ReserveAssignmentService = {
     expectedSourceFingerprint: string;
   }>;
 };
+type ObjectiveAssignment = {
+  objectiveId: string;
+  objectiveName: string;
+  amountCents: string;
+  observedOn: string;
+  expectedOwners: Record<string, string | null>;
+  allocation: Record<string, string | null>;
+  expectedSourceFingerprint: string;
+  changedPositionCount: number;
+};
+type ObjectiveAssignmentService = {
+  findAutomaticObjectiveAssignment(input: {
+    objectiveId: string;
+    amountCents: string;
+    observedOn: string;
+    requestId?: string;
+  }): Promise<ObjectiveAssignment>;
+  saveAutomaticObjectiveAssignment(
+    input: ObjectiveAssignment & { cdiPercentage: string | null },
+  ): Promise<{
+    batchId: string;
+    objectiveName: string;
+    changedPositionCount: number;
+    transferredPositionCount: number;
+  }>;
+};
 
 function centsToDecimal(cents: string) {
   const value = BigInt(cents);
@@ -95,6 +125,7 @@ export class ObjectiveBalanceService {
       bcbCdiService.fetchRates(from, to),
     private readonly getEvaluationDate = todayInSaoPaulo,
     private readonly reserveAssignment?: ReserveAssignmentService,
+    private readonly objectiveAssignment?: ObjectiveAssignmentService,
   ) {}
 
   async save(input: unknown, requestId?: string) {
@@ -107,6 +138,23 @@ export class ObjectiveBalanceService {
       parsed.data.cdiPercentage === null
         ? null
         : parsed.data.cdiPercentage.toFixed(4);
+    // Historical observations are factual records; only today's balance may
+    // drive changes to current position ownership.
+    if (parsed.data.observedOn < this.getEvaluationDate()) {
+      const saved = await this.repository.saveObservedBalance({
+        objectiveId: parsed.data.objectiveId,
+        amountCents,
+        observedOn: parsed.data.observedOn,
+        cdiPercentage,
+      });
+      if (!saved) throw new ApplicationError("Objetivo não encontrado.", 404);
+      return {
+        ...saved,
+        observedDate: parsed.data.observedOn,
+        assignmentStatus: "preserved" as const,
+        assignmentReason: "historical_balance" as const,
+      };
+    }
     const saved =
       parsed.data.objectiveId === reserveObjectiveId
         ? await this.saveReserveBalance({
@@ -116,11 +164,12 @@ export class ObjectiveBalanceService {
             cdiPercentage,
             requestId,
           })
-        : await this.repository.saveObservedBalance({
+        : await this.saveObjectiveBalanceWithAssignments({
             objectiveId: parsed.data.objectiveId,
             amountCents,
             observedOn: parsed.data.observedOn,
             cdiPercentage,
+            requestId,
           });
     if (!saved) throw new ApplicationError("Objetivo não encontrado.", 404);
     return saved;
@@ -137,11 +186,30 @@ export class ObjectiveBalanceService {
       this.reserveAssignment ??
       (await import("@/backend/services/emergency-reserve.service"))
         .emergencyReserveService;
-    const assignment = await reserveAssignment.findAutomaticAssignment(
-      input.amount,
-      input.observedOn,
-      input.requestId,
-    );
+    let assignment: Awaited<
+      ReturnType<typeof reserveAssignment.findAutomaticAssignment>
+    >;
+    try {
+      assignment = await reserveAssignment.findAutomaticAssignment(
+        input.amount,
+        input.observedOn,
+        input.requestId,
+      );
+    } catch {
+      const saved = await this.repository.saveObservedBalance({
+        objectiveId: reserveObjectiveId,
+        amountCents: input.amountCents,
+        observedOn: input.observedOn,
+        cdiPercentage: input.cdiPercentage,
+      });
+      return saved
+        ? {
+            ...saved,
+            assignmentStatus: "preserved" as const,
+            assignmentReason: "calculation_unavailable" as const,
+          }
+        : null;
+    }
     return this.repository.saveReserveBalanceWithAssignments({
       amountCents: input.amountCents,
       observedOn: input.observedOn,
@@ -150,6 +218,57 @@ export class ObjectiveBalanceService {
       expectedOwners: assignment.expectedOwners,
       expectedSourceFingerprint: assignment.expectedSourceFingerprint,
     });
+  }
+
+  private async saveObjectiveBalanceWithAssignments(input: {
+    objectiveId: string;
+    amountCents: string;
+    observedOn: string;
+    cdiPercentage: string | null;
+    requestId?: string;
+  }) {
+    const service =
+      this.objectiveAssignment ??
+      (await import("@/backend/services/portfolio-objectives.service"))
+        .portfolioObjectivesService;
+    let assignment: Awaited<
+      ReturnType<typeof service.findAutomaticObjectiveAssignment>
+    >;
+    try {
+      assignment = await service.findAutomaticObjectiveAssignment({
+        objectiveId: input.objectiveId,
+        amountCents: input.amountCents,
+        observedOn: input.observedOn,
+        requestId: input.requestId,
+      });
+    } catch {
+      const saved = await this.repository.saveObservedBalance({
+        objectiveId: input.objectiveId,
+        amountCents: input.amountCents,
+        observedOn: input.observedOn,
+        cdiPercentage: input.cdiPercentage,
+      });
+      return saved
+        ? {
+            ...saved,
+            observedDate: input.observedOn,
+            assignmentStatus: "preserved" as const,
+            assignmentReason: "calculation_unavailable" as const,
+          }
+        : null;
+    }
+    const saved = await service.saveAutomaticObjectiveAssignment({
+      ...assignment,
+      cdiPercentage: input.cdiPercentage,
+    });
+    return {
+      objectiveId: input.objectiveId,
+      amountCents: input.amountCents,
+      observedDate: input.observedOn,
+      cdiPercentage: input.cdiPercentage,
+      ...saved,
+      assignmentStatus: "updated" as const,
+    };
   }
 
   async projectLatest(

@@ -128,6 +128,105 @@ describe("PortfolioObjectivesService", () => {
     expect(mocks.classifyPositions).not.toHaveBeenCalled();
   });
 
+  it("automatically chooses the closest available positions and leaves other objectives untouched", async () => {
+    const targetObjective = {
+      ...customObjective,
+      id: "00000000-0000-4000-8000-000000000001",
+    };
+    const currentAsset = imported({
+      product: "CDB já vinculado",
+      assetCode: "CDB60",
+      totalValue: "60",
+      referenceDate: "2026-09-30",
+    });
+    const unassignedAsset = imported({
+      product: "CDB sem destino",
+      assetCode: "CDB40",
+      totalValue: "40",
+      referenceDate: "2026-09-30",
+    });
+    const otherObjectiveAsset = imported({
+      product: "CDB de outro objetivo",
+      assetCode: "CDB500",
+      totalValue: "500",
+      referenceDate: "2026-09-30",
+    });
+    const otherObjective = {
+      ...customObjective,
+      id: "00000000-0000-4000-8000-000000000002",
+      name: "Reserva futura",
+    };
+    const currentKey = getEmergencyReserveAssetKey(currentAsset);
+    const otherKey = getEmergencyReserveAssetKey(otherObjectiveAsset);
+    mocks.listCurrentEnriched.mockResolvedValue([
+      currentAsset,
+      unassignedAsset,
+      otherObjectiveAsset,
+    ]);
+    mocks.list.mockResolvedValue({
+      objectives: [targetObjective, otherObjective],
+      assignments: [
+        { objectiveId: targetObjective.id, assetKey: currentKey },
+        { objectiveId: otherObjective.id, assetKey: otherKey },
+      ],
+    });
+
+    const assignment =
+      await new PortfolioObjectivesService().findAutomaticObjectiveAssignment({
+        objectiveId: targetObjective.id,
+        amountCents: "10000",
+        observedOn: "2026-09-30",
+        requestId: "request-1",
+      });
+
+    expect(assignment.allocation).toEqual({
+      [currentKey]: targetObjective.id,
+      [getEmergencyReserveAssetKey(unassignedAsset)]: targetObjective.id,
+    });
+    expect(assignment.expectedOwners).not.toHaveProperty(otherKey);
+    expect(assignment.changedPositionCount).toBe(1);
+  });
+
+  it("saves an automatic objective allocation with the observed balance and CDI input", async () => {
+    mocks.saveGlobalAllocation.mockResolvedValue({ batchId: "batch-1" });
+    const service = new PortfolioObjectivesService();
+    const assignment = {
+      objectiveId: customObjective.id,
+      objectiveName: customObjective.name,
+      amountCents: "10000",
+      observedOn: "2026-09-30",
+      expectedOwners: { "v1:asset": null },
+      allocation: { "v1:asset": customObjective.id },
+      expectedSourceFingerprint: "a".repeat(64),
+      changedPositionCount: 1,
+    };
+
+    await expect(
+      service.saveAutomaticObjectiveAssignment({
+        ...assignment,
+        cdiPercentage: "100.0000",
+      }),
+    ).resolves.toMatchObject({
+      batchId: "batch-1",
+      objectiveName: customObjective.name,
+      changedPositionCount: 1,
+      transferredPositionCount: 0,
+    });
+    expect(mocks.saveGlobalAllocation).toHaveBeenCalledWith({
+      observedOn: assignment.observedOn,
+      expectedOwners: assignment.expectedOwners,
+      allocation: assignment.allocation,
+      expectedSourceFingerprint: assignment.expectedSourceFingerprint,
+      references: [
+        {
+          objectiveId: customObjective.id,
+          amountCents: "10000",
+          cdiPercentage: "100.0000",
+        },
+      ],
+    });
+  });
+
   it("uses the essential expense baseline and default six-month horizon for the reserve objective", async () => {
     mocks.list.mockResolvedValue({
       objectives: [

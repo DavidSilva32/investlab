@@ -9,7 +9,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  warning: vi.fn(),
+  error: vi.fn(),
+}));
 vi.mock("sonner", () => ({ toast }));
 
 import { PortfolioImport } from "@/components/portfolio-import";
@@ -142,6 +146,7 @@ const reconciliationPair = {
 describe("PortfolioImport", () => {
   beforeEach(() => {
     toast.success.mockReset();
+    toast.warning.mockReset();
     toast.error.mockReset();
   });
 
@@ -501,8 +506,9 @@ describe("PortfolioImport", () => {
     );
 
     await waitFor(() => expect(portfolioUpdated).toHaveBeenCalledOnce());
-    expect(toast.success).toHaveBeenCalledWith(
-      "Arquivo importado com sucesso.",
+    expect(toast.success).toHaveBeenCalledWith("Atualização concluída.");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "snapshot de posição mais recente",
     );
     expect(screen.queryByText("ETF")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("Import");
@@ -604,7 +610,9 @@ describe("PortfolioImport", () => {
       "Ativos ausentes serão encerrados",
     );
     expect(
-      screen.getByText(/RESGATE ANTECIPADO.*29\/10\/2026.*R\$ 445,42/),
+      screen.getByText(
+        /O extrato registra RESGATE ANTECIPADO\/ em 29\/10\/2026/,
+      ),
     ).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
     const confirmButton = screen.getByRole("button", {
@@ -720,12 +728,15 @@ describe("PortfolioImport", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Snapshot histórico: vínculos preservados",
     );
-    expect(screen.queryByText(/RESGATE em/)).toBeNull();
+    expect(screen.queryByText(/O extrato registra .* em/)).toBeNull();
     fireEvent.change(dateInput, { target: { value: "15/11/2026" } });
     expect(screen.getByRole("status").textContent).toContain(
       "Ativos ausentes serão encerrados",
     );
-    expect(screen.getByText(/RESGATE em 14\/11\/2026/)).toBeTruthy();
+    expect(
+      screen.getByText(/O extrato registra RESGATE em 14\/11\/2026/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/RESGATE ANTIGO/)).toBeNull();
     expect(screen.queryByText(/RESGATE FUTURO/)).toBeNull();
   });
 
@@ -883,10 +894,16 @@ describe("PortfolioImport", () => {
       name: /^Data exibida na B3/,
     });
     fireEvent.change(dateInput, { target: { value: "13/11/2026" } });
-    expect(screen.queryByText(/RESGATE ANTECIPADO em/)).toBeNull();
+    expect(
+      screen.queryByText(/O extrato registra RESGATE ANTECIPADO em/),
+    ).toBeNull();
     fireEvent.change(dateInput, { target: { value: "15/11/2026" } });
-    expect(screen.getByText(/RESGATE TOTAL em 15\/11\/2026/)).toBeTruthy();
-    expect(screen.queryByText(/RESGATE ANTECIPADO em/)).toBeNull();
+    expect(
+      screen.getByText(/O extrato registra RESGATE TOTAL em 15\/11\/2026/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/O extrato registra RESGATE ANTECIPADO em/),
+    ).toBeNull();
   });
 
   it("confirms multiple snapshots without per-position retirement acknowledgements", async () => {
@@ -1054,7 +1071,9 @@ describe("PortfolioImport", () => {
       await screen.findByText("posicoes.xlsx: Importação não concluída."),
     ).toBeTruthy();
     expect(screen.queryByText("Falha ao salvar")).toBeNull();
-    expect(toast.error).toHaveBeenCalledWith("posicoes.xlsx: Falha ao salvar");
+    expect(toast.error).toHaveBeenCalledWith(
+      "Importação não concluída. Veja os detalhes abaixo.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(screen.queryByText("ETF")).toBeNull());
   });
@@ -1099,24 +1118,28 @@ describe("PortfolioImport", () => {
     );
 
     await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith("Posições importadas.");
-      expect(toast.error).toHaveBeenCalledWith(
-        "movimentos.xlsx: Movimentações recusadas.",
+      expect(toast.warning).toHaveBeenCalledWith(
+        "Atualização parcial. Veja os detalhes abaixo.",
       );
     });
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Atualização parcial",
+    );
     expect(portfolioUpdated).toHaveBeenCalledOnce();
     expect(screen.queryByText("posicoes.xlsx")).toBeNull();
     expect(
       screen.getByText("movimentos.xlsx: Importação não concluída."),
     ).toBeTruthy();
-    expect(screen.queryByText("Movimentações recusadas.")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "movimentos.xlsx: Movimentações recusadas",
+    );
 
     fireEvent.click(
       screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
     );
     await waitFor(() =>
       expect(toast.error).toHaveBeenLastCalledWith(
-        "movimentos.xlsx: Movimentações seguem recusadas.",
+        "Importação não concluída. Veja os detalhes abaixo.",
       ),
     );
     const confirmationRequests = fetchMock.mock.calls.filter(
@@ -1228,7 +1251,7 @@ describe("PortfolioImport", () => {
       await screen.findByText("offline.xlsx: Importação não concluída."),
     ).toBeTruthy();
     expect(toast.error).toHaveBeenCalledWith(
-      "offline.xlsx: Não foi possível salvar o arquivo.",
+      "Importação não concluída. Veja os detalhes abaixo.",
     );
   });
   it("treats a missing file list as an empty chooser", () => {
@@ -1265,7 +1288,7 @@ describe("PortfolioImport", () => {
     );
 
     await waitFor(() => expect(portfolioUpdated).toHaveBeenCalledOnce());
-    expect(toast.success).toHaveBeenCalledWith("Movimentacoes importadas.");
+    expect(toast.success).toHaveBeenCalledWith("Atualização concluída.");
     expect(screen.queryByText("movimentos.xlsx")).toBeNull();
     window.removeEventListener("portfolio:updated", portfolioUpdated);
   });

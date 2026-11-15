@@ -40,7 +40,11 @@ export type ObjectiveAssignmentTransfer = {
   toObjectiveId: string;
 };
 
-export type AllocationReference = { objectiveId: string; amountCents: string };
+export type AllocationReference = {
+  objectiveId: string;
+  amountCents: string;
+  cdiPercentage?: string | null;
+};
 
 type AllocationValuationPosition = Record<string, unknown> & {
   source?: string | null;

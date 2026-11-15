@@ -2,6 +2,7 @@ import { logger } from "@/infrastructure/logging/logger";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { objectiveBalanceService } from "@/backend/services/objective-balance.service";
 import { objectiveProjectionService } from "@/backend/services/objective-projection.service";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 export class PortfolioObjectivesController {
   simulateProjection(body: unknown, requestId: string) {
@@ -117,6 +118,9 @@ export class PortfolioObjectivesController {
     const assignmentSummary = reference as typeof reference & {
       changedPositionCount?: number;
       transferredPositionCount?: number;
+      assignmentStatus?: "updated" | "preserved";
+      assignmentReason?: "historical_balance" | "calculation_unavailable";
+      objectiveName?: string;
     };
     const changedPositionCount =
       typeof assignmentSummary.changedPositionCount === "number"
@@ -133,14 +137,24 @@ export class PortfolioObjectivesController {
       changedPositionCount: changedPositionCount ?? 0,
       transferredPositionCount: transferredPositionCount ?? 0,
     });
+    const objectiveName = assignmentSummary.objectiveName;
+    const isReserve = reference.objectiveId === reserveObjectiveId;
     const message =
-      changedPositionCount !== null && transferredPositionCount !== null
-        ? transferredPositionCount > 0
-          ? `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo atualizado" : "vínculos atualizados"}; ${transferredPositionCount} ${transferredPositionCount === 1 ? "posição transferida de outro objetivo" : "posições transferidas de outros objetivos"} para a Reserva.`
-          : changedPositionCount > 0
-            ? `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo da Reserva atualizado" : "vínculos da Reserva atualizados"} automaticamente.`
-            : "Saldo salvo. Os vínculos da Reserva já correspondiam às posições mais próximas."
-        : "Saldo observado salvo.";
+      assignmentSummary.assignmentReason === "historical_balance"
+        ? "Saldo histórico salvo. Os vínculos atuais foram mantidos."
+        : assignmentSummary.assignmentStatus === "preserved"
+          ? "Saldo salvo. Os vínculos atuais foram mantidos porque não foi possível recalcular a distribuição com segurança."
+          : changedPositionCount !== null && transferredPositionCount !== null
+            ? transferredPositionCount > 0
+              ? `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo atualizado" : "vínculos atualizados"}; ${transferredPositionCount} ${transferredPositionCount === 1 ? "posição transferida de outro objetivo" : "posições transferidas de outros objetivos"} para a Reserva.`
+              : changedPositionCount > 0
+                ? isReserve
+                  ? `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo da Reserva atualizado" : "vínculos da Reserva atualizados"} automaticamente.`
+                  : `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo atualizado" : "vínculos atualizados"} automaticamente para ${objectiveName ?? "o objetivo"}; os demais objetivos foram preservados.`
+                : isReserve
+                  ? "Saldo salvo. Os vínculos da Reserva já correspondiam às posições mais próximas."
+                  : `Saldo salvo. Os vínculos de ${objectiveName ?? "o objetivo"} já correspondiam às posições mais próximas.`
+            : "Saldo observado salvo.";
     return Response.json({ message }, { status: 201 });
   }
 

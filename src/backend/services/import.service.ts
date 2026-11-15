@@ -499,7 +499,13 @@ export class ImportService {
         ? movements
             .filter(
               (candidate) =>
+                Boolean(latestPositionReferenceDate) &&
+                candidate.occurredAt > latestPositionReferenceDate! &&
                 normalized(candidate.assetCode) === normalized(assetCode) &&
+                (!candidate.institution ||
+                  !conflict.position.institution ||
+                  normalized(candidate.institution) ===
+                    normalized(conflict.position.institution)) &&
                 candidate.direction === "DEBITO" &&
                 normalizedMovementText(candidate.movementType).includes(
                   "RESGATE",

@@ -177,8 +177,8 @@ function BalanceTrackingEditor({
         </div>
         <p className="text-sm text-muted-foreground">
           {isReserve
-            ? "Informe o saldo total. Ao salvar, o sistema ajusta os vínculos das posições de renda fixa para aproximá-los desse valor e informa se transferiu posições de outros objetivos."
-            : "Informe o saldo total do objetivo. Ele não é somado à carteira."}
+            ? "Informe o saldo total. Para hoje, o sistema aproxima esse valor com posições de renda fixa e informa se transferiu vínculos de outros objetivos. Em data anterior, só salva o saldo e mantém os vínculos atuais."
+            : "Para hoje, o sistema escolhe as posições disponíveis mais próximas para este objetivo e mantém os outros objetivos. A distribuição usa valores conhecidos das posições; o banco não confirma a composição do saldo. Em data anterior, só registra o saldo e mantém os vínculos atuais."}
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
