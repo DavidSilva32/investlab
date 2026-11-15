@@ -516,6 +516,69 @@ describe("PortfolioImport", () => {
     window.removeEventListener("portfolio:updated", portfolioUpdated);
   });
 
+  it("summarizes plural movement and trade files after a successful batch", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => movementPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => movementPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => tradingPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => tradingPreview,
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          candidates: [],
+          confirmed: [],
+          ambiguous: [],
+          separated: [],
+          unmatched: [],
+          duplicateCandidates: [],
+          movementDuplicateCandidates: [],
+          history: { complete: true, reasons: [] },
+        }),
+      });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          spreadsheet("movimentacao-1.xlsx"),
+          spreadsheet("movimentacao-2.xlsx"),
+          spreadsheet("negociacao-1.xlsx"),
+          spreadsheet("negociacao-2.xlsx"),
+        ],
+      },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 4 arquivo/ }),
+    );
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(9));
+    const summary = screen.getByText(/Processamento concluído:/).textContent;
+    expect(summary).toContain(
+      "2 arquivos de movimentação processados (4 linhas analisadas)",
+    );
+    expect(summary).toContain(
+      "2 arquivos de negociação processados (4 linhas analisadas)",
+    );
+  });
+
   it("uses the one B3 date for the import and does not send a separate base date", async () => {
     const fetch = vi
       .fn()
@@ -566,7 +629,7 @@ describe("PortfolioImport", () => {
           matchingRedemptions: [
             {
               occurredAt: "2026-10-29",
-              movementType: "RESGATE ANTECIPADO/",
+              movementType: null,
               quantity: "35",
               operationValue: "445.42",
             },
@@ -615,6 +678,9 @@ describe("PortfolioImport", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "não alteram os valores do snapshot",
     );
+    expect(
+      screen.getByText(/O extrato registra uma saída em 29\/10\/2026/),
+    ).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
     const confirmButton = screen.getByRole("button", {
       name: /Confirmar 1 arquivo/,

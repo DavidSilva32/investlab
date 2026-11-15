@@ -228,11 +228,10 @@ export class EmergencyReserveService {
         return leftDifference - rightDifference;
       const leftSignature = left.join("|");
       const rightSignature = right.join("|");
-      return leftSignature < rightSignature
-        ? -1
-        : leftSignature > rightSignature
-          ? 1
-          : 0;
+      return (
+        Number(leftSignature > rightSignature) -
+        Number(leftSignature < rightSignature)
+      );
     };
     let selectedAssetKeys: string[];
     if (targetAmount === 0) {
@@ -257,9 +256,9 @@ export class EmergencyReserveService {
           409,
         );
       }
-      if (result.searchLimited) {
+      if (result.searchLimited || result.alternativesLimited) {
         throw new ApplicationError(
-          "Há posições demais para confirmar automaticamente a melhor combinação. O saldo não foi salvo; atualize os dados ou ajuste os vínculos em Gerenciar posições.",
+          "A busca não confirmou todas as combinações equivalentes. O saldo não foi salvo; atualize os dados ou ajuste os vínculos em Gerenciar posições.",
           409,
         );
       }

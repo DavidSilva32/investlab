@@ -471,12 +471,8 @@ export function PortfolioImport({
         ({ item }) => item.preview.documentType === "B3_TRADING_XLSX",
       ),
     };
-    const countRows = (
-      imports: typeof successes,
-      documentType: Preview["documentType"],
-    ) =>
+    const countRows = (imports: typeof successes) =>
       imports.reduce((total, result) => {
-        if (result.item.preview.documentType !== documentType) return total;
         const preview = result.item.preview;
         return (
           total +
@@ -490,17 +486,17 @@ export function PortfolioImport({
     const importedParts = [
       ...(importedByType.positions.length
         ? [
-            `${importedByType.positions.length} ${importedByType.positions.length === 1 ? "arquivo de posição processado" : "arquivos de posição processados"} (${countRows(importedByType.positions, "B3_POSITION_XLSX")} linhas analisadas)`,
+            `${importedByType.positions.length} ${importedByType.positions.length === 1 ? "arquivo de posição processado" : "arquivos de posição processados"} (${countRows(importedByType.positions)} linhas analisadas)`,
           ]
         : []),
       ...(importedByType.movements.length
         ? [
-            `${importedByType.movements.length} ${importedByType.movements.length === 1 ? "arquivo de movimentação processado" : "arquivos de movimentação processados"} (${countRows(importedByType.movements, "B3_MOVEMENT_XLSX")} linhas analisadas)`,
+            `${importedByType.movements.length} ${importedByType.movements.length === 1 ? "arquivo de movimentação processado" : "arquivos de movimentação processados"} (${countRows(importedByType.movements)} linhas analisadas)`,
           ]
         : []),
       ...(importedByType.trades.length
         ? [
-            `${importedByType.trades.length} ${importedByType.trades.length === 1 ? "arquivo de negociação processado" : "arquivos de negociação processados"} (${countRows(importedByType.trades, "B3_TRADING_XLSX")} linhas analisadas)`,
+            `${importedByType.trades.length} ${importedByType.trades.length === 1 ? "arquivo de negociação processado" : "arquivos de negociação processados"} (${countRows(importedByType.trades)} linhas analisadas)`,
           ]
         : []),
     ];

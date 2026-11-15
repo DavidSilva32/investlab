@@ -838,6 +838,17 @@ describe("ImportService persistence", () => {
         operationValue: "100",
       },
       {
+        id: "redemption-after-snapshot-without-code",
+        direction: "DEBITO",
+        occurredAt: "2026-11-14",
+        movementType: "RESGATE TOTAL",
+        product: "CDB sem código",
+        assetCode: null,
+        institution: "Banco A",
+        quantity: "1",
+        operationValue: "100",
+      },
+      {
         id: "redemption-similar-name",
         direction: "DEBITO",
         occurredAt: "2026-10-30",
