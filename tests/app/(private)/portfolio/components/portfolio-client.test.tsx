@@ -362,6 +362,11 @@ describe("PortfolioClient", () => {
         name: "Análise e classificação da carteira",
       }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("region", {
+        name: "Conteúdo de análise e classificação da carteira",
+      }),
+    ).toBeTruthy();
   });
 
   it("opens classification deep links and synchronizes browser history without mutating positions", async () => {

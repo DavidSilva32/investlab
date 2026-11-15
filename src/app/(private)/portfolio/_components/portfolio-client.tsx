@@ -305,7 +305,7 @@ export function PortfolioClient({
                   </SheetDescription>
                 </SheetHeader>
                 <div
-                  aria-label="Conteúdo de metas pessoais e dados detalhados"
+                  aria-label="Conteúdo de análise e classificação da carteira"
                   className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
                   role="region"
                 >
