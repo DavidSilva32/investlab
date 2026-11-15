@@ -104,6 +104,7 @@ export class ImportController {
       duplicate,
       referenceDateUpdated = false,
       reprocessedExistingImport = false,
+      retirementReview = [],
     } = await importService.confirm(
       file,
       requestId,
@@ -125,27 +126,87 @@ export class ImportController {
           : preview.trades.length;
     const enrichedPositionCount =
       "enrichedPositionCount" in result ? result.enrichedPositionCount : 0;
+    const importMessage = referenceDateUpdated
+      ? reprocessedExistingImport
+        ? enrichedPositionCount
+          ? `Data exibida na B3 registrada e ${enrichedPositionCount} posição(ões) existente(s) enriquecida(s). Nenhuma nova posição foi criada.`
+          : "Data exibida na B3 registrada no snapshot legado. Nenhuma posição precisou de enriquecimento."
+        : "Data exibida na B3 atualizada para as posições já importadas."
+      : reprocessedExistingImport
+        ? enrichedPositionCount
+          ? `${enrichedPositionCount} posição(ões) existente(s) enriquecida(s). Nenhuma nova posição foi criada.`
+          : "Arquivo idêntico revisado. Não havia campos ausentes para enriquecer e nenhuma nova posição foi criada."
+        : preview.documentType === "B3_POSITION_XLSX"
+          ? `${count} posição(ões) importada(s) com sucesso.`
+          : preview.documentType === "B3_MOVEMENT_XLSX"
+            ? `${count} movimentação(ões) importada(s) com sucesso.`
+            : `${count} negociação(ões) importada(s) com sucesso.`;
+    const retiredCount = retirementReview.filter(
+      ({ reason }) => reason === "total_redemption",
+    ).length;
+    const preservedReasonLabels: Record<string, [string, string]> = {
+      partial_redemption: ["resgate parcial", "resgates parciais"],
+      duplicate_evidence: [
+        "movimentação duplicada",
+        "movimentações duplicadas",
+      ],
+      institution_mismatch: [
+        "divergência de instituição",
+        "divergências de instituição",
+      ],
+      identity_conflict: ["conflito de identidade", "conflitos de identidade"],
+      snapshot_not_newer: ["snapshot fora de ordem", "snapshots fora de ordem"],
+      snapshot_date_unavailable: [
+        "data de snapshot indisponível",
+        "datas de snapshot indisponíveis",
+      ],
+      movement_before_previous_snapshot: [
+        "movimentação anterior ao snapshot",
+        "movimentações anteriores ao snapshot",
+      ],
+      no_matching_redemption: [
+        "resgate compatível não encontrado",
+        "resgates compatíveis não encontrados",
+      ],
+      incomplete_evidence: ["evidência incompleta", "evidências incompletas"],
+    };
+    const preservedReasons = new Map<
+      string,
+      { count: number; labels: [string, string] }
+    >();
+    for (const { reason } of retirementReview) {
+      if (reason === "total_redemption") continue;
+      const labels = preservedReasonLabels[reason] ?? [
+        "evidência incompleta",
+        "evidências incompletas",
+      ];
+      const current = preservedReasons.get(reason);
+      preservedReasons.set(reason, {
+        count: (current?.count ?? 0) + 1,
+        labels,
+      });
+    }
+    const retirementMessage = [
+      retiredCount
+        ? `${retiredCount} ${retiredCount === 1 ? "vínculo encerrado" : "vínculos encerrados"} após resgate total.`
+        : "",
+      preservedReasons.size
+        ? `${[...preservedReasons.entries()]
+            .map(([, { count, labels }]) =>
+              count === 1 ? `1 ${labels[0]}` : `${count} ${labels[1]}`,
+            )
+            .join(", ")} — os vínculos foram mantidos.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     return Response.json(
       {
         importId: result.importId,
         count,
         ...(reprocessedExistingImport ? { enrichedPositionCount } : {}),
         documentType: preview.documentType,
-        message: referenceDateUpdated
-          ? reprocessedExistingImport
-            ? enrichedPositionCount
-              ? `Data exibida na B3 registrada e ${enrichedPositionCount} posição(ões) existente(s) enriquecida(s). Nenhuma nova posição foi criada.`
-              : "Data exibida na B3 registrada no snapshot legado. Nenhuma posição precisou de enriquecimento."
-            : "Data exibida na B3 atualizada para as posições já importadas."
-          : reprocessedExistingImport
-            ? enrichedPositionCount
-              ? `${enrichedPositionCount} posição(ões) existente(s) enriquecida(s). Nenhuma nova posição foi criada.`
-              : "Arquivo idêntico revisado. Não havia campos ausentes para enriquecer e nenhuma nova posição foi criada."
-            : preview.documentType === "B3_POSITION_XLSX"
-              ? `${count} posição(ões) importada(s) com sucesso.`
-              : preview.documentType === "B3_MOVEMENT_XLSX"
-                ? `${count} movimentação(ões) importada(s) com sucesso.`
-                : `${count} negociação(ões) importada(s) com sucesso.`,
+        message: [importMessage, retirementMessage].filter(Boolean).join(" "),
       },
       { status: reprocessedExistingImport ? 200 : 201 },
     );

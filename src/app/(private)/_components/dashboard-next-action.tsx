@@ -4,6 +4,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 
 export type DashboardNextActionData = {
+  kind:
+    | "reserve-incomplete"
+    | "portfolio-empty"
+    | "missing-values"
+    | "objective-incomplete"
+    | "reserve-setup"
+    | "reserve-below-target";
   title: string;
   detail: string;
   label: string;
@@ -14,15 +21,28 @@ export function getDashboardNextAction({
   positionCount,
   missingValueCount,
   reserveIncomplete,
+  objectiveIncomplete,
   reserve,
 }: {
   positionCount: number;
   missingValueCount: number;
   reserveIncomplete: boolean;
+  objectiveIncomplete?: boolean;
   reserve?: EmergencyReserveCalculation;
 }): DashboardNextActionData | null {
+  if (missingValueCount > 0) {
+    return {
+      kind: "missing-values",
+      title: "Revise as posições sem valor atual",
+      detail:
+        "Valores ausentes deixam o total conhecido e a distribuição incompletos.",
+      label: "Revisar carteira",
+      href: "/carteira?view=positions",
+    };
+  }
   if (reserveIncomplete) {
     return {
+      kind: "reserve-incomplete",
       title: "Revise as posições selecionadas como reserva",
       detail:
         "Há posições sem valor ou seleções que não correspondem à carteira atual.",
@@ -32,19 +52,21 @@ export function getDashboardNextAction({
   }
   if (positionCount === 0) {
     return {
+      kind: "portfolio-empty",
       title: "Adicione os dados da sua carteira",
       detail: "Sem posições, ainda não há base para interpretar sua situação.",
       label: "Importar carteira",
       href: "/?openImport=1",
     };
   }
-  if (missingValueCount > 0) {
+  if (objectiveIncomplete) {
     return {
-      title: "Revise as posições sem valor atual",
+      kind: "objective-incomplete",
+      title: "Revise os objetivos com posições ausentes",
       detail:
-        "Valores ausentes deixam o total conhecido e a distribuição incompletos.",
-      label: "Revisar carteira",
-      href: "/carteira?view=positions",
+        "Algumas posições vinculadas a objetivos não aparecem na carteira atual.",
+      label: "Revisar objetivos",
+      href: "/carteira?panel=objectives",
     };
   }
   if (
@@ -52,6 +74,7 @@ export function getDashboardNextAction({
     (reserve.monthlyExpenses === null || reserve.status === "not_configured")
   ) {
     return {
+      kind: "reserve-setup",
       title: "Complete a configuração da reserva",
       detail:
         "Informe suas despesas e defina sua meta pessoal para acompanhar a cobertura.",
@@ -61,6 +84,7 @@ export function getDashboardNextAction({
   }
   if (reserve?.status === "below_target" && reserve.difference !== null) {
     return {
+      kind: "reserve-below-target",
       title: "Acompanhe a evolução da reserva",
       detail:
         "A cobertura está abaixo da meta pessoal que você definiu. Consulte os valores registrados na carteira.",

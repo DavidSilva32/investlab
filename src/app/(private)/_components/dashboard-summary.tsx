@@ -7,6 +7,10 @@ import { DashboardDestinationsOverview } from "@/app/(private)/_components/dashb
 import type { DashboardDestinationSummary } from "@/app/(private)/_components/dashboard-destinations-overview";
 import type { DashboardDestinationPosition } from "@/app/(private)/_components/dashboard-destinations-overview";
 import { DashboardObservations } from "@/app/(private)/_components/dashboard-observations";
+import {
+  DashboardNextAction,
+  getDashboardNextAction,
+} from "@/app/(private)/_components/dashboard-next-action";
 import { DashboardQuickActions } from "@/app/(private)/_components/dashboard-quick-actions";
 import { DashboardReviewPositions } from "@/app/(private)/_components/dashboard-review-positions";
 import { DashboardWealthSummary } from "@/app/(private)/_components/dashboard-wealth-summary";
@@ -74,6 +78,29 @@ export function DashboardSummary({
 }) {
   const firstAccess = positions.length === 0;
   const readOnly = supportReadOnly || supportChecking || supportCheckError;
+  const nextAction = getDashboardNextAction({
+    positionCount: positions.length,
+    missingValueCount: insights.unvaluedPositions,
+    reserveIncomplete: Boolean(
+      !reserveObservation &&
+      emergencyReserve &&
+      (emergencyReserve.unvaluedGroups > 0 ||
+        (emergencyReserve.missingSelectionCount ?? 0) > 0),
+    ),
+    objectiveIncomplete:
+      longTermMissingPositionCount > 0 ||
+      (destinationSummary?.missingPositionCount ?? 0) > 0,
+    reserve: emergencyReserve,
+  });
+  const priorityAction =
+    !firstAccess &&
+    !readOnly &&
+    (nextAction?.kind === "reserve-incomplete" ||
+      nextAction?.kind === "missing-values" ||
+      nextAction?.kind === "objective-incomplete" ||
+      nextAction?.kind === "reserve-setup")
+      ? nextAction
+      : null;
 
   const quickActions = (
     <DashboardQuickActions
@@ -134,6 +161,10 @@ export function DashboardSummary({
                   onOpenReserve={onOpenReserve}
                   onOpenImport={onOpenImport}
                   readOnly={readOnly}
+                  suppressIncompleteWarning={
+                    priorityAction?.kind === "reserve-incomplete" ||
+                    priorityAction?.kind === "missing-values"
+                  }
                 />
               </section>
             )}
@@ -144,6 +175,7 @@ export function DashboardSummary({
 
   return (
     <div className="space-y-4">
+      {priorityAction && <DashboardNextAction action={priorityAction} />}
       <DashboardWealthSummary positions={positions} insights={insights} />
       {quickActions}
 
@@ -165,11 +197,17 @@ export function DashboardSummary({
             onOpenReserve={onOpenReserve}
             onOpenImport={onOpenImport}
             readOnly={readOnly}
+            suppressIncompleteWarning={
+              priorityAction?.kind === "reserve-incomplete" ||
+              priorityAction?.kind === "missing-values"
+            }
           />
         </section>
       </div>
 
-      <DashboardReviewPositions count={insights.unvaluedPositions} />
+      {priorityAction?.kind !== "missing-values" && (
+        <DashboardReviewPositions count={insights.unvaluedPositions} />
+      )}
       <DashboardObservations
         positions={positions}
         insights={insights}
