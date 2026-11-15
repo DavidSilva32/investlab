@@ -2065,6 +2065,22 @@ describe("EmergencyReserveService", () => {
       new EmergencyReserveService().findAutomaticAssignment(10, "2026-11-14"),
     ).rejects.toMatchObject({ statusCode: 409 });
   });
+
+  it("does not automatically assign a candidate when equivalent combinations are truncated", async () => {
+    mocks.listCurrentEnriched.mockResolvedValue(
+      Array.from({ length: 36 }, (_, index) =>
+        position({
+          id: `p${index}`,
+          assetCode: `CDB${String(index).padStart(3, "0")}`,
+          totalValue: "1",
+        }),
+      ),
+    );
+
+    await expect(
+      new EmergencyReserveService().findAutomaticAssignment(18, "2026-11-14"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
 });
 
 function simulateOldSearchForExact(target: number, amounts: number[]) {
