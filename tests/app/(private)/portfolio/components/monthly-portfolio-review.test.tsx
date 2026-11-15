@@ -644,7 +644,9 @@ describe("MonthlyPortfolioReview", () => {
       "100,null,123.45",
     );
     expect(screen.getByText(/valor parcial/)).toBeTruthy();
-    expect(screen.getByText("Algumas posições estão sem valor.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: Algumas posições estão sem valor/),
+    ).toBeTruthy();
   });
 
   it("shows only the selected year in chronological monthly order for both charts", async () => {
@@ -826,7 +828,9 @@ describe("MonthlyPortfolioReview", () => {
           element.textContent?.replace(/\u00a0/g, " ") === "-R$ 10,00",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("Algumas posições estão sem valor.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: Algumas posições estão sem valor/),
+    ).toBeTruthy();
   });
 
   it("uses a neutral icon when the observed difference is zero", () => {
@@ -840,7 +844,7 @@ describe("MonthlyPortfolioReview", () => {
     expect(difference.querySelector(".lucide-arrow-down-right")).toBeNull();
   });
 
-  it("shows concise partial warnings without opening technical details", () => {
+  it("shows the partial reason beside the value and expands the explanation on demand", async () => {
     renderReview(
       review({
         status: "partial",
@@ -848,13 +852,28 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(screen.getByText("Histórico manual incompleto.")).toBeTruthy();
-    expect(screen.queryByText("Detalhes dos valores")).toBeNull();
-    expect(screen.queryByText(/salvo em 01\/09\/2026/)).toBeNull();
-    expect(screen.queryByText(/não é possível separar aportes/)).toBeNull();
+    expect(
+      screen.getByText(/Comparação parcial: Histórico manual incompleto/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "Há posições manuais que não foram acompanhadas em todos os fechamentos.",
+      ),
+    ).toBeNull();
+    await userEvent.setup().click(
+      screen.getByRole("button", {
+        name: "Por que a comparação é parcial?",
+      }),
+    );
+    expect(
+      screen.getByText(
+        "Há posições manuais que não foram acompanhadas em todos os fechamentos.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(new RegExp(flowExplanation))).toBeTruthy();
   });
 
-  it("explains when source composition cannot be identified with a short warning", () => {
+  it("explains when source composition cannot be identified", async () => {
     renderReview(
       review({
         status: "partial",
@@ -863,11 +882,21 @@ describe("MonthlyPortfolioReview", () => {
     );
 
     expect(
-      screen.getByText("Cobertura da carteira não confirmada."),
+      screen.getByText(
+        /Comparação parcial: Cobertura da carteira não confirmada/,
+      ),
+    ).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Por que a comparação é parcial?" }),
+      );
+    expect(
+      screen.getByText("Não foi possível confirmar a composição da carteira."),
     ).toBeTruthy();
   });
 
-  it("uses short warnings for changed coverage and missing months", () => {
+  it("explains changed coverage and missing months on demand", async () => {
     const { rerender } = render(
       <MonthlyPortfolioReview
         review={review({ status: "partial", compositionCoverage: "changed" })}
@@ -878,7 +907,17 @@ describe("MonthlyPortfolioReview", () => {
       />,
     );
     expect(
-      screen.getByText("A carteira mudou entre os períodos."),
+      screen.getByText(
+        /Comparação parcial: A carteira mudou entre os períodos/,
+      ),
+    ).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Por que a comparação é parcial?" }),
+      );
+    expect(
+      screen.getByText("A composição da carteira mudou entre os fechamentos."),
     ).toBeTruthy();
 
     rerender(
@@ -890,10 +929,20 @@ describe("MonthlyPortfolioReview", () => {
         onRetry={vi.fn()}
       />,
     );
-    expect(screen.getByText("Há meses sem fechamento.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: Há meses sem fechamento/),
+    ).toBeTruthy();
+    const detailsTrigger = screen.getByRole("button", {
+      name: "Por que a comparação é parcial?",
+    });
+    if (detailsTrigger.getAttribute("aria-expanded") === "false")
+      await userEvent.setup().click(detailsTrigger);
+    expect(
+      screen.getByText("Há meses sem fechamento no intervalo exibido."),
+    ).toBeTruthy();
   });
 
-  it("explains a valuation method change when the closes are otherwise comparable", () => {
+  it("explains a valuation method change when the closes are otherwise comparable", async () => {
     renderReview(
       review({
         status: "partial",
@@ -907,10 +956,20 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(screen.getByText("O método de avaliação mudou.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: O método de avaliação mudou/),
+    ).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Por que a comparação é parcial?" }),
+      );
+    expect(
+      screen.getByText("O método de avaliação mudou entre os fechamentos."),
+    ).toBeTruthy();
   });
 
-  it("does not attribute the partial comparison only to method when sources also change", () => {
+  it("does not attribute the partial comparison only to method when sources also change", async () => {
     renderReview(
       review({
         status: "partial",
@@ -924,13 +983,25 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(screen.queryByText("O método de avaliação mudou.")).toBeNull();
     expect(
-      screen.getByText("A carteira mudou entre os períodos."),
+      screen.getByText(
+        /Comparação parcial: A carteira mudou entre os períodos/,
+      ),
+    ).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Por que a comparação é parcial?" }),
+      );
+    expect(
+      screen.getByText("O método de avaliação mudou entre os fechamentos."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("A composição da carteira mudou entre os fechamentos."),
     ).toBeTruthy();
   });
 
-  it("explains when the valuation method cannot be confirmed", () => {
+  it("explains when the valuation method cannot be confirmed", async () => {
     renderReview(
       review({
         status: "partial",
@@ -938,6 +1009,16 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
+    expect(
+      screen.getByText(
+        /Comparação parcial: Não foi possível confirmar o método de avaliação/,
+      ),
+    ).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Por que a comparação é parcial?" }),
+      );
     expect(
       screen.getByText("Não foi possível confirmar o método de avaliação."),
     ).toBeTruthy();
@@ -955,14 +1036,16 @@ describe("MonthlyPortfolioReview", () => {
         observedChangeCents: null,
       }),
     );
-    expect(screen.getByText("Comparação parcial.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: Comparação parcial/),
+    ).toBeTruthy();
     expect(screen.getByTestId("area-chart").getAttribute("data-values")).toBe(
       "1200.5",
     );
     expect(screen.queryByTestId("bar-chart")).toBeNull();
   });
 
-  it("shows the date alignment warning", () => {
+  it("shows the date alignment warning beside the value and in details", async () => {
     renderReview(
       review({
         status: "partial",
@@ -980,10 +1063,22 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(screen.getByText("Datas de avaliação diferentes.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: Datas de avaliação diferentes/),
+    ).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Por que a comparação é parcial?" }),
+      );
+    expect(
+      screen.getByText(
+        "Os valores comparados usam datas de avaliação diferentes ou desatualizadas.",
+      ),
+    ).toBeTruthy();
   });
 
-  it("explains when a foreign position has no conversion date", () => {
+  it("explains when a foreign position has no conversion date", async () => {
     renderReview(
       review({
         status: "partial",
@@ -992,10 +1087,22 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(screen.getByText("Data da conversão não informada.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: Data da conversão não informada/),
+    ).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Por que a comparação é parcial?" }),
+      );
+    expect(
+      screen.getByText(
+        "Falta a data usada para converter valores em outra moeda.",
+      ),
+    ).toBeTruthy();
   });
 
-  it("explains mixed valuation dates", () => {
+  it("explains mixed valuation dates", async () => {
     renderReview(
       review({
         status: "partial",
@@ -1003,7 +1110,9 @@ describe("MonthlyPortfolioReview", () => {
       }),
     );
 
-    expect(screen.getByText("Datas de avaliação diferentes.")).toBeTruthy();
+    expect(
+      screen.getByText(/Comparação parcial: Datas de avaliação diferentes/),
+    ).toBeTruthy();
   });
 
   it("supports an unset period and manual records without a save timestamp", () => {

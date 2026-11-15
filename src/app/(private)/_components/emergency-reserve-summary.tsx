@@ -23,6 +23,7 @@ export function EmergencyReserveSummary({
   onOpenReserve = () => {},
   onOpenImport,
   readOnly = false,
+  suppressIncompleteWarning = false,
 }: {
   calculation?: EmergencyReserveCalculation;
   reserveObservation?: {
@@ -32,6 +33,7 @@ export function EmergencyReserveSummary({
   onOpenReserve?: () => void;
   onOpenImport?: () => void;
   readOnly?: boolean;
+  suppressIncompleteWarning?: boolean;
 }) {
   const canCalculateCoverage =
     calculation?.monthlyExpenses !== null &&
@@ -233,7 +235,7 @@ export function EmergencyReserveSummary({
                 </CollapsibleContent>
               </Collapsible>
             )}
-            {hasPersonalTarget && incomplete ? (
+            {hasPersonalTarget && incomplete && !suppressIncompleteWarning ? (
               <p className="text-sm font-medium text-status-warning">
                 A comparação com sua meta está incompleta porque há posições ou
                 valores ausentes.

@@ -286,7 +286,7 @@ describe("DashboardSummary", () => {
     expect(importButton.getAttribute("aria-expanded")).toBeNull();
   });
 
-  it("shows a concise review action only when positions have no current value", () => {
+  it("consolidates missing position values into the dashboard next action", () => {
     const html = renderToStaticMarkup(
       <DashboardSummary
         positions={[
@@ -301,10 +301,46 @@ describe("DashboardSummary", () => {
     );
 
     expect(html).toContain("0 de 1");
-    expect(html).toContain("Dados para revisar");
-    expect(html).toContain("1 posição sem valor atual");
+    expect(html).toContain("Próxima ação");
+    expect(html).toContain("Revise as posições sem valor atual");
+    expect(html).not.toContain("Dados para revisar");
     expect(html).toContain('href="/carteira?view=positions"');
-    expect(html).not.toContain("Próxima ação");
+  });
+
+  it("summarizes missing objective positions in one direct action", () => {
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        destinationSummary={{ ...destinations, missingPositionCount: 1 }}
+      />,
+    );
+
+    expect(html).toContain("Próxima ação");
+    expect(html).toContain("Revise os objetivos com posições ausentes");
+    expect(html).toContain('href="/carteira?panel=objectives"');
+  });
+
+  it("shows reserve identity gaps once and keeps the reserve card useful", () => {
+    const incompleteReserve = {
+      ...reserve,
+      unvaluedGroups: 1,
+    };
+    const html = renderToStaticMarkup(
+      <DashboardSummary
+        positions={positions}
+        emergencyReserve={incompleteReserve}
+      />,
+    );
+
+    expect(html).toContain("Próxima ação");
+    expect(html).toContain("Revise as posições selecionadas como reserva");
+    expect(html).toContain(
+      'href="/carteira?panel=objectives&amp;objective=reserve"',
+    );
+    expect(html).not.toContain(
+      "A comparação com sua meta está incompleta porque há posições ou valores ausentes.",
+    );
+    expect(html).toContain("Ver reserva");
   });
 
   it("shows recorded position and maturity facts with their values", () => {
