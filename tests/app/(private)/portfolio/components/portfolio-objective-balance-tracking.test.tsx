@@ -26,10 +26,14 @@ describe("PortfolioObjectiveBalanceTracking", () => {
 
     expect(screen.getByText("Atualizar saldo da Reserva")).toBeTruthy();
     expect(
-      screen.getByText(/Esse saldo atualiza o progresso da meta/u),
+      screen.getByText(
+        /Para hoje, o sistema atualiza o progresso e tenta ajustar os vínculos automaticamente/u,
+      ),
     ).toBeTruthy();
     expect(
-      screen.getByText(/ajusta os vínculos automaticamente/u),
+      screen.getByText(
+        /Para datas anteriores, salva o saldo e mantém os vínculos atuais/u,
+      ),
     ).toBeTruthy();
     expect(screen.getByLabelText("Saldo atual (R$)")).toBeTruthy();
     expect(screen.getByLabelText("Data-base")).toBeTruthy();

@@ -179,7 +179,7 @@ function BalanceTrackingEditor({
         </div>
         <p className="text-sm text-muted-foreground">
           {isReserve
-            ? "Informe o total e a data. Esse saldo atualiza o progresso da meta; o sistema ajusta os vínculos automaticamente. Se não encontrar uma combinação segura, salva o saldo e mantém os vínculos atuais."
+            ? "Informe o saldo e a data. Para hoje, o sistema atualiza o progresso e tenta ajustar os vínculos automaticamente. Para datas anteriores, salva o saldo e mantém os vínculos atuais."
             : "Para hoje, o sistema escolhe as posições disponíveis mais próximas para este objetivo e mantém os outros objetivos. A distribuição usa valores conhecidos das posições; o banco não confirma a composição do saldo. Em data anterior, só registra o saldo e mantém os vínculos atuais."}
         </p>
       </CardHeader>
