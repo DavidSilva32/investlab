@@ -93,4 +93,22 @@ describe("AdminOverview", () => {
     );
     expect(screen.getByText("Convites aguardando")).toBeTruthy();
   });
+
+  it("uses zero when a partially returned metric is absent", () => {
+    render(
+      <AdminOverview
+        stats={{
+          ...stats,
+          totalUsers: undefined as unknown as number,
+          invitationsPending: undefined as unknown as number,
+        }}
+        loading={false}
+      />,
+    );
+
+    expect(
+      screen.getByText("Pessoas cadastradas").parentElement?.textContent,
+    ).toContain("0");
+    expect(screen.queryByText("Convites aguardando")).toBeNull();
+  });
 });

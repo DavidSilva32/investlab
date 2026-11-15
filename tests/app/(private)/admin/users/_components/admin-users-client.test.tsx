@@ -14,6 +14,40 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("AdminUsersClient remaining action states", () => {
+  it("shows populated access links without an empty-state message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          users: [],
+          invitations: [
+            {
+              id: "invite-1",
+              email: "new-person@example.com",
+              status: "pending",
+              expiresAt: "2026-12-31T00:00:00.000Z",
+            },
+          ],
+          passwordResets: [],
+          stats: {
+            totalUsers: 0,
+            activeUsers: 0,
+            pendingUsers: 0,
+            disabledUsers: 0,
+            expiringTrials: 0,
+            expiredTrials: 0,
+            invitationsPending: 1,
+          },
+        }),
+      ),
+    );
+
+    render(<AdminUsersClient />);
+
+    expect(await screen.findByText("new-person@example.com")).toBeTruthy();
+    expect(screen.queryByText("Nenhum registro.")).toBeNull();
+  });
+
   it("shows an inline load error, suppresses empty states, and retries", async () => {
     const fetchMock = vi
       .fn()

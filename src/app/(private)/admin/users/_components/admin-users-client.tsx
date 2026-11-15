@@ -466,8 +466,6 @@ function AccessLinkList({
       <CardContent>
         {loading ? (
           <p role="status">Carregando…</p>
-        ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum registro.</p>
         ) : (
           <ul className="divide-y">
             {items.map((item) => (

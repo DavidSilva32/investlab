@@ -5,6 +5,10 @@ import { FinancialEntriesTable } from "@/app/(private)/financas/_components/fina
 import { FinancialCategoryManager } from "@/app/(private)/financas/_components/financial-category-manager";
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
 import { FinancialRecurrencesSheet as RecurrencesSheet } from "@/app/(private)/financas/_components/financial-recurrences-sheet";
+import {
+  FinancialCapacitySummary,
+  type FinancialCapacitySimulation,
+} from "@/app/(private)/financas/_components/financial-capacity-summary";
 import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -87,6 +91,29 @@ type RecurrenceOverview = {
   recurrences: Recurrence[];
   recurrenceOccurrences: Occurrence[];
 };
+type StrategyPercentages = {
+  fixed_income: number;
+  brazilian_equities: number;
+  international_etfs: number;
+  fiis: number;
+};
+type StrategyOverview = {
+  savedAllocationPercentages: StrategyPercentages | null;
+  allocationActive: boolean;
+};
+type ContributionSimulationResponse = {
+  reserveContributionCents: string | null;
+  strategyContributionCents: string | null;
+  reserveStatus: "applied" | "not_needed" | "not_configured" | "incomplete";
+  simulation: {
+    allocations: Array<{
+      label: string;
+      contributionValueCents: string;
+    }>;
+    unallocatedContributionCents: string;
+    completeness: { complete: boolean };
+  } | null;
+};
 
 const monthNow = () => {
   const parts = new Intl.DateTimeFormat("en", {
@@ -152,6 +179,128 @@ export function FinancialOverview() {
       ),
   });
   const data = overview.data;
+  const isHistoricalMonth = month < monthNow();
+  const expectedBalance = data?.summary.expectedBalance ?? null;
+  const balanceToSimulate =
+    expectedBalance === null ? null : Number(expectedBalance);
+  const hasPositiveExpectedBalance =
+    !isHistoricalMonth &&
+    data?.summary.completeness === "recorded_only" &&
+    balanceToSimulate !== null &&
+    Number.isFinite(balanceToSimulate) &&
+    balanceToSimulate > 0;
+  const strategy = useQuery({
+    queryKey: queryKeys.portfolio.strategy(),
+    enabled: hasPositiveExpectedBalance,
+    queryFn: () =>
+      apiRequest<StrategyOverview>(
+        "/api/portfolio/strategy",
+        undefined,
+        "Não foi possível carregar a estratégia.",
+      ),
+  });
+  const contributionSimulation = useQuery({
+    queryKey: [
+      "finances",
+      "capacity-simulation",
+      month,
+      expectedBalance ?? "unavailable",
+      JSON.stringify(strategy.data?.savedAllocationPercentages ?? null),
+    ],
+    enabled:
+      hasPositiveExpectedBalance &&
+      strategy.data?.allocationActive === true &&
+      Boolean(strategy.data.savedAllocationPercentages),
+    queryFn: () =>
+      apiRequest<ContributionSimulationResponse>(
+        "/api/portfolio/strategy/contribution",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            contributionAmount: balanceToSimulate as number,
+            allocationPercentages: strategy.data?.savedAllocationPercentages,
+          }),
+        },
+        "Não foi possível calcular a simulação.",
+      ),
+  });
+  let capacitySimulation: FinancialCapacitySimulation | null = null;
+  if (hasPositiveExpectedBalance) {
+    if (strategy.isPending) {
+      capacitySimulation = {
+        state: "loading",
+        reserveContributionCents: null,
+        allocations: [],
+        unallocatedContributionCents: "0",
+      };
+    } else if (strategy.isError) {
+      capacitySimulation = {
+        state: "error",
+        reserveContributionCents: null,
+        allocations: [],
+        unallocatedContributionCents: "0",
+      };
+    } else if (
+      !strategy.data?.allocationActive ||
+      !strategy.data.savedAllocationPercentages
+    ) {
+      capacitySimulation = {
+        state: "unavailable",
+        reserveContributionCents: null,
+        allocations: [],
+        unallocatedContributionCents: "0",
+      };
+    } else if (contributionSimulation.isPending) {
+      capacitySimulation = {
+        state: "loading",
+        reserveContributionCents: null,
+        allocations: [],
+        unallocatedContributionCents: "0",
+      };
+    } else if (contributionSimulation.isError) {
+      capacitySimulation = {
+        state: "error",
+        reserveContributionCents: null,
+        allocations: [],
+        unallocatedContributionCents: "0",
+      };
+    } else if (contributionSimulation.data) {
+      const result = contributionSimulation.data;
+      const simulation = result.simulation;
+      const hasStrategyAllocation = simulation?.allocations.some(
+        (allocation) => BigInt(allocation.contributionValueCents) > 0n,
+      );
+      capacitySimulation = {
+        state:
+          result.reserveStatus === "incomplete"
+            ? "reserve-incomplete"
+            : simulation && !simulation.completeness.complete
+              ? "portfolio-incomplete"
+              : !simulation &&
+                  result.reserveContributionCents !== null &&
+                  BigInt(result.reserveContributionCents) > 0n
+                ? "reserve-priority"
+                : !hasStrategyAllocation &&
+                    (result.reserveContributionCents === null ||
+                      BigInt(result.reserveContributionCents) === 0n) &&
+                    simulation !== null &&
+                    BigInt(simulation.unallocatedContributionCents) > 0n
+                  ? "unallocated"
+                  : "ready",
+        reserveContributionCents: result.reserveContributionCents,
+        allocations: simulation?.allocations ?? [],
+        unallocatedContributionCents:
+          simulation?.unallocatedContributionCents ?? "0",
+      };
+    } else {
+      capacitySimulation = {
+        state: "error",
+        reserveContributionCents: null,
+        allocations: [],
+        unallocatedContributionCents: "0",
+      };
+    }
+  }
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -199,7 +348,10 @@ export function FinancialOverview() {
           <Button
             variant="outline"
             disabled={!canEdit}
-            onClick={() => setRecurrencesOpen(true)}
+            onClick={() => {
+              setEditingRecurrenceId(null);
+              setRecurrencesOpen(true);
+            }}
           >
             <CalendarClock className="mr-2 size-4" />
             Recorrências
@@ -289,6 +441,14 @@ export function FinancialOverview() {
               </Card>
             ))}
           </div>
+          {data?.summary.completeness === "recorded_only" && (
+            <FinancialCapacitySummary
+              monthLabel={monthLabel(month)}
+              expectedBalance={data.summary.expectedBalance}
+              historicalMonth={isHistoricalMonth}
+              simulation={capacitySimulation}
+            />
+          )}
           {data?.summary.completeness === "no_data" && (
             <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
               Ainda não há registros neste mês. Cadastre uma receita, despesa ou
@@ -338,10 +498,7 @@ export function FinancialOverview() {
       <EntryDialog
         key={editingEntry?.id ?? "new-entry"}
         open={entryOpen}
-        onOpenChange={(open) => {
-          setEntryOpen(open);
-          if (!open) setEditingEntry(null);
-        }}
+        onOpenChange={setEntryOpen}
         categories={overview.data?.categories ?? []}
         entry={editingEntry}
         recurrences={recurrences.data?.recurrences ?? []}
@@ -353,10 +510,7 @@ export function FinancialOverview() {
       />
       <RecurrencesSheet
         open={recurrencesOpen}
-        onOpenChange={(open) => {
-          setRecurrencesOpen(open);
-          if (!open) setEditingRecurrenceId(null);
-        }}
+        onOpenChange={setRecurrencesOpen}
         month={month}
         data={recurrences.data}
         loading={recurrences.isPending}
