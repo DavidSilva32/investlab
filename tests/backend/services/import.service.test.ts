@@ -343,8 +343,70 @@ const persistenceFile = {
   type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   buffer: Buffer.from("b3"),
 };
+const makeRedemption = (
+  id: string,
+  occurredAt: string,
+  quantity: string,
+  overrides: Record<string, unknown> = {},
+) => ({
+  id,
+  eventFingerprint: id,
+  direction: "DEBITO",
+  occurredAt,
+  movementType: "RESGATE TOTAL",
+  product: "CDB - CDB1 - BANCO A",
+  assetCode: "CDB1",
+  institution: "Banco A",
+  quantity,
+  operationValue: "100",
+  ...overrides,
+});
 
 describe("ImportService persistence", () => {
+  it("returns the repository review for movements imported after a position snapshot", async () => {
+    const movementReview = [
+      {
+        assetKey: "v1:retired-position",
+        objectiveName: "Viagem",
+        reason: "total_redemption",
+      },
+    ];
+    parser.mockReturnValue({
+      documentType: "B3_MOVEMENT_XLSX",
+      movements: [
+        {
+          sourceRow: 2,
+          direction: "DEBITO",
+          occurredAt: "2026-11-13",
+          movementType: "RESGATE TOTAL",
+          product: "CDB - CDB1 - BANCO A",
+          assetCode: "CDB1",
+          originalAssetCode: "CDB1",
+          institution: "Banco A",
+          quantity: "1",
+          unitPrice: "1",
+          operationValue: "1",
+        },
+      ],
+    });
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockResolvedValue({
+      importId: "movement-import",
+      retirementReview: movementReview,
+    });
+
+    const result = await importService.confirm(
+      persistenceFile,
+      "request-late-movement",
+    );
+
+    expect(result.retirementReview).toEqual(movementReview);
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ documentType: "B3_MOVEMENT_XLSX" }),
+      "request-late-movement",
+    );
+  });
+
   it("rejects malformed retired objective assignments before any write", async () => {
     parser.mockReturnValue({
       documentType: "B3_POSITION_XLSX",
@@ -725,10 +787,9 @@ describe("ImportService persistence", () => {
       totalValue: "100",
       referenceDate: "2026-11-12",
     };
-    const incoming = { ...previous, institution: "Banco B" };
     parser.mockReturnValue({
       documentType: "B3_POSITION_XLSX",
-      positions: [incoming],
+      positions: [],
     });
     repository.listLatestPositions.mockResolvedValue([previous]);
     objectives.list.mockResolvedValue({
@@ -764,6 +825,9 @@ describe("ImportService persistence", () => {
       },
       {
         id: "redemption-after-snapshot",
+        sourceRow: 3,
+        originalAssetCode: "CDB1",
+        unitPrice: null,
         direction: "DEBITO",
         occurredAt: "2026-11-13",
         movementType: "RESGATE TOTAL",
@@ -843,20 +907,28 @@ describe("ImportService persistence", () => {
     repository.existsByHash.mockResolvedValue(false);
     repository.create.mockResolvedValue({ importId: "new-import" });
     await expect(
-      importService.confirm(persistenceFile, "request-confirm", "2026-09-28"),
+      importService.confirm(persistenceFile, "request-confirm", "2026-11-13"),
     ).resolves.toMatchObject({ duplicate: false });
     expect(repository.existsByHash).toHaveBeenCalledTimes(2);
     expect(repository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         retiredObjectiveAssignments: [
-          { assetKey: getEmergencyReserveAssetKey(previous), objectiveId },
+          {
+            assetKey: getEmergencyReserveAssetKey(previous),
+            objectiveId,
+            previousSnapshotReferenceDate: "2026-11-12",
+            previousPositionQuantity: "1",
+            assetCode: "CDB1",
+            institution: "Banco A",
+            evidenceFingerprints: [expect.any(String)],
+          },
         ],
       }),
       "request-confirm",
     );
   });
 
-  it("automatically retires every disappeared assigned position when confirming a new snapshot", async () => {
+  it("preserves an absent assignment when movements do not prove full redemption", async () => {
     const objectiveId = "00000000-0000-4000-8000-000000000001";
     const previous = {
       product: "CDB Banco A",
@@ -869,12 +941,12 @@ describe("ImportService persistence", () => {
       maturityAt: "2027-01-01",
       quantity: "1",
       totalValue: "100",
+      referenceDate: "2026-11-12",
     };
-    const incoming = { ...previous, institution: "Banco B" };
     const staleAssetKey = getEmergencyReserveAssetKey(previous);
     parser.mockReturnValue({
       documentType: "B3_POSITION_XLSX",
-      positions: [incoming],
+      positions: [],
     });
     repository.listLatestPositions.mockResolvedValue([previous]);
     repository.existsByHash.mockResolvedValue(false);
@@ -884,23 +956,29 @@ describe("ImportService persistence", () => {
       assignments: [{ assetKey: staleAssetKey, objectiveId }],
     });
 
-    await expect(
-      importService.confirm(
-        persistenceFile,
-        "request-retired-position",
-        "2026-09-28",
-      ),
-    ).resolves.toMatchObject({ duplicate: false });
+    const result = await importService.confirm(
+      persistenceFile,
+      "request-retired-position",
+      "2026-11-13",
+    );
+    expect(result.duplicate).toBe(false);
 
     expect(repository.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        retiredObjectiveAssignments: [{ assetKey: staleAssetKey, objectiveId }],
+        retiredObjectiveAssignments: [],
       }),
       "request-retired-position",
     );
+    expect(result.retirementReview).toEqual([
+      {
+        assetKey: staleAssetKey,
+        objectiveName: "Viagem",
+        reason: "no_matching_redemption",
+      },
+    ]);
   });
 
-  it("uses the current objective assignment when automatically retiring a disappeared position", async () => {
+  it("uses total redemption evidence and the current objective assignment when retiring", async () => {
     const previous = {
       product: "CDB Banco A",
       institution: "Banco A",
@@ -912,13 +990,14 @@ describe("ImportService persistence", () => {
       maturityAt: "2027-01-01",
       quantity: "1",
       totalValue: "100",
+      referenceDate: "2026-11-12",
     };
     const staleAssetKey = getEmergencyReserveAssetKey(previous);
     const objectiveA = "00000000-0000-4000-8000-000000000001";
     const objectiveB = "00000000-0000-4000-8000-000000000002";
     parser.mockReturnValue({
       documentType: "B3_POSITION_XLSX",
-      positions: [{ ...previous, institution: "Banco B" }],
+      positions: [],
     });
     repository.listLatestPositions.mockResolvedValue([previous]);
     repository.existsByHash.mockResolvedValue(false);
@@ -929,25 +1008,47 @@ describe("ImportService persistence", () => {
       ],
       assignments: [{ assetKey: staleAssetKey, objectiveId: objectiveB }],
     });
+    repository.listMovements.mockResolvedValue([
+      {
+        id: "full-redemption",
+        eventFingerprint: "full-redemption-fingerprint",
+        direction: "DEBITO",
+        occurredAt: "2026-11-13",
+        movementType: "RESGATE TOTAL",
+        product: "CDB - CDB1 - BANCO A",
+        assetCode: "CDB1",
+        institution: "Banco A",
+        quantity: "1",
+        operationValue: "100",
+      },
+    ]);
 
     await expect(
       importService.confirm(
         persistenceFile,
         "request-reassigned-position",
-        "2026-09-28",
+        "2026-11-13",
       ),
     ).resolves.toMatchObject({ duplicate: false });
     expect(repository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         retiredObjectiveAssignments: [
-          { assetKey: staleAssetKey, objectiveId: objectiveB },
+          {
+            assetKey: staleAssetKey,
+            objectiveId: objectiveB,
+            previousSnapshotReferenceDate: "2026-11-12",
+            previousPositionQuantity: "1",
+            assetCode: "CDB1",
+            institution: "Banco A",
+            evidenceFingerprints: ["full-redemption-fingerprint"],
+          },
         ],
       }),
       "request-reassigned-position",
     );
   });
 
-  it("does not depend on client-supplied retirement choices", async () => {
+  it("ignores client retirement choices when redemption evidence is missing", async () => {
     const objectiveId = "00000000-0000-4000-8000-000000000001";
     const assigned = {
       product: "CDB Banco A",
@@ -960,10 +1061,11 @@ describe("ImportService persistence", () => {
       maturityAt: "2027-01-01",
       quantity: "1",
       totalValue: "100",
+      referenceDate: "2026-11-12",
     };
     parser.mockReturnValue({
       documentType: "B3_POSITION_XLSX",
-      positions: [{ ...assigned, institution: "Banco B" }],
+      positions: [],
     });
     repository.listLatestPositions.mockResolvedValue([assigned]);
     objectives.list.mockResolvedValue({
@@ -980,17 +1082,14 @@ describe("ImportService persistence", () => {
       importService.confirm(
         persistenceFile,
         "request-stale-retirement-decision",
-        "2026-09-28",
+        "2026-11-13",
+        undefined,
+        [{ assetKey: getEmergencyReserveAssetKey(assigned), objectiveId }],
       ),
     ).resolves.toMatchObject({ duplicate: false });
     expect(repository.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        retiredObjectiveAssignments: [
-          {
-            assetKey: getEmergencyReserveAssetKey(assigned),
-            objectiveId,
-          },
-        ],
+        retiredObjectiveAssignments: [],
       }),
       "request-stale-retirement-decision",
     );
@@ -1069,6 +1168,201 @@ describe("ImportService persistence", () => {
     await expect(
       importService.previewWithIdentityConflicts(persistenceFile, "request-1"),
     ).resolves.toMatchObject({ identityConflicts: [] });
+  });
+
+  it.each([
+    {
+      title: "a partial redemption",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [makeRedemption("partial", "2026-11-13", "0.4")],
+      reason: "partial_redemption",
+      closes: false,
+    },
+    {
+      title: "a redemption quantity above the prior holding",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [makeRedemption("over-redemption", "2026-11-13", "1.1")],
+      reason: "incomplete_evidence",
+      closes: false,
+    },
+    {
+      title: "a redemption with an invalid quantity",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [makeRedemption("invalid-quantity", "2026-11-13", "1e0")],
+      reason: "incomplete_evidence",
+      closes: false,
+    },
+    {
+      title: "a zero-quantity redemption",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [makeRedemption("zero-quantity", "2026-11-13", "0")],
+      reason: "incomplete_evidence",
+      closes: false,
+    },
+    {
+      title: "a compatible credit in the interval makes evidence ambiguous",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [
+        makeRedemption("credit-application", "2026-11-13", "1", {
+          direction: "CREDITO",
+          movementType: "APLICAÇÃO",
+        }),
+      ],
+      reason: "incomplete_evidence",
+      closes: false,
+    },
+    {
+      title: "an unexplained debit in the interval makes evidence ambiguous",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [
+        makeRedemption("unexplained-debit", "2026-11-13", "1", {
+          movementType: "AMORTIZAÇÃO",
+        }),
+      ],
+      reason: "incomplete_evidence",
+      closes: false,
+    },
+    {
+      title:
+        "multiple compatible redemptions whose quantities sum to the position",
+      incomingDate: "2026-11-14",
+      incomingPositions: [],
+      movements: [
+        makeRedemption("partial-a", "2026-11-13", "0.4"),
+        makeRedemption("partial-b", "2026-11-14", "0.6"),
+      ],
+      reason: "total_redemption",
+      closes: true,
+    },
+    {
+      title:
+        "duplicate redemption rows that would otherwise double the quantity",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [
+        makeRedemption("same-fingerprint", "2026-11-13", "0.5"),
+        makeRedemption("same-fingerprint", "2026-11-13", "0.5"),
+      ],
+      reason: "duplicate_evidence",
+      closes: false,
+    },
+    {
+      title: "a redemption from a different institution",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [
+        makeRedemption("different-bank", "2026-11-13", "1", {
+          institution: "Banco B",
+        }),
+      ],
+      reason: "institution_mismatch",
+      closes: false,
+    },
+    {
+      title: "a position with an unavailable quantity cannot be retired",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      previousQuantity: "",
+      movements: [
+        makeRedemption("missing-position-quantity", "2026-11-13", "1"),
+      ],
+      reason: "incomplete_evidence",
+      closes: false,
+    },
+    {
+      title: "fractional quantities are compared exactly",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      previousQuantity: "0.5",
+      movements: [makeRedemption("fractional-quantity", "2026-11-13", "0.5")],
+      reason: "total_redemption",
+      closes: true,
+    },
+    {
+      title: "a redemption dated before the previous snapshot",
+      incomingDate: "2026-11-13",
+      incomingPositions: [],
+      movements: [makeRedemption("old-redemption", "2026-11-11", "1")],
+      reason: "movement_before_previous_snapshot",
+      closes: false,
+    },
+    {
+      title: "a snapshot that is older than the current snapshot",
+      incomingDate: "2026-11-10",
+      incomingPositions: [],
+      movements: [makeRedemption("future-redemption", "2026-11-13", "1")],
+      reason: "snapshot_not_newer",
+      closes: false,
+    },
+    {
+      title:
+        "a same-code incoming position with a different institution identity",
+      incomingDate: "2026-11-13",
+      incomingPositions: [
+        {
+          product: "CDB Banco A",
+          institution: "Banco B",
+          issuer: "Banco A",
+          assetCode: "CDB1",
+          indexer: "CDI",
+          regimeType: "PÓS",
+          issuedAt: "2025-01-01",
+          maturityAt: "2027-01-01",
+          quantity: "1",
+          totalValue: "100",
+        },
+      ],
+      movements: [makeRedemption("matching", "2026-11-13", "1")],
+      reason: "identity_conflict",
+      closes: false,
+    },
+  ])("$title", async (scenario) => {
+    const objectiveId = "00000000-0000-4000-8000-000000000001";
+    const previous = {
+      product: "CDB Banco A",
+      institution: "Banco A",
+      issuer: "Banco A",
+      assetCode: "CDB1",
+      indexer: "CDI",
+      regimeType: "PÓS",
+      issuedAt: "2025-01-01",
+      maturityAt: "2027-01-01",
+      quantity: scenario.previousQuantity ?? "1",
+      totalValue: "100",
+      referenceDate: "2026-11-12",
+    };
+    const assetKey = getEmergencyReserveAssetKey(previous);
+    parser.mockReturnValue({
+      documentType: "B3_POSITION_XLSX",
+      positions: scenario.incomingPositions,
+    });
+    repository.listLatestPositions.mockResolvedValue([previous]);
+    repository.listMovements.mockResolvedValue(scenario.movements);
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockResolvedValue({ importId: "new-import" });
+    objectives.list.mockResolvedValue({
+      objectives: [{ id: objectiveId, name: "Viagem" }],
+      assignments: [{ assetKey, objectiveId }],
+    });
+
+    const result = await importService.confirm(
+      persistenceFile,
+      "request-redemption-scenario",
+      scenario.incomingDate,
+    );
+
+    expect(result.retirementReview).toEqual([
+      expect.objectContaining({ assetKey, reason: scenario.reason }),
+    ]);
+    const [{ retiredObjectiveAssignments }] = repository.create.mock
+      .calls[0] as [{ retiredObjectiveAssignments: unknown[] }, string];
+    expect(retiredObjectiveAssignments).toHaveLength(scenario.closes ? 1 : 0);
   });
 
   it("sorts disappeared assignments and leaves redemptions unmatched without an exact asset code", async () => {

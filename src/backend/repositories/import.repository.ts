@@ -1,5 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, inArray, desc, eq, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -47,6 +58,11 @@ type ImportCreateInput =
       retiredObjectiveAssignments?: Array<{
         assetKey: string;
         objectiveId: string;
+        previousSnapshotReferenceDate: string;
+        previousPositionQuantity: string;
+        assetCode: string;
+        institution: string;
+        evidenceFingerprints: string[];
       }>;
       reconcileExistingImport?: boolean;
       reprocessExistingImport?: boolean;
@@ -77,6 +93,12 @@ function normalizedAnchor(value: string) {
     .toLocaleUpperCase("pt-BR");
 }
 
+function normalizedMovementType(value: string | null | undefined) {
+  return normalizedAnchor(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function normalizedQuantity(value: string) {
   const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
   if (!match) return null;
@@ -86,6 +108,30 @@ function normalizedQuantity(value: string) {
   const isZero = /^0+$/.test(normalizedInteger) && normalizedFraction === "";
   return `${sign === "-" && !isZero ? "-" : ""}${normalizedInteger}${normalizedFraction ? `.${normalizedFraction}` : ""}`;
 }
+
+function exactQuantityUnits(value: string | null | undefined) {
+  const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(value?.trim() ?? "");
+  if (!match) return null;
+  return (
+    BigInt(match[1]!) * 100_000_000n + BigInt((match[2] ?? "").padEnd(8, "0"))
+  );
+}
+
+type MovementRetirementReview = {
+  assetKey: string;
+  objectiveId: string;
+  objectiveName: string;
+  reason:
+    | "total_redemption"
+    | "partial_redemption"
+    | "duplicate_evidence"
+    | "institution_mismatch"
+    | "identity_conflict"
+    | "snapshot_date_unavailable"
+    | "movement_before_previous_snapshot"
+    | "no_matching_redemption"
+    | "incomplete_evidence";
+};
 
 const genericInstrumentKinds = new Set(["UNKNOWN", "INVESTMENT_FUND"]);
 export class ImportRepository {
@@ -241,10 +287,15 @@ export class ImportRepository {
     retiredObjectiveAssignments: Array<{
       assetKey: string;
       objectiveId: string;
+      previousSnapshotReferenceDate: string;
+      previousPositionQuantity: string;
+      assetCode: string;
+      institution: string;
+      evidenceFingerprints: string[];
     }>,
   ) {
     await transaction.execute(
-      sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions} IN SHARE ROW EXCLUSIVE MODE`,
+      sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions}, ${movementItems} IN SHARE ROW EXCLUSIVE MODE`,
     );
     const [latestSnapshot] = await transaction
       .select({
@@ -271,11 +322,22 @@ export class ImportRepository {
     // A historical snapshot can be imported for history, but it cannot prove
     // that a position disappeared from the current portfolio. If the current
     // snapshot has no date, preserve assignments for the same reason.
-    if (
-      latestSnapshot.referenceDate === null ||
-      referenceDate < latestSnapshot.referenceDate
-    )
+    if (latestSnapshot.referenceDate === null) {
+      if (retiredObjectiveAssignments.length)
+        throw new ApplicationError(
+          "A posição mudou. Atualize a prévia antes de confirmar o encerramento do vínculo.",
+          409,
+        );
       return;
+    }
+    if (referenceDate <= latestSnapshot.referenceDate) {
+      if (retiredObjectiveAssignments.length)
+        throw new ApplicationError(
+          "O snapshot não é mais recente que a posição atual. O vínculo foi mantido.",
+          409,
+        );
+      return;
+    }
 
     const currentPositions = await transaction
       .select()
@@ -325,42 +387,111 @@ export class ImportRepository {
       assetKey: string;
       objectiveId: string;
     }) => JSON.stringify([assetKey, objectiveId]);
-    const conflictPairs = conflicts.map(pairKey).sort();
-    const confirmedPairs = retiredObjectiveAssignments.map(pairKey).sort();
-    const assignmentsMatch =
-      conflictPairs.length === confirmedPairs.length &&
-      conflictPairs.every((pair, index) => pair === confirmedPairs[index]);
-    if (!assignmentsMatch) {
-      if (!retiredObjectiveAssignments.length && conflicts.length) {
-        const affectedObjectiveIds = [
-          ...new Set(conflicts.map(({ objectiveId }) => objectiveId)),
-        ];
-        const affectedObjectives = await transaction
-          .select({
-            id: portfolioObjectives.id,
-            name: portfolioObjectives.name,
-          })
-          .from(portfolioObjectives)
-          .where(
-            and(
-              eq(portfolioObjectives.userId, userId),
-              inArray(portfolioObjectives.id, affectedObjectiveIds),
-            ),
-          );
-        const objectiveNameById = new Map(
-          affectedObjectives.map((objective) => [objective.id, objective.name]),
+    const conflictByPair = new Map(
+      conflicts.map((conflict) => [pairKey(conflict), conflict]),
+    );
+    const requestedPairs = retiredObjectiveAssignments.map(pairKey);
+    if (
+      new Set(requestedPairs).size !== requestedPairs.length ||
+      retiredObjectiveAssignments.some((candidate) => {
+        const current = conflictByPair.get(pairKey(candidate));
+        const position = positionByAssetKey.get(candidate.assetKey);
+        return (
+          !current ||
+          !position ||
+          latestSnapshot.referenceDate !==
+            candidate.previousSnapshotReferenceDate ||
+          normalizedQuantity(position.quantity) !==
+            normalizedQuantity(candidate.previousPositionQuantity) ||
+          normalizedAnchor(position.assetCode ?? "") !==
+            normalizedAnchor(candidate.assetCode) ||
+          normalizedAnchor(position.institution ?? "") !==
+            normalizedAnchor(candidate.institution) ||
+          !candidate.evidenceFingerprints.length ||
+          new Set(candidate.evidenceFingerprints).size !==
+            candidate.evidenceFingerprints.length
         );
-        const conflict = conflicts[0]!;
-        const position = positionByAssetKey.get(conflict.assetKey)!;
-        throw new ApplicationError(
-          `A posição ${position.product} atribuída a ${objectiveNameById.get(conflict.objectiveId) ?? "um objetivo"} mudou enquanto a importação era preparada. Atualize a prévia e investigue a identidade antes de confirmar.`,
-          409,
-        );
-      }
+      })
+    )
       throw new ApplicationError(
-        "As posições atribuídas mudaram. Atualize a prévia antes de confirmar a remoção dos vínculos.",
+        "As posições mudaram. Atualize a prévia antes de confirmar o encerramento do vínculo.",
         409,
       );
+
+    if (retiredObjectiveAssignments.length) {
+      const evidenceRows = await transaction
+        .select({
+          eventFingerprint: movementItems.eventFingerprint,
+          assetCode: movementItems.assetCode,
+          institution: movementItems.institution,
+          direction: movementItems.direction,
+          movementType: movementItems.movementType,
+          occurredAt: movementItems.occurredAt,
+        })
+        .from(movementItems)
+        .where(
+          and(
+            eq(movementItems.userId, userId),
+            gt(
+              movementItems.occurredAt,
+              retiredObjectiveAssignments
+                .map(
+                  ({ previousSnapshotReferenceDate }) =>
+                    previousSnapshotReferenceDate,
+                )
+                .sort()[0]!,
+            ),
+            lte(movementItems.occurredAt, referenceDate),
+          ),
+        );
+      if (
+        retiredObjectiveAssignments.some((candidate) => {
+          const periodRows = evidenceRows.filter(
+            (row) =>
+              normalizedAnchor(row.assetCode ?? "") ===
+                normalizedAnchor(candidate.assetCode) &&
+              row.occurredAt > candidate.previousSnapshotReferenceDate &&
+              row.occurredAt <= referenceDate,
+          );
+          const mismatchedInstitution = periodRows.some(
+            (row) =>
+              !row.institution ||
+              normalizedAnchor(row.institution) !==
+                normalizedAnchor(candidate.institution),
+          );
+          const ambiguousMovement = periodRows.some(
+            (row) =>
+              row.direction !== "DEBITO" ||
+              !normalizedMovementType(row.movementType).includes("RESGATE"),
+          );
+          const redemptions = periodRows.filter(
+            (row) =>
+              row.direction === "DEBITO" &&
+              normalizedMovementType(row.movementType).includes("RESGATE"),
+          );
+          const matchingFingerprints = redemptions
+            .map(({ eventFingerprint }) => eventFingerprint)
+            .sort();
+          const expectedFingerprints = [
+            ...candidate.evidenceFingerprints,
+          ].sort();
+          return (
+            mismatchedInstitution ||
+            ambiguousMovement ||
+            new Set(matchingFingerprints).size !==
+              matchingFingerprints.length ||
+            matchingFingerprints.length !== expectedFingerprints.length ||
+            matchingFingerprints.some(
+              (fingerprint, index) =>
+                fingerprint !== expectedFingerprints[index],
+            )
+          );
+        })
+      )
+        throw new ApplicationError(
+          "As movimentações mudaram ou estão duplicadas. O vínculo foi mantido; atualize os dados e tente novamente.",
+          409,
+        );
     }
 
     if (retiredObjectiveAssignments.length)
@@ -379,6 +510,203 @@ export class ImportRepository {
             ),
           ),
         );
+  }
+
+  private async retireAssignmentsAfterMovementImport(
+    transaction: Parameters<
+      Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
+    >[0],
+    userId: string,
+  ): Promise<MovementRetirementReview[]> {
+    const snapshots = await transaction
+      .select()
+      .from(positionSnapshots)
+      .where(eq(positionSnapshots.userId, userId))
+      .orderBy(
+        sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
+        desc(positionSnapshots.createdAt),
+        desc(positionSnapshots.id),
+      );
+    const latestSnapshot = snapshots[0];
+    if (!latestSnapshot?.referenceDate) return [];
+
+    const [positions, assignments, movements, objectives] = await Promise.all([
+      transaction
+        .select()
+        .from(positionItems)
+        .where(eq(positionItems.userId, userId)),
+      transaction
+        .select()
+        .from(portfolioObjectivePositions)
+        .where(eq(portfolioObjectivePositions.userId, userId)),
+      transaction
+        .select()
+        .from(movementItems)
+        .where(eq(movementItems.userId, userId)),
+      transaction
+        .select({ id: portfolioObjectives.id, name: portfolioObjectives.name })
+        .from(portfolioObjectives)
+        .where(eq(portfolioObjectives.userId, userId)),
+    ]);
+    if (!assignments.length) return [];
+
+    const objectiveNameById = new Map(
+      objectives.map(({ id, name }) => [id, name]),
+    );
+    const latestPositions = positions.filter(
+      (position) => position.snapshotId === latestSnapshot.id,
+    );
+    const latestAssetKeys = new Set(
+      latestPositions.map(getEmergencyReserveAssetKey),
+    );
+    const positionRowsBySnapshot = new Map<string, typeof positions>();
+    for (const position of positions) {
+      const snapshotPositions = positionRowsBySnapshot.get(position.snapshotId);
+      if (snapshotPositions) snapshotPositions.push(position);
+      else positionRowsBySnapshot.set(position.snapshotId, [position]);
+    }
+    const reviews: MovementRetirementReview[] = [];
+    const confirmed: Array<{ assetKey: string; objectiveId: string }> = [];
+
+    for (const assignment of assignments) {
+      if (!assignment.assetKey.startsWith("v1:")) continue;
+      if (latestAssetKeys.has(assignment.assetKey)) continue;
+      const objectiveName = objectiveNameById.get(assignment.objectiveId);
+      if (!objectiveName) continue;
+      const priorSnapshots = snapshots.filter(
+        (snapshot) =>
+          snapshot.referenceDate &&
+          snapshot.referenceDate < latestSnapshot.referenceDate!,
+      );
+      const baselineSnapshot = priorSnapshots.find((snapshot) =>
+        (positionRowsBySnapshot.get(snapshot.id) ?? []).some(
+          (position) =>
+            getEmergencyReserveAssetKey(position) === assignment.assetKey,
+        ),
+      );
+      const baselinePositions = baselineSnapshot
+        ? positionRowsBySnapshot
+            .get(baselineSnapshot.id)!
+            .filter(
+              (position) =>
+                getEmergencyReserveAssetKey(position) === assignment.assetKey,
+            )
+        : [];
+      const baseline = baselinePositions[0];
+      let reason: MovementRetirementReview["reason"] = "incomplete_evidence";
+      if (!baselineSnapshot?.referenceDate || !baseline) continue;
+      if (baselinePositions.length !== 1) {
+        reason = "incomplete_evidence";
+      } else {
+        const assetCode = normalizedAnchor(baseline.assetCode ?? "");
+        const institution = normalizedAnchor(baseline.institution ?? "");
+        const identityConflict = latestPositions.some(
+          (position) =>
+            getEmergencyReserveAssetKey(position) !== assignment.assetKey &&
+            ((assetCode &&
+              normalizedAnchor(position.assetCode ?? "") === assetCode) ||
+              normalizedAnchor(position.product) ===
+                normalizedAnchor(baseline.product)),
+        );
+        const periodMovements = movements.filter(
+          (movement) =>
+            movement.occurredAt > baselineSnapshot.referenceDate! &&
+            movement.occurredAt <= latestSnapshot.referenceDate! &&
+            assetCode !== "" &&
+            normalizedAnchor(movement.assetCode ?? "") === assetCode,
+        );
+        const mismatchedInstitution = periodMovements.some(
+          (movement) =>
+            !institution ||
+            !movement.institution ||
+            normalizedAnchor(movement.institution) !== institution,
+        );
+        const redemptions = periodMovements.filter(
+          (movement) =>
+            movement.direction === "DEBITO" &&
+            normalizedMovementType(movement.movementType).includes("RESGATE"),
+        );
+        const ambiguousMovement = periodMovements.some(
+          (movement) =>
+            movement.direction !== "DEBITO" ||
+            !normalizedMovementType(movement.movementType).includes("RESGATE"),
+        );
+        const previousRedemptionExists = movements.some(
+          (movement) =>
+            movement.occurredAt <= baselineSnapshot.referenceDate! &&
+            movement.assetCode &&
+            normalizedAnchor(movement.assetCode) === assetCode &&
+            movement.direction === "DEBITO" &&
+            normalizedMovementType(movement.movementType).includes("RESGATE"),
+        );
+        const baselineQuantity = exactQuantityUnits(baseline.quantity);
+        const redeemedQuantity = redemptions.reduce<bigint | null>(
+          (total, movement) => {
+            const quantity = exactQuantityUnits(movement.quantity);
+            return total === null || quantity === null || quantity === 0n
+              ? null
+              : total + quantity;
+          },
+          0n,
+        );
+        if (identityConflict) {
+          reason = "identity_conflict";
+        } else if (mismatchedInstitution) {
+          reason = "institution_mismatch";
+        } else if (ambiguousMovement) {
+          reason = "incomplete_evidence";
+        } else if (
+          new Set(redemptions.map(({ eventFingerprint }) => eventFingerprint))
+            .size !== redemptions.length
+        ) {
+          reason = "duplicate_evidence";
+        } else if (!redemptions.length) {
+          reason = previousRedemptionExists
+            ? "movement_before_previous_snapshot"
+            : "no_matching_redemption";
+        } else if (
+          baselineQuantity === null ||
+          baselineQuantity === 0n ||
+          redeemedQuantity === null
+        ) {
+          reason = "incomplete_evidence";
+        } else if (redeemedQuantity === baselineQuantity) {
+          reason = "total_redemption";
+        } else if (redeemedQuantity < baselineQuantity) {
+          reason = "partial_redemption";
+        }
+      }
+      reviews.push({
+        assetKey: assignment.assetKey,
+        objectiveId: assignment.objectiveId,
+        objectiveName,
+        reason,
+      });
+      if (reason === "total_redemption")
+        confirmed.push({
+          assetKey: assignment.assetKey,
+          objectiveId: assignment.objectiveId,
+        });
+    }
+
+    if (confirmed.length) {
+      await transaction
+        .delete(portfolioObjectivePositions)
+        .where(
+          and(
+            eq(portfolioObjectivePositions.userId, userId),
+            or(
+              ...confirmed.map(({ assetKey, objectiveId }) =>
+                and(
+                  eq(portfolioObjectivePositions.assetKey, assetKey),
+                  eq(portfolioObjectivePositions.objectiveId, objectiveId),
+                ),
+              ),
+            ),
+          ),
+        );
+    }
+    return reviews;
   }
 
   private async enrichExistingB3PositionImport(
@@ -695,11 +1023,10 @@ export class ImportRepository {
           );
           if (
             decisionKeys.size !== decisions.length ||
-            decisions.length !== candidates.length ||
-            candidates.some(
-              (candidate) =>
-                !decisions.some(
-                  (decision) =>
+            decisions.some(
+              (decision) =>
+                !candidates.some(
+                  (candidate) =>
                     decision.manualAssetKey === candidate.manualAssetKey &&
                     decision.importedAssetKey === candidate.importedAssetKey &&
                     decision.manualUpdatedAt === candidate.manualUpdatedAt,
@@ -898,6 +1225,10 @@ export class ImportRepository {
             ...existing,
           };
         }
+        if (input.documentType === "B3_MOVEMENT_XLSX")
+          await transaction.execute(
+            sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions}, ${movementItems} IN SHARE ROW EXCLUSIVE MODE`,
+          );
         const [importRecord] = await transaction
           .insert(imports)
           .values({
@@ -923,7 +1254,12 @@ export class ImportRepository {
               ...movement,
             })),
           );
-          return { importId: importRecord.id };
+          const retirementReview =
+            await this.retireAssignmentsAfterMovementImport(
+              transaction,
+              userId,
+            );
+          return { importId: importRecord.id, retirementReview };
         }
         if (input.documentType === "B3_TRADING_XLSX") {
           await transaction.insert(tradingItems).values(
