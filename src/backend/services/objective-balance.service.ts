@@ -173,18 +173,22 @@ export class ObjectiveBalanceService {
       const mcpWrite = mcpIdempotency
         ? { ...mcpIdempotency, replayResult }
         : undefined;
-      const saved = await this.withReplayRecovery(mcpWrite, () =>
-        this.repository.saveObservedBalance({
-          objectiveId: parsed.data.objectiveId,
-          amountCents,
-          observedOn: parsed.data.observedOn,
-          cdiPercentage,
-          mcpIdempotency: mcpWrite,
-        }),
+      const { result: saved, replayed } = await this.withReplayRecovery(
+        mcpWrite,
+        () =>
+          this.repository.saveObservedBalance({
+            objectiveId: parsed.data.objectiveId,
+            amountCents,
+            observedOn: parsed.data.observedOn,
+            cdiPercentage,
+            mcpIdempotency: mcpWrite,
+          }),
       );
       if (!saved) throw new ApplicationError("Objetivo não encontrado.", 404);
       return mcpIdempotency
-        ? replayResult
+        ? replayed
+          ? (saved as Record<string, unknown>)
+          : replayResult
         : {
             ...saved,
             observedDate: parsed.data.observedOn,
@@ -260,18 +264,22 @@ export class ObjectiveBalanceService {
       const mcpWrite = input.mcpIdempotency
         ? { ...input.mcpIdempotency, replayResult }
         : undefined;
-      const saved = await this.withReplayRecovery(mcpWrite, () =>
-        this.repository.saveObservedBalance({
-          objectiveId: reserveObjectiveId,
-          amountCents: input.amountCents,
-          observedOn: input.observedOn,
-          cdiPercentage: input.cdiPercentage,
-          mcpIdempotency: mcpWrite,
-        }),
+      const { result: saved, replayed } = await this.withReplayRecovery(
+        mcpWrite,
+        () =>
+          this.repository.saveObservedBalance({
+            objectiveId: reserveObjectiveId,
+            amountCents: input.amountCents,
+            observedOn: input.observedOn,
+            cdiPercentage: input.cdiPercentage,
+            mcpIdempotency: mcpWrite,
+          }),
       );
       return saved
         ? input.mcpIdempotency
-          ? replayResult
+          ? replayed
+            ? (saved as Record<string, unknown>)
+            : replayResult
           : {
               ...saved,
               assignmentStatus: "preserved" as const,
@@ -279,6 +287,30 @@ export class ObjectiveBalanceService {
             }
         : null;
     }
+    const replayResult = input.mcpIdempotency
+      ? {
+          objectiveId: reserveObjectiveId,
+          amountCents: input.amountCents,
+          observedDate: input.observedOn,
+          assignmentStatus: "updated",
+          changedPositionCount:
+            assignment.selectedAssetKeys.filter(
+              (assetKey) =>
+                (assignment.expectedOwners[assetKey] ?? null) !==
+                reserveObjectiveId,
+            ).length +
+            Object.entries(assignment.expectedOwners).filter(
+              ([assetKey, owner]) =>
+                owner === reserveObjectiveId &&
+                !assignment.selectedAssetKeys.includes(assetKey),
+            ).length,
+          transferredPositionCount: assignment.selectedAssetKeys.filter(
+            (assetKey) =>
+              (assignment.expectedOwners[assetKey] ?? null) !== null &&
+              assignment.expectedOwners[assetKey] !== reserveObjectiveId,
+          ).length,
+        }
+      : undefined;
     const saved = await this.repository.saveReserveBalanceWithAssignments({
       amountCents: input.amountCents,
       observedOn: input.observedOn,
@@ -289,32 +321,11 @@ export class ObjectiveBalanceService {
       mcpIdempotency: input.mcpIdempotency
         ? {
             ...input.mcpIdempotency,
-            replayResult: {
-              objectiveId: reserveObjectiveId,
-              amountCents: input.amountCents,
-              observedDate: input.observedOn,
-              assignmentStatus: "updated",
-              changedPositionCount:
-                assignment.selectedAssetKeys.filter(
-                  (assetKey) =>
-                    (assignment.expectedOwners[assetKey] ?? null) !==
-                    reserveObjectiveId,
-                ).length +
-                Object.entries(assignment.expectedOwners).filter(
-                  ([assetKey, owner]) =>
-                    owner === reserveObjectiveId &&
-                    !assignment.selectedAssetKeys.includes(assetKey),
-                ).length,
-              transferredPositionCount: assignment.selectedAssetKeys.filter(
-                (assetKey) =>
-                  (assignment.expectedOwners[assetKey] ?? null) !== null &&
-                  assignment.expectedOwners[assetKey] !== reserveObjectiveId,
-              ).length,
-            },
+            replayResult: replayResult!,
           }
         : undefined,
     });
-    return input.mcpIdempotency ? input.mcpIdempotency.replayResult : saved;
+    return replayResult ?? saved;
   }
 
   private async saveObjectiveBalanceWithAssignments(input: {
@@ -350,18 +361,22 @@ export class ObjectiveBalanceService {
       const mcpWrite = input.mcpIdempotency
         ? { ...input.mcpIdempotency, replayResult }
         : undefined;
-      const saved = await this.withReplayRecovery(mcpWrite, () =>
-        this.repository.saveObservedBalance({
-          objectiveId: input.objectiveId,
-          amountCents: input.amountCents,
-          observedOn: input.observedOn,
-          cdiPercentage: input.cdiPercentage,
-          mcpIdempotency: mcpWrite,
-        }),
+      const { result: saved, replayed } = await this.withReplayRecovery(
+        mcpWrite,
+        () =>
+          this.repository.saveObservedBalance({
+            objectiveId: input.objectiveId,
+            amountCents: input.amountCents,
+            observedOn: input.observedOn,
+            cdiPercentage: input.cdiPercentage,
+            mcpIdempotency: mcpWrite,
+          }),
       );
       return saved
         ? input.mcpIdempotency
-          ? replayResult
+          ? replayed
+            ? (saved as Record<string, unknown>)
+            : replayResult
           : {
               ...saved,
               observedDate: input.observedOn,
@@ -433,9 +448,9 @@ export class ObjectiveBalanceService {
   private async withReplayRecovery<T>(
     idempotency: McpBalanceIdempotency | undefined,
     operation: () => Promise<T>,
-  ): Promise<T> {
+  ): Promise<{ result: T; replayed: boolean }> {
     try {
-      return await operation();
+      return { result: await operation(), replayed: false };
     } catch (error) {
       const postgresError = error as { code?: string };
       if (idempotency && postgresError.code === "23505") {
@@ -444,7 +459,7 @@ export class ObjectiveBalanceService {
           key: idempotency.key,
           payloadHash: idempotency.payloadHash,
         });
-        if (replay) return replay as T;
+        if (replay) return { result: replay as T, replayed: true };
       }
       throw error;
     }

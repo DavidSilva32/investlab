@@ -208,6 +208,31 @@ describe("McpPortfolioToolsService read tools", () => {
     );
   });
 
+  it("generates request IDs for manual position writes when context is omitted", async () => {
+    const position = { id: "manual-id" };
+    mocks.createManualPosition.mockResolvedValue(position);
+    mocks.updateManualPosition.mockResolvedValue(position);
+
+    await service.createMyManualPosition(
+      "trusted-owner",
+      { product: "CDB" },
+      "create-key",
+    );
+    await service.updateMyManualPosition(
+      "trusted-owner",
+      "manual-id",
+      { product: "CDB" },
+      "2026-11-14T15:00:00.000Z",
+      "update-key",
+    );
+
+    const createRequestId = mocks.createManualPosition.mock.calls[0][1];
+    const updateRequestId = mocks.updateManualPosition.mock.calls[0][2];
+    expect(createRequestId).toMatch(/^[\da-f-]{36}$/i);
+    expect(updateRequestId).toMatch(/^[\da-f-]{36}$/i);
+    expect(createRequestId).not.toBe(updateRequestId);
+  });
+
   it("deletes only the exact current manual position after explicit confirmation", async () => {
     const position = {
       id: "manual-id",
@@ -277,6 +302,92 @@ describe("McpPortfolioToolsService read tools", () => {
       ),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(mocks.deleteManualPosition).not.toHaveBeenCalled();
+  });
+
+  it("replays a completed manual position deletion and recovers a concurrent retry", async () => {
+    const replay = { deleted: true, positionId: "manual-id", replayed: true };
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(replay)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(replay);
+    mocks.listManualPositions.mockResolvedValue([]);
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        "manual-id",
+        "2026-11-14T15:00:00.000Z",
+        "CDB",
+        'EXCLUIR POSIÇÃO "CDB" [manual-id]',
+        "manual-delete-replay-key",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.listManualPositions).not.toHaveBeenCalled();
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        "manual-id",
+        "2026-11-14T15:00:00.000Z",
+        "CDB",
+        'EXCLUIR POSIÇÃO "CDB" [manual-id]',
+        "manual-delete-race-key",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.listManualPositions).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteManualPosition).not.toHaveBeenCalled();
+  });
+
+  it("fails when a manual position is missing and no concurrent deletion replay exists", async () => {
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mocks.listManualPositions.mockResolvedValue([]);
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        "missing-id",
+        "2026-11-14T15:00:00.000Z",
+        "CDB",
+        'EXCLUIR POSIÇÃO "CDB" [missing-id]',
+        "manual-delete-missing-key",
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("returns the stored receipt after deleting an un-coded manual position", async () => {
+    const position = {
+      id: "manual-no-code",
+      product: "CDB do banco",
+      lastUpdatedAt: "2026-11-14T15:00:00.000Z",
+    };
+    const replayResult = { deleted: true, positionId: position.id };
+    mocks.listManualPositions.mockResolvedValue([position]);
+    mocks.deleteManualPosition.mockResolvedValue({
+      mcpReplayResult: replayResult,
+    });
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        position.id,
+        position.lastUpdatedAt,
+        "CDB do banco",
+        `EXCLUIR POSIÇÃO "CDB do banco" [${position.id}]`,
+        "manual-delete-stored-result-key",
+      ),
+    ).resolves.toEqual({ mcpReplayResult: replayResult });
+    expect(mocks.deleteManualPosition).toHaveBeenCalledWith(
+      position.id,
+      undefined,
+      expect.objectContaining({
+        expectedUpdatedAt: position.lastUpdatedAt,
+        mcpMutation: expect.objectContaining({
+          replayResult: expect.objectContaining({ positionId: position.id }),
+        }),
+      }),
+    );
   });
 
   it("deletes only the current objective identity after exact owner confirmation", async () => {
@@ -356,6 +467,115 @@ describe("McpPortfolioToolsService read tools", () => {
       ),
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.deleteObjective).not.toHaveBeenCalled();
+  });
+
+  it("replays objective deletion results and recovers concurrent retries", async () => {
+    const replay = {
+      deleted: true,
+      objectiveId: "objective-id",
+      replayed: true,
+    };
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(replay)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(replay);
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "objective-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        'EXCLUIR OBJETIVO "Viagem" [objective-id]',
+        "objective-delete-replay-key",
+        "request-id",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.getObjectivesOverview).not.toHaveBeenCalled();
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "objective-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        'EXCLUIR OBJETIVO "Viagem" [objective-id]',
+        "objective-delete-race-key",
+        "request-id",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.getObjectivesOverview).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteObjective).not.toHaveBeenCalled();
+  });
+
+  it("rejects an incorrect objective deletion confirmation before writing", async () => {
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [
+        {
+          id: "objective-id",
+          name: "Viagem",
+          updatedAt: "2026-11-14T15:00:00.000Z",
+          assignedPositionCount: 1,
+        },
+      ],
+    });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "objective-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        "EXCLUIR",
+        "objective-delete-bad-confirmation",
+        "request-id",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.deleteObjective).not.toHaveBeenCalled();
+  });
+
+  it("returns a repository-provided objective deletion replay receipt", async () => {
+    const objective = {
+      id: "objective-id",
+      name: "Viagem",
+      updatedAt: "2026-11-14T15:00:00.000Z",
+      assignedPositionCount: 1,
+    };
+    const replay = { deleted: true, objectiveId: objective.id, replayed: true };
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [objective] });
+    mocks.deleteObjective.mockResolvedValue({ mcpReplay: replay });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        objective.id,
+        objective.updatedAt,
+        objective.name,
+        `EXCLUIR OBJETIVO "${objective.name}" [${objective.id}]`,
+        "objective-delete-stored-result-key",
+        "request-id",
+      ),
+    ).resolves.toBe(replay);
+  });
+
+  it("fails when an objective is missing and no concurrent deletion replay exists", async () => {
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "missing-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        'EXCLUIR OBJETIVO "Viagem" [missing-id]',
+        "objective-delete-missing-key",
+        "request-id",
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("creates an objective inside the trusted token owner's context", async () => {

@@ -95,6 +95,12 @@ describe("McpMutationReplaysRepository", () => {
     });
 
     database.returning.mockResolvedValueOnce([]);
+    database.limit.mockResolvedValueOnce([]);
+    await expect(
+      repository.reserve(database as never, key),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    database.returning.mockResolvedValueOnce([]);
     database.limit.mockResolvedValueOnce([
       { payloadHash: key.payloadHash, result: null },
     ]);
@@ -143,6 +149,9 @@ describe("McpMutationReplaysRepository", () => {
     await expect(repository.find(key)).rejects.toMatchObject({
       statusCode: 409,
     });
+
+    database.limit.mockResolvedValueOnce([]);
+    await expect(repository.find(key)).resolves.toBeNull();
 
     database.limit.mockResolvedValueOnce([
       { payloadHash: key.payloadHash, result: null },

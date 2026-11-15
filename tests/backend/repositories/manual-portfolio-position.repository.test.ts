@@ -565,6 +565,24 @@ describe("ManualPortfolioPositionRepository", () => {
     expect(database.query.insert).not.toHaveBeenCalled();
   });
 
+  it("rejects an idempotent update when the position disappeared before locking", async () => {
+    database.query.limit.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row },
+        "req",
+        undefined,
+        row.updatedAt,
+        {
+          operation: "update_manual_position",
+          key: "update-key",
+          payloadHash: "a".repeat(64),
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("updates a position and reports a missing row as null", async () => {
     const repository = new ManualPortfolioPositionRepository();
     await expect(repository.update(id, { ...row }, "req")).resolves.toEqual(
@@ -654,6 +672,24 @@ describe("ManualPortfolioPositionRepository", () => {
     expect(database.query.update).not.toHaveBeenCalled();
   });
 
+  it("rejects an idempotent update when the row disappears during the write", async () => {
+    database.query.returning.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row },
+        "req",
+        undefined,
+        row.updatedAt,
+        {
+          operation: "update_manual_position",
+          key: "update-key",
+          payloadHash: "a".repeat(64),
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("deletes a position and reports a missing row as null", async () => {
     const repository = new ManualPortfolioPositionRepository();
     await expect(repository.delete(id, "req")).resolves.toEqual({ id });
@@ -680,6 +716,20 @@ describe("ManualPortfolioPositionRepository", () => {
       ),
     ).rejects.toBeInstanceOf(ApplicationError);
     expect(database.query.delete).not.toHaveBeenCalled();
+  });
+
+  it("rejects an idempotent delete when the position disappeared before locking", async () => {
+    database.query.limit.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().delete(id, "req", row.updatedAt, {
+        key: {
+          operation: "delete_manual_position",
+          key: "delete-key",
+          payloadHash: "b".repeat(64),
+        },
+        replayResult: { deleted: true, positionId: id },
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("replays manual deletion receipts after hard deletion without querying the row", async () => {

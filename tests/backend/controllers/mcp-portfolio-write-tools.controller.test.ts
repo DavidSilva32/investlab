@@ -335,4 +335,58 @@ describe("McpPortfolioWriteToolsController", () => {
       "request-1",
     );
   });
+
+  it("converts failures from every write tool to the safe MCP error response", async () => {
+    controller.register(
+      { registerTool: mocks.registerTool } as never,
+      "trusted-owner",
+      "request-1",
+    );
+    const input = {
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL",
+      targetAmount: 16000,
+      monthlyPlannedAmount: 2000,
+      objectiveId: "a2cb9250-387c-4699-8a2b-06f9d1a9b062",
+      amount: "56042.48",
+      observedOn: "2026-11-14",
+      cdiPercentage: null,
+      expectedUpdatedAt: "2026-11-14T15:00:00.000Z",
+      idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7",
+      confirmation:
+        'EXCLUIR OBJETIVO "Viagem" [a2cb9250-387c-4699-8a2b-06f9d1a9b062]',
+      objectiveName: "Viagem",
+      product: "ETF internacional",
+      assetCode: "VT",
+      quantity: 2,
+      currency: "USD",
+      valueBasis: "unit_price",
+      unitPrice: 100,
+      positionDate: "2026-11-14",
+      positionId: "a2cb9250-387c-4699-8a2b-06f9d1a9b062",
+      positionIdentity: "ETF internacional (VT)",
+    };
+    const toolMocks = [
+      ["write_create_objective", mocks.createMyObjective],
+      ["write_update_objective", mocks.updateMyObjective],
+      ["write_delete_objective", mocks.deleteMyObjective],
+      ["write_save_observed_balance", mocks.saveMyObservedBalance],
+      ["write_create_manual_position", mocks.createMyManualPosition],
+      ["write_update_manual_position", mocks.updateMyManualPosition],
+      ["write_delete_manual_position", mocks.deleteMyManualPosition],
+    ] as const;
+
+    for (const [toolName, serviceMock] of toolMocks) {
+      serviceMock.mockRejectedValueOnce(new Error("database secret details"));
+      await expect(handlers.get(toolName)!(input as never)).resolves.toEqual({
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: "Não foi possível concluir a operação no InvestLab.",
+          },
+        ],
+      });
+    }
+  });
 });

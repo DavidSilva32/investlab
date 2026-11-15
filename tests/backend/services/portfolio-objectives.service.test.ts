@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   updateWithMcpReplay: vi.fn(),
   delete: vi.fn(),
+  deleteWithMcpReplay: vi.fn(),
   getObjective: vi.fn(),
   findMcpMutationReplay: vi.fn(),
   replaceAssignments: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
     update: mocks.update,
     updateWithMcpReplay: mocks.updateWithMcpReplay,
     delete: mocks.delete,
+    deleteWithMcpReplay: mocks.deleteWithMcpReplay,
     getObjective: mocks.getObjective,
     replaceAssignments: mocks.replaceAssignments,
     replaceAssignmentsWithTransfers: mocks.replaceAssignmentsWithTransfers,
@@ -1009,6 +1011,16 @@ describe("PortfolioObjectivesService", () => {
     );
   });
 
+  it("rejects an invalid objective creation idempotency key", async () => {
+    await expect(
+      new PortfolioObjectivesService().create(
+        { name: "Viagem", purpose: "PERSONAL_GOAL" },
+        { idempotencyKey: "short" },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
   it("stores an omitted monthly plan as null", async () => {
     await new PortfolioObjectivesService().create({
       name: "Longo prazo",
@@ -1084,6 +1096,153 @@ describe("PortfolioObjectivesService", () => {
       ),
     ).resolves.toMatchObject({ updatedAt: objective.updatedAt });
     expect(mocks.getObjective).not.toHaveBeenCalled();
+  });
+
+  it("requires a current expected version for an idempotent objective update", async () => {
+    const objectiveId = "b6d84f7a-4f3e-4a41-a561-31a2ccbfad1e";
+    await expect(
+      new PortfolioObjectivesService().update(
+        objectiveId,
+        {
+          name: "Viagem revisada",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: 18000,
+          monthlyPlannedAmount: 1000,
+        },
+        { idempotencyKey: "update-objective-key" },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.getObjective).not.toHaveBeenCalled();
+    expect(mocks.updateWithMcpReplay).not.toHaveBeenCalled();
+  });
+
+  it("hydrates the result from an MCP objective update replay", async () => {
+    const objectiveId = "b6d84f7a-4f3e-4a41-a561-31a2ccbfad1e";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    const replay = {
+      ...customObjective,
+      createdAt: customObjective.createdAt.toISOString(),
+      updatedAt: "2026-11-14T15:01:00.000Z",
+    };
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id: objectiveId,
+      updatedAt: new Date(expectedUpdatedAt),
+    });
+    mocks.updateWithMcpReplay.mockResolvedValueOnce({
+      mcpReplayResult: replay,
+    });
+
+    await expect(
+      new PortfolioObjectivesService().update(
+        objectiveId,
+        {
+          name: "Viagem revisada",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: 18000,
+          monthlyPlannedAmount: 1000,
+        },
+        {
+          expectedUpdatedAt,
+          idempotencyKey: "update-objective-replay-key",
+        },
+      ),
+    ).resolves.toMatchObject({ updatedAt: new Date(replay.updatedAt) });
+  });
+
+  it("rejects an invalid expected version before updating an objective", async () => {
+    const objectiveId = "b6d84f7a-4f3e-4a41-a561-31a2ccbfad1e";
+    await expect(
+      new PortfolioObjectivesService().update(
+        objectiveId,
+        {
+          name: "Viagem revisada",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: 18000,
+          monthlyPlannedAmount: 1000,
+        },
+        { expectedUpdatedAt: "not-a-timestamp" },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.getObjective).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("rechecks an idempotent update after a stale version and returns a completed replay", async () => {
+    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    const replay = {
+      ...customObjective,
+      id: objectiveId,
+      createdAt: customObjective.createdAt.toISOString(),
+      updatedAt: "2026-11-14T15:00:00.001Z",
+    };
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(replay);
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id: objectiveId,
+      updatedAt: new Date("2026-11-14T15:00:00.001Z"),
+    });
+
+    await expect(
+      new PortfolioObjectivesService().update(
+        objectiveId,
+        { name: "Viagem revisada", purpose: "PERSONAL_GOAL" },
+        { expectedUpdatedAt, idempotencyKey: "update-replay-key" },
+      ),
+    ).resolves.toMatchObject({ updatedAt: new Date(replay.updatedAt) });
+    expect(mocks.findMcpMutationReplay).toHaveBeenCalledTimes(2);
+    expect(mocks.updateWithMcpReplay).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale idempotent update when no completed replay exists", async () => {
+    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
+    mocks.findMcpMutationReplay.mockResolvedValue(null);
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id: objectiveId,
+      updatedAt: new Date("2026-11-14T15:00:00.001Z"),
+    });
+
+    await expect(
+      new PortfolioObjectivesService().update(
+        objectiveId,
+        { name: "Viagem revisada", purpose: "PERSONAL_GOAL" },
+        {
+          expectedUpdatedAt: "2026-11-14T15:00:00.000Z",
+          idempotencyKey: "update-stale-key",
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.updateWithMcpReplay).not.toHaveBeenCalled();
+  });
+
+  it("reports a concurrent objective update when the expected version changes in storage", async () => {
+    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    mocks.getObjective
+      .mockResolvedValueOnce({
+        ...customObjective,
+        id: objectiveId,
+        updatedAt: new Date(expectedUpdatedAt),
+      })
+      .mockResolvedValueOnce({
+        ...customObjective,
+        id: objectiveId,
+        updatedAt: new Date("2026-11-14T15:01:00.000Z"),
+      });
+    mocks.update.mockResolvedValueOnce(null);
+
+    await expect(
+      new PortfolioObjectivesService().update(
+        objectiveId,
+        { name: "Viagem revisada", purpose: "PERSONAL_GOAL" },
+        { expectedUpdatedAt },
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.getObjective).toHaveBeenCalledTimes(2);
   });
 
   it("creates a destination without a target or monthly plan", async () => {
@@ -1266,6 +1425,121 @@ describe("PortfolioObjectivesService", () => {
     await expect(
       new PortfolioObjectivesService().delete(id, { objectiveId: id }),
     ).resolves.toMatchObject({ id });
+  });
+
+  it("deletes an objective with an expected version without MCP metadata", async () => {
+    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id,
+      updatedAt: new Date(expectedUpdatedAt),
+    });
+    mocks.delete.mockResolvedValueOnce({ ...customObjective, id });
+
+    await expect(
+      new PortfolioObjectivesService().delete(
+        id,
+        { objectiveId: id },
+        { expectedUpdatedAt },
+      ),
+    ).resolves.toMatchObject({ id });
+    expect(mocks.delete).toHaveBeenCalledWith(id, new Date(expectedUpdatedAt));
+  });
+
+  it("returns the persisted replay receipt when an idempotent objective delete is retried", async () => {
+    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    const receipt = { deleted: true, objectiveId: id };
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id,
+      updatedAt: new Date(expectedUpdatedAt),
+    });
+    mocks.deleteWithMcpReplay.mockResolvedValueOnce({
+      mcpReplayResult: receipt,
+    });
+
+    await expect(
+      new PortfolioObjectivesService().delete(
+        id,
+        { objectiveId: id },
+        {
+          expectedUpdatedAt,
+          mcpMutation: {
+            key: "delete-objective-key",
+            payloadHash: "a".repeat(64),
+            replayResult: receipt,
+          },
+        },
+      ),
+    ).resolves.toEqual({ mcpReplay: receipt });
+    expect(mocks.deleteWithMcpReplay).toHaveBeenCalledWith(
+      id,
+      new Date(expectedUpdatedAt),
+      expect.objectContaining({ operation: "delete_objective" }),
+      receipt,
+    );
+  });
+
+  it("returns the objective delete result from the MCP transaction", async () => {
+    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    const deleted = { ...customObjective, id, name: "Viagem arquivada" };
+    mocks.getObjective.mockResolvedValueOnce({
+      ...customObjective,
+      id,
+      updatedAt: new Date(expectedUpdatedAt),
+    });
+    mocks.deleteWithMcpReplay.mockResolvedValueOnce({ mcpDeleted: deleted });
+
+    await expect(
+      new PortfolioObjectivesService().delete(
+        id,
+        { objectiveId: id },
+        {
+          expectedUpdatedAt,
+          mcpMutation: {
+            key: "delete-objective-key",
+            payloadHash: "b".repeat(64),
+            replayResult: { deleted: true, objectiveId: id },
+          },
+        },
+      ),
+    ).resolves.toEqual(deleted);
+  });
+
+  it("reports a concurrent delete when the objective still exists after its version changes", async () => {
+    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
+    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
+    mocks.getObjective
+      .mockResolvedValueOnce({
+        ...customObjective,
+        id,
+        updatedAt: new Date(expectedUpdatedAt),
+      })
+      .mockResolvedValueOnce({
+        ...customObjective,
+        id,
+        updatedAt: new Date("2026-11-14T15:01:00.000Z"),
+      });
+    mocks.deleteWithMcpReplay.mockResolvedValueOnce(null);
+
+    await expect(
+      new PortfolioObjectivesService().delete(
+        id,
+        { objectiveId: id },
+        {
+          expectedUpdatedAt,
+          mcpMutation: {
+            key: "delete-objective-race-key",
+            payloadHash: "c".repeat(64),
+            replayResult: { deleted: true, objectiveId: id },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.getObjective).toHaveBeenCalledTimes(2);
   });
 
   it("rejects objective deletion when the expected version is stale", async () => {

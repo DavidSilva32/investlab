@@ -476,6 +476,30 @@ describe("ManualPortfolioPositionService", () => {
     );
   });
 
+  it("requires an expected version when an MCP update has an idempotency key", async () => {
+    await expect(
+      new ManualPortfolioPositionService().update("position-id", input, "req", {
+        idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it.each(["not-a-date", "2026-09-20T12:00:00Z"])(
+    "rejects non-canonical expected versions (%s)",
+    async (expectedUpdatedAt) => {
+      await expect(
+        new ManualPortfolioPositionService().update(
+          "position-id",
+          input,
+          "req",
+          { expectedUpdatedAt },
+        ),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(repository.update).not.toHaveBeenCalled();
+    },
+  );
+
   it("preserves an existing informational CDI percentage when an edit omits it", async () => {
     repository.update.mockImplementation(async (_id, value) => ({
       ...saved({ product: "CDB", informationalCdiPercentage: "100.0000" }),

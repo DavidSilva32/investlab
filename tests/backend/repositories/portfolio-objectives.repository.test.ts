@@ -658,6 +658,36 @@ describe("PortfolioObjectivesRepository", () => {
     );
   });
 
+  it("returns a replayed objective create with normalized timestamps", async () => {
+    const replay = {
+      id: "goal-replay",
+      name: "Viagem",
+      createdAt: "2026-11-14T15:00:00.000Z",
+      updatedAt: "2026-11-14T16:00:00.000Z",
+    };
+    const tx = { insert: vi.fn() };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+    mutationReplay.reserve.mockResolvedValueOnce({
+      replayed: true,
+      result: replay,
+    });
+
+    const result = await new PortfolioObjectivesRepository().create({
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL",
+      targetAmount: "1000.00",
+      monthlyPlannedAmount: null,
+      mcpIdempotency: { key: "create-replay-key", payloadHash: "a".repeat(64) },
+    });
+
+    expect(result).toMatchObject({ id: replay.id, name: replay.name });
+    expect(result.createdAt).toEqual(new Date(replay.createdAt));
+    expect(result.updatedAt).toEqual(new Date(replay.updatedAt));
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
   it("stores objective updates in the same transaction and returns retry replays before mutation", async () => {
     const previous = {
       id: "goal-1",
@@ -730,6 +760,83 @@ describe("PortfolioObjectivesRepository", () => {
       ),
     ).resolves.toEqual({ mcpReplayResult: updated });
     expect(tx.select).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing, stale, or no-longer-updatable objectives", async () => {
+    const expectedUpdatedAt = new Date("2026-11-14T15:00:00.000Z");
+    const input = {
+      name: "Viagem revisada",
+      purpose: "PERSONAL_GOAL" as const,
+      targetAmount: "1500.00",
+      monthlyPlannedAmount: null,
+    };
+    const idempotency = {
+      operation: "update_objective" as const,
+      key: "update-failure-key",
+      payloadHash: "a".repeat(64),
+    };
+    const prepare = (previous: unknown[], updated: unknown[] = []) => {
+      const limit = vi.fn().mockResolvedValue(previous);
+      const whereSelect = vi.fn().mockReturnValue({
+        for: vi.fn().mockReturnValue({ limit }),
+      });
+      const returning = vi.fn().mockResolvedValue(updated);
+      const tx = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({ where: whereSelect }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({ returning }),
+          }),
+        }),
+      };
+      database.transaction.mockImplementation(async (callback) =>
+        callback(tx as never),
+      );
+      return tx;
+    };
+    const repository = new PortfolioObjectivesRepository();
+
+    let tx = prepare([]);
+    await expect(
+      repository.updateWithMcpReplay(
+        "goal-missing",
+        input,
+        expectedUpdatedAt,
+        idempotency,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(tx.update).not.toHaveBeenCalled();
+
+    tx = prepare([
+      {
+        id: "goal-1",
+        userId: "user-1",
+        updatedAt: new Date("2026-11-14T14:00:00.000Z"),
+      },
+    ]);
+    await expect(
+      repository.updateWithMcpReplay(
+        "goal-1",
+        input,
+        expectedUpdatedAt,
+        idempotency,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(tx.update).not.toHaveBeenCalled();
+
+    tx = prepare([
+      { id: "goal-1", userId: "user-1", updatedAt: expectedUpdatedAt },
+    ]);
+    await expect(
+      repository.updateWithMcpReplay(
+        "goal-1",
+        input,
+        expectedUpdatedAt,
+        idempotency,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("keeps objective deletion receipts after hard deletion and replays without another delete", async () => {
@@ -818,6 +925,87 @@ describe("PortfolioObjectivesRepository", () => {
     expect(tx.delete).toHaveBeenCalledOnce();
   });
 
+  it("protects the reserve and rejects missing, stale, or already-deleted goals", async () => {
+    const expectedUpdatedAt = new Date("2026-11-14T15:00:00.000Z");
+    const idempotency = {
+      operation: "delete_objective" as const,
+      key: "delete-failure-key",
+      payloadHash: "d".repeat(64),
+    };
+    const receipt = { deleted: true, objectiveId: "goal-1" };
+    const prepare = (previous: unknown[], deleted: unknown[] = []) => {
+      const limit = vi.fn().mockResolvedValue(previous);
+      const whereSelect = vi.fn().mockReturnValue({
+        for: vi.fn().mockReturnValue({ limit }),
+      });
+      const returning = vi.fn().mockResolvedValue(deleted);
+      const tx = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({ where: whereSelect }),
+        }),
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({ returning }),
+        }),
+      };
+      database.transaction.mockImplementation(async (callback) =>
+        callback(tx as never),
+      );
+      return tx;
+    };
+    const repository = new PortfolioObjectivesRepository();
+
+    let tx = prepare([]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        reserveObjectiveId,
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(tx.select).not.toHaveBeenCalled();
+
+    tx = prepare([]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        "goal-missing",
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(tx.delete).not.toHaveBeenCalled();
+
+    tx = prepare([
+      {
+        id: "goal-1",
+        userId: "user-1",
+        updatedAt: new Date("2026-11-14T14:00:00.000Z"),
+      },
+    ]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        "goal-1",
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(tx.delete).not.toHaveBeenCalled();
+
+    tx = prepare([
+      { id: "goal-1", userId: "user-1", updatedAt: expectedUpdatedAt },
+    ]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        "goal-1",
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("appends a canonical observed balance to a new batch", async () => {
     const objectiveQuery = {
       from: vi.fn().mockReturnThis(),
@@ -885,6 +1073,47 @@ describe("PortfolioObjectivesRepository", () => {
     );
   });
 
+  it("saves a balance without MCP replay metadata for regular interface updates", async () => {
+    const objectiveQuery = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      for: vi.fn().mockResolvedValue([{ id: "goal-1" }]),
+    };
+    const referenceValues = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: "reference-regular" }]),
+    });
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: "batch-regular" }]),
+        }),
+      })
+      .mockReturnValueOnce({ values: referenceValues });
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select: () => objectiveQuery, insert }),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveObservedBalance({
+        objectiveId: "goal-1",
+        amountCents: "12345",
+        observedOn: "2026-10-01",
+        cdiPercentage: null,
+      }),
+    ).resolves.toMatchObject({
+      id: "reference-regular",
+      observedDate: "2026-10-01",
+    });
+    expect(referenceValues).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        mcpOperation: expect.anything(),
+        mcpIdempotencyKey: expect.anything(),
+        mcpReplayResult: expect.anything(),
+      }),
+    );
+  });
+
   it("looks up a balance replay using the active owner and returns its stored result", async () => {
     const replayResult = { objectiveId: "goal-1", assignmentStatus: "updated" };
     const where = vi.fn().mockReturnValue({
@@ -931,6 +1160,44 @@ describe("PortfolioObjectivesRepository", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(where).toHaveBeenCalledOnce();
+  });
+
+  it("returns no balance replay when the key is absent and rejects unusable stored results", async () => {
+    const where = vi.fn();
+    database.select.mockReturnValue({
+      from: () => ({
+        where: (...args: unknown[]) => {
+          where(...args);
+          return { limit: vi.fn().mockResolvedValue([]) };
+        },
+      }),
+    });
+    const repository = new PortfolioObjectivesRepository();
+    const input = {
+      operation: "save_observed_balance",
+      key: "replay-missing-key",
+      payloadHash: "b".repeat(64),
+    };
+    await expect(repository.findMcpBalanceReplay(input)).resolves.toBeNull();
+
+    for (const replayResult of [null, [], "invalid"] as const) {
+      database.select.mockReturnValue({
+        from: () => ({
+          where: () => ({
+            limit: vi
+              .fn()
+              .mockResolvedValue([
+                { payloadHash: input.payloadHash, replayResult },
+              ]),
+          }),
+        }),
+      });
+      await expect(
+        repository.findMcpBalanceReplay(input),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+      });
+    }
   });
 
   it("does not append a balance when its objective no longer exists", async () => {

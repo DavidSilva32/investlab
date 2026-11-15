@@ -130,6 +130,23 @@ function createService(options?: {
 }
 
 describe("ObjectiveBalanceService", () => {
+  it("rejects an idempotency key outside the supported length before looking up a replay", async () => {
+    const { service, repository } = createService();
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "short" },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repository.findMcpBalanceReplay).not.toHaveBeenCalled();
+  });
+
   it("persists a stable replay result for historical balance calls", async () => {
     const { service, repository } = createService();
     const input = {
@@ -157,6 +174,59 @@ describe("ObjectiveBalanceService", () => {
         }),
       }),
     );
+  });
+
+  it("returns the stored result when a historical balance write races with a duplicate", async () => {
+    const { service, repository } = createService();
+    const replay = {
+      objectiveId: reference().objectiveId,
+      amountCents: "10000",
+      observedDate: "2026-10-01",
+      assignmentStatus: "preserved",
+      assignmentReason: "historical_balance",
+    };
+    repository.saveObservedBalance.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate balance"), { code: "23505" }),
+    );
+    repository.findMcpBalanceReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(replay);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reference().objectiveId,
+          amount: "100.00",
+          observedOn: "2026-10-01",
+        },
+        undefined,
+        { idempotencyKey: "history-race-key" },
+      ),
+    ).resolves.toBe(replay);
+  });
+
+  it("rethrows a fallback duplicate when no matching MCP replay was saved", async () => {
+    const { service, repository, objectiveAssignment } = createService();
+    const failure = Object.assign(new Error("duplicate balance"), {
+      code: "23505",
+    });
+    objectiveAssignment.findAutomaticObjectiveAssignment.mockRejectedValueOnce(
+      new Error("matching unavailable"),
+    );
+    repository.saveObservedBalance.mockRejectedValueOnce(failure);
+    repository.findMcpBalanceReplay.mockResolvedValueOnce(null);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reference().objectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "fallback-no-replay-key" },
+      ),
+    ).rejects.toBe(failure);
   });
 
   it("returns the stored response without writing again after a completed retry", async () => {
@@ -459,6 +529,132 @@ describe("ObjectiveBalanceService", () => {
     expect(saved).toMatchObject({ changedPositionCount: 2 });
   });
 
+  it("records exact MCP counts for newly linked, transferred, retained, and removed reserve positions", async () => {
+    const { service, repository, reserveAssignment } = createService();
+    reserveAssignment.findAutomaticAssignment.mockResolvedValueOnce({
+      selectedAssetKeys: [
+        "new-unowned",
+        "transfer",
+        "already-owned",
+        "owner-omitted",
+      ],
+      expectedOwners: {
+        "new-unowned": null,
+        transfer: "objective-other",
+        "already-owned": reserveObjectiveId,
+        removed: reserveObjectiveId,
+      },
+      expectedSourceFingerprint: "c".repeat(64),
+    } as never);
+
+    const result = await service.save(
+      {
+        objectiveId: reserveObjectiveId,
+        amount: "56042.48",
+        observedOn: "2026-11-14",
+      },
+      "request-1",
+      { idempotencyKey: "reserve-balance-key" },
+    );
+
+    expect(result).toMatchObject({
+      assignmentStatus: "updated",
+      changedPositionCount: 4,
+      transferredPositionCount: 1,
+    });
+    expect(repository.saveReserveBalanceWithAssignments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpIdempotency: expect.objectContaining({ replayResult: result }),
+      }),
+    );
+  });
+
+  it("rethrows an unexpected reserve persistence failure after checking the duplicate-key condition", async () => {
+    const { service, repository } = createService();
+    const failure = new Error("database unavailable");
+    repository.saveReserveBalanceWithAssignments.mockRejectedValueOnce(failure);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "reserve-balance-key" },
+      ),
+    ).rejects.toBe(failure);
+    expect(repository.findMcpBalanceReplay).toHaveBeenCalledTimes(1);
+    expect(repository.findMcpBalanceReplay).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "reserve-balance-key" }),
+    );
+  });
+
+  it("rethrows a duplicate reserve write when no saved MCP replay exists", async () => {
+    const { service, repository } = createService();
+    const failure = Object.assign(new Error("duplicate balance"), {
+      code: "23505",
+    });
+    repository.saveReserveBalanceWithAssignments.mockRejectedValueOnce(failure);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "reserve-duplicate-key" },
+      ),
+    ).rejects.toBe(failure);
+    expect(repository.findMcpBalanceReplay).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers an idempotent observed balance after reserve assignment is unavailable and a duplicate insert races", async () => {
+    const { service, repository, reserveAssignment } = createService();
+    const original = {
+      objectiveId: reserveObjectiveId,
+      amountCents: "10000",
+      observedDate: "2026-11-14",
+      assignmentStatus: "preserved",
+    };
+    reserveAssignment.findAutomaticAssignment.mockRejectedValueOnce(
+      new Error("automatic matching unavailable"),
+    );
+    repository.saveObservedBalance.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate idempotency reservation"), {
+        code: "23505",
+      }),
+    );
+    repository.findMcpBalanceReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(original);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "reserve-fallback-key" },
+      ),
+    ).resolves.toBe(original);
+    expect(repository.saveObservedBalance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpIdempotency: expect.objectContaining({
+          replayResult: expect.objectContaining({
+            assignmentStatus: "preserved",
+            assignmentReason: "calculation_unavailable",
+          }),
+        }),
+      }),
+    );
+  });
+
   it("saves the observed reserve balance and preserves links when automatic matching is unavailable", async () => {
     const { service, repository, reserveAssignment } = createService();
     reserveAssignment.findAutomaticAssignment.mockRejectedValueOnce(
@@ -479,6 +675,29 @@ describe("ObjectiveBalanceService", () => {
       observedOn: "2026-11-14",
       cdiPercentage: null,
     });
+  });
+
+  it("returns the calculated reserve result when MCP fallback persistence succeeds", async () => {
+    const { service, reserveAssignment, repository } = createService();
+    reserveAssignment.findAutomaticAssignment.mockRejectedValueOnce(
+      new Error("matching unavailable"),
+    );
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "56042.48",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "reserve-fallback-success" },
+      ),
+    ).resolves.toMatchObject({
+      assignmentStatus: "preserved",
+      assignmentReason: "calculation_unavailable",
+    });
+    expect(repository.saveObservedBalance).toHaveBeenCalledOnce();
   });
 
   it("saves a historical reserve balance without recalculating current links", async () => {
@@ -562,6 +781,89 @@ describe("ObjectiveBalanceService", () => {
       assignmentStatus: "preserved",
       assignmentReason: "calculation_unavailable",
     });
+  });
+
+  it("returns the calculated objective result when MCP fallback persistence succeeds", async () => {
+    const { service, objectiveAssignment, repository } = createService();
+    objectiveAssignment.findAutomaticObjectiveAssignment.mockRejectedValueOnce(
+      new Error("matching unavailable"),
+    );
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reference().objectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "objective-fallback-success" },
+      ),
+    ).resolves.toMatchObject({
+      assignmentStatus: "preserved",
+      assignmentReason: "calculation_unavailable",
+    });
+    expect(repository.saveObservedBalance).toHaveBeenCalledOnce();
+  });
+
+  it("rethrows a failed observed-balance fallback without an MCP key", async () => {
+    const { service, objectiveAssignment, repository } = createService();
+    const failure = new Error("persistence unavailable");
+    objectiveAssignment.findAutomaticObjectiveAssignment.mockRejectedValueOnce(
+      new Error("matching unavailable"),
+    );
+    repository.saveObservedBalance.mockRejectedValueOnce(failure);
+
+    await expect(
+      service.save({
+        objectiveId: reference().objectiveId,
+        amount: "100.00",
+        observedOn: "2026-11-14",
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it("returns a stable replay when an objective assignment fallback collides with an already saved balance", async () => {
+    const { service, repository, objectiveAssignment } = createService();
+    const savedResponse = {
+      objectiveId: reference().objectiveId,
+      amountCents: "10000",
+      observedDate: "2026-11-14",
+      assignmentStatus: "preserved",
+    };
+    objectiveAssignment.findAutomaticObjectiveAssignment.mockRejectedValueOnce(
+      new Error("assignment calculation unavailable"),
+    );
+    repository.saveObservedBalance.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate idempotency reservation"), {
+        code: "23505",
+      }),
+    );
+    repository.findMcpBalanceReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(savedResponse);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reference().objectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "objective-fallback-key" },
+      ),
+    ).resolves.toBe(savedResponse);
+    expect(repository.saveObservedBalance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpIdempotency: expect.objectContaining({
+          replayResult: expect.objectContaining({
+            assignmentStatus: "preserved",
+            assignmentReason: "calculation_unavailable",
+          }),
+        }),
+      }),
+    );
   });
 
   it("saves a historical regular objective balance without recalculating links", async () => {
