@@ -8,7 +8,7 @@ import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 describe("PortfolioObjectiveBalanceTracking", () => {
   afterEach(cleanup);
 
-  it("explains that an observed reserve balance drives its goal without duplicating portfolio value", () => {
+  it("keeps the reserve update focused on its balance and automatic allocation", () => {
     render(
       <PortfolioObjectiveBalanceTracking
         objectiveId={reserveObjectiveId}
@@ -24,13 +24,12 @@ describe("PortfolioObjectiveBalanceTracking", () => {
       />,
     );
 
-    expect(screen.getByText("Saldo total da Reserva")).toBeTruthy();
-    expect(screen.getByText("Usado na meta")).toBeTruthy();
+    expect(screen.getByText("Atualizar saldo da Reserva")).toBeTruthy();
     expect(
-      screen.getByText(/aproxima esse valor com posições de renda fixa/u),
+      screen.getByText(/Esse saldo atualiza o progresso da meta/u),
     ).toBeTruthy();
     expect(
-      screen.getByText(/Em data anterior, só salva o saldo/u),
+      screen.getByText(/ajusta os vínculos automaticamente/u),
     ).toBeTruthy();
     expect(screen.getByLabelText("Saldo atual (R$)")).toBeTruthy();
     expect(screen.getByLabelText("Data-base")).toBeTruthy();
@@ -54,9 +53,7 @@ describe("PortfolioObjectiveBalanceTracking", () => {
       screen.getByLabelText("Saldo observado de Reserva"),
       "56042,48",
     );
-    await user.click(
-      screen.getByRole("button", { name: "Salvar saldo observado" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Salvar saldo" }));
     expect(onSave).toHaveBeenCalledWith({
       objectiveId: reserveObjectiveId,
       amount: "56042.48",

@@ -76,7 +76,7 @@ describe("PortfolioObjectiveDetail", () => {
     expect(onEdit).toHaveBeenCalledOnce();
   });
 
-  it("exposes separate position and reserve settings actions", async () => {
+  it("keeps manual position and target settings under advanced options", async () => {
     const user = userEvent.setup();
     const onManagePositions = vi.fn();
     const onConfigureReserve = vi.fn();
@@ -97,11 +97,20 @@ describe("PortfolioObjectiveDetail", () => {
       />,
     );
 
+    expect(
+      screen.queryByRole("button", { name: "Gerenciar posições" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Editar despesas e meta" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Opções avançadas" }));
     await user.click(
-      screen.getByRole("button", { name: /Gerenciar posições/ }),
+      screen.getByRole("button", { name: "Ajustar posições manualmente" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Editar despesas e meta" }),
     );
     expect(onManagePositions).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole("button", { name: "Editar reserva" }));
     expect(onConfigureReserve).toHaveBeenCalledOnce();
     expect(screen.getByText("Não configurada")).toBeTruthy();
     expect(
@@ -141,7 +150,7 @@ describe("PortfolioObjectiveDetail", () => {
     expect(screen.getByText(/R\$\s*56\.042,48/u)).toBeTruthy();
     expect(screen.getByText("Informado em 14/11/2026")).toBeTruthy();
     expect(screen.getByText("Meta atingida")).toBeTruthy();
-    expect(screen.getByText("Usado na meta")).toBeTruthy();
+    expect(screen.queryByText("Usado na meta")).toBeNull();
     expect(screen.queryByText(/Falta R\$/)).toBeNull();
     expect(screen.queryByText(/R\$\s*50\.459,11/u)).toBeNull();
   });

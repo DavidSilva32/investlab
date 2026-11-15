@@ -169,15 +169,17 @@ function BalanceTrackingEditor({
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle id="objective-balance-title" className="text-base">
-            {isReserve ? "Saldo total da Reserva" : "Saldo observado no banco"}
+            {isReserve
+              ? "Atualizar saldo da Reserva"
+              : "Saldo observado no banco"}
           </CardTitle>
-          <Badge variant="outline">
-            {isReserve ? "Usado na meta" : "Acompanhamento separado"}
-          </Badge>
+          {!isReserve && (
+            <Badge variant="outline">Acompanhamento separado</Badge>
+          )}
         </div>
         <p className="text-sm text-muted-foreground">
           {isReserve
-            ? "Informe o saldo total. Para hoje, o sistema aproxima esse valor com posições de renda fixa e informa se transferiu vínculos de outros objetivos. Em data anterior, só salva o saldo e mantém os vínculos atuais."
+            ? "Informe o total e a data. Esse saldo atualiza o progresso da meta; o sistema ajusta os vínculos automaticamente. Se não encontrar uma combinação segura, salva o saldo e mantém os vínculos atuais."
             : "Para hoje, o sistema escolhe as posições disponíveis mais próximas para este objetivo e mantém os outros objetivos. A distribuição usa valores conhecidos das posições; o banco não confirma a composição do saldo. Em data anterior, só registra o saldo e mantém os vínculos atuais."}
         </p>
       </CardHeader>
@@ -330,7 +332,11 @@ function BalanceTrackingEditor({
           )}
           <div className="sm:col-span-2 lg:col-span-1">
             <Button className="w-full" type="submit" disabled={saving}>
-              {saving ? "Salvando…" : "Salvar saldo observado"}
+              {saving
+                ? "Salvando…"
+                : isReserve
+                  ? "Salvar saldo"
+                  : "Salvar saldo observado"}
             </Button>
           </div>
         </form>
