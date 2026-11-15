@@ -545,7 +545,7 @@ describe("PortfolioImport", () => {
     expect(confirmBody.has("estimationBaseDate")).toBe(false);
   });
 
-  it("explains automatic retirement with an exact redemption and does not send manual decisions", async () => {
+  it("explains the full-redemption rule and does not ask for manual retirement decisions", async () => {
     const preview = {
       ...positionPreview,
       identityConflicts: [
@@ -607,13 +607,14 @@ describe("PortfolioImport", () => {
       { target: { value: "13/11/2026" } },
     );
     expect(screen.getByRole("status").textContent).toContain(
-      "Ativos ausentes serão encerrados",
+      "Vínculos sob revisão automática",
     );
-    expect(
-      screen.getByText(
-        /O extrato registra RESGATE ANTECIPADO\/ em 29\/10\/2026/,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "só encerrará um vínculo",
+    );
+    expect(screen.getByRole("status").textContent).toContain(
+      "não alteram os valores do snapshot",
+    );
     expect(screen.queryByRole("checkbox")).toBeNull();
     const confirmButton = screen.getByRole("button", {
       name: /Confirmar 1 arquivo/,
@@ -731,11 +732,11 @@ describe("PortfolioImport", () => {
     expect(screen.queryByText(/O extrato registra .* em/)).toBeNull();
     fireEvent.change(dateInput, { target: { value: "15/11/2026" } });
     expect(screen.getByRole("status").textContent).toContain(
-      "Ativos ausentes serão encerrados",
+      "Vínculos sob revisão automática",
     );
-    expect(
-      screen.getByText(/O extrato registra RESGATE em 14\/11\/2026/),
-    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "só encerrará este vínculo",
+    );
     expect(screen.queryByText(/RESGATE ANTIGO/)).toBeNull();
     expect(screen.queryByText(/RESGATE FUTURO/)).toBeNull();
   });
@@ -850,6 +851,7 @@ describe("PortfolioImport", () => {
           product: "CDB - CDB1",
           assetCode: "CDB1",
           direction: "DEBITO",
+          institution: "Banco A",
           quantity: "1",
           operationValue: "100",
         },
@@ -859,6 +861,7 @@ describe("PortfolioImport", () => {
           product: "Movimento sem tipo",
           assetCode: "CDB1",
           direction: "DEBITO",
+          institution: "Banco A",
           quantity: "1",
           operationValue: "100",
         },
@@ -868,21 +871,28 @@ describe("PortfolioImport", () => {
           product: "CDB - CDB1",
           assetCode: "CDB1",
           direction: "DEBITO",
+          institution: "Banco A",
           quantity: "1",
           operationValue: "200",
         },
       ],
     };
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce({ ok: true, json: async () => preview })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => batchMovementPreview,
-        }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => preview })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => batchMovementPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Movimentações importadas." }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Posições importadas." }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
     const { container } = render(<PortfolioImport />);
     fireEvent.change(container.querySelector('input[type="file"]')!, {
       target: {
@@ -894,16 +904,21 @@ describe("PortfolioImport", () => {
       name: /^Data exibida na B3/,
     });
     fireEvent.change(dateInput, { target: { value: "13/11/2026" } });
-    expect(
-      screen.queryByText(/O extrato registra RESGATE ANTECIPADO em/),
-    ).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain(
+      "O sistema vai conferir as saídas compatíveis",
+    );
     fireEvent.change(dateInput, { target: { value: "15/11/2026" } });
-    expect(
-      screen.getByText(/O extrato registra RESGATE TOTAL em 15\/11\/2026/),
-    ).toBeTruthy();
-    expect(
-      screen.queryByText(/O extrato registra RESGATE ANTECIPADO em/),
-    ).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain(
+      "O sistema vai conferir as saídas compatíveis",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar 2 arquivo/ }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const confirmationOrder = fetchMock.mock.calls
+      .filter(([url]) => url === "/api/imports/confirm")
+      .map(([, init]) => ((init?.body as FormData).get("file") as File).name);
+    expect(confirmationOrder).toEqual(["movimentacao.xlsx", "posicao.xlsx"]);
   });
 
   it("confirms multiple snapshots without per-position retirement acknowledgements", async () => {
@@ -1086,12 +1101,12 @@ describe("PortfolioImport", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => positionPreview })
       .mockResolvedValueOnce({ ok: true, json: async () => movementPreview })
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ message: "Posições importadas." }),
-      })
-      .mockResolvedValueOnce({
         ok: false,
         json: async () => ({ message: "Movimentações recusadas." }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Posições importadas." }),
       })
       .mockResolvedValueOnce({
         ok: false,
@@ -1149,7 +1164,7 @@ describe("PortfolioImport", () => {
       confirmationRequests.map(
         ([, init]) => ((init?.body as FormData).get("file") as File).name,
       ),
-    ).toEqual(["posicoes.xlsx", "movimentos.xlsx", "movimentos.xlsx"]);
+    ).toEqual(["movimentos.xlsx", "posicoes.xlsx", "movimentos.xlsx"]);
     expect(portfolioUpdated).toHaveBeenCalledOnce();
     window.removeEventListener("portfolio:updated", portfolioUpdated);
   });

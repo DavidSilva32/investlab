@@ -13,7 +13,10 @@ import {
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
 import { createB3TradeIdentityFingerprint } from "@/backend/services/b3-trading-fingerprint";
 import { buildB3ReconciliationSummary } from "@/backend/services/b3-reconciliation-summary";
-import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
+import {
+  createB3MovementFingerprint,
+  prepareB3MovementForPersistence,
+} from "@/backend/services/b3-movement-fingerprint";
 import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
@@ -30,6 +33,7 @@ const documentTypes = new Set<B3DocumentType>([
 ]);
 type PositionIdentity = {
   product: string;
+  quantity: string;
   assetCode: string | null;
   institution: string | null;
   issuer: string | null;
@@ -44,6 +48,27 @@ const normalizedMovementText = (value: string | null | undefined) =>
   normalized(value)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+const QUANTITY_SCALE = 8;
+const quantityUnits = (value: string | null | undefined) => {
+  if (!value) return null;
+  const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(value.trim());
+  if (!match) return null;
+  return (
+    BigInt(match[1]!) * 10n ** BigInt(QUANTITY_SCALE) +
+    BigInt((match[2] ?? "").padEnd(QUANTITY_SCALE, "0") || "0")
+  );
+};
+type PositionRetirementReason =
+  | "total_redemption"
+  | "partial_redemption"
+  | "duplicate_evidence"
+  | "institution_mismatch"
+  | "identity_conflict"
+  | "snapshot_not_newer"
+  | "snapshot_date_unavailable"
+  | "movement_before_previous_snapshot"
+  | "no_matching_redemption"
+  | "incomplete_evidence";
 
 export class ImportService {
   async reconciliationSummary(requestId: string) {
@@ -361,17 +386,52 @@ export class ImportService {
     const reconcileExistingImport =
       reprocessExistingImport && parsedDecisions.data.length > 0;
     this.assertCanBeConfirmed(duplicate && !reprocessExistingImport);
-    let retiredAssignmentsForImport = parsedRetiredAssignments.data;
+    let retiredAssignmentsForImport: Array<{
+      assetKey: string;
+      objectiveId: string;
+      previousSnapshotReferenceDate: string;
+      previousPositionQuantity: string;
+      assetCode: string;
+      institution: string;
+      evidenceFingerprints: string[];
+    }> = [];
+    let retirementReview: Array<{
+      assetKey: string;
+      objectiveName: string;
+      reason: PositionRetirementReason;
+    }> = [];
     if (
       preview.documentType === "B3_POSITION_XLSX" &&
       !reprocessExistingImport
     ) {
-      const { conflicts } = await this.findAssignedPositionsMissingFromImport(
+      const review = await this.findAssignedPositionsMissingFromImport(
         preview.positions,
         requestId,
+        effectiveReferenceDate,
       );
-      retiredAssignmentsForImport = conflicts.map(
-        ({ assetKey, objectiveId }) => ({ assetKey, objectiveId }),
+      retiredAssignmentsForImport = review.conflicts.flatMap((conflict) =>
+        conflict.reason === "total_redemption" &&
+        conflict.previousSnapshotReferenceDate
+          ? [
+              {
+                assetKey: conflict.assetKey,
+                objectiveId: conflict.objectiveId,
+                previousSnapshotReferenceDate:
+                  conflict.previousSnapshotReferenceDate,
+                previousPositionQuantity: conflict.position.quantity,
+                assetCode: conflict.position.assetCode!,
+                institution: conflict.position.institution!,
+                evidenceFingerprints: conflict.evidenceFingerprints,
+              },
+            ]
+          : [],
+      );
+      retirementReview = review.conflicts.map(
+        ({ assetKey, objectiveName, reason }) => ({
+          assetKey,
+          objectiveName,
+          reason,
+        }),
       );
     }
     const importData =
@@ -399,6 +459,14 @@ export class ImportService {
       { fileName: file.name, fileHash: preview.hash, ...importData },
       requestId,
     );
+    if ("retirementReview" in result && result.retirementReview)
+      retirementReview = result.retirementReview.map(
+        ({ assetKey, objectiveName, reason }) => ({
+          assetKey,
+          objectiveName,
+          reason,
+        }),
+      );
     return {
       preview,
       result,
@@ -408,6 +476,7 @@ export class ImportService {
         "referenceDateUpdated" in result &&
         result.referenceDateUpdated,
       reprocessedExistingImport: reprocessExistingImport,
+      retirementReview,
     };
   }
 
@@ -436,6 +505,7 @@ export class ImportService {
   private async findAssignedPositionsMissingFromImport(
     incoming: PositionIdentity[],
     requestId: string,
+    incomingReferenceDate?: string | null,
   ) {
     const [currentPositions, objectives] = await Promise.all([
       importRepository.listLatestPositions(requestId),
@@ -494,33 +564,126 @@ export class ImportService {
       return { conflicts: [], latestPositionReferenceDate };
     const movements = await importRepository.listMovements(requestId);
     const conflictsWithRedemptions = missingPositions.map((conflict) => {
-      const assetCode = conflict.position.assetCode;
-      const matchingRedemptions = assetCode
-        ? movements
-            .filter(
-              (candidate) =>
-                Boolean(latestPositionReferenceDate) &&
-                candidate.occurredAt > latestPositionReferenceDate! &&
-                normalized(candidate.assetCode) === normalized(assetCode) &&
-                (!candidate.institution ||
-                  !conflict.position.institution ||
-                  normalized(candidate.institution) ===
-                    normalized(conflict.position.institution)) &&
-                candidate.direction === "DEBITO" &&
-                normalizedMovementText(candidate.movementType).includes(
-                  "RESGATE",
-                ),
-            )
-            .map((movement) => ({
-              occurredAt: movement.occurredAt,
-              movementType: movement.movementType,
-              quantity: movement.quantity,
-              operationValue: movement.operationValue,
-            }))
-        : [];
+      const assetCode = normalized(conflict.position.assetCode);
+      const positionAssetKey = conflict.assetKey;
+      const identityConflict = incoming.some(
+        (position) =>
+          getEmergencyReserveAssetKey(position) !== positionAssetKey &&
+          ((assetCode && normalized(position.assetCode) === assetCode) ||
+            normalized(position.product) ===
+              normalized(conflict.position.product)),
+      );
+      const matchingCodeMovements = movements.filter(
+        (candidate) =>
+          assetCode !== "" && normalized(candidate.assetCode) === assetCode,
+      );
+      const matchingCodeRedemptions = matchingCodeMovements.filter(
+        (candidate) =>
+          candidate.direction === "DEBITO" &&
+          normalizedMovementText(candidate.movementType).includes("RESGATE"),
+      );
+      const matchingRedemptions = matchingCodeRedemptions
+        .filter(
+          (candidate) =>
+            Boolean(latestPositionReferenceDate) &&
+            candidate.occurredAt > latestPositionReferenceDate! &&
+            (!incomingReferenceDate ||
+              candidate.occurredAt <= incomingReferenceDate),
+        )
+        .map((movement) => ({
+          occurredAt: movement.occurredAt,
+          movementType: movement.movementType,
+          quantity: movement.quantity,
+          operationValue: movement.operationValue,
+          institution: movement.institution,
+        }));
+      let reason: PositionRetirementReason = "incomplete_evidence";
+      let evidenceFingerprints: string[] = [];
+      if (!latestPositionReferenceDate || !incomingReferenceDate) {
+        reason = "snapshot_date_unavailable";
+      } else if (incomingReferenceDate <= latestPositionReferenceDate) {
+        reason = "snapshot_not_newer";
+      } else if (identityConflict) {
+        reason = "identity_conflict";
+      } else {
+        const periodMovements = matchingCodeMovements.filter(
+          (movement) =>
+            movement.occurredAt > latestPositionReferenceDate &&
+            movement.occurredAt <= incomingReferenceDate,
+        );
+        const mismatchedInstitution = periodMovements.some(
+          (movement) =>
+            !movement.institution ||
+            !conflict.position.institution ||
+            normalized(movement.institution) !==
+              normalized(conflict.position.institution),
+        );
+        const periodRedemptions = periodMovements.filter(
+          (movement) =>
+            movement.direction === "DEBITO" &&
+            normalizedMovementText(movement.movementType).includes("RESGATE"),
+        );
+        const ambiguousMovement = periodMovements.some(
+          (movement) =>
+            movement.direction !== "DEBITO" ||
+            !normalizedMovementText(movement.movementType).includes("RESGATE"),
+        );
+        const earlierRedemptions = matchingCodeRedemptions.some(
+          (movement) => movement.occurredAt <= latestPositionReferenceDate,
+        );
+        if (mismatchedInstitution) {
+          reason = "institution_mismatch";
+        } else if (ambiguousMovement) {
+          reason = "incomplete_evidence";
+        } else {
+          const fingerprints = periodRedemptions.map((movement) =>
+            "eventFingerprint" in movement && movement.eventFingerprint
+              ? movement.eventFingerprint
+              : createB3MovementFingerprint({
+                  ...movement,
+                  direction: "DEBITO",
+                }),
+          );
+          if (new Set(fingerprints).size !== fingerprints.length) {
+            reason = "duplicate_evidence";
+          } else if (!periodRedemptions.length) {
+            reason = earlierRedemptions
+              ? "movement_before_previous_snapshot"
+              : "no_matching_redemption";
+          } else {
+            const expectedQuantity = quantityUnits(conflict.position.quantity);
+            const redeemedQuantity = periodRedemptions.reduce<bigint | null>(
+              (total, movement) => {
+                const units = quantityUnits(movement.quantity);
+                return total === null || units === null || units === 0n
+                  ? null
+                  : total + units;
+              },
+              0n,
+            );
+            if (
+              expectedQuantity === null ||
+              expectedQuantity === 0n ||
+              redeemedQuantity === null
+            ) {
+              reason = "incomplete_evidence";
+            } else if (redeemedQuantity === expectedQuantity) {
+              reason = "total_redemption";
+              evidenceFingerprints = fingerprints;
+            } else if (redeemedQuantity < expectedQuantity) {
+              reason = "partial_redemption";
+            } else {
+              reason = "incomplete_evidence";
+            }
+          }
+        }
+      }
       return {
         ...conflict,
         matchingRedemptions,
+        reason,
+        previousSnapshotReferenceDate: latestPositionReferenceDate,
+        evidenceFingerprints,
       };
     });
     return { conflicts: conflictsWithRedemptions, latestPositionReferenceDate };

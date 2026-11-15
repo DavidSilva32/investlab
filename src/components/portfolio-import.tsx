@@ -75,6 +75,7 @@ type IdentityConflict = {
     movementType: string;
     quantity: string;
     operationValue: string | null;
+    institution?: string | null;
   }>;
 };
 type Movement = {
@@ -85,6 +86,7 @@ type Movement = {
   operationValue: string | null;
   direction?: string;
   assetCode?: string | null;
+  institution?: string | null;
 };
 type TradingRecord = {
   side: "BUY" | "SELL";
@@ -327,17 +329,28 @@ export function PortfolioImport({
                     conflict.position.assetCode &&
                     normalizeMovementText(movement.assetCode) ===
                       normalizeMovementText(conflict.position.assetCode) &&
+                    movement.institution &&
+                    conflict.position.institution &&
+                    normalizeMovementText(movement.institution) ===
+                      normalizeMovementText(conflict.position.institution) &&
                     movement.direction === "DEBITO" &&
                     normalizeMovementText(movement.movementType).includes(
                       "RESGATE",
                     ),
                 )
                 .map(
-                  ({ occurredAt, movementType, quantity, operationValue }) => ({
+                  ({
                     occurredAt,
                     movementType,
                     quantity,
                     operationValue,
+                    institution,
+                  }) => ({
+                    occurredAt,
+                    movementType,
+                    quantity,
+                    operationValue,
+                    institution,
                   }),
                 );
               const existingEvidence = conflict.matchingRedemptions ?? [];
@@ -348,6 +361,7 @@ export function PortfolioImport({
                     event.movementType,
                     event.quantity,
                     event.operationValue,
+                    event.institution,
                   ]),
                 ),
               );
@@ -361,6 +375,7 @@ export function PortfolioImport({
                       event.movementType,
                       event.quantity,
                       event.operationValue,
+                      event.institution,
                     ]);
                     if (seen.has(key)) return false;
                     seen.add(key);
@@ -391,38 +406,51 @@ export function PortfolioImport({
     );
     setConfirmationSummary(null);
     setLoading(true);
-    const results = await Promise.all(
-      ready.map(async (item) => {
-        try {
-          const response = await send(
-            item.file,
-            "/api/imports/confirm",
-            item.preview.documentType === "B3_POSITION_XLSX"
-              ? item.referenceDate
-              : undefined,
-            item.reconciliationDecisions,
-          );
-          return {
-            status: "success" as const,
-            item,
-            message: getApiMessage(response, "Arquivo importado com sucesso."),
-          };
-        } catch (error) {
-          const message =
-            error instanceof ApiMessageError
-              ? error.message
-              : "Não foi possível salvar o arquivo.";
-          return {
-            status: "failure" as const,
-            item: {
-              ...item,
-              error: "Importação não concluída.",
-            },
-            notification: `${item.file.name}: ${message}`,
-          };
-        }
-      }),
+    const importPriority = (item: (typeof ready)[number]) =>
+      item.preview.documentType === "B3_MOVEMENT_XLSX"
+        ? 0
+        : item.preview.documentType === "B3_TRADING_XLSX"
+          ? 1
+          : 2;
+    const ordered = [...ready].sort(
+      (left, right) =>
+        importPriority(left) - importPriority(right) ||
+        (left.preview.documentType === "B3_POSITION_XLSX" &&
+        right.preview.documentType === "B3_POSITION_XLSX"
+          ? (left.referenceDate ?? "").localeCompare(right.referenceDate ?? "")
+          : 0),
     );
+    const results: ConfirmationResult[] = [];
+    for (const item of ordered) {
+      try {
+        const response = await send(
+          item.file,
+          "/api/imports/confirm",
+          item.preview.documentType === "B3_POSITION_XLSX"
+            ? item.referenceDate
+            : undefined,
+          item.reconciliationDecisions,
+        );
+        results.push({
+          status: "success" as const,
+          item,
+          message: getApiMessage(response, "Arquivo importado com sucesso."),
+        });
+      } catch (error) {
+        const message =
+          error instanceof ApiMessageError
+            ? error.message
+            : "Não foi possível salvar o arquivo.";
+        results.push({
+          status: "failure" as const,
+          item: {
+            ...item,
+            error: "Importação não concluída.",
+          },
+          notification: `${item.file.name}: ${message}`,
+        });
+      }
+    }
     setLoading(false);
     const successes = results.filter(
       (result): result is Extract<ConfirmationResult, { status: "success" }> =>
@@ -1070,12 +1098,17 @@ function PositionPreview({
     !preview.duplicateImportMessage &&
     referenceDate &&
     preview.latestPositionReferenceDate &&
-    referenceDate >= preview.latestPositionReferenceDate,
+    referenceDate > preview.latestPositionReferenceDate,
   );
   const isHistoricalSnapshot = Boolean(
     referenceDate &&
     preview.latestPositionReferenceDate &&
     referenceDate < preview.latestPositionReferenceDate,
+  );
+  const isSameDateSnapshot = Boolean(
+    referenceDate &&
+    preview.latestPositionReferenceDate &&
+    referenceDate === preview.latestPositionReferenceDate,
   );
 
   return (
@@ -1354,26 +1387,30 @@ function PositionPreview({
           <Alert role="status" aria-live="polite" className="border-primary/30">
             <AlertTitle>
               {canRetireMissingAssignments
-                ? `Ativos ausentes serão encerrados (${preview.identityConflicts.length})`
+                ? `Vínculos sob revisão automática (${preview.identityConflicts.length})`
                 : isHistoricalSnapshot
                   ? "Snapshot histórico: vínculos preservados"
                   : preview.duplicateImportMessage
                     ? "Arquivo já importado: vínculos preservados"
                     : !preview.latestPositionReferenceDate
                       ? "Vínculos preservados: data atual indisponível"
-                      : "Ativos ausentes da posição atual"}
+                      : isSameDateSnapshot
+                        ? "Snapshot da mesma data: vínculos preservados"
+                        : "Ativos ausentes da posição atual"}
             </AlertTitle>
             <AlertDescription>
               <p>
                 {canRetireMissingAssignments
-                  ? "Estes ativos não aparecem no snapshot enviado. Ao confirmar, os vínculos com os objetivos serão encerrados; o histórico dos extratos será mantido e nenhum vínculo será passado a outro ativo por semelhança de nome."
+                  ? "O sistema só encerrará um vínculo quando o snapshot mais recente omitir a posição e as movimentações compatíveis comprovarem o resgate total. Saídas parciais, duplicadas ou com divergência de identidade/instituição mantêm o vínculo. As movimentações servem como evidência e não alteram os valores do snapshot."
                   : isHistoricalSnapshot
                     ? `Este arquivo é anterior ao snapshot atual de ${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}. Ele será importado como histórico e manterá os vínculos atuais.`
                     : preview.duplicateImportMessage
                       ? "A confirmação deste arquivo não encerra vínculos de objetivos."
                       : !preview.latestPositionReferenceDate
                         ? "A data do snapshot atual não está disponível para comparação. A importação manterá os vínculos atuais."
-                        : `Selecione a data exibida na B3. Vínculos só serão encerrados quando o snapshot enviado for da mesma data ou posterior ao snapshot atual (${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}).`}
+                        : isSameDateSnapshot
+                          ? "Este snapshot não é mais recente que a posição atual, então os vínculos serão mantidos."
+                          : `Selecione a data exibida na B3. Snapshots anteriores à posição atual (${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}) manterão os vínculos.`}
               </p>
               <ul className="mt-3 space-y-2">
                 {preview.identityConflicts.map((conflict) => (
@@ -1392,40 +1429,14 @@ function PositionPreview({
                         .filter(Boolean)
                         .join(" · ") || "Código não informado"}
                     </p>
-                    {referenceDate && conflict.matchingRedemptions?.length
-                      ? (() => {
-                          const matchingRedemption =
-                            conflict.matchingRedemptions
-                              .filter(
-                                (event) =>
-                                  Boolean(
-                                    preview.latestPositionReferenceDate,
-                                  ) &&
-                                  event.occurredAt >
-                                    preview.latestPositionReferenceDate! &&
-                                  event.occurredAt <= referenceDate,
-                              )
-                              .sort((left, right) =>
-                                right.occurredAt.localeCompare(left.occurredAt),
-                              )[0];
-                          if (!matchingRedemption) return null;
-                          return (
-                            <p className="mt-2 text-sm text-muted-foreground">
-                              O extrato registra{" "}
-                              {matchingRedemption.movementType ?? "uma saída"}{" "}
-                              em{" "}
-                              {date.format(
-                                new Date(
-                                  `${matchingRedemption.occurredAt}T00:00:00Z`,
-                                ),
-                              )}
-                              . Ao confirmar este snapshot, o vínculo com{" "}
-                              {conflict.objectiveName} será encerrado
-                              automaticamente.
-                            </p>
-                          );
-                        })()
-                      : null}
+                    {referenceDate && canRetireMissingAssignments ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        A posição não aparece neste snapshot. O sistema vai
+                        conferir as saídas compatíveis e só encerrará este
+                        vínculo se a quantidade total resgatada estiver
+                        comprovada.
+                      </p>
+                    ) : null}
                   </li>
                 ))}
               </ul>
