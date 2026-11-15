@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { mcpAdminReadToolsController } from "@/backend/controllers/mcp-admin-read-tools.controller";
 import { mcpPortfolioReadToolsController } from "@/backend/controllers/mcp-portfolio-read-tools.controller";
+import { mcpPortfolioWriteToolsController } from "@/backend/controllers/mcp-portfolio-write-tools.controller";
 import { mcpAuthenticationService } from "@/backend/services/mcp-authentication.service";
 
 type VerifiedClaims = { sub?: unknown; scope?: unknown; scp?: unknown };
@@ -35,6 +36,13 @@ export class McpController {
           principal.userId,
           requestId,
         );
+        if (scopes.includes("mcp:write")) {
+          mcpPortfolioWriteToolsController.register(
+            server,
+            principal.userId,
+            requestId,
+          );
+        }
         if (principal.role === "ADMIN" && scopes.includes("mcp:admin:read")) {
           mcpAdminReadToolsController.register(
             server,

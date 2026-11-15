@@ -7,6 +7,14 @@ const database = vi.hoisted(() => ({
   update: vi.fn(),
   transaction: vi.fn(),
 }));
+const mutationReplay = vi.hoisted(() => ({
+  reserve: vi.fn(),
+  complete: vi.fn(),
+  find: vi.fn(),
+}));
+vi.mock("@/backend/repositories/mcp-mutation-replays.repository", () => ({
+  mcpMutationReplaysRepository: mutationReplay,
+}));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => database,
 }));
@@ -34,6 +42,21 @@ const sqlChunksText = (chunks: unknown[]) =>
       return "";
     })
     .join("");
+
+const sqlParameterValues = (chunk: unknown): string[] => {
+  if (typeof chunk === "string") return [];
+  if (Array.isArray(chunk)) return chunk.flatMap(sqlParameterValues);
+  if (!chunk || typeof chunk !== "object") return [];
+  const value = chunk as { queryChunks?: unknown[]; value?: unknown };
+  if (Array.isArray(value.queryChunks)) {
+    return value.queryChunks.flatMap(sqlParameterValues);
+  }
+  return typeof value.value === "string"
+    ? [value.value]
+    : value.value instanceof Date
+      ? [value.value.toISOString()]
+      : [];
+};
 
 function prepareReserveAssignmentTransaction(options?: {
   fingerprint?: string | null;
@@ -107,6 +130,11 @@ describe("PortfolioObjectivesRepository", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    mutationReplay.reserve.mockResolvedValue({ replayed: false });
+    mutationReplay.complete.mockResolvedValue(undefined);
+    database.transaction.mockImplementation(async (callback) =>
+      callback(database as never),
+    );
     vi.spyOn(
       PortfolioObjectivesRepository.prototype as unknown as {
         assertOwnedObjectives: (
@@ -592,6 +620,392 @@ describe("PortfolioObjectivesRepository", () => {
     });
   });
 
+  it("reserves an objective create replay in the transaction and stores its result", async () => {
+    const objective = { id: "goal-replay", name: "Viagem" };
+    const returning = vi.fn().mockResolvedValue([objective]);
+    const values = vi.fn().mockReturnValue({ returning });
+    const tx = {
+      insert: vi.fn().mockReturnValue({ values }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().create({
+        name: "Viagem",
+        purpose: "PERSONAL_GOAL",
+        targetAmount: "1000.00",
+        monthlyPlannedAmount: null,
+        mcpIdempotency: {
+          key: "create-objective-key",
+          payloadHash: "a".repeat(64),
+        },
+      }),
+    ).resolves.toBe(objective);
+    expect(mutationReplay.reserve).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        operation: "create_objective",
+        key: "create-objective-key",
+        payloadHash: "a".repeat(64),
+      }),
+    );
+    expect(mutationReplay.complete).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ operation: "create_objective" }),
+      objective,
+    );
+  });
+
+  it("returns a replayed objective create with normalized timestamps", async () => {
+    const replay = {
+      id: "goal-replay",
+      name: "Viagem",
+      createdAt: "2026-11-14T15:00:00.000Z",
+      updatedAt: "2026-11-14T16:00:00.000Z",
+    };
+    const tx = { insert: vi.fn() };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+    mutationReplay.reserve.mockResolvedValueOnce({
+      replayed: true,
+      result: replay,
+    });
+
+    const result = await new PortfolioObjectivesRepository().create({
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL",
+      targetAmount: "1000.00",
+      monthlyPlannedAmount: null,
+      mcpIdempotency: { key: "create-replay-key", payloadHash: "a".repeat(64) },
+    });
+
+    expect(result).toMatchObject({ id: replay.id, name: replay.name });
+    expect(result.createdAt).toEqual(new Date(replay.createdAt));
+    expect(result.updatedAt).toEqual(new Date(replay.updatedAt));
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it("stores objective updates in the same transaction and returns retry replays before mutation", async () => {
+    const previous = {
+      id: "goal-1",
+      userId: "user-1",
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL",
+      targetAmount: "1000.00",
+      monthlyPlannedAmount: null,
+      updatedAt: new Date("2026-11-14T15:00:00.000Z"),
+    };
+    const updated = {
+      ...previous,
+      name: "Viagem revisada",
+      updatedAt: new Date("2026-11-14T15:00:00.001Z"),
+    };
+    const limit = vi.fn().mockResolvedValue([previous]);
+    const whereSelect = vi
+      .fn()
+      .mockReturnValue({ for: vi.fn().mockReturnValue({ limit }) });
+    const returning = vi.fn().mockResolvedValue([updated]);
+    const whereUpdate = vi.fn().mockReturnValue({ returning });
+    const tx = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({ where: whereSelect }),
+      }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({ where: whereUpdate }),
+      }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+    const idempotency = {
+      operation: "update_objective" as const,
+      key: "update-key",
+      payloadHash: "a".repeat(64),
+    };
+    const input = {
+      name: "Viagem revisada",
+      purpose: "PERSONAL_GOAL" as const,
+      targetAmount: "1500.00",
+      monthlyPlannedAmount: null,
+    };
+    await expect(
+      new PortfolioObjectivesRepository().updateWithMcpReplay(
+        previous.id,
+        input,
+        previous.updatedAt,
+        idempotency,
+      ),
+    ).resolves.toEqual({ mcpUpdated: updated });
+    expect(mutationReplay.reserve).toHaveBeenCalledWith(tx, idempotency);
+    expect(mutationReplay.complete).toHaveBeenCalledWith(
+      tx,
+      idempotency,
+      updated,
+    );
+
+    mutationReplay.reserve.mockResolvedValueOnce({
+      replayed: true,
+      result: updated,
+    });
+    tx.select.mockClear();
+    await expect(
+      new PortfolioObjectivesRepository().updateWithMcpReplay(
+        previous.id,
+        input,
+        previous.updatedAt,
+        idempotency,
+      ),
+    ).resolves.toEqual({ mcpReplayResult: updated });
+    expect(tx.select).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing, stale, or no-longer-updatable objectives", async () => {
+    const expectedUpdatedAt = new Date("2026-11-14T15:00:00.000Z");
+    const input = {
+      name: "Viagem revisada",
+      purpose: "PERSONAL_GOAL" as const,
+      targetAmount: "1500.00",
+      monthlyPlannedAmount: null,
+    };
+    const idempotency = {
+      operation: "update_objective" as const,
+      key: "update-failure-key",
+      payloadHash: "a".repeat(64),
+    };
+    const prepare = (previous: unknown[], updated: unknown[] = []) => {
+      const limit = vi.fn().mockResolvedValue(previous);
+      const whereSelect = vi.fn().mockReturnValue({
+        for: vi.fn().mockReturnValue({ limit }),
+      });
+      const returning = vi.fn().mockResolvedValue(updated);
+      const tx = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({ where: whereSelect }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({ returning }),
+          }),
+        }),
+      };
+      database.transaction.mockImplementation(async (callback) =>
+        callback(tx as never),
+      );
+      return tx;
+    };
+    const repository = new PortfolioObjectivesRepository();
+
+    let tx = prepare([]);
+    await expect(
+      repository.updateWithMcpReplay(
+        "goal-missing",
+        input,
+        expectedUpdatedAt,
+        idempotency,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(tx.update).not.toHaveBeenCalled();
+
+    tx = prepare([
+      {
+        id: "goal-1",
+        userId: "user-1",
+        updatedAt: new Date("2026-11-14T14:00:00.000Z"),
+      },
+    ]);
+    await expect(
+      repository.updateWithMcpReplay(
+        "goal-1",
+        input,
+        expectedUpdatedAt,
+        idempotency,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(tx.update).not.toHaveBeenCalled();
+
+    tx = prepare([
+      { id: "goal-1", userId: "user-1", updatedAt: expectedUpdatedAt },
+    ]);
+    await expect(
+      repository.updateWithMcpReplay(
+        "goal-1",
+        input,
+        expectedUpdatedAt,
+        idempotency,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("keeps objective deletion receipts after hard deletion and replays without another delete", async () => {
+    const tx = {
+      select: vi.fn(),
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: "goal-1" }]),
+        }),
+      }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+    const expectedUpdatedAt = new Date("2026-11-14T15:00:00.000Z");
+    const idempotency = {
+      operation: "delete_objective" as const,
+      key: "delete-key",
+      payloadHash: "b".repeat(64),
+    };
+    const receipt = { deleted: true, objectiveId: "goal-1" };
+    mutationReplay.reserve.mockResolvedValueOnce({
+      replayed: true,
+      result: receipt,
+    });
+    await expect(
+      new PortfolioObjectivesRepository().deleteWithMcpReplay(
+        "goal-1",
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).resolves.toEqual({ mcpReplayResult: receipt });
+    expect(tx.select).not.toHaveBeenCalled();
+    expect(tx.delete).not.toHaveBeenCalled();
+  });
+
+  it("commits objective hard deletion and its stable receipt in one transaction", async () => {
+    const previous = {
+      id: "goal-1",
+      userId: "user-1",
+      name: "Viagem",
+      kind: "CUSTOM",
+      updatedAt: new Date("2026-11-14T15:00:00.000Z"),
+    };
+    const deleted = { ...previous };
+    const limit = vi.fn().mockResolvedValue([previous]);
+    const whereSelect = vi.fn().mockReturnValue({
+      for: vi.fn().mockReturnValue({ limit }),
+    });
+    const returning = vi.fn().mockResolvedValue([deleted]);
+    const whereDelete = vi.fn().mockReturnValue({ returning });
+    const tx = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({ where: whereSelect }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: whereDelete }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+    const idempotency = {
+      operation: "delete_objective" as const,
+      key: "delete-key",
+      payloadHash: "d".repeat(64),
+    };
+    const receipt = {
+      deleted: true,
+      objectiveId: "goal-1",
+      unlinkedPositionCount: 2,
+    };
+    await expect(
+      new PortfolioObjectivesRepository().deleteWithMcpReplay(
+        previous.id,
+        previous.updatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).resolves.toEqual({ mcpDeleted: deleted });
+    expect(mutationReplay.reserve).toHaveBeenCalledWith(tx, idempotency);
+    expect(mutationReplay.complete).toHaveBeenCalledWith(
+      tx,
+      idempotency,
+      receipt,
+    );
+    expect(tx.delete).toHaveBeenCalledOnce();
+  });
+
+  it("protects the reserve and rejects missing, stale, or already-deleted goals", async () => {
+    const expectedUpdatedAt = new Date("2026-11-14T15:00:00.000Z");
+    const idempotency = {
+      operation: "delete_objective" as const,
+      key: "delete-failure-key",
+      payloadHash: "d".repeat(64),
+    };
+    const receipt = { deleted: true, objectiveId: "goal-1" };
+    const prepare = (previous: unknown[], deleted: unknown[] = []) => {
+      const limit = vi.fn().mockResolvedValue(previous);
+      const whereSelect = vi.fn().mockReturnValue({
+        for: vi.fn().mockReturnValue({ limit }),
+      });
+      const returning = vi.fn().mockResolvedValue(deleted);
+      const tx = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({ where: whereSelect }),
+        }),
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({ returning }),
+        }),
+      };
+      database.transaction.mockImplementation(async (callback) =>
+        callback(tx as never),
+      );
+      return tx;
+    };
+    const repository = new PortfolioObjectivesRepository();
+
+    let tx = prepare([]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        reserveObjectiveId,
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(tx.select).not.toHaveBeenCalled();
+
+    tx = prepare([]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        "goal-missing",
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(tx.delete).not.toHaveBeenCalled();
+
+    tx = prepare([
+      {
+        id: "goal-1",
+        userId: "user-1",
+        updatedAt: new Date("2026-11-14T14:00:00.000Z"),
+      },
+    ]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        "goal-1",
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(tx.delete).not.toHaveBeenCalled();
+
+    tx = prepare([
+      { id: "goal-1", userId: "user-1", updatedAt: expectedUpdatedAt },
+    ]);
+    await expect(
+      repository.deleteWithMcpReplay(
+        "goal-1",
+        expectedUpdatedAt,
+        idempotency,
+        receipt,
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("appends a canonical observed balance to a new batch", async () => {
     const objectiveQuery = {
       from: vi.fn().mockReturnThis(),
@@ -607,13 +1021,16 @@ describe("PortfolioObjectivesRepository", () => {
     };
     const batchReturning = vi.fn().mockResolvedValue([{ id: "batch-1" }]);
     const referenceReturning = vi.fn().mockResolvedValue([savedReference]);
+    const referenceValues = vi.fn().mockReturnValue({
+      returning: referenceReturning,
+    });
     const insert = vi
       .fn()
       .mockReturnValueOnce({
         values: vi.fn().mockReturnValue({ returning: batchReturning }),
       })
       .mockReturnValueOnce({
-        values: vi.fn().mockReturnValue({ returning: referenceReturning }),
+        values: referenceValues,
       });
     database.transaction.mockImplementation(async (callback) =>
       callback({ select: () => objectiveQuery, insert }),
@@ -625,10 +1042,162 @@ describe("PortfolioObjectivesRepository", () => {
         amountCents: "12345",
         observedOn: "2026-10-01",
         cdiPercentage: "100.0000",
+        mcpIdempotency: {
+          operation: "save_observed_balance",
+          key: "history-key-1",
+          payloadHash: "a".repeat(64),
+          replayResult: {
+            objectiveId: "goal-1",
+            amountCents: "12345",
+            observedDate: "2026-10-01",
+            assignmentStatus: "preserved",
+          },
+        },
       }),
     ).resolves.toEqual({ ...savedReference, observedDate: "2026-10-01" });
     expect(batchReturning).toHaveBeenCalledOnce();
     expect(referenceReturning).toHaveBeenCalledOnce();
+    expect(referenceValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountCents: "12345",
+        mcpOperation: "save_observed_balance",
+        mcpIdempotencyKey: "history-key-1",
+        mcpPayloadHash: "a".repeat(64),
+        mcpReplayResult: {
+          objectiveId: "goal-1",
+          amountCents: "12345",
+          observedDate: "2026-10-01",
+          assignmentStatus: "preserved",
+        },
+      }),
+    );
+  });
+
+  it("saves a balance without MCP replay metadata for regular interface updates", async () => {
+    const objectiveQuery = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      for: vi.fn().mockResolvedValue([{ id: "goal-1" }]),
+    };
+    const referenceValues = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: "reference-regular" }]),
+    });
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([{ id: "batch-regular" }]),
+        }),
+      })
+      .mockReturnValueOnce({ values: referenceValues });
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select: () => objectiveQuery, insert }),
+    );
+
+    await expect(
+      new PortfolioObjectivesRepository().saveObservedBalance({
+        objectiveId: "goal-1",
+        amountCents: "12345",
+        observedOn: "2026-10-01",
+        cdiPercentage: null,
+      }),
+    ).resolves.toMatchObject({
+      id: "reference-regular",
+      observedDate: "2026-10-01",
+    });
+    expect(referenceValues).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        mcpOperation: expect.anything(),
+        mcpIdempotencyKey: expect.anything(),
+        mcpReplayResult: expect.anything(),
+      }),
+    );
+  });
+
+  it("looks up a balance replay using the active owner and returns its stored result", async () => {
+    const replayResult = { objectiveId: "goal-1", assignmentStatus: "updated" };
+    const where = vi.fn().mockReturnValue({
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ payloadHash: "b".repeat(64), replayResult }]),
+    });
+    const from = vi.fn().mockReturnValue({ where });
+    database.select.mockReturnValue({ from });
+
+    await expect(
+      new PortfolioObjectivesRepository().findMcpBalanceReplay({
+        operation: "save_observed_balance",
+        key: "replay-key-1",
+        payloadHash: "b".repeat(64),
+      }),
+    ).resolves.toEqual(replayResult);
+
+    const whereParameters = sqlParameterValues(where.mock.calls[0]?.[0]);
+    expect(whereParameters).toEqual(
+      expect.arrayContaining([
+        "user-1",
+        "save_observed_balance",
+        "replay-key-1",
+      ]),
+    );
+  });
+
+  it("rejects a replay key when the stored payload hash differs", async () => {
+    const where = vi.fn().mockReturnValue({
+      limit: vi
+        .fn()
+        .mockResolvedValue([
+          { payloadHash: "c".repeat(64), replayResult: { ok: true } },
+        ]),
+    });
+    database.select.mockReturnValue({ from: () => ({ where }) });
+
+    await expect(
+      new PortfolioObjectivesRepository().findMcpBalanceReplay({
+        operation: "save_observed_balance",
+        key: "replay-key-2",
+        payloadHash: "d".repeat(64),
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(where).toHaveBeenCalledOnce();
+  });
+
+  it("returns no balance replay when the key is absent and rejects unusable stored results", async () => {
+    const where = vi.fn();
+    database.select.mockReturnValue({
+      from: () => ({
+        where: (...args: unknown[]) => {
+          where(...args);
+          return { limit: vi.fn().mockResolvedValue([]) };
+        },
+      }),
+    });
+    const repository = new PortfolioObjectivesRepository();
+    const input = {
+      operation: "save_observed_balance",
+      key: "replay-missing-key",
+      payloadHash: "b".repeat(64),
+    };
+    await expect(repository.findMcpBalanceReplay(input)).resolves.toBeNull();
+
+    for (const replayResult of [null, [], "invalid"] as const) {
+      database.select.mockReturnValue({
+        from: () => ({
+          where: () => ({
+            limit: vi
+              .fn()
+              .mockResolvedValue([
+                { payloadHash: input.payloadHash, replayResult },
+              ]),
+          }),
+        }),
+      });
+      await expect(
+        repository.findMcpBalanceReplay(input),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+      });
+    }
   });
 
   it("does not append a balance when its objective no longer exists", async () => {
@@ -689,11 +1258,15 @@ describe("PortfolioObjectivesRepository", () => {
         },
       ],
     ];
+    const insertedValues: unknown[] = [];
     let insertIndex = 0;
     const insert = vi.fn(() => {
       const result = insertRows[insertIndex++];
       return {
-        values: () => ({ returning: async () => result }),
+        values: (value: unknown) => {
+          insertedValues.push(value);
+          return { returning: async () => result };
+        },
       };
     });
     const transaction = {
@@ -727,6 +1300,18 @@ describe("PortfolioObjectivesRepository", () => {
             [transferKey]: tripId,
           },
           expectedSourceFingerprint: "a".repeat(64),
+          mcpIdempotency: {
+            operation: "save_observed_balance",
+            key: "reserve-key-1",
+            payloadHash: "e".repeat(64),
+            replayResult: {
+              objectiveId: reserveObjectiveId,
+              amountCents: "50000",
+              observedDate: "2026-11-14",
+              assignmentStatus: "updated",
+              changedPositionCount: 2,
+            },
+          },
         },
       );
 
@@ -740,6 +1325,18 @@ describe("PortfolioObjectivesRepository", () => {
     expect(deleteWhere).toHaveBeenCalledOnce();
     expect(updateWhere).toHaveBeenCalledOnce();
     expect(insert).toHaveBeenCalledTimes(2);
+    expect(insertedValues[1]).toEqual(
+      expect.objectContaining({
+        objectiveId: reserveObjectiveId,
+        amountCents: "50000",
+        mcpOperation: "save_observed_balance",
+        mcpIdempotencyKey: "reserve-key-1",
+        mcpPayloadHash: "e".repeat(64),
+        mcpReplayResult: expect.objectContaining({
+          changedPositionCount: 2,
+        }),
+      }),
+    );
     expect(database.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "serializable",
     });
@@ -1108,7 +1705,6 @@ describe("PortfolioObjectivesRepository", () => {
       };
       return query;
     };
-    const insertedValues: unknown[] = [];
     const insertedResults = [
       [{ id: "batch-linked" }],
       [
@@ -1122,6 +1718,7 @@ describe("PortfolioObjectivesRepository", () => {
       ],
     ];
     let insertIndex = 0;
+    const insertedValues: unknown[] = [];
     const transaction = {
       execute: vi.fn().mockResolvedValue(undefined),
       select: vi.fn(() => ({
@@ -1223,14 +1820,19 @@ describe("PortfolioObjectivesRepository", () => {
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
     database.update.mockReturnValue({ set });
+    const expectedUpdatedAt = new Date("2026-11-14T15:00:00.000Z");
 
     await expect(
-      new PortfolioObjectivesRepository().update("goal-1", {
-        name: "Carro",
-        purpose: "PERSONAL_GOAL",
-        targetAmount: "20000.00",
-        monthlyPlannedAmount: null,
-      }),
+      new PortfolioObjectivesRepository().update(
+        "goal-1",
+        {
+          name: "Carro",
+          purpose: "PERSONAL_GOAL",
+          targetAmount: "20000.00",
+          monthlyPlannedAmount: null,
+        },
+        expectedUpdatedAt,
+      ),
     ).resolves.toEqual(objective);
     expect(set).toHaveBeenCalledWith({
       name: "Carro",
@@ -1239,6 +1841,13 @@ describe("PortfolioObjectivesRepository", () => {
       monthlyPlannedAmount: null,
       updatedAt: expect.any(Date),
     });
+    expect(sqlParameterValues(where.mock.calls[0]?.[0])).toEqual(
+      expect.arrayContaining([
+        "goal-1",
+        "user-1",
+        expectedUpdatedAt.toISOString(),
+      ]),
+    );
   });
 
   it("returns null when an objective update matches no row", async () => {
@@ -1264,7 +1873,17 @@ describe("PortfolioObjectivesRepository", () => {
     database.delete.mockReturnValue({ where });
 
     const repository = new PortfolioObjectivesRepository();
-    await expect(repository.delete("goal-1")).resolves.toEqual(objective);
+    const expectedUpdatedAt = new Date("2026-11-14T15:00:00.000Z");
+    await expect(
+      repository.delete("goal-1", expectedUpdatedAt),
+    ).resolves.toEqual(objective);
+    expect(sqlParameterValues(where.mock.calls[0]?.[0])).toEqual(
+      expect.arrayContaining([
+        "goal-1",
+        "user-1",
+        expectedUpdatedAt.toISOString(),
+      ]),
+    );
     returning.mockResolvedValueOnce([]);
     await expect(repository.delete("missing")).resolves.toBeNull();
   });
@@ -2137,6 +2756,7 @@ describe("PortfolioObjectivesRepository", () => {
       };
       return query;
     };
+    const insertedValues: unknown[] = [];
     const transaction = {
       execute: vi.fn().mockResolvedValue(undefined),
       select: vi.fn(() => ({
@@ -2449,6 +3069,7 @@ describe("PortfolioObjectivesRepository", () => {
       };
       return query;
     };
+    const insertedValues: unknown[] = [];
     const transaction = {
       execute: vi.fn().mockResolvedValue(undefined),
       select: vi.fn(() => ({
@@ -2456,7 +3077,10 @@ describe("PortfolioObjectivesRepository", () => {
           queryFor(rows.get(String(table[Symbol.for("drizzle:Name")])) ?? []),
       })),
       insert: vi.fn(() => ({
-        values: () => ({ returning: async () => [{ id: "batch-no-base" }] }),
+        values: (value: unknown) => {
+          insertedValues.push(value);
+          return { returning: async () => [{ id: "batch-no-base" }] };
+        },
       })),
     };
     database.transaction.mockImplementation(async (callback) =>
@@ -2470,8 +3094,31 @@ describe("PortfolioObjectivesRepository", () => {
         expectedOwners: {},
         allocation: {},
         references: [{ objectiveId: "goal-a", amountCents: "10000" }],
+        mcpIdempotency: {
+          operation: "save_observed_balance",
+          key: "objective-key-1",
+          payloadHash: "f".repeat(64),
+          replayResult: {
+            objectiveId: "goal-a",
+            amountCents: "10000",
+            observedDate: "2026-10-01",
+            assignmentStatus: "updated",
+          },
+        },
       }),
     ).resolves.toEqual({ batchId: "batch-no-base" });
+    expect(insertedValues[1]).toEqual([
+      expect.objectContaining({
+        objectiveId: "goal-a",
+        amountCents: "10000",
+        mcpOperation: "save_observed_balance",
+        mcpIdempotencyKey: "objective-key-1",
+        mcpPayloadHash: "f".repeat(64),
+        mcpReplayResult: expect.objectContaining({
+          assignmentStatus: "updated",
+        }),
+      }),
+    ]);
   });
 
   it("rejects a concurrent owner change before writing the reference batch", async () => {

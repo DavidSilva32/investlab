@@ -3,8 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getOverview: vi.fn(),
   listManualPositions: vi.fn(),
+  createManualPosition: vi.fn(),
+  updateManualPosition: vi.fn(),
+  deleteManualPosition: vi.fn(),
   getEmergencyReserveEditorData: vi.fn(),
   getObjectivesOverview: vi.fn(),
+  updateObjective: vi.fn(),
+  createObjective: vi.fn(),
+  deleteObjective: vi.fn(),
+  saveObservedBalance: vi.fn(),
   getLongTermStrategyOverview: vi.fn(),
   getAllocationOverview: vi.fn(),
   getAllocationTargets: vi.fn(),
@@ -17,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     return operation();
   }),
   runWithDataOwnerCall: vi.fn(),
+  findMcpMutationReplay: vi.fn(),
 }));
 
 vi.mock("@/backend/services/portfolio.service", () => ({
@@ -25,6 +33,9 @@ vi.mock("@/backend/services/portfolio.service", () => ({
 vi.mock("@/backend/services/manual-portfolio-position.service", () => ({
   manualPortfolioPositionService: {
     list: mocks.listManualPositions,
+    create: mocks.createManualPosition,
+    update: mocks.updateManualPosition,
+    delete: mocks.deleteManualPosition,
   },
 }));
 vi.mock("@/backend/services/emergency-reserve.service", () => ({
@@ -33,7 +44,12 @@ vi.mock("@/backend/services/emergency-reserve.service", () => ({
   },
 }));
 vi.mock("@/backend/services/portfolio-objectives.service", () => ({
-  portfolioObjectivesService: { getOverview: mocks.getObjectivesOverview },
+  portfolioObjectivesService: {
+    getOverview: mocks.getObjectivesOverview,
+    create: mocks.createObjective,
+    delete: mocks.deleteObjective,
+    update: mocks.updateObjective,
+  },
 }));
 vi.mock("@/backend/services/personal-investment-strategy.service", () => ({
   personalInvestmentStrategyService: {
@@ -52,6 +68,9 @@ vi.mock("@/backend/services/portfolio-operation.service", () => ({
 vi.mock("@/backend/services/objective-projection.service", () => ({
   objectiveProjectionService: { simulate: mocks.simulateObjectiveProjection },
 }));
+vi.mock("@/backend/services/objective-balance.service", () => ({
+  objectiveBalanceService: { save: mocks.saveObservedBalance },
+}));
 vi.mock("@/backend/services/stock-analysis.service", () => ({
   stockAnalysisService: { getMarketByTicker: mocks.getMarketByTicker },
 }));
@@ -64,6 +83,9 @@ vi.mock("@/backend/services/portfolio.service", () => ({
 vi.mock("@/infrastructure/auth/data-owner-context", () => ({
   runWithDataOwner: mocks.runWithDataOwner,
 }));
+vi.mock("@/backend/repositories/mcp-mutation-replays.repository", () => ({
+  mcpMutationReplaysRepository: { find: mocks.findMcpMutationReplay },
+}));
 
 import { McpPortfolioToolsService } from "@/backend/services/mcp-portfolio-tools.service";
 
@@ -72,6 +94,7 @@ describe("McpPortfolioToolsService read tools", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.findMcpMutationReplay.mockResolvedValue(null);
     mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
   });
 
@@ -116,6 +139,497 @@ describe("McpPortfolioToolsService read tools", () => {
       movements: overview.movements,
     });
     expect(JSON.stringify(result)).not.toContain("other-user");
+  });
+
+  it("updates an objective only inside the trusted token owner's context", async () => {
+    const input = {
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL" as const,
+      targetAmount: 10000,
+      monthlyPlannedAmount: 1000,
+    };
+    const objective = { id: "objective-id", ...input };
+    mocks.updateObjective.mockResolvedValue(objective);
+
+    await expect(
+      service.updateMyObjective(
+        "owner-from-sub",
+        "objective-id",
+        input,
+        "2026-11-14T15:00:00.000Z",
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+      ),
+    ).resolves.toBe(objective);
+
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("owner-from-sub");
+    expect(mocks.updateObjective).toHaveBeenCalledWith("objective-id", input, {
+      expectedUpdatedAt: "2026-11-14T15:00:00.000Z",
+      idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7",
+    });
+  });
+
+  it("creates and updates manual positions only inside the token owner's context", async () => {
+    const position = { id: "manual-id", product: "ETF", assetCode: "VT" };
+    const input = { product: "ETF", assetCode: "VT", quantity: 2 };
+    mocks.createManualPosition.mockResolvedValue(position);
+    mocks.updateManualPosition.mockResolvedValue(position);
+
+    await expect(
+      service.createMyManualPosition(
+        "trusted-owner",
+        input,
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+        "request-id",
+      ),
+    ).resolves.toBe(position);
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("trusted-owner");
+    expect(mocks.createManualPosition).toHaveBeenCalledWith(
+      input,
+      "request-id",
+      { idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7" },
+    );
+
+    await service.updateMyManualPosition(
+      "trusted-owner",
+      "manual-id",
+      input,
+      "2026-11-14T15:00:00.000Z",
+      "f1d92f3e-9168-493f-905b-30726d292aa7",
+      "request-id",
+    );
+    expect(mocks.updateManualPosition).toHaveBeenCalledWith(
+      "manual-id",
+      input,
+      "request-id",
+      {
+        expectedUpdatedAt: "2026-11-14T15:00:00.000Z",
+        idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7",
+      },
+    );
+  });
+
+  it("generates request IDs for manual position writes when context is omitted", async () => {
+    const position = { id: "manual-id" };
+    mocks.createManualPosition.mockResolvedValue(position);
+    mocks.updateManualPosition.mockResolvedValue(position);
+
+    await service.createMyManualPosition(
+      "trusted-owner",
+      { product: "CDB" },
+      "create-key",
+    );
+    await service.updateMyManualPosition(
+      "trusted-owner",
+      "manual-id",
+      { product: "CDB" },
+      "2026-11-14T15:00:00.000Z",
+      "update-key",
+    );
+
+    const createRequestId = mocks.createManualPosition.mock.calls[0][1];
+    const updateRequestId = mocks.updateManualPosition.mock.calls[0][2];
+    expect(createRequestId).toMatch(/^[\da-f-]{36}$/i);
+    expect(updateRequestId).toMatch(/^[\da-f-]{36}$/i);
+    expect(createRequestId).not.toBe(updateRequestId);
+  });
+
+  it("deletes only the exact current manual position after explicit confirmation", async () => {
+    const position = {
+      id: "manual-id",
+      product: "ETF internacional",
+      assetCode: "VT",
+      lastUpdatedAt: "2026-11-14T15:00:00.000Z",
+    };
+    mocks.listManualPositions.mockResolvedValue([position]);
+    mocks.deleteManualPosition.mockResolvedValue({ id: position.id });
+
+    await expect(
+      service.deleteMyManualPosition(
+        "trusted-owner",
+        position.id,
+        position.lastUpdatedAt,
+        "ETF internacional (VT)",
+        `EXCLUIR POSIÇÃO "ETF internacional (VT)" [${position.id}]`,
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+        "request-id",
+      ),
+    ).resolves.toMatchObject({
+      deleted: true,
+      positionId: position.id,
+      historicalSnapshotsRetained: true,
+    });
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("trusted-owner");
+    expect(mocks.deleteManualPosition).toHaveBeenCalledWith(
+      position.id,
+      "request-id",
+      {
+        expectedUpdatedAt: position.lastUpdatedAt,
+        mcpMutation: expect.objectContaining({
+          key: "f1d92f3e-9168-493f-905b-30726d292aa7",
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          replayResult: expect.objectContaining({ positionId: position.id }),
+        }),
+      },
+    );
+  });
+
+  it("rejects stale manual position versions or confirmation identities", async () => {
+    const position = {
+      id: "manual-id",
+      product: "ETF internacional",
+      assetCode: "VT",
+      lastUpdatedAt: "2026-11-14T15:00:00.000Z",
+    };
+    mocks.listManualPositions.mockResolvedValue([position]);
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        position.id,
+        "2026-11-13T15:00:00.000Z",
+        "ETF internacional (VT)",
+        `EXCLUIR POSIÇÃO "ETF internacional (VT)" [${position.id}]`,
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        position.id,
+        position.lastUpdatedAt,
+        "ETF internacional (VT)",
+        "sim",
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.deleteManualPosition).not.toHaveBeenCalled();
+  });
+
+  it("replays a completed manual position deletion and recovers a concurrent retry", async () => {
+    const replay = { deleted: true, positionId: "manual-id", replayed: true };
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(replay)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(replay);
+    mocks.listManualPositions.mockResolvedValue([]);
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        "manual-id",
+        "2026-11-14T15:00:00.000Z",
+        "CDB",
+        'EXCLUIR POSIÇÃO "CDB" [manual-id]',
+        "manual-delete-replay-key",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.listManualPositions).not.toHaveBeenCalled();
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        "manual-id",
+        "2026-11-14T15:00:00.000Z",
+        "CDB",
+        'EXCLUIR POSIÇÃO "CDB" [manual-id]',
+        "manual-delete-race-key",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.listManualPositions).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteManualPosition).not.toHaveBeenCalled();
+  });
+
+  it("fails when a manual position is missing and no concurrent deletion replay exists", async () => {
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mocks.listManualPositions.mockResolvedValue([]);
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        "missing-id",
+        "2026-11-14T15:00:00.000Z",
+        "CDB",
+        'EXCLUIR POSIÇÃO "CDB" [missing-id]',
+        "manual-delete-missing-key",
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("returns the stored receipt after deleting an un-coded manual position", async () => {
+    const position = {
+      id: "manual-no-code",
+      product: "CDB do banco",
+      lastUpdatedAt: "2026-11-14T15:00:00.000Z",
+    };
+    const replayResult = { deleted: true, positionId: position.id };
+    mocks.listManualPositions.mockResolvedValue([position]);
+    mocks.deleteManualPosition.mockResolvedValue({
+      mcpReplayResult: replayResult,
+    });
+
+    await expect(
+      service.deleteMyManualPosition(
+        "owner",
+        position.id,
+        position.lastUpdatedAt,
+        "CDB do banco",
+        `EXCLUIR POSIÇÃO "CDB do banco" [${position.id}]`,
+        "manual-delete-stored-result-key",
+      ),
+    ).resolves.toEqual({ mcpReplayResult: replayResult });
+    expect(mocks.deleteManualPosition).toHaveBeenCalledWith(
+      position.id,
+      undefined,
+      expect.objectContaining({
+        expectedUpdatedAt: position.lastUpdatedAt,
+        mcpMutation: expect.objectContaining({
+          replayResult: expect.objectContaining({ positionId: position.id }),
+        }),
+      }),
+    );
+  });
+
+  it("deletes only the current objective identity after exact owner confirmation", async () => {
+    const objective = {
+      id: "objective-id",
+      name: "Viagem",
+      updatedAt: "2026-11-14T15:00:00.000Z",
+      assignedPositionCount: 2,
+    };
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [objective] });
+    mocks.deleteObjective.mockResolvedValue(objective);
+
+    await expect(
+      service.deleteMyObjective(
+        "trusted-owner",
+        objective.id,
+        objective.updatedAt,
+        objective.name,
+        `EXCLUIR OBJETIVO "Viagem" [${objective.id}]`,
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+        "request-id",
+      ),
+    ).resolves.toMatchObject({
+      deleted: true,
+      objectiveId: objective.id,
+      unlinkedPositionCount: 2,
+      positionsRetained: true,
+    });
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("trusted-owner");
+    expect(mocks.deleteObjective).toHaveBeenCalledWith(
+      objective.id,
+      { objectiveId: objective.id },
+      {
+        expectedUpdatedAt: objective.updatedAt,
+        mcpMutation: expect.objectContaining({
+          key: "f1d92f3e-9168-493f-905b-30726d292aa7",
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      },
+    );
+  });
+
+  it("rejects an objective deletion when its identity or version is stale", async () => {
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [
+        {
+          id: "objective-id",
+          name: "Viagem",
+          updatedAt: "2026-11-15T10:00:00.000Z",
+          assignedPositionCount: 1,
+        },
+      ],
+    });
+
+    await expect(
+      service.deleteMyObjective(
+        "trusted-owner",
+        "objective-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        'EXCLUIR OBJETIVO "Viagem" [objective-id]',
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+        "request-id",
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.deleteObjective).not.toHaveBeenCalled();
+
+    await expect(
+      service.deleteMyObjective(
+        "trusted-owner",
+        "objective-id",
+        "2026-11-15T10:00:00.000Z",
+        "Outro objetivo",
+        'EXCLUIR OBJETIVO "Outro objetivo" [objective-id]',
+        "f1d92f3e-9168-493f-905b-30726d292aa7",
+        "request-id",
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.deleteObjective).not.toHaveBeenCalled();
+  });
+
+  it("replays objective deletion results and recovers concurrent retries", async () => {
+    const replay = {
+      deleted: true,
+      objectiveId: "objective-id",
+      replayed: true,
+    };
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(replay)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(replay);
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "objective-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        'EXCLUIR OBJETIVO "Viagem" [objective-id]',
+        "objective-delete-replay-key",
+        "request-id",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.getObjectivesOverview).not.toHaveBeenCalled();
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "objective-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        'EXCLUIR OBJETIVO "Viagem" [objective-id]',
+        "objective-delete-race-key",
+        "request-id",
+      ),
+    ).resolves.toBe(replay);
+    expect(mocks.getObjectivesOverview).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteObjective).not.toHaveBeenCalled();
+  });
+
+  it("rejects an incorrect objective deletion confirmation before writing", async () => {
+    mocks.getObjectivesOverview.mockResolvedValue({
+      objectives: [
+        {
+          id: "objective-id",
+          name: "Viagem",
+          updatedAt: "2026-11-14T15:00:00.000Z",
+          assignedPositionCount: 1,
+        },
+      ],
+    });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "objective-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        "EXCLUIR",
+        "objective-delete-bad-confirmation",
+        "request-id",
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.deleteObjective).not.toHaveBeenCalled();
+  });
+
+  it("returns a repository-provided objective deletion replay receipt", async () => {
+    const objective = {
+      id: "objective-id",
+      name: "Viagem",
+      updatedAt: "2026-11-14T15:00:00.000Z",
+      assignedPositionCount: 1,
+    };
+    const replay = { deleted: true, objectiveId: objective.id, replayed: true };
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [objective] });
+    mocks.deleteObjective.mockResolvedValue({ mcpReplay: replay });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        objective.id,
+        objective.updatedAt,
+        objective.name,
+        `EXCLUIR OBJETIVO "${objective.name}" [${objective.id}]`,
+        "objective-delete-stored-result-key",
+        "request-id",
+      ),
+    ).resolves.toBe(replay);
+  });
+
+  it("fails when an objective is missing and no concurrent deletion replay exists", async () => {
+    mocks.findMcpMutationReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
+
+    await expect(
+      service.deleteMyObjective(
+        "owner",
+        "missing-id",
+        "2026-11-14T15:00:00.000Z",
+        "Viagem",
+        'EXCLUIR OBJETIVO "Viagem" [missing-id]',
+        "objective-delete-missing-key",
+        "request-id",
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("creates an objective inside the trusted token owner's context", async () => {
+    const input = {
+      name: "Viagem",
+      purpose: "PERSONAL_GOAL" as const,
+      targetAmount: 16000,
+      monthlyPlannedAmount: 2000,
+    };
+    const objective = { id: "objective-id", ...input };
+    mocks.createObjective.mockResolvedValue(objective);
+
+    await expect(
+      service.createMyObjective(
+        "trusted-owner",
+        input,
+        "create-idempotency-key",
+      ),
+    ).resolves.toBe(objective);
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("trusted-owner");
+    expect(mocks.createObjective).toHaveBeenCalledWith(input, {
+      idempotencyKey: "create-idempotency-key",
+    });
+  });
+
+  it("saves an observed balance with the token owner and caller idempotency key", async () => {
+    const input = {
+      objectiveId: "objective-id",
+      amount: "56042.48",
+      observedOn: "2026-11-14",
+      cdiPercentage: null,
+    };
+    const result = {
+      objectiveId: input.objectiveId,
+      assignmentStatus: "updated",
+    };
+    mocks.saveObservedBalance.mockResolvedValue(result);
+
+    await expect(
+      service.saveMyObservedBalance(
+        "trusted-owner",
+        input,
+        "idempotency-key",
+        "request-id",
+      ),
+    ).resolves.toBe(result);
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("trusted-owner");
+    expect(mocks.saveObservedBalance).toHaveBeenCalledWith(
+      input,
+      "request-id",
+      {
+        idempotencyKey: "idempotency-key",
+      },
+    );
   });
 
   it("lists manual positions under the same authenticated owner", async () => {

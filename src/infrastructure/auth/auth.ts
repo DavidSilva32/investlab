@@ -128,13 +128,14 @@ export const auth = betterAuth({
         "email",
         "offline_access",
         "mcp:read",
+        "mcp:write",
         "mcp:admin:read",
       ],
       resources: [
         {
           identifier: mcpResource,
           name: "InvestLab MCP",
-          allowedScopes: ["mcp:read", "mcp:admin:read"],
+          allowedScopes: ["mcp:read", "mcp:write", "mcp:admin:read"],
         },
       ],
       allowDynamicClientRegistration: true,
@@ -144,6 +145,7 @@ export const auth = betterAuth({
         "profile",
         "email",
         "offline_access",
+        "mcp:write",
         "mcp:admin:read",
       ],
     }),

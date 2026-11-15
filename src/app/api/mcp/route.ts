@@ -5,6 +5,16 @@ import { mcpResource } from "@/infrastructure/mcp/mcp-configuration";
 
 export const runtime = "nodejs";
 
+const writeToolScopes: Record<string, string> = {
+  write_create_objective: "mcp:write",
+  write_delete_objective: "mcp:write",
+  write_create_manual_position: "mcp:write",
+  write_update_manual_position: "mcp:write",
+  write_delete_manual_position: "mcp:write",
+  write_update_objective: "mcp:write",
+  write_save_observed_balance: "mcp:write",
+};
+
 function scopeSet(claims: { scope?: unknown; scp?: unknown }) {
   const scope = claims.scope ?? claims.scp;
   return new Set(
@@ -42,6 +52,10 @@ async function handleAuthenticatedRequest(
     !scopeSet(claims).has("mcp:admin:read")
   ) {
     throw createInsufficientScopeError(["mcp:admin:read"]);
+  }
+  const requiredWriteScope = toolName ? writeToolScopes[toolName] : undefined;
+  if (requiredWriteScope && !scopeSet(claims).has(requiredWriteScope)) {
+    throw createInsufficientScopeError([requiredWriteScope]);
   }
   return mcpController.handle(request, claims);
 }

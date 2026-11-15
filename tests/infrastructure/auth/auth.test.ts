@@ -170,11 +170,11 @@ describe("Better Auth configuration", () => {
       "mcp:read",
     ]);
     expect(oauthProvider?.options?.clientRegistrationAllowedScopes).toEqual(
-      expect.arrayContaining(["mcp:admin:read"]),
+      expect.arrayContaining(["mcp:admin:read", "mcp:write"]),
     );
+    expect(oauthProvider?.options?.scopes).toContain("mcp:write");
     expect(
-      oauthProvider?.options?.clientRegistrationAllowedScopes,
+      oauthProvider?.options?.clientRegistrationDefaultScopes,
     ).not.toContain("mcp:write");
-    expect(oauthProvider?.options?.scopes).not.toContain("mcp:write");
   });
 });

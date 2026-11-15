@@ -22,6 +22,14 @@ const database = vi.hoisted(() => ({
   },
   logger: { error: vi.fn() },
 }));
+const mutationReplay = vi.hoisted(() => ({
+  reserve: vi.fn(),
+  complete: vi.fn(),
+  find: vi.fn(),
+}));
+vi.mock("@/backend/repositories/mcp-mutation-replays.repository", () => ({
+  mcpMutationReplaysRepository: mutationReplay,
+}));
 vi.mock("@/infrastructure/auth/data-owner-context", () => ({
   requireDataOwnerId: () => "owner-1",
 }));
@@ -31,6 +39,7 @@ vi.mock("@/infrastructure/database/client", () => ({
 vi.mock("@/infrastructure/logging/logger", () => ({ logger: database.logger }));
 
 import { ManualPortfolioPositionRepository } from "@/backend/repositories/manual-portfolio-position.repository";
+import { ApplicationError } from "@/backend/errors/application-error";
 import {
   manualPortfolioAdjustmentEvents,
   manualPortfolioPositionSnapshots,
@@ -57,10 +66,11 @@ const row = {
   createdAt: new Date("2026-09-20T12:00:00.000Z"),
   updatedAt: new Date("2026-09-20T12:00:00.000Z"),
 };
-
 describe("ManualPortfolioPositionRepository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mutationReplay.reserve.mockResolvedValue({ replayed: false });
+    mutationReplay.complete.mockResolvedValue(undefined);
     database.getDatabaseClient.mockReturnValue(database.query);
     database.query.select.mockReturnValue(database.query);
     database.query.from.mockReturnValue(database.query);
@@ -139,6 +149,75 @@ describe("ManualPortfolioPositionRepository", () => {
         recordedAt: row.createdAt,
       }),
     );
+  });
+
+  it("persists manual position and MCP replay result in the same transaction", async () => {
+    const idempotency = { key: "create-key", payloadHash: "payload-hash" };
+    await new ManualPortfolioPositionRepository().create(
+      { ...row },
+      "req",
+      undefined,
+      { operation: "create_manual_position", ...idempotency },
+    );
+    expect(database.query.values).toHaveBeenNthCalledWith(1, {
+      ...row,
+      userId: "owner-1",
+    });
+    expect(database.query.values).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ status: "ACTIVE", assetKey: row.assetKey }),
+    );
+    expect(mutationReplay.reserve).toHaveBeenCalledWith(
+      database.query,
+      expect.objectContaining({ operation: "create_manual_position" }),
+    );
+    expect(mutationReplay.complete).toHaveBeenCalledWith(
+      database.query,
+      expect.objectContaining({ operation: "create_manual_position" }),
+      expect.objectContaining({ position: expect.any(Object) }),
+    );
+  });
+
+  it("replays a manual position create after its source row has been deleted", async () => {
+    const replayResult = {
+      position: row,
+      classification: { assetClass: null, subClass: null, geography: null },
+    };
+    mutationReplay.reserve.mockResolvedValueOnce({
+      replayed: true,
+      result: replayResult,
+    });
+    await expect(
+      new ManualPortfolioPositionRepository().create(
+        { ...row },
+        "req",
+        undefined,
+        {
+          operation: "create_manual_position",
+          key: "create-key",
+          payloadHash: "payload-hash",
+        },
+      ),
+    ).resolves.toEqual({ mcpReplayResult: replayResult });
+    expect(database.query.insert).not.toHaveBeenCalled();
+  });
+
+  it("aborts an MCP position create when its replay result cannot be committed", async () => {
+    const failure = new Error("result persistence failed");
+    mutationReplay.complete.mockRejectedValueOnce(failure);
+    await expect(
+      new ManualPortfolioPositionRepository().create(
+        { ...row },
+        "req",
+        undefined,
+        {
+          operation: "create_manual_position",
+          key: "create-key",
+          payloadHash: "payload-hash",
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(mutationReplay.complete).toHaveBeenCalledOnce();
   });
 
   it("persists and lists the informational CDB CDI percentage with the position", async () => {
@@ -486,6 +565,24 @@ describe("ManualPortfolioPositionRepository", () => {
     expect(database.query.insert).not.toHaveBeenCalled();
   });
 
+  it("rejects an idempotent update when the position disappeared before locking", async () => {
+    database.query.limit.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row },
+        "req",
+        undefined,
+        row.updatedAt,
+        {
+          operation: "update_manual_position",
+          key: "update-key",
+          payloadHash: "a".repeat(64),
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("updates a position and reports a missing row as null", async () => {
     const repository = new ManualPortfolioPositionRepository();
     await expect(repository.update(id, { ...row }, "req")).resolves.toEqual(
@@ -494,6 +591,103 @@ describe("ManualPortfolioPositionRepository", () => {
     expect(database.query.where).toHaveBeenCalled();
     database.query.returning.mockResolvedValueOnce([]);
     await expect(repository.update(id, { ...row })).resolves.toBeNull();
+  });
+
+  it("returns an update retry replay without reading or mutating the position", async () => {
+    const replayResult = {
+      position: row,
+      classification: { assetClass: null, subClass: null, geography: null },
+    };
+    mutationReplay.reserve.mockResolvedValueOnce({
+      replayed: true,
+      result: replayResult,
+    });
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row },
+        "req",
+        undefined,
+        row.updatedAt,
+        {
+          operation: "update_manual_position",
+          key: "update-key",
+          payloadHash: "payload-hash",
+        },
+      ),
+    ).resolves.toEqual({ mcpReplayResult: replayResult });
+    expect(database.query.select).not.toHaveBeenCalled();
+    expect(database.query.update).not.toHaveBeenCalled();
+  });
+
+  it("writes an expected-version manual update and replay result in one transaction", async () => {
+    const updatedAt = new Date("2026-09-21T12:00:00.000Z");
+    const updated = { ...row, updatedAt };
+    database.query.returning.mockResolvedValueOnce([updated]);
+    database.query.limit.mockResolvedValueOnce([row]).mockResolvedValueOnce([]);
+    const idempotency = {
+      operation: "update_manual_position" as const,
+      key: "update-key",
+      payloadHash: "e".repeat(64),
+    };
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row },
+        "req",
+        undefined,
+        row.updatedAt,
+        idempotency,
+      ),
+    ).resolves.toEqual({
+      mcpReplayResult: {
+        position: updated,
+        classification: { assetClass: null, subClass: null, geography: null },
+      },
+    });
+    expect(mutationReplay.reserve).toHaveBeenCalledWith(
+      database.query,
+      idempotency,
+    );
+    expect(mutationReplay.complete).toHaveBeenCalledWith(
+      database.query,
+      idempotency,
+      expect.objectContaining({
+        position: updated,
+        classification: { assetClass: null, subClass: null, geography: null },
+      }),
+    );
+  });
+
+  it("rejects manual position updates when the stored version is stale", async () => {
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row },
+        "req",
+        undefined,
+        new Date("2026-09-21T12:00:00.000Z"),
+      ),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    expect(database.query.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects an idempotent update when the row disappears during the write", async () => {
+    database.query.returning.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().update(
+        id,
+        { ...row },
+        "req",
+        undefined,
+        row.updatedAt,
+        {
+          operation: "update_manual_position",
+          key: "update-key",
+          payloadHash: "a".repeat(64),
+        },
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("deletes a position and reports a missing row as null", async () => {
@@ -511,6 +705,83 @@ describe("ManualPortfolioPositionRepository", () => {
     await expect(repository.delete(id)).resolves.toBeNull();
     database.query.limit.mockResolvedValueOnce([]);
     await expect(repository.delete(id)).resolves.toBeNull();
+  });
+
+  it("rejects manual position deletion when the stored version is stale", async () => {
+    await expect(
+      new ManualPortfolioPositionRepository().delete(
+        id,
+        "req",
+        new Date("2026-09-21T12:00:00.000Z"),
+      ),
+    ).rejects.toBeInstanceOf(ApplicationError);
+    expect(database.query.delete).not.toHaveBeenCalled();
+  });
+
+  it("rejects an idempotent delete when the position disappeared before locking", async () => {
+    database.query.limit.mockResolvedValueOnce([]);
+    await expect(
+      new ManualPortfolioPositionRepository().delete(id, "req", row.updatedAt, {
+        key: {
+          operation: "delete_manual_position",
+          key: "delete-key",
+          payloadHash: "b".repeat(64),
+        },
+        replayResult: { deleted: true, positionId: id },
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("replays manual deletion receipts after hard deletion without querying the row", async () => {
+    const receipt = {
+      deleted: true,
+      positionId: id,
+      historicalSnapshotsRetained: true,
+    };
+    mutationReplay.reserve.mockResolvedValueOnce({
+      replayed: true,
+      result: receipt,
+    });
+    await expect(
+      new ManualPortfolioPositionRepository().delete(id, "req", row.updatedAt, {
+        key: {
+          operation: "delete_manual_position",
+          key: "delete-key",
+          payloadHash: "payload-hash",
+        },
+        replayResult: receipt,
+      }),
+    ).resolves.toEqual({ mcpReplayResult: receipt });
+    expect(database.query.select).not.toHaveBeenCalled();
+    expect(database.query.delete).not.toHaveBeenCalled();
+  });
+
+  it("commits the manual delete receipt with historical snapshots in one transaction", async () => {
+    const receipt = { deleted: true, positionId: id };
+    database.query.returning.mockResolvedValueOnce([{ id }]);
+    const idempotency = {
+      operation: "delete_manual_position" as const,
+      key: "delete-key",
+      payloadHash: "f".repeat(64),
+    };
+    await expect(
+      new ManualPortfolioPositionRepository().delete(id, "req", row.updatedAt, {
+        key: idempotency,
+        replayResult: receipt,
+      }),
+    ).resolves.toEqual({ id });
+    expect(mutationReplay.reserve).toHaveBeenCalledWith(
+      database.query,
+      idempotency,
+    );
+    expect(mutationReplay.complete).toHaveBeenCalledWith(
+      database.query,
+      idempotency,
+      receipt,
+    );
+    expect(database.query.values).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "DELETED" }),
+    );
   });
 
   it.each(["list", "snapshots", "create", "update", "delete"] as const)(

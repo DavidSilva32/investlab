@@ -24,6 +24,7 @@ vi.mock("@/backend/services/mcp-portfolio-tools.service", () => ({
     getMyLongTermStrategy: vi.fn(),
     getMyPortfolioAllocation: vi.fn(),
     getMyMonthlyPortfolioReview: vi.fn(),
+    updateMyObjective: vi.fn(),
   },
 }));
 
@@ -79,6 +80,19 @@ describe("McpController tool exposure", () => {
       "simulate_objective_projection",
       "get_b3_market_quotes",
     ]);
+  });
+
+  it("registers no mutation tool unless mcp:write is explicitly granted", async () => {
+    await handle("openid mcp:read");
+    expect(toolNames).not.toContain("write_update_objective");
+
+    toolNames = [];
+    await handle("openid mcp:read mcp:write");
+    expect(toolNames).toContain("write_create_objective");
+    expect(toolNames).toContain("write_delete_objective");
+    expect(toolNames).toContain("write_update_objective");
+    expect(toolNames).toContain("write_create_objective");
+    expect(toolNames).toContain("write_save_observed_balance");
   });
 
   it("keeps administrative tools separate from ordinary and read-only connections", async () => {

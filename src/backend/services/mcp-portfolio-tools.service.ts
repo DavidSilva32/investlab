@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { manualPortfolioPositionService } from "@/backend/services/manual-portfolio-position.service";
 import { portfolioService } from "@/backend/services/portfolio.service";
 import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
+import { objectiveBalanceService } from "@/backend/services/objective-balance.service";
 import { personalInvestmentStrategyService } from "@/backend/services/personal-investment-strategy.service";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioOperationService } from "@/backend/services/portfolio-operation.service";
@@ -11,8 +12,136 @@ import { stockAnalysisService } from "@/backend/services/stock-analysis.service"
 import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 import type { ObjectiveProjectionInput } from "@/lib/objective-projection";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
+import { ApplicationError } from "@/backend/errors/application-error";
+import { mcpMutationReplaysRepository } from "@/backend/repositories/mcp-mutation-replays.repository";
 
 export class McpPortfolioToolsService {
+  async createMyObjective(
+    userId: string,
+    input: {
+      name: string;
+      purpose: "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT";
+      targetAmount: number | null;
+      monthlyPlannedAmount: number | null;
+    },
+    idempotencyKey: string,
+  ) {
+    return runWithDataOwner(userId, () =>
+      portfolioObjectivesService.create(input, { idempotencyKey }),
+    );
+  }
+
+  async saveMyObservedBalance(
+    userId: string,
+    input: {
+      objectiveId: string;
+      amount: string;
+      observedOn: string;
+      cdiPercentage: number | null;
+    },
+    idempotencyKey: string,
+    requestId: string,
+  ) {
+    return runWithDataOwner(userId, () =>
+      objectiveBalanceService.save(input, requestId, { idempotencyKey }),
+    );
+  }
+
+  async updateMyObjective(
+    userId: string,
+    objectiveId: string,
+    input: {
+      name: string;
+      purpose: "PERSONAL_GOAL" | "LONG_TERM_INVESTMENT";
+      targetAmount: number | null;
+      monthlyPlannedAmount: number | null;
+    },
+    expectedUpdatedAt: string,
+    idempotencyKey: string,
+  ) {
+    return runWithDataOwner(userId, () =>
+      portfolioObjectivesService.update(objectiveId, input, {
+        expectedUpdatedAt,
+        idempotencyKey,
+      }),
+    );
+  }
+
+  async deleteMyObjective(
+    userId: string,
+    objectiveId: string,
+    expectedUpdatedAt: string,
+    objectiveName: string,
+    confirmation: string,
+    idempotencyKey: string,
+    requestId: string,
+  ) {
+    return runWithDataOwner(userId, async () => {
+      const replayKey = {
+        operation: "delete_objective" as const,
+        key: idempotencyKey,
+        payloadHash: createHash("sha256")
+          .update(
+            JSON.stringify({
+              objectiveId,
+              expectedUpdatedAt,
+              objectiveName,
+              confirmation,
+            }),
+          )
+          .digest("hex"),
+      };
+      const replay = await mcpMutationReplaysRepository.find(replayKey);
+      if (replay) return replay;
+      const overview = await portfolioObjectivesService.getOverview(requestId);
+      const current = overview.objectives.find(
+        (objective) => objective.id === objectiveId,
+      );
+      if (!current) {
+        const racedReplay = await mcpMutationReplaysRepository.find(replayKey);
+        if (racedReplay) return racedReplay;
+        throw new ApplicationError("Objetivo não encontrado.", 404);
+      }
+      if (
+        current.name !== objectiveName ||
+        current.updatedAt !== expectedUpdatedAt
+      ) {
+        throw new ApplicationError(
+          "O objetivo mudou desde a última consulta. Atualize a lista antes de excluir.",
+          409,
+        );
+      }
+      const requiredConfirmation = `EXCLUIR OBJETIVO "${current.name}" [${current.id}]`;
+      if (confirmation !== requiredConfirmation) {
+        throw new ApplicationError(
+          "A confirmação deve repetir o nome e o identificador do objetivo.",
+          400,
+        );
+      }
+      const deletionReceipt = {
+        deleted: true,
+        objectiveId: current.id,
+        objectiveName: current.name,
+        unlinkedPositionCount: current.assignedPositionCount,
+        positionsRetained: true,
+        balanceHistoryDeleted: true,
+      };
+      const deleted = await portfolioObjectivesService.delete(
+        objectiveId,
+        { objectiveId },
+        {
+          expectedUpdatedAt,
+          mcpMutation: {
+            key: idempotencyKey,
+            payloadHash: replayKey.payloadHash,
+            replayResult: deletionReceipt,
+          },
+        },
+      );
+      return "mcpReplay" in deleted ? deleted.mcpReplay : deletionReceipt;
+    });
+  }
+
   async getMarketQuotes(tickers: string[], requestId?: string) {
     const uniqueTickers = [
       ...new Set(tickers.map((ticker) => ticker.trim().toUpperCase())),
@@ -179,6 +308,110 @@ export class McpPortfolioToolsService {
     );
   }
 
+  async createMyManualPosition(
+    userId: string,
+    input: unknown,
+    idempotencyKey: string,
+    requestId?: string,
+  ) {
+    return runWithDataOwner(userId, () =>
+      manualPortfolioPositionService.create(input, requestId ?? randomUUID(), {
+        idempotencyKey,
+      }),
+    );
+  }
+
+  async updateMyManualPosition(
+    userId: string,
+    positionId: string,
+    input: unknown,
+    expectedUpdatedAt: string,
+    idempotencyKey: string,
+    requestId?: string,
+  ) {
+    return runWithDataOwner(userId, () =>
+      manualPortfolioPositionService.update(
+        positionId,
+        input,
+        requestId ?? randomUUID(),
+        { expectedUpdatedAt, idempotencyKey },
+      ),
+    );
+  }
+
+  async deleteMyManualPosition(
+    userId: string,
+    positionId: string,
+    expectedUpdatedAt: string,
+    positionIdentity: string,
+    confirmation: string,
+    idempotencyKey: string,
+    requestId?: string,
+  ) {
+    return runWithDataOwner(userId, async () => {
+      const replayKey = {
+        operation: "delete_manual_position" as const,
+        key: idempotencyKey,
+        payloadHash: createHash("sha256")
+          .update(
+            JSON.stringify({
+              positionId,
+              expectedUpdatedAt,
+              positionIdentity,
+              confirmation,
+            }),
+          )
+          .digest("hex"),
+      };
+      const replay = await mcpMutationReplaysRepository.find(replayKey);
+      if (replay) return replay;
+      const current = (
+        await manualPortfolioPositionService.list(requestId ?? randomUUID())
+      ).find((position) => position.id === positionId);
+      if (!current) {
+        const racedReplay = await mcpMutationReplaysRepository.find(replayKey);
+        if (racedReplay) return racedReplay;
+        throw new ApplicationError("Posição manual não encontrada.", 404);
+      }
+      const identity = `${current.product}${current.assetCode ? ` (${current.assetCode})` : ""}`;
+      if (
+        identity !== positionIdentity ||
+        current.lastUpdatedAt !== expectedUpdatedAt
+      ) {
+        throw new ApplicationError(
+          "A posição mudou desde a última consulta. Atualize a lista antes de excluir.",
+          409,
+        );
+      }
+      const requiredConfirmation = `EXCLUIR POSIÇÃO "${identity}" [${current.id}]`;
+      if (confirmation !== requiredConfirmation) {
+        throw new ApplicationError(
+          "A confirmação deve repetir a identidade e o identificador da posição.",
+          400,
+        );
+      }
+      const deletionReceipt = {
+        deleted: true,
+        positionId,
+        positionIdentity: identity,
+        historicalSnapshotsRetained: true,
+      };
+      const result = await manualPortfolioPositionService.delete(
+        positionId,
+        requestId,
+        {
+          expectedUpdatedAt,
+          mcpMutation: {
+            key: idempotencyKey,
+            payloadHash: replayKey.payloadHash,
+            replayResult: deletionReceipt,
+          },
+        },
+      );
+      return "mcpReplayResult" in Object(result) ? result : deletionReceipt;
+    });
+  }
+
   async getMyEmergencyReserve(userId: string, requestId?: string) {
     return runWithDataOwner(userId, async () => {
       const id = requestId ?? randomUUID();
@@ -225,6 +458,8 @@ export class McpPortfolioToolsService {
       );
       return {
         objectives: overview.objectives.map((objective) => ({
+          id: objective.id,
+          updatedAt: objective.updatedAt,
           kind: objective.kind,
           purpose: objective.purpose,
           name: objective.name,
