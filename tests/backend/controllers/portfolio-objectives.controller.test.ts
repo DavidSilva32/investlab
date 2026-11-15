@@ -23,6 +23,7 @@ vi.mock("@/backend/services/objective-projection.service", () => ({
 }));
 
 import { PortfolioObjectivesController } from "@/backend/controllers/portfolio-objectives.controller";
+import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 it("logs the target basis for a required-contribution projection", () => {
   const result = {
@@ -164,6 +165,131 @@ describe("PortfolioObjectivesController", () => {
       message:
         "Saldo salvo. 3 vínculos atualizados automaticamente para Viagem; os demais objetivos foram preservados.",
     });
+  });
+
+  it.each([
+    {
+      title: "retains current links after an unavailable recalculation",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        assignmentStatus: "preserved",
+        assignmentReason: "calculation_unavailable",
+      },
+      message:
+        "Saldo salvo. Os vínculos atuais foram mantidos porque não foi possível recalcular a distribuição com segurança.",
+    },
+    {
+      title: "uses singular wording for a transferred position",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        changedPositionCount: 1,
+        transferredPositionCount: 1,
+      },
+      message:
+        "Saldo salvo. 1 vínculo atualizado; 1 posição transferida de outro objetivo para a Reserva.",
+    },
+    {
+      title: "uses plural wording for multiple transferred positions",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        changedPositionCount: 2,
+        transferredPositionCount: 2,
+      },
+      message:
+        "Saldo salvo. 2 vínculos atualizados; 2 posições transferidas de outros objetivos para a Reserva.",
+    },
+    {
+      title: "uses singular wording for a changed regular objective link",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        changedPositionCount: 1,
+        transferredPositionCount: 0,
+        assignmentStatus: "updated",
+        objectiveName: "Viagem",
+      },
+      message:
+        "Saldo salvo. 1 vínculo atualizado automaticamente para Viagem; os demais objetivos foram preservados.",
+    },
+    {
+      title: "uses the fallback name for an updated unnamed objective",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        changedPositionCount: 1,
+        transferredPositionCount: 0,
+      },
+      message:
+        "Saldo salvo. 1 vínculo atualizado automaticamente para o objetivo; os demais objetivos foram preservados.",
+    },
+    {
+      title: "summarizes an automatic reserve link update",
+      value: {
+        objectiveId: reserveObjectiveId,
+        observedDate: "2026-11-14",
+        changedPositionCount: 1,
+        transferredPositionCount: 0,
+      },
+      message: "Saldo salvo. 1 vínculo da Reserva atualizado automaticamente.",
+    },
+    {
+      title: "uses plural wording for multiple automatic reserve links",
+      value: {
+        objectiveId: reserveObjectiveId,
+        observedDate: "2026-11-14",
+        changedPositionCount: 2,
+        transferredPositionCount: 0,
+      },
+      message:
+        "Saldo salvo. 2 vínculos da Reserva atualizados automaticamente.",
+    },
+    {
+      title: "reports a reserve assignment that already matches",
+      value: {
+        objectiveId: reserveObjectiveId,
+        observedDate: "2026-11-14",
+        changedPositionCount: 0,
+        transferredPositionCount: 0,
+      },
+      message:
+        "Saldo salvo. Os vínculos da Reserva já correspondiam às posições mais próximas.",
+    },
+    {
+      title: "uses the generic objective label when no name is available",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        changedPositionCount: 0,
+        transferredPositionCount: 0,
+      },
+      message:
+        "Saldo salvo. Os vínculos desse objetivo já correspondiam ao valor informado.",
+    },
+    {
+      title: "reports a regular objective assignment that already matches",
+      value: {
+        objectiveId: "goal-1",
+        observedDate: "2026-11-14",
+        changedPositionCount: 0,
+        transferredPositionCount: 0,
+        objectiveName: "Viagem",
+      },
+      message:
+        "Saldo salvo. Os vínculos de Viagem já correspondiam às posições mais próximas.",
+    },
+  ])("$title", async ({ value, message }) => {
+    balanceService.save.mockResolvedValue(value);
+
+    const response =
+      await new PortfolioObjectivesController().saveObservedBalance(
+        { objectiveId: value.objectiveId, amount: "500.00" },
+        "r-balance-summary",
+      );
+
+    await expect(response.json()).resolves.toEqual({ message });
   });
 
   it("rejects an assignment request without an objective id", async () => {

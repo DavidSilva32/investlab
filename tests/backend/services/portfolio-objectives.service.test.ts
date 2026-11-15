@@ -194,6 +194,48 @@ describe("PortfolioObjectivesService", () => {
     expect(assignment.changedPositionCount).toBe(1);
   });
 
+  it("refuses automatic objective assignments when the allocation preview is partial", async () => {
+    const preview = vi
+      .spyOn(PortfolioObjectivesService.prototype, "previewGlobalAllocation")
+      .mockResolvedValueOnce({ optimal: false } as never);
+
+    await expect(
+      new PortfolioObjectivesService().findAutomaticObjectiveAssignment({
+        objectiveId: customObjective.id,
+        amountCents: "10000",
+        observedOn: "2026-09-30",
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(preview).toHaveBeenCalledWith(
+      {
+        valuationDate: "2026-09-30",
+        balances: [{ objectiveId: customObjective.id, amount: 100 }],
+      },
+      undefined,
+    );
+  });
+
+  it("uses a generic label when the objective is absent from an optimal preview", async () => {
+    vi.spyOn(
+      PortfolioObjectivesService.prototype,
+      "previewGlobalAllocation",
+    ).mockResolvedValueOnce({
+      optimal: true,
+      objectives: [],
+      expectedOwners: { "v1:asset": null },
+      allocation: { "v1:asset": customObjective.id },
+      expectedSourceFingerprint: "a".repeat(64),
+    } as never);
+
+    await expect(
+      new PortfolioObjectivesService().findAutomaticObjectiveAssignment({
+        objectiveId: customObjective.id,
+        amountCents: "10000",
+        observedOn: "2026-09-30",
+      }),
+    ).resolves.toMatchObject({ objectiveName: "objetivo" });
+  });
+
   it("saves an automatic objective allocation with the observed balance and CDI input", async () => {
     mocks.saveGlobalAllocation.mockResolvedValue({ batchId: "batch-1" });
     const service = new PortfolioObjectivesService();
