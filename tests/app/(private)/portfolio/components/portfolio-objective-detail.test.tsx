@@ -155,6 +155,30 @@ describe("PortfolioObjectiveDetail", () => {
     expect(screen.queryByText(/R\$\s*50\.459,11/u)).toBeNull();
   });
 
+  it("preserves an unformatted observed date when it cannot be split", () => {
+    render(
+      <PortfolioObjectiveDetail
+        objective={{
+          ...objective,
+          id: reserveObjectiveId,
+          kind: "RESERVE",
+          name: "Reserva",
+          balanceTracking: {
+            observedAmountCents: "50000",
+            observedOn: "2026",
+            cdiPercentage: null,
+            projection: null,
+          },
+        }}
+        onEdit={vi.fn()}
+        onManagePositions={vi.fn()}
+        onConfigureReserve={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Informado em 2026")).toBeTruthy();
+  });
+
   it("explains when an objective has no configured financial target", () => {
     render(
       <PortfolioObjectiveDetail

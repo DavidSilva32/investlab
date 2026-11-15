@@ -228,11 +228,10 @@ export class EmergencyReserveService {
         return leftDifference - rightDifference;
       const leftSignature = left.join("|");
       const rightSignature = right.join("|");
-      return leftSignature < rightSignature
-        ? -1
-        : leftSignature > rightSignature
-          ? 1
-          : 0;
+      return (
+        Number(leftSignature > rightSignature) -
+        Number(leftSignature < rightSignature)
+      );
     };
     let selectedAssetKeys: string[];
     if (targetAmount === 0) {

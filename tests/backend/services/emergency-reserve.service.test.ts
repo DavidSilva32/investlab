@@ -53,6 +53,7 @@ vi.mock("@/backend/services/portfolio-objectives.service", () => ({
 
 import { ApplicationError } from "@/backend/errors/application-error";
 import { inferPortfolioAssetClassification } from "@/backend/services/portfolio-classification";
+import * as positionSuggestions from "@/backend/services/emergency-reserve-position-suggestions";
 import { EmergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
@@ -2006,6 +2007,52 @@ describe("EmergencyReserveService", () => {
     expect(result.linkedPositionCount).toBe(1);
   });
 
+  it("uses the lexical tie-breaker for equally ranked unassigned positions", async () => {
+    const candidates = ["C", "B", "A"].map((suffix) =>
+      position({
+        id: `lexical-${suffix}`,
+        assetCode: `CDB-LEXICAL-${suffix}`,
+        totalValue: "50",
+      }),
+    );
+    mocks.listCurrentEnriched.mockResolvedValue(candidates);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        { id: reserveObjectiveId, name: "Reserva", kind: "RESERVE" },
+      ],
+      assignments: [],
+    });
+
+    const result = await new EmergencyReserveService().findAutomaticAssignment(
+      50,
+      "2026-11-14",
+    );
+
+    expect(result.selectedAssetKeys).toEqual(
+      candidates.map(getEmergencyReserveAssetKey).sort().slice(0, 1),
+    );
+  });
+
+  it("uses a fallback name for an orphaned owner while finding a reserve match", async () => {
+    const assigned = position({ assetCode: "ORPHAN-CDB", totalValue: "50" });
+    const assetKey = getEmergencyReserveAssetKey(assigned);
+    mocks.listCurrentEnriched.mockResolvedValue([assigned]);
+    mocks.listObjectives.mockResolvedValue({
+      objectives: [
+        { id: reserveObjectiveId, name: "Reserva", kind: "RESERVE" },
+      ],
+      assignments: [{ assetKey, objectiveId: "deleted-objective" }],
+    });
+
+    const result = await new EmergencyReserveService().findAutomaticAssignment(
+      50,
+      "2026-11-14",
+    );
+
+    expect(result.selectedAssetKeys).toEqual([assetKey]);
+    expect(result.expectedOwners).toEqual({ [assetKey]: "deleted-objective" });
+  });
+
   it("clears position links when a zero reserve balance is observed", async () => {
     const cdb = position({
       assetCode: "CDBZERO-CHECK",
@@ -2044,6 +2091,34 @@ describe("EmergencyReserveService", () => {
         canonicalValueCents: null,
       }),
     ]);
+
+    await expect(
+      new EmergencyReserveService().findAutomaticAssignment(100, "2026-11-14"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("does not assign from an empty set of valued positions", async () => {
+    mocks.listCurrentEnriched.mockResolvedValue([]);
+
+    await expect(
+      new EmergencyReserveService().findAutomaticAssignment(100, "2026-11-14"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("rejects a suggestion result that contains no candidate", async () => {
+    mocks.listCurrentEnriched.mockResolvedValue([
+      position({ assetCode: "EMPTY-CANDIDATE", totalValue: "100" }),
+    ]);
+    vi.spyOn(
+      positionSuggestions,
+      "suggestEmergencyReservePositions",
+    ).mockReturnValueOnce({
+      status: "suggestions",
+      kind: "exact",
+      candidates: [],
+      searchLimited: false,
+      alternativesLimited: false,
+    });
 
     await expect(
       new EmergencyReserveService().findAutomaticAssignment(100, "2026-11-14"),
