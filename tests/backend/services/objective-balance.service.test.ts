@@ -612,6 +612,38 @@ describe("ObjectiveBalanceService", () => {
     expect(repository.findMcpBalanceReplay).toHaveBeenCalledTimes(2);
   });
 
+  it("returns the committed balance when a concurrent identical save sees a stale assignment fingerprint", async () => {
+    const { service, repository } = createService();
+    const committedResult = {
+      objectiveId: reserveObjectiveId,
+      amountCents: "10000",
+      observedDate: "2026-11-14",
+      assignmentStatus: "updated",
+      changedPositionCount: 1,
+    };
+    repository.saveReserveBalanceWithAssignments.mockRejectedValueOnce(
+      Object.assign(new Error("assignment fingerprint changed"), {
+        statusCode: 409,
+      }),
+    );
+    repository.findMcpBalanceReplay
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(committedResult);
+
+    await expect(
+      service.save(
+        {
+          objectiveId: reserveObjectiveId,
+          amount: "100.00",
+          observedOn: "2026-11-14",
+        },
+        undefined,
+        { idempotencyKey: "reserve-concurrent-key" },
+      ),
+    ).resolves.toBe(committedResult);
+    expect(repository.findMcpBalanceReplay).toHaveBeenCalledTimes(2);
+  });
+
   it("recovers an idempotent observed balance after reserve assignment is unavailable and a duplicate insert races", async () => {
     const { service, repository, reserveAssignment } = createService();
     const original = {

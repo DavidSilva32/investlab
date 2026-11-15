@@ -217,8 +217,12 @@ export class ObjectiveBalanceService {
               mcpIdempotency,
             });
     } catch (error) {
-      const postgresError = error as { code?: string };
-      if (mcpIdempotency && postgresError.code === "23505") {
+      const persistenceError = error as { code?: string; statusCode?: number };
+      if (
+        mcpIdempotency &&
+        (persistenceError.code === "23505" ||
+          persistenceError.statusCode === 409)
+      ) {
         const replay = await this.repository.findMcpBalanceReplay({
           operation: mcpIdempotency.operation,
           key: mcpIdempotency.key,
