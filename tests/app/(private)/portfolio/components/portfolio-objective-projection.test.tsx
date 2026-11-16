@@ -29,14 +29,8 @@ const objective: PortfolioObjective = {
   targetAmount: 1_000_000,
   monthlyPlannedAmount: 1_000,
   currentValue: 65_000,
-  knownValue: 65_000,
   remainingAmount: 935_000,
   progressPercent: 6.5,
-  assignedPositionCount: 2,
-  missingPositionCount: 0,
-  unvaluedPositionCount: 0,
-  assignedAssetKeys: ["asset-1", "asset-2"],
-  canEditAssignments: true,
 };
 
 function createMonthlyProjectionPoints(monthCount: number) {

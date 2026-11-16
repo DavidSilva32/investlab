@@ -219,6 +219,7 @@ describe("PortfolioService", () => {
       ipca: null,
     });
     reserve.getSummary.mockResolvedValue({
+      hasObservedBalance: true,
       selectedValue: 0,
       unvaluedGroups: 0,
       missingSelectionCount: 0,
@@ -242,7 +243,7 @@ describe("PortfolioService", () => {
       "request-1",
     );
     expect(allocation.getAllocationTargets).toHaveBeenCalledWith("request-1");
-    expect(reserve.getSummary).toHaveBeenCalledWith(classified, "request-1");
+    expect(reserve.getSummary).toHaveBeenCalledWith("request-1");
   });
   it.each(["classification", "targets", "emergency_reserve"] as const)(
     "keeps the dashboard available when the %s lookup fails",
@@ -260,6 +261,7 @@ describe("PortfolioService", () => {
         ipca: null,
       });
       reserve.getSummary.mockResolvedValue({
+        hasObservedBalance: true,
         unvaluedGroups: 0,
         missingSelectionCount: 0,
         status: "not_configured",
@@ -331,7 +333,7 @@ describe("PortfolioService", () => {
         international_etfs: 25,
         fiis: 0,
       },
-      longTermWealth: {
+      portfolioWealth: {
         positionCount: 2,
         unvaluedPositionCount: 0,
         unclassifiedKnownValueCents: "0",
@@ -356,6 +358,7 @@ describe("PortfolioService", () => {
       },
     });
     reserve.getSummary.mockResolvedValue({
+      hasObservedBalance: true,
       status: "not_configured",
       difference: null,
       unvaluedGroups: 0,
@@ -386,6 +389,7 @@ describe("PortfolioService", () => {
         ipca: null,
       });
       reserve.getSummary.mockResolvedValue({
+        hasObservedBalance: true,
         unvaluedGroups: 0,
         missingSelectionCount: 0,
         status: "not_configured",
@@ -498,6 +502,80 @@ describe("PortfolioService", () => {
       "assetClassId",
       "fixed_income",
     );
+  });
+});
+
+describe("PortfolioService observed reserve balance", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    strategyRepository.get.mockResolvedValue(null);
+    portfolioPositions.listCurrent.mockImplementation((requestId) =>
+      repository.listLatestPositions(requestId),
+    );
+    portfolioPositions.enrichImportedPositions.mockImplementation(
+      (positions, valuationDate) => estimates.enrich(positions, valuationDate),
+    );
+  });
+
+  it("does not infer the reserve from selected portfolio positions when no balance was reported", async () => {
+    const positions = [{ id: "position-1" }];
+    repository.listLatestPositions.mockResolvedValue(positions);
+    estimates.enrich.mockResolvedValue(positions);
+    allocation.classifyPositions.mockResolvedValue(positions);
+    allocation.getAllocationTargets.mockResolvedValue({
+      "Renda fixa": 100,
+    });
+    reserve.getContributionContext.mockResolvedValue(null);
+
+    const result = await new PortfolioService().calculateContribution(100);
+
+    expect(result).toMatchObject({
+      status: "reserve_incomplete",
+      reserveStatus: "incomplete",
+      reserveAmount: null,
+      remainingAmount: null,
+      allocations: [],
+    });
+    expect(reserve.getContributionContext).toHaveBeenCalledWith();
+  });
+
+  it("withholds contribution guidance until the user reports the reserve balance", async () => {
+    const position = {
+      id: "position-1",
+      estimatedValue: 100,
+      totalValue: "100",
+      classification: { assetClass: "Renda fixa" },
+    };
+    repository.listLatestPositions.mockResolvedValue([position]);
+    repository.listMovements.mockResolvedValue([]);
+    estimates.enrich.mockResolvedValue([position]);
+    allocation.classifyPositions.mockResolvedValue([position]);
+    allocation.getAllocationTargets.mockResolvedValue({ "Renda fixa": 100 });
+    rates.getReferenceRates.mockResolvedValue({
+      selic: null,
+      cdi: null,
+      ipca: null,
+    });
+    reserve.getSummary.mockResolvedValue({
+      hasObservedBalance: false,
+      status: "below_target",
+      selectedValue: 0,
+      difference: 1000,
+      unvaluedGroups: 0,
+      missingSelectionCount: 0,
+    });
+
+    const result = await new PortfolioService().getOverview(
+      "request-no-balance",
+    );
+
+    expect(result.nextContributionGuidance).toEqual({
+      status: "unavailable",
+      title: "Informe o saldo atual da reserva",
+      explanation:
+        "A orientação de aporte precisa do saldo total que você informou. As posições da carteira não substituem esse valor.",
+    });
+    expect(reserve.getSummary).toHaveBeenCalledWith("request-no-balance");
   });
 });
 

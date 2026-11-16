@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PortfolioObjectiveBalanceTracking } from "@/app/(private)/portfolio/_components/portfolio-objective-balance-tracking";
@@ -8,40 +8,27 @@ import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 describe("PortfolioObjectiveBalanceTracking", () => {
   afterEach(cleanup);
 
-  it("keeps the reserve update focused on its balance and automatic allocation", () => {
+  it("shows the current observed balance and date", () => {
     render(
       <PortfolioObjectiveBalanceTracking
         objectiveId={reserveObjectiveId}
         objectiveName="Reserva"
         saving={false}
         onSave={vi.fn()}
-        tracking={{
-          observedAmountCents: "5604248",
-          observedOn: "2026-11-14",
-          cdiPercentage: null,
-          projection: null,
-        }}
+        tracking={{ observedAmountCents: "5604248", observedOn: "2026-11-14" }}
       />,
     );
 
     expect(screen.getByText("Atualizar saldo da Reserva")).toBeTruthy();
-    expect(
-      screen.getByText(
-        /Para hoje, o sistema atualiza o progresso e tenta ajustar os vínculos automaticamente/u,
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        /Para datas anteriores, salva o saldo e mantém os vínculos atuais/u,
-      ),
-    ).toBeTruthy();
     expect(screen.getByLabelText("Saldo atual (R$)")).toBeTruthy();
     expect(screen.getByLabelText("Data-base")).toBeTruthy();
     expect(screen.queryByLabelText(/Rendimento contratado/u)).toBeNull();
-    expect(screen.queryByText("Saldo observado")).toBeNull();
+    expect(
+      screen.getByText(/as posições da carteira continuam independentes/u),
+    ).toBeTruthy();
   });
 
-  it("saves a reserve total without exposing CDI or position selection", async () => {
+  it("saves only the objective balance and date", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
     render(
@@ -53,6 +40,7 @@ describe("PortfolioObjectiveBalanceTracking", () => {
         tracking={null}
       />,
     );
+
     await user.type(
       screen.getByLabelText("Saldo observado de Reserva"),
       "56042,48",
@@ -62,321 +50,107 @@ describe("PortfolioObjectiveBalanceTracking", () => {
       objectiveId: reserveObjectiveId,
       amount: "56042.48",
       observedOn: expect.any(String),
-      cdiPercentage: null,
     });
-    expect(screen.queryByText(/combinação de posições/u)).toBeNull();
     expect(screen.queryByLabelText(/Rendimento contratado/u)).toBeNull();
   });
 
-  it("explains automatic allocation and preserved links for a regular objective", () => {
-    render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={vi.fn()}
-        tracking={null}
-      />,
-    );
-
-    expect(
-      screen.getByText(/escolhe as posições disponíveis mais próximas/u),
-    ).toBeTruthy();
-    expect(screen.getByText(/mantém os outros objetivos/u)).toBeTruthy();
-    expect(
-      screen.getByText(/o banco não confirma a composição do saldo/u),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Em data anterior, só registra o saldo/u),
-    ).toBeTruthy();
-  });
-
-  it("separates the observed amount from its gross CDI projection and saves the observation", async () => {
+  it("keeps the existing amount when editing a goal balance", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
     render(
       <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
+        objectiveId="00000000-0000-4000-8000-000000000001"
         objectiveName="Viagem"
         saving={false}
         onSave={onSave}
-        tracking={{
-          observedAmountCents: "10000",
-          observedOn: "2026-10-02",
-          cdiPercentage: "100.0000",
-          projection: {
-            projectedAmountCents: "10010",
-            projectedOn: "2026-10-06",
-            estimatedThrough: "2026-10-05",
-            cdiPercentage: "100.0000",
-            status: "provisional",
-          },
-        }}
+        tracking={{ observedAmountCents: "10000", observedOn: "2026-10-02" }}
       />,
     );
 
-    expect(
-      screen.getByText("Saldo observado").parentElement?.textContent,
-    ).toMatch(/R\$\s*100,00/u);
-    expect(
-      (screen.getByLabelText("Saldo observado de Viagem") as HTMLInputElement)
-        .value,
-    ).toBe("R$ 100,00");
-    expect(
-      screen.getByText("Projeção bruta antes de impostos").parentElement
-        ?.textContent,
-    ).toMatch(/R\$\s*100,10/u);
-    expect(screen.getByText("Em 02/10/2026")).toBeTruthy();
-    expect(screen.queryByText(/Use apenas se o saldo renderiza/)).toBeNull();
-    expect(
-      screen.getByText(/Avaliada em 06\/10\/2026; CDI até 05\/10\/2026/u),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/não inclui impostos, aportes ou resgates/u),
-    ).toBeTruthy();
-    expect(screen.getByText(/última taxa oficial conhecida/)).toBeTruthy();
-    await user.clear(screen.getByLabelText("Saldo observado de Viagem"));
-    await user.type(
-      screen.getByLabelText("Saldo observado de Viagem"),
-      "250,50",
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Salvar saldo observado" }),
-    );
+    const amount = screen.getByLabelText("Saldo observado de Viagem");
+    expect((amount as HTMLInputElement).value).toBe("R$ 100,00");
+    await user.clear(amount);
+    await user.type(amount, "250,50");
+    await user.click(screen.getByRole("button", { name: "Salvar saldo" }));
     expect(onSave).toHaveBeenCalledWith({
-      objectiveId: "goal-1",
+      objectiveId: "00000000-0000-4000-8000-000000000001",
       amount: "250.50",
       observedOn: "2026-10-02",
-      cdiPercentage: "100.0000",
     });
   });
 
-  it("explains why an old observation remains unprojected", () => {
-    render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={vi.fn()}
-        tracking={{
-          observedAmountCents: "12500",
-          observedOn: "2026-09-01",
-          cdiPercentage: null,
-          projection: null,
-        }}
-      />,
-    );
-    expect(screen.getByText("R$ 125,00")).toBeTruthy();
-    expect(
-      screen.getByText(/Sem condições suficientes para projetar/),
-    ).toBeTruthy();
-  });
-
-  it("labels an official projection and preserves an unrecognized source date", () => {
-    render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={vi.fn()}
-        tracking={{
-          observedAmountCents: "12500",
-          observedOn: "data desconhecida",
-          cdiPercentage: "100.0000",
-          projection: {
-            projectedAmountCents: "12510",
-            projectedOn: "2026-10-06",
-            estimatedThrough: "2026-10-06",
-            cdiPercentage: "100.0000",
-            status: "projected",
-          },
-        }}
-      />,
-    );
-
-    expect(screen.getByText("Em data desconhecida")).toBeTruthy();
-    expect(
-      screen.getByText(/Avaliada em 06\/10\/2026.*06\/10\/2026/),
-    ).toBeTruthy();
-    expect(screen.getByText(/taxas oficiais/)).toBeTruthy();
-  });
-
-  it("explains why a CDI-backed observation has no projection yet", () => {
-    render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={vi.fn()}
-        tracking={{
-          observedAmountCents: "12500",
-          observedOn: "2026-10-02",
-          cdiPercentage: "100.0000",
-          projectionUnavailableReason: "no_eligible_days",
-          projection: null,
-        }}
-      />,
-    );
-    expect(
-      screen.getByText(/Ainda não há dias úteis elegíveis para projetar/),
-    ).toBeTruthy();
-    expect(
-      screen.queryByText(/Sem condições suficientes para projetar/),
-    ).toBeNull();
-  });
-
-  it("explains when CDI rates are unavailable for an eligible projection", () => {
-    render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={vi.fn()}
-        tracking={{
-          observedAmountCents: "12500",
-          observedOn: "2026-09-01",
-          cdiPercentage: "100.0000",
-          projectionUnavailableReason: "rates_unavailable",
-          projection: null,
-        }}
-      />,
-    );
-    expect(
-      screen.getByText(/Não foi possível obter taxas CDI oficiais suficientes/),
-    ).toBeTruthy();
-    expect(screen.queryByText(/Ainda não há dias úteis elegíveis/)).toBeNull();
-  });
-
-  it("requires an observed amount before saving", async () => {
+  it("saves a valid changed date and shows the saving state", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
-    render(
+    const { rerender } = render(
       <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
+        objectiveId="goal-date"
         objectiveName="Viagem"
         saving={false}
         onSave={onSave}
-        tracking={null}
+        tracking={{ observedAmountCents: "10000", observedOn: "2026-10-02" }}
       />,
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Salvar saldo observado" }),
-    );
-
-    expect(screen.getByText(/Informe um valor entre/)).toBeTruthy();
-    expect(onSave).not.toHaveBeenCalled();
-  });
-
-  it("keeps invalid amount, future date, and CDI fields beside their controls", async () => {
-    const user = userEvent.setup();
-    const onSave = vi.fn();
-    render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={onSave}
-        tracking={null}
-      />,
-    );
-    await user.type(
-      screen.getByLabelText("Saldo observado de Viagem"),
-      "100000000000001",
-    );
     const date = screen.getByLabelText("Data-base");
-    await user.clear(date);
-    await user.type(date, "31/12/2099");
-    await user.type(screen.getByLabelText(/Rendimento contratado/), "1001");
-    await user.click(
-      screen.getByRole("button", { name: "Salvar saldo observado" }),
+    fireEvent.change(date, { target: { value: "15/11/2026" } });
+    expect((date as HTMLInputElement).value).toBe("15/11/2026");
+    await user.click(screen.getByRole("button", { name: "Salvar saldo" }));
+    expect(onSave).toHaveBeenCalledWith({
+      objectiveId: "goal-date",
+      amount: "100.00",
+      observedOn: "2026-11-15",
+    });
+    rerender(
+      <PortfolioObjectiveBalanceTracking
+        objectiveId="goal-date"
+        objectiveName="Viagem"
+        saving={true}
+        onSave={onSave}
+        tracking={{ observedAmountCents: "10000", observedOn: "2026-10-02" }}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Salvando…" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("rejects invalid, future, and excessive amounts without saving", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(
+      <PortfolioObjectiveBalanceTracking
+        objectiveId="goal-invalid"
+        objectiveName="Viagem"
+        saving={false}
+        onSave={onSave}
+        tracking={{ observedAmountCents: "", observedOn: "2026-10-02" }}
+      />,
     );
 
-    expect(screen.getByText(/Informe um valor entre/)).toBeTruthy();
+    const amount = screen.getByLabelText("Saldo observado de Viagem");
+    await user.clear(amount);
+    await user.click(screen.getByRole("button", { name: "Salvar saldo" }));
+    expect(screen.getByRole("alert").textContent).toContain("R$ 1 trilhão");
+
+    await user.clear(amount);
+    await user.type(amount, "1000000000001,00");
+    await user.click(screen.getByRole("button", { name: "Salvar saldo" }));
+    expect(screen.getByRole("alert").textContent).toContain("R$ 1 trilhão");
+
+    await user.clear(amount);
+    await user.type(amount, "100,00");
+    const date = screen.getByLabelText("Data-base");
+    fireEvent.change(date, { target: { value: "31/12/2999" } });
+    await user.click(screen.getByRole("button", { name: "Salvar saldo" }));
     expect(screen.getByText("A data-base não pode ser futura.")).toBeTruthy();
-    expect(screen.getByText(/Informe um percentual maior que 0/)).toBeTruthy();
-    expect(
-      screen
-        .getByLabelText("Saldo observado de Viagem")
-        .getAttribute("aria-invalid"),
-    ).toBe("true");
-    expect(
-      screen.getByLabelText("Data-base").getAttribute("aria-invalid"),
-    ).toBe("true");
-    expect(
-      screen
-        .getByLabelText(/Rendimento contratado/)
-        .getAttribute("aria-describedby"),
-    ).toBe("objective-cdi-error");
     expect(onSave).not.toHaveBeenCalled();
-  });
 
-  it("keeps an invalid calendar date beside the date field", async () => {
-    const user = userEvent.setup();
-    const onSave = vi.fn();
-    render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={onSave}
-        tracking={null}
-      />,
-    );
-
-    await user.type(screen.getByLabelText("Saldo observado de Viagem"), "10");
-    const date = screen.getByLabelText("Data-base");
-    await user.clear(date);
-    await user.type(date, "31/02/2026");
-    await user.click(
-      screen.getByRole("button", { name: "Salvar saldo observado" }),
-    );
-
-    expect(screen.getByRole("alert").textContent).toMatch(/data-base/);
-    expect(date.getAttribute("aria-invalid")).toBe("true");
+    fireEvent.change(date, { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: "Salvar saldo" }));
+    expect(screen.getByText("Informe uma data-base válida.")).toBeTruthy();
     expect(onSave).not.toHaveBeenCalled();
-  });
-
-  it("reloads the editor when the objective and saved observation change", () => {
-    const onSave = vi.fn();
-    const view = render(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-1"
-        objectiveName="Viagem"
-        saving={false}
-        onSave={onSave}
-        tracking={{
-          observedAmountCents: "10000",
-          observedOn: "2026-10-02",
-          cdiPercentage: "90.0000",
-          projection: null,
-        }}
-      />,
-    );
-    view.rerender(
-      <PortfolioObjectiveBalanceTracking
-        objectiveId="goal-2"
-        objectiveName="Casa"
-        saving={false}
-        onSave={onSave}
-        tracking={{
-          observedAmountCents: "27550",
-          observedOn: "2026-10-01",
-          cdiPercentage: "100.0000",
-          projection: null,
-        }}
-      />,
-    );
-    expect(
-      (screen.getByLabelText("Saldo observado de Casa") as HTMLInputElement)
-        .value,
-    ).toBe("R$ 275,50");
-    expect((screen.getByLabelText("Data-base") as HTMLInputElement).value).toBe(
-      "01/10/2026",
-    );
-    expect(
-      (screen.getByLabelText(/Rendimento contratado/) as HTMLInputElement)
-        .value,
-    ).toBe("100.0000");
   });
 });

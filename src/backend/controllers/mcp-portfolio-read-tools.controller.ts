@@ -50,7 +50,7 @@ export class McpPortfolioReadToolsController {
       "get_my_emergency_reserve",
       {
         description:
-          "Consulta o resumo da Reserva. Se houver saldo observado, a cobertura e a meta usam esse valor e retornam sua fonte e data; sem observação, usam as posições vinculadas.",
+          "Consulta a Reserva com o saldo informado mais recente e sua data, além da meta baseada em despesas mensais. Posições da carteira são independentes e não são atribuídas à Reserva.",
         inputSchema: z.object({}),
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
@@ -70,7 +70,7 @@ export class McpPortfolioReadToolsController {
       "get_my_objectives",
       {
         description:
-          "Consulta objetivos financeiros. Na Reserva, currentValue é o saldo observado mais recente e knownValue é o subtotal das posições vinculadas; os totais da carteira continuam baseados nas posições. Para os demais objetivos, currentValue e knownValue são valores conhecidos das posições. Não retorna posições detalhadas.",
+          "Consulta objetivos financeiros. Cada objetivo mostra o saldo informado mais recente, sua data, meta e progresso; sem observação, currentValue é null. Objetivos não agrupam posições, e seus saldos não são somados ao patrimônio da carteira.",
         inputSchema: z.object({}),
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
@@ -90,7 +90,7 @@ export class McpPortfolioReadToolsController {
       "get_my_long_term_strategy",
       {
         description:
-          "Consulta a estratégia de longo prazo da conta conectada, incluindo patrimônio classificado, alocação, metas e qualidade das datas de avaliação.",
+          "Consulta a estratégia aplicada à carteira inteira, incluindo patrimônio classificado, alocação, metas e qualidade das datas de avaliação. Não infere a finalidade de ativos a partir dos objetivos nem atribui posições a objetivos.",
         inputSchema: z.object({}),
         annotations: { readOnlyHint: true, openWorldHint: false },
       },

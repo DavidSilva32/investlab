@@ -1,117 +1,60 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmergencyReserveSummary } from "@/app/(private)/_components/emergency-reserve-summary";
-import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
+import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 
-const calculation: EmergencyReserveCalculation = {
+const calculation = calculateEmergencyReserve({
   monthlyExpenses: 1000,
   targetMonths: 6,
-  selectedValue: 2500,
-  selectedGroups: 2,
-  unvaluedGroups: 0,
+  balance: 2500,
   referenceDate: "2026-09-01",
-  targetValue: 6000,
-  coveredMonths: 2.5,
-  difference: 3500,
-  progressPercentage: (2.5 / 6) * 100,
-  status: "below_target",
-};
+});
 
 describe("EmergencyReserveSummary", () => {
   afterEach(cleanup);
 
-  it("shows coverage and the personal target with a visual progress bar", () => {
-    const html = renderToStaticMarkup(
-      <EmergencyReserveSummary calculation={calculation} />,
-    );
-
-    expect(html).toContain("Reserva de emergência");
-    expect(html).toContain("Cobertura em meses");
-    expect(html).toContain("lg:grid-cols-3");
-    expect(html).toContain("2,5 meses de despesas");
-    expect(html).toContain("Sua meta pessoal");
-    expect(html).toContain("6 meses");
-    expect(html).toContain("meta que você escolheu");
-    expect(html).toContain("42% da sua meta pessoal");
-    expect(html).toContain('role="progressbar"');
-    expect(html).toContain("Cobertura em relação à sua meta pessoal");
-    expect(html).toContain("Ver reserva");
-    expect(html).not.toContain('href="/carteira?panel=objectives');
-  });
-
-  it("does not show a position date when the snapshot date is unavailable", () => {
-    const html = renderToStaticMarkup(
-      <EmergencyReserveSummary
-        calculation={{ ...calculation, referenceDate: null }}
-      />,
-    );
-
-    expect(html).toContain("Posições vinculadas");
-    expect(html).not.toContain("B3 em");
-  });
-
-  it("opens the reserve panel through the provided dashboard action", () => {
-    const onOpenReserve = vi.fn();
+  it("does not show progress until a bank balance is informed", () => {
     render(
       <EmergencyReserveSummary
         calculation={calculation}
-        onOpenReserve={onOpenReserve}
+        reserveObservation={null}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
-
-    expect(onOpenReserve).toHaveBeenCalledOnce();
+    expect(screen.getByText("Saldo não informado")).toBeTruthy();
+    expect(screen.getByText(/Informe o saldo atual da Reserva/)).toBeTruthy();
+    expect(screen.queryByText("Cobertura em meses")).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByText(/posições vinculadas/i)).toBeNull();
   });
 
-  it("uses the observed reserve balance for coverage and confirms the reached target", () => {
-    const html = renderToStaticMarkup(
+  it("calculates coverage and progress from the latest observed balance", () => {
+    render(
       <EmergencyReserveSummary
-        calculation={{
-          ...calculation,
-          monthlyExpenses: 4650,
-          monthlyExpensesCents: "465000",
-          targetMonths: 12,
-          selectedValue: 50459.11,
-          selectedValueCents: "5045911",
-          selectedGroups: 11,
-          targetValue: 55800,
-          coveredMonths: 10.8514,
-          difference: 5340.89,
-          progressPercentage: 90.43,
-        }}
+        calculation={calculation}
         reserveObservation={{
-          observedAmountCents: "5604248",
+          observedAmountCents: "1200000",
           observedOn: "2026-11-14",
         }}
       />,
     );
 
-    expect(html).toContain("Saldo atual da reserva");
-    expect(html).toContain("R$ 56.042,48");
-    expect(html).toContain("Informado em 14/11/2026");
-    expect(html).toContain("12,1 meses de despesas");
-    expect(html).toContain("Calculada pelo saldo informado");
-    expect(html).toContain("Sua meta está atingida.");
-    expect(html).toContain("100% da sua meta pessoal");
-    expect(html).not.toContain("Faltam R$ 5.340,89");
-    expect(html).not.toContain("Posições vinculadas");
+    expect(screen.getByText("R$ 12.000,00")).toBeTruthy();
+    expect(screen.getByText("12 meses de despesas")).toBeTruthy();
+    expect(screen.getByText(/Sua meta está atingida/u)).toBeTruthy();
+    expect(screen.getByText(/Informado em 14\/11\/2026/)).toBeTruthy();
+    expect(screen.getByRole("progressbar")).toBeTruthy();
   });
 
-  it("keeps the single observed balance visible when monthly expenses are missing", () => {
-    const html = renderToStaticMarkup(
+  it("keeps the observed balance visible when monthly expenses are not available", () => {
+    render(
       <EmergencyReserveSummary
         calculation={{
           ...calculation,
           monthlyExpenses: null,
           coveredMonths: null,
-          targetValue: null,
-          difference: null,
-          progressPercentage: null,
-          status: "not_configured",
         }}
         reserveObservation={{
           observedAmountCents: "5604248",
@@ -120,345 +63,184 @@ describe("EmergencyReserveSummary", () => {
       />,
     );
 
-    expect(html).toContain("Saldo atual da reserva");
-    expect(html).toContain("R$ 56.042,48");
-    expect(html).toContain("Informado em 14/11/2026");
-    expect(html).toContain("Informe suas despesas mensais");
-    expect(html).not.toContain("Cobertura em meses");
-    expect(html.match(/R\$ 56\.042,48/gu)).toHaveLength(1);
+    expect(screen.getByText("R$ 56.042,48")).toBeTruthy();
+    expect(screen.getByText(/Informe suas despesas mensais/)).toBeTruthy();
+    expect(screen.queryByText("Cobertura em meses")).toBeNull();
   });
 
-  it("opens the existing B3 importer from the reserve summary", () => {
+  it("keeps settings and import actions out of read-only mode", () => {
+    const onOpenReserve = vi.fn();
     const onOpenImport = vi.fn();
     render(
       <EmergencyReserveSummary
-        calculation={calculation}
+        calculation={{
+          ...calculation,
+          essentialMonthlyExpenses: 900,
+          essentialExpenseSources: [
+            {
+              id: "rent",
+              description: "Moradia",
+              frequency: "Mensal",
+              amount: 900,
+              monthlyEquivalent: 900,
+            },
+          ],
+        }}
+        reserveObservation={{
+          observedAmountCents: "1200000",
+          observedOn: "2026-11-14",
+        }}
+        onOpenReserve={onOpenReserve}
         onOpenImport={onOpenImport}
-      />,
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Atualizar dados da B3" }),
-    );
-
-    expect(onOpenImport).toHaveBeenCalledOnce();
-  });
-
-  it("keeps configured reserve information visible without an edit action in read-only mode", () => {
-    render(
-      <EmergencyReserveSummary
-        calculation={calculation}
-        onOpenImport={vi.fn()}
         readOnly
       />,
     );
 
-    expect(screen.getByText("6 meses")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Ver reserva" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Atualizar dados da B3" }),
     ).toBeNull();
   });
 
-  it("keeps the reserve link safe when no dashboard panel action is provided", () => {
-    render(<EmergencyReserveSummary calculation={calculation} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
-
-    expect(screen.getByRole("button", { name: "Ver reserva" })).toBeTruthy();
-  });
-
-  it("calculates and shows months even without a personal target", () => {
-    const html = renderToStaticMarkup(
-      <EmergencyReserveSummary
-        calculation={{
-          ...calculation,
-          targetMonths: null,
-          targetValue: null,
-          coveredMonths: 2.5,
-          difference: null,
-          progressPercentage: null,
-          status: "not_configured",
-        }}
-      />,
-    );
-
-    expect(html).toContain("2,5 meses de despesas");
-    expect(html).toContain("Sem meta pessoal configurada");
-    expect(html).not.toContain('role="progressbar"');
-    expect(html).not.toContain("recomendação do InvestLab");
-  });
-
-  it("shows all four reserve coverage horizons and the calculated essential reference", async () => {
-    const data = {
-      ...calculation,
-      targetMonths: null,
-      targetValue: null,
-      difference: null,
-      essentialMonthlyExpenses: 850,
-      essentialExpenseSources: [
-        {
-          id: "rent",
-          description: "Aluguel",
-          frequency: "Mensal",
-          amount: 850,
-          monthlyEquivalent: 850,
-        },
-      ],
-      horizons: [3, 6, 9, 12].map((months) => ({
-        months: months as 3 | 6 | 9 | 12,
-        targetValue: 850 * months,
-        targetValueCents: String(85000 * months),
-        difference: 850 * months - 2500,
-        differenceCents: String(85000 * months - 250000),
-      })),
-    };
-    const html = renderToStaticMarkup(
-      <EmergencyReserveSummary calculation={data} />,
-    );
-
-    expect(html).toContain("Comparar metas de 3, 6, 9 e 12 meses");
-    expect(html).not.toContain("R$ 850,00 por mês");
-
-    render(<EmergencyReserveSummary calculation={data} />);
-    const comparisonTrigger = screen.getByRole("button", {
-      name: "Comparar metas de 3, 6, 9 e 12 meses",
-    });
-    expect(comparisonTrigger.getAttribute("aria-expanded")).toBe("false");
-    await userEvent.setup().click(comparisonTrigger);
-    expect(comparisonTrigger.getAttribute("aria-expanded")).toBe("true");
-    await userEvent
-      .setup()
-      .click(
-        screen.getByRole("button", { name: "Origem, cálculo e limitações" }),
-      );
-    expect(
-      screen.getByText(/Referência das recorrências essenciais ativas/),
-    ).toBeTruthy();
-    expect(screen.getByText(/Aluguel \(Mensal\)/)).toBeTruthy();
-    expect(
-      screen.getByText(/não estimam aportes nem rendimentos/),
-    ).toBeTruthy();
-  });
-
-  it("renders all horizon difference states and unavailable references on demand", async () => {
+  it("opens calculation details and explains that the balance is not added to wealth", async () => {
+    const user = userEvent.setup();
     render(
       <EmergencyReserveSummary
         calculation={{
           ...calculation,
-          selectedValue: 6000,
-          coveredMonths: 6,
-          targetMonths: null,
-          targetValue: null,
-          difference: null,
-          progressPercentage: null,
-          status: "not_configured",
-          horizons: [
+          essentialMonthlyExpenses: 900,
+          essentialExpenseSources: [
             {
-              months: 3,
-              targetValue: null,
-              targetValueCents: null,
-              difference: null,
-              differenceCents: null,
-            },
-            {
-              months: 6,
-              targetValue: 6500,
-              targetValueCents: "650000",
-              difference: 500,
-              differenceCents: "50000",
-            },
-            {
-              months: 9,
-              targetValue: 5500,
-              targetValueCents: "550000",
-              difference: -500,
-              differenceCents: "-50000",
-            },
-            {
-              months: 12,
-              targetValue: 6000,
-              targetValueCents: "600000",
-              difference: 0,
-              differenceCents: "0",
+              id: "rent",
+              description: "Moradia",
+              frequency: "Mensal",
+              amount: 900,
+              monthlyEquivalent: 900,
             },
           ],
         }}
-      />,
-    );
-
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: /Comparar metas/ }));
-    expect(screen.getByText("Sem referência")).toBeTruthy();
-    expect(screen.getByText(/Faltam R\$\s*500,00/)).toBeTruthy();
-    expect(screen.getByText(/R\$\s*500,00 acima/)).toBeTruthy();
-    expect(screen.getByText("Valor atingido")).toBeTruthy();
-  });
-
-  it("describes coverage above the configured personal target", () => {
-    const html = renderToStaticMarkup(
-      <EmergencyReserveSummary
-        calculation={{
-          ...calculation,
-          selectedValue: 7000,
-          coveredMonths: 7,
-          difference: -1000,
-          progressPercentage: 116.7,
-          status: "above_target",
+        reserveObservation={{
+          observedAmountCents: "1200000",
+          observedOn: "2026-11-14",
         }}
       />,
     );
-
-    expect(html).toContain("7 meses de despesas");
-    expect(html).toContain("A cobertura está R$ 1.000,00 acima da meta");
-    expect(html).toContain('aria-valuenow="100"');
-    expect(html).toContain("117% da sua meta pessoal");
-  });
-
-  it("describes a personal target that is exactly reached", () => {
-    const html = renderToStaticMarkup(
-      <EmergencyReserveSummary
-        calculation={{
-          ...calculation,
-          selectedValue: 6000,
-          coveredMonths: 6,
-          difference: 0,
-          progressPercentage: 100,
-          status: "on_target",
-        }}
-      />,
-    );
-
-    expect(html).toContain("Sua meta pessoal está atingida.");
-    expect(html).toContain("100% da sua meta pessoal");
-  });
-
-  it("keeps methodology and liquidity limitations under disclosure", async () => {
-    const user = userEvent.setup();
-    render(<EmergencyReserveSummary calculation={calculation} />);
     const trigger = screen.getByRole("button", {
       name: "Origem, cálculo e limitações",
     });
 
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
     await user.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(
-      screen.getByText(/valor das posições vinculadas à reserva/),
+      screen.getByText(/não é somado novamente ao patrimônio da carteira/),
     ).toBeTruthy();
-    expect(screen.getByText(/começamos por 6 meses/)).toBeTruthy();
-    expect(
-      screen.getByText(/não considera carência, prazo de resgate/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Data-base dos valores: 01\/09\/2026/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Moradia \(Mensal\)/)).toBeTruthy();
+    expect(screen.queryByText(/vinculadas à reserva/i)).toBeNull();
   });
 
-  it("shows why coverage cannot be calculated when expenses are absent", () => {
-    const html = renderToStaticMarkup(
+  it("shows retry-independent data loading failure inline", () => {
+    render(<EmergencyReserveSummary />);
+    expect(
+      screen.getByText(/Não foi possível carregar os dados da reserva/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+  });
+
+  it("opens reserve and import actions when editing is allowed", () => {
+    const onOpenReserve = vi.fn();
+    const onOpenImport = vi.fn();
+    render(
       <EmergencyReserveSummary
-        calculation={{
-          ...calculation,
-          monthlyExpenses: null,
-          coveredMonths: null,
-          targetValue: null,
-          difference: null,
-          progressPercentage: null,
-          status: "not_configured",
-        }}
+        calculation={calculation}
+        onOpenReserve={onOpenReserve}
+        onOpenImport={onOpenImport}
       />,
     );
 
-    expect(html).toContain("Informe suas despesas mensais");
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Atualizar dados da B3" }),
+    );
+    expect(onOpenReserve).toHaveBeenCalledOnce();
+    expect(onOpenImport).toHaveBeenCalledOnce();
   });
 
-  it("reports reserve data unavailability without asking the user to add expenses", () => {
-    const html = renderToStaticMarkup(<EmergencyReserveSummary />);
-
-    expect(html).toContain("Não foi possível carregar os dados da reserva");
-    expect(html).not.toContain("Informe suas despesas mensais");
-  });
-
-  it("preserves the limitation when selected positions have incomplete values", async () => {
-    const { container } = render(
-      <EmergencyReserveSummary
-        calculation={{
-          ...calculation,
-          unvaluedGroups: 1,
-          missingSelectionCount: 1,
-          horizons: [
-            {
-              months: 3,
-              targetValue: 3000,
-              targetValueCents: "300000",
-              difference: 500,
-              differenceCents: "50000",
-            },
-            {
-              months: 6,
-              targetValue: 2000,
-              targetValueCents: "200000",
-              difference: -500,
-              differenceCents: "-50000",
-            },
-          ],
-        }}
-      />,
-    );
-
-    expect(container.innerHTML).toContain(
-      "Estimativa parcial: 2,5 meses de despesas",
-    );
-    expect(container.innerHTML).toContain(
-      "A comparação com sua meta está incompleta",
-    );
-    expect(container.innerHTML).not.toContain('role="progressbar"');
-    expect(container.innerHTML).not.toContain("% da sua meta pessoal");
-    expect(container.innerHTML).not.toContain("R$ 3.000,00");
-    expect(container.innerHTML).not.toContain("contêm posições sem valor");
-
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: /Comparar metas/ }));
-    expect(screen.getByText(/R\$\s*3.000,00/)).toBeTruthy();
-    expect(screen.queryByText(/Faltam R\$\s*500,00/)).toBeNull();
-    expect(screen.queryByText(/R\$\s*500,00 acima/)).toBeNull();
-  });
-
-  it("reveals incomplete-selection reasons when details are opened", async () => {
+  it("shows below-target gaps in the horizon comparison from the observed amount", async () => {
     const user = userEvent.setup();
     render(
       <EmergencyReserveSummary
-        calculation={{
-          ...calculation,
-          unvaluedGroups: 1,
-          missingSelectionCount: 2,
+        calculation={calculation}
+        reserveObservation={{
+          observedAmountCents: "300000",
+          observedOn: "2026-11-14",
         }}
       />,
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Origem, cálculo e limitações" }),
+      screen.getByRole("button", {
+        name: "Comparar metas de 3, 6, 9 e 12 meses",
+      }),
     );
-    expect(screen.getByText(/contêm posições sem valor/)).toBeTruthy();
-    expect(screen.getByText(/2 seleção\(ões\) salva\(s\)/)).toBeTruthy();
+    expect(screen.getByText("Valor atingido")).toBeTruthy();
+    expect(screen.getAllByText(/Faltam R\$/u).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Faltam R\$ 3\.000,00 para a meta/)).toBeTruthy();
   });
 
-  it("explains that non-positive expenses cannot be used", () => {
-    const html = renderToStaticMarkup(
+  it("supports a reserve with no personal month target", () => {
+    render(
       <EmergencyReserveSummary
         calculation={{
           ...calculation,
-          monthlyExpenses: 0,
-          coveredMonths: null,
+          targetMonths: null,
+          targetValue: null,
+          difference: null,
           progressPercentage: null,
-          status: "expenses_required",
+        }}
+        reserveObservation={{
+          observedAmountCents: "120000",
+          observedOn: "2026-11-14",
         }}
       />,
     );
 
-    expect(html).toContain("maiores que zero");
+    expect(screen.getByText("Sem meta pessoal configurada")).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("shows the on-target result without describing it as above the target", () => {
+    render(
+      <EmergencyReserveSummary
+        calculation={calculation}
+        reserveObservation={{
+          observedAmountCents: "600000",
+          observedOn: "2026-11-14",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Sua meta pessoal está atingida.")).toBeTruthy();
+    expect(screen.queryByText(/acima dela/)).toBeNull();
+  });
+
+  it("asks for positive expenses when zero expense data cannot produce coverage", () => {
+    render(
+      <EmergencyReserveSummary
+        calculation={calculateEmergencyReserve({
+          monthlyExpenses: 0,
+          targetMonths: 6,
+          balance: 1200,
+          referenceDate: "2026-11-14",
+        })}
+        reserveObservation={{
+          observedAmountCents: "120000",
+          observedOn: "2026-11-14",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText(/despesas informadas precisam ser maiores que zero/),
+    ).toBeTruthy();
   });
 });

@@ -66,7 +66,8 @@ export const mcpToolGroups: McpToolGroupDocumentation[] = [
         name: "get_my_long_term_strategy",
         description: "Consulta a estratégia de longo prazo cadastrada.",
         input: "Sem parâmetros.",
-        output: "Composição, alocação, metas e qualidade das datas.",
+        output:
+          "Composição da carteira inteira, sem inferir finalidade de ativos por objetivo.",
       },
       {
         name: "simulate_objective_projection",
@@ -130,7 +131,8 @@ export const mcpToolGroups: McpToolGroupDocumentation[] = [
         name: "write_update_objective",
         description: "Atualiza um objetivo da conta conectada.",
         input: "ID, campos atualizados, expectedUpdatedAt e idempotencyKey.",
-        output: "Objetivo atualizado; não altera vínculos da Reserva.",
+        output:
+          "Objetivo atualizado; as posições da carteira permanecem independentes.",
       },
       {
         name: "write_delete_objective",
@@ -140,10 +142,9 @@ export const mcpToolGroups: McpToolGroupDocumentation[] = [
       },
       {
         name: "write_save_observed_balance",
-        description:
-          "Registra saldo observado e tenta conciliar vínculos atuais.",
-        input: "Objetivo, valor, data, CDI opcional e chave idempotente.",
-        output: "Saldo registrado; vínculos históricos são preservados.",
+        description: "Registra o saldo informado e a data de um objetivo.",
+        input: "Objetivo, valor, data e chave idempotente.",
+        output: "Saldo e data registrados; não altera posições da carteira.",
       },
       {
         name: "write_create_manual_position",
@@ -155,7 +156,7 @@ export const mcpToolGroups: McpToolGroupDocumentation[] = [
         name: "write_update_manual_position",
         description: "Atualiza uma posição manual da conta conectada.",
         input: "Posição completa, ID, expectedUpdatedAt e idempotencyKey.",
-        output: "Posição atualizada; não move vínculos entre objetivos.",
+        output: "Posição atualizada na carteira independente dos objetivos.",
       },
       {
         name: "write_delete_manual_position",

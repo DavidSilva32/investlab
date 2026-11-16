@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PortfolioObjectiveProjection } from "@/app/(private)/portfolio/_components/portfolio-objective-projection";
-import type { ObjectivePosition } from "@/app/(private)/portfolio/_components/portfolio-objective-assignment";
 import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +27,6 @@ import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 type PlanningData = {
   objectives: PortfolioObjective[];
-  positions: ObjectivePosition[];
-  destinationSummary: {
-    knownTotal: number;
-    missingPositionCount: number;
-    unvaluedPositionCount: number;
-  };
 };
 
 type PortfolioOverviewData = {
@@ -115,8 +108,12 @@ export function PlanningSimulator({
   const startingBalance = needsPortfolioOverview
     ? portfolio
       ? resolvePortfolioProjectionBalance(
-          portfolio.positions ?? [],
-          data?.objectives ?? [],
+          (portfolio.positions ?? []).map((position) => ({
+            value: position.estimatedValue ?? null,
+            referenceDate: position.referenceDate ?? null,
+            estimatedThrough: position.estimatedThrough ?? null,
+            unvaluedPositions: position.totalValue === null ? 1 : 0,
+          })),
           {
             knownTotal: portfolio.insights.totalValue,
             missingPositionCount: 0,
@@ -127,7 +124,7 @@ export function PlanningSimulator({
         )
       : null
     : data && selectedObjective
-      ? resolveObjectiveProjectionBalance(selectedObjective, data.positions)
+      ? resolveObjectiveProjectionBalance(selectedObjective)
       : null;
 
   return (

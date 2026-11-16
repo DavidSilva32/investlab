@@ -34,7 +34,6 @@ export class ImportController {
       buffer: Buffer.from(await file.arrayBuffer()),
       referenceDate: formData.get("referenceDate"),
       reconciliationDecisions: formData.get("reconciliationDecisions"),
-      retiredObjectiveAssignments: formData.get("retiredObjectiveAssignments"),
     };
   }
 
@@ -43,10 +42,9 @@ export class ImportController {
     const {
       referenceDate: _referenceDate,
       reconciliationDecisions: _decisions,
-      retiredObjectiveAssignments: _retiredObjectiveAssignments,
       ...file
     } = await this.readFile(request);
-    const preview = await importService.previewWithIdentityConflicts(
+    const preview = await importService.previewWithReconciliation(
       file,
       requestId,
     );
@@ -66,12 +64,8 @@ export class ImportController {
 
   async confirm(request: Request, requestId: string) {
     logger.info("b3_import_confirm_started", { requestId });
-    const {
-      referenceDate,
-      reconciliationDecisions,
-      retiredObjectiveAssignments,
-      ...file
-    } = await this.readFile(request);
+    const { referenceDate, reconciliationDecisions, ...file } =
+      await this.readFile(request);
     let decisions: unknown;
     if (reconciliationDecisions !== null) {
       if (typeof reconciliationDecisions !== "string")
@@ -82,35 +76,17 @@ export class ImportController {
         throw new ApplicationError("Decisões de conciliação inválidas.", 400);
       }
     }
-    let retiredAssignments: unknown;
-    if (retiredObjectiveAssignments !== null) {
-      if (typeof retiredObjectiveAssignments !== "string")
-        throw new ApplicationError(
-          "Confirmações de posições removidas inválidas.",
-          400,
-        );
-      try {
-        retiredAssignments = JSON.parse(retiredObjectiveAssignments);
-      } catch {
-        throw new ApplicationError(
-          "Confirmações de posições removidas inválidas.",
-          400,
-        );
-      }
-    }
     const {
       preview,
       result,
       duplicate,
       referenceDateUpdated = false,
       reprocessedExistingImport = false,
-      retirementReview = [],
     } = await importService.confirm(
       file,
       requestId,
       typeof referenceDate === "string" ? referenceDate : null,
       decisions,
-      retiredAssignments,
     );
     if (duplicate)
       logger.warn("b3_import_duplicate_detected", {
@@ -141,72 +117,13 @@ export class ImportController {
           : preview.documentType === "B3_MOVEMENT_XLSX"
             ? `${count} movimentação(ões) importada(s) com sucesso.`
             : `${count} negociação(ões) importada(s) com sucesso.`;
-    const retiredCount = retirementReview.filter(
-      ({ reason }) => reason === "total_redemption",
-    ).length;
-    const preservedReasonLabels: Record<string, [string, string]> = {
-      partial_redemption: ["resgate parcial", "resgates parciais"],
-      duplicate_evidence: [
-        "movimentação duplicada",
-        "movimentações duplicadas",
-      ],
-      institution_mismatch: [
-        "divergência de instituição",
-        "divergências de instituição",
-      ],
-      identity_conflict: ["conflito de identidade", "conflitos de identidade"],
-      snapshot_not_newer: ["snapshot fora de ordem", "snapshots fora de ordem"],
-      snapshot_date_unavailable: [
-        "data de snapshot indisponível",
-        "datas de snapshot indisponíveis",
-      ],
-      movement_before_previous_snapshot: [
-        "movimentação anterior ao snapshot",
-        "movimentações anteriores ao snapshot",
-      ],
-      no_matching_redemption: [
-        "resgate compatível não encontrado",
-        "resgates compatíveis não encontrados",
-      ],
-      incomplete_evidence: ["evidência incompleta", "evidências incompletas"],
-    };
-    const preservedReasons = new Map<
-      string,
-      { count: number; labels: [string, string] }
-    >();
-    for (const { reason } of retirementReview) {
-      if (reason === "total_redemption") continue;
-      const labels = preservedReasonLabels[reason] ?? [
-        "evidência incompleta",
-        "evidências incompletas",
-      ];
-      const current = preservedReasons.get(reason);
-      preservedReasons.set(reason, {
-        count: (current?.count ?? 0) + 1,
-        labels,
-      });
-    }
-    const retirementMessage = [
-      retiredCount
-        ? `${retiredCount} ${retiredCount === 1 ? "vínculo encerrado" : "vínculos encerrados"} após resgate total.`
-        : "",
-      preservedReasons.size
-        ? `${[...preservedReasons.entries()]
-            .map(([, { count, labels }]) =>
-              count === 1 ? `1 ${labels[0]}` : `${count} ${labels[1]}`,
-            )
-            .join(", ")} — os vínculos foram mantidos.`
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
     return Response.json(
       {
         importId: result.importId,
         count,
         ...(reprocessedExistingImport ? { enrichedPositionCount } : {}),
         documentType: preview.documentType,
-        message: [importMessage, retirementMessage].filter(Boolean).join(" "),
+        message: importMessage,
       },
       { status: reprocessedExistingImport ? 200 : 201 },
     );

@@ -2,7 +2,6 @@ import { z } from "zod";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { personalInvestmentStrategyRepository } from "@/backend/repositories/personal-investment-strategy.repository";
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
-import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
 import { todayInSaoPaulo } from "@/lib/valuation-date";
@@ -60,8 +59,6 @@ type Position = {
   positionCount: number;
   product: string;
   valueCents: string | null;
-  objectiveId: string | null;
-  objectivePurpose: string | null;
   assetClass: string | null;
   subClass: string | null;
   geography: string | null;
@@ -76,7 +73,6 @@ export class PersonalInvestmentStrategyService {
   constructor(
     private readonly positions = portfolioPositionService,
     private readonly allocation = portfolioAllocationService,
-    private readonly objectives = portfolioObjectivesService,
     private readonly repository = personalInvestmentStrategyRepository,
     private readonly reserve = emergencyReserveService,
     private readonly today = todayInSaoPaulo,
@@ -92,30 +88,32 @@ export class PersonalInvestmentStrategyService {
       evaluated,
       requestId,
     );
-    const objectiveOverview = await this.objectives.getOverview(
-      requestId,
-      valuationDate,
-      classified,
-    );
-    const positions = objectiveOverview.positions as Position[];
+    const positions = classified.map((position) => ({
+      positionCount: 1,
+      product: position.product,
+      valueCents: position.canonicalValueCents,
+      knownValueCents: position.canonicalValueCents ?? "0",
+      assetClass: position.classification.assetClass,
+      subClass: position.classification.subClass,
+      geography: position.classification.geography,
+      maturityAt: position.maturityAt ?? null,
+      referenceDate: position.referenceDate ?? null,
+      unvaluedPositions: position.canonicalValueCents === null ? 1 : 0,
+    }));
     const totalCents = positions.reduce(
-      (total, position) =>
-        total + BigInt(position.knownValueCents ?? position.valueCents ?? "0"),
+      (total, position) => total + BigInt(position.knownValueCents),
       0n,
     );
-    const longTerm = positions.filter(
-      (position) => position.objectivePurpose === "LONG_TERM_INVESTMENT",
-    );
-    const allocation = summarizeStrategyAllocation(longTerm);
-    const longTermCents = BigInt(allocation.knownValueCents);
-    const effectiveDateGroups = longTerm.map((position) => ({
+    const allocation = summarizeStrategyAllocation(positions);
+    const portfolioKnownCents = BigInt(allocation.knownValueCents);
+    const effectiveDateGroups = positions.map((position) => ({
       positionCount: position.positionCount,
-      date: position.estimatedThrough ?? position.referenceDate,
+      date: position.referenceDate,
     }));
     const datedPositionCount = effectiveDateGroups
       .filter((group) => group.date !== null)
       .reduce((sum, group) => sum + group.positionCount, 0);
-    const longTermPositionCount = effectiveDateGroups.reduce(
+    const portfolioPositionCount = effectiveDateGroups.reduce(
       (sum, group) => sum + group.positionCount,
       0,
     );
@@ -128,7 +126,7 @@ export class PersonalInvestmentStrategyService {
     ].sort();
     const saved = await this.repository.get(requestId);
     const maturityCounts = new Map<string, number>();
-    for (const position of longTerm) {
+    for (const position of positions) {
       if (position.maturityAt) {
         maturityCounts.set(
           position.maturityAt,
@@ -149,38 +147,30 @@ export class PersonalInvestmentStrategyService {
           0,
         ),
       },
-      longTermWealth: {
-        knownValueCents: longTermCents.toString(),
-        unvaluedPositionCount: longTerm
+      portfolioWealth: {
+        knownValueCents: portfolioKnownCents.toString(),
+        unvaluedPositionCount: positions
           .filter((position) => position.valueCents === null)
           .reduce((sum, position) => sum + position.unvaluedPositions, 0),
-        positionCount: longTerm.reduce(
+        positionCount: positions.reduce(
           (sum, position) => sum + position.positionCount,
           0,
         ),
-        positionsWithoutMaturityDate: longTerm
+        positionsWithoutMaturityDate: positions
           .filter((position) => !position.maturityAt)
-          .reduce((sum, position) => sum + position.positionCount, 0),
-        assignedPositionCount: longTerm
-          .filter((position) => position.objectiveId !== null)
           .reduce((sum, position) => sum + position.positionCount, 0),
         unclassifiedKnownValueCents: allocation.unclassifiedKnownValueCents,
         unclassifiedPositionCount: allocation.unclassifiedPositionCount,
         classes: allocation.classes,
       },
-      longTermMaturityDates: [...maturityCounts]
+      maturityDates: [...maturityCounts]
         .map(([date, count]) => ({ date, count }))
         .sort((left, right) => left.date.localeCompare(right.date)),
-      longTermPositionsWithoutMaturityDate: longTerm
+      positionsWithoutMaturityDate: positions
         .filter((position) => !position.maturityAt)
         .reduce((sum, position) => sum + position.positionCount, 0),
-      destinationsNeedingPurposeConfirmation:
-        objectiveOverview.objectives.filter(
-          (objective: { kind: string; purpose: string | null }) =>
-            objective.kind !== "RESERVE" && objective.purpose === null,
-        ).length,
       valuationDates: dates,
-      valuationDatesComplete: datedPositionCount === longTermPositionCount,
+      valuationDatesComplete: datedPositionCount === portfolioPositionCount,
       savedStrategy:
         saved?.answers && saved.selectedDirection
           ? {
@@ -236,11 +226,17 @@ export class PersonalInvestmentStrategyService {
       evaluated,
       requestId,
     );
-    const reserve = await this.reserve.getContributionContext(classified);
-    const priority = calculateReservePriorityAmounts(
-      parsed.contributionAmount,
-      reserve.calculation,
-    );
+    const reserve = await this.reserve.getContributionContext();
+    const priority = reserve
+      ? calculateReservePriorityAmounts(parsed.contributionAmount, reserve)
+      : {
+          contributionCents: Math.round(
+            (parsed.contributionAmount + Number.EPSILON) * 100,
+          ),
+          reserveCents: null,
+          remainingCents: null,
+          reserveStatus: "incomplete" as const,
+        };
     const reserveCents = (value: number | null, cents?: string | null) =>
       cents ??
       (value === null
@@ -256,16 +252,16 @@ export class PersonalInvestmentStrategyService {
           : String(priority.remainingCents),
       reserveStatus: priority.reserveStatus,
       reserveSelectedValueCents: reserveCents(
-        reserve.calculation.selectedValue,
-        reserve.calculation.selectedValueCents,
+        reserve?.balance ?? null,
+        reserve?.balanceCents,
       ),
       reserveTargetValueCents: reserveCents(
-        reserve.calculation.targetValue,
-        reserve.calculation.targetValueCents,
+        reserve?.targetValue ?? null,
+        reserve?.targetValueCents,
       ),
       reserveDifferenceCents: reserveCents(
-        reserve.calculation.difference,
-        reserve.calculation.differenceCents,
+        reserve?.difference ?? null,
+        reserve?.differenceCents,
       ),
     };
     if (priority.remainingCents === null || priority.remainingCents === 0) {
@@ -274,23 +270,24 @@ export class PersonalInvestmentStrategyService {
         simulation: null,
       };
     }
-    const objectiveOverview = await this.objectives.getOverview(
-      requestId,
-      valuationDate,
-      classified,
-    );
-    const positions = objectiveOverview.positions as Position[];
-    const longTerm = positions.filter(
-      (position) => position.objectivePurpose === "LONG_TERM_INVESTMENT",
-    );
+    const positions = classified.map((position) => ({
+      positionCount: 1,
+      product: position.product,
+      valueCents: position.canonicalValueCents,
+      knownValueCents: position.canonicalValueCents ?? "0",
+      assetClass: position.classification.assetClass,
+      subClass: position.classification.subClass,
+      geography: position.classification.geography,
+      maturityAt: position.maturityAt ?? null,
+      referenceDate: position.referenceDate ?? null,
+      unvaluedPositions: position.canonicalValueCents === null ? 1 : 0,
+    }));
     const currentValuesCents = Object.fromEntries(
       groups.map(({ id }) => [id, "0"]),
     ) as Record<(typeof groups)[number]["id"], string>;
     let unclassifiedKnownValueCents = 0n;
-    for (const position of longTerm) {
-      const knownValueCents = BigInt(
-        position.knownValueCents ?? position.valueCents ?? "0",
-      );
+    for (const position of positions) {
+      const knownValueCents = BigInt(position.knownValueCents);
       if (knownValueCents === 0n) continue;
       const group = getStrategyAssetClassId(position);
       if (group) {
@@ -312,20 +309,17 @@ export class PersonalInvestmentStrategyService {
         ...result,
         completeness: {
           complete:
-            longTerm.every((position) => position.valueCents !== null) &&
+            positions.every((position) => position.valueCents !== null) &&
             unclassifiedKnownValueCents === 0n,
-          unvaluedPositionCount: longTerm
+          unvaluedPositionCount: positions
             .filter((position) => position.valueCents === null)
             .reduce((sum, position) => sum + position.unvaluedPositions, 0),
           unclassifiedKnownValueCents: unclassifiedKnownValueCents.toString(),
           valuationDate,
           valuationDates: [
             ...new Set(
-              longTerm
-                .map(
-                  (position) =>
-                    position.estimatedThrough ?? position.referenceDate,
-                )
+              positions
+                .map((position) => position.referenceDate)
                 .filter((date): date is string => date !== null),
             ),
           ].sort(),

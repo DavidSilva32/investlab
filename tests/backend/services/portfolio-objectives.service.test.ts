@@ -1,36 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  listCurrentEnriched: vi.fn(),
-  classifyPositions: vi.fn(),
-  getSettings: vi.fn(),
-  listRecurrences: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
-  update: vi.fn(),
-  updateWithMcpReplay: vi.fn(),
-  delete: vi.fn(),
-  deleteWithMcpReplay: vi.fn(),
   getObjective: vi.fn(),
-  findMcpMutationReplay: vi.fn(),
-  replaceAssignments: vi.fn(),
-  replaceAssignmentsWithTransfers: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  getSettings: vi.fn(),
+  listRecurrences: vi.fn(),
   listLatestBalanceReferences: vi.fn(),
-  saveGlobalAllocation: vi.fn(),
-  fingerprint: vi.fn((input: unknown) => {
-    const serialized = JSON.stringify(input);
-    let value = 0;
-    for (const character of serialized)
-      value = (value * 31 + character.charCodeAt(0)) >>> 0;
-    return value.toString(16).padStart(64, "0");
-  }),
+  findReplay: vi.fn(),
 }));
-
-vi.mock("@/backend/services/portfolio-position.service", () => ({
-  portfolioPositionService: { listCurrentEnriched: mocks.listCurrentEnriched },
-}));
-vi.mock("@/backend/services/portfolio-allocation.service", () => ({
-  portfolioAllocationService: { classifyPositions: mocks.classifyPositions },
+vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
+  portfolioObjectivesRepository: {
+    list: mocks.list,
+    create: mocks.create,
+    getObjective: mocks.getObjective,
+    update: mocks.update,
+    updateWithMcpReplay: mocks.update,
+    delete: mocks.delete,
+    deleteWithMcpReplay: mocks.delete,
+    listLatestBalanceReferences: mocks.listLatestBalanceReferences,
+  },
 }));
 vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
   emergencyReserveRepository: { getSettings: mocks.getSettings },
@@ -38,982 +29,156 @@ vi.mock("@/backend/repositories/emergency-reserve.repository", () => ({
 vi.mock("@/backend/repositories/financial-recurrences.repository", () => ({
   financialRecurrencesRepository: { listRecurrences: mocks.listRecurrences },
 }));
-vi.mock("@/backend/repositories/portfolio-objectives.repository", () => ({
-  createAllocationSourceFingerprint: mocks.fingerprint,
-  portfolioObjectivesRepository: {
-    list: mocks.list,
-    create: mocks.create,
-    update: mocks.update,
-    updateWithMcpReplay: mocks.updateWithMcpReplay,
-    delete: mocks.delete,
-    deleteWithMcpReplay: mocks.deleteWithMcpReplay,
-    getObjective: mocks.getObjective,
-    replaceAssignments: mocks.replaceAssignments,
-    replaceAssignmentsWithTransfers: mocks.replaceAssignmentsWithTransfers,
-    listLatestBalanceReferences: mocks.listLatestBalanceReferences,
-    saveGlobalAllocation: mocks.saveGlobalAllocation,
-  },
-}));
 vi.mock("@/backend/repositories/mcp-mutation-replays.repository", () => ({
-  mcpMutationReplaysRepository: { find: mocks.findMcpMutationReplay },
+  mcpMutationReplaysRepository: { find: mocks.findReplay },
 }));
 
 import { ApplicationError } from "@/backend/errors/application-error";
-import { objectiveBalanceService } from "@/backend/services/objective-balance.service";
 import { PortfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
-import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
-const imported = (overrides: Record<string, unknown> = {}) => ({
-  product: "CDB DI",
-  assetCode: "CDB1",
-  institution: "Banco A",
-  issuer: "Banco A S.A.",
-  indexer: "DI",
-  regimeType: "PÓS-FIXADO",
-  issuedAt: "2025-01-01",
-  maturityAt: "2028-01-01",
-  totalValue: "100",
-  estimatedValue: null,
-  referenceDate: "2026-09-30",
-  source: "B3",
-  classification: { assetClass: "Renda fixa" },
+const timestamp = new Date("2026-11-14T00:00:00.000Z");
+const goal = (overrides: Record<string, unknown> = {}) => ({
+  id: "00000000-0000-4000-8000-000000000001",
+  kind: "CUSTOM",
+  purpose: "PERSONAL_GOAL",
+  name: "Viagem",
+  targetAmount: "16000.00",
+  monthlyPlannedAmount: "2000.00",
+  updatedAt: timestamp,
   ...overrides,
 });
-
-const customObjective = {
-  id: "objective-trip",
-  kind: "CUSTOM",
-  purpose: null,
-  name: "Viagem",
-  targetAmount: "500.00",
-  monthlyPlannedAmount: "100.00",
-  createdAt: new Date("2026-01-01"),
-  updatedAt: new Date("2026-01-01"),
-};
 
 describe("PortfolioObjectivesService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.findMcpMutationReplay.mockResolvedValue(null);
-    mocks.listCurrentEnriched.mockResolvedValue([]);
-    mocks.classifyPositions.mockImplementation(async (positions) => positions);
+    mocks.list.mockResolvedValue({ objectives: [goal()] });
     mocks.getSettings.mockResolvedValue(null);
     mocks.listRecurrences.mockResolvedValue([]);
-    mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
     mocks.listLatestBalanceReferences.mockResolvedValue([]);
-    mocks.getObjective.mockResolvedValue(customObjective);
-    mocks.create.mockResolvedValue(customObjective);
-    mocks.replaceAssignmentsWithTransfers.mockResolvedValue(undefined);
+    mocks.findReplay.mockResolvedValue(null);
   });
 
-  it("builds the overview from a supplied evaluated position snapshot", async () => {
-    const evaluatedPositions = [
-      imported({
-        canonicalValueCents: "12345",
-        estimatedValue: 123.45,
-        classification: {
-          assetClass: "Renda variável",
-          subClass: "Ação ordinária",
-          geography: "Brasil",
-        },
-      }),
-    ];
-
-    const result = await new PortfolioObjectivesService().getOverview(
-      "request-1",
-      "2026-09-30",
-      evaluatedPositions,
-    );
-
-    expect(result.positions[0]).toMatchObject({
-      value: 123.45,
-      valueCents: "12345",
-      assetClass: "Renda variável",
-      subClass: "Ação ordinária",
-      geography: "Brasil",
-    });
-    expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
-    expect(mocks.classifyPositions).not.toHaveBeenCalled();
-  });
-
-  it("automatically chooses the closest available positions and leaves other objectives untouched", async () => {
-    const targetObjective = {
-      ...customObjective,
-      id: "00000000-0000-4000-8000-000000000001",
-    };
-    const currentAsset = imported({
-      product: "CDB já vinculado",
-      assetCode: "CDB60",
-      totalValue: "60",
-      referenceDate: "2026-09-30",
-    });
-    const unassignedAsset = imported({
-      product: "CDB sem destino",
-      assetCode: "CDB40",
-      totalValue: "40",
-      referenceDate: "2026-09-30",
-    });
-    const otherObjectiveAsset = imported({
-      product: "CDB de outro objetivo",
-      assetCode: "CDB500",
-      totalValue: "500",
-      referenceDate: "2026-09-30",
-    });
-    const otherObjective = {
-      ...customObjective,
-      id: "00000000-0000-4000-8000-000000000002",
-      name: "Reserva futura",
-    };
-    const currentKey = getEmergencyReserveAssetKey(currentAsset);
-    const otherKey = getEmergencyReserveAssetKey(otherObjectiveAsset);
-    mocks.listCurrentEnriched.mockResolvedValue([
-      currentAsset,
-      unassignedAsset,
-      otherObjectiveAsset,
-    ]);
-    mocks.list.mockResolvedValue({
-      objectives: [targetObjective, otherObjective],
-      assignments: [
-        { objectiveId: targetObjective.id, assetKey: currentKey },
-        { objectiveId: otherObjective.id, assetKey: otherKey },
-      ],
-    });
-
-    const assignment =
-      await new PortfolioObjectivesService().findAutomaticObjectiveAssignment({
-        objectiveId: targetObjective.id,
-        amountCents: "10000",
-        observedOn: "2026-09-30",
-        requestId: "request-1",
-      });
-
-    expect(assignment.allocation).toEqual({
-      [currentKey]: targetObjective.id,
-      [getEmergencyReserveAssetKey(unassignedAsset)]: targetObjective.id,
-    });
-    expect(assignment.expectedOwners).not.toHaveProperty(otherKey);
-    expect(assignment.changedPositionCount).toBe(1);
-  });
-
-  it("refuses automatic objective assignments when the allocation preview is partial", async () => {
-    const preview = vi
-      .spyOn(PortfolioObjectivesService.prototype, "previewGlobalAllocation")
-      .mockResolvedValueOnce({ optimal: false } as never);
-
-    await expect(
-      new PortfolioObjectivesService().findAutomaticObjectiveAssignment({
-        objectiveId: customObjective.id,
-        amountCents: "10000",
-        observedOn: "2026-09-30",
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(preview).toHaveBeenCalledWith(
+  it("uses the latest observed amount for goal progress and never reads assignments", async () => {
+    mocks.listLatestBalanceReferences.mockResolvedValue([
       {
-        valuationDate: "2026-09-30",
-        balances: [{ objectiveId: customObjective.id, amount: 100 }],
+        objectiveId: "00000000-0000-4000-8000-000000000001",
+        amountCents: "1230456",
+        observedDate: "2026-11-14",
       },
-      undefined,
-    );
-  });
+    ]);
 
-  it("uses a generic label when the objective is absent from an optimal preview", async () => {
-    vi.spyOn(
-      PortfolioObjectivesService.prototype,
-      "previewGlobalAllocation",
-    ).mockResolvedValueOnce({
-      optimal: true,
-      objectives: [],
-      expectedOwners: { "v1:asset": null },
-      allocation: { "v1:asset": customObjective.id },
-      expectedSourceFingerprint: "a".repeat(64),
-    } as never);
+    const result = await new PortfolioObjectivesService().getOverview();
 
-    await expect(
-      new PortfolioObjectivesService().findAutomaticObjectiveAssignment({
-        objectiveId: customObjective.id,
-        amountCents: "10000",
-        observedOn: "2026-09-30",
-      }),
-    ).resolves.toMatchObject({ objectiveName: "objetivo" });
-  });
-
-  it("saves an automatic objective allocation with the observed balance and CDI input", async () => {
-    mocks.saveGlobalAllocation.mockResolvedValue({ batchId: "batch-1" });
-    const service = new PortfolioObjectivesService();
-    const assignment = {
-      objectiveId: customObjective.id,
-      objectiveName: customObjective.name,
-      amountCents: "10000",
-      observedOn: "2026-09-30",
-      expectedOwners: { "v1:asset": null },
-      allocation: { "v1:asset": customObjective.id },
-      expectedSourceFingerprint: "a".repeat(64),
-      changedPositionCount: 1,
-    };
-
-    await expect(
-      service.saveAutomaticObjectiveAssignment({
-        ...assignment,
-        cdiPercentage: "100.0000",
-      }),
-    ).resolves.toMatchObject({
-      batchId: "batch-1",
-      objectiveName: customObjective.name,
-      changedPositionCount: 1,
-      transferredPositionCount: 0,
-    });
-    expect(mocks.saveGlobalAllocation).toHaveBeenCalledWith({
-      observedOn: assignment.observedOn,
-      expectedOwners: assignment.expectedOwners,
-      allocation: assignment.allocation,
-      expectedSourceFingerprint: assignment.expectedSourceFingerprint,
-      references: [
-        {
-          objectiveId: customObjective.id,
-          amountCents: "10000",
-          cdiPercentage: "100.0000",
-        },
-      ],
-    });
-  });
-
-  it("uses the essential expense baseline and default six-month horizon for the reserve objective", async () => {
-    mocks.list.mockResolvedValue({
+    expect(result).toEqual({
       objectives: [
         {
+          id: "00000000-0000-4000-8000-000000000001",
+          updatedAt: timestamp.toISOString(),
+          kind: "CUSTOM",
+          purpose: "PERSONAL_GOAL",
+          name: "Viagem",
+          targetAmount: 16000,
+          monthlyPlannedAmount: 2000,
+          currentValue: 12304.56,
+          remainingAmount: expect.closeTo(3695.44, 2),
+          progressPercent: 76.9035,
+          balanceTracking: {
+            observedAmountCents: "1230456",
+            observedOn: "2026-11-14",
+          },
+        },
+      ],
+    });
+    expect(mocks.list).toHaveBeenCalledOnce();
+  });
+
+  it("leaves current value, remaining amount, and progress empty until a balance is recorded", async () => {
+    const result = await new PortfolioObjectivesService().getOverview();
+
+    expect(result.objectives[0]).toMatchObject({
+      currentValue: null,
+      remainingAmount: null,
+      progressPercent: null,
+      balanceTracking: null,
+    });
+    expect(result.objectives[0]).not.toHaveProperty("knownValue");
+    expect(result).not.toHaveProperty("positions");
+  });
+
+  it("treats an invalid legacy planned amount as zero without inventing progress", async () => {
+    mocks.list.mockResolvedValue({
+      objectives: [goal({ monthlyPlannedAmount: "invalid-amount" })],
+    });
+
+    const result = await new PortfolioObjectivesService().getOverview();
+
+    expect(result.objectives[0]).toMatchObject({
+      monthlyPlannedAmount: 0,
+      currentValue: null,
+      progressPercent: null,
+    });
+  });
+
+  it("calculates the reserve target from its settings while keeping the observed amount primary", async () => {
+    mocks.list.mockResolvedValue({
+      objectives: [
+        goal({
           id: reserveObjectiveId,
           kind: "RESERVE",
-          purpose: "RESERVE",
           name: "Reserva",
           targetAmount: null,
           monthlyPlannedAmount: null,
-          createdAt: new Date("2026-01-01"),
-          updatedAt: new Date("2026-01-01"),
-        },
+        }),
       ],
-      assignments: [],
     });
-    mocks.listRecurrences.mockResolvedValue([
-      {
-        description: "Aluguel",
-        amount: "1500.00",
-        frequency: "MONTHLY",
-        kind: "EXPENSE",
-        essential: true,
-        active: true,
-      },
-    ]);
-
-    const result = await new PortfolioObjectivesService().getOverview(
-      undefined,
-      "2026-09-30",
-      [],
-    );
-
-    expect(result.objectives[0]).toMatchObject({
-      id: reserveObjectiveId,
-      targetAmount: 9000,
-      targetAmountCents: "900000",
-    });
-  });
-
-  it("uses the observed reserve balance for goal progress without changing portfolio totals", async () => {
-    const reservePosition = imported({
-      assetCode: "RESERVE-CDB",
-      canonicalValueCents: "5045911",
-      estimatedValue: 50459.11,
-      referenceDate: "2026-11-13",
-    });
-    const reserveAssetKey = getEmergencyReserveAssetKey(reservePosition);
     mocks.getSettings.mockResolvedValue({
       monthlyExpenses: "4650.00",
       targetMonths: 12,
-      selectedAssetKeys: [reserveAssetKey],
-    });
-    mocks.list.mockResolvedValue({
-      objectives: [
-        {
-          id: reserveObjectiveId,
-          kind: "RESERVE",
-          purpose: "RESERVE",
-          name: "Reserva",
-          targetAmount: null,
-          monthlyPlannedAmount: null,
-          createdAt: new Date("2026-01-01"),
-          updatedAt: new Date("2026-01-01"),
-        },
-      ],
-      assignments: [
-        { objectiveId: reserveObjectiveId, assetKey: reserveAssetKey },
-      ],
     });
     mocks.listLatestBalanceReferences.mockResolvedValue([
       {
         objectiveId: reserveObjectiveId,
         amountCents: "5604248",
         observedDate: "2026-11-14",
-        cdiPercentage: null,
       },
     ]);
 
-    const result = await new PortfolioObjectivesService().getOverview(
-      undefined,
-      "2026-11-14",
-      [reservePosition],
-    );
-    const reserve = result.objectives[0];
+    const result = await new PortfolioObjectivesService().getOverview();
 
-    expect(reserve).toMatchObject({
+    expect(result.objectives[0]).toMatchObject({
       currentValue: 56042.48,
-      currentValueCents: "5604248",
-      knownValue: 50459.11,
-      knownValueCents: "5045911",
       targetAmount: 55800,
       remainingAmount: 0,
-      remainingAmountCents: "0",
       progressPercent: 100,
-      balanceTracking: {
-        observedAmountCents: "5604248",
-        observedOn: "2026-11-14",
-      },
-    });
-    expect(
-      result.destinationSummary.categories.find(({ key }) => key === "reserve"),
-    ).toMatchObject({ value: 50459.11, valueCents: "5045911" });
-    expect(result.destinationSummary.knownTotalCents).toBe("5045911");
-  });
-
-  it("does not report one reference date for grouped values from different dates", async () => {
-    const result = await new PortfolioObjectivesService().getOverview(
-      undefined,
-      "2026-09-30",
-      [
-        imported({ canonicalValueCents: "10000", referenceDate: "2026-09-29" }),
-        imported({ canonicalValueCents: "20000", referenceDate: "2026-09-30" }),
-      ],
-    );
-
-    expect(result.positions).toHaveLength(1);
-    expect(result.positions[0]).toMatchObject({
-      valueCents: "30000",
-      referenceDate: null,
     });
   });
 
-  it("keeps conflicting grouped asset classifications unknown", async () => {
-    const result = await new PortfolioObjectivesService().getOverview(
-      undefined,
-      "2026-09-30",
-      [
-        imported({
-          canonicalValueCents: "10000",
-          classification: {
-            assetClass: "Renda variável",
-            subClass: "Ação ordinária",
-            geography: "Brasil",
-          },
-        }),
-        imported({
-          canonicalValueCents: "20000",
-          classification: {
-            assetClass: "Fundos",
-            subClass: "FII",
-            geography: "Brasil",
-          },
-        }),
-        imported({
-          canonicalValueCents: "30000",
-          classification: undefined,
-          referenceDate: null,
-        }),
-      ],
-    );
+  it("creates a normalized objective", async () => {
+    mocks.create.mockResolvedValue(goal());
 
-    expect(result.positions).toHaveLength(1);
-    expect(result.positions[0]).toMatchObject({
-      assetClass: null,
-      subClass: null,
-      geography: null,
-      knownValueCents: "60000",
-      referenceDate: null,
-    });
-  });
-
-  it("separates long-term destination values and keeps legacy goals unclassified until confirmed", async () => {
-    const reserve = {
-      ...customObjective,
-      id: reserveObjectiveId,
-      kind: "RESERVE",
-      purpose: "RESERVE",
-      name: "Reserva",
-    };
-    const longTerm = {
-      ...customObjective,
-      id: "objective-long",
-      purpose: "LONG_TERM_INVESTMENT",
-      name: "Longo prazo",
-    };
-    const personal = {
-      ...customObjective,
-      id: "objective-trip",
+    await new PortfolioObjectivesService().create({
+      name: " Viagem ",
       purpose: "PERSONAL_GOAL",
-      name: "Viagem",
-    };
-    const legacy = {
-      ...customObjective,
-      id: "objective-legacy",
-      purpose: null,
-      name: "Meta antiga",
-    };
-    const reservePosition = imported({
-      product: "CDB Reserva",
-      canonicalValueCents: "1000",
-    });
-    const longTermPosition = imported({
-      product: "CDB Long",
-      canonicalValueCents: "2000",
-    });
-    const personalPosition = imported({
-      product: "CDB Viagem",
-      canonicalValueCents: "3000",
-    });
-    const legacyPosition = imported({
-      product: "CDB Legado",
-      canonicalValueCents: "4000",
-    });
-    const keys = [
-      reservePosition,
-      longTermPosition,
-      personalPosition,
-      legacyPosition,
-    ].map((position) => getEmergencyReserveAssetKey(position));
-    mocks.list.mockResolvedValue({
-      objectives: [reserve, longTerm, personal, legacy],
-      assignments: [reserve, longTerm, personal, legacy].map(
-        (objective, index) => ({
-          objectiveId: objective.id,
-          assetKey: keys[index],
-        }),
-      ),
+      targetAmount: 16000,
+      monthlyPlannedAmount: 2000,
     });
 
-    const result = await new PortfolioObjectivesService().getOverview(
-      undefined,
-      "2026-09-30",
-      [reservePosition, longTermPosition, personalPosition, legacyPosition],
-    );
-
-    expect(result.destinationSummary.categories).toEqual([
-      { key: "reserve", value: 10, valueCents: "1000", percentage: 10 },
-      { key: "personal", value: 30, valueCents: "3000", percentage: 30 },
-      { key: "long_term", value: 20, valueCents: "2000", percentage: 20 },
-      { key: "purpose_unknown", value: 40, valueCents: "4000", percentage: 40 },
-      { key: "unassigned", value: 0, valueCents: "0", percentage: 0 },
-    ]);
-    expect(result.destinationSummary.knownTotalCents).toBe("10000");
-    expect(
-      result.destinationSummary.categories.reduce(
-        (total, category) => total + category.percentage,
-        0,
-      ),
-    ).toBe(100);
-    expect(
-      result.positions.map(({ objectivePurpose }) => objectivePurpose),
-    ).toEqual(["RESERVE", "LONG_TERM_INVESTMENT", "PERSONAL_GOAL", null]);
-  });
-
-  it("uses the Sao Paulo valuation date when an allocation fingerprint is requested without a date", async () => {
-    const result = await new PortfolioObjectivesService().getOverview(
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
-
-    expect(
-      (result as typeof result & { allocationSourceFingerprint: string })
-        .allocationSourceFingerprint,
-    ).toMatch(/^[a-f0-9]{64}$/);
-    expect(mocks.fingerprint).toHaveBeenCalledWith(
-      expect.objectContaining({
-        valuationDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      }),
-    );
-  });
-
-  it("uses canonical cents for unassigned objective totals", async () => {
-    mocks.listCurrentEnriched.mockResolvedValue([
-      imported({
-        canonicalValueCents: "12345",
-        canonicalValueSource: "CDB_ESTIMATE",
-      }),
-    ]);
-
-    const result = await new PortfolioObjectivesService().getOverview();
-
-    expect(result.unassignedKnownValue).toBe(123.45);
-    expect(result.unassignedKnownValueCents).toBe("12345");
-    expect(result.positions[0]).toMatchObject({
-      value: 123.45,
-      valueCents: "12345",
-    });
-  });
-
-  it("keeps an observed objective balance separate from assigned positions and destination totals", async () => {
-    const position = imported({
-      canonicalValueCents: "10000",
-      canonicalValueSource: "B3_IMPORTED",
-    });
-    const assetKey = getEmergencyReserveAssetKey(position);
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective],
-      assignments: [{ objectiveId: customObjective.id, assetKey }],
-    });
-    mocks.listLatestBalanceReferences.mockResolvedValue([
-      {
-        objectiveId: customObjective.id,
-        amountCents: "25000",
-        observedDate: "2026-09-30",
-        cdiPercentage: null,
-      },
-    ]);
-
-    const result = await new PortfolioObjectivesService().getOverview(
-      undefined,
-      "2026-09-30",
-      [position],
-    );
-
-    expect(result.objectives[0]).toMatchObject({
-      currentValueCents: "10000",
-      balanceTracking: {
-        observedAmountCents: "25000",
-        observedOn: "2026-09-30",
-        projection: null,
-      },
-    });
-    expect(result.destinationSummary.knownTotalCents).toBe("10000");
-  });
-
-  it("keeps the objective overview available when balance projection fails", async () => {
-    const secondObjective = {
-      ...customObjective,
-      id: "objective-home",
-      name: "Casa",
-    };
-    const projection = vi
-      .spyOn(objectiveBalanceService, "projectLatest")
-      .mockRejectedValueOnce(new Error("CDI temporarily unavailable"));
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective, secondObjective],
-      assignments: [],
-    });
-    mocks.listLatestBalanceReferences.mockResolvedValue([
-      {
-        objectiveId: customObjective.id,
-        amountCents: "10000",
-        observedDate: "2026-09-30",
-        cdiPercentage: null,
-      },
-      {
-        objectiveId: secondObjective.id,
-        amountCents: "20000",
-        observedDate: "2026-09-30",
-        cdiPercentage: "100.0000",
-      },
-    ]);
-
-    try {
-      const result = await new PortfolioObjectivesService().getOverview(
-        undefined,
-        "2026-09-30",
-        [],
-      );
-
-      expect(
-        result.objectives.find(({ id }) => id === customObjective.id)
-          ?.balanceTracking,
-      ).toMatchObject({ projectionUnavailableReason: "missing_conditions" });
-      expect(
-        result.objectives.find(({ id }) => id === secondObjective.id)
-          ?.balanceTracking,
-      ).toMatchObject({ projectionUnavailableReason: "rates_unavailable" });
-      expect(result.destinationSummary.knownTotalCents).toBe("0");
-    } finally {
-      projection.mockRestore();
-    }
-  });
-
-  it("handles canonical valued and unvalued positions with incomplete metadata", async () => {
-    const valued = imported({
-      canonicalValueCents: "10000",
-      canonicalValueSource: undefined,
-      totalValue: "1",
-    });
-    const key = getEmergencyReserveAssetKey(valued);
-    mocks.listCurrentEnriched.mockResolvedValue([valued]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        {
-          ...customObjective,
-          targetAmount: "50.00",
-          monthlyPlannedAmount: "bad",
-        },
-      ],
-      assignments: [{ objectiveId: customObjective.id, assetKey: key }],
-    });
-
-    const valuedResult = await new PortfolioObjectivesService().getOverview();
-
-    expect(valuedResult.objectives[0]).toMatchObject({
-      currentValueCents: "10000",
-      remainingAmountCents: "0",
-      progressPercent: 100,
-      monthlyPlannedAmount: 0,
-      monthlyPlannedAmountCents: null,
-    });
-
-    const unvalued = imported({
-      assetCode: "CDB2",
-      canonicalValueCents: null,
-      totalValue: "100",
-    });
-    mocks.listCurrentEnriched.mockResolvedValue([unvalued]);
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective],
-      assignments: [
-        {
-          objectiveId: customObjective.id,
-          assetKey: getEmergencyReserveAssetKey(unvalued),
-        },
-      ],
-    });
-
-    const unvaluedResult = await new PortfolioObjectivesService().getOverview();
-
-    expect(unvaluedResult.objectives[0]).toMatchObject({
-      currentValue: null,
-      currentValueCents: null,
-      unvaluedPositionCount: 1,
-    });
-  });
-
-  it("builds objective progress from current position values and reports unassigned wealth", async () => {
-    const first = imported();
-    const duplicate = imported({
-      totalValue: "50",
-      classification: { assetClass: "Renda fixa", geography: "Exterior" },
-    });
-    const manual = imported({
-      assetKey: "manual:asset",
-      source: "MANUAL",
-      product: "ETF",
-      assetCode: "ETF1",
-      totalValue: "300",
-      convertedValueBrl: "300",
-      institution: "Corretora",
-      issuer: null,
-      indexer: null,
-      regimeType: null,
-      issuedAt: null,
-      maturityAt: null,
-    });
-    const key = getEmergencyReserveAssetKey(first);
-    mocks.listCurrentEnriched.mockResolvedValue([first, duplicate, manual]);
-    mocks.getSettings.mockResolvedValue({
-      monthlyExpenses: "200.00",
-      targetMonths: 6,
-      selectedAssetKeys: [],
-    });
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        {
-          ...customObjective,
-          id: reserveObjectiveId,
-          kind: "RESERVE",
-          name: "Reserva",
-          targetAmount: null,
-          monthlyPlannedAmount: null,
-        },
-      ],
-      assignments: [{ objectiveId: customObjective.id, assetKey: key }],
-    });
-
-    const result = await new PortfolioObjectivesService().getOverview("r1");
-
-    expect(result.objectives[0]).toMatchObject({
-      currentValue: 150,
-      targetAmount: 500,
-      remainingAmount: 350,
-      progressPercent: 30,
-      assignedPositionCount: 2,
-      monthlyPlannedAmount: 100,
-    });
-    expect(result.objectives[1]).toMatchObject({
-      targetAmount: 1200,
-      currentValue: 0,
-    });
-    expect(result.positions[0]).toMatchObject({
-      objectiveId: customObjective.id,
-      geography: null,
-    });
-    expect(result.unassignedKnownValue).toBe(300);
-    expect(result.unassignedPositionCount).toBe(1);
-  });
-
-  it("keeps stale and unvalued objective values unavailable", async () => {
-    const noValue = imported({ totalValue: null });
-    mocks.listCurrentEnriched.mockResolvedValue([noValue]);
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective],
-      assignments: [
-        {
-          objectiveId: customObjective.id,
-          assetKey: getEmergencyReserveAssetKey(noValue),
-        },
-        { objectiveId: customObjective.id, assetKey: "v1:stale" },
-      ],
-    });
-
-    const result = await new PortfolioObjectivesService().getOverview();
-
-    expect(result.objectives[0]).toMatchObject({
-      currentValue: null,
-      remainingAmount: null,
-      progressPercent: null,
-      missingPositionCount: 1,
-      unvaluedPositionCount: 1,
-    });
-  });
-
-  it("retains known subtotal for a mixed-valued position group without claiming full progress", async () => {
-    const valued = imported({
-      estimationBaseDate: "2026-09-16",
-      estimatedThrough: "2026-09-21",
-      cdbEstimateStatus: "provisional",
-    });
-    const unvalued = imported({
-      totalValue: null,
-      estimationBaseDate: null,
-      estimatedThrough: null,
-      cdbEstimateStatus: "unavailable",
-      cdbEstimateLimitation: "Data-base CURVA não confirmada.",
-    });
-    const other = imported({
-      assetCode: "CDB2",
-      totalValue: "300",
-      issuer: "Banco B S.A.",
-      institution: "Banco B",
-    });
-    const key = getEmergencyReserveAssetKey(valued);
-    mocks.listCurrentEnriched.mockResolvedValue([valued, unvalued, other]);
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective],
-      assignments: [{ objectiveId: customObjective.id, assetKey: key }],
-    });
-
-    const result = await new PortfolioObjectivesService().getOverview();
-
-    expect(result.objectives[0]).toMatchObject({
-      currentValue: null,
-      knownValue: 100,
-      unvaluedPositionCount: 1,
-      progressPercent: null,
-      remainingAmount: null,
-    });
-    expect(
-      result.positions.find((position) => position.assetKey === key),
-    ).toMatchObject({
-      value: null,
-      knownValue: 100,
-      unvaluedPositions: 1,
-      estimationBaseDate: null,
-      estimatedThrough: null,
-      cdbEstimateStatus: null,
-      cdbEstimateLimitation: "Data-base CURVA não confirmada.",
-    });
-    expect(result.unassignedKnownValue).toBe(300);
-  });
-
-  it("clears grouped comparison metadata when lots have different approximation states", async () => {
-    const first = imported({
-      cdbEstimateComparisonApproximate: true,
-      estimatedThrough: "2026-09-18",
-    });
-    const second = imported({
-      totalValue: "125",
-      cdbEstimateComparisonApproximate: false,
-      estimatedThrough: "2026-09-19",
-    });
-    mocks.listCurrentEnriched.mockResolvedValue([first, second]);
-
-    const result = await new PortfolioObjectivesService().getOverview();
-
-    expect(result.positions).toHaveLength(1);
-    expect(result.positions[0]).toMatchObject({
-      positionCount: 2,
-      cdbEstimateComparisonApproximate: null,
-      estimatedThrough: null,
-    });
-  });
-
-  it("retains the known subtotal when an unvalued lot precedes a valued lot", async () => {
-    const unvalued = imported({ totalValue: null });
-    const valued = imported({ totalValue: "75" });
-    const key = getEmergencyReserveAssetKey(valued);
-    mocks.listCurrentEnriched.mockResolvedValue([unvalued, valued]);
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective],
-      assignments: [{ objectiveId: customObjective.id, assetKey: key }],
-    });
-
-    const result = await new PortfolioObjectivesService().getOverview();
-
-    expect(result.objectives[0]).toMatchObject({
-      currentValue: null,
-      knownValue: 75,
-      unvaluedPositionCount: 1,
-      progressPercent: null,
-    });
-    expect(result.positions[0]).toMatchObject({
-      value: null,
-      knownValue: 75,
-      unvaluedPositions: 1,
-    });
-  });
-
-  it("handles unclassified positions with unavailable or invalid values", async () => {
-    const unavailableIdentity = imported({
-      issuer: null,
-      indexer: null,
-      regimeType: null,
-      issuedAt: null,
-      maturityAt: null,
-      classification: null,
-      referenceDate: null,
-      source: null,
-      totalValue: "not-a-number",
-    });
-    mocks.listCurrentEnriched.mockResolvedValue([unavailableIdentity]);
-    mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
-
-    const result = await new PortfolioObjectivesService().getOverview();
-
-    expect(result.positions[0]).toMatchObject({
-      assetClass: null,
-      value: null,
-      knownValue: 0,
-      unvaluedPositions: 1,
-      referenceDate: null,
-      source: null,
-    });
-    expect(result.unassignedKnownValue).toBe(0);
-    expect(result.unassignedUnvaluedPositionCount).toBe(1);
-  });
-
-  it("leaves the reserve and custom target unavailable until their targets are configured", async () => {
-    mocks.list.mockResolvedValue({
-      objectives: [
-        { ...customObjective, targetAmount: null },
-        {
-          ...customObjective,
-          id: reserveObjectiveId,
-          kind: "RESERVE",
-          name: "Reserva",
-          targetAmount: null,
-          monthlyPlannedAmount: null,
-        },
-      ],
-      assignments: [],
-    });
-
-    const result = await new PortfolioObjectivesService().getOverview();
-
-    expect(result.objectives.map(({ targetAmount }) => targetAmount)).toEqual([
-      null,
-      null,
-    ]);
-    expect(
-      result.objectives.every(({ currentValue }) => currentValue === 0),
-    ).toBe(true);
-  });
-
-  it("creates a named objective with a target and optional monthly plan", async () => {
-    await expect(
-      new PortfolioObjectivesService().create({
-        name: " Viagem ",
-        purpose: "PERSONAL_GOAL",
-        targetAmount: 12000,
-        monthlyPlannedAmount: 500,
-      }),
-    ).resolves.toEqual(customObjective);
     expect(mocks.create).toHaveBeenCalledWith({
       name: "Viagem",
       purpose: "PERSONAL_GOAL",
-      targetAmount: "12000.00",
-      monthlyPlannedAmount: "500.00",
+      targetAmount: "16000.00",
+      monthlyPlannedAmount: "2000.00",
     });
   });
 
-  it("passes normalized objective creation idempotency to its repository transaction", async () => {
+  it("rejects invalid objective details and invalid idempotency keys", async () => {
     const service = new PortfolioObjectivesService();
-    const body = {
-      name: "Viagem",
-      purpose: "PERSONAL_GOAL" as const,
-      targetAmount: 12000,
-      monthlyPlannedAmount: 500,
-    };
-    mocks.create.mockResolvedValueOnce(customObjective);
-
     await expect(
-      service.create(body, { idempotencyKey: "create-objective-key" }),
-    ).resolves.toBe(customObjective);
-    const inserted = mocks.create.mock.calls[0]?.[0];
-    expect(inserted).toMatchObject({
-      name: "Viagem",
-      purpose: "PERSONAL_GOAL",
-      mcpIdempotency: {
-        key: "create-objective-key",
-        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      },
-    });
-  });
-
-  it("rejects objective create key reuse with a different normalized payload", async () => {
-    const service = new PortfolioObjectivesService();
-    mocks.create.mockRejectedValueOnce(
-      new ApplicationError(
-        "Esta chave de repetição já foi usada com outros dados.",
-        409,
-      ),
-    );
-
+      service.create({ name: "", purpose: "PERSONAL_GOAL" }),
+    ).rejects.toBeInstanceOf(ApplicationError);
     await expect(
       service.create(
-        {
-          name: "Reserva de viagem",
-          purpose: "PERSONAL_GOAL",
-          targetAmount: 12000,
-        },
-        { idempotencyKey: "create-objective-key" },
-      ),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "Reserva de viagem",
-        mcpIdempotency: expect.objectContaining({
-          key: "create-objective-key",
-          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-        }),
-      }),
-    );
-  });
-
-  it("rejects an invalid objective creation idempotency key", async () => {
-    await expect(
-      new PortfolioObjectivesService().create(
         { name: "Viagem", purpose: "PERSONAL_GOAL" },
         { idempotencyKey: "short" },
       ),
@@ -1021,2196 +186,419 @@ describe("PortfolioObjectivesService", () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
-  it("stores an omitted monthly plan as null", async () => {
-    await new PortfolioObjectivesService().create({
-      name: "Longo prazo",
-      purpose: "LONG_TERM_INVESTMENT",
-      targetAmount: 5000,
-    });
+  it("creates objectives with nullable fields and an MCP payload hash", async () => {
+    mocks.create.mockResolvedValue(goal({ targetAmount: null }));
+    await new PortfolioObjectivesService().create(
+      { name: "  Curso  ", purpose: "LONG_TERM_INVESTMENT" },
+      { idempotencyKey: "create-key-123" },
+    );
 
-    expect(mocks.create).toHaveBeenCalledWith({
-      name: "Longo prazo",
-      purpose: "LONG_TERM_INVESTMENT",
-      targetAmount: "5000.00",
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Curso",
+        purpose: "LONG_TERM_INVESTMENT",
+        targetAmount: null,
+        monthlyPlannedAmount: null,
+        mcpIdempotency: {
+          key: "create-key-123",
+          payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        },
+      }),
+    );
+  });
+
+  it("calculates absent reserve targets and caps observed progress at the goal", async () => {
+    mocks.list.mockResolvedValue({
+      objectives: [
+        goal({ targetAmount: null, monthlyPlannedAmount: null, purpose: null }),
+        goal({ id: "goal-above", targetAmount: "100.00" }),
+      ],
+    });
+    mocks.listLatestBalanceReferences.mockResolvedValue([
+      {
+        objectiveId: "goal-above",
+        amountCents: "15000",
+        observedDate: "2026-11-14",
+      },
+    ]);
+
+    const overview = await new PortfolioObjectivesService().getOverview();
+
+    expect(overview.objectives[0]).toMatchObject({
+      purpose: null,
+      targetAmount: null,
       monthlyPlannedAmount: null,
+      currentValue: null,
+      progressPercent: null,
+    });
+    expect(overview.objectives[1]).toMatchObject({
+      currentValue: 150,
+      remainingAmount: 0,
+      progressPercent: 100,
     });
   });
 
-  it("replays objective updates by key before checking the now-stale version", async () => {
-    const service = new PortfolioObjectivesService();
-    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
-    const idempotencyKey = "f1d92f3e-9168-493f-905b-30726d292aa7";
-    const objective = {
-      ...customObjective,
-      id: objectiveId,
-      updatedAt: new Date("2026-11-14T15:00:00.001Z"),
-    };
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id: objectiveId,
-      updatedAt: new Date(expectedUpdatedAt),
+  it("uses recurrence totals as the reserve target when settings are absent", async () => {
+    mocks.list.mockResolvedValue({
+      objectives: [
+        goal({ id: reserveObjectiveId, kind: "RESERVE", targetAmount: null }),
+      ],
     });
-    mocks.findMcpMutationReplay.mockResolvedValueOnce(null);
-    mocks.updateWithMcpReplay.mockResolvedValueOnce({ mcpUpdated: objective });
+    mocks.listRecurrences.mockResolvedValue([
+      {
+        description: "Aluguel",
+        amount: "1000.00",
+        frequency: "MONTHLY",
+        kind: "EXPENSE",
+        essential: true,
+        active: true,
+      },
+    ]);
+    mocks.listLatestBalanceReferences.mockResolvedValue([
+      {
+        objectiveId: reserveObjectiveId,
+        amountCents: "300000",
+        observedDate: "2026-11-14",
+      },
+    ]);
 
+    const overview = await new PortfolioObjectivesService().getOverview();
+    expect(overview.objectives[0]).toMatchObject({
+      targetAmount: 6000,
+      currentValue: 3000,
+      remainingAmount: 3000,
+      progressPercent: 50,
+    });
+  });
+
+  it("updates with idempotency replay, optimistic concurrency, and normalized nullable fields", async () => {
+    const service = new PortfolioObjectivesService();
+    const objectiveId = goal().id;
+    mocks.getObjective.mockResolvedValue(goal({ purpose: null }));
+    mocks.findReplay.mockResolvedValueOnce({
+      id: objectiveId,
+      createdAt: timestamp.toISOString(),
+      updatedAt: timestamp.toISOString(),
+    });
+    const replay = await service.update(
+      objectiveId,
+      { name: "Repetição" },
+      {
+        expectedUpdatedAt: timestamp.toISOString(),
+        idempotencyKey: "update-key",
+      },
+    );
+    expect(replay.updatedAt).toEqual(timestamp);
+    expect(mocks.update).not.toHaveBeenCalled();
+
+    mocks.findReplay.mockResolvedValue(null);
+    mocks.getObjective.mockResolvedValue(goal({ purpose: null }));
+    mocks.update.mockResolvedValue({ mcpUpdated: goal({ name: "Novo" }) });
     await expect(
       service.update(
         objectiveId,
+        { name: "Novo", targetAmount: null, monthlyPlannedAmount: 0 },
         {
-          name: "Viagem revisada",
-          purpose: "PERSONAL_GOAL",
-          targetAmount: 18000,
-          monthlyPlannedAmount: 1000,
+          expectedUpdatedAt: timestamp.toISOString(),
+          idempotencyKey: "update-key",
         },
-        { expectedUpdatedAt, idempotencyKey },
       ),
-    ).resolves.toBe(objective);
-    expect(mocks.updateWithMcpReplay).toHaveBeenCalledWith(
+    ).resolves.toMatchObject({ name: "Novo" });
+    expect(mocks.update).toHaveBeenCalledWith(
       objectiveId,
-      expect.objectContaining({ name: "Viagem revisada" }),
-      new Date(expectedUpdatedAt),
+      expect.objectContaining({
+        purpose: null,
+        targetAmount: null,
+        monthlyPlannedAmount: "0.00",
+      }),
+      timestamp,
       expect.objectContaining({
         operation: "update_objective",
-        key: idempotencyKey,
-        payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        key: "update-key",
       }),
     );
+  });
 
-    mocks.findMcpMutationReplay.mockResolvedValueOnce({
-      ...objective,
-      createdAt: objective.createdAt.toISOString(),
-      updatedAt: objective.updatedAt.toISOString(),
-    });
-    mocks.getObjective.mockClear();
+  it("validates update payloads and requires a version for idempotent writes", async () => {
+    const service = new PortfolioObjectivesService();
+    const objectiveId = goal().id;
+    await expect(
+      service.update(objectiveId, { name: "" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
     await expect(
       service.update(
         objectiveId,
-        {
-          name: "Viagem revisada",
-          purpose: "PERSONAL_GOAL",
-          targetAmount: 18000,
-          monthlyPlannedAmount: 1000,
-        },
-        { expectedUpdatedAt, idempotencyKey },
-      ),
-    ).resolves.toMatchObject({ updatedAt: objective.updatedAt });
-    expect(mocks.getObjective).not.toHaveBeenCalled();
-  });
-
-  it("requires a current expected version for an idempotent objective update", async () => {
-    const objectiveId = "b6d84f7a-4f3e-4a41-a561-31a2ccbfad1e";
-    await expect(
-      new PortfolioObjectivesService().update(
-        objectiveId,
-        {
-          name: "Viagem revisada",
-          purpose: "PERSONAL_GOAL",
-          targetAmount: 18000,
-          monthlyPlannedAmount: 1000,
-        },
-        { idempotencyKey: "update-objective-key" },
+        { name: "Novo" },
+        { idempotencyKey: "update-key" },
       ),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(mocks.getObjective).not.toHaveBeenCalled();
-    expect(mocks.updateWithMcpReplay).not.toHaveBeenCalled();
   });
 
-  it("hydrates the result from an MCP objective update replay", async () => {
-    const objectiveId = "b6d84f7a-4f3e-4a41-a561-31a2ccbfad1e";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
-    const replay = {
-      ...customObjective,
-      createdAt: customObjective.createdAt.toISOString(),
-      updatedAt: "2026-11-14T15:01:00.000Z",
-    };
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
+  it("returns an MCP replay discovered after a concurrent version change", async () => {
+    const service = new PortfolioObjectivesService();
+    const objectiveId = goal().id;
+    mocks.findReplay.mockResolvedValueOnce(null).mockResolvedValueOnce({
       id: objectiveId,
-      updatedAt: new Date(expectedUpdatedAt),
+      createdAt: timestamp.toISOString(),
+      updatedAt: timestamp.toISOString(),
     });
-    mocks.updateWithMcpReplay.mockResolvedValueOnce({
-      mcpReplayResult: replay,
-    });
+    mocks.getObjective.mockResolvedValue(
+      goal({ updatedAt: new Date("2026-11-13T00:00:00.000Z") }),
+    );
 
     await expect(
-      new PortfolioObjectivesService().update(
+      service.update(
         objectiveId,
+        { name: "Férias" },
         {
-          name: "Viagem revisada",
-          purpose: "PERSONAL_GOAL",
-          targetAmount: 18000,
-          monthlyPlannedAmount: 1000,
-        },
-        {
-          expectedUpdatedAt,
-          idempotencyKey: "update-objective-replay-key",
+          expectedUpdatedAt: timestamp.toISOString(),
+          idempotencyKey: "update-key",
         },
       ),
-    ).resolves.toMatchObject({ updatedAt: new Date(replay.updatedAt) });
+    ).resolves.toMatchObject({ updatedAt: timestamp });
+    expect(mocks.findReplay).toHaveBeenCalledTimes(2);
   });
 
-  it("rejects an invalid expected version before updating an objective", async () => {
-    const objectiveId = "b6d84f7a-4f3e-4a41-a561-31a2ccbfad1e";
+  it("reports a concurrent version change when no replay has been recorded", async () => {
+    mocks.getObjective.mockResolvedValue(
+      goal({ updatedAt: new Date("2026-11-13T00:00:00.000Z") }),
+    );
+    mocks.findReplay.mockResolvedValue(null);
+
     await expect(
       new PortfolioObjectivesService().update(
-        objectiveId,
+        goal().id,
+        { name: "Nova viagem" },
         {
-          name: "Viagem revisada",
-          purpose: "PERSONAL_GOAL",
-          targetAmount: 18000,
-          monthlyPlannedAmount: 1000,
-        },
-        { expectedUpdatedAt: "not-a-timestamp" },
-      ),
-    ).rejects.toMatchObject({ statusCode: 400 });
-    expect(mocks.getObjective).not.toHaveBeenCalled();
-    expect(mocks.update).not.toHaveBeenCalled();
-  });
-
-  it("rechecks an idempotent update after a stale version and returns a completed replay", async () => {
-    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
-    const replay = {
-      ...customObjective,
-      id: objectiveId,
-      createdAt: customObjective.createdAt.toISOString(),
-      updatedAt: "2026-11-14T15:00:00.001Z",
-    };
-    mocks.findMcpMutationReplay
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(replay);
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id: objectiveId,
-      updatedAt: new Date("2026-11-14T15:00:00.001Z"),
-    });
-
-    await expect(
-      new PortfolioObjectivesService().update(
-        objectiveId,
-        { name: "Viagem revisada", purpose: "PERSONAL_GOAL" },
-        { expectedUpdatedAt, idempotencyKey: "update-replay-key" },
-      ),
-    ).resolves.toMatchObject({ updatedAt: new Date(replay.updatedAt) });
-    expect(mocks.findMcpMutationReplay).toHaveBeenCalledTimes(2);
-    expect(mocks.updateWithMcpReplay).not.toHaveBeenCalled();
-  });
-
-  it("rejects a stale idempotent update when no completed replay exists", async () => {
-    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
-    mocks.findMcpMutationReplay.mockResolvedValue(null);
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id: objectiveId,
-      updatedAt: new Date("2026-11-14T15:00:00.001Z"),
-    });
-
-    await expect(
-      new PortfolioObjectivesService().update(
-        objectiveId,
-        { name: "Viagem revisada", purpose: "PERSONAL_GOAL" },
-        {
-          expectedUpdatedAt: "2026-11-14T15:00:00.000Z",
-          idempotencyKey: "update-stale-key",
+          expectedUpdatedAt: timestamp.toISOString(),
+          idempotencyKey: "update-key",
         },
       ),
     ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.updateWithMcpReplay).not.toHaveBeenCalled();
+    expect(mocks.findReplay).toHaveBeenCalledTimes(2);
   });
 
-  it("reports a concurrent objective update when the expected version changes in storage", async () => {
-    const objectiveId = "f1d92f3e-9168-493f-905b-30726d292aa7";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
-    mocks.getObjective
-      .mockResolvedValueOnce({
-        ...customObjective,
-        id: objectiveId,
-        updatedAt: new Date(expectedUpdatedAt),
-      })
-      .mockResolvedValueOnce({
-        ...customObjective,
-        id: objectiveId,
-        updatedAt: new Date("2026-11-14T15:01:00.000Z"),
-      });
-    mocks.update.mockResolvedValueOnce(null);
-
-    await expect(
-      new PortfolioObjectivesService().update(
-        objectiveId,
-        { name: "Viagem revisada", purpose: "PERSONAL_GOAL" },
-        { expectedUpdatedAt },
-      ),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.getObjective).toHaveBeenCalledTimes(2);
-  });
-
-  it("creates a destination without a target or monthly plan", async () => {
-    await new PortfolioObjectivesService().create({
-      name: "Longo prazo",
-      purpose: "LONG_TERM_INVESTMENT",
-    });
-
-    expect(mocks.create).toHaveBeenCalledWith({
-      name: "Longo prazo",
-      purpose: "LONG_TERM_INVESTMENT",
-      targetAmount: null,
-      monthlyPlannedAmount: null,
-    });
-  });
-
-  it("clears an optional target without changing objective assignments", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    mocks.getObjective.mockResolvedValueOnce({ ...customObjective, id });
+  it("hydrates repository replay updates", async () => {
+    const objectiveId = goal().id;
+    mocks.getObjective.mockResolvedValue(goal());
+    mocks.findReplay.mockResolvedValue(null);
     mocks.update.mockResolvedValue({
-      ...customObjective,
-      id,
-      targetAmount: null,
-    });
-
-    await expect(
-      new PortfolioObjectivesService().update(id, {
-        name: "Viagem",
-        purpose: "PERSONAL_GOAL",
-      }),
-    ).resolves.toMatchObject({ targetAmount: null });
-
-    expect(mocks.update).toHaveBeenCalledWith(id, {
-      name: "Viagem",
-      purpose: "PERSONAL_GOAL",
-      targetAmount: null,
-      monthlyPlannedAmount: null,
-    });
-    expect(mocks.replaceAssignments).not.toHaveBeenCalled();
-  });
-
-  it("updates custom objective details without replacing its assignments", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    mocks.getObjective.mockResolvedValueOnce({ ...customObjective, id });
-    mocks.update.mockResolvedValue({ ...customObjective, id, name: "Carro" });
-
-    await expect(
-      new PortfolioObjectivesService().update(id, {
-        name: " Carro ",
-        purpose: "LONG_TERM_INVESTMENT",
-        targetAmount: 25000,
-        monthlyPlannedAmount: null,
-      }),
-    ).resolves.toMatchObject({ name: "Carro" });
-    expect(mocks.update).toHaveBeenCalledWith(id, {
-      name: "Carro",
-      purpose: "LONG_TERM_INVESTMENT",
-      targetAmount: "25000.00",
-      monthlyPlannedAmount: null,
-    });
-    expect(mocks.replaceAssignments).not.toHaveBeenCalled();
-  });
-
-  it("rejects an objective update when its expected version is stale", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id,
-      updatedAt: new Date("2026-11-15T10:00:00.000Z"),
+      mcpReplayResult: {
+        id: objectiveId,
+        createdAt: timestamp.toISOString(),
+        updatedAt: timestamp.toISOString(),
+      },
     });
 
     await expect(
       new PortfolioObjectivesService().update(
-        id,
+        objectiveId,
+        { name: "Atualizado" },
         {
-          name: "Viagem",
-          purpose: "PERSONAL_GOAL",
-          targetAmount: 12000,
-          monthlyPlannedAmount: null,
+          expectedUpdatedAt: timestamp.toISOString(),
+          idempotencyKey: "update-key",
         },
-        { expectedUpdatedAt: "2026-11-14T15:00:00.000Z" },
+      ),
+    ).resolves.toMatchObject({ createdAt: timestamp, updatedAt: timestamp });
+    expect(mocks.update).toHaveBeenCalledOnce();
+  });
+
+  it("reports missing objectives and update conflicts after the write", async () => {
+    const service = new PortfolioObjectivesService();
+    const objectiveId = goal().id;
+    mocks.getObjective.mockResolvedValue(null);
+    await expect(
+      service.update(objectiveId, { name: "A" }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    mocks.getObjective.mockResolvedValue(goal());
+    mocks.update.mockResolvedValue(null);
+    await expect(
+      service.update(
+        objectiveId,
+        { name: "A" },
+        { expectedUpdatedAt: timestamp.toISOString() },
       ),
     ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.update).not.toHaveBeenCalled();
-  });
 
-  it("classifies an existing goal in place without changing its financial details or assignments", async () => {
-    const existing = {
-      ...customObjective,
-      id: "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0",
-      purpose: null,
-      targetAmount: "100000.00",
-      monthlyPlannedAmount: "8000.00",
-    };
-    mocks.getObjective.mockResolvedValueOnce(existing);
-    mocks.update.mockResolvedValueOnce({
-      ...existing,
-      purpose: "LONG_TERM_INVESTMENT",
-    });
-
-    await expect(
-      new PortfolioObjectivesService().update(existing.id, {
-        name: "Longo prazo",
-        purpose: "LONG_TERM_INVESTMENT",
-        targetAmount: 100000,
-        monthlyPlannedAmount: 8000,
-      }),
-    ).resolves.toMatchObject({
-      id: existing.id,
-      purpose: "LONG_TERM_INVESTMENT",
-      targetAmount: "100000.00",
-      monthlyPlannedAmount: "8000.00",
-    });
-    expect(mocks.update).toHaveBeenCalledWith(existing.id, {
-      name: "Longo prazo",
-      purpose: "LONG_TERM_INVESTMENT",
-      targetAmount: "100000.00",
-      monthlyPlannedAmount: "8000.00",
-    });
-    expect(mocks.replaceAssignments).not.toHaveBeenCalled();
-  });
-
-  it("preserves a known destination purpose when an older update omits it", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id,
-      purpose: "LONG_TERM_INVESTMENT",
-    });
-    mocks.update.mockResolvedValueOnce({
-      ...customObjective,
-      id,
-      purpose: "LONG_TERM_INVESTMENT",
-      name: "Investimento",
-    });
-
-    await new PortfolioObjectivesService().update(id, {
-      name: "Investimento",
-      targetAmount: 100000,
-      monthlyPlannedAmount: 8000,
-    });
-
-    expect(mocks.update).toHaveBeenCalledWith(id, {
-      name: "Investimento",
-      purpose: "LONG_TERM_INVESTMENT",
-      targetAmount: "100000.00",
-      monthlyPlannedAmount: "8000.00",
-    });
-  });
-
-  it.each(["update", "delete"] as const)(
-    "protects the reserve from %s",
-    async (operation) => {
-      mocks.getObjective.mockResolvedValueOnce({
-        ...customObjective,
-        id: reserveObjectiveId,
-      });
-      const service = new PortfolioObjectivesService();
-      const run =
-        operation === "update"
-          ? service.update(reserveObjectiveId, {
-              name: "Reserva",
-              targetAmount: 100,
-            })
-          : service.delete(reserveObjectiveId, {
-              objectiveId: reserveObjectiveId,
-            });
-
-      await expect(run).rejects.toBeInstanceOf(ApplicationError);
-      expect(mocks.update).not.toHaveBeenCalled();
-      expect(mocks.delete).not.toHaveBeenCalled();
-    },
-  );
-
-  it("deletes a custom objective and leaves assignment deletion to the database cascade", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    mocks.getObjective.mockResolvedValueOnce({ ...customObjective, id });
-    mocks.delete.mockResolvedValue({ ...customObjective, id });
-
-    await expect(
-      new PortfolioObjectivesService().delete(id, { objectiveId: id }),
-    ).resolves.toMatchObject({ id });
-  });
-
-  it("deletes an objective with an expected version without MCP metadata", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id,
-      updatedAt: new Date(expectedUpdatedAt),
-    });
-    mocks.delete.mockResolvedValueOnce({ ...customObjective, id });
-
-    await expect(
-      new PortfolioObjectivesService().delete(
-        id,
-        { objectiveId: id },
-        { expectedUpdatedAt },
-      ),
-    ).resolves.toMatchObject({ id });
-    expect(mocks.delete).toHaveBeenCalledWith(id, new Date(expectedUpdatedAt));
-  });
-
-  it("returns the persisted replay receipt when an idempotent objective delete is retried", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
-    const receipt = { deleted: true, objectiveId: id };
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id,
-      updatedAt: new Date(expectedUpdatedAt),
-    });
-    mocks.deleteWithMcpReplay.mockResolvedValueOnce({
-      mcpReplayResult: receipt,
-    });
-
-    await expect(
-      new PortfolioObjectivesService().delete(
-        id,
-        { objectiveId: id },
-        {
-          expectedUpdatedAt,
-          mcpMutation: {
-            key: "delete-objective-key",
-            payloadHash: "a".repeat(64),
-            replayResult: receipt,
-          },
-        },
-      ),
-    ).resolves.toEqual({ mcpReplay: receipt });
-    expect(mocks.deleteWithMcpReplay).toHaveBeenCalledWith(
-      id,
-      new Date(expectedUpdatedAt),
-      expect.objectContaining({ operation: "delete_objective" }),
-      receipt,
-    );
-  });
-
-  it("returns the objective delete result from the MCP transaction", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
-    const deleted = { ...customObjective, id, name: "Viagem arquivada" };
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id,
-      updatedAt: new Date(expectedUpdatedAt),
-    });
-    mocks.deleteWithMcpReplay.mockResolvedValueOnce({ mcpDeleted: deleted });
-
-    await expect(
-      new PortfolioObjectivesService().delete(
-        id,
-        { objectiveId: id },
-        {
-          expectedUpdatedAt,
-          mcpMutation: {
-            key: "delete-objective-key",
-            payloadHash: "b".repeat(64),
-            replayResult: { deleted: true, objectiveId: id },
-          },
-        },
-      ),
-    ).resolves.toEqual(deleted);
-  });
-
-  it("reports a concurrent delete when the objective still exists after its version changes", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    const expectedUpdatedAt = "2026-11-14T15:00:00.000Z";
     mocks.getObjective
-      .mockResolvedValueOnce({
-        ...customObjective,
-        id,
-        updatedAt: new Date(expectedUpdatedAt),
-      })
-      .mockResolvedValueOnce({
-        ...customObjective,
-        id,
-        updatedAt: new Date("2026-11-14T15:01:00.000Z"),
-      });
-    mocks.deleteWithMcpReplay.mockResolvedValueOnce(null);
-
+      .mockResolvedValueOnce(goal())
+      .mockResolvedValueOnce(null);
     await expect(
-      new PortfolioObjectivesService().delete(
-        id,
-        { objectiveId: id },
-        {
-          expectedUpdatedAt,
-          mcpMutation: {
-            key: "delete-objective-race-key",
-            payloadHash: "c".repeat(64),
-            replayResult: { deleted: true, objectiveId: id },
-          },
-        },
+      service.update(
+        objectiveId,
+        { name: "A" },
+        { expectedUpdatedAt: timestamp.toISOString() },
       ),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.getObjective).toHaveBeenCalledTimes(2);
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it("rejects objective deletion when the expected version is stale", async () => {
-    const id = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id,
-      updatedAt: new Date("2026-11-15T10:00:00.000Z"),
-    });
-
-    await expect(
-      new PortfolioObjectivesService().delete(
-        id,
-        { objectiveId: id },
-        { expectedUpdatedAt: "2026-11-14T15:00:00.000Z" },
-      ),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.delete).not.toHaveBeenCalled();
-  });
-
-  it("searches only unassigned positions and limits confident CDB search by classification and product", async () => {
-    const cdb1 = imported({
-      totalValue: "40",
-      canonicalValueCents: "4000",
-      canonicalValueSource: "CDB_ESTIMATE",
-      estimationBaseDate: "2026-09-16",
-      estimatedThrough: "2026-09-18",
-      cdbEstimateStatus: "provisional",
-      cdbEstimateLimitation: "Taxa CDI ainda não publicada.",
-    });
-    const cdb2 = imported({
-      assetCode: "CDB2",
-      issuer: "Banco B S.A.",
-      institution: "Banco B",
-      totalValue: "60",
-      canonicalValueCents: "6000",
-      canonicalValueSource: "B3_IMPORTED",
-      estimationBaseDate: "2026-09-16",
-      estimatedThrough: "2026-09-18",
-      cdbEstimateStatus: "complete",
-    });
-    const unknownFixedIncome = imported({
-      assetCode: "UNKNOWN",
-      product: "Produto não identificado",
-      totalValue: "100",
-    });
-    const unclassifiedCdb = imported({
-      assetCode: "CDB3",
-      issuer: "Banco C S.A.",
-      institution: "Banco C",
-      classification: null,
-      totalValue: "100",
-    });
-    const assignedCdb = imported({
-      assetCode: "CDB4",
-      issuer: "Banco D S.A.",
-      institution: "Banco D",
-      totalValue: "100",
-    });
-    const reserveAssignedCdb = imported({
-      assetCode: "CDB5",
-      issuer: "Banco E S.A.",
-      institution: "Banco E",
-      totalValue: "100",
-    });
-    const assignedKey = getEmergencyReserveAssetKey(assignedCdb);
-    const reserveAssignedKey = getEmergencyReserveAssetKey(reserveAssignedCdb);
-    mocks.listCurrentEnriched.mockResolvedValue([
-      cdb1,
-      cdb2,
-      unknownFixedIncome,
-      unclassifiedCdb,
-      assignedCdb,
-      reserveAssignedCdb,
-    ]);
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective],
-      assignments: [
-        { objectiveId: customObjective.id, assetKey: assignedKey },
-        { objectiveId: reserveObjectiveId, assetKey: reserveAssignedKey },
-      ],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 100,
-        instrumentType: "CDB",
-      });
-
-    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
-    if (result.status === "suggestions") {
-      expect([...result.candidates[0].assetKeys].sort()).toEqual(
-        [
-          getEmergencyReserveAssetKey(cdb1),
-          getEmergencyReserveAssetKey(cdb2),
-        ].sort(),
-      );
-      expect(result.candidates[0].assetKeys).not.toContain(assignedKey);
-      expect(result.candidates[0].assetKeys).not.toContain(reserveAssignedKey);
-      expect(result.candidates[0].positions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            assetKey: getEmergencyReserveAssetKey(cdb1),
-            valueCents: "4000",
-            canonicalValueSource: "CDB_ESTIMATE",
-            cdbEstimateLimitation: "Taxa CDI ainda não publicada.",
-          }),
-          expect.objectContaining({
-            assetKey: getEmergencyReserveAssetKey(cdb2),
-            valueCents: "6000",
-            canonicalValueSource: "B3_IMPORTED",
-          }),
-        ]),
-      );
-    }
-  });
-
-  it("rejects invalid suggestion and objective update input before persistence", async () => {
+  it("updates an objective and rejects stale or invalid versions", async () => {
+    mocks.getObjective.mockResolvedValue(goal());
+    mocks.update.mockResolvedValue(goal({ name: "Férias" }));
     const service = new PortfolioObjectivesService();
 
-    await expect(
-      service.findPositionCombinations({ targetAmount: 0 }),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    await expect(
-      service.update("objective-trip", {
-        name: "",
+    await service.update(
+      "00000000-0000-4000-8000-000000000001",
+      { name: "Férias", purpose: "PERSONAL_GOAL", targetAmount: 18000 },
+      { expectedUpdatedAt: timestamp.toISOString() },
+    );
+    expect(mocks.update).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+      {
+        name: "Férias",
         purpose: "PERSONAL_GOAL",
-        targetAmount: -1,
-      }),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    expect(mocks.getObjective).not.toHaveBeenCalled();
-    expect(mocks.update).not.toHaveBeenCalled();
-  });
-
-  it("supports all unassigned suggestions and validates update outcomes", async () => {
-    const position = imported({ totalValue: "100" });
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
-    const service = new PortfolioObjectivesService();
-    await expect(
-      service.findPositionCombinations({
-        targetAmount: 100,
-        instrumentType: "ALL",
-      }),
-    ).resolves.toMatchObject({ status: "suggestions", kind: "exact" });
-
-    mocks.listCurrentEnriched.mockResolvedValue([
-      imported({ totalValue: null }),
-    ]);
-    await expect(
-      service.findPositionCombinations({
-        targetAmount: 100,
-        instrumentType: "ALL",
-      }),
-    ).resolves.toMatchObject({ status: "no_valued_positions" });
-
-    const missingId = "d755114d-f6ad-45a2-a5f6-95e5e18dd6f0";
-    mocks.getObjective.mockResolvedValueOnce(null);
-    await expect(
-      service.update(missingId, {
-        name: "Viagem",
-        targetAmount: 100,
+        targetAmount: "18000.00",
         monthlyPlannedAmount: null,
-      }),
-    ).rejects.toMatchObject({ statusCode: 404 });
+      },
+      timestamp,
+    );
 
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id: missingId,
-    });
-    mocks.update.mockResolvedValueOnce(null);
     await expect(
-      service.update(missingId, {
-        name: "Viagem",
-        targetAmount: 100,
-        monthlyPlannedAmount: 5,
-      }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-    expect(mocks.update).toHaveBeenCalledWith(missingId, {
-      name: "Viagem",
-      purpose: null,
-      targetAmount: "100.00",
-      monthlyPlannedAmount: "5.00",
-    });
-
-    mocks.getObjective.mockResolvedValueOnce(null);
-    await expect(
-      service.delete(missingId, { objectiveId: missingId }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id: missingId,
-    });
-    mocks.delete.mockResolvedValueOnce(null);
-    await expect(
-      service.delete(missingId, { objectiveId: missingId }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-  });
-
-  it("includes owned positions as explicit transfer candidates using the requested valuation date", async () => {
-    const targetPosition = imported({
-      assetCode: "TARGET",
-      totalValue: "30.00",
-      canonicalValueCents: "3000",
-    });
-    const freePosition = imported({
-      assetCode: "FREE",
-      totalValue: "10.00",
-      canonicalValueCents: "1000",
-    });
-    const sourcePosition = imported({
-      assetCode: "SOURCE",
-      totalValue: "60.00",
-      canonicalValueCents: "6000",
-    });
-    const sourceRemainder = imported({
-      assetCode: "SOURCE-REMAINDER",
-      totalValue: "30.00",
-      canonicalValueCents: "3000",
-    });
-    const targetKey = getEmergencyReserveAssetKey(targetPosition);
-    const sourceKey = getEmergencyReserveAssetKey(sourcePosition);
-    mocks.listCurrentEnriched.mockResolvedValue([
-      targetPosition,
-      freePosition,
-      sourcePosition,
-      sourceRemainder,
-    ]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: "objective-home", name: "Casa" },
-      ],
-      assignments: [
-        { objectiveId: customObjective.id, assetKey: targetKey },
-        { objectiveId: "objective-home", assetKey: sourceKey },
-        {
-          objectiveId: "objective-home",
-          assetKey: getEmergencyReserveAssetKey(sourceRemainder),
-        },
-      ],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 90,
-        objectiveId: customObjective.id,
-        valuationDate: "2026-09-30",
-      });
-
-    expect(mocks.listCurrentEnriched).toHaveBeenCalledWith(
-      undefined,
-      "2026-09-30",
-    );
-    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    const transferred = result.candidates.find(
-      (candidate) =>
-        candidate.assetKeys.includes(targetKey) &&
-        candidate.transfers?.some(
-          (transfer) => transfer.assetKey === sourceKey,
-        ),
-    );
-    expect(transferred?.assetKeys).toEqual(
-      expect.arrayContaining([targetKey, sourceKey]),
-    );
-    expect(transferred?.transfers).toEqual([
-      expect.objectContaining({
-        assetKey: sourceKey,
-        fromObjectiveId: "objective-home",
-        fromObjectiveName: "Casa",
-        toObjectiveId: customObjective.id,
-      }),
-    ]);
-    expect(transferred?.impacts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          objectiveId: "objective-home",
-          currentValue: 30,
-          knownValue: 30,
-        }),
-        expect.objectContaining({
-          objectiveId: customObjective.id,
-          currentValue: 90,
-        }),
-      ]),
-    );
-    expect(transferred?.positions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ assetKey: sourceKey, valueCents: "6000" }),
-      ]),
-    );
-  });
-
-  it("finds an exact objective transfer missed by the former 50,000-node search", async () => {
-    const free = [
-      ...Array.from({ length: 18 }, (_, index) =>
-        imported({
-          assetCode: `FREE-HIGH-${String(index).padStart(2, "0")}`,
-          totalValue: "19",
-          canonicalValueCents: "1900",
-        }),
+      service.update(
+        "00000000-0000-4000-8000-000000000001",
+        { name: "Viagem" },
+        { expectedUpdatedAt: "bad" },
       ),
-      ...Array.from({ length: 17 }, (_, index) =>
-        imported({
-          assetCode: `FREE-LOW-${String(index).padStart(2, "0")}`,
-          totalValue: "5",
-          canonicalValueCents: "500",
-        }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    mocks.getObjective.mockResolvedValue(
+      goal({ updatedAt: new Date("2026-11-13T00:00:00.000Z") }),
+    );
+    await expect(
+      service.update(
+        "00000000-0000-4000-8000-000000000001",
+        { name: "Férias" },
+        { expectedUpdatedAt: timestamp.toISOString() },
       ),
-    ];
-    const assigned = [
-      imported({
-        assetCode: "TRIP-LOW-TRANSFER",
-        totalValue: "5",
-        canonicalValueCents: "500",
-      }),
-    ];
-    const sourceId = "objective-source";
-    const sourceObjective = {
-      ...customObjective,
-      id: sourceId,
-      name: "Viagem",
-    };
-    const transferredKeys = assigned.map(getEmergencyReserveAssetKey);
-    mocks.listCurrentEnriched.mockResolvedValue([...free, ...assigned]);
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective, sourceObjective],
-      assignments: transferredKeys.map((assetKey) => ({
-        objectiveId: sourceId,
-        assetKey,
-      })),
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 90,
-        objectiveId: customObjective.id,
-        instrumentType: "ALL",
-      });
-
-    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    expect(result.searchLimited).toBe(false);
-    expect(result.candidates[0].transfers).toHaveLength(1);
-    expect(result.candidates[0].transfers?.[0]).toMatchObject({
-      fromObjectiveId: sourceId,
-      fromObjectiveName: "Viagem",
-      toObjectiveId: customObjective.id,
-    });
-    expect(result.candidates[0].totalCents).toBe("9000");
-  }, 15_000);
-
-  it("reports expanded search limits for valued and empty objective baselines", async () => {
-    const assigned = Array.from({ length: 40 }, (_, index) =>
-      imported({
-        assetCode: `OTHER-${String(index).padStart(2, "0")}`,
-        totalValue: "1",
-        canonicalValueCents: "100",
-      }),
-    );
-    const sourceId = "objective-many";
-    const source = { ...customObjective, id: sourceId, name: "Viagem" };
-    const assignments = assigned.map((position) => ({
-      objectiveId: sourceId,
-      assetKey: getEmergencyReserveAssetKey(position),
-    }));
-    const service = new PortfolioObjectivesService();
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective, source],
-      assignments,
-    });
-    mocks.listCurrentEnriched.mockResolvedValue([
-      imported({
-        assetCode: "FREE-90",
-        totalValue: "90",
-        canonicalValueCents: "9000",
-      }),
-      ...assigned,
-    ]);
-
-    await expect(
-      service.findPositionCombinations({
-        objectiveId: customObjective.id,
-        targetAmount: 100,
-        instrumentType: "ALL",
-      }),
-    ).resolves.toMatchObject({
-      status: "suggestions",
-      searchLimited: true,
-      candidates: [{ total: 90, difference: 10 }],
-    });
-
-    const onlyAssigned = Array.from({ length: 41 }, (_, index) =>
-      imported({
-        assetCode: `ALL-OTHER-${String(index).padStart(2, "0")}`,
-        totalValue: "1",
-        canonicalValueCents: "100",
-      }),
-    );
-    mocks.list.mockResolvedValue({
-      objectives: [customObjective, source],
-      assignments: onlyAssigned.map((position) => ({
-        objectiveId: sourceId,
-        assetKey: getEmergencyReserveAssetKey(position),
-      })),
-    });
-    mocks.listCurrentEnriched.mockResolvedValue(onlyAssigned);
-
-    await expect(
-      service.findPositionCombinations({
-        objectiveId: customObjective.id,
-        targetAmount: 100,
-        instrumentType: "ALL",
-      }),
-    ).resolves.toMatchObject({ status: "too_many_positions", maximum: 40 });
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it("keeps the objective baseline when a transfer candidate only ties its difference", async () => {
-    const free = [
-      imported({
-        assetCode: "FREE-TIE-LOW",
-        totalValue: "99",
-        canonicalValueCents: "9900",
-      }),
-      imported({
-        assetCode: "FREE-TIE-HIGH",
-        totalValue: "101",
-        canonicalValueCents: "10100",
-      }),
-    ];
-    const assigned = imported({
-      assetCode: "SOURCE-TIE",
-      totalValue: "500",
-      canonicalValueCents: "50000",
-    });
-    const sourceId = "objective-tie-source";
-    const freeKeys = free.map(getEmergencyReserveAssetKey);
-    const assignedKey = getEmergencyReserveAssetKey(assigned);
-    mocks.listCurrentEnriched.mockResolvedValue([...free, assigned]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: sourceId, name: "Viagem" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: assignedKey }],
-    });
+  it("updates an objective without an optimistic version for the direct user flow", async () => {
+    mocks.getObjective.mockResolvedValue(goal());
+    mocks.update.mockResolvedValue(goal({ name: "Nova viagem" }));
 
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        objectiveId: customObjective.id,
-        targetAmount: 100,
-        instrumentType: "ALL",
-      });
+    await expect(
+      new PortfolioObjectivesService().update(goal().id, {
+        name: "Nova viagem",
+      }),
+    ).resolves.toMatchObject({ name: "Nova viagem" });
 
-    expect(result).toMatchObject({
-      status: "suggestions",
-      kind: "nearest",
-    });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    expect(
-      result.candidates.map((candidate) => candidate.assetKeys[0]).sort(),
-    ).toEqual([...freeKeys].sort());
-    expect(result.candidates.every((candidate) => !candidate.transfers)).toBe(
-      true,
+    expect(mocks.update).toHaveBeenCalledWith(
+      goal().id,
+      expect.objectContaining({ name: "Nova viagem" }),
     );
   });
 
-  it("rejects deletion requests with an invalid objective id", async () => {
+  it("prevents editing the reserve through the generic objective form", async () => {
+    mocks.getObjective.mockResolvedValue(
+      goal({ id: reserveObjectiveId, kind: "RESERVE" }),
+    );
+
     await expect(
-      new PortfolioObjectivesService().delete("not-a-uuid", {}),
+      new PortfolioObjectivesService().update(reserveObjectiveId, {
+        name: "Reserva",
+      }),
     ).rejects.toMatchObject({ statusCode: 400 });
-    expect(mocks.getObjective).not.toHaveBeenCalled();
-    expect(mocks.delete).not.toHaveBeenCalled();
   });
 
-  it.each([
-    { name: "", targetAmount: 100 },
-    { name: "Viagem", targetAmount: 0 },
-    { name: "Viagem", targetAmount: 100, monthlyPlannedAmount: -1 },
-  ])("rejects invalid objective input", async (body) => {
+  it("deletes custom objectives and prevents deleting the reserve", async () => {
+    mocks.getObjective.mockResolvedValue(goal());
+    mocks.delete.mockResolvedValue(goal());
     await expect(
-      new PortfolioObjectivesService().create(body),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    expect(mocks.create).not.toHaveBeenCalled();
-  });
-
-  it("validates assignments and refuses editing the reserve outside its editor", async () => {
-    const service = new PortfolioObjectivesService();
-    await expect(
-      service.updateAssignments("objective-trip", {}),
-    ).rejects.toBeInstanceOf(ApplicationError);
-    mocks.getObjective.mockResolvedValueOnce(null);
-    await expect(
-      service.updateAssignments("missing", { assetKeys: [] }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-    mocks.getObjective.mockResolvedValueOnce({
-      ...customObjective,
-      id: reserveObjectiveId,
-    });
-    await expect(
-      service.updateAssignments(reserveObjectiveId, { assetKeys: [] }),
-    ).rejects.toBeInstanceOf(ApplicationError);
-  });
-
-  it("rejects stale or already assigned positions and saves a valid unique assignment", async () => {
-    const position = imported();
-    const key = getEmergencyReserveAssetKey(position);
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    const service = new PortfolioObjectivesService();
-
-    await expect(
-      service.updateAssignments("objective-trip", {
-        assetKeys: ["not-current"],
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-
-    mocks.list.mockResolvedValueOnce({
-      objectives: [customObjective],
-      assignments: [{ objectiveId: reserveObjectiveId, assetKey: key }],
-    });
-    await expect(
-      service.updateAssignments("objective-trip", { assetKeys: [key] }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-
-    mocks.list.mockResolvedValueOnce({
-      objectives: [customObjective],
-      assignments: [],
-    });
-    await expect(
-      service.updateAssignments("objective-trip", { assetKeys: [key, key] }),
-    ).resolves.toBeUndefined();
-    expect(mocks.replaceAssignmentsWithTransfers).toHaveBeenCalledWith(
-      "objective-trip",
-      [key],
-      [],
-    );
-  });
-
-  it("requires and forwards the explicitly confirmed current-owner transfer", async () => {
-    const targetId = "00000000-0000-4000-8000-000000000010";
-    const sourceId = "00000000-0000-4000-8000-000000000011";
-    const position = imported({ totalValue: "100.00" });
-    const key = getEmergencyReserveAssetKey(position);
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        { ...customObjective, id: targetId },
-        { ...customObjective, id: sourceId, name: "Casa" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: key }],
-    });
-    const service = new PortfolioObjectivesService();
-
-    await expect(
-      service.updateAssignments(targetId, { assetKeys: [key] }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.replaceAssignmentsWithTransfers).not.toHaveBeenCalled();
-
-    await expect(
-      service.updateAssignments(targetId, {
-        assetKeys: [key],
-        transfers: [
-          {
-            assetKey: key,
-            fromObjectiveId: sourceId,
-            toObjectiveId: targetId,
-          },
-        ],
-      }),
-    ).resolves.toBeUndefined();
-    expect(mocks.replaceAssignmentsWithTransfers).toHaveBeenCalledWith(
-      targetId,
-      [key],
-      [
-        {
-          assetKey: key,
-          fromObjectiveId: sourceId,
-          toObjectiveId: targetId,
-        },
-      ],
-    );
-  });
-
-  it("returns readable feedback for an invalid valuation date", async () => {
-    await expect(
-      new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 100,
-        valuationDate: "not-a-date",
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      message: "Informe um valor válido para comparar.",
-    });
-  });
-
-  it("retains a partial objective baseline beside an exact transfer candidate", async () => {
-    const free = Array.from({ length: 37 }, (_, index) =>
-      imported({
-        assetCode: `PARTIAL-${index}`,
-        totalValue: "700",
-        canonicalValueCents: "70000",
-      }),
-    );
-    const assigned = imported({
-      assetCode: "TRANSFER-EXACT",
-      totalValue: "1000",
-      canonicalValueCents: "100000",
-    });
-    const assignedKey = getEmergencyReserveAssetKey(assigned);
-    const sourceId = "objective-partial-source";
-    mocks.listCurrentEnriched.mockResolvedValue([...free, assigned]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: sourceId, name: "Viagem" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: assignedKey }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        objectiveId: customObjective.id,
-        targetAmount: 1000,
-        instrumentType: "ALL",
-      });
-
-    expect(result).toMatchObject({
-      status: "suggestions",
-      kind: "exact",
-      searchLimited: true,
-      candidates: expect.arrayContaining([
-        expect.objectContaining({ assetKeys: [assignedKey], difference: 0 }),
-        expect.objectContaining({ difference: 300 }),
-      ]),
-    });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    expect(result.candidates.some((candidate) => !candidate.transfers)).toBe(
-      true,
-    );
-  });
-
-  it("prefers an observed no-transfer objective candidate on a partial tie", async () => {
-    const free = Array.from({ length: 37 }, (_, index) =>
-      imported({
-        assetCode: `TIE-PARTIAL-${index}`,
-        totalValue: "700",
-        canonicalValueCents: "70000",
-      }),
-    );
-    const assigned = imported({
-      assetCode: "TIE-TRANSFER",
-      totalValue: "1300",
-      canonicalValueCents: "130000",
-    });
-    const assignedKey = getEmergencyReserveAssetKey(assigned);
-    const sourceId = "objective-partial-tie-source";
-    mocks.listCurrentEnriched.mockResolvedValue([...free, assigned]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: sourceId, name: "Viagem" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: assignedKey }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        objectiveId: customObjective.id,
-        targetAmount: 1000,
-        instrumentType: "ALL",
-      });
-
-    expect(result).toMatchObject({
-      status: "suggestions",
-      searchLimited: true,
-      candidates: expect.arrayContaining([
-        expect.objectContaining({ difference: 300 }),
-        expect.objectContaining({
-          difference: -300,
-          transfers: expect.any(Array),
-        }),
-      ]),
-    });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    expect(result.candidates[0].difference).toBe(300);
-    expect(result.candidates[0].transfers).toBeUndefined();
-  });
-
-  it("returns readable feedback when a transfer source no longer owns the position", async () => {
-    const targetId = "00000000-0000-4000-8000-000000000011";
-    const sourceId = "00000000-0000-4000-8000-000000000012";
-    const position = imported({ totalValue: "100.00" });
-    const key = getEmergencyReserveAssetKey(position);
-    mocks.getObjective.mockResolvedValue({ ...customObjective, id: targetId });
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
-    mocks.classifyPositions.mockResolvedValue([
-      { ...position, assetKey: key, objectiveId: null, objectiveName: null },
-    ]);
-
-    await expect(
-      new PortfolioObjectivesService().updateAssignments(targetId, {
-        assetKeys: [key],
-        transfers: [
-          {
-            assetKey: key,
-            fromObjectiveId: sourceId,
-            toObjectiveId: targetId,
-          },
-        ],
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 409,
-      message:
-        "Uma posição mudou de destino desde a busca. Atualize os objetivos e tente novamente.",
-    });
-    expect(mocks.replaceAssignmentsWithTransfers).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    {
-      assetKeys: ["asset-a"],
-      transfers: [
-        {
-          assetKey: "asset-a",
-          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
-          toObjectiveId: "00000000-0000-4000-8000-000000000020",
-        },
-        {
-          assetKey: "asset-a",
-          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
-          toObjectiveId: "00000000-0000-4000-8000-000000000020",
-        },
-      ],
-    },
-    {
-      assetKeys: ["asset-a"],
-      transfers: [
-        {
-          assetKey: "asset-b",
-          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
-          toObjectiveId: "00000000-0000-4000-8000-000000000020",
-        },
-      ],
-    },
-    {
-      assetKeys: ["asset-a"],
-      transfers: [
-        {
-          assetKey: "asset-a",
-          fromObjectiveId: "00000000-0000-4000-8000-000000000021",
-          toObjectiveId: "00000000-0000-4000-8000-000000000022",
-        },
-      ],
-    },
-  ])(
-    "rejects duplicate, unselected, or misdirected transfer confirmations",
-    async (body) => {
-      await expect(
-        new PortfolioObjectivesService().updateAssignments(
-          "00000000-0000-4000-8000-000000000020",
-          body,
-        ),
-      ).rejects.toMatchObject({ statusCode: 400 });
-      expect(mocks.listCurrentEnriched).not.toHaveBeenCalled();
-      expect(mocks.replaceAssignmentsWithTransfers).not.toHaveBeenCalled();
-    },
-  );
-
-  it("reports candidate transfer impacts for known and orphaned source objectives", async () => {
-    const targetId = customObjective.id;
-    const homeId = "objective-home";
-    const free = imported({
-      assetCode: "FREE-20",
-      totalValue: "20.00",
-      canonicalValueCents: "2000",
-    });
-    const homeTransfer = imported({
-      assetCode: "HOME-70",
-      totalValue: "70.00",
-      canonicalValueCents: "7000",
-    });
-    const homeRemaining = imported({
-      assetCode: "HOME-5",
-      totalValue: "5.00",
-      canonicalValueCents: "500",
-    });
-    const orphanTransfer = imported({
-      assetCode: "ORPHAN-10",
-      totalValue: "10.00",
-      canonicalValueCents: "1000",
-      referenceDate: null,
-    });
-    const freeKey = getEmergencyReserveAssetKey(free);
-    const homeTransferKey = getEmergencyReserveAssetKey(homeTransfer);
-    const homeRemainingKey = getEmergencyReserveAssetKey(homeRemaining);
-    const orphanTransferKey = getEmergencyReserveAssetKey(orphanTransfer);
-    mocks.listCurrentEnriched.mockResolvedValue([
-      free,
-      homeTransfer,
-      homeRemaining,
-      orphanTransfer,
-    ]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        { ...customObjective, targetAmount: null },
-        { ...customObjective, id: homeId, name: "Casa", targetAmount: null },
-      ],
-      assignments: [
-        { objectiveId: homeId, assetKey: homeTransferKey },
-        { objectiveId: homeId, assetKey: homeRemainingKey },
-        {
-          objectiveId: homeId,
-          assetKey: getEmergencyReserveAssetKey(
-            imported({
-              assetCode: "HOME-UNVALUED",
-              totalValue: null,
-              issuer: "Banco C S.A.",
-              institution: "Banco C",
-            }),
-          ),
-        },
-        { objectiveId: "deleted-objective", assetKey: orphanTransferKey },
-      ],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 100,
-        objectiveId: targetId,
-        valuationDate: "2026-09-30",
-      });
-
-    expect(mocks.listCurrentEnriched).toHaveBeenCalledWith(
-      undefined,
-      "2026-09-30",
-    );
-    expect(result).toMatchObject({ status: "suggestions", kind: "exact" });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    const transferCandidate = result.candidates.find((candidate) =>
-      candidate.assetKeys.includes(orphanTransferKey),
-    );
-    expect(transferCandidate?.assetKeys).toEqual(
-      expect.arrayContaining([freeKey, homeTransferKey, orphanTransferKey]),
-    );
-    expect(transferCandidate?.transfers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          assetKey: homeTransferKey,
-          fromObjectiveName: "Casa",
-          toObjectiveId: targetId,
-          value: 70,
-        }),
-        expect.objectContaining({
-          assetKey: orphanTransferKey,
-          fromObjectiveName: "Outro objetivo",
-          toObjectiveId: targetId,
-          value: 10,
-        }),
-      ]),
-    );
-    expect(transferCandidate?.positions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          assetKey: orphanTransferKey,
-          referenceDate: null,
-        }),
-      ]),
-    );
-    expect(transferCandidate?.impacts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          objectiveId: targetId,
-          currentValue: 100,
-          transferredValue: 80,
-          targetAmount: null,
-          progressPercent: null,
-        }),
-        expect.objectContaining({
-          objectiveId: homeId,
-          objectiveName: "Casa",
-          currentValue: null,
-          knownValue: 5,
-          targetAmount: null,
-          progressPercent: null,
-        }),
-        expect.objectContaining({
-          objectiveId: "deleted-objective",
-          objectiveName: "Outro objetivo",
-          currentValue: null,
-          knownValue: 0,
-          progressPercent: null,
-        }),
-      ]),
-    );
-  });
-
-  it("uses the CDB-only expanded pool to find an exact candidate requiring transfer", async () => {
-    const targetId = customObjective.id;
-    const sourceId = "objective-home-cdb";
-    const free = imported({ assetCode: "FREE-CDB-20", totalValue: "20.00" });
-    const owned = imported({
-      assetCode: "OWNED-CDB-30",
-      totalValue: "30.00",
-      institution: "Banco B",
-      issuer: "Banco B S.A.",
-    });
-    const freeKey = getEmergencyReserveAssetKey(free);
-    const ownedKey = getEmergencyReserveAssetKey(owned);
-    mocks.listCurrentEnriched.mockResolvedValue([free, owned]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: sourceId, name: "Casa" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: ownedKey }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 55,
-        objectiveId: targetId,
-        instrumentType: "CDB",
-      });
-
-    expect(result).toMatchObject({ status: "suggestions", kind: "nearest" });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    expect(result.candidates[0].assetKeys).toEqual(
-      expect.arrayContaining([freeKey, ownedKey]),
-    );
-    expect(result.candidates[0].transfers).toEqual([
-      expect.objectContaining({
-        assetKey: ownedKey,
-        fromObjectiveId: sourceId,
-      }),
-    ]);
-  });
-
-  it("keeps the baseline when an expanded transfer candidate is not closer", async () => {
-    const targetId = customObjective.id;
-    const sourceId = "objective-home-not-closer";
-    const free = imported({ assetCode: "FREE-90", totalValue: "90.00" });
-    const owned = imported({
-      assetCode: "OWNED-90",
-      totalValue: "90.00",
-      institution: "Banco B",
-      issuer: "Banco B S.A.",
-    });
-    const freeKey = getEmergencyReserveAssetKey(free);
-    const ownedKey = getEmergencyReserveAssetKey(owned);
-    mocks.listCurrentEnriched.mockResolvedValue([free, owned]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: sourceId, name: "Casa" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: ownedKey }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 100,
-        objectiveId: targetId,
-      });
-
-    expect(result).toMatchObject({ status: "suggestions", kind: "nearest" });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    expect(result.candidates[0].assetKeys).toContain(freeKey);
-    expect(result.candidates[0].assetKeys).not.toContain(ownedKey);
-    expect(result.candidates[0].transfers).toBeUndefined();
-  });
-
-  it("retains the no-valued-positions result when an expanded pool has no candidates", async () => {
-    const targetId = customObjective.id;
-    const sourceId = "objective-home-unvalued";
-    const unvalued = imported({
-      assetCode: "OWNED-UNVALUED",
-      totalValue: "not available",
-      canonicalValueCents: null,
-    });
-    const key = getEmergencyReserveAssetKey(unvalued);
-    mocks.listCurrentEnriched.mockResolvedValue([unvalued]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: sourceId, name: "Casa" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: key }],
-    });
-
-    await expect(
-      new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 100,
-        objectiveId: targetId,
-      }),
-    ).resolves.toMatchObject({ status: "no_valued_positions" });
-  });
-
-  it("uses a source-only candidate when no free baseline exists", async () => {
-    const targetId = customObjective.id;
-    const sourceId = "objective-home-source-only";
-    const owned = imported({ assetCode: "OWNED-ONLY", totalValue: "80.00" });
-    const key = getEmergencyReserveAssetKey(owned);
-    mocks.listCurrentEnriched.mockResolvedValue([owned]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        customObjective,
-        { ...customObjective, id: sourceId, name: "Casa" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: key }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().findPositionCombinations({
-        targetAmount: 100,
-        objectiveId: targetId,
-      });
-
-    expect(result).toMatchObject({ status: "suggestions", kind: "nearest" });
-    if (result.status !== "suggestions") throw new Error("Expected candidates");
-    expect(result.candidates[0].assetKeys).toContain(key);
-    expect(result.candidates[0].transfers).toEqual([
-      expect.objectContaining({ assetKey: key, fromObjectiveId: sourceId }),
-    ]);
-  });
-
-  it("optimizes only entered balances and preserves owners of omitted objectives", async () => {
-    const measuredId = "00000000-0000-4000-8000-000000000001";
-    const omittedId = "00000000-0000-4000-8000-000000000002";
-    const measured = { ...customObjective, id: measuredId, name: "Reserva" };
-    const omitted = { ...customObjective, id: omittedId, name: "Viagem" };
-    const freePosition = imported({
-      assetCode: "FREE",
-      totalValue: "100.00",
-      canonicalValueCents: "10000",
-    });
-    const ownedPosition = imported({
-      assetCode: "OWNED",
-      totalValue: "90.00",
-      canonicalValueCents: "9000",
-    });
-    const freeKey = getEmergencyReserveAssetKey(freePosition);
-    const ownedKey = getEmergencyReserveAssetKey(ownedPosition);
-    mocks.listCurrentEnriched.mockResolvedValue([freePosition, ownedPosition]);
-    mocks.list.mockResolvedValue({
-      objectives: [measured, omitted],
-      assignments: [{ objectiveId: omittedId, assetKey: ownedKey }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId: measuredId, amount: 100 }],
-      });
-
-    expect(result.optimal).toBe(true);
-    expect(result.allocation).toEqual({ [freeKey]: measuredId });
-    expect(result.preservedPositionCount).toBe(1);
-    expect(result.expectedValueCents).toEqual({ [freeKey]: "10000" });
-    expect(result.expectedValuationDates).toEqual({
-      [freeKey]: "2026-09-30",
-    });
-    expect(result.objectives[0]).toMatchObject({
-      name: "Reserva",
-      observedBalanceCents: "10000",
-      proposedValueCents: "10000",
-      differenceCents: "0",
-    });
-  });
-
-  it("confirms only the server-recomputed complete allocation and stores its references", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000003";
-    const position = imported({
-      assetCode: "CONFIRM",
-      totalValue: "25.00",
-      canonicalValueCents: "2500",
-    });
-    const additionalPosition = imported({
-      assetCode: "CONFIRM-ADDITIONAL",
-      totalValue: "5.00",
-      canonicalValueCents: "500",
-    });
-    const assetKey = getEmergencyReserveAssetKey(position);
-    const additionalAssetKey = getEmergencyReserveAssetKey(additionalPosition);
-    mocks.listCurrentEnriched.mockResolvedValue([position, additionalPosition]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId, name: "Reserva" }],
-      assignments: [],
-    });
-    mocks.saveGlobalAllocation.mockResolvedValue({ batchId: "batch-1" });
-    const preview =
-      await new PortfolioObjectivesService().previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 25 }],
-      });
-
-    await expect(
-      new PortfolioObjectivesService().confirmGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 25 }],
-        allocation: preview.allocation,
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: Object.fromEntries(
-          Object.entries(preview.expectedValueCents).reverse(),
-        ),
-        expectedValuationDates: Object.fromEntries(
-          Object.entries(preview.expectedValuationDates).reverse(),
-        ),
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-      }),
-    ).resolves.toEqual({ batchId: "batch-1" });
-    expect(mocks.saveGlobalAllocation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        observedOn: "2026-10-01",
-        allocation: { [assetKey]: objectiveId, [additionalAssetKey]: null },
-        references: [{ objectiveId, amountCents: "2500" }],
-      }),
-    );
-  });
-
-  it("rejects a stale or changed allocation before persistence", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000004";
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    const service = new PortfolioObjectivesService();
-    const preview = await service.previewGlobalAllocation({
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 1 }],
-    });
-    await expect(
-      service.confirmGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 1 }],
-        allocation: { forged: objectiveId },
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
-  });
-
-  it("rejects confirmation when an eligible position's canonical cents change", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000013";
-    const position = imported({
-      assetCode: "CHANGING-VALUE",
-      canonicalValueCents: "2500",
-    });
-    const changedPosition = { ...position, canonicalValueCents: "2501" };
-    mocks.listCurrentEnriched
-      .mockResolvedValueOnce([position])
-      .mockResolvedValueOnce([changedPosition])
-      .mockResolvedValueOnce([changedPosition]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    const service = new PortfolioObjectivesService();
-    const preview = await service.previewGlobalAllocation({
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 25 }],
-    });
-    const changedPreview = await service.previewGlobalAllocation({
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 25 }],
-    });
-    expect(changedPreview.allocation).toEqual(preview.allocation);
-    expect(changedPreview.expectedValueCents).not.toEqual(
-      preview.expectedValueCents,
+      new PortfolioObjectivesService().delete(
+        "00000000-0000-4000-8000-000000000001",
+        {},
+      ),
+    ).resolves.toMatchObject({ id: "00000000-0000-4000-8000-000000000001" });
+    expect(mocks.delete).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
     );
 
+    mocks.getObjective.mockResolvedValue(
+      goal({ id: reserveObjectiveId, kind: "RESERVE" }),
+    );
     await expect(
-      service.confirmGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 25 }],
-        allocation: preview.allocation,
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
-  });
-
-  it("rejects confirmation when an eligible position's effective date changes", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000014";
-    const position = imported({
-      assetCode: "CHANGING-DATE",
-      canonicalValueCents: "2500",
-      referenceDate: "2026-09-29",
-    });
-    const changedPosition = { ...position, referenceDate: "2026-09-30" };
-    mocks.listCurrentEnriched
-      .mockResolvedValueOnce([position])
-      .mockResolvedValueOnce([changedPosition]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    const service = new PortfolioObjectivesService();
-    const preview = await service.previewGlobalAllocation({
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 25 }],
-    });
-
-    await expect(
-      service.confirmGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 25 }],
-        allocation: preview.allocation,
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
-  });
-
-  it("rejects a changed position identity even when its cents and allocation stay the same", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000024";
-    const position = imported({
-      id: "position-identity",
-      assetKey: "stable-asset-key",
-      assetCode: "CDB-OLD",
-      canonicalValueCents: "2500",
-    });
-    const changedPosition = { ...position, assetCode: "CDB-NEW" };
-    mocks.listCurrentEnriched
-      .mockResolvedValueOnce([position])
-      .mockResolvedValueOnce([changedPosition]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    const service = new PortfolioObjectivesService();
-    const preview = await service.previewGlobalAllocation({
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 25 }],
-    });
-
-    await expect(
-      service.confirmGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 25 }],
-        allocation: preview.allocation,
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
-  });
-
-  it("rejects a malformed confirmation payload", async () => {
-    await expect(
-      new PortfolioObjectivesService().confirmGlobalAllocation({}),
+      new PortfolioObjectivesService().delete(reserveObjectiveId, {}),
     ).rejects.toMatchObject({ statusCode: 400 });
-    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
   });
 
-  it("validates balances and protects duplicate or deleted destinations", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000005";
+  it("validates delete requests and supports versioned MCP deletion receipts", async () => {
     const service = new PortfolioObjectivesService();
-    await expect(service.previewGlobalAllocation({})).rejects.toMatchObject({
+    const objectiveId = goal().id;
+    await expect(service.delete("invalid", {})).rejects.toMatchObject({
       statusCode: 400,
     });
+    mocks.getObjective.mockResolvedValue(null);
+    await expect(service.delete(objectiveId, {})).rejects.toMatchObject({
+      statusCode: 404,
+    });
+
+    mocks.getObjective.mockResolvedValue(goal());
+    mocks.delete.mockResolvedValue({ mcpReplayResult: { deleted: true } });
     await expect(
-      service.previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [
-          { objectiveId, amount: 1 },
-          { objectiveId, amount: 2 },
-        ],
-      }),
-    ).rejects.toMatchObject({ statusCode: 400 });
-    mocks.list.mockResolvedValue({ objectives: [], assignments: [] });
-    await expect(
-      service.previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 1 }],
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-  });
-
-  it("reports candidate transfers, effective dates, limitations, and unvalued positions", async () => {
-    const sourceId = "00000000-0000-4000-8000-000000000006";
-    const targetId = "00000000-0000-4000-8000-000000000007";
-    const omittedId = "00000000-0000-4000-8000-000000000012";
-    const source = { ...customObjective, id: sourceId, name: "Viagem" };
-    const target = { ...customObjective, id: targetId, name: "Reserva" };
-    const omitted = { ...customObjective, id: omittedId, name: "Casa" };
-    const transferPosition = imported({
-      assetCode: "TRANSFER-ME",
-      totalValue: "1.00",
-      canonicalValueCents: "100",
-      estimatedThrough: "2026-09-30",
-      cdbEstimateLimitation: "Taxas disponíveis até 30/09.",
-    });
-    const unvalued = imported({
-      assetCode: "UNVALUED",
-      canonicalValueCents: null,
-      cdbEstimateLimitation: "Data-base CURVA nao confirmada.",
-    });
-    const omittedValued = imported({
-      assetCode: "OMITTED-VALUED",
-      canonicalValueCents: "250",
-    });
-    const omittedUnvalued = imported({
-      assetCode: "OMITTED-UNVALUED",
-      canonicalValueCents: null,
-    });
-    const freeUnvalued = imported({
-      assetCode: "FREE-UNVALUED",
-      canonicalValueCents: null,
-    });
-    const transferKey = getEmergencyReserveAssetKey(transferPosition);
-    const unvaluedKey = getEmergencyReserveAssetKey(unvalued);
-    const omittedValuedKey = getEmergencyReserveAssetKey(omittedValued);
-    const omittedUnvaluedKey = getEmergencyReserveAssetKey(omittedUnvalued);
-    const freeUnvaluedKey = getEmergencyReserveAssetKey(freeUnvalued);
-    mocks.listCurrentEnriched.mockResolvedValue([
-      transferPosition,
-      unvalued,
-      omittedValued,
-      omittedUnvalued,
-      freeUnvalued,
-    ]);
-    mocks.list.mockResolvedValue({
-      objectives: [source, target, omitted],
-      assignments: [
-        { objectiveId: sourceId, assetKey: transferKey },
-        { objectiveId: targetId, assetKey: unvaluedKey },
-        { objectiveId: omittedId, assetKey: omittedValuedKey },
-        { objectiveId: omittedId, assetKey: omittedUnvaluedKey },
-      ],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [
-          { objectiveId: sourceId, amount: 0 },
-          { objectiveId: targetId, amount: 1 },
-        ],
-      });
-
-    expect(result.transfers).toEqual([
-      expect.objectContaining({
-        assetKey: transferKey,
-        product: transferPosition.product,
-        assetCode: transferPosition.assetCode,
-        maturityAt: transferPosition.maturityAt,
-        fromObjectiveId: sourceId,
-        fromObjectiveName: "Viagem",
-        toObjectiveId: targetId,
-        toObjectiveName: "Reserva",
-      }),
-    ]);
-    expect(result.effectiveValuationDates).toEqual(["2026-09-30"]);
-    expect(result.limitations).toEqual(["Taxas disponíveis até 30/09."]);
-    expect(result.preservedPositionCount).toBe(4);
-    expect(result.preservedPositions).toEqual([
-      {
-        assetKey: unvaluedKey,
-        product: unvalued.product,
-        ownerObjectiveId: targetId,
-        ownerObjectiveName: "Reserva",
-        valueCents: null,
-        reasons: [
-          {
-            code: "value_unavailable",
-            limitation: "Data-base CURVA nao confirmada.",
+      service.delete(
+        objectiveId,
+        {},
+        {
+          expectedUpdatedAt: timestamp.toISOString(),
+          mcpMutation: {
+            key: "delete-key",
+            payloadHash: "hash",
+            replayResult: { deleted: true },
           },
-        ],
-      },
-      {
-        assetKey: omittedValuedKey,
-        product: omittedValued.product,
-        ownerObjectiveId: omittedId,
-        ownerObjectiveName: "Casa",
-        valueCents: "250",
-        reasons: [{ code: "objective_balance_not_provided" }],
-      },
-      {
-        assetKey: omittedUnvaluedKey,
-        product: omittedUnvalued.product,
-        ownerObjectiveId: omittedId,
-        ownerObjectiveName: "Casa",
-        valueCents: null,
-        reasons: [
-          {
-            code: "value_unavailable",
-            limitation: null,
+        },
+      ),
+    ).resolves.toEqual({ mcpReplay: { deleted: true } });
+
+    mocks.delete.mockResolvedValue({ mcpDeleted: goal() });
+    await expect(
+      service.delete(
+        objectiveId,
+        {},
+        {
+          expectedUpdatedAt: timestamp.toISOString(),
+          mcpMutation: {
+            key: "delete-key",
+            payloadHash: "hash",
+            replayResult: { deleted: true },
           },
-          { code: "objective_balance_not_provided" },
-        ],
-      },
-      {
-        assetKey: freeUnvaluedKey,
-        product: freeUnvalued.product,
-        ownerObjectiveId: null,
-        ownerObjectiveName: null,
-        valueCents: null,
-        reasons: [
-          {
-            code: "value_unavailable",
-            limitation: null,
-          },
-        ],
-      },
-    ]);
+        },
+      ),
+    ).resolves.toMatchObject({ id: objectiveId });
   });
 
-  it("requires explicit consent before a partial search can be confirmed", async () => {
-    const firstId = "00000000-0000-4000-8000-000000000008";
-    const secondId = "00000000-0000-4000-8000-000000000009";
-    const position = imported({
-      assetCode: "LIMITED",
-      canonicalValueCents: "100",
-    });
-    const key = getEmergencyReserveAssetKey(position);
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        { ...customObjective, id: firstId },
-        { ...customObjective, id: secondId },
-      ],
-      assignments: [],
-    });
-    const service = new PortfolioObjectivesService(1);
-    const preview = await service.previewGlobalAllocation({
-      valuationDate: "2026-10-01",
-      balances: [
-        { objectiveId: firstId, amount: 1 },
-        { objectiveId: secondId, amount: 2 },
-      ],
-    });
-    expect(preview).toMatchObject({
-      optimal: false,
-      canConfirm: true,
-      stateLimit: 1,
-    });
-    await expect(
-      service.confirmGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [
-          { objectiveId: firstId, amount: 1 },
-          { objectiveId: secondId, amount: 2 },
-        ],
-        allocation: preview.allocation,
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
-    expect(preview.expectedOwners).toEqual({ [key]: null });
-  });
-
-  it("keeps transfer maturity unknown when grouped manual positions disagree", async () => {
-    const sourceId = "00000000-0000-4000-8000-000000000018";
-    const targetId = "00000000-0000-4000-8000-000000000019";
-    const first = imported({
-      source: "MANUAL",
-      assetKey: "manual-shared-key",
-      assetCode: "MANUAL-1",
-      canonicalValueCents: "50",
-      maturityAt: null,
-    });
-    const second = imported({
-      source: "MANUAL",
-      assetKey: "manual-shared-key",
-      assetCode: "MANUAL-1",
-      canonicalValueCents: "50",
-      maturityAt: "2028-01-01",
-    });
-    const third = imported({
-      source: "MANUAL",
-      assetKey: "manual-shared-key",
-      assetCode: "MANUAL-1",
-      canonicalValueCents: "50",
-      maturityAt: null,
-    });
-    mocks.listCurrentEnriched.mockResolvedValue([first, second, third]);
-    mocks.list.mockResolvedValue({
-      objectives: [
-        { ...customObjective, id: sourceId, name: "Origem" },
-        { ...customObjective, id: targetId, name: "Destino" },
-      ],
-      assignments: [{ objectiveId: sourceId, assetKey: "manual-shared-key" }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [
-          { objectiveId: sourceId, amount: 0 },
-          { objectiveId: targetId, amount: 1.5 },
-        ],
-      });
-
-    expect(result.transfers).toEqual([
-      expect.objectContaining({
-        assetKey: "manual-shared-key",
-        product: first.product,
-        assetCode: first.assetCode,
-        maturityAt: null,
-        fromObjectiveName: "Origem",
-        toObjectiveName: "Destino",
-      }),
-    ]);
-  });
-
-  it("confirms a partial candidate only when the request explicitly accepts it", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000016";
-    const position = imported({
-      assetCode: "PARTIAL-CONSENT",
-      canonicalValueCents: "100",
-    });
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    mocks.saveGlobalAllocation.mockResolvedValue({ batchId: "partial-batch" });
-    const service = new PortfolioObjectivesService(1);
-    const request = {
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 1 }],
-    };
-    const preview = await service.previewGlobalAllocation(request);
-    expect(preview.optimal).toBe(false);
-
-    await expect(
-      service.confirmGlobalAllocation({
-        ...request,
-        allocation: preview.allocation,
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-        acceptPartial: true,
-      }),
-    ).resolves.toEqual({ batchId: "partial-batch" });
-    expect(mocks.saveGlobalAllocation).toHaveBeenCalledWith(
-      expect.objectContaining({ allocation: preview.allocation }),
-    );
-  });
-
-  it("still rejects a stale partial candidate after explicit consent", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000017";
-    const position = imported({
-      assetCode: "STALE-PARTIAL",
-      canonicalValueCents: "100",
-    });
-    const changedPosition = { ...position, canonicalValueCents: "101" };
-    mocks.listCurrentEnriched
-      .mockResolvedValueOnce([position])
-      .mockResolvedValueOnce([changedPosition]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    const service = new PortfolioObjectivesService(1);
-    const request = {
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 1 }],
-    };
-    const preview = await service.previewGlobalAllocation(request);
-    expect(preview.optimal).toBe(false);
-    await expect(
-      service.confirmGlobalAllocation({
-        ...request,
-        allocation: preview.allocation,
-        expectedOwners: preview.expectedOwners,
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-        acceptPartial: true,
-      }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    expect(mocks.saveGlobalAllocation).not.toHaveBeenCalled();
-  });
-
-  it("rejects confirmation when the expected owner map is stale even if allocation is unchanged", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000010";
+  it("reports stale and missing deletions after a versioned write", async () => {
     const service = new PortfolioObjectivesService();
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    const preview = await service.previewGlobalAllocation({
-      valuationDate: "2026-10-01",
-      balances: [{ objectiveId, amount: 0 }],
-    });
+    const objectiveId = goal().id;
+    mocks.getObjective.mockResolvedValue(goal({ updatedAt: new Date(0) }));
     await expect(
-      service.confirmGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 0 }],
-        allocation: preview.allocation,
-        expectedOwners: { stale: null },
-        expectedValueCents: preview.expectedValueCents,
-        expectedValuationDates: preview.expectedValuationDates,
-        expectedSourceFingerprint: preview.expectedSourceFingerprint,
-      }),
+      service.delete(
+        objectiveId,
+        {},
+        { expectedUpdatedAt: timestamp.toISOString() },
+      ),
     ).rejects.toMatchObject({ statusCode: 409 });
-  });
 
-  it("leaves positions whose values exceed a small measured balance unassigned", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000011";
-    const position = imported({
-      assetCode: "TOO-LARGE",
-      canonicalValueCents: "10000",
-      referenceDate: null,
-    });
-    const key = getEmergencyReserveAssetKey(position);
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [],
-    });
-    const result =
-      await new PortfolioObjectivesService().previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 10 }],
-      });
-    expect(result.unassignedPositions).toEqual([
-      { assetKey: key, product: position.product, valueCents: "10000" },
-    ]);
-    expect(result.effectiveValuationDates).toEqual([]);
-  });
+    mocks.getObjective.mockResolvedValue(goal());
+    mocks.delete.mockResolvedValue(null);
+    await expect(
+      service.delete(
+        objectiveId,
+        {},
+        { expectedUpdatedAt: timestamp.toISOString() },
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
 
-  it("identifies owned positions that the proposed allocation will leave without an objective", async () => {
-    const objectiveId = "00000000-0000-4000-8000-000000000018";
-    const position = imported({
-      assetCode: "UNASSIGN-OWNED",
-      canonicalValueCents: "10000",
-      maturityAt: null,
-    });
-    const key = getEmergencyReserveAssetKey(position);
-    mocks.listCurrentEnriched.mockResolvedValue([position]);
-    mocks.list.mockResolvedValue({
-      objectives: [{ ...customObjective, id: objectiveId }],
-      assignments: [{ objectiveId, assetKey: key }],
-    });
-
-    const result =
-      await new PortfolioObjectivesService().previewGlobalAllocation({
-        valuationDate: "2026-10-01",
-        balances: [{ objectiveId, amount: 0 }],
-      });
-
-    expect(result.allocation[key]).toBeNull();
-    expect(result.unassignmentTransfers).toEqual([
-      {
-        assetKey: key,
-        product: position.product,
-        assetCode: position.assetCode,
-        maturityAt: null,
-        fromObjectiveId: objectiveId,
-        fromObjectiveName: customObjective.name,
-        valueCents: "10000",
-      },
-    ]);
+    mocks.getObjective
+      .mockResolvedValueOnce(goal())
+      .mockResolvedValueOnce(null);
+    await expect(
+      service.delete(
+        objectiveId,
+        {},
+        { expectedUpdatedAt: timestamp.toISOString() },
+      ),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

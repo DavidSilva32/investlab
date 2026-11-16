@@ -403,14 +403,13 @@ export function StrategyAllocationWorkspace({
                 </span>
                 <div className="min-w-0">
                   <h2 className="text-sm font-medium text-muted-foreground">
-                    Patrimônio de longo prazo
+                    Patrimônio da carteira
                   </h2>
                   <p className="mt-1 text-3xl font-bold tracking-tight text-primary tabular-nums sm:text-4xl">
                     {formatCurrencyCents(knownValueCents)}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Total investido em ativos de longo prazo ·{" "}
-                    {formatDate(valuationDate)}
+                    Total das posições da carteira · {formatDate(valuationDate)}
                     {valuationContext ? ` · ${valuationContext}` : ""}
                     {positionCount === 0 ? " · sem posições" : ""}
                   </p>
@@ -625,7 +624,7 @@ export function StrategyAllocationWorkspace({
             {!baselineComplete && (
               <Alert>
                 <AlertDescription>
-                  Parte do patrimônio de Longo Prazo está sem valor ou classe
+                  Parte do patrimônio da carteira está sem valor ou classe
                   reconhecida. A distribuição atual mostra apenas valores
                   classificados.
                 </AlertDescription>
@@ -747,7 +746,7 @@ export function StrategyAllocationWorkspace({
                   />
                   <span className="min-w-0">
                     <span className="block text-sm text-muted-foreground">
-                      Restante para Longo Prazo
+                      Restante para a carteira
                     </span>
                     <strong className="mt-1 block text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">
                       {simulation.strategyContributionCents === null
@@ -766,7 +765,7 @@ export function StrategyAllocationWorkspace({
                   </AlertTitle>
                   <AlertDescription>
                     Revise as posições e os valores selecionados para a Reserva.
-                    O valor disponível para Longo Prazo não foi estimado.
+                    O valor disponível para a carteira não foi estimado.
                     {simulation.reserveTargetValueCents !== null &&
                       ` Meta da Reserva: ${formatCurrencyCents(simulation.reserveTargetValueCents)}.`}
                   </AlertDescription>
@@ -786,7 +785,7 @@ export function StrategyAllocationWorkspace({
                           : "Plano aproximado"}
                     </p>
                     <p className="text-sm tabular-nums">
-                      Longo Prazo após aporte:{" "}
+                      Carteira após aporte:{" "}
                       {formatCurrencyCents(
                         (
                           BigInt(simulation.simulation.totalCents) +
@@ -828,7 +827,7 @@ export function StrategyAllocationWorkspace({
                   )}
                   <div className="space-y-3 border-t pt-4">
                     <h3 className="text-sm font-semibold">
-                      Distribuição do longo prazo
+                      Distribuição da carteira
                     </h3>
                     <ul className="grid gap-3 sm:grid-cols-2">
                       {simulation.simulation.allocations.map((item) => (
@@ -886,7 +885,7 @@ export function StrategyAllocationWorkspace({
               <p className="text-sm font-medium">Assistente de aportes</p>
               <p className="text-sm text-muted-foreground">
                 {active
-                  ? "Usando esta composição para posições de Longo Prazo."
+                  ? "Usando esta composição para a carteira inteira."
                   : "A configuração atual continua ativa até você escolher a Estratégia."}
               </p>
             </div>

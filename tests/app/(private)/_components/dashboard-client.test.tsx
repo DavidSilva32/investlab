@@ -23,8 +23,7 @@ vi.mock("@/app/(private)/_components/dashboard-finances-card", () => ({
 
 vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
   DashboardSummary: ({
-    destinationSummary,
-    longTermMissingPositionCount,
+    objectives,
     destinationsUnavailable,
     destinationsLoading,
     importOpen,
@@ -39,11 +38,14 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     supportChecking,
     supportCheckError,
     onImportOpenChange,
-    configuredObjectivesCount,
     manualPositions,
   }: {
-    destinationSummary?: { knownTotal: number };
-    longTermMissingPositionCount?: number;
+    objectives?: Array<{
+      id?: string;
+      name?: string;
+      currentValue?: number | null;
+      balanceTracking?: { observedOn: string } | null;
+    }>;
     destinationsUnavailable?: boolean;
     destinationsLoading?: boolean;
     importOpen?: boolean;
@@ -64,7 +66,6 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
     supportChecking?: boolean;
     supportCheckError?: boolean;
     onImportOpenChange?: (open: boolean) => void;
-    configuredObjectivesCount?: number;
     manualPositions?: unknown[];
   }) => (
     <>
@@ -74,7 +75,13 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
       {!supportReadOnly && !supportChecking && !supportCheckError && (
         <button type="button">Adicionar posição</button>
       )}
-      <p>Objetivos configurados: {configuredObjectivesCount ?? 0}</p>
+      <p>Objetivos configurados: {objectives?.length ?? 0}</p>
+      {objectives?.map((objective) => (
+        <p key={objective.id ?? objective.name}>
+          {objective.name}: {objective.currentValue ?? "Saldo não informado"}
+          {objective.balanceTracking?.observedOn ?? ""}
+        </p>
+      ))}
       <p>Posições visíveis: {manualPositions?.length ?? 0}</p>
       <button type="button" onClick={onOpenReserve}>
         Ver reserva
@@ -110,10 +117,6 @@ vi.mock("@/app/(private)/_components/dashboard-summary", () => ({
           Fechar importação
         </button>
       )}
-      {destinationSummary && (
-        <p>Total por destinos: {destinationSummary.knownTotal}</p>
-      )}
-      <p>Posições de longo prazo ausentes: {longTermMissingPositionCount}</p>
       {destinationsLoading && <p>Carregando destinos</p>}
       {destinationsUnavailable && (
         <>
@@ -154,14 +157,7 @@ const overview = {
   referenceRates: { selic: null, cdi: null, ipca: null },
 };
 
-const destinationSummary = {
-  categories: [{ key: "reserve", value: 1250, percentage: 100 }],
-  knownTotal: 1250,
-  missingPositionCount: 0,
-  unvaluedPositionCount: 0,
-};
-
-const objectivesOverview = { destinationSummary };
+const objectivesOverview = { objectives: [] };
 const learningProgress = {
   courses: [
     { courseId: "fixed_income", passed: true },
@@ -192,14 +188,14 @@ describe("DashboardClient", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("loads the portfolio overview and destination summary independently", async () => {
+  it("loads portfolio data and objective balances independently", async () => {
     const fetchMock = vi.fn((url: string) => dashboardResponse(url));
     vi.stubGlobal("fetch", fetchMock);
 
     renderDashboard();
 
     expect(await screen.findByText("Resumo do dashboard")).toBeTruthy();
-    expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
+    expect(await screen.findByText("Objetivos configurados: 0")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio");
     expect(fetchMock).toHaveBeenCalledWith("/api/portfolio/objectives");
     expect(fetchMock).toHaveBeenCalledWith("/api/learning/progress");
@@ -211,9 +207,11 @@ describe("DashboardClient", () => {
       "fetch",
       vi.fn((url: string) =>
         dashboardResponse(url, overview, {
-          destinationSummary,
           objectives: [
             {
+              id: "trip",
+              name: "Viagem",
+              currentValue: 123,
               kind: "PERSONAL_GOAL",
               balanceTracking: {
                 observedAmountCents: "12300",
@@ -221,6 +219,9 @@ describe("DashboardClient", () => {
               },
             },
             {
+              id: "reserve",
+              name: "Reserva",
+              currentValue: 56042.48,
               kind: "RESERVE",
               balanceTracking: {
                 observedAmountCents: "5604248",
@@ -351,7 +352,7 @@ describe("DashboardClient", () => {
     ).toBeNull();
   });
 
-  it("counts only missing long-term objective positions for the dashboard", async () => {
+  it("does not infer objective balances from legacy position assignment metadata", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) =>
@@ -360,11 +361,12 @@ describe("DashboardClient", () => {
               ...objectivesOverview,
               objectives: [
                 {
+                  id: "long-term",
+                  name: "Longo prazo",
+                  currentValue: null,
                   purpose: "LONG_TERM_INVESTMENT",
                   missingPositionCount: 2,
                 },
-                { purpose: "PERSONAL_GOAL", missingPositionCount: 5 },
-                { purpose: "LONG_TERM_INVESTMENT" },
               ],
             })
           : dashboardResponse(url),
@@ -373,10 +375,10 @@ describe("DashboardClient", () => {
 
     renderDashboard();
 
+    expect(await screen.findByText("Objetivos configurados: 1")).toBeTruthy();
     expect(
-      await screen.findByText("Posições de longo prazo ausentes: 2"),
+      await screen.findByText(/Longo prazo: Saldo não informado/u),
     ).toBeTruthy();
-    expect(await screen.findByText("Objetivos configurados: 3")).toBeTruthy();
   });
 
   it("opens the reserve in the dashboard panel without changing routes", async () => {
@@ -467,7 +469,7 @@ describe("DashboardClient", () => {
     expect(screen.queryByText("Importação lateral aberta")).toBeNull();
   });
 
-  it("keeps the portfolio available and retries only unavailable destinations", async () => {
+  it("keeps the portfolio available and retries only unavailable objectives", async () => {
     let objectiveRequests = 0;
     const fetchMock = vi.fn((url: string) => {
       if (url === "/api/portfolio/objectives" && objectiveRequests++ === 0) {
@@ -483,7 +485,7 @@ describe("DashboardClient", () => {
     expect(await screen.findByText("Destinos indisponíveis")).toBeTruthy();
     screen.getByRole("button", { name: "Tentar novamente" }).click();
 
-    expect(await screen.findByText("Total por destinos: 1250")).toBeTruthy();
+    expect(await screen.findByText("Objetivos configurados: 0")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(
       fetchMock.mock.calls.filter(

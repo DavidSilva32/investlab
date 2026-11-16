@@ -9,7 +9,6 @@ import { portfolioAllocationService } from "@/backend/services/portfolio-allocat
 import { portfolioOperationService } from "@/backend/services/portfolio-operation.service";
 import { objectiveProjectionService } from "@/backend/services/objective-projection.service";
 import { stockAnalysisService } from "@/backend/services/stock-analysis.service";
-import { calculateEmergencyReserve } from "@/lib/emergency-reserve";
 import type { ObjectiveProjectionInput } from "@/lib/objective-projection";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 import { ApplicationError } from "@/backend/errors/application-error";
@@ -37,7 +36,6 @@ export class McpPortfolioToolsService {
       objectiveId: string;
       amount: string;
       observedOn: string;
-      cdiPercentage: number | null;
     },
     idempotencyKey: string,
     requestId: string,
@@ -122,7 +120,6 @@ export class McpPortfolioToolsService {
         deleted: true,
         objectiveId: current.id,
         objectiveName: current.name,
-        unlinkedPositionCount: current.assignedPositionCount,
         positionsRetained: true,
         balanceHistoryDeleted: true,
       };
@@ -415,38 +412,24 @@ export class McpPortfolioToolsService {
   async getMyEmergencyReserve(userId: string, requestId?: string) {
     return runWithDataOwner(userId, async () => {
       const id = requestId ?? randomUUID();
-      const [data, objectives] = await Promise.all([
-        emergencyReserveService.getEditorData(id),
-        portfolioObjectivesService.getOverview(id),
-      ]);
-      const observedBalance = objectives.objectives.find(
-        (objective) => objective.kind === "RESERVE",
-      )?.balanceTracking;
-      if (!observedBalance) {
-        return {
-          ...data.calculation,
-          balanceSource: "linked_positions" as const,
-          balanceDate: data.calculation.referenceDate ?? null,
-        };
-      }
-
-      const calculation = calculateEmergencyReserve({
-        monthlyExpenses: data.calculation.monthlyExpenses,
-        monthlyExpensesCents: data.calculation.monthlyExpensesCents,
-        essentialMonthlyExpenses: data.calculation.essentialMonthlyExpenses,
-        essentialExpenseSources: data.calculation.essentialExpenseSources,
-        targetMonths: data.calculation.targetMonths,
-        selectedValue:
-          Number(BigInt(observedBalance.observedAmountCents)) / 100,
-        selectedValueCents: observedBalance.observedAmountCents,
-        selectedGroups: data.calculation.selectedGroups,
-        unvaluedGroups: 0,
-        referenceDate: observedBalance.observedOn,
-      });
+      const calculation = await emergencyReserveService.getSummary(id);
+      const hasObservedBalance = calculation.hasObservedBalance;
       return {
-        ...calculation,
-        balanceSource: "observed_balance" as const,
-        balanceDate: observedBalance.observedOn,
+        hasObservedBalance,
+        balanceCents: hasObservedBalance
+          ? (calculation.balanceCents ?? null)
+          : null,
+        balanceDate: hasObservedBalance ? calculation.referenceDate : null,
+        monthlyExpenses: calculation.monthlyExpenses,
+        targetMonths: calculation.targetMonths,
+        coveredMonths: hasObservedBalance ? calculation.coveredMonths : null,
+        progressPercent: hasObservedBalance
+          ? calculation.progressPercentage
+          : null,
+        remainingAmount:
+          !hasObservedBalance || calculation.difference === null
+            ? null
+            : Math.max(calculation.difference, 0),
       };
     });
   }
@@ -466,19 +449,10 @@ export class McpPortfolioToolsService {
           targetAmount: objective.targetAmount,
           monthlyPlannedAmount: objective.monthlyPlannedAmount,
           currentValue: objective.currentValue,
-          knownValue: objective.knownValue,
           remainingAmount: objective.remainingAmount,
           progressPercent: objective.progressPercent,
-          assignedPositionCount: objective.assignedPositionCount,
-          missingPositionCount: objective.missingPositionCount,
-          unvaluedPositionCount: objective.unvaluedPositionCount,
           balanceTracking: objective.balanceTracking,
         })),
-        destinationSummary: overview.destinationSummary,
-        unassignedKnownValue: overview.unassignedKnownValue,
-        unassignedPositionCount: overview.unassignedPositionCount,
-        unassignedUnvaluedPositionCount:
-          overview.unassignedUnvaluedPositionCount,
       };
     });
   }

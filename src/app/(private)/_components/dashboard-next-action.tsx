@@ -5,10 +5,8 @@ import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
 
 export type DashboardNextActionData = {
   kind:
-    | "reserve-incomplete"
     | "portfolio-empty"
     | "missing-values"
-    | "objective-incomplete"
     | "reserve-setup"
     | "reserve-below-target";
   title: string;
@@ -20,14 +18,10 @@ export type DashboardNextActionData = {
 export function getDashboardNextAction({
   positionCount,
   missingValueCount,
-  reserveIncomplete,
-  objectiveIncomplete,
   reserve,
 }: {
   positionCount: number;
   missingValueCount: number;
-  reserveIncomplete: boolean;
-  objectiveIncomplete?: boolean;
   reserve?: EmergencyReserveCalculation;
 }): DashboardNextActionData | null {
   if (missingValueCount > 0) {
@@ -40,16 +34,6 @@ export function getDashboardNextAction({
       href: "/carteira?view=positions",
     };
   }
-  if (reserveIncomplete) {
-    return {
-      kind: "reserve-incomplete",
-      title: "Revise as posições selecionadas como reserva",
-      detail:
-        "Há posições sem valor ou seleções que não correspondem à carteira atual.",
-      label: "Revisar reserva",
-      href: "/carteira?panel=objectives&objective=reserve",
-    };
-  }
   if (positionCount === 0) {
     return {
       kind: "portfolio-empty",
@@ -57,16 +41,6 @@ export function getDashboardNextAction({
       detail: "Sem posições, ainda não há base para interpretar sua situação.",
       label: "Importar carteira",
       href: "/?openImport=1",
-    };
-  }
-  if (objectiveIncomplete) {
-    return {
-      kind: "objective-incomplete",
-      title: "Revise os objetivos com posições ausentes",
-      detail:
-        "Algumas posições vinculadas a objetivos não aparecem na carteira atual.",
-      label: "Revisar objetivos",
-      href: "/carteira?panel=objectives",
     };
   }
   if (
@@ -86,8 +60,7 @@ export function getDashboardNextAction({
     return {
       kind: "reserve-below-target",
       title: "Acompanhe a evolução da reserva",
-      detail:
-        "A cobertura está abaixo da meta pessoal que você definiu. Consulte os valores registrados na carteira.",
+      detail: "O saldo informado está abaixo da meta pessoal que você definiu.",
       label: "Ver reserva",
       href: "/carteira?panel=objectives&objective=reserve",
     };

@@ -13,63 +13,19 @@ import {
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
 import { createB3TradeIdentityFingerprint } from "@/backend/services/b3-trading-fingerprint";
 import { buildB3ReconciliationSummary } from "@/backend/services/b3-reconciliation-summary";
-import {
-  createB3MovementFingerprint,
-  prepareB3MovementForPersistence,
-} from "@/backend/services/b3-movement-fingerprint";
+import { prepareB3MovementForPersistence } from "@/backend/services/b3-movement-fingerprint";
 import { createTreasurySelicLiquidityFact } from "@/backend/services/treasury-selic-liquidity";
 import { ApplicationError } from "@/backend/errors/application-error";
 import {
   importRepository,
   type B3DocumentType,
 } from "@/backend/repositories/import.repository";
-import { portfolioObjectivesRepository } from "@/backend/repositories/portfolio-objectives.repository";
-import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 
 const documentTypes = new Set<B3DocumentType>([
   "B3_POSITION_XLSX",
   "B3_MOVEMENT_XLSX",
   "B3_TRADING_XLSX",
 ]);
-type PositionIdentity = {
-  product: string;
-  quantity: string;
-  assetCode: string | null;
-  institution: string | null;
-  issuer: string | null;
-  indexer: string | null;
-  regimeType: string | null;
-  issuedAt: string | null;
-  maturityAt: string | null;
-};
-const normalized = (value: string | null | undefined) =>
-  value?.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR") ?? "";
-const normalizedMovementText = (value: string | null | undefined) =>
-  normalized(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-const QUANTITY_SCALE = 8;
-const quantityUnits = (value: string | null | undefined) => {
-  if (!value) return null;
-  const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(value.trim());
-  if (!match) return null;
-  return (
-    BigInt(match[1]!) * 10n ** BigInt(QUANTITY_SCALE) +
-    BigInt((match[2] ?? "").padEnd(QUANTITY_SCALE, "0"))
-  );
-};
-type PositionRetirementReason =
-  | "total_redemption"
-  | "partial_redemption"
-  | "duplicate_evidence"
-  | "institution_mismatch"
-  | "identity_conflict"
-  | "snapshot_not_newer"
-  | "snapshot_date_unavailable"
-  | "movement_before_previous_snapshot"
-  | "no_matching_redemption"
-  | "incomplete_evidence";
-
 export class ImportService {
   async reconciliationSummary(requestId: string) {
     const [trades, movements, events] = await Promise.all([
@@ -185,7 +141,7 @@ export class ImportService {
         : {}),
     };
   }
-  async previewWithIdentityConflicts(
+  async previewWithReconciliation(
     file: { name: string; size: number; type: string; buffer: Buffer },
     requestId: string,
   ) {
@@ -217,18 +173,18 @@ export class ImportService {
       manualPortfolioPositionRepository.list(requestId),
       positionReconciliationRepository.listEvents(requestId),
     ]);
-    const identityReview = await this.findAssignedPositionsMissingFromImport(
-      preview.positions,
-      requestId,
-    );
+    const latestPositions =
+      await importRepository.listLatestPositions(requestId);
+    const latestPositionReferenceDate =
+      (latestPositions[0] as { referenceDate?: string | null } | undefined)
+        ?.referenceDate ?? null;
     return {
       ...preview,
-      latestPositionReferenceDate: identityReview.latestPositionReferenceDate,
+      latestPositionReferenceDate,
       reconciliationCandidates: unresolvedReconciliationCandidates(
         getReconciliationCandidates(preview.positions, manualPositions),
         reconciliationEvents,
       ),
-      identityConflicts: identityReview.conflicts,
       ...(duplicateImport
         ? {
             duplicateImportMessage:
@@ -291,7 +247,6 @@ export class ImportService {
     requestId: string,
     referenceDate?: string | null,
     decisions?: unknown,
-    retiredObjectiveAssignments?: unknown,
   ) {
     const decisionSchema = z
       .array(
@@ -308,36 +263,10 @@ export class ImportService {
     const parsedDecisions = decisionSchema.safeParse(decisions ?? []);
     if (!parsedDecisions.success)
       throw new ApplicationError("Revise as decisões de conciliação.", 400);
-    const retiredAssignmentsSchema = z
-      .array(
-        z
-          .object({
-            assetKey: z.string().regex(/^v1:[a-f0-9]{64}$/),
-            objectiveId: z.string().uuid(),
-          })
-          .strict(),
-      )
-      .max(1000)
-      .refine(
-        (assignments) =>
-          new Set(
-            assignments.map(({ assetKey, objectiveId }) =>
-              JSON.stringify([assetKey, objectiveId]),
-            ),
-          ).size === assignments.length,
-      );
-    const parsedRetiredAssignments = retiredAssignmentsSchema.safeParse(
-      retiredObjectiveAssignments ?? [],
-    );
-    if (!parsedRetiredAssignments.success)
-      throw new ApplicationError(
-        "Confirmações de posições removidas inválidas.",
-        400,
-      );
     const preview = this.preview(file);
     if (
       preview.documentType !== "B3_POSITION_XLSX" &&
-      (parsedDecisions.data.length || parsedRetiredAssignments.data.length)
+      parsedDecisions.data.length
     ) {
       throw new ApplicationError(
         "Conciliação disponível apenas para posições.",
@@ -350,11 +279,6 @@ export class ImportService {
     );
     const reprocessExistingImport =
       duplicate && preview.documentType === "B3_POSITION_XLSX";
-    if (reprocessExistingImport && parsedRetiredAssignments.data.length)
-      throw new ApplicationError(
-        "A revisão de arquivo já importado não pode remover vínculos de posições. Envie um novo snapshot da B3.",
-        409,
-      );
     const existingReference = reprocessExistingImport
       ? await importRepository.getPositionImportReferenceDateByHash(
           preview.hash,
@@ -392,54 +316,6 @@ export class ImportService {
     const reconcileExistingImport =
       reprocessExistingImport && parsedDecisions.data.length > 0;
     this.assertCanBeConfirmed(duplicate && !reprocessExistingImport);
-    let retiredAssignmentsForImport: Array<{
-      assetKey: string;
-      objectiveId: string;
-      previousSnapshotReferenceDate: string;
-      previousPositionQuantity: string;
-      assetCode: string;
-      institution: string;
-      evidenceFingerprints: string[];
-    }> = [];
-    let retirementReview: Array<{
-      assetKey: string;
-      objectiveName: string;
-      reason: PositionRetirementReason;
-    }> = [];
-    if (
-      preview.documentType === "B3_POSITION_XLSX" &&
-      !reprocessExistingImport
-    ) {
-      const review = await this.findAssignedPositionsMissingFromImport(
-        preview.positions,
-        requestId,
-        effectiveReferenceDate,
-      );
-      retiredAssignmentsForImport = review.conflicts.flatMap((conflict) =>
-        conflict.reason === "total_redemption" &&
-        conflict.previousSnapshotReferenceDate
-          ? [
-              {
-                assetKey: conflict.assetKey,
-                objectiveId: conflict.objectiveId,
-                previousSnapshotReferenceDate:
-                  conflict.previousSnapshotReferenceDate,
-                previousPositionQuantity: conflict.position.quantity,
-                assetCode: conflict.position.assetCode!,
-                institution: conflict.position.institution!,
-                evidenceFingerprints: conflict.evidenceFingerprints,
-              },
-            ]
-          : [],
-      );
-      retirementReview = review.conflicts.map(
-        ({ assetKey, objectiveName, reason }) => ({
-          assetKey,
-          objectiveName,
-          reason,
-        }),
-      );
-    }
     const importData =
       preview.documentType === "B3_MOVEMENT_XLSX"
         ? {
@@ -457,7 +333,6 @@ export class ImportService {
           : {
               ...this.buildPositionImportData(preview, effectiveReferenceDate),
               reconciliationDecisions: parsedDecisions.data,
-              retiredObjectiveAssignments: retiredAssignmentsForImport,
               reconcileExistingImport,
               reprocessExistingImport,
             };
@@ -465,14 +340,6 @@ export class ImportService {
       { fileName: file.name, fileHash: preview.hash, ...importData },
       requestId,
     );
-    if ("retirementReview" in result && result.retirementReview)
-      retirementReview = result.retirementReview.map(
-        ({ assetKey, objectiveName, reason }) => ({
-          assetKey,
-          objectiveName,
-          reason,
-        }),
-      );
     return {
       preview,
       result,
@@ -482,7 +349,6 @@ export class ImportService {
         "referenceDateUpdated" in result &&
         result.referenceDateUpdated,
       reprocessedExistingImport: reprocessExistingImport,
-      retirementReview,
     };
   }
 
@@ -506,193 +372,6 @@ export class ImportService {
         }),
       ),
     };
-  }
-
-  private async findAssignedPositionsMissingFromImport(
-    incoming: PositionIdentity[],
-    requestId: string,
-    incomingReferenceDate?: string | null,
-  ) {
-    const [currentPositions, objectives] = await Promise.all([
-      importRepository.listLatestPositions(requestId),
-      portfolioObjectivesRepository.list(),
-    ]);
-    const incomingByKey = new Map(
-      incoming.map((position) => [
-        getEmergencyReserveAssetKey(position),
-        position,
-      ]),
-    );
-    const objectiveById = new Map(
-      objectives.objectives.map((objective) => [objective.id, objective.name]),
-    );
-    const objectiveByAssetKey = new Map(
-      objectives.assignments.map((assignment) => [
-        assignment.assetKey,
-        assignment.objectiveId,
-      ]),
-    );
-    const conflicts = new Map<
-      string,
-      {
-        assetKey: string;
-        objectiveId: string;
-        objectiveName: string;
-        position: PositionIdentity;
-      }
-    >();
-    for (const position of currentPositions as PositionIdentity[]) {
-      const assetKey = getEmergencyReserveAssetKey(position);
-      const objectiveId = objectiveByAssetKey.get(assetKey);
-      const objectiveName = objectiveId ? objectiveById.get(objectiveId) : null;
-      if (
-        !objectiveName ||
-        incomingByKey.has(assetKey) ||
-        conflicts.has(assetKey)
-      )
-        continue;
-      conflicts.set(assetKey, {
-        assetKey,
-        objectiveId: objectiveId!,
-        objectiveName,
-        position,
-      });
-    }
-    const missingPositions = [...conflicts.values()].sort((left, right) =>
-      left.assetKey.localeCompare(right.assetKey),
-    );
-    const latestPositionReferenceDate =
-      (
-        currentPositions[0] as
-          (PositionIdentity & { referenceDate?: string | null }) | undefined
-      )?.referenceDate ?? null;
-    if (!missingPositions.length)
-      return { conflicts: [], latestPositionReferenceDate };
-    const movements = await importRepository.listMovements(requestId);
-    const conflictsWithRedemptions = missingPositions.map((conflict) => {
-      const assetCode = normalized(conflict.position.assetCode);
-      const positionAssetKey = conflict.assetKey;
-      const identityConflict = incoming.some(
-        (position) =>
-          getEmergencyReserveAssetKey(position) !== positionAssetKey &&
-          ((assetCode && normalized(position.assetCode) === assetCode) ||
-            normalized(position.product) ===
-              normalized(conflict.position.product)),
-      );
-      const matchingCodeMovements = movements.filter(
-        (candidate) =>
-          assetCode !== "" && normalized(candidate.assetCode) === assetCode,
-      );
-      const matchingCodeRedemptions = matchingCodeMovements.filter(
-        (candidate) =>
-          candidate.direction === "DEBITO" &&
-          normalizedMovementText(candidate.movementType).includes("RESGATE"),
-      );
-      const matchingRedemptions = matchingCodeRedemptions
-        .filter(
-          (candidate) =>
-            Boolean(latestPositionReferenceDate) &&
-            candidate.occurredAt > latestPositionReferenceDate! &&
-            (!incomingReferenceDate ||
-              candidate.occurredAt <= incomingReferenceDate),
-        )
-        .map((movement) => ({
-          occurredAt: movement.occurredAt,
-          movementType: movement.movementType,
-          quantity: movement.quantity,
-          operationValue: movement.operationValue,
-          institution: movement.institution,
-        }));
-      let reason: PositionRetirementReason = "incomplete_evidence";
-      let evidenceFingerprints: string[] = [];
-      if (!latestPositionReferenceDate || !incomingReferenceDate) {
-        reason = "snapshot_date_unavailable";
-      } else if (incomingReferenceDate <= latestPositionReferenceDate) {
-        reason = "snapshot_not_newer";
-      } else if (identityConflict) {
-        reason = "identity_conflict";
-      } else {
-        const periodMovements = matchingCodeMovements.filter(
-          (movement) =>
-            movement.occurredAt > latestPositionReferenceDate &&
-            movement.occurredAt <= incomingReferenceDate,
-        );
-        const mismatchedInstitution = periodMovements.some(
-          (movement) =>
-            !movement.institution ||
-            !conflict.position.institution ||
-            normalized(movement.institution) !==
-              normalized(conflict.position.institution),
-        );
-        const periodRedemptions = periodMovements.filter(
-          (movement) =>
-            movement.direction === "DEBITO" &&
-            normalizedMovementText(movement.movementType).includes("RESGATE"),
-        );
-        const ambiguousMovement = periodMovements.some(
-          (movement) =>
-            movement.direction !== "DEBITO" ||
-            !normalizedMovementText(movement.movementType).includes("RESGATE"),
-        );
-        const earlierRedemptions = matchingCodeRedemptions.some(
-          (movement) => movement.occurredAt <= latestPositionReferenceDate,
-        );
-        if (mismatchedInstitution) {
-          reason = "institution_mismatch";
-        } else if (ambiguousMovement) {
-          reason = "incomplete_evidence";
-        } else {
-          const fingerprints = periodRedemptions.map((movement) =>
-            "eventFingerprint" in movement && movement.eventFingerprint
-              ? movement.eventFingerprint
-              : createB3MovementFingerprint({
-                  ...movement,
-                  direction: "DEBITO",
-                }),
-          );
-          if (new Set(fingerprints).size !== fingerprints.length) {
-            reason = "duplicate_evidence";
-          } else if (!periodRedemptions.length) {
-            reason = earlierRedemptions
-              ? "movement_before_previous_snapshot"
-              : "no_matching_redemption";
-          } else {
-            const expectedQuantity = quantityUnits(conflict.position.quantity);
-            const redeemedQuantity = periodRedemptions.reduce<bigint | null>(
-              (total, movement) => {
-                const units = quantityUnits(movement.quantity);
-                return total === null || units === null || units === 0n
-                  ? null
-                  : total + units;
-              },
-              0n,
-            );
-            if (
-              expectedQuantity === null ||
-              expectedQuantity === 0n ||
-              redeemedQuantity === null
-            ) {
-              reason = "incomplete_evidence";
-            } else if (redeemedQuantity === expectedQuantity) {
-              reason = "total_redemption";
-              evidenceFingerprints = fingerprints;
-            } else if (redeemedQuantity < expectedQuantity) {
-              reason = "partial_redemption";
-            } else {
-              reason = "incomplete_evidence";
-            }
-          }
-        }
-      }
-      return {
-        ...conflict,
-        matchingRedemptions,
-        reason,
-        previousSnapshotReferenceDate: latestPositionReferenceDate,
-        evidenceFingerprints,
-      };
-    });
-    return { conflicts: conflictsWithRedemptions, latestPositionReferenceDate };
   }
 
   async delete(

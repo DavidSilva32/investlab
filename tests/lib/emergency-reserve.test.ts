@@ -7,9 +7,7 @@ import {
 const base = {
   monthlyExpenses: 1000,
   targetMonths: 6,
-  selectedValue: 3000,
-  selectedGroups: 2,
-  unvaluedGroups: 0,
+  balance: 3000,
   referenceDate: "2026-09-01",
 };
 
@@ -284,7 +282,7 @@ describe("calculateEmergencyReserve", () => {
     });
 
     expect(result).toMatchObject({
-      selectedValue: 3000,
+      balance: 3000,
       targetValue: null,
       coveredMonths: null,
       difference: null,
@@ -304,6 +302,42 @@ describe("calculateEmergencyReserve", () => {
       difference: null,
       progressPercentage: null,
       status: "not_configured",
+    });
+  });
+
+  it("keeps reserve coverage and horizon amounts unavailable when no balance is observed", () => {
+    const withoutTarget = calculateEmergencyReserve({
+      ...base,
+      balance: null,
+      targetMonths: null,
+    });
+    expect(withoutTarget).toMatchObject({
+      balance: null,
+      balanceCents: null,
+      targetValue: null,
+      targetValueCents: null,
+      coveredMonths: null,
+      difference: null,
+      status: "balance_required",
+      horizons: [
+        { months: 3, targetValue: 3000, difference: null },
+        { months: 6, targetValue: 6000, difference: null },
+        { months: 9, targetValue: 9000, difference: null },
+        { months: 12, targetValue: 12000, difference: null },
+      ],
+    });
+
+    const withTarget = calculateEmergencyReserve({
+      ...base,
+      balance: null,
+    });
+    expect(withTarget).toMatchObject({
+      balance: null,
+      targetValue: 6000,
+      targetValueCents: "600000",
+      coveredMonths: null,
+      difference: null,
+      status: "balance_required",
     });
   });
 
@@ -345,18 +379,18 @@ describe("calculateEmergencyReserve", () => {
   it("recognizes a target met within currency rounding tolerance", () => {
     const result = calculateEmergencyReserve({
       ...base,
-      selectedValue: 5999.999,
+      balance: 5999.999,
     });
 
     expect(result).toMatchObject({
-      selectedValue: 6000,
+      balance: 6000,
       difference: 0,
       status: "on_target",
     });
   });
 
   it("caps progress at the configured target and reports an excess", () => {
-    const result = calculateEmergencyReserve({ ...base, selectedValue: 9000 });
+    const result = calculateEmergencyReserve({ ...base, balance: 9000 });
 
     expect(result).toMatchObject({
       coveredMonths: 9,
@@ -370,7 +404,7 @@ describe("calculateEmergencyReserve", () => {
     const result = calculateEmergencyReserve({
       ...base,
       targetMonths: 0,
-      selectedValue: 0,
+      balance: 0,
     });
 
     expect(result.targetValue).toBe(0);
@@ -378,9 +412,9 @@ describe("calculateEmergencyReserve", () => {
   });
 
   it("prevents negative values from reducing the reserve", () => {
-    const result = calculateEmergencyReserve({ ...base, selectedValue: -100 });
+    const result = calculateEmergencyReserve({ ...base, balance: -100 });
 
-    expect(result.selectedValue).toBe(0);
+    expect(result.balance).toBe(0);
     expect(result.difference).toBe(6000);
   });
 
@@ -388,13 +422,13 @@ describe("calculateEmergencyReserve", () => {
     expect(
       calculateEmergencyReserve({
         ...base,
-        selectedValue: 999,
-        selectedValueCents: "1250",
+        balance: 999,
+        balanceCents: "1250",
         monthlyExpensesCents: "100000",
       }),
     ).toMatchObject({
-      selectedValue: 12.5,
-      selectedValueCents: "1250",
+      balance: 12.5,
+      balanceCents: "1250",
       targetValue: 6000,
     });
 
@@ -438,14 +472,14 @@ describe("calculateEmergencyReserve", () => {
     expect(
       calculateEmergencyReserve({
         ...base,
-        selectedValue: Number.NaN,
+        balance: Number.NaN,
         monthlyExpenses: Number.NaN,
         monthlyExpensesCents: null,
         targetMonths: 1,
       }),
     ).toMatchObject({
-      selectedValue: 0,
-      selectedValueCents: "0",
+      balance: 0,
+      balanceCents: "0",
       targetValue: null,
       targetValueCents: null,
       coveredMonths: null,

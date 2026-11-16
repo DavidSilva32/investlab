@@ -5,60 +5,26 @@ import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
-import { PortfolioObjectiveAssignment } from "@/app/(private)/portfolio/_components/portfolio-objective-assignment";
-import type { ObjectivePosition } from "@/app/(private)/portfolio/_components/portfolio-objective-assignment";
 import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
 import { PortfolioObjectiveDetail } from "@/app/(private)/portfolio/_components/portfolio-objective-detail";
 import { PortfolioObjectiveForm } from "@/app/(private)/portfolio/_components/portfolio-objective-form";
 import { PortfolioObjectivesOverview } from "@/app/(private)/portfolio/_components/portfolio-objectives-overview";
 import { EmergencyReserveEditor } from "@/app/(private)/portfolio/_components/emergency-reserve-editor";
-import { PortfolioObjectiveOrganizer } from "@/app/(private)/portfolio/_components/portfolio-objective-organizer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
-import type { SuggestionCandidate } from "@/app/(private)/portfolio/_components/position-combination-suggestions";
-
-type AssignmentTransfer = NonNullable<SuggestionCandidate["transfers"]>[number];
-
-type ObjectivesData = {
-  objectives: PortfolioObjective[];
-  balanceReferences?: Array<{
-    objectiveId: string;
-    amountCents: string;
-    observedDate: string;
-  }>;
-  destinationSummary: {
-    categories: Array<{
-      key:
-        "reserve" | "personal" | "long_term" | "purpose_unknown" | "unassigned";
-      value: number;
-      valueCents: string;
-      percentage: number;
-    }>;
-    knownTotal: number;
-    knownTotalCents: string;
-    missingPositionCount: number;
-    unvaluedPositionCount: number;
-  };
-  positions: ObjectivePosition[];
-  unassignedKnownValue: number;
-  unassignedPositionCount: number;
-  unassignedUnvaluedPositionCount: number;
-};
+type ObjectivesData = { objectives: PortfolioObjective[] };
 
 type View =
   | { kind: "overview" }
   | { kind: "detail"; objectiveId: string }
   | { kind: "create" }
   | { kind: "edit"; objectiveId: string; returnTo: "overview" | "detail" }
-  | { kind: "assign"; objectiveId: string }
-  | { kind: "organize" }
-  | { kind: "reserve-positions" }
   | { kind: "reserve-settings" };
 
-const loadErrorMessage = "Não foi possível carregar seus objetivos e posições.";
+const loadErrorMessage = "Não foi possível carregar seus objetivos.";
 
 export function PortfolioObjectives({
   navigation = { open: true, objectiveId: null, screen: null },
@@ -118,9 +84,9 @@ export function PortfolioObjectives({
 
   const editObjectiveId = view.kind === "edit" ? view.objectiveId : null;
   const activeObjectiveId =
-    view.kind === "detail" || view.kind === "edit" || view.kind === "assign"
+    view.kind === "detail" || view.kind === "edit"
       ? view.objectiveId
-      : view.kind === "reserve-settings" || view.kind === "reserve-positions"
+      : view.kind === "reserve-settings"
         ? reserveObjectiveId
         : null;
   const activeObjective =
@@ -172,45 +138,10 @@ export function PortfolioObjectives({
     }
   }
 
-  async function saveAssignments(
-    objectiveId: string,
-    assetKeys: string[],
-    transfers: AssignmentTransfer[] = [],
-  ) {
-    setSaving(true);
-    try {
-      const response = await fetch("/api/portfolio/objectives", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectiveId, assetKeys, transfers }),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        toast.error(
-          getApiMessage(body, "Não foi possível salvar as posições."),
-        );
-        return;
-      }
-      toast.success(
-        transfers.length
-          ? `${transfers.length} ${transfers.length === 1 ? "posição foi transferida" : "posições foram transferidas"} para ${data!.objectives.find((item) => item.id === objectiveId)!.name}.`
-          : getApiMessage(body, "Posições vinculadas ao objetivo."),
-      );
-      await loadData();
-      setView({ kind: "detail", objectiveId });
-      navigateToObjective(objectiveId);
-    } catch {
-      toast.error("Não foi possível salvar as posições.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function saveObservedBalance(input: {
     objectiveId: string;
     amount: string;
     observedOn: string;
-    cdiPercentage: string | null;
   }) {
     setSaving(true);
     try {
@@ -224,7 +155,7 @@ export function PortfolioObjectives({
         toast.error(getApiMessage(body, "Não foi possível salvar o saldo."));
         return;
       }
-      toast.success(getApiMessage(body, "Saldo observado salvo."));
+      toast.success(getApiMessage(body, "Saldo atualizado."));
       await loadData();
     } catch {
       toast.error("Não foi possível salvar o saldo.");
@@ -248,12 +179,7 @@ export function PortfolioObjectives({
         );
         return;
       }
-      toast.success(
-        getApiMessage(
-          body,
-          "Objetivo excluído; as posições ficaram sem destino.",
-        ),
-      );
+      toast.success(getApiMessage(body, "Objetivo excluído."));
       setDeleteObjectiveId(null);
       setView({ kind: "overview" });
       navigateToObjective(null);
@@ -279,13 +205,7 @@ export function PortfolioObjectives({
       navigateToObjective(
         nextView.kind === "detail" ? nextView.objectiveId : null,
       );
-    } else if (view.kind === "assign") {
-      setView({ kind: "detail", objectiveId: view.objectiveId });
-      navigateToObjective(view.objectiveId);
-    } else if (
-      view.kind === "reserve-settings" ||
-      view.kind === "reserve-positions"
-    ) {
+    } else if (view.kind === "reserve-settings") {
       setView({ kind: "detail", objectiveId: reserveObjectiveId });
       navigateToObjective(reserveObjectiveId);
     } else {
@@ -298,26 +218,20 @@ export function PortfolioObjectives({
       ? "Novo objetivo"
       : view.kind === "edit"
         ? "Editar objetivo"
-        : view.kind === "assign"
-          ? "Gerenciar posições"
-          : view.kind === "organize"
-            ? "Organizar objetivos"
-            : view.kind === "reserve-settings"
-              ? "Editar reserva"
-              : view.kind === "reserve-positions"
-                ? "Gerenciar posições"
-                : (activeObjective?.name ?? "Objetivo");
+        : view.kind === "reserve-settings"
+          ? "Editar reserva"
+          : (activeObjective?.name ?? "Objetivo");
 
   return (
     <div className="space-y-5" data-testid="portfolio-objectives">
       {loading && !data && (
         <div
           role="status"
-          aria-label="Carregando objetivos e posições"
+          aria-label="Carregando objetivos"
           aria-busy="true"
           className="space-y-4"
         >
-          <span className="sr-only">Carregando objetivos e posições…</span>
+          <span className="sr-only">Carregando objetivos…</span>
           <div className="rounded-xl border p-4 sm:p-5">
             <div className="flex items-center justify-between gap-3">
               <Skeleton className="h-5 w-44" />
@@ -373,7 +287,6 @@ export function PortfolioObjectives({
             onCreate={() => {
               setView({ kind: "create" });
             }}
-            onOrganize={() => setView({ kind: "organize" })}
           />
         </>
       )}
@@ -401,26 +314,9 @@ export function PortfolioObjectives({
               >
                 {subviewTitle}
               </h2>
-              {view.kind === "assign" && (
-                <p className="text-sm text-muted-foreground">
-                  Associe posições existentes a um objetivo.
-                </p>
-              )}
-              {view.kind === "organize" && (
-                <p className="text-sm text-muted-foreground">
-                  Revise os saldos, veja a distribuição proposta e confirme para
-                  transferir as posições.
-                </p>
-              )}
               {view.kind === "reserve-settings" && (
                 <p className="text-sm text-muted-foreground">
                   Atualize o custo mensal e a meta em meses da Reserva.
-                </p>
-              )}
-              {view.kind === "reserve-positions" && (
-                <p className="text-sm text-muted-foreground">
-                  Selecione as posições da Reserva e salve os vínculos sem
-                  alterar sua meta pessoal.
                 </p>
               )}
             </div>
@@ -435,14 +331,6 @@ export function PortfolioObjectives({
                   returnTo: "detail",
                 })
               }
-              onManagePositions={() => {
-                if (activeObjective.id === reserveObjectiveId) {
-                  setView({ kind: "reserve-positions" });
-                  navigateToObjective(reserveObjectiveId, "reserve-positions");
-                  return;
-                }
-                setView({ kind: "assign", objectiveId: activeObjective.id });
-              }}
               onConfigureReserve={() => {
                 setView({ kind: "reserve-settings" });
                 navigateToObjective(reserveObjectiveId, "reserve-settings");
@@ -470,37 +358,7 @@ export function PortfolioObjectives({
               onCancel={returnFromSubview}
             />
           )}
-          {view.kind === "assign" && activeObjective && (
-            <PortfolioObjectiveAssignment
-              key={
-                activeObjective.id +
-                ":" +
-                activeObjective.assignedAssetKeys.join(",")
-              }
-              objectives={data.objectives}
-              positions={data.positions}
-              preferredObjectiveId={activeObjective.id}
-              saving={saving}
-              onSave={saveAssignments}
-            />
-          )}
-          {view.kind === "organize" && (
-            <PortfolioObjectiveOrganizer
-              objectives={data.objectives.map(({ id, name }) => ({ id, name }))}
-              balanceReferences={data.balanceReferences}
-              onCancel={returnFromSubview}
-              onCompleted={() => {
-                setView({ kind: "overview" });
-                navigateToObjective(null);
-              }}
-            />
-          )}
-          {view.kind === "reserve-positions" && (
-            <EmergencyReserveEditor mode="positions" />
-          )}
-          {view.kind === "reserve-settings" && (
-            <EmergencyReserveEditor mode="settings" />
-          )}
+          {view.kind === "reserve-settings" && <EmergencyReserveEditor />}
         </section>
       )}
     </div>
@@ -515,9 +373,6 @@ function getViewFromNavigation(navigation: {
   if (!navigation.open) return { kind: "overview" };
   if (navigation.screen === "reserve-settings") {
     return { kind: "reserve-settings" };
-  }
-  if (navigation.screen === "reserve-positions") {
-    return { kind: "reserve-positions" };
   }
   if (navigation.objectiveId) {
     return {

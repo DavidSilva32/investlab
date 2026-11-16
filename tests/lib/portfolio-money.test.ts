@@ -7,9 +7,6 @@ import {
   resolvePositionMoney,
   sumMoneyCents,
 } from "@/lib/portfolio-money";
-import { getPortfolioInsights } from "@/lib/portfolio-insights";
-import { suggestEmergencyReservePositions } from "@/backend/services/emergency-reserve-position-suggestions";
-import { calculateObjectiveValue } from "@/lib/portfolio-objectives";
 
 describe("portfolio money", () => {
   it("converts decimal strings and numbers to cents with half-up rounding", () => {
@@ -94,57 +91,5 @@ describe("portfolio money", () => {
     expect(formatCurrencyCents("4732295")).toBe("R$ 47.322,95");
     expect(formatCurrencyCents(-123n)).toBe("-R$ 1,23");
     expect(formatCurrencyCents(null)).toBe("—");
-  });
-
-  it("uses identical canonical cents in portfolio, reserve combinations, and objectives", () => {
-    const position = {
-      product: "CDB DI",
-      institution: "Banco A",
-      maturityAt: null,
-      totalValue: "47296.00520902593",
-      estimatedValue: 47322.08,
-      estimatedValueCents: "4732208",
-      canonicalValueCents: "4732208",
-    };
-    const assetKey = "asset-1";
-    const insights = getPortfolioInsights([position]);
-    const combination = suggestEmergencyReservePositions(47322.08, [
-      {
-        assetKey,
-        product: position.product,
-        institution: position.institution,
-        value: position.estimatedValue,
-        valueCents: position.canonicalValueCents,
-      },
-    ]);
-    const objective = calculateObjectiveValue(
-      [assetKey],
-      [
-        {
-          assetKey,
-          product: position.product,
-          assetCode: null,
-          institution: position.institution,
-          assetClass: "Renda fixa",
-          positionCount: 1,
-          value: position.estimatedValue,
-          valueCents: position.canonicalValueCents,
-          knownValue: position.estimatedValue,
-          knownValueCents: position.canonicalValueCents,
-          unvaluedPositions: 0,
-          referenceDate: "2026-09-18",
-          source: "IMPORT",
-        },
-      ],
-    );
-
-    expect(insights.totalValueCents).toBe("4732208");
-    expect(combination).toMatchObject({
-      status: "suggestions",
-      kind: "exact",
-      candidates: [{ totalCents: "4732208", differenceCents: "0" }],
-    });
-    expect(objective.currentValueCents).toBe("4732208");
-    expect(objective.knownValueCents).toBe("4732208");
   });
 });

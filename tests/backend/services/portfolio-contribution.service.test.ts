@@ -31,7 +31,6 @@ vi.mock("@/backend/services/personal-investment-strategy.service", () => ({
 }));
 
 import { PortfolioService } from "@/backend/services/portfolio.service";
-import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 
 const position = (assetCode: string, totalValue: string) => ({
@@ -112,26 +111,10 @@ describe("PortfolioService.calculateContribution", () => {
         fiis: 0,
       },
     });
-    reserveService.getContributionContext.mockResolvedValue({
-      calculation: {
-        monthlyExpenses: null,
-        targetMonths: null,
-        selectedValue: 0,
-        selectedGroups: 0,
-        unvaluedGroups: 0,
-        missingSelectionCount: 0,
-        referenceDate: null,
-        targetValue: null,
-        coveredMonths: null,
-        difference: null,
-        progressPercentage: null,
-        status: "not_configured",
-      },
-      selectedAssetKeys: [],
-    });
+    reserveService.getContributionContext.mockResolvedValue(null);
   }
 
-  it("uses classified known positions and reserve settings for a separate first slice", async () => {
+  it("keeps the full portfolio in class totals while prioritizing the observed reserve balance", async () => {
     const reservePosition = position("RESERVE", "800");
     const longTermPosition = position("LONG-TERM", "100");
     const classified = [reservePosition, longTermPosition];
@@ -150,21 +133,16 @@ describe("PortfolioService.calculateContribution", () => {
     allocationService.classifyPositions.mockResolvedValue(classified);
     allocationService.getAllocationTargets.mockResolvedValue(targets);
     reserveService.getContributionContext.mockResolvedValue({
-      calculation: {
-        monthlyExpenses: 1000,
-        targetMonths: 1,
-        selectedValue: 800,
-        selectedGroups: 1,
-        unvaluedGroups: 0,
-        missingSelectionCount: 0,
-        referenceDate: "2026-01-01",
-        targetValue: 1000,
-        coveredMonths: 0.8,
-        difference: 200,
-        progressPercentage: 80,
-        status: "below_target",
-      },
-      selectedAssetKeys: [getEmergencyReserveAssetKey(reservePosition)],
+      monthlyExpenses: 1000,
+      targetMonths: 1,
+      balance: 800,
+      balanceCents: "80000",
+      referenceDate: "2026-01-01",
+      targetValue: 1000,
+      coveredMonths: 0.8,
+      difference: 200,
+      progressPercentage: 80,
+      status: "below_target",
     });
 
     const result = await new PortfolioService().calculateContribution(
@@ -176,20 +154,18 @@ describe("PortfolioService.calculateContribution", () => {
       status: "ready",
       reserveAmount: 200,
       remainingAmount: 100,
-      longTermPortfolioValue: 100,
+      longTermPortfolioValue: 900,
       strategySource: "user_defined",
     });
     expect(allocationService.classifyPositions).toHaveBeenCalledWith(
       classified,
       "r1",
     );
-    expect(reserveService.getContributionContext).toHaveBeenCalledWith(
-      classified,
-    );
+    expect(reserveService.getContributionContext).toHaveBeenCalledWith();
     expect(
       result.allocations.find((item) => item.assetClass === "Renda fixa")
         ?.currentValue,
-    ).toBe(100);
+    ).toBe(900);
   });
 
   it("uses the explicitly activated Strategy after the reserve slice", async () => {
@@ -211,23 +187,7 @@ describe("PortfolioService.calculateContribution", () => {
         fiis: 0,
       },
     });
-    reserveService.getContributionContext.mockResolvedValue({
-      calculation: {
-        monthlyExpenses: null,
-        targetMonths: null,
-        selectedValue: 0,
-        selectedGroups: 0,
-        unvaluedGroups: 0,
-        missingSelectionCount: 0,
-        referenceDate: null,
-        targetValue: null,
-        coveredMonths: null,
-        difference: null,
-        progressPercentage: null,
-        status: "not_configured",
-      },
-      selectedAssetKeys: [],
-    });
+    reserveService.getContributionContext.mockResolvedValue(null);
     strategyService.simulateContribution.mockResolvedValue(strategyPlan());
 
     const result = await new PortfolioService().calculateContribution(100);

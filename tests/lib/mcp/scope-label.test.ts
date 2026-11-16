@@ -5,9 +5,11 @@ describe("scopeLabel", () => {
   it("explains known MCP permissions and preserves unknown scopes", () => {
     expect(scopeLabel("mcp:read")).toBe("Consultar sua carteira e posições.");
     expect(scopeLabel("mcp:write")).toContain(
-      "Um saldo de hoje pode atualizar automaticamente vínculos de posições",
+      "Posições e saldos de objetivos são acompanhamentos independentes",
     );
-    expect(scopeLabel("mcp:write")).toContain("sem executar compras ou vendas");
+    expect(scopeLabel("mcp:write")).toContain(
+      "nenhuma compra ou venda é executada",
+    );
     expect(scopeLabel("mcp:admin:read")).toContain("somente para ADMIN");
     expect(scopeLabel("openid")).toBe(
       "Confirmar sua identidade para esta conexão.",

@@ -51,6 +51,8 @@ const getReserveNote = (reserve?: EmergencyReserveCalculation) => {
     return "A reserva ainda não está configurada; esta comparação não considera uma meta de reserva.";
   if (reserve.status === "expenses_required")
     return "A reserva precisa de um custo mensal válido para ser considerada.";
+  if (reserve.status === "balance_required")
+    return "Informe o saldo atual da reserva para comparar com sua meta.";
   return undefined;
 };
 export function getNextContributionGuidance({
@@ -59,17 +61,6 @@ export function getNextContributionGuidance({
   emergencyReserve,
 }: Input): ContributionGuidance {
   const reserveNote = getReserveNote(emergencyReserve);
-  if (
-    emergencyReserve?.status === "below_target" &&
-    (emergencyReserve.unvaluedGroups > 0 ||
-      (emergencyReserve.missingSelectionCount ?? 0) > 0)
-  )
-    return {
-      status: "reserve_incomplete",
-      title: "Revise os dados da reserva",
-      explanation:
-        "Há posições sem valor ou seleções que não correspondem à carteira atual. A diferença para a meta pode estar incompleta, então não indicamos um valor de aporte para a reserva.",
-    };
   if (
     emergencyReserve?.status === "below_target" &&
     emergencyReserve.difference !== null &&
@@ -204,9 +195,9 @@ export function getStrategyContributionGuidance({
   if (positionCount === 0)
     return {
       status: "needs_values",
-      title: "Atribua posições a Longo Prazo para orientar aportes",
+      title: "Importe sua carteira para orientar aportes",
       explanation:
-        "A Estratégia considera somente posições vinculadas a destinos classificados como investimento de longo prazo.",
+        "A comparação considera a carteira inteira e não presume a finalidade de cada posição.",
       reserveNote,
       allocationMode: "strategy",
     };
@@ -215,7 +206,7 @@ export function getStrategyContributionGuidance({
       status: "incomplete_data",
       title: "A comparação de Longo Prazo está incompleta",
       explanation:
-        "Há posições sem valor ou classe reconhecida. Revise os dados antes de usar a Estratégia para orientar aportes.",
+        "Há posições sem valor ou classe reconhecida. Revise os dados antes de comparar a carteira com a Estratégia.",
       reserveNote,
       allocationMode: "strategy",
     };
@@ -224,7 +215,7 @@ export function getStrategyContributionGuidance({
       status: "needs_targets",
       title: "Salve uma composição na Estratégia",
       explanation:
-        "A Estratégia ainda não tem uma composição salva para comparar com as posições de Longo Prazo.",
+        "A Estratégia ainda não tem uma composição salva para comparar com a carteira.",
       reserveNote,
       allocationMode: "strategy",
     };
@@ -242,7 +233,7 @@ export function getStrategyContributionGuidance({
       status: "no_gap",
       title: "Nenhuma classe está abaixo da composição escolhida",
       explanation:
-        "Com os valores atuais de Longo Prazo, nenhuma classe está abaixo do percentual registrado na Estratégia.",
+        "Com os valores atuais da carteira, nenhuma classe está abaixo do percentual registrado na Estratégia.",
       reserveNote,
       allocationMode: "strategy",
     };
@@ -259,7 +250,7 @@ export function getStrategyContributionGuidance({
   return {
     status: "target_gap",
     title: `Revise ${priority.label} no planejamento de aportes`,
-    explanation: `${priority.label} representa ${priority.currentPercentage.toFixed(1)}% das posições de Longo Prazo; a composição escolhida registra ${allocationPercentages[priority.id]!.toFixed(1)}%. A comparação não escolhe ativos nem movimenta investimentos.`,
+    explanation: `${priority.label} representa ${priority.currentPercentage.toFixed(1)}% da carteira; a composição escolhida registra ${allocationPercentages[priority.id]!.toFixed(1)}%. A comparação não escolhe ativos nem movimenta investimentos.`,
     assetClass: priority.label,
     currentPercentage: priority.currentPercentage,
     targetPercentage: allocationPercentages[priority.id],

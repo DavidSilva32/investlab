@@ -1,7 +1,6 @@
 import { isValidPortfolioAllocationTargets } from "@/lib/portfolio-allocation-target-values";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
-import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { allocateCentsByProportionalGap } from "@/lib/proportional-cent-allocation";
 import type { StrategyAssetClassId } from "@/lib/strategy-allocation";
 
@@ -57,7 +56,6 @@ type Input = {
   positions: ContributionPosition[];
   targets: unknown;
   reserve: EmergencyReserveCalculation;
-  selectedReserveAssetKeys: string[];
   strategySource?: "user_defined" | "system_calculated";
 };
 
@@ -76,8 +74,7 @@ export function calculateReservePriorityAmounts(
   reserve: EmergencyReserveCalculation,
 ): ReservePriorityAmounts {
   const contributionCents = Math.max(0, cents(contributionAmount));
-  const incompleteReserve =
-    reserve.unvaluedGroups > 0 || (reserve.missingSelectionCount ?? 0) > 0;
+  const incompleteReserve = reserve.status === "balance_required";
   const hasReserveTarget =
     reserve.targetValue !== null &&
     reserve.difference !== null &&
@@ -132,23 +129,19 @@ export function calculateContributionAllocation({
   positions,
   targets,
   reserve,
-  selectedReserveAssetKeys,
   strategySource = "user_defined",
 }: Input): ContributionAllocationResult {
   const priority = calculateReservePriorityAmounts(contributionAmount, reserve);
   const { contributionCents, reserveStatus } = priority;
   const reserveCents = priority.reserveCents ?? 0;
   const remainingCents = priority.remainingCents ?? 0;
-  const selectedKeys = new Set(selectedReserveAssetKeys);
-  const longTermPositions = positions.filter(
-    (position) => !selectedKeys.has(getEmergencyReserveAssetKey(position)),
-  );
+  const portfolioPositions = positions;
   const valued: Array<{
     assetClass: string;
     valueCents: number;
   }> = [];
   let unknownPositionCount = 0;
-  for (const position of longTermPositions) {
+  for (const position of portfolioPositions) {
     const value = getPositionValue(position);
     if (value === null || !isAssetClass(position.classification.assetClass)) {
       unknownPositionCount += 1;
@@ -181,7 +174,7 @@ export function calculateContributionAllocation({
   if (!isValidPortfolioAllocationTargets(targets))
     return { ...base, status: "needs_targets" };
   if (unknownPositionCount > 0) return { ...base, status: "incomplete_data" };
-  if (longTermPositions.length === 0)
+  if (portfolioPositions.length === 0)
     return { ...base, status: "no_positions" };
 
   const currentByClass = new Map<string, number>();

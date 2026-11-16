@@ -37,7 +37,6 @@ const saveBalanceSchema = z.object({
     .trim()
     .regex(/^\d+(?:\.\d+)?$/),
   observedOn: z.string().date(),
-  cdiPercentage: z.number().finite().positive().max(1000).nullable(),
   idempotencyKey: z.string().uuid(),
 });
 const deleteObjectiveSchema = z
@@ -117,7 +116,7 @@ export class McpPortfolioWriteToolsController {
       "write_update_objective",
       {
         description:
-          "Atualiza um objetivo da conta conectada. Envie nome, finalidade, meta, aporte mensal planejado, expectedUpdatedAt e idempotencyKey UUID; meta e aporte podem ser null. Reenviar a mesma chave e os mesmos dados retorna o resultado original. Não altera a Reserva nem seus vínculos.",
+          "Atualiza nome, finalidade, meta e aporte mensal planejado de um objetivo. O saldo e a data observados são gerenciados separadamente. Envie expectedUpdatedAt e idempotencyKey UUID; meta e aporte podem ser null. Reenviar a mesma chave e os mesmos dados retorna o resultado original.",
         inputSchema: updateObjectiveSchema,
         annotations: { readOnlyHint: false, openWorldHint: false },
       },
@@ -145,7 +144,7 @@ export class McpPortfolioWriteToolsController {
       "write_delete_objective",
       {
         description:
-          "Exclui permanentemente um objetivo pessoal ou de longo prazo, seus vínculos de posições e o histórico de saldo observado associado; os ativos da carteira permanecem e ficam sem esse destino. Nunca chame sem pedido explícito e direto do titular para excluir esse objetivo específico. Envie nome e ID exatos, expectedUpdatedAt, idempotencyKey UUID e confirmation no formato exigido. Reenviar a mesma chave e os mesmos dados retorna o recibo original. A frase de confirmação não prova interação humana.",
+          "Exclui permanentemente um objetivo pessoal ou de longo prazo e o histórico de saldo observado associado. Posições da carteira não são vinculadas a objetivos e permanecem inalteradas. Nunca chame sem pedido explícito e direto do titular para excluir esse objetivo específico. Envie nome e ID exatos, expectedUpdatedAt, idempotencyKey UUID e confirmation no formato exigido. Reenviar a mesma chave e os mesmos dados retorna o recibo original. A frase de confirmação não prova interação humana.",
         inputSchema: deleteObjectiveSchema,
         annotations: {
           readOnlyHint: false,
@@ -174,7 +173,7 @@ export class McpPortfolioWriteToolsController {
       "write_save_observed_balance",
       {
         description:
-          "Registra o saldo informado de um objetivo e tenta reconciliar automaticamente suas posições elegíveis quando a data é hoje. Para histórico, preserva os vínculos. Reenvie a mesma chave idempotencyKey somente com os mesmos dados para receber a resposta original; use uma nova chave para uma nova atualização. Não aceita identificação de usuário nem altera posições manualmente.",
+          "Registra somente o saldo informado e sua data. O objetivo acompanha esse saldo; as posições da carteira permanecem independentes. Reenvie a mesma chave idempotencyKey somente com os mesmos dados para receber a resposta original; use uma nova chave para uma nova atualização. Não aceita identificação de usuário nem altera posições.",
         inputSchema: saveBalanceSchema,
         annotations: { readOnlyHint: false, openWorldHint: false },
       },
@@ -186,7 +185,6 @@ export class McpPortfolioWriteToolsController {
               objectiveId: input.objectiveId,
               amount: input.amount,
               observedOn: input.observedOn,
-              cdiPercentage: input.cdiPercentage,
             },
             input.idempotencyKey,
             requestId,

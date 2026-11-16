@@ -226,7 +226,7 @@ describe("StrategyAllocationWorkspace", () => {
     expect(
       screen.getByRole("button", { name: "Editar composição" }),
     ).toBeTruthy();
-    expect(screen.getByText("Patrimônio de longo prazo")).toBeTruthy();
+    expect(screen.getByText("Patrimônio da carteira")).toBeTruthy();
     expect(screen.getByText("Distribuição atual")).toBeTruthy();
     expect(
       screen.getByTestId("next-contribution-stock-opportunities"),
@@ -444,7 +444,7 @@ describe("StrategyAllocationWorkspace", () => {
       }),
     );
     expect(
-      screen.getByText("Usando esta composição para posições de Longo Prazo."),
+      screen.getByText("Usando esta composição para a carteira inteira."),
     ).toBeTruthy();
     expect(toast.success).toHaveBeenCalled();
   });
@@ -537,11 +537,11 @@ describe("StrategyAllocationWorkspace", () => {
       "R$ 30,00",
     );
     expect(screen.getByText("Completar reserva")).toBeTruthy();
-    const remaining = screen.getByText("Restante para Longo Prazo");
+    const remaining = screen.getByText("Restante para a carteira");
     expect(
       remaining.parentElement?.textContent?.replace(/\u00a0/g, " "),
     ).toContain("R$ 70,00");
-    expect(screen.getByText("Distribuição do longo prazo")).toBeTruthy();
+    expect(screen.getByText("Distribuição da carteira")).toBeTruthy();
     expect(screen.queryByText("Distribuído por classe")).toBeNull();
   });
 
@@ -576,7 +576,7 @@ describe("StrategyAllocationWorkspace", () => {
       screen.getByRole("button", { name: "Simular aporte" }),
     );
 
-    const title = await screen.findByText("Distribuição do longo prazo");
+    const title = await screen.findByText("Distribuição da carteira");
     const cards = title.parentElement?.querySelectorAll("ul li");
     expect(cards).toHaveLength(4);
     expect(cards?.[0]?.getAttribute("style")).toContain(
@@ -660,7 +660,7 @@ describe("StrategyAllocationWorkspace", () => {
     );
 
     expect(await screen.findByText("Reserva completa")).toBeTruthy();
-    const remaining = screen.getByText("Restante para Longo Prazo");
+    const remaining = screen.getByText("Restante para a carteira");
     expect(
       remaining.parentElement?.textContent?.replace(/\u00a0/g, " "),
     ).toContain("R$ 100,00");
@@ -744,7 +744,7 @@ describe("StrategyAllocationWorkspace", () => {
     );
     openEditor();
     expect(
-      screen.getByText(/Parte do patrimônio de Longo Prazo está sem valor/),
+      screen.getByText(/Parte do patrimônio da carteira está sem valor/),
     ).toBeTruthy();
     expect(
       input("Fundos imobiliários (FIIs) planejada em porcentagem").value,

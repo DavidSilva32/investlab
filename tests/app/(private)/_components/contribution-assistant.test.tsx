@@ -38,9 +38,7 @@ describe("ContributionAssistant", () => {
       ),
     ).toBeTruthy();
     expect(
-      screen.getByText(
-        /A Estratégia orienta este planejamento usando somente posições destinadas a Longo Prazo/,
-      ),
+      screen.getByText(/A Estratégia compara a carteira inteira/),
     ).toBeTruthy();
     expect(screen.queryByText(/seus objetivos pessoais/)).toBeNull();
   });
@@ -183,7 +181,7 @@ describe("ContributionAssistant", () => {
       screen.getByRole("button", { name: "Por quê e detalhes do cálculo" }),
     );
     expect(
-      await screen.findByText(/Base de longo prazo considerada/),
+      await screen.findByText(/Base da carteira considerada/),
     ).toBeTruthy();
   });
 

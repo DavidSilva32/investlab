@@ -6,13 +6,11 @@ export default function StrategyLoading() {
     <AppShell title="Estratégia">
       <section
         role="status"
-        aria-label="Carregando as posições de Longo Prazo e os valores atuais…"
+        aria-label="Carregando a carteira e os valores atuais…"
         aria-busy="true"
         className="space-y-5"
       >
-        <p className="sr-only">
-          Carregando as posições de Longo Prazo e os valores atuais…
-        </p>
+        <p className="sr-only">Carregando a carteira e os valores atuais…</p>
         <div className="grid gap-5 rounded-xl border bg-card p-5 sm:p-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
           <div className="flex items-center gap-4">
             <Skeleton className="hidden size-14 rounded-xl sm:block" />

@@ -155,7 +155,7 @@ export function LongTermAllocationBreakdown({
             Composição atual do investimento de longo prazo
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Valores conhecidos por classe, sobre posições vinculadas.
+            Valores conhecidos por classe, sobre a carteira inteira.
           </p>
         </div>
         <Button

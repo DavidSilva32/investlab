@@ -27,10 +27,7 @@ const reserve = (
 ): EmergencyReserveCalculation => ({
   monthlyExpenses: 1000,
   targetMonths: 3,
-  selectedValue: 1000,
-  selectedGroups: 1,
-  unvaluedGroups: 0,
-  missingSelectionCount: 0,
+  balance: 1000,
   referenceDate: "2026-09-01",
   targetValue: 3000,
   coveredMonths: 1,
@@ -95,18 +92,6 @@ describe("getNextContributionGuidance", () => {
       }),
     ).toMatchObject({ status: "reserve_below_target" });
   });
-  it.each([
-    { unvaluedGroups: 1, missingSelectionCount: 0 },
-    { unvaluedGroups: 0, missingSelectionCount: 1 },
-  ])("does not overstate an incomplete reserve gap", (incomplete) =>
-    expect(
-      getNextContributionGuidance({
-        positions: [position("Renda fixa")],
-        targets,
-        emergencyReserve: reserve(incomplete),
-      }),
-    ).toMatchObject({ status: "reserve_incomplete" }),
-  );
   it("states when the reserve is not configured", () => {
     expect(
       getNextContributionGuidance({
@@ -137,6 +122,19 @@ describe("getNextContributionGuidance", () => {
         }),
       }).reserveNote,
     ).toContain("custo mensal válido");
+  });
+  it("asks for the observed reserve balance before comparing its target", () => {
+    expect(
+      getNextContributionGuidance({
+        positions: [position("Renda fixa")],
+        targets,
+        emergencyReserve: reserve({
+          status: "balance_required",
+          balance: null,
+          difference: null,
+        }),
+      }).reserveNote,
+    ).toContain("Informe o saldo atual da reserva");
   });
   it("requires imported positions and positive values", () => {
     expect(
@@ -311,7 +309,7 @@ describe("getStrategyContributionGuidance", () => {
     emergencyReserve: reserve({ status: "not_configured", difference: null }),
   };
 
-  it("keeps reserve priority and limits the comparison to complete long-term data", () => {
+  it("keeps reserve priority and compares the whole portfolio when data is complete", () => {
     expect(
       getStrategyContributionGuidance({
         ...input,
@@ -319,15 +317,6 @@ describe("getStrategyContributionGuidance", () => {
       }),
     ).toMatchObject({
       status: "reserve_below_target",
-      allocationMode: "strategy",
-    });
-    expect(
-      getStrategyContributionGuidance({
-        ...input,
-        emergencyReserve: reserve({ unvaluedGroups: 1 }),
-      }),
-    ).toMatchObject({
-      status: "reserve_incomplete",
       allocationMode: "strategy",
     });
     expect(

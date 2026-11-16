@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,16 +18,15 @@ type StrategyData = {
   valuationDate: string;
   valuationDates: string[];
   valuationDatesComplete: boolean;
-  longTermWealth: {
+  portfolioWealth: {
     knownValueCents: string;
     unvaluedPositionCount: number;
     positionCount: number;
-    assignedPositionCount: number;
+    positionsWithoutMaturityDate: number;
     unclassifiedKnownValueCents: string;
     unclassifiedPositionCount: number;
     classes: StrategyClassValue[];
   };
-  destinationsNeedingPurposeConfirmation: number;
   savedAllocationPercentages: StrategyAllocationPercentages | null;
   allocationActive: boolean;
 };
@@ -72,7 +70,7 @@ export function PersonalInvestmentStrategy() {
     return (
       <div
         role="status"
-        aria-label="Carregando as posições de Longo Prazo e os valores atuais…"
+        aria-label="Carregando a carteira e os valores atuais…"
         className="w-full space-y-5"
       >
         <Card>
@@ -152,84 +150,59 @@ export function PersonalInvestmentStrategy() {
 
   return (
     <div className="w-full space-y-5">
-      {data.destinationsNeedingPurposeConfirmation > 0 && (
-        <Alert>
-          <AlertTitle>
-            {data.destinationsNeedingPurposeConfirmation} destino(s) sem
-            finalidade definida
-          </AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-            <span>
-              Eles permanecem fora da Estratégia até você classificar sua
-              finalidade.
-            </span>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/carteira?panel=objectives">Revisar destinos</Link>
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
       {(data.valuationDates.length > 1 ||
-        data.longTermWealth.unvaluedPositionCount > 0 ||
-        data.longTermWealth.unclassifiedPositionCount > 0) && (
+        data.portfolioWealth.unvaluedPositionCount > 0 ||
+        data.portfolioWealth.unclassifiedPositionCount > 0) && (
         <Alert>
           <AlertTitle>Cobertura dos valores</AlertTitle>
           <AlertDescription>
             {data.valuationDates.length > 1 &&
               `As posições têm datas efetivas diferentes: ${data.valuationDates.map(formatDate).join(", ")}. `}
-            {data.longTermWealth.unvaluedPositionCount > 0 &&
-              `${data.longTermWealth.unvaluedPositionCount} posição(ões) não têm valor conhecido. `}
-            {BigInt(data.longTermWealth.unclassifiedKnownValueCents) > 0n
-              ? `${formatCurrencyCents(data.longTermWealth.unclassifiedKnownValueCents)} em posições sem classe identificada não se enquadram nos quatro grupos mostrados.`
-              : data.longTermWealth.unclassifiedPositionCount > 0
-                ? `${data.longTermWealth.unclassifiedPositionCount} posição(ões) não têm classe identificada.`
+            {data.portfolioWealth.unvaluedPositionCount > 0 &&
+              `${data.portfolioWealth.unvaluedPositionCount} posição(ões) não têm valor conhecido. `}
+            {BigInt(data.portfolioWealth.unclassifiedKnownValueCents) > 0n
+              ? `${formatCurrencyCents(data.portfolioWealth.unclassifiedKnownValueCents)} em posições sem classe identificada não se enquadram nos quatro grupos mostrados.`
+              : data.portfolioWealth.unclassifiedPositionCount > 0
+                ? `${data.portfolioWealth.unclassifiedPositionCount} posição(ões) não têm classe identificada.`
                 : null}
           </AlertDescription>
         </Alert>
       )}
 
-      {data.longTermWealth.positionCount === 0 ? (
+      {data.portfolioWealth.positionCount === 0 ? (
         <div className="space-y-4">
           <Card>
             <CardContent className="pt-6">
               <h2 className="text-sm font-medium text-muted-foreground">
-                Patrimônio de longo prazo
+                Patrimônio da carteira
               </h2>
               <p className="mt-1 text-3xl font-bold tracking-tight text-primary tabular-nums sm:text-4xl">
-                {formatCurrencyCents(data.longTermWealth.knownValueCents)}
+                {formatCurrencyCents(data.portfolioWealth.knownValueCents)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Total investido em ativos de longo prazo ·{" "}
+                Total das posições da carteira ·{" "}
                 {formatDate(data.valuationDate)}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              Nenhuma posição está atribuída a um destino de longo prazo.
-              <div className="mt-3">
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/carteira?panel=objectives">
-                    Organizar destinos
-                  </Link>
-                </Button>
-              </div>
+              Nenhuma posição está disponível na carteira para analisar.
             </CardContent>
           </Card>
         </div>
       ) : (
         <StrategyAllocationWorkspace
-          classes={data.longTermWealth.classes}
-          knownValueCents={data.longTermWealth.knownValueCents}
+          classes={data.portfolioWealth.classes}
+          knownValueCents={data.portfolioWealth.knownValueCents}
           valuationDate={data.valuationDate}
           valuationDates={data.valuationDates}
           valuationDatesComplete={data.valuationDatesComplete}
-          positionCount={data.longTermWealth.positionCount}
+          positionCount={data.portfolioWealth.positionCount}
           unclassifiedKnownValueCents={
-            data.longTermWealth.unclassifiedKnownValueCents
+            data.portfolioWealth.unclassifiedKnownValueCents
           }
-          unvaluedPositionCount={data.longTermWealth.unvaluedPositionCount}
+          unvaluedPositionCount={data.portfolioWealth.unvaluedPositionCount}
           savedAllocationPercentages={data.savedAllocationPercentages}
           allocationActive={data.allocationActive}
           onSaved={(allocationPercentages) =>

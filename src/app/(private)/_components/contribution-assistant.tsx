@@ -150,7 +150,7 @@ export function ContributionAssistant({
           <p className="text-xs text-muted-foreground">
             {result?.allocationMode === "strategy" ||
             allocationMode === "strategy"
-              ? "A Estratégia orienta este planejamento usando somente posições destinadas a Longo Prazo. Reserva e objetivos pessoais ficam fora."
+              ? "A Estratégia compara a carteira inteira. O saldo informado da Reserva orienta a prioridade de aporte, sem vincular ativos a objetivos."
               : allocationMode === "unavailable"
                 ? "Não foi possível verificar qual composição orienta os aportes. Atualize a Carteira antes de tomar uma decisão."
                 : "Até você ativar a Estratégia, esta simulação continua usando as metas pessoais legadas já salvas."}
@@ -491,13 +491,13 @@ export function ContributionAssistant({
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-3 space-y-2 rounded-lg bg-muted/50 p-4 text-muted-foreground">
                   <p>
-                    A alocação compara valores por classe com as metas completas
-                    definidas por você. Posições selecionadas para a reserva são
-                    excluídas do valor e do denominador de longo prazo.
+                    A simulação compara a carteira inteira com as metas por
+                    classe definidas por você. Objetivos usam saldos informados
+                    separadamente e não excluem posições do cálculo.
                   </p>
                   {result.longTermPortfolioValue !== null && (
                     <p>
-                      Base de longo prazo considerada:{" "}
+                      Base da carteira considerada:{" "}
                       {formatCurrency(result.longTermPortfolioValue)}.
                     </p>
                   )}
@@ -513,19 +513,18 @@ export function ContributionAssistant({
                     </p>
                   ))}
                   <p>
-                    A reserva é um destino separado da classe do ativo. O valor
-                    destinado segue sua meta pessoal configurada; não é uma
-                    recomendação universal. O cálculo usa valores conhecidos e
-                    não escolhe instrumentos.
+                    O saldo informado da reserva pode priorizar parte do aporte
+                    até a meta pessoal que você configurou. O cálculo não
+                    vincula ativos à reserva nem escolhe instrumentos.
                   </p>
                   <p>
-                    A seleção da reserva é a única separação de destino nesta
-                    versão. Outros destinos pessoais ainda não são separados e
-                    permanecem na carteira considerada.
+                    Esta é uma simulação da carteira inteira. Os saldos dos
+                    objetivos são acompanhamentos informados e não vinculam nem
+                    excluem posições do cálculo.
                   </p>
                   <p>
-                    As barras “Após” consideram a carteira de longo prazo mais
-                    todo o restante do aporte. Valores sem classe direcionada
+                    As barras “Após” consideram a carteira inteira mais todo o
+                    restante do aporte. Valores sem classe direcionada
                     permanecem identificados à parte.
                   </p>
                 </CollapsibleContent>

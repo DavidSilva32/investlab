@@ -1,347 +1,80 @@
 // @vitest-environment jsdom
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PortfolioObjectivesOverview } from "@/app/(private)/portfolio/_components/portfolio-objectives-overview";
-import { destinationChartConfig } from "@/lib/portfolio-destination-chart";
 import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
-import { reserveObjectiveId } from "@/lib/portfolio-objectives";
-
-vi.mock("@/components/ui/chart", () => ({
-  ChartContainer: ({
-    children,
-    config,
-    ...props
-  }: React.PropsWithChildren<Record<string, unknown>>) => (
-    <div
-      {...props}
-      data-chart-colors={Object.values(
-        config as Record<string, { color: string }>,
-      )
-        .map((item) => item.color)
-        .join("|")}
-    >
-      {children}
-    </div>
-  ),
-  ChartTooltip: ({ content }: { content: React.ReactNode }) => <>{content}</>,
-  ChartTooltipContent: ({
-    formatter,
-  }: {
-    formatter: (value: number) => string;
-  }) => <span data-testid="chart-tooltip-value">{formatter(250)}</span>,
-}));
-vi.mock("recharts", () => ({
-  Cell: ({ fill }: { fill: string }) => (
-    <span data-testid="chart-cell" data-fill={fill} />
-  ),
-  Pie: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  PieChart: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-}));
 
 const objectives: PortfolioObjective[] = [
   {
-    id: reserveObjectiveId,
-    kind: "RESERVE",
-    name: "Reserva",
-    targetAmount: 1000,
-    monthlyPlannedAmount: null,
-    currentValue: 200,
-    knownValue: 250,
-    remainingAmount: 800,
-    progressPercent: 20,
-    assignedPositionCount: 2,
-    missingPositionCount: 1,
-    unvaluedPositionCount: 1,
-    assignedAssetKeys: [],
-    canEditAssignments: false,
+    id: "goal-1",
+    kind: "CUSTOM",
+    purpose: "PERSONAL_GOAL",
+    name: "Viagem",
+    targetAmount: 16000,
+    monthlyPlannedAmount: 2000,
+    currentValue: 14200.99,
+    remainingAmount: 1799.01,
+    progressPercent: 88.75,
+    balanceTracking: {
+      observedAmountCents: "1420099",
+      observedOn: "2026-11-14",
+    },
   },
   {
-    id: "trip",
+    id: "goal-2",
     kind: "CUSTOM",
-    name: "Viagem",
-    targetAmount: 2000,
+    purpose: "PERSONAL_GOAL",
+    name: "Casa",
+    targetAmount: null,
     monthlyPlannedAmount: null,
-    currentValue: 300,
-    knownValue: 300,
-    remainingAmount: 1700,
-    progressPercent: 15,
-    assignedPositionCount: 1,
-    missingPositionCount: 0,
-    unvaluedPositionCount: 0,
-    assignedAssetKeys: [],
-    canEditAssignments: true,
+    currentValue: null,
+    remainingAmount: null,
+    progressPercent: null,
   },
 ];
 
+function renderOverview(input: { objectives?: PortfolioObjective[] } = {}) {
+  const onOpen = vi.fn();
+  const onCreate = vi.fn();
+  render(
+    <PortfolioObjectivesOverview
+      data={{ objectives: input.objectives ?? objectives }}
+      deleting={false}
+      deleteObjectiveId={null}
+      onOpen={onOpen}
+      onEdit={vi.fn()}
+      onDeleteOpenChange={vi.fn()}
+      onDelete={vi.fn()}
+      onCreate={onCreate}
+    />,
+  );
+  return { onOpen, onCreate };
+}
+
 describe("PortfolioObjectivesOverview", () => {
-  it("uses dedicated semantic color tokens for each destination", () => {
-    expect(
-      Object.fromEntries(
-        Object.entries(destinationChartConfig).map(([key, value]) => [
-          key,
-          value.color,
-        ]),
-      ),
-    ).toEqual({
-      reserve: "var(--destination-reserve)",
-      personal: "var(--destination-personal)",
-      long_term: "var(--destination-long-term)",
-      purpose_unknown: "var(--destination-purpose-unknown)",
-      unassigned: "var(--destination-unassigned)",
-    });
-  });
   afterEach(cleanup);
 
-  it("shows the known partial distribution, missing data and accessible objective actions", () => {
-    const onCreate = vi.fn();
-    const onOpen = vi.fn();
-    const { container } = render(
-      <PortfolioObjectivesOverview
-        data={{
-          objectives,
-          positions: [],
-          destinationSummary: {
-            categories: [
-              { key: "reserve", value: 250, percentage: 25 },
-              { key: "personal", value: 300, percentage: 30 },
-              { key: "long_term", value: 0, percentage: 0 },
-              { key: "purpose_unknown", value: 50, percentage: 5 },
-              { key: "unassigned", value: 400, percentage: 40 },
-            ],
-            knownTotal: 1000,
-            missingPositionCount: 1,
-            unvaluedPositionCount: 3,
-          },
-          unassignedKnownValue: 450,
-          unassignedPositionCount: 3,
-          unassignedUnvaluedPositionCount: 2,
-        }}
-        deleting={false}
-        deleteObjectiveId={null}
-        onOpen={onOpen}
-        onEdit={vi.fn()}
-        onDeleteOpenChange={vi.fn()}
-        onDelete={vi.fn()}
-        onCreate={onCreate}
-      />,
-    );
+  it("shows each observed balance and an explicit missing-balance state", () => {
+    renderOverview();
+    expect(screen.getByText("R$ 14.200,99")).toBeTruthy();
+    expect(screen.getByText("Saldo não informado")).toBeTruthy();
+    expect(
+      screen.getByText(/A carteira B3 é calculada separadamente/u),
+    ).toBeTruthy();
+  });
 
-    expect(screen.getByText("Valores conhecidos · parcial")).toBeTruthy();
-    expect(screen.getByText("Posições por objetivo")).toBeTruthy();
-    expect(
-      screen.getByRole("heading", { name: "Comparar objetivos" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Compare valor atual, meta e quanto falta/u),
-    ).toBeTruthy();
-    expect(screen.getByText("Posições vinculadas à Reserva")).toBeTruthy();
-    expect(
-      screen.getByText(/A meta da Reserva usa o saldo informado/u),
-    ).toBeTruthy();
-    expect(container.querySelector("[class*='xl:grid-cols-3']")).toBeNull();
-    expect(container.innerHTML).toMatch(
-      /<span class="text-sm font-semibold text-primary tabular-nums">R\$/,
-    );
-    expect(screen.getAllByText(/R\$\s*1\.000,00/)).toHaveLength(2);
-    const chart = screen.getByRole("img", {
-      name: "Gráfico de rosca dos valores conhecidos por objetivo",
-    });
-    expect(chart.getAttribute("data-chart-colors")).toBe(
-      "var(--destination-reserve)|var(--destination-personal)|var(--destination-long-term)|var(--destination-purpose-unknown)|var(--destination-unassigned)",
-    );
-    expect(
-      screen
-        .getAllByTestId("chart-cell")
-        .map((cell) => cell.getAttribute("data-fill")),
-    ).toEqual([
-      "var(--color-reserve)",
-      "var(--color-personal)",
-      "var(--color-purpose_unknown)",
-      "var(--color-unassigned)",
-    ]);
-    expect(screen.getByTestId("chart-tooltip-value").textContent).toBe(
-      "R$ 250,00",
-    );
-    const distribution = within(
-      screen.getByRole("list", { name: "Valores e proporções por objetivo" }),
-    );
-    const distributionRows = distribution.getAllByRole("listitem");
-    expect(distributionRows[0].textContent).toContain("25");
-    expect(distributionRows[0].textContent).toContain("%");
-    expect(distributionRows).toHaveLength(4);
-    expect(distributionRows[2].textContent).toContain(
-      "Finalidade não definida",
-    );
-    expect(distributionRows[2].textContent).toContain("5");
-    expect(distributionRows[3].textContent).toContain("40");
-    expect(distributionRows[3].textContent).toContain("%");
-    expect(distribution.queryByText("Investimento de longo prazo")).toBeNull();
-    fireEvent.click(
-      screen.getByRole("button", { name: /Como ler estes valores/ }),
-    );
-    expect(screen.getByText(/1 vínculo\(s\) não encontrados/)).toBeTruthy();
-    expect(
-      screen.getByText(/3 posição\(ões\) sem valor conhecido/),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("img", {
-        name: "Gráfico de rosca dos valores conhecidos por objetivo",
-      }),
-    ).toBeTruthy();
-
+  it("opens the selected objective and starts objective creation", () => {
+    const { onOpen, onCreate } = renderOverview();
     fireEvent.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
-    expect(onOpen).toHaveBeenCalledWith(objectives[1]);
+    expect(onOpen).toHaveBeenCalledWith(objectives[0]);
     fireEvent.click(screen.getByRole("button", { name: "Novo objetivo" }));
     expect(onCreate).toHaveBeenCalledOnce();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Organizar objetivos" }),
-    );
   });
 
-  it("shows an empty chart state when all known category values are zero", () => {
-    render(
-      <PortfolioObjectivesOverview
-        data={{
-          objectives: [],
-          positions: [],
-          destinationSummary: {
-            categories: [
-              { key: "reserve", value: 0, percentage: 0 },
-              { key: "personal", value: 0, percentage: 0 },
-              { key: "long_term", value: 0, percentage: 0 },
-              { key: "purpose_unknown", value: 0, percentage: 0 },
-              { key: "unassigned", value: 0, percentage: 0 },
-            ],
-            knownTotal: 0,
-            missingPositionCount: 0,
-            unvaluedPositionCount: 1,
-          },
-          unassignedKnownValue: 0,
-          unassignedPositionCount: 1,
-          unassignedUnvaluedPositionCount: 1,
-        }}
-        deleting={false}
-        deleteObjectiveId={null}
-        onOpen={vi.fn()}
-        onEdit={vi.fn()}
-        onDeleteOpenChange={vi.fn()}
-        onDelete={vi.fn()}
-        onCreate={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByRole("img", {
-        name: "Sem valores conhecidos para compor o gráfico",
-      }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Nenhum objetivo pessoal cadastrado. Você pode começar por uma meta que já tenha em mente.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("shows the long-term class allocation directly in the objectives overview", () => {
-    const longTermObjective: PortfolioObjective = {
-      ...objectives[1]!,
-      id: "long-term",
-      name: "Investimento de longo prazo",
-      purpose: "LONG_TERM_INVESTMENT",
-    };
-    const secondLongTermObjective: PortfolioObjective = {
-      ...longTermObjective,
-      id: "long-term-2",
-      name: "Aposentadoria",
-    };
-    render(
-      <PortfolioObjectivesOverview
-        data={{
-          objectives: [longTermObjective, secondLongTermObjective],
-          positions: [
-            {
-              assetKey: "etf-global",
-              product: "ETF de índice",
-              assetCode: "VT",
-              institution: null,
-              assetClass: "Renda variável",
-              geography: "Exterior",
-              positionCount: 1,
-              value: 12486,
-              valueCents: "1248600",
-              knownValueCents: "1248600",
-              referenceDate: "2026-10-01",
-              unvaluedPositions: 0,
-              objectiveId: "long-term",
-              objectiveName: "Investimento de longo prazo",
-              objectivePurpose: "LONG_TERM_INVESTMENT",
-            },
-            {
-              assetKey: "cdb-long-term",
-              product: "CDB",
-              assetCode: "CDB1",
-              institution: null,
-              assetClass: "Renda fixa",
-              geography: "Brasil",
-              positionCount: 1,
-              value: 3000,
-              valueCents: "300000",
-              knownValueCents: "300000",
-              referenceDate: "2026-10-01",
-              unvaluedPositions: 0,
-              objectiveId: "long-term-2",
-              objectiveName: "Aposentadoria",
-              objectivePurpose: "LONG_TERM_INVESTMENT",
-            },
-          ],
-          destinationSummary: {
-            categories: [
-              { key: "reserve", value: 0, percentage: 0 },
-              { key: "personal", value: 0, percentage: 0 },
-              { key: "long_term", value: 15486, percentage: 100 },
-              { key: "purpose_unknown", value: 0, percentage: 0 },
-              { key: "unassigned", value: 0, percentage: 0 },
-            ],
-            knownTotal: 15486,
-            missingPositionCount: 0,
-            unvaluedPositionCount: 0,
-          },
-          unassignedKnownValue: 0,
-          unassignedPositionCount: 0,
-          unassignedUnvaluedPositionCount: 0,
-        }}
-        deleting={false}
-        deleteObjectiveId={null}
-        onOpen={vi.fn()}
-        onEdit={vi.fn()}
-        onDeleteOpenChange={vi.fn()}
-        onDelete={vi.fn()}
-        onCreate={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText("Composição atual do investimento de longo prazo"),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByRole("heading", { name: "Comparar objetivos" })
-        .compareDocumentPosition(
-          screen.getByText("Composição atual do investimento de longo prazo"),
-        ) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(screen.getByText("ETFs internacionais")).toBeTruthy();
-    expect(screen.getByText("Renda fixa")).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: "Comparar com a estratégia" }),
-    ).toBeTruthy();
+  it("shows the empty state when no objectives exist", () => {
+    renderOverview({ objectives: [] });
+    expect(screen.getByText(/Ainda não há objetivos/u)).toBeTruthy();
   });
 });

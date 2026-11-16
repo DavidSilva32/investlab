@@ -13,9 +13,7 @@ import {
 const emptyReserve: EmergencyReserveCalculation = {
   monthlyExpenses: 1000,
   targetMonths: 3,
-  selectedValue: 2000,
-  selectedGroups: 1,
-  unvaluedGroups: 0,
+  balance: 2000,
   referenceDate: "2026-09-01",
   targetValue: 3000,
   coveredMonths: 2,
@@ -120,7 +118,6 @@ describe("DashboardObservations", () => {
       ],
       {
         ...emptyReserve,
-        unvaluedGroups: 1,
       },
     );
     expect(html).toContain("Maior posição");

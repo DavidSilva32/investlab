@@ -213,7 +213,6 @@ describe("McpPortfolioWriteToolsController", () => {
       objectiveId: "a2cb9250-387c-4699-8a2b-06f9d1a9b062",
       amount: "56042.48",
       observedOn: "2026-11-14",
-      cdiPercentage: null,
       idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7",
       userId: "untrusted-owner",
     };
@@ -233,7 +232,6 @@ describe("McpPortfolioWriteToolsController", () => {
         objectiveId: input.objectiveId,
         amount: input.amount,
         observedOn: input.observedOn,
-        cdiPercentage: null,
       },
       input.idempotencyKey,
       "request-1",
@@ -350,7 +348,6 @@ describe("McpPortfolioWriteToolsController", () => {
       objectiveId: "a2cb9250-387c-4699-8a2b-06f9d1a9b062",
       amount: "56042.48",
       observedOn: "2026-11-14",
-      cdiPercentage: null,
       expectedUpdatedAt: "2026-11-14T15:00:00.000Z",
       idempotencyKey: "f1d92f3e-9168-493f-905b-30726d292aa7",
       confirmation:

@@ -1,7 +1,6 @@
 "use client";
 
-import type { DashboardDestinationSummary } from "@/app/(private)/_components/dashboard-destinations-overview";
-import type { DashboardDestinationPosition } from "@/app/(private)/_components/dashboard-destinations-overview";
+import type { DashboardObjective } from "@/app/(private)/_components/dashboard-destinations-overview";
 import { DashboardSummary } from "@/app/(private)/_components/dashboard-summary";
 import { DashboardLearningEntry } from "@/app/(private)/_components/dashboard-learning-entry";
 import { DashboardFinancesCard } from "@/app/(private)/_components/dashboard-finances-card";
@@ -48,17 +47,7 @@ export function DashboardClient({
     "Não foi possível carregar o dashboard.",
   );
   const objectivesQuery = usePortfolioObjectives<{
-    destinationSummary?: DashboardDestinationSummary;
-    positions?: DashboardDestinationPosition[];
-    objectives?: Array<{
-      kind?: string;
-      purpose?: string | null;
-      missingPositionCount?: number;
-      balanceTracking?: {
-        observedAmountCents: string;
-        observedOn: string;
-      } | null;
-    }>;
+    objectives?: DashboardObjective[];
   }>();
   const overview = overviewQuery.data;
 
@@ -151,26 +140,11 @@ export function DashboardClient({
         supportReadOnly={supportView === true}
         supportChecking={supportView === null}
         supportCheckError={supportCheckError}
-        destinationSummary={objectivesQuery.data?.destinationSummary}
-        destinationPositions={objectivesQuery.data?.positions}
+        objectives={objectivesQuery.data?.objectives}
         reserveObservation={
           objectivesQuery.data?.objectives?.find(
             (objective) => objective.kind === "RESERVE",
           )?.balanceTracking
-        }
-        longTermMissingPositionCount={
-          objectivesQuery.data?.objectives
-            ?.filter(
-              (objective) => objective.purpose === "LONG_TERM_INVESTMENT",
-            )
-            .reduce(
-              (total, objective) =>
-                total + (objective.missingPositionCount ?? 0),
-              0,
-            ) ?? 0
-        }
-        configuredObjectivesCount={
-          objectivesQuery.data?.objectives?.length ?? 0
         }
         destinationsLoading={objectivesQuery.isPending}
         destinationsUnavailable={objectivesQuery.isError}

@@ -27,21 +27,18 @@ function formatDisplayDate(value: string) {
 type Props = {
   objective: PortfolioObjective;
   onEdit: () => void;
-  onManagePositions: () => void;
   onConfigureReserve: () => void;
   balanceSaving?: boolean;
   onSaveBalance?: (input: {
     objectiveId: string;
     amount: string;
     observedOn: string;
-    cdiPercentage: string | null;
   }) => void;
 };
 
 export function PortfolioObjectiveDetail({
   objective,
   onEdit,
-  onManagePositions,
   onConfigureReserve,
   balanceSaving = false,
   onSaveBalance = () => {},
@@ -77,32 +74,22 @@ export function PortfolioObjectiveDetail({
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {isReserve
-                    ? "O saldo total informado acompanha a meta da Reserva; as posições da carteira continuam no patrimônio por destino."
-                    : objective.purpose === "LONG_TERM_INVESTMENT"
-                      ? "Ativos da carteira separados pela sua estratégia de longo prazo."
-                      : "Valor calculado pelas posições inteiras vinculadas a este objetivo."}
+                    ? "Acompanhe o saldo total da Reserva informado no banco."
+                    : objective.balanceTracking
+                      ? "Acompanhe o saldo informado para este objetivo. Ele não altera os valores da carteira."
+                      : "Informe o saldo atual para acompanhar o progresso deste objetivo."}
                 </p>
               </div>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end">
-              {isReserve ? null : (
-                <>
-                  <Button
-                    className="w-full sm:w-auto"
-                    type="button"
-                    variant="outline"
-                    onClick={onManagePositions}
-                  >
-                    Gerenciar posições
-                  </Button>
-                  <Button
-                    className="w-full sm:w-auto"
-                    type="button"
-                    onClick={onEdit}
-                  >
-                    Editar objetivo
-                  </Button>
-                </>
+              {!isReserve && (
+                <Button
+                  className="w-full sm:w-auto"
+                  type="button"
+                  onClick={onEdit}
+                >
+                  Editar objetivo
+                </Button>
               )}
             </div>
           </div>
@@ -111,24 +98,21 @@ export function PortfolioObjectiveDetail({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <p className="text-xs text-muted-foreground">
-                {isReserve && objective.balanceTracking
-                  ? "Saldo atual da Reserva"
-                  : "Valor conhecido"}
+                {objective.balanceTracking
+                  ? isReserve
+                    ? "Saldo atual da Reserva"
+                    : "Saldo informado"
+                  : "Saldo informado"}
               </p>
               <p className="text-xl font-semibold tabular-nums">
                 {objective.currentValue === null
-                  ? "Indisponível"
+                  ? "Saldo não informado"
                   : formatCurrency(objective.currentValue)}
               </p>
-              {isReserve && objective.balanceTracking && (
+              {objective.balanceTracking && (
                 <p className="text-xs text-muted-foreground">
                   Informado em{" "}
                   {formatDisplayDate(objective.balanceTracking.observedOn)}
-                </p>
-              )}
-              {objective.currentValue === null && objective.knownValue > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Subtotal conhecido: {formatCurrency(objective.knownValue)}
                 </p>
               )}
             </div>
@@ -145,8 +129,7 @@ export function PortfolioObjectiveDetail({
               </p>
               {!isReserve && objective.targetAmount === null && (
                 <p className="text-xs text-muted-foreground">
-                  Acompanha o valor destinado, sem cálculo de progresso ou
-                  falta.
+                  Acompanha o saldo informado, sem cálculo de progresso ou meta.
                 </p>
               )}
               {objective.remainingAmount !== null && (
@@ -174,18 +157,6 @@ export function PortfolioObjectiveDetail({
                 {Math.round(objective.progressPercent)}% da meta
               </p>
             </div>
-          )}
-          {(objective.missingPositionCount > 0 ||
-            objective.unvaluedPositionCount > 0) && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {objective.missingPositionCount > 0 &&
-                objective.missingPositionCount +
-                  " vínculo(s) sem correspondência na carteira atual. "}
-              {objective.unvaluedPositionCount > 0 &&
-                objective.unvaluedPositionCount +
-                  " posição(ões) sem valor conhecido. "}
-              O progresso fica indisponível até os dados serem atualizados.
-            </p>
           )}
           {objective.monthlyPlannedAmount !== null && (
             <p className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
@@ -232,14 +203,6 @@ export function PortfolioObjectiveDetail({
               onClick={onConfigureReserve}
             >
               Editar despesas e meta
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={onManagePositions}
-            >
-              Ajustar posições manualmente
             </Button>
           </CollapsibleContent>
         </Collapsible>

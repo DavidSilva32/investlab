@@ -20,9 +20,7 @@ function input(
 const reserve = calculateEmergencyReserve({
   monthlyExpenses: 1000,
   targetMonths: 6,
-  selectedValue: 0,
-  selectedGroups: 0,
-  unvaluedGroups: 0,
+  balance: 0,
   referenceDate: "2000-01-01",
 });
 const guidance = {
@@ -95,7 +93,12 @@ describe("getPortfolioDiagnostics", () => {
         ...getPortfolioConcentration([], "assetClass"),
         unclassifiedPositions: 2,
       },
-      emergencyReserve: { ...reserve, missingSelectionCount: 1 },
+      emergencyReserve: {
+        ...reserve,
+        balance: null,
+        difference: null,
+        status: "balance_required",
+      },
       nextContributionGuidance: guidance,
     });
     const original = structuredClone(data);
@@ -164,20 +167,21 @@ describe("getPortfolioDiagnostics", () => {
     );
   });
 
-  it("only shows reserve coverage limitations proven by its canonical summary", () => {
+  it("asks for a balance only when no reserve observation exists", () => {
     expect(
       getPortfolioDiagnostics(
-        input({ emergencyReserve: { ...reserve, unvaluedGroups: 1 } }),
+        input({
+          emergencyReserve: {
+            ...reserve,
+            balance: null,
+            difference: null,
+            status: "balance_required",
+          },
+        }),
       ),
     ).toMatchObject([{ id: "reserve" }]);
-    const { missingSelectionCount: _missing, ...withoutOptionalCount } = {
-      ...reserve,
-      missingSelectionCount: 0,
-    };
     expect(
-      getPortfolioDiagnostics(
-        input({ emergencyReserve: withoutOptionalCount }),
-      ),
+      getPortfolioDiagnostics(input({ emergencyReserve: reserve })),
     ).toEqual([]);
   });
 

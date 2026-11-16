@@ -1,11 +1,18 @@
-import type { ObjectivePosition } from "@/app/(private)/portfolio/_components/portfolio-objective-assignment";
-import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
-import {
-  centsToNumber,
-  decimalToCents,
-  sumMoneyCents,
-} from "@/lib/portfolio-money";
-import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import { centsToNumber } from "@/lib/portfolio-money";
+
+type ProjectionPosition = {
+  value?: number | null;
+  unvaluedPositions?: number;
+  referenceDate: string | null;
+  estimatedThrough?: string | null;
+};
+
+type ObjectiveObservedBalance = {
+  balanceTracking?: {
+    observedAmountCents: string;
+    observedOn: string;
+  } | null;
+} | null;
 
 export type DatedProjectionBalance = {
   amount: number;
@@ -14,50 +21,8 @@ export type DatedProjectionBalance = {
   completeness: "complete" | "partial";
 };
 
-function completeDatedBalance(
-  positions: ObjectivePosition[],
-  amount: number | null,
-  missingPositionCount: number,
-  unvaluedPositionCount: number,
-  source: DatedProjectionBalance["source"],
-): DatedProjectionBalance | null {
-  if (
-    amount === null ||
-    positions.length === 0 ||
-    missingPositionCount > 0 ||
-    unvaluedPositionCount > 0 ||
-    positions.some(
-      (position) =>
-        position.value === null ||
-        !(position.estimatedThrough ?? position.referenceDate),
-    )
-  ) {
-    return null;
-  }
-  const referenceDates = new Set(
-    positions
-      .map((position) => position.estimatedThrough ?? position.referenceDate)
-      .filter((date): date is string => Boolean(date)),
-  );
-  if (referenceDates.size !== 1) return null;
-  const referenceDate = [...referenceDates][0]!;
-  const parsedDate = new Date(`${referenceDate}T00:00:00Z`);
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(referenceDate) ||
-    Number.isNaN(parsedDate.getTime()) ||
-    parsedDate.toISOString().slice(0, 10) !== referenceDate
-  ) {
-    return null;
-  }
-  return { amount, referenceDate, source, completeness: "complete" };
-}
-
 export function resolvePortfolioProjectionBalance(
-  positions: Array<
-    Pick<ObjectivePosition, "referenceDate" | "estimatedThrough"> &
-      Partial<Pick<ObjectivePosition, "value" | "unvaluedPositions">>
-  >,
-  objectives: PortfolioObjective[],
+  positions: ProjectionPosition[],
   summary?: {
     knownTotal: number;
     missingPositionCount: number;
@@ -66,12 +31,7 @@ export function resolvePortfolioProjectionBalance(
   },
   knownTotal?: number,
 ): DatedProjectionBalance | null {
-  const missingPositionCount =
-    summary?.missingPositionCount ??
-    objectives.reduce(
-      (total, objective) => total + objective.missingPositionCount,
-      0,
-    );
+  const missingPositionCount = summary?.missingPositionCount ?? 0;
   const unvaluedPositionCount =
     summary?.unvaluedPositionCount ??
     positions.reduce(
@@ -119,52 +79,20 @@ export function resolvePortfolioProjectionBalance(
 }
 
 export function resolveObjectiveProjectionBalance(
-  objective: PortfolioObjective | null,
-  positions: ObjectivePosition[],
+  objective: ObjectiveObservedBalance,
 ): DatedProjectionBalance | null {
-  if (
-    !objective ||
-    objective.kind === "RESERVE" ||
-    objective.id === reserveObjectiveId
-  ) {
+  const observedBalance = objective?.balanceTracking;
+  if (!observedBalance || !/^\d+$/.test(observedBalance.observedAmountCents)) {
     return null;
   }
-  const assignedPositions = positions.filter((position) =>
-    objective.assignedAssetKeys.includes(position.assetKey),
-  );
-  if (assignedPositions.length === 0) return null;
-
-  const completeBalance = completeDatedBalance(
-    assignedPositions,
-    objective.currentValue,
-    objective.missingPositionCount,
-    objective.unvaluedPositionCount,
-    "objective",
-  );
-  if (completeBalance) return completeBalance;
-
-  const knownAmount = centsToNumber(
-    sumMoneyCents(
-      assignedPositions.map((position) => {
-        const knownCents = position.knownValueCents ?? position.valueCents;
-        return knownCents && /^-?\d+$/.test(knownCents)
-          ? BigInt(knownCents)
-          : decimalToCents(position.value);
-      }),
-    ),
-  );
-  if (
-    knownAmount === null ||
-    !Number.isFinite(knownAmount) ||
-    !(knownAmount > 0)
-  )
-    return null;
-
+  const amount = centsToNumber(BigInt(observedBalance.observedAmountCents));
+  if (amount === null || !Number.isFinite(amount) || amount < 0) return null;
+  const isDateValid = isValidDate(observedBalance.observedOn);
   return {
-    amount: knownAmount,
-    referenceDate: null,
+    amount,
+    referenceDate: isDateValid ? observedBalance.observedOn : null,
     source: "objective",
-    completeness: "partial",
+    completeness: isDateValid ? "complete" : "partial",
   };
 }
 

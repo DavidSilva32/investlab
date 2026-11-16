@@ -185,14 +185,8 @@ describe("PortfolioObjectiveForm", () => {
       targetAmount: 100000,
       monthlyPlannedAmount: 8000,
       currentValue: 0,
-      knownValue: 0,
       remainingAmount: 100000,
       progressPercent: 0,
-      assignedPositionCount: 1,
-      missingPositionCount: 0,
-      unvaluedPositionCount: 0,
-      assignedAssetKeys: ["asset"],
-      canEditAssignments: true,
     } satisfies PortfolioObjective;
     render(
       <PortfolioObjectiveForm
@@ -267,14 +261,8 @@ describe("PortfolioObjectiveForm", () => {
             targetAmount: 500,
             monthlyPlannedAmount: 125.5,
             currentValue: 0,
-            knownValue: 0,
             remainingAmount: 500,
             progressPercent: 0,
-            assignedPositionCount: 0,
-            missingPositionCount: 0,
-            unvaluedPositionCount: 0,
-            assignedAssetKeys: [],
-            canEditAssignments: true,
           } satisfies PortfolioObjective
         }
         saving={false}

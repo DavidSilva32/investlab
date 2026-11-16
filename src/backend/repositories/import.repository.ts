@@ -1,16 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -23,8 +12,6 @@ import {
   portfolioOperationReconciliationEvents,
   positionItems,
   positionSnapshots,
-  portfolioObjectivePositions,
-  portfolioObjectives,
   treasuryPositionLiquidityFacts,
   treasuryLiquidityRules,
   manualPortfolioPositions,
@@ -55,15 +42,6 @@ type ImportCreateInput =
       estimationBaseDate?: string | null;
       liquidityFacts?: Array<TreasurySelicLiquidityFact | null>;
       reconciliationDecisions?: ReconciliationDecision[];
-      retiredObjectiveAssignments?: Array<{
-        assetKey: string;
-        objectiveId: string;
-        previousSnapshotReferenceDate: string;
-        previousPositionQuantity: string;
-        assetCode: string;
-        institution: string;
-        evidenceFingerprints: string[];
-      }>;
       reconcileExistingImport?: boolean;
       reprocessExistingImport?: boolean;
     } & Extract<ParsedB3Import, { documentType: "B3_POSITION_XLSX" }>)
@@ -93,12 +71,6 @@ function normalizedAnchor(value: string) {
     .toLocaleUpperCase("pt-BR");
 }
 
-function normalizedMovementType(value: string | null | undefined) {
-  return normalizedAnchor(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
 function normalizedQuantity(value: string) {
   const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
   if (!match) return null;
@@ -108,30 +80,6 @@ function normalizedQuantity(value: string) {
   const isZero = /^0+$/.test(normalizedInteger) && normalizedFraction === "";
   return `${sign === "-" && !isZero ? "-" : ""}${normalizedInteger}${normalizedFraction ? `.${normalizedFraction}` : ""}`;
 }
-
-function exactQuantityUnits(value: string | null | undefined) {
-  const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(value?.trim() ?? "");
-  if (!match) return null;
-  return (
-    BigInt(match[1]!) * 100_000_000n + BigInt((match[2] ?? "").padEnd(8, "0"))
-  );
-}
-
-type MovementRetirementReview = {
-  assetKey: string;
-  objectiveId: string;
-  objectiveName: string;
-  reason:
-    | "total_redemption"
-    | "partial_redemption"
-    | "duplicate_evidence"
-    | "institution_mismatch"
-    | "identity_conflict"
-    | "snapshot_date_unavailable"
-    | "movement_before_previous_snapshot"
-    | "no_matching_redemption"
-    | "incomplete_evidence";
-};
 
 const genericInstrumentKinds = new Set(["UNKNOWN", "INVESTMENT_FUND"]);
 export class ImportRepository {
@@ -272,441 +220,6 @@ export class ImportRepository {
       });
       throw error;
     }
-  }
-
-  private async lockAndValidateAssignedPositionIdentities(
-    transaction: Parameters<
-      Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
-    >[0],
-    incomingPositions: Extract<
-      ParsedB3Import,
-      { documentType: "B3_POSITION_XLSX" }
-    >["positions"],
-    referenceDate: string,
-    userId: string,
-    retiredObjectiveAssignments: Array<{
-      assetKey: string;
-      objectiveId: string;
-      previousSnapshotReferenceDate: string;
-      previousPositionQuantity: string;
-      assetCode: string;
-      institution: string;
-      evidenceFingerprints: string[];
-    }>,
-  ) {
-    await transaction.execute(
-      sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions}, ${movementItems} IN SHARE ROW EXCLUSIVE MODE`,
-    );
-    const [latestSnapshot] = await transaction
-      .select({
-        id: positionSnapshots.id,
-        referenceDate: positionSnapshots.referenceDate,
-      })
-      .from(positionSnapshots)
-      .where(eq(positionSnapshots.userId, userId))
-      .orderBy(
-        sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
-        desc(positionSnapshots.createdAt),
-        desc(positionSnapshots.id),
-      )
-      .limit(1);
-    if (!latestSnapshot) {
-      if (retiredObjectiveAssignments.length)
-        throw new ApplicationError(
-          "As posições mudaram. Atualize a prévia antes de confirmar a remoção dos vínculos.",
-          409,
-        );
-      return;
-    }
-
-    // A historical snapshot can be imported for history, but it cannot prove
-    // that a position disappeared from the current portfolio. If the current
-    // snapshot has no date, preserve assignments for the same reason.
-    if (latestSnapshot.referenceDate === null) {
-      if (retiredObjectiveAssignments.length)
-        throw new ApplicationError(
-          "A posição mudou. Atualize a prévia antes de confirmar o encerramento do vínculo.",
-          409,
-        );
-      return;
-    }
-    if (referenceDate <= latestSnapshot.referenceDate) {
-      if (retiredObjectiveAssignments.length)
-        throw new ApplicationError(
-          "O snapshot não é mais recente que a posição atual. O vínculo foi mantido.",
-          409,
-        );
-      return;
-    }
-
-    const currentPositions = await transaction
-      .select()
-      .from(positionItems)
-      .where(
-        and(
-          eq(positionItems.snapshotId, latestSnapshot.id),
-          eq(positionItems.userId, userId),
-        ),
-      );
-    const positionByAssetKey = new Map(
-      currentPositions.map((position) => [
-        getEmergencyReserveAssetKey(position),
-        position,
-      ]),
-    );
-    if (positionByAssetKey.size === 0) {
-      if (retiredObjectiveAssignments.length)
-        throw new ApplicationError(
-          "As posições mudaram. Atualize a prévia antes de confirmar a remoção dos vínculos.",
-          409,
-        );
-      return;
-    }
-
-    const assignments = await transaction
-      .select()
-      .from(portfolioObjectivePositions)
-      .where(
-        and(
-          eq(portfolioObjectivePositions.userId, userId),
-          inArray(portfolioObjectivePositions.assetKey, [
-            ...positionByAssetKey.keys(),
-          ]),
-        ),
-      );
-    const incomingAssetKeys = new Set(
-      incomingPositions.map(getEmergencyReserveAssetKey),
-    );
-    const conflicts = assignments.filter(
-      (assignment) => !incomingAssetKeys.has(assignment.assetKey),
-    );
-    const pairKey = ({
-      assetKey,
-      objectiveId,
-    }: {
-      assetKey: string;
-      objectiveId: string;
-    }) => JSON.stringify([assetKey, objectiveId]);
-    const conflictByPair = new Map(
-      conflicts.map((conflict) => [pairKey(conflict), conflict]),
-    );
-    const requestedPairs = retiredObjectiveAssignments.map(pairKey);
-    if (
-      new Set(requestedPairs).size !== requestedPairs.length ||
-      retiredObjectiveAssignments.some((candidate) => {
-        const current = conflictByPair.get(pairKey(candidate));
-        const position = positionByAssetKey.get(candidate.assetKey);
-        return (
-          !current ||
-          !position ||
-          latestSnapshot.referenceDate !==
-            candidate.previousSnapshotReferenceDate ||
-          normalizedQuantity(position.quantity) !==
-            normalizedQuantity(candidate.previousPositionQuantity) ||
-          normalizedAnchor(position.assetCode ?? "") !==
-            normalizedAnchor(candidate.assetCode) ||
-          normalizedAnchor(position.institution ?? "") !==
-            normalizedAnchor(candidate.institution) ||
-          !candidate.evidenceFingerprints.length ||
-          new Set(candidate.evidenceFingerprints).size !==
-            candidate.evidenceFingerprints.length
-        );
-      })
-    )
-      throw new ApplicationError(
-        "As posições mudaram. Atualize a prévia antes de confirmar o encerramento do vínculo.",
-        409,
-      );
-
-    if (retiredObjectiveAssignments.length) {
-      const evidenceRows = await transaction
-        .select({
-          eventFingerprint: movementItems.eventFingerprint,
-          assetCode: movementItems.assetCode,
-          institution: movementItems.institution,
-          direction: movementItems.direction,
-          movementType: movementItems.movementType,
-          occurredAt: movementItems.occurredAt,
-        })
-        .from(movementItems)
-        .where(
-          and(
-            eq(movementItems.userId, userId),
-            gt(
-              movementItems.occurredAt,
-              retiredObjectiveAssignments
-                .map(
-                  ({ previousSnapshotReferenceDate }) =>
-                    previousSnapshotReferenceDate,
-                )
-                .sort()[0]!,
-            ),
-            lte(movementItems.occurredAt, referenceDate),
-          ),
-        );
-      if (
-        retiredObjectiveAssignments.some((candidate) => {
-          const periodRows = evidenceRows.filter(
-            (row) =>
-              normalizedAnchor(row.assetCode ?? "") ===
-                normalizedAnchor(candidate.assetCode) &&
-              row.occurredAt > candidate.previousSnapshotReferenceDate &&
-              row.occurredAt <= referenceDate,
-          );
-          const mismatchedInstitution = periodRows.some(
-            (row) =>
-              !row.institution ||
-              normalizedAnchor(row.institution) !==
-                normalizedAnchor(candidate.institution),
-          );
-          const ambiguousMovement = periodRows.some(
-            (row) =>
-              row.direction !== "DEBITO" ||
-              !normalizedMovementType(row.movementType).includes("RESGATE"),
-          );
-          const redemptions = periodRows.filter(
-            (row) =>
-              row.direction === "DEBITO" &&
-              normalizedMovementType(row.movementType).includes("RESGATE"),
-          );
-          const matchingFingerprints = redemptions
-            .map(({ eventFingerprint }) => eventFingerprint)
-            .sort();
-          const expectedFingerprints = [
-            ...candidate.evidenceFingerprints,
-          ].sort();
-          return (
-            mismatchedInstitution ||
-            ambiguousMovement ||
-            new Set(matchingFingerprints).size !==
-              matchingFingerprints.length ||
-            matchingFingerprints.length !== expectedFingerprints.length ||
-            matchingFingerprints.some(
-              (fingerprint, index) =>
-                fingerprint !== expectedFingerprints[index],
-            )
-          );
-        })
-      )
-        throw new ApplicationError(
-          "As movimentações mudaram ou estão duplicadas. O vínculo foi mantido; atualize os dados e tente novamente.",
-          409,
-        );
-    }
-
-    if (retiredObjectiveAssignments.length)
-      await transaction
-        .delete(portfolioObjectivePositions)
-        .where(
-          and(
-            eq(portfolioObjectivePositions.userId, userId),
-            or(
-              ...retiredObjectiveAssignments.map(({ assetKey, objectiveId }) =>
-                and(
-                  eq(portfolioObjectivePositions.assetKey, assetKey),
-                  eq(portfolioObjectivePositions.objectiveId, objectiveId),
-                ),
-              ),
-            ),
-          ),
-        );
-  }
-
-  private async retireAssignmentsAfterMovementImport(
-    transaction: Parameters<
-      Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
-    >[0],
-    userId: string,
-  ): Promise<MovementRetirementReview[]> {
-    const snapshots = await transaction
-      .select()
-      .from(positionSnapshots)
-      .where(eq(positionSnapshots.userId, userId))
-      .orderBy(
-        sql`${positionSnapshots.referenceDate} DESC NULLS LAST`,
-        desc(positionSnapshots.createdAt),
-        desc(positionSnapshots.id),
-      );
-    const latestSnapshot = snapshots[0];
-    if (!latestSnapshot?.referenceDate) return [];
-
-    const [positions, assignments, movements, objectives] = await Promise.all([
-      transaction
-        .select()
-        .from(positionItems)
-        .where(eq(positionItems.userId, userId)),
-      transaction
-        .select()
-        .from(portfolioObjectivePositions)
-        .where(eq(portfolioObjectivePositions.userId, userId)),
-      transaction
-        .select()
-        .from(movementItems)
-        .where(eq(movementItems.userId, userId)),
-      transaction
-        .select({ id: portfolioObjectives.id, name: portfolioObjectives.name })
-        .from(portfolioObjectives)
-        .where(eq(portfolioObjectives.userId, userId)),
-    ]);
-    if (!assignments.length) return [];
-
-    const objectiveNameById = new Map(
-      objectives.map(({ id, name }) => [id, name]),
-    );
-    const latestPositions = positions.filter(
-      (position) => position.snapshotId === latestSnapshot.id,
-    );
-    const latestAssetKeys = new Set(
-      latestPositions.map(getEmergencyReserveAssetKey),
-    );
-    const positionRowsBySnapshot = new Map<string, typeof positions>();
-    for (const position of positions) {
-      const snapshotPositions = positionRowsBySnapshot.get(position.snapshotId);
-      if (snapshotPositions) snapshotPositions.push(position);
-      else positionRowsBySnapshot.set(position.snapshotId, [position]);
-    }
-    const reviews: MovementRetirementReview[] = [];
-    const confirmed: Array<{ assetKey: string; objectiveId: string }> = [];
-
-    for (const assignment of assignments) {
-      if (!assignment.assetKey.startsWith("v1:")) continue;
-      if (latestAssetKeys.has(assignment.assetKey)) continue;
-      const objectiveName = objectiveNameById.get(assignment.objectiveId);
-      if (!objectiveName) continue;
-      const priorSnapshots = snapshots.filter(
-        (snapshot) =>
-          snapshot.referenceDate &&
-          snapshot.referenceDate < latestSnapshot.referenceDate!,
-      );
-      const baselineSnapshot = priorSnapshots.find((snapshot) =>
-        (positionRowsBySnapshot.get(snapshot.id) ?? []).some(
-          (position) =>
-            getEmergencyReserveAssetKey(position) === assignment.assetKey,
-        ),
-      );
-      const baselinePositions = baselineSnapshot
-        ? positionRowsBySnapshot
-            .get(baselineSnapshot.id)!
-            .filter(
-              (position) =>
-                getEmergencyReserveAssetKey(position) === assignment.assetKey,
-            )
-        : [];
-      const baseline = baselinePositions[0];
-      let reason: MovementRetirementReview["reason"] = "incomplete_evidence";
-      if (!baselineSnapshot?.referenceDate || !baseline) continue;
-      if (baselinePositions.length !== 1) {
-        reason = "incomplete_evidence";
-      } else {
-        const assetCode = normalizedAnchor(baseline.assetCode ?? "");
-        const institution = normalizedAnchor(baseline.institution ?? "");
-        const identityConflict = latestPositions.some(
-          (position) =>
-            getEmergencyReserveAssetKey(position) !== assignment.assetKey &&
-            ((assetCode &&
-              normalizedAnchor(position.assetCode ?? "") === assetCode) ||
-              normalizedAnchor(position.product) ===
-                normalizedAnchor(baseline.product)),
-        );
-        const periodMovements = movements.filter(
-          (movement) =>
-            movement.occurredAt > baselineSnapshot.referenceDate! &&
-            movement.occurredAt <= latestSnapshot.referenceDate! &&
-            assetCode !== "" &&
-            normalizedAnchor(movement.assetCode ?? "") === assetCode,
-        );
-        const mismatchedInstitution = periodMovements.some(
-          (movement) =>
-            !institution ||
-            !movement.institution ||
-            normalizedAnchor(movement.institution) !== institution,
-        );
-        const redemptions = periodMovements.filter(
-          (movement) =>
-            movement.direction === "DEBITO" &&
-            normalizedMovementType(movement.movementType).includes("RESGATE"),
-        );
-        const ambiguousMovement = periodMovements.some(
-          (movement) =>
-            movement.direction !== "DEBITO" ||
-            !normalizedMovementType(movement.movementType).includes("RESGATE"),
-        );
-        const previousRedemptionExists = movements.some(
-          (movement) =>
-            movement.occurredAt <= baselineSnapshot.referenceDate! &&
-            movement.assetCode &&
-            normalizedAnchor(movement.assetCode) === assetCode &&
-            movement.direction === "DEBITO" &&
-            normalizedMovementType(movement.movementType).includes("RESGATE"),
-        );
-        const baselineQuantity = exactQuantityUnits(baseline.quantity);
-        const redeemedQuantity = redemptions.reduce<bigint | null>(
-          (total, movement) => {
-            const quantity = exactQuantityUnits(movement.quantity);
-            return total === null || quantity === null || quantity === 0n
-              ? null
-              : total + quantity;
-          },
-          0n,
-        );
-        if (identityConflict) {
-          reason = "identity_conflict";
-        } else if (mismatchedInstitution) {
-          reason = "institution_mismatch";
-        } else if (ambiguousMovement) {
-          reason = "incomplete_evidence";
-        } else if (
-          new Set(redemptions.map(({ eventFingerprint }) => eventFingerprint))
-            .size !== redemptions.length
-        ) {
-          reason = "duplicate_evidence";
-        } else if (!redemptions.length) {
-          reason = previousRedemptionExists
-            ? "movement_before_previous_snapshot"
-            : "no_matching_redemption";
-        } else if (
-          baselineQuantity === null ||
-          baselineQuantity === 0n ||
-          redeemedQuantity === null
-        ) {
-          reason = "incomplete_evidence";
-        } else if (redeemedQuantity === baselineQuantity) {
-          reason = "total_redemption";
-        } else if (redeemedQuantity < baselineQuantity) {
-          reason = "partial_redemption";
-        }
-      }
-      reviews.push({
-        assetKey: assignment.assetKey,
-        objectiveId: assignment.objectiveId,
-        objectiveName,
-        reason,
-      });
-      if (reason === "total_redemption")
-        confirmed.push({
-          assetKey: assignment.assetKey,
-          objectiveId: assignment.objectiveId,
-        });
-    }
-
-    if (confirmed.length) {
-      await transaction
-        .delete(portfolioObjectivePositions)
-        .where(
-          and(
-            eq(portfolioObjectivePositions.userId, userId),
-            or(
-              ...confirmed.map(({ assetKey, objectiveId }) =>
-                and(
-                  eq(portfolioObjectivePositions.assetKey, assetKey),
-                  eq(portfolioObjectivePositions.objectiveId, objectiveId),
-                ),
-              ),
-            ),
-          ),
-        );
-    }
-    return reviews;
   }
 
   private async enrichExistingB3PositionImport(
@@ -992,14 +505,6 @@ export class ImportRepository {
           await transaction.execute(
             sql`LOCK TABLE ${manualPortfolioPositions}, ${positionReconciliationEvents}, ${portfolioAssetClassifications} IN SHARE ROW EXCLUSIVE MODE`,
           );
-          if (!input.reprocessExistingImport)
-            await this.lockAndValidateAssignedPositionIdentities(
-              transaction,
-              input.positions,
-              input.referenceDate,
-              userId,
-              input.retiredObjectiveAssignments ?? [],
-            );
           const manual = await transaction
             .select()
             .from(manualPortfolioPositions)
@@ -1070,38 +575,6 @@ export class ImportRepository {
             ) {
               throw new ApplicationError(
                 "Uma destas posições já possui outra conciliação ativa. Desfaça o vínculo existente antes de escolher esta correspondência.",
-                409,
-              );
-            }
-            const assignments = await transaction
-              .select()
-              .from(portfolioObjectivePositions)
-              .where(
-                and(
-                  eq(portfolioObjectivePositions.userId, userId),
-                  inArray(portfolioObjectivePositions.assetKey, [
-                    ...linkedManual,
-                    ...linkedImported,
-                  ]),
-                ),
-              );
-            const objectiveByKey = new Map(
-              assignments.map((assignment) => [
-                assignment.assetKey,
-                assignment.objectiveId,
-              ]),
-            );
-            if (
-              decisions.some(
-                (decision) =>
-                  decision.action === "link" &&
-                  objectiveByKey.has(decision.importedAssetKey) &&
-                  objectiveByKey.get(decision.manualAssetKey) !==
-                    objectiveByKey.get(decision.importedAssetKey),
-              )
-            ) {
-              throw new ApplicationError(
-                "Revise os objetivos das posições antes de conciliar.",
                 409,
               );
             }
@@ -1227,7 +700,7 @@ export class ImportRepository {
         }
         if (input.documentType === "B3_MOVEMENT_XLSX")
           await transaction.execute(
-            sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${portfolioObjectives}, ${portfolioObjectivePositions}, ${movementItems} IN SHARE ROW EXCLUSIVE MODE`,
+            sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${movementItems} IN SHARE ROW EXCLUSIVE MODE`,
           );
         const [importRecord] = await transaction
           .insert(imports)
@@ -1254,12 +727,7 @@ export class ImportRepository {
               ...movement,
             })),
           );
-          const retirementReview =
-            await this.retireAssignmentsAfterMovementImport(
-              transaction,
-              userId,
-            );
-          return { importId: importRecord.id, retirementReview };
+          return { importId: importRecord.id };
         }
         if (input.documentType === "B3_TRADING_XLSX") {
           await transaction.insert(tradingItems).values(

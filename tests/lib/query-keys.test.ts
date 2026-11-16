@@ -61,27 +61,6 @@ describe("queryKeys", () => {
       "emergency-reserve",
     ]);
     expect(queryKeys.portfolio.strategy()).toEqual(["portfolio", "strategy"]);
-    const previewInput = { targetAmount: 1200, valuationDate: "2026-10-09" };
-    expect(
-      queryKeys.portfolio.positionSuggestions(
-        "/api/emergency-reserve/suggestions",
-        previewInput,
-      ),
-    ).toEqual([
-      "portfolio",
-      "position-combination-suggestions",
-      "/api/emergency-reserve/suggestions",
-      previewInput,
-    ]);
-    expect(
-      queryKeys.portfolio.objectiveAllocationPreview(previewInput),
-    ).toEqual(["portfolio", "objectives", "allocation-preview", previewInput]);
-    expect(queryKeys.portfolio.emergencyReservePreview(previewInput)).toEqual([
-      "portfolio",
-      "emergency-reserve",
-      "preview",
-      previewInput,
-    ]);
   });
 
   it("includes search and resource identifiers in analysis keys", () => {

@@ -1,13 +1,11 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatCurrencyCents } from "@/lib/portfolio-money";
 import { decimalToCents } from "@/lib/portfolio-money";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 import {
@@ -26,16 +24,6 @@ import {
 export type ObjectiveBalanceTrackingData = {
   observedAmountCents: string;
   observedOn: string;
-  cdiPercentage: string | null;
-  projection: {
-    projectedAmountCents: string;
-    projectedOn: string;
-    estimatedThrough: string;
-    cdiPercentage: string;
-    status: "projected" | "provisional";
-  } | null;
-  projectionUnavailableReason?:
-    "missing_conditions" | "no_eligible_days" | "rates_unavailable" | null;
 } | null;
 
 type Props = {
@@ -48,7 +36,6 @@ type Props = {
     objectiveId: string;
     amount: string;
     observedOn: string;
-    cdiPercentage: string | null;
   }) => void;
 };
 
@@ -56,11 +43,6 @@ function decimalFromCents(cents: string | undefined) {
   if (!cents) return "";
   const value = BigInt(cents);
   return `${value / 100n}.${(value % 100n).toString().padStart(2, "0")}`;
-}
-
-function formatDisplayDate(value: string) {
-  const [year, month, day] = value.split("-");
-  return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
 export function PortfolioObjectiveBalanceTracking({
@@ -75,7 +57,6 @@ export function PortfolioObjectiveBalanceTracking({
     objectiveId,
     tracking?.observedAmountCents,
     tracking?.observedOn,
-    tracking?.cdiPercentage,
   ]);
   return (
     <BalanceTrackingEditor
@@ -104,12 +85,8 @@ function BalanceTrackingEditor({
   const [observedOn, setObservedOn] = useState(
     tracking?.observedOn ?? todayInSaoPaulo(),
   );
-  const [cdiPercentage, setCdiPercentage] = useState(
-    tracking?.cdiPercentage ?? "",
-  );
   const [amountError, setAmountError] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
-  const [cdiError, setCdiError] = useState<string | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
   const amountSelectionRef = useRef<CurrencyInputSelection | null>(null);
 
@@ -141,114 +118,37 @@ function BalanceTrackingEditor({
       : isFutureValuationDate(observedOn)
         ? "A data-base não pode ser futura."
         : null;
-    const parsedCdi = Number(cdiPercentage);
-    const nextCdiError =
-      !isReserve &&
-      cdiPercentage.trim() &&
-      (!/^\d+(?:\.\d+)?$/.test(cdiPercentage) ||
-        !Number.isFinite(parsedCdi) ||
-        parsedCdi <= 0 ||
-        parsedCdi > 1000)
-        ? "Informe um percentual maior que 0 e até 1.000% do CDI."
-        : null;
     setAmountError(nextAmountError);
     setDateError(nextDateError);
-    setCdiError(nextCdiError);
-    if (nextAmountError || nextDateError || nextCdiError) return;
+    if (nextAmountError || nextDateError) return;
     onSave({
       objectiveId,
       amount: canonicalAmount,
       observedOn,
-      cdiPercentage:
-        !isReserve && cdiPercentage.trim() ? cdiPercentage.trim() : null,
     });
   }
 
   return (
     <Card aria-labelledby="objective-balance-title">
       <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle id="objective-balance-title" className="text-base">
-            {isReserve
-              ? "Atualizar saldo da Reserva"
-              : "Saldo observado no banco"}
-          </CardTitle>
-          {!isReserve && (
-            <Badge variant="outline">Acompanhamento separado</Badge>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
+        <CardTitle id="objective-balance-title" className="text-base">
           {isReserve
-            ? "Informe o saldo e a data. Para hoje, o sistema atualiza o progresso e tenta ajustar os vínculos automaticamente. Para datas anteriores, salva o saldo e mantém os vínculos atuais."
-            : "Para hoje, o sistema escolhe as posições disponíveis mais próximas para este objetivo e mantém os outros objetivos. A distribuição usa valores conhecidos das posições; o banco não confirma a composição do saldo. Em data anterior, só registra o saldo e mantém os vínculos atuais."}
+            ? "Atualizar saldo da Reserva"
+            : "Atualizar saldo do objetivo"}
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Informe o saldo que aparece no banco e a data. O objetivo acompanha
+          esse valor; as posições da carteira continuam independentes.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {tracking && !isReserve && (
-          <div className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
-            <div>
-              <p className="text-xs text-muted-foreground">Saldo observado</p>
-              <p className="font-semibold tabular-nums">
-                {formatCurrencyCents(tracking.observedAmountCents)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Em {formatDisplayDate(tracking.observedOn)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">
-                Projeção bruta antes de impostos
-              </p>
-              {tracking.projection ? (
-                <>
-                  <p className="font-semibold tabular-nums">
-                    {formatCurrencyCents(
-                      tracking.projection.projectedAmountCents,
-                    )}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Avaliada em{" "}
-                    {formatDisplayDate(tracking.projection.projectedOn)}; CDI
-                    até{" "}
-                    {formatDisplayDate(tracking.projection.estimatedThrough)}
-                    {tracking.projection.status === "provisional"
-                      ? " · usa a última taxa oficial conhecida nas lacunas"
-                      : " · taxas oficiais"}
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {tracking.projectionUnavailableReason ===
-                    "missing_conditions" || tracking.cdiPercentage === null
-                    ? "Sem condições suficientes para projetar; o saldo observado permanece como referência."
-                    : tracking.projectionUnavailableReason ===
-                        "no_eligible_days"
-                      ? "Ainda não há dias úteis elegíveis para projetar. O saldo observado permanece como referência."
-                      : "Não foi possível obter taxas CDI oficiais suficientes para projetar. O saldo observado permanece como referência."}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-        {tracking?.projection && !isReserve && (
-          <p className="text-xs text-muted-foreground">
-            A projeção não inclui impostos, aportes ou resgates que não foram
-            informados.
-          </p>
-        )}
         <form
           noValidate
           onSubmit={submit}
-          className={`grid gap-3 sm:grid-cols-2 ${
-            isReserve
-              ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(10rem,auto)]"
-              : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(10rem,auto)]"
-          } lg:items-end`}
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(10rem,auto)] lg:items-end"
         >
           <div className="space-y-1.5">
-            <Label htmlFor="objective-observed-amount">
-              {isReserve ? "Saldo atual (R$)" : "Saldo total (R$)"}
-            </Label>
+            <Label htmlFor="objective-observed-amount">Saldo atual (R$)</Label>
             <Input
               id="objective-observed-amount"
               ref={amountInputRef}
@@ -300,43 +200,9 @@ function BalanceTrackingEditor({
             required
             errorMessage={dateError}
           />
-          {!isReserve && (
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-              <Label htmlFor="objective-cdi-percentage">
-                Rendimento contratado (% do CDI, opcional)
-              </Label>
-              <Input
-                id="objective-cdi-percentage"
-                inputMode="decimal"
-                placeholder="Ex.: 100"
-                value={cdiPercentage}
-                onChange={(event) => {
-                  setCdiPercentage(event.target.value.replace(",", "."));
-                  setCdiError(null);
-                }}
-                type="text"
-                pattern="\d+(?:\.\d+)?"
-                aria-invalid={Boolean(cdiError)}
-                aria-describedby={cdiError ? "objective-cdi-error" : undefined}
-              />
-              {cdiError && (
-                <p
-                  id="objective-cdi-error"
-                  className="text-sm text-destructive"
-                  role="alert"
-                >
-                  {cdiError}
-                </p>
-              )}
-            </div>
-          )}
           <div className="sm:col-span-2 lg:col-span-1">
             <Button className="w-full" type="submit" disabled={saving}>
-              {saving
-                ? "Salvando…"
-                : isReserve
-                  ? "Salvar saldo"
-                  : "Salvar saldo observado"}
+              {saving ? "Salvando…" : "Salvar saldo"}
             </Button>
           </div>
         </form>

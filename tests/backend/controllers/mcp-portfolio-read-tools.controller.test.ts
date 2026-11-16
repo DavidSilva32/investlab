@@ -70,10 +70,14 @@ describe("McpPortfolioReadToolsController", () => {
     mocks.getMyPortfolio.mockResolvedValue({ positionCount: 0, movements: [] });
     mocks.listMyManualPositions.mockResolvedValue([]);
     mocks.getMyEmergencyReserve.mockResolvedValue({
-      status: "not_configured",
+      hasObservedBalance: false,
+      balanceCents: null,
+      balanceDate: null,
       monthlyExpenses: null,
       targetMonths: null,
-      selectedValue: 0,
+      coveredMonths: null,
+      progressPercent: null,
+      remainingAmount: null,
     });
     mocks.getMyObjectives.mockResolvedValue({ objectives: [] });
     mocks.getMyLongTermStrategy.mockResolvedValue({ allocationActive: false });
@@ -133,10 +137,10 @@ describe("McpPortfolioReadToolsController", () => {
       "get_b3_market_quotes",
     ]);
     expect(schemas.get("get_my_emergency_reserve")?.description).toMatch(
-      /saldo observado.*fonte e data.*posições vinculadas/u,
+      /saldo informado mais recente e sua data.*posições da carteira são independentes/iu,
     );
     expect(schemas.get("get_my_objectives")?.description).toMatch(
-      /currentValue é o saldo observado mais recente e knownValue é o subtotal das posições vinculadas/u,
+      /saldo informado mais recente.*sem observação, currentValue é null.*não são somados ao patrimônio/u,
     );
     expect(mocks.getMyPortfolio).toHaveBeenCalledWith("owner-1", "req-1");
     expect(mocks.listMyManualPositions).toHaveBeenCalledWith(
@@ -186,10 +190,14 @@ describe("McpPortfolioReadToolsController", () => {
         {
           type: "text",
           text: JSON.stringify({
-            status: "not_configured",
+            hasObservedBalance: false,
+            balanceCents: null,
+            balanceDate: null,
             monthlyExpenses: null,
             targetMonths: null,
-            selectedValue: 0,
+            coveredMonths: null,
+            progressPercent: null,
+            remainingAmount: null,
           }),
         },
       ],

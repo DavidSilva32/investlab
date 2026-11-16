@@ -59,25 +59,6 @@ type Position = {
   sourceSheet?: string;
   originalAssetCode?: string | null;
 };
-type IdentityConflict = {
-  assetKey: string;
-  objectiveId: string;
-  objectiveName: string;
-  position: Pick<Position, "product" | "assetCode" | "institution"> &
-    Partial<
-      Pick<
-        Position,
-        "issuer" | "indexer" | "regimeType" | "issuedAt" | "maturityAt"
-      >
-    >;
-  matchingRedemptions?: Array<{
-    occurredAt: string;
-    movementType: string;
-    quantity: string;
-    operationValue: string | null;
-    institution?: string | null;
-  }>;
-};
 type Movement = {
   occurredAt: string;
   movementType: string;
@@ -150,7 +131,6 @@ type Preview =
       latestPositionReferenceDate?: string | null;
       referenceDateNeedsSelection?: boolean;
       referenceDateConflict?: boolean;
-      identityConflicts?: IdentityConflict[];
       reconciliationCandidates?: ReconciliationCandidate[];
     }
   | {
@@ -221,15 +201,6 @@ export function compareImportConfirmationOrder(
 
 function formatMoney(value: string | null) {
   return value === null ? "—" : money.format(Number(value));
-}
-
-function normalizeMovementText(value: string | null | undefined) {
-  return (value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleUpperCase("pt-BR");
 }
 
 function groupReconciliationCandidates(
@@ -332,94 +303,11 @@ export function PortfolioImport({
         }
       }),
     );
-    const uploadedMovements = results.flatMap((result) =>
-      result.preview?.documentType === "B3_MOVEMENT_XLSX"
-        ? result.preview.movements
-        : [],
-    );
-    const previewsWithBatchMovements = results.map((result) => {
-      if (result.preview?.documentType !== "B3_POSITION_XLSX") return result;
-      return {
-        ...result,
-        preview: {
-          ...result.preview,
-          identityConflicts: result.preview.identityConflicts?.map(
-            (conflict) => {
-              const batchEvidence = uploadedMovements
-                .filter(
-                  (movement) =>
-                    movement.assetCode &&
-                    conflict.position.assetCode &&
-                    normalizeMovementText(movement.assetCode) ===
-                      normalizeMovementText(conflict.position.assetCode) &&
-                    movement.institution &&
-                    conflict.position.institution &&
-                    normalizeMovementText(movement.institution) ===
-                      normalizeMovementText(conflict.position.institution) &&
-                    movement.direction === "DEBITO" &&
-                    normalizeMovementText(movement.movementType).includes(
-                      "RESGATE",
-                    ),
-                )
-                .map(
-                  ({
-                    occurredAt,
-                    movementType,
-                    quantity,
-                    operationValue,
-                    institution,
-                  }) => ({
-                    occurredAt,
-                    movementType,
-                    quantity,
-                    operationValue,
-                    institution,
-                  }),
-                );
-              const existingEvidence = conflict.matchingRedemptions ?? [];
-              const seen = new Set(
-                existingEvidence.map((event) =>
-                  JSON.stringify([
-                    event.occurredAt,
-                    event.movementType,
-                    event.quantity,
-                    event.operationValue,
-                    event.institution,
-                  ]),
-                ),
-              );
-              return {
-                ...conflict,
-                matchingRedemptions: [
-                  ...existingEvidence,
-                  ...batchEvidence.filter((event) => {
-                    const key = JSON.stringify([
-                      event.occurredAt,
-                      event.movementType,
-                      event.quantity,
-                      event.operationValue,
-                      event.institution,
-                    ]);
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                  }),
-                ],
-              };
-            },
-          ),
-        },
-      };
-    });
-    const previewFailures = previewsWithBatchMovements.flatMap((result) =>
+    const previewFailures = results.flatMap((result) =>
       "notification" in result ? [result.notification] : [],
     );
     if (previewFailures.length > 0) toast.error(previewFailures.join(" · "));
-    setItems(
-      previewsWithBatchMovements.map(
-        ({ notification: _notification, ...item }) => item,
-      ),
-    );
+    setItems(results.map(({ notification: _notification, ...item }) => item));
     setLoading(false);
   }
 
@@ -1100,23 +988,6 @@ function PositionPreview({
       .map((position) => position.institution)
       .filter((institution): institution is string => Boolean(institution)),
   );
-  const canRetireMissingAssignments = Boolean(
-    !preview.duplicateImportMessage &&
-    referenceDate &&
-    preview.latestPositionReferenceDate &&
-    referenceDate > preview.latestPositionReferenceDate,
-  );
-  const isHistoricalSnapshot = Boolean(
-    referenceDate &&
-    preview.latestPositionReferenceDate &&
-    referenceDate < preview.latestPositionReferenceDate,
-  );
-  const isSameDateSnapshot = Boolean(
-    referenceDate &&
-    preview.latestPositionReferenceDate &&
-    referenceDate === preview.latestPositionReferenceDate,
-  );
-
   return (
     <Card className="motion-content-reveal overflow-hidden shadow-sm">
       <CardHeader className="gap-4 border-b bg-muted/20 p-4 sm:p-5">
@@ -1211,9 +1082,8 @@ function PositionPreview({
               <p className="mt-1 text-xs text-muted-foreground">
                 Opcional: confirme somente correspondências entre posições
                 manuais e da B3 quando tiver certeza. Sem escolha, nenhum
-                vínculo entre elas será criado. Vínculos com objetivos de ativos
-                ausentes só serão encerrados se o aviso abaixo informar isso. A
-                ordem não confirma identidade.
+                vínculo entre elas será criado. Objetivos são acompanhados pelo
+                saldo informado separadamente. A ordem não confirma identidade.
               </p>
             </div>
             {reconciliationGroups.map((group) => {
@@ -1389,101 +1259,6 @@ function PositionPreview({
             })}
           </section>
         )}
-        {preview.identityConflicts?.length ? (
-          <Alert role="status" aria-live="polite" className="border-primary/30">
-            <AlertTitle>
-              {canRetireMissingAssignments
-                ? `Vínculos sob revisão automática (${preview.identityConflicts.length})`
-                : isHistoricalSnapshot
-                  ? "Snapshot histórico: vínculos preservados"
-                  : preview.duplicateImportMessage
-                    ? "Arquivo já importado: vínculos preservados"
-                    : !preview.latestPositionReferenceDate
-                      ? "Vínculos preservados: data atual indisponível"
-                      : isSameDateSnapshot
-                        ? "Snapshot da mesma data: vínculos preservados"
-                        : "Ativos ausentes da posição atual"}
-            </AlertTitle>
-            <AlertDescription>
-              <p>
-                {canRetireMissingAssignments
-                  ? "O sistema só encerrará um vínculo quando o snapshot mais recente omitir a posição e as movimentações compatíveis comprovarem o resgate total. Saídas parciais, duplicadas ou com divergência de identidade/instituição mantêm o vínculo. As movimentações servem como evidência e não alteram os valores do snapshot."
-                  : isHistoricalSnapshot
-                    ? `Este arquivo é anterior ao snapshot atual de ${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}. Ele será importado como histórico e manterá os vínculos atuais.`
-                    : preview.duplicateImportMessage
-                      ? "A confirmação deste arquivo não encerra vínculos de objetivos."
-                      : !preview.latestPositionReferenceDate
-                        ? "A data do snapshot atual não está disponível para comparação. A importação manterá os vínculos atuais."
-                        : isSameDateSnapshot
-                          ? "Este snapshot não é mais recente que a posição atual, então os vínculos serão mantidos."
-                          : `Selecione a data exibida na B3. Snapshots anteriores à posição atual (${date.format(new Date(`${preview.latestPositionReferenceDate}T00:00:00Z`))}) manterão os vínculos.`}
-              </p>
-              <ul className="mt-3 space-y-2">
-                {preview.identityConflicts.map((conflict) => {
-                  const relevantRedemption =
-                    referenceDate &&
-                    preview.latestPositionReferenceDate &&
-                    canRetireMissingAssignments
-                      ? conflict.matchingRedemptions
-                          ?.filter(
-                            (movement) =>
-                              movement.occurredAt >
-                                preview.latestPositionReferenceDate! &&
-                              movement.occurredAt <= referenceDate &&
-                              (!movement.institution ||
-                                !conflict.position.institution ||
-                                normalizeMovementText(movement.institution) ===
-                                  normalizeMovementText(
-                                    conflict.position.institution,
-                                  )),
-                          )
-                          .sort((left, right) =>
-                            right.occurredAt.localeCompare(left.occurredAt),
-                          )[0]
-                      : undefined;
-                  return (
-                    <li
-                      key={conflict.assetKey}
-                      className="rounded-md border bg-background/70 p-3"
-                    >
-                      <p className="font-medium">
-                        {conflict.position.product} — {conflict.objectiveName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {[
-                          conflict.position.assetCode,
-                          conflict.position.institution,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "Código não informado"}
-                      </p>
-                      {referenceDate && canRetireMissingAssignments ? (
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {relevantRedemption ? (
-                            <>
-                              O extrato registra{" "}
-                              {relevantRedemption.movementType ?? "uma saída"}{" "}
-                              em{" "}
-                              {date.format(
-                                new Date(
-                                  `${relevantRedemption.occurredAt}T00:00:00Z`,
-                                ),
-                              )}
-                              . O sistema só encerra o vínculo se comprovar o
-                              resgate total.
-                            </>
-                          ) : (
-                            "A posição não aparece neste snapshot. O sistema vai conferir as saídas compatíveis e só encerrará este vínculo se a quantidade total resgatada estiver comprovada."
-                          )}
-                        </p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        ) : null}
         {preview.duplicateImportMessage ? (
           <Alert aria-live="polite">
             <AlertTitle>Arquivo já importado</AlertTitle>

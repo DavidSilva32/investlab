@@ -4,8 +4,7 @@ import type {
 } from "@/lib/portfolio-insights";
 import type { PortfolioPosition } from "@/app/(private)/portfolio/_components/portfolio-overview";
 import { DashboardDestinationsOverview } from "@/app/(private)/_components/dashboard-destinations-overview";
-import type { DashboardDestinationSummary } from "@/app/(private)/_components/dashboard-destinations-overview";
-import type { DashboardDestinationPosition } from "@/app/(private)/_components/dashboard-destinations-overview";
+import type { DashboardObjective } from "@/app/(private)/_components/dashboard-destinations-overview";
 import { DashboardObservations } from "@/app/(private)/_components/dashboard-observations";
 import {
   DashboardNextAction,
@@ -23,10 +22,7 @@ export function DashboardSummary({
   insights,
   emergencyReserve,
   reserveObservation,
-  destinationSummary,
-  destinationPositions,
-  longTermMissingPositionCount = 0,
-  configuredObjectivesCount = 0,
+  objectives,
   destinationsLoading,
   destinationsUnavailable,
   onRetryDestinations,
@@ -50,10 +46,7 @@ export function DashboardSummary({
     observedAmountCents: string;
     observedOn: string;
   } | null;
-  destinationSummary?: DashboardDestinationSummary | null;
-  destinationPositions?: DashboardDestinationPosition[];
-  longTermMissingPositionCount?: number;
-  configuredObjectivesCount?: number;
+  objectives?: DashboardObjective[];
   destinationsLoading?: boolean;
   destinationsUnavailable?: boolean;
   onRetryDestinations?: () => void;
@@ -81,23 +74,12 @@ export function DashboardSummary({
   const nextAction = getDashboardNextAction({
     positionCount: positions.length,
     missingValueCount: insights.unvaluedPositions,
-    reserveIncomplete: Boolean(
-      !reserveObservation &&
-      emergencyReserve &&
-      (emergencyReserve.unvaluedGroups > 0 ||
-        (emergencyReserve.missingSelectionCount ?? 0) > 0),
-    ),
-    objectiveIncomplete:
-      longTermMissingPositionCount > 0 ||
-      (destinationSummary?.missingPositionCount ?? 0) > 0,
-    reserve: emergencyReserve,
+    reserve: reserveObservation ? emergencyReserve : undefined,
   });
   const priorityAction =
     !firstAccess &&
     !readOnly &&
-    (nextAction?.kind === "reserve-incomplete" ||
-      nextAction?.kind === "missing-values" ||
-      nextAction?.kind === "objective-incomplete" ||
+    (nextAction?.kind === "missing-values" ||
       nextAction?.kind === "reserve-setup")
       ? nextAction
       : null;
@@ -120,7 +102,7 @@ export function DashboardSummary({
 
   const showDestinations =
     !firstAccess ||
-    configuredObjectivesCount > 0 ||
+    (objectives?.length ?? 0) > 0 ||
     destinationsUnavailable ||
     destinationsLoading;
   const showEmergencyReserve = firstAccess
@@ -128,10 +110,7 @@ export function DashboardSummary({
         reserveObservation ||
         (emergencyReserve &&
           (emergencyReserve.monthlyExpenses !== null ||
-            emergencyReserve.targetMonths !== null ||
-            emergencyReserve.selectedGroups > 0 ||
-            emergencyReserve.unvaluedGroups > 0 ||
-            (emergencyReserve.missingSelectionCount ?? 0) > 0)),
+            emergencyReserve.targetMonths !== null)),
       )
     : true;
 
@@ -143,9 +122,7 @@ export function DashboardSummary({
           <div className="grid items-stretch gap-4 xl:grid-cols-2">
             {showDestinations && (
               <DashboardDestinationsOverview
-                summary={destinationSummary}
-                positions={destinationPositions}
-                longTermMissingPositionCount={longTermMissingPositionCount}
+                objectives={objectives}
                 loading={destinationsLoading}
                 unavailable={destinationsUnavailable}
                 onRetry={onRetryDestinations}
@@ -161,10 +138,6 @@ export function DashboardSummary({
                   onOpenReserve={onOpenReserve}
                   onOpenImport={onOpenImport}
                   readOnly={readOnly}
-                  suppressIncompleteWarning={
-                    priorityAction?.kind === "reserve-incomplete" ||
-                    priorityAction?.kind === "missing-values"
-                  }
                 />
               </section>
             )}
@@ -181,9 +154,7 @@ export function DashboardSummary({
 
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
         <DashboardDestinationsOverview
-          summary={destinationSummary}
-          positions={destinationPositions}
-          longTermMissingPositionCount={longTermMissingPositionCount}
+          objectives={objectives}
           loading={destinationsLoading}
           unavailable={destinationsUnavailable}
           onRetry={onRetryDestinations}
@@ -197,10 +168,6 @@ export function DashboardSummary({
             onOpenReserve={onOpenReserve}
             onOpenImport={onOpenImport}
             readOnly={readOnly}
-            suppressIncompleteWarning={
-              priorityAction?.kind === "reserve-incomplete" ||
-              priorityAction?.kind === "missing-values"
-            }
           />
         </section>
       </div>

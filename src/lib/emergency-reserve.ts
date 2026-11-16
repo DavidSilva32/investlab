@@ -6,10 +6,8 @@ export type EmergencyReserveCalculationInput = {
   essentialMonthlyExpenses?: number | null;
   essentialExpenseSources?: EssentialExpenseSource[];
   targetMonths: number | null;
-  selectedValue: number;
-  selectedValueCents?: string;
-  selectedGroups: number;
-  unvaluedGroups: number;
+  balance: number | null;
+  balanceCents?: string | null;
   referenceDate: string | null;
 };
 
@@ -118,11 +116,8 @@ export type EmergencyReserveCalculation = {
   essentialMonthlyExpenses?: number | null;
   essentialExpenseSources?: EssentialExpenseSource[];
   targetMonths: number | null;
-  selectedValue: number;
-  selectedValueCents?: string;
-  selectedGroups: number;
-  unvaluedGroups: number;
-  missingSelectionCount?: number;
+  balance: number | null;
+  balanceCents?: string | null;
   referenceDate: string | null;
   targetValue: number | null;
   targetValueCents?: string | null;
@@ -131,6 +126,7 @@ export type EmergencyReserveCalculation = {
   differenceCents?: string | null;
   progressPercentage: number | null;
   status:
+    | "balance_required"
     | "not_configured"
     | "expenses_required"
     | "below_target"
@@ -148,12 +144,19 @@ export type EmergencyReserveCalculation = {
 export function calculateEmergencyReserve(
   input: EmergencyReserveCalculationInput,
 ): EmergencyReserveCalculation {
-  const parsedSelectedCents = input.selectedValueCents
-    ? BigInt(input.selectedValueCents)
-    : (decimalToCents(input.selectedValue) ?? 0n);
-  const selectedValueCents =
-    parsedSelectedCents > 0n ? parsedSelectedCents : 0n;
-  const selectedValue = centsToNumber(selectedValueCents)!;
+  const parsedBalanceCents =
+    input.balance === null
+      ? null
+      : input.balanceCents !== undefined && input.balanceCents !== null
+        ? BigInt(input.balanceCents)
+        : (decimalToCents(input.balance) ?? 0n);
+  const balanceCents =
+    parsedBalanceCents === null
+      ? null
+      : parsedBalanceCents > 0n
+        ? parsedBalanceCents
+        : 0n;
+  const balance = balanceCents === null ? null : centsToNumber(balanceCents)!;
   const monthlyExpenses = input.monthlyExpenses;
   const targetMonths = input.targetMonths;
   const expenseCents =
@@ -175,22 +178,44 @@ export function calculateEmergencyReserve(
       };
     }
     const targetCents = expenseCents * BigInt(months);
-    const differenceCents = targetCents - selectedValueCents;
+    const differenceCents =
+      balanceCents === null ? null : targetCents - balanceCents;
     return {
       months,
       targetValue: centsToNumber(targetCents),
       targetValueCents: targetCents.toString(),
-      difference: centsToNumber(differenceCents),
-      differenceCents: differenceCents.toString(),
+      difference:
+        differenceCents === null ? null : centsToNumber(differenceCents),
+      differenceCents: differenceCents?.toString() ?? null,
     };
   });
+
+  if (balanceCents === null) {
+    const targetCents =
+      expenseCents !== null && expenseCents > 0n && targetMonths !== null
+        ? expenseCents * BigInt(targetMonths)
+        : null;
+    return {
+      ...input,
+      horizons,
+      balance: null,
+      balanceCents: null,
+      targetValue: targetCents === null ? null : centsToNumber(targetCents),
+      targetValueCents: targetCents?.toString() ?? null,
+      coveredMonths: null,
+      difference: null,
+      differenceCents: null,
+      progressPercentage: null,
+      status: "balance_required",
+    };
+  }
 
   if (monthlyExpenses === null) {
     return {
       ...input,
       horizons,
-      selectedValue,
-      selectedValueCents: selectedValueCents.toString(),
+      balance,
+      balanceCents: balanceCents.toString(),
       targetValue: null,
       targetValueCents: null,
       coveredMonths: null,
@@ -205,8 +230,8 @@ export function calculateEmergencyReserve(
     return {
       ...input,
       horizons,
-      selectedValue,
-      selectedValueCents: selectedValueCents.toString(),
+      balance,
+      balanceCents: balanceCents.toString(),
       targetValue: null,
       targetValueCents: null,
       coveredMonths: null,
@@ -225,12 +250,12 @@ export function calculateEmergencyReserve(
     const targetValue =
       targetCents === null ? null : centsToNumber(targetCents);
     const differenceCents =
-      targetCents === null ? null : targetCents - selectedValueCents;
+      targetCents === null ? null : targetCents - balanceCents;
     return {
       ...input,
       horizons,
-      selectedValue,
-      selectedValueCents: selectedValueCents.toString(),
+      balance,
+      balanceCents: balanceCents.toString(),
       targetValue,
       targetValueCents: targetCents?.toString() ?? null,
       coveredMonths: null,
@@ -244,14 +269,14 @@ export function calculateEmergencyReserve(
 
   const coveredMonths =
     expenseCents !== null && expenseCents > 0n
-      ? Number(selectedValueCents) / Number(expenseCents)
+      ? Number(balanceCents) / Number(expenseCents)
       : null;
   if (targetMonths === null) {
     return {
       ...input,
       horizons,
-      selectedValue,
-      selectedValueCents: selectedValueCents.toString(),
+      balance,
+      balanceCents: balanceCents.toString(),
       targetValue: null,
       targetValueCents: null,
       coveredMonths,
@@ -264,7 +289,7 @@ export function calculateEmergencyReserve(
 
   const targetCents = expenseCents * BigInt(targetMonths);
   const targetValue = centsToNumber(targetCents)!;
-  const differenceCents = targetCents - selectedValueCents;
+  const differenceCents = targetCents - balanceCents;
   const difference = centsToNumber(differenceCents)!;
   const status =
     differenceCents > 0n
@@ -276,8 +301,8 @@ export function calculateEmergencyReserve(
   return {
     ...input,
     horizons,
-    selectedValue,
-    selectedValueCents: selectedValueCents.toString(),
+    balance,
+    balanceCents: balanceCents.toString(),
     targetValue,
     targetValueCents: targetCents.toString(),
     coveredMonths,
@@ -285,10 +310,7 @@ export function calculateEmergencyReserve(
     differenceCents: differenceCents.toString(),
     progressPercentage:
       targetCents > 0n
-        ? Math.min(
-            100,
-            (Number(selectedValueCents) / Number(targetCents)) * 100,
-          )
+        ? Math.min(100, (Number(balanceCents) / Number(targetCents)) * 100)
         : null,
     status,
   };

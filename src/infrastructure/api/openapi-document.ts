@@ -112,28 +112,11 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
           ...validationError,
         },
       },
-      patch: {
-        tags: ["Objetivos"],
-        summary: "Atualizar posições vinculadas aos objetivos",
-        description:
-          "Aplica as atribuições informadas para a conta autenticada.",
-        security: ownerSecurity,
-        requestBody: jsonRequest({
-          $ref: "#/components/schemas/ObjectiveAssignments",
-        }),
-        responses: {
-          "200": response("Atribuições atualizadas."),
-          ...commonErrors,
-          ...validationError,
-          ...notFoundError,
-          ...conflictError,
-        },
-      },
       delete: {
         tags: ["Objetivos"],
         summary: "Excluir objetivo",
         description:
-          "A Reserva não pode ser excluída. A exclusão de outro objetivo remove seus vínculos.",
+          "A Reserva não pode ser excluída. A exclusão de outro objetivo também remove seus registros de saldo observado. As posições permanecem na carteira e não são associadas a objetivos.",
         security: ownerSecurity,
         parameters: [
           {
@@ -156,20 +139,16 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
         tags: ["Objetivos"],
         summary: "Salvar saldo observado de um objetivo",
         description:
-          "Registra o valor informado e, quando possível para a data atual, tenta reconciliar posições elegíveis automaticamente. Datas históricas preservam os vínculos atuais.",
+          "Registra somente o saldo informado e sua data. O objetivo acompanha esse saldo; as posições da carteira permanecem independentes.",
         security: ownerSecurity,
         requestBody: jsonRequest({
           $ref: "#/components/schemas/ObservedBalance",
         }),
         responses: {
-          "201": response(
-            "Saldo salvo e vínculos processados.",
-            "MessageResponse",
-          ),
+          "201": response("Saldo atualizado.", "MessageResponse"),
           ...commonErrors,
           ...validationError,
           ...notFoundError,
-          ...conflictError,
         },
       },
     },
@@ -303,7 +282,7 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
         tags: ["Importação B3"],
         summary: "Confirmar importação de arquivo XLSX",
         description:
-          "Aceita multipart/form-data. O nome deve terminar em .xlsx e o tamanho deve ser maior que zero e até 5 MiB. O MIME informado não é validado. referenceDate, reconciliationDecisions e retiredObjectiveAssignments são campos textuais opcionais; os dois últimos recebem JSON serializado. A confirmação altera dados da conta.",
+          "Aceita multipart/form-data. O nome deve terminar em .xlsx e o tamanho deve ser maior que zero e até 5 MiB. O MIME informado não é validado. referenceDate e reconciliationDecisions são campos textuais opcionais; reconciliationDecisions recebe JSON serializado. A confirmação altera dados da conta.",
         security: ownerSecurity,
         requestBody: {
           required: true,
@@ -319,11 +298,6 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
                     type: "string",
                     description:
                       "JSON serializado com as decisões de conciliação.",
-                  },
-                  retiredObjectiveAssignments: {
-                    type: "string",
-                    description:
-                      "JSON serializado com as confirmações de vínculos encerrados.",
                   },
                 },
               },
@@ -425,17 +399,8 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
           monthlyPlannedAmount: { type: "number", nullable: true },
           monthlyPlannedAmountCents: { type: "string", nullable: true },
           currentValue: { type: "number", nullable: true },
-          currentValueCents: { type: "string", nullable: true },
-          knownValue: { type: "number" },
-          knownValueCents: { type: "string" },
           remainingAmount: { type: "number", nullable: true },
-          remainingAmountCents: { type: "string", nullable: true },
           progressPercent: { type: "number", nullable: true },
-          assignedPositionCount: { type: "integer" },
-          missingPositionCount: { type: "integer" },
-          unvaluedPositionCount: { type: "integer" },
-          assignedAssetKeys: { type: "array", items: { type: "string" } },
-          canEditAssignments: { type: "boolean" },
           balanceTracking: {
             nullable: true,
             allOf: [{ $ref: "#/components/schemas/BalanceTracking" }],
@@ -444,164 +409,20 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
       },
       BalanceTracking: {
         type: "object",
-        required: [
-          "observedAmountCents",
-          "observedOn",
-          "cdiPercentage",
-          "projection",
-          "projectionUnavailableReason",
-        ],
+        required: ["observedAmountCents", "observedOn"],
         properties: {
           observedAmountCents: { type: "string" },
           observedOn: { type: "string", format: "date" },
-          cdiPercentage: { type: "string", nullable: true },
-          projection: {
-            type: "object",
-            nullable: true,
-            additionalProperties: true,
-          },
-          projectionUnavailableReason: {
-            type: "string",
-            enum: [
-              "missing_conditions",
-              "no_eligible_days",
-              "rates_unavailable",
-            ],
-            nullable: true,
-          },
-        },
-      },
-      ObjectivePosition: {
-        type: "object",
-        required: [
-          "assetKey",
-          "product",
-          "positionCount",
-          "knownValueCents",
-          "knownValue",
-          "unvaluedPositions",
-        ],
-        properties: {
-          assetKey: { type: "string" },
-          product: { type: "string" },
-          assetCode: { type: "string", nullable: true },
-          maturityAt: { type: "string", format: "date", nullable: true },
-          institution: { type: "string", nullable: true },
-          assetClass: { type: "string", nullable: true },
-          subClass: { type: "string", nullable: true },
-          geography: { type: "string", nullable: true },
-          positionCount: { type: "integer" },
-          valueCents: { type: "string", nullable: true },
-          value: { type: "number", nullable: true },
-          knownValueCents: { type: "string" },
-          knownValue: { type: "number" },
-          unvaluedPositions: { type: "integer" },
-          referenceDate: { type: "string", format: "date", nullable: true },
-          estimationBaseDate: {
-            type: "string",
-            format: "date",
-            nullable: true,
-          },
-          estimatedThrough: { type: "string", format: "date", nullable: true },
-          cdbEstimateStatus: {
-            type: "string",
-            enum: ["complete", "provisional", "unavailable"],
-            nullable: true,
-          },
-          cdbEstimateLimitation: { type: "string", nullable: true },
-          source: { type: "string", nullable: true },
-          canonicalValueSource: { type: "string" },
         },
       },
       ObjectiveOverview: {
         type: "object",
-        required: [
-          "objectives",
-          "balanceReferences",
-          "destinationSummary",
-          "positions",
-        ],
+        required: ["objectives"],
         properties: {
           objectives: {
             type: "array",
             items: { $ref: "#/components/schemas/ObjectiveOverviewItem" },
           },
-          balanceReferences: {
-            type: "array",
-            description: "Saldos observados registrados para objetivos.",
-            items: {
-              type: "object",
-              required: ["objectiveId", "amountCents", "observedDate"],
-              properties: {
-                objectiveId: { type: "string", format: "uuid" },
-                amountCents: { type: "string" },
-                observedDate: { type: "string", format: "date" },
-                cdiPercentage: { type: "string", nullable: true },
-              },
-            },
-          },
-          destinationSummary: {
-            type: "object",
-            required: [
-              "categories",
-              "knownTotal",
-              "knownTotalCents",
-              "missingPositionCount",
-              "unvaluedPositionCount",
-            ],
-            properties: {
-              categories: {
-                type: "array",
-                items: {
-                  type: "object",
-                  required: ["key", "value", "valueCents", "percentage"],
-                  properties: {
-                    key: {
-                      type: "string",
-                      enum: [
-                        "reserve",
-                        "personal",
-                        "long_term",
-                        "purpose_unknown",
-                        "unassigned",
-                      ],
-                    },
-                    value: { type: "number" },
-                    valueCents: { type: "string" },
-                    percentage: { type: "number" },
-                  },
-                },
-              },
-              knownTotal: { type: "number" },
-              knownTotalCents: { type: "string" },
-              missingPositionCount: { type: "integer" },
-              unvaluedPositionCount: { type: "integer" },
-            },
-          },
-          positions: {
-            type: "array",
-            items: {
-              allOf: [
-                { $ref: "#/components/schemas/ObjectivePosition" },
-                {
-                  type: "object",
-                  properties: {
-                    objectiveId: {
-                      type: "string",
-                      format: "uuid",
-                      nullable: true,
-                    },
-                    objectiveName: { type: "string", nullable: true },
-                    objectivePurpose: { type: "string", nullable: true },
-                  },
-                },
-              ],
-            },
-          },
-          unassignedKnownValue: { type: "number" },
-          unassignedKnownValueCents: { type: "string" },
-          unassignedPositionCount: { type: "integer" },
-          unassignedUnvaluedPositionCount: { type: "integer" },
         },
       },
       CreateObjective: {
@@ -675,7 +496,39 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
         },
       },
       ObjectiveOverviewItem: {
-        allOf: [{ $ref: "#/components/schemas/Objective" }],
+        type: "object",
+        required: [
+          "id",
+          "kind",
+          "name",
+          "targetAmount",
+          "currentValue",
+          "balanceTracking",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          kind: { type: "string", enum: ["RESERVE", "CUSTOM"] },
+          purpose: {
+            type: "string",
+            enum: ["PERSONAL_GOAL", "LONG_TERM_INVESTMENT"],
+            nullable: true,
+          },
+          name: { type: "string" },
+          targetAmount: { type: "number", nullable: true },
+          monthlyPlannedAmount: { type: "number", nullable: true },
+          currentValue: {
+            type: "number",
+            nullable: true,
+            description:
+              "Último saldo informado; null enquanto não houver observação.",
+          },
+          remainingAmount: { type: "number", nullable: true },
+          progressPercent: { type: "number", nullable: true },
+          balanceTracking: {
+            nullable: true,
+            allOf: [{ $ref: "#/components/schemas/BalanceTracking" }],
+          },
+        },
       },
       MonthlyPortfolioReview: {
         type: "object",
@@ -817,31 +670,6 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
           },
         },
       },
-      ObjectiveAssignments: {
-        type: "object",
-        required: ["objectiveId", "assetKeys"],
-        properties: {
-          objectiveId: { type: "string", minLength: 1 },
-          assetKeys: {
-            type: "array",
-            maxItems: 500,
-            items: { type: "string", minLength: 1, maxLength: 80 },
-          },
-          transfers: {
-            type: "array",
-            maxItems: 500,
-            items: {
-              type: "object",
-              required: ["assetKey", "fromObjectiveId", "toObjectiveId"],
-              properties: {
-                assetKey: { type: "string" },
-                fromObjectiveId: { type: "string", format: "uuid" },
-                toObjectiveId: { type: "string", format: "uuid" },
-              },
-            },
-          },
-        },
-      },
       ObservedBalance: {
         type: "object",
         required: ["objectiveId", "amount", "observedOn"],
@@ -857,13 +685,6 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
             type: "string",
             format: "date",
             description: "Data de referência, não pode estar no futuro.",
-          },
-          cdiPercentage: {
-            type: "number",
-            minimum: 0,
-            exclusiveMinimum: true,
-            maximum: 1000,
-            nullable: true,
           },
         },
       },
@@ -1250,7 +1071,7 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
           },
         },
         description:
-          "A prévia discrimina posição, movimentação e negociação. A prévia de posição também inclui candidatos de conciliação e conflitos de identidade.",
+          "A prévia discrimina posição, movimentação e negociação. A prévia de posição pode incluir candidatos de conciliação de identidade entre posições manuais e da B3.",
       },
       B3PositionImportPreview: {
         type: "object",
@@ -1261,7 +1082,6 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
           "positions",
           "latestPositionReferenceDate",
           "reconciliationCandidates",
-          "identityConflicts",
         ],
         properties: {
           documentType: { type: "string", enum: ["B3_POSITION_XLSX"] },
@@ -1281,10 +1101,6 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
             items: {
               $ref: "#/components/schemas/PositionReconciliationCandidate",
             },
-          },
-          identityConflicts: {
-            type: "array",
-            items: { $ref: "#/components/schemas/PositionIdentityConflict" },
           },
           duplicateImportMessage: { type: "string" },
           existingReferenceDate: {
@@ -1482,75 +1298,6 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
           valueDifferenceCents: { type: "string", nullable: true },
           closestValue: { type: "boolean" },
           reasons: { type: "array", items: { type: "string" } },
-        },
-      },
-      PositionIdentityConflict: {
-        type: "object",
-        required: ["assetKey", "objectiveId", "objectiveName", "position"],
-        properties: {
-          assetKey: { type: "string" },
-          objectiveId: { type: "string", format: "uuid" },
-          objectiveName: { type: "string" },
-          position: { $ref: "#/components/schemas/PositionIdentity" },
-          matchingRedemptions: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                occurredAt: { type: "string", format: "date" },
-                movementType: { type: "string" },
-                quantity: { type: "string" },
-                operationValue: { type: "string", nullable: true },
-                institution: { type: "string", nullable: true },
-              },
-            },
-          },
-          reason: {
-            type: "string",
-            enum: [
-              "snapshot_date_unavailable",
-              "snapshot_not_newer",
-              "identity_conflict",
-              "institution_mismatch",
-              "incomplete_evidence",
-              "duplicate_evidence",
-              "no_matching_redemption",
-              "movement_before_previous_snapshot",
-              "partial_redemption",
-              "total_redemption",
-            ],
-          },
-          previousSnapshotReferenceDate: {
-            type: "string",
-            format: "date",
-            nullable: true,
-          },
-          evidenceFingerprints: { type: "array", items: { type: "string" } },
-        },
-      },
-      PositionIdentity: {
-        type: "object",
-        required: [
-          "product",
-          "quantity",
-          "assetCode",
-          "institution",
-          "issuer",
-          "indexer",
-          "regimeType",
-          "issuedAt",
-          "maturityAt",
-        ],
-        properties: {
-          product: { type: "string" },
-          quantity: { type: "string" },
-          assetCode: { type: "string", nullable: true },
-          institution: { type: "string", nullable: true },
-          issuer: { type: "string", nullable: true },
-          indexer: { type: "string", nullable: true },
-          regimeType: { type: "string", nullable: true },
-          issuedAt: { type: "string", nullable: true },
-          maturityAt: { type: "string", nullable: true },
         },
       },
       ImportHistory: {

@@ -77,17 +77,13 @@ export function getPortfolioDiagnostics({
       action: "classification",
     });
   }
-  if (
-    emergencyReserve &&
-    (emergencyReserve.unvaluedGroups > 0 ||
-      (emergencyReserve.missingSelectionCount ?? 0) > 0)
-  ) {
+  if (emergencyReserve?.status === "balance_required") {
     rows.push({
       id: "reserve",
       severity: "missing",
-      title: "Cobertura da reserva incompleta",
+      title: "Informe o saldo da reserva",
       detail:
-        "A reserva contém seleções ausentes ou grupos sem valor. Revise as posições vinculadas antes de comparar com sua meta.",
+        "A cobertura da reserva depende do saldo informado e da data correspondente.",
       action: "reserve",
       href: "/carteira?panel=objectives&objective=reserve",
     });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { calculateContributionAllocation } from "@/lib/contribution-allocation";
-import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { portfolioAssetClassOptions } from "@/lib/portfolio-classification-options";
 
 const position = (overrides: Record<string, unknown> = {}) => ({
@@ -28,10 +27,7 @@ const targets = Object.fromEntries(
 const reserve = (overrides: Record<string, unknown> = {}) => ({
   monthlyExpenses: 1000,
   targetMonths: 1,
-  selectedValue: 0,
-  selectedGroups: 1,
-  unvaluedGroups: 0,
-  missingSelectionCount: 0,
+  balance: 0,
   referenceDate: "2026-01-01",
   targetValue: 1000,
   coveredMonths: 0,
@@ -54,7 +50,6 @@ describe("calculateContributionAllocation", () => {
         difference: null,
         targetValue: null,
       }),
-      selectedReserveAssetKeys: [],
     });
 
     expect(result.longTermPortfolioValue).toBe(100.52);
@@ -70,7 +65,6 @@ describe("calculateContributionAllocation", () => {
         difference: null,
         targetValue: null,
       }),
-      selectedReserveAssetKeys: [],
     });
 
     expect(result).toMatchObject({
@@ -79,7 +73,7 @@ describe("calculateContributionAllocation", () => {
     });
   });
 
-  it("subtracts the personal reserve gap and excludes reserve positions from long-term totals", () => {
+  it("subtracts the personal reserve gap and keeps every position in portfolio totals", () => {
     const heldForReserve = position({
       assetCode: "RESERVE",
       totalValue: "300",
@@ -92,7 +86,6 @@ describe("calculateContributionAllocation", () => {
       ],
       targets,
       reserve: reserve(),
-      selectedReserveAssetKeys: [getEmergencyReserveAssetKey(heldForReserve)],
     });
 
     expect(result).toMatchObject({
@@ -102,11 +95,11 @@ describe("calculateContributionAllocation", () => {
       reserveAmount: 700,
       remainingAmount: 100,
       reserveStatus: "applied",
-      longTermPortfolioValue: 700,
+      longTermPortfolioValue: 1000,
     });
     expect(
-      result.allocations.find((row) => row.assetClass === "Renda variável"),
-    ).toMatchObject({ contributionAmount: 100, currentValue: 0 });
+      result.allocations.find((row) => row.assetClass === "Renda fixa"),
+    ).toMatchObject({ currentValue: 1000 });
     expect(result.remainingAmount).not.toBeNull();
     expect(
       result.allocations.reduce((sum, row) => sum + row.contributionAmount, 0),
@@ -119,7 +112,6 @@ describe("calculateContributionAllocation", () => {
       positions: [position()],
       targets,
       reserve: reserve(),
-      selectedReserveAssetKeys: [],
     });
 
     expect(result.reserveAmount).toBe(250);
@@ -149,7 +141,6 @@ describe("calculateContributionAllocation", () => {
       positions: [position({ totalValue: "100" })],
       targets: splitTargets,
       reserve: reserve({ status: "on_target", difference: 0 }),
-      selectedReserveAssetKeys: [],
     };
     const first = calculateContributionAllocation(input);
     const second = calculateContributionAllocation(input);
@@ -184,7 +175,6 @@ describe("calculateContributionAllocation", () => {
       ],
       targets: unevenTargets,
       reserve: reserve({ status: "on_target", difference: 0 }),
-      selectedReserveAssetKeys: [],
     });
     const fixedIncome = result.allocations.find(
       (row) => row.assetClass === "Renda fixa",
@@ -228,7 +218,6 @@ describe("calculateContributionAllocation", () => {
       positions: [position({ totalValue: "100" })],
       targets: allFixedIncomeTargets,
       reserve: reserve({ status: "on_target", difference: 0 }),
-      selectedReserveAssetKeys: [],
     });
 
     expect(result.status).toBe("ready");
@@ -246,7 +235,6 @@ describe("calculateContributionAllocation", () => {
       ],
       targets,
       reserve: reserve({ status: "on_target", difference: 0 }),
-      selectedReserveAssetKeys: [],
     });
 
     expect(result).toMatchObject({
@@ -257,13 +245,12 @@ describe("calculateContributionAllocation", () => {
     expect(result.allocations).toEqual([]);
   });
 
-  it("blocks allocation when reserve data is incomplete", () => {
+  it("blocks allocation when no reserve balance has been observed", () => {
     const result = calculateContributionAllocation({
       contributionAmount: 100,
       positions: [position()],
       targets,
-      reserve: reserve({ unvaluedGroups: 1 }),
-      selectedReserveAssetKeys: [],
+      reserve: reserve({ status: "balance_required", difference: null }),
     });
 
     expect(result).toMatchObject({
@@ -280,7 +267,6 @@ describe("calculateContributionAllocation", () => {
       contributionAmount: 100,
       positions: [position()],
       reserve: reserve({ status: "on_target", difference: 0 }),
-      selectedReserveAssetKeys: [],
     };
     expect(
       calculateContributionAllocation({ ...base, targets: {} }).status,
@@ -325,25 +311,6 @@ describe("calculateContributionAllocation", () => {
         targets,
       }).reserveStatus,
     ).toBe("not_configured");
-    expect(
-      calculateContributionAllocation({
-        ...base,
-        reserve: reserve({ unvaluedGroups: 0, missingSelectionCount: 1 }),
-        targets,
-      }).status,
-    ).toBe("reserve_incomplete");
-    expect(
-      calculateContributionAllocation({
-        ...base,
-        reserve: reserve({
-          unvaluedGroups: 0,
-          missingSelectionCount: undefined,
-          status: "on_target",
-          difference: 0,
-        }),
-        targets,
-      }).status,
-    ).toBe("ready");
     expect(
       calculateContributionAllocation({
         ...base,

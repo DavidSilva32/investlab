@@ -23,7 +23,6 @@ export function EmergencyReserveSummary({
   onOpenReserve = () => {},
   onOpenImport,
   readOnly = false,
-  suppressIncompleteWarning = false,
 }: {
   calculation?: EmergencyReserveCalculation;
   reserveObservation?: {
@@ -33,12 +32,7 @@ export function EmergencyReserveSummary({
   onOpenReserve?: () => void;
   onOpenImport?: () => void;
   readOnly?: boolean;
-  suppressIncompleteWarning?: boolean;
 }) {
-  const canCalculateCoverage =
-    calculation?.monthlyExpenses !== null &&
-    calculation?.monthlyExpenses !== undefined &&
-    calculation.coveredMonths !== null;
   const goalCalculation =
     calculation && reserveObservation
       ? {
@@ -48,24 +42,25 @@ export function EmergencyReserveSummary({
             essentialMonthlyExpenses: calculation.essentialMonthlyExpenses,
             essentialExpenseSources: calculation.essentialExpenseSources,
             targetMonths: calculation.targetMonths,
-            selectedValue:
+            balance:
               Number(BigInt(reserveObservation.observedAmountCents)) / 100,
-            selectedValueCents: reserveObservation.observedAmountCents,
-            selectedGroups: calculation.selectedGroups,
-            unvaluedGroups: 0,
+            balanceCents: reserveObservation.observedAmountCents,
             referenceDate: reserveObservation.observedOn,
           }),
-          missingSelectionCount: 0,
         }
-      : calculation;
+      : null;
+  const canCalculateCoverage =
+    goalCalculation?.monthlyExpenses !== null &&
+    goalCalculation?.monthlyExpenses !== undefined &&
+    goalCalculation.coveredMonths !== null;
   const hasPersonalTarget =
     goalCalculation?.targetMonths !== null &&
     goalCalculation?.targetMonths !== undefined;
-  const incomplete = Boolean(
-    goalCalculation &&
-    (goalCalculation.unvaluedGroups > 0 ||
-      (goalCalculation.missingSelectionCount ?? 0) > 0),
-  );
+  const availableHorizons =
+    goalCalculation?.horizons?.filter(
+      (horizon): horizon is typeof horizon & { targetValue: number } =>
+        horizon.targetValue !== null,
+    ) ?? [];
 
   return (
     <Card>
@@ -104,17 +99,15 @@ export function EmergencyReserveSummary({
           )}
         </div>
 
-        {(reserveObservation || calculation) && (
+        {calculation && (
           <div className="mt-4 rounded-lg border bg-muted/20 px-4 py-3">
             <p className="text-xs text-muted-foreground">
-              {reserveObservation
-                ? "Saldo atual da reserva"
-                : "Posições vinculadas"}
+              Saldo informado no banco
             </p>
             <p className="mt-1 text-lg font-semibold tabular-nums">
               {reserveObservation
                 ? formatCurrencyCents(reserveObservation.observedAmountCents)
-                : formatCurrency(calculation!.selectedValue)}
+                : "Saldo não informado"}
             </p>
             <p className="text-xs text-muted-foreground">
               {reserveObservation ? (
@@ -122,13 +115,6 @@ export function EmergencyReserveSummary({
                   Informado em{" "}
                   {date.format(
                     new Date(`${reserveObservation.observedOn}T00:00:00Z`),
-                  )}
-                </>
-              ) : calculation!.referenceDate ? (
-                <>
-                  B3 em{" "}
-                  {date.format(
-                    new Date(`${calculation!.referenceDate}T00:00:00Z`),
                   )}
                 </>
               ) : null}
@@ -162,17 +148,13 @@ export function EmergencyReserveSummary({
                   Cobertura em meses
                 </p>
                 <p className="mt-1 text-lg font-semibold tabular-nums">
-                  {incomplete ? "Estimativa parcial: " : ""}
                   {months.format(goalCalculation!.coveredMonths!)} meses de
                   despesas
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {reserveObservation
-                    ? "Calculada pelo saldo informado"
-                    : "Calculada pelas posições vinculadas"}
+                  Calculada pelo saldo informado
                 </p>
                 {hasPersonalTarget &&
-                  !incomplete &&
                   goalCalculation!.progressPercentage !== null && (
                     <div className="mt-2 space-y-1.5">
                       <Progress
@@ -191,9 +173,7 @@ export function EmergencyReserveSummary({
                   )}
               </div>
             </div>
-            {goalCalculation!.horizons?.some(
-              (horizon) => horizon.targetValue !== null,
-            ) && (
+            {availableHorizons.length > 0 && (
               <Collapsible className="border-t pt-3">
                 <CollapsibleTrigger className="group flex min-h-10 w-fit cursor-pointer items-center gap-2 text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   Comparar metas de 3, 6, 9 e 12 meses
@@ -207,7 +187,7 @@ export function EmergencyReserveSummary({
                     aria-label="Cenários de cobertura da reserva"
                     className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
                   >
-                    {goalCalculation!.horizons!.map((horizon) => (
+                    {availableHorizons.map((horizon) => (
                       <div
                         key={horizon.months}
                         className="rounded-lg border bg-muted/20 p-3"
@@ -216,11 +196,9 @@ export function EmergencyReserveSummary({
                           {horizon.months} meses
                         </p>
                         <p className="mt-1 font-semibold tabular-nums">
-                          {horizon.targetValue === null
-                            ? "Sem referência"
-                            : formatCurrency(horizon.targetValue)}
+                          {formatCurrency(horizon.targetValue)}
                         </p>
-                        {!incomplete && horizon.difference !== null && (
+                        {horizon.difference !== null && (
                           <p className="mt-1 text-xs text-muted-foreground">
                             {horizon.difference > 0
                               ? `Faltam ${formatCurrency(horizon.difference)}`
@@ -235,12 +213,7 @@ export function EmergencyReserveSummary({
                 </CollapsibleContent>
               </Collapsible>
             )}
-            {hasPersonalTarget && incomplete && !suppressIncompleteWarning ? (
-              <p className="text-sm font-medium text-status-warning">
-                A comparação com sua meta está incompleta porque há posições ou
-                valores ausentes.
-              </p>
-            ) : hasPersonalTarget && goalCalculation!.difference !== null ? (
+            {hasPersonalTarget && goalCalculation!.difference !== null ? (
               <p
                 className={
                   goalCalculation!.status === "below_target"
@@ -251,9 +224,7 @@ export function EmergencyReserveSummary({
                 {goalCalculation!.status === "below_target"
                   ? `Faltam ${formatCurrency(goalCalculation!.difference!)} para a meta que você escolheu.`
                   : goalCalculation!.status === "above_target"
-                    ? reserveObservation
-                      ? `Sua meta está atingida. O saldo atual está ${formatCurrency(Math.abs(goalCalculation!.difference!))} acima dela.`
-                      : `A cobertura está ${formatCurrency(Math.abs(goalCalculation!.difference!))} acima da meta que você escolheu.`
+                    ? `Sua meta está atingida. O saldo informado está ${formatCurrency(Math.abs(goalCalculation!.difference!))} acima dela.`
                     : `Sua meta pessoal está atingida.`}
               </p>
             ) : null}
@@ -262,9 +233,11 @@ export function EmergencyReserveSummary({
           <p className="mt-4 text-sm text-muted-foreground">
             {!calculation
               ? "Não foi possível carregar os dados da reserva. Tente novamente mais tarde."
-              : calculation.monthlyExpenses === null
-                ? "Informe suas despesas mensais para calcular quantos meses dos valores conhecidos da reserva elas cobrem."
-                : "As despesas informadas precisam ser maiores que zero para calcular a cobertura."}
+              : !reserveObservation
+                ? "Informe o saldo atual da Reserva para calcular quantos meses de despesas ele cobre."
+                : calculation.monthlyExpenses === null
+                  ? "Informe suas despesas mensais para calcular quantos meses o saldo informado cobre."
+                  : "As despesas informadas precisam ser maiores que zero para calcular a cobertura."}
           </p>
         )}
 
@@ -280,8 +253,8 @@ export function EmergencyReserveSummary({
             <CollapsibleContent className="mt-3 space-y-2">
               <p>
                 {reserveObservation
-                  ? "Cobertura = saldo total informado para a Reserva ÷ despesa mensal escolhida. Esse saldo acompanha a meta e não é somado novamente ao patrimônio da carteira."
-                  : "Cobertura = valor das posições vinculadas à reserva ÷ despesa mensal escolhida. Sem saldo informado, esse valor também serve de referência da meta e compõe o patrimônio da carteira."}{" "}
+                  ? "Cobertura = saldo informado no banco ÷ despesa mensal escolhida. Esse saldo acompanha a meta e não é somado novamente ao patrimônio da carteira."
+                  : "Informe o saldo do banco na página da Reserva para calcular a cobertura."}{" "}
                 Sem uma meta salva, começamos por 6 meses; você pode alterar
                 esse prazo na Reserva.
               </p>
@@ -312,29 +285,6 @@ export function EmergencyReserveSummary({
                 A cobertura não considera carência, prazo de resgate ou
                 disponibilidade imediata dos ativos.
               </p>
-              {goalCalculation?.referenceDate && !reserveObservation && (
-                <p>
-                  Data-base dos valores:{" "}
-                  {date.format(
-                    new Date(`${goalCalculation.referenceDate}T00:00:00Z`),
-                  )}
-                  .
-                </p>
-              )}
-              {calculation.unvaluedGroups > 0 && (
-                <p>
-                  {calculation.unvaluedGroups} grupo(s) selecionado(s) contêm
-                  posições sem valor; o total considera apenas valores
-                  conhecidos.
-                </p>
-              )}
-              {calculation.missingSelectionCount ? (
-                <p>
-                  {calculation.missingSelectionCount} seleção(ões) salva(s) não
-                  correspondem a posições da carteira atual e não entram no
-                  cálculo. Você pode revisar a seleção na carteira.
-                </p>
-              ) : null}
             </CollapsibleContent>
           </Collapsible>
         )}

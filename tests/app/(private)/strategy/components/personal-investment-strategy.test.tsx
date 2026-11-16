@@ -19,11 +19,11 @@ const baseData = {
   valuationDate: "2026-10-02",
   valuationDates: ["2026-10-02"],
   valuationDatesComplete: true,
-  longTermWealth: {
+  portfolioWealth: {
     knownValueCents: "100000",
     unvaluedPositionCount: 0,
     positionCount: 4,
-    assignedPositionCount: 4,
+    positionsWithoutMaturityDate: 0,
     unclassifiedKnownValueCents: "0",
     unclassifiedPositionCount: 0,
     classes: [
@@ -53,7 +53,6 @@ const baseData = {
       },
     ],
   },
-  destinationsNeedingPurposeConfirmation: 0,
   savedAllocationPercentages: null,
   allocationActive: false,
 };
@@ -88,14 +87,14 @@ afterEach(() => {
 });
 
 describe("PersonalInvestmentStrategy", () => {
-  it("loads the dated long-term composition and excludes unrelated wealth from the strategy view", async () => {
+  it("loads the dated allocation of the whole portfolio", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(baseData)));
     render(<PersonalInvestmentStrategy />);
 
     expect(screen.getByRole("status").getAttribute("aria-label")).toBe(
-      "Carregando as posições de Longo Prazo e os valores atuais…",
+      "Carregando a carteira e os valores atuais…",
     );
-    expect(await screen.findByText("Patrimônio de longo prazo")).toBeTruthy();
+    expect(await screen.findByText("Patrimônio da carteira")).toBeTruthy();
     expect(screen.getByText(/R\$\s*1\.000,00/)).toBeTruthy();
     expect(screen.getByText(/02\/10\/2026/)).toBeTruthy();
     expect(screen.getByText("Distribuição por classe")).toBeTruthy();
@@ -119,7 +118,7 @@ describe("PersonalInvestmentStrategy", () => {
     expect(await screen.findByText("Falha temporária.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
 
-    expect(await screen.findByText("Patrimônio de longo prazo")).toBeTruthy();
+    expect(await screen.findByText("Patrimônio da carteira")).toBeTruthy();
     expect(
       vi
         .mocked(fetch)
@@ -136,7 +135,7 @@ describe("PersonalInvestmentStrategy", () => {
     render(<PersonalInvestmentStrategy />);
     expect(
       screen.getByRole("status", {
-        name: "Carregando as posições de Longo Prazo e os valores atuais…",
+        name: "Carregando a carteira e os valores atuais…",
       }),
     ).toBeTruthy();
 
@@ -161,33 +160,26 @@ describe("PersonalInvestmentStrategy", () => {
     ).toBeTruthy();
   });
 
-  it("shows purpose and valuation coverage limitations, and links to review destinations", async () => {
+  it("shows valuation coverage without requiring destination assignment", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
           ...baseData,
           valuationDates: ["2026-09-30", "2026-10-02"],
-          longTermWealth: {
-            ...baseData.longTermWealth,
+          portfolioWealth: {
+            ...baseData.portfolioWealth,
             unvaluedPositionCount: 1,
             unclassifiedKnownValueCents: "500",
             unclassifiedPositionCount: 1,
           },
-          destinationsNeedingPurposeConfirmation: 2,
         }),
       ),
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(
-      await screen.findByText("2 destino(s) sem finalidade definida"),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByRole("link", { name: "Revisar destinos" })
-        .getAttribute("href"),
-    ).toBe("/carteira?panel=objectives");
+    expect(await screen.findByText("Cobertura dos valores")).toBeTruthy();
+    expect(screen.queryByText(/sem finalidade definida/)).toBeNull();
     expect(
       screen.getByText(/As posições têm datas efetivas diferentes/),
     ).toBeTruthy();
@@ -240,8 +232,8 @@ describe("PersonalInvestmentStrategy", () => {
       vi.fn().mockResolvedValue(
         jsonResponse({
           ...baseData,
-          longTermWealth: {
-            ...baseData.longTermWealth,
+          portfolioWealth: {
+            ...baseData.portfolioWealth,
             unclassifiedKnownValueCents: "0",
             unclassifiedPositionCount: 1,
           },
@@ -271,17 +263,16 @@ describe("PersonalInvestmentStrategy", () => {
     expect(screen.queryByText(/não têm classe identificada/)).toBeNull();
   });
 
-  it("explains the empty state when no position is assigned to long term", async () => {
+  it("explains the empty state when the portfolio has no positions", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
           ...baseData,
-          longTermWealth: {
-            ...baseData.longTermWealth,
+          portfolioWealth: {
+            ...baseData.portfolioWealth,
             knownValueCents: "0",
             positionCount: 0,
-            assignedPositionCount: 0,
             classes: [],
           },
         }),
@@ -291,11 +282,8 @@ describe("PersonalInvestmentStrategy", () => {
 
     expect(
       await screen.findByText(
-        "Nenhuma posição está atribuída a um destino de longo prazo.",
+        "Nenhuma posição está disponível na carteira para analisar.",
       ),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("link", { name: "Organizar destinos" }),
     ).toBeTruthy();
   });
 
@@ -383,9 +371,7 @@ describe("PersonalInvestmentStrategy", () => {
     );
 
     expect(
-      await screen.findByText(
-        /Usando esta composição para posições de Longo Prazo/,
-      ),
+      await screen.findByText(/Usando esta composição para a carteira inteira/),
     ).toBeTruthy();
   });
 

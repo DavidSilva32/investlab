@@ -77,8 +77,8 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
 
 import { PlanningSimulator } from "@/app/(private)/planning/_components/planning-simulator";
 import type { PortfolioObjective } from "@/app/(private)/portfolio/_components/portfolio-objective-card";
-import type { ObjectivePosition } from "@/app/(private)/portfolio/_components/portfolio-objective-assignment";
 import { reserveObjectiveId } from "@/lib/portfolio-objectives";
+import type { PortfolioInsightPosition } from "@/lib/portfolio-insights";
 
 const goal: PortfolioObjective = {
   id: "goal-a",
@@ -88,28 +88,20 @@ const goal: PortfolioObjective = {
   targetAmount: 12_000,
   monthlyPlannedAmount: 500,
   currentValue: 1_200,
-  knownValue: 1_200,
   remainingAmount: 10_800,
   progressPercent: 10,
-  assignedPositionCount: 1,
-  missingPositionCount: 0,
-  unvaluedPositionCount: 0,
-  assignedAssetKeys: ["goal-position"],
-  canEditAssignments: true,
+  balanceTracking: {
+    observedAmountCents: "120000",
+    observedOn: "2026-10-01",
+  },
 };
-const position: ObjectivePosition = {
-  assetKey: "goal-position",
+const position: PortfolioInsightPosition = {
   product: "Tesouro",
-  assetCode: "SELIC",
   institution: "Custodiante",
-  assetClass: "fixed_income",
-  positionCount: 1,
-  value: 1_200,
+  maturityAt: null,
+  totalValue: "1200",
+  estimatedValue: 1_200,
   referenceDate: "2026-10-01",
-  unvaluedPositions: 0,
-  objectiveId: "goal-a",
-  objectiveName: "Viagem",
-  objectivePurpose: "PERSONAL_GOAL",
 };
 
 function setQuery(overrides: Record<string, unknown> = {}) {
@@ -124,15 +116,9 @@ function setQuery(overrides: Record<string, unknown> = {}) {
             kind: "RESERVE",
             purpose: "RESERVE",
             name: "Reserva",
-            assignedAssetKeys: [],
+            balanceTracking: null,
           },
         ],
-        positions: [position],
-        destinationSummary: {
-          knownTotal: 1_200,
-          missingPositionCount: 1,
-          unvaluedPositionCount: 0,
-        },
       },
       isPending: false,
       isError: false,
@@ -173,6 +159,16 @@ describe("PlanningSimulator", () => {
     ).toBeTruthy();
   });
 
+  it("uses the selected goal's reported balance and date without position assignments", () => {
+    setQuery();
+    render(<PlanningSimulator initialObjectiveId="goal-a" />);
+
+    expect(
+      screen.getByText("Viagem · objective · 1200 · complete"),
+    ).toBeTruthy();
+    expect(state.queryOptions.overview?.enabled).toBe(false);
+  });
+
   it("uses the exact dashboard total and marks it partial when positions are unvalued", () => {
     setQuery();
     state.queries.overview.data = {
@@ -190,16 +186,34 @@ describe("PlanningSimulator", () => {
     ).toBeTruthy();
   });
 
+  it("handles portfolio positions with missing valuation metadata", () => {
+    setQuery();
+    state.queries.overview.data = {
+      insights: {
+        totalValue: 1_200,
+        valuedPositions: 0,
+        unvaluedPositions: 1,
+      },
+      positions: [
+        {
+          product: "CDB sem avaliação",
+          institution: null,
+          maturityAt: null,
+          totalValue: null,
+        },
+      ],
+    };
+    render(<PlanningSimulator initialObjectiveId={null} />);
+
+    expect(
+      screen.getByText("Patrimônio total · portfolio · 1200 · partial"),
+    ).toBeTruthy();
+  });
+
   it("keeps an incomplete selected objective separate and offers an explicit total source action", async () => {
     setQuery({
       data: {
-        objectives: [{ ...goal, assignedAssetKeys: [], currentValue: null }],
-        positions: [position],
-        destinationSummary: {
-          knownTotal: 1_200,
-          missingPositionCount: 0,
-          unvaluedPositionCount: 0,
-        },
+        objectives: [{ ...goal, balanceTracking: null, currentValue: 1200 }],
       },
     });
     const user = userEvent.setup();

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   createManualPosition: vi.fn(),
   updateManualPosition: vi.fn(),
   deleteManualPosition: vi.fn(),
-  getEmergencyReserveEditorData: vi.fn(),
+  getEmergencyReserveSummary: vi.fn(),
   getObjectivesOverview: vi.fn(),
   updateObjective: vi.fn(),
   createObjective: vi.fn(),
@@ -40,7 +40,7 @@ vi.mock("@/backend/services/manual-portfolio-position.service", () => ({
 }));
 vi.mock("@/backend/services/emergency-reserve.service", () => ({
   emergencyReserveService: {
-    getEditorData: mocks.getEmergencyReserveEditorData,
+    getSummary: mocks.getEmergencyReserveSummary,
   },
 }));
 vi.mock("@/backend/services/portfolio-objectives.service", () => ({
@@ -395,7 +395,6 @@ describe("McpPortfolioToolsService read tools", () => {
       id: "objective-id",
       name: "Viagem",
       updatedAt: "2026-11-14T15:00:00.000Z",
-      assignedPositionCount: 2,
     };
     mocks.getObjectivesOverview.mockResolvedValue({ objectives: [objective] });
     mocks.deleteObjective.mockResolvedValue(objective);
@@ -413,7 +412,6 @@ describe("McpPortfolioToolsService read tools", () => {
     ).resolves.toMatchObject({
       deleted: true,
       objectiveId: objective.id,
-      unlinkedPositionCount: 2,
       positionsRetained: true,
     });
     expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("trusted-owner");
@@ -437,7 +435,6 @@ describe("McpPortfolioToolsService read tools", () => {
           id: "objective-id",
           name: "Viagem",
           updatedAt: "2026-11-15T10:00:00.000Z",
-          assignedPositionCount: 1,
         },
       ],
     });
@@ -516,7 +513,6 @@ describe("McpPortfolioToolsService read tools", () => {
           id: "objective-id",
           name: "Viagem",
           updatedAt: "2026-11-14T15:00:00.000Z",
-          assignedPositionCount: 1,
         },
       ],
     });
@@ -540,7 +536,6 @@ describe("McpPortfolioToolsService read tools", () => {
       id: "objective-id",
       name: "Viagem",
       updatedAt: "2026-11-14T15:00:00.000Z",
-      assignedPositionCount: 1,
     };
     const replay = { deleted: true, objectiveId: objective.id, replayed: true };
     mocks.getObjectivesOverview.mockResolvedValue({ objectives: [objective] });
@@ -606,7 +601,6 @@ describe("McpPortfolioToolsService read tools", () => {
       objectiveId: "objective-id",
       amount: "56042.48",
       observedOn: "2026-11-14",
-      cdiPercentage: null,
     };
     const result = {
       objectiveId: input.objectiveId,
@@ -643,68 +637,76 @@ describe("McpPortfolioToolsService read tools", () => {
     expect(mocks.listManualPositions).toHaveBeenCalledWith("req-2");
   });
 
-  it("returns only the connected owner's emergency reserve summary", async () => {
+  it("returns the observed reserve summary for the connected owner without position data", async () => {
     const calculation = {
       monthlyExpenses: 4200,
       monthlyExpensesCents: "420000",
       targetMonths: 12,
-      selectedValue: 50642.41,
-      selectedValueCents: "5064241",
-      selectedGroups: 1,
-      unvaluedGroups: 0,
-      referenceDate: "2026-11-13",
+      balanceCents: "5064241",
+      referenceDate: "2026-11-14",
       targetValue: 50400,
       coveredMonths: 12.05,
       progressPercentage: 100,
+      difference: -242.41,
+      hasObservedBalance: true,
       status: "above_target",
     };
-    mocks.getEmergencyReserveEditorData.mockResolvedValue({
-      calculation,
-      holdings: [{ ticker: "CDB-PRIVATE" }],
-    });
-    mocks.getObjectivesOverview.mockResolvedValue({ objectives: [] });
+    mocks.getEmergencyReserveSummary.mockResolvedValue(calculation);
 
     await expect(
       service.getMyEmergencyReserve("owner-from-sub", "req-reserve"),
-    ).resolves.toMatchObject({
-      ...calculation,
-      balanceSource: "linked_positions",
-      balanceDate: "2026-11-13",
+    ).resolves.toEqual({
+      hasObservedBalance: true,
+      balanceCents: "5064241",
+      balanceDate: "2026-11-14",
+      monthlyExpenses: 4200,
+      targetMonths: 12,
+      coveredMonths: 12.05,
+      progressPercent: 100,
+      remainingAmount: 0,
     });
     expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("owner-from-sub");
-    expect(mocks.getEmergencyReserveEditorData).toHaveBeenCalledWith(
+    expect(mocks.getEmergencyReserveSummary).toHaveBeenCalledWith(
       "req-reserve",
     );
-    expect(mocks.getObjectivesOverview).toHaveBeenCalledWith("req-reserve");
+    expect(mocks.getObjectivesOverview).not.toHaveBeenCalled();
   });
 
-  it("uses the observed reserve balance and date for its MCP coverage", async () => {
-    mocks.getEmergencyReserveEditorData.mockResolvedValue({
-      calculation: {
-        monthlyExpenses: 4200,
-        monthlyExpensesCents: "420000",
-        targetMonths: 12,
-        selectedValue: 50642.41,
-        selectedValueCents: "5064241",
-        selectedGroups: 1,
-        unvaluedGroups: 0,
-        referenceDate: "2026-11-13",
-        targetValue: 50400,
-        coveredMonths: 12.05,
-        progressPercentage: 100,
-        status: "above_target",
-      },
+  it("keeps an observed reserve date when a legacy calculation omits its balance value", async () => {
+    mocks.getEmergencyReserveSummary.mockResolvedValue({
+      monthlyExpenses: 4200,
+      targetMonths: 12,
+      balanceCents: undefined,
+      referenceDate: "2026-11-14",
+      coveredMonths: null,
+      progressPercentage: null,
+      difference: null,
+      hasObservedBalance: true,
+      status: "above_target",
     });
-    mocks.getObjectivesOverview.mockResolvedValue({
-      objectives: [
-        {
-          kind: "RESERVE",
-          balanceTracking: {
-            observedAmountCents: "5604248",
-            observedOn: "2026-11-14",
-          },
-        },
-      ],
+
+    await expect(
+      service.getMyEmergencyReserve("owner-from-sub", "req-reserve-legacy"),
+    ).resolves.toMatchObject({
+      hasObservedBalance: true,
+      balanceCents: null,
+      balanceDate: "2026-11-14",
+      coveredMonths: null,
+      progressPercent: null,
+      remainingAmount: null,
+    });
+  });
+
+  it("returns an explicit no-balance state without exposing an inferred zero", async () => {
+    mocks.getEmergencyReserveSummary.mockResolvedValue({
+      hasObservedBalance: false,
+      balanceCents: null,
+      referenceDate: null,
+      monthlyExpenses: 4200,
+      targetMonths: 12,
+      coveredMonths: null,
+      progressPercentage: null,
+      difference: 50400,
     });
 
     const result = await service.getMyEmergencyReserve(
@@ -712,43 +714,53 @@ describe("McpPortfolioToolsService read tools", () => {
       "req-reserve-observed",
     );
 
-    expect(result).toMatchObject({
-      selectedValue: 56042.48,
-      selectedValueCents: "5604248",
-      difference: -5642.48,
-      status: "above_target",
-      balanceSource: "observed_balance",
-      balanceDate: "2026-11-14",
+    expect(result).toEqual({
+      hasObservedBalance: false,
+      balanceCents: null,
+      balanceDate: null,
+      monthlyExpenses: 4200,
+      targetMonths: 12,
+      coveredMonths: null,
+      progressPercent: null,
+      remainingAmount: null,
     });
-    expect(result.coveredMonths).toBeCloseTo(13.3434, 4);
+    expect(mocks.getEmergencyReserveSummary).toHaveBeenCalledWith(
+      "req-reserve-observed",
+    );
   });
 
-  it("preserves an unconfigured empty reserve and propagates data errors", async () => {
+  it("preserves unconfigured reserve targets and propagates summary errors", async () => {
     const unconfiguredCalculation = {
+      hasObservedBalance: false,
       monthlyExpenses: null,
       targetMonths: null,
-      selectedValue: 0,
+      balanceCents: null,
       targetValue: null,
       coveredMonths: null,
+      progressPercentage: null,
+      difference: null,
+      referenceDate: null,
       status: "not_configured",
     };
-    mocks.getEmergencyReserveEditorData.mockResolvedValue({
-      calculation: unconfiguredCalculation,
-      holdings: [],
-    });
+    mocks.getEmergencyReserveSummary.mockResolvedValue(unconfiguredCalculation);
     await expect(service.getMyEmergencyReserve("owner-empty")).resolves.toEqual(
       {
-        ...unconfiguredCalculation,
-        balanceSource: "linked_positions",
+        hasObservedBalance: false,
+        balanceCents: null,
         balanceDate: null,
+        monthlyExpenses: null,
+        targetMonths: null,
+        coveredMonths: null,
+        progressPercent: null,
+        remainingAmount: null,
       },
     );
-    expect(mocks.getEmergencyReserveEditorData).toHaveBeenCalledWith(
+    expect(mocks.getEmergencyReserveSummary).toHaveBeenCalledWith(
       expect.stringMatching(/^[\da-f-]{36}$/i),
     );
     expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("owner-empty");
 
-    mocks.getEmergencyReserveEditorData.mockRejectedValue(
+    mocks.getEmergencyReserveSummary.mockRejectedValue(
       new Error("database unavailable"),
     );
     await expect(
@@ -760,27 +772,24 @@ describe("McpPortfolioToolsService read tools", () => {
     mocks.getObjectivesOverview.mockResolvedValue({
       objectives: [
         {
+          id: "objective-id",
+          updatedAt: "2026-11-14T12:00:00.000Z",
           kind: "GOAL",
           purpose: "PERSONAL_GOAL",
           name: "Viagem",
           targetAmount: 10000,
           monthlyPlannedAmount: 500,
           currentValue: 2500,
-          knownValue: 2500,
           remainingAmount: 7500,
           progressPercent: 25,
-          assignedPositionCount: 1,
-          missingPositionCount: 0,
-          unvaluedPositionCount: 0,
           assignedAssetKeys: ["private-asset-key"],
-          balanceTracking: null,
+          balanceTracking: {
+            observedAmountCents: "250000",
+            observedOn: "2026-11-14",
+          },
         },
       ],
-      destinationSummary: { knownTotal: 2500 },
       positions: [{ assetCode: "private-position" }],
-      unassignedKnownValue: 0,
-      unassignedPositionCount: 0,
-      unassignedUnvaluedPositionCount: 0,
     });
 
     const result = await service.getMyObjectives("owner-objectives", "req-obj");
@@ -790,32 +799,29 @@ describe("McpPortfolioToolsService read tools", () => {
     expect(result).toEqual({
       objectives: [
         {
+          id: "objective-id",
+          updatedAt: "2026-11-14T12:00:00.000Z",
           kind: "GOAL",
           purpose: "PERSONAL_GOAL",
           name: "Viagem",
           targetAmount: 10000,
           monthlyPlannedAmount: 500,
           currentValue: 2500,
-          knownValue: 2500,
           remainingAmount: 7500,
           progressPercent: 25,
-          assignedPositionCount: 1,
-          missingPositionCount: 0,
-          unvaluedPositionCount: 0,
-          balanceTracking: null,
+          balanceTracking: {
+            observedAmountCents: "250000",
+            observedOn: "2026-11-14",
+          },
         },
       ],
-      destinationSummary: { knownTotal: 2500 },
-      unassignedKnownValue: 0,
-      unassignedPositionCount: 0,
-      unassignedUnvaluedPositionCount: 0,
     });
     expect(JSON.stringify(result)).not.toContain("private-position");
     expect(JSON.stringify(result)).not.toContain("private-asset-key");
   });
 
   it("reads strategy, allocation, and monthly review in the connected owner's context", async () => {
-    const strategy = { longTermWealth: { knownValueCents: "100000" } };
+    const strategy = { portfolioWealth: { knownValueCents: "100000" } };
     const allocation = {
       positions: [{ assetCode: "VOO" }],
       concentrations: { asset: [{ label: "VOO", percentage: 60 }] },
@@ -967,10 +973,6 @@ describe("McpPortfolioToolsService read tools", () => {
     });
     mocks.getObjectivesOverview.mockResolvedValue({
       objectives: [],
-      destinationSummary: {},
-      unassignedKnownValue: 0,
-      unassignedPositionCount: 0,
-      unassignedUnvaluedPositionCount: 0,
     });
     mocks.getLongTermStrategyOverview.mockResolvedValue({ strategy: null });
     mocks.getAllocationOverview.mockResolvedValue({

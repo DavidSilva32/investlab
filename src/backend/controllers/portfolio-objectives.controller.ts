@@ -2,7 +2,6 @@ import { logger } from "@/infrastructure/logging/logger";
 import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { objectiveBalanceService } from "@/backend/services/objective-balance.service";
 import { objectiveProjectionService } from "@/backend/services/objective-projection.service";
-import { reserveObjectiveId } from "@/lib/portfolio-objectives";
 
 export class PortfolioObjectivesController {
   simulateProjection(body: unknown, requestId: string) {
@@ -23,9 +22,21 @@ export class PortfolioObjectivesController {
     logger.info("portfolio_objectives_loaded", {
       requestId,
       objectives: data.objectives.length,
-      positions: data.positions.length,
     });
-    return Response.json(data);
+    return Response.json({
+      objectives: data.objectives.map((objective) => ({
+        id: objective.id,
+        kind: objective.kind,
+        purpose: objective.purpose,
+        name: objective.name,
+        targetAmount: objective.targetAmount,
+        monthlyPlannedAmount: objective.monthlyPlannedAmount,
+        currentValue: objective.currentValue,
+        remainingAmount: objective.remainingAmount,
+        progressPercent: objective.progressPercent,
+        balanceTracking: objective.balanceTracking,
+      })),
+    });
   }
 
   async create(body: unknown, requestId: string) {
@@ -37,63 +48,6 @@ export class PortfolioObjectivesController {
       objectiveId: objective.id,
     });
     return Response.json(responseObjective, { status: 201 });
-  }
-
-  async updateAssignments(body: unknown, requestId: string) {
-    const input = body as { objectiveId?: unknown };
-    if (typeof input?.objectiveId !== "string") {
-      return Response.json(
-        { message: "Objetivo não encontrado." },
-        { status: 400 },
-      );
-    }
-    await portfolioObjectivesService.updateAssignments(input.objectiveId, body);
-    logger.info("portfolio_objective_positions_updated", {
-      requestId,
-      objectiveId: input.objectiveId,
-    });
-    return Response.json({ message: "Posições do objetivo atualizadas." });
-  }
-  async suggestions(body: unknown, requestId: string) {
-    const data = await portfolioObjectivesService.findPositionCombinations(
-      body,
-      requestId,
-    );
-    logger.info("portfolio_objective_position_suggestions_generated", {
-      requestId,
-      status: data.status,
-      candidates: data.status === "suggestions" ? data.candidates.length : 0,
-    });
-    return Response.json(data);
-  }
-
-  async previewAllocation(body: unknown, requestId: string) {
-    const data = await portfolioObjectivesService.previewGlobalAllocation(
-      body,
-      requestId,
-    );
-    logger.info("portfolio_objective_allocation_previewed", {
-      requestId,
-      objectives: data.objectives.length,
-      positions: Object.keys(data.allocation).length,
-      optimal: data.optimal,
-    });
-    return Response.json(data);
-  }
-
-  async confirmAllocation(body: unknown, requestId: string) {
-    const data = await portfolioObjectivesService.confirmGlobalAllocation(
-      body,
-      requestId,
-    );
-    logger.info("portfolio_objective_allocation_confirmed", {
-      requestId,
-      batchId: data.batchId,
-    });
-    return Response.json({
-      message: "A distribuição foi salva.",
-      batchId: data.batchId,
-    });
   }
 
   async update(body: unknown, requestId: string) {
@@ -119,49 +73,18 @@ export class PortfolioObjectivesController {
 
   async saveObservedBalance(body: unknown, requestId: string) {
     const reference = await objectiveBalanceService.save(body, requestId);
-    const assignmentSummary = reference as typeof reference & {
-      changedPositionCount?: number;
-      transferredPositionCount?: number;
-      assignmentStatus?: "updated" | "preserved";
-      assignmentReason?: "historical_balance" | "calculation_unavailable";
-      objectiveName?: string;
-    };
-    const changedPositionCount =
-      typeof assignmentSummary.changedPositionCount === "number"
-        ? assignmentSummary.changedPositionCount
-        : null;
-    const transferredPositionCount =
-      typeof assignmentSummary.transferredPositionCount === "number"
-        ? assignmentSummary.transferredPositionCount
-        : null;
     logger.info("portfolio_objective_balance_saved", {
       requestId,
       objectiveId: reference.objectiveId,
       observedOn: reference.observedDate,
-      changedPositionCount: changedPositionCount ?? 0,
-      transferredPositionCount: transferredPositionCount ?? 0,
     });
-    const objectiveName = assignmentSummary.objectiveName;
-    const isReserve = reference.objectiveId === reserveObjectiveId;
-    const message =
-      assignmentSummary.assignmentReason === "historical_balance"
-        ? "Saldo histórico salvo. Os vínculos atuais foram mantidos."
-        : assignmentSummary.assignmentStatus === "preserved"
-          ? "Saldo salvo. Os vínculos atuais foram mantidos porque não foi possível recalcular a distribuição com segurança."
-          : changedPositionCount !== null && transferredPositionCount !== null
-            ? transferredPositionCount > 0
-              ? `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo atualizado" : "vínculos atualizados"}; ${transferredPositionCount} ${transferredPositionCount === 1 ? "posição transferida de outro objetivo" : "posições transferidas de outros objetivos"} para a Reserva.`
-              : changedPositionCount > 0
-                ? isReserve
-                  ? `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo da Reserva atualizado" : "vínculos da Reserva atualizados"} automaticamente.`
-                  : `Saldo salvo. ${changedPositionCount} ${changedPositionCount === 1 ? "vínculo atualizado" : "vínculos atualizados"} automaticamente para ${objectiveName ?? "o objetivo"}; os demais objetivos foram preservados.`
-                : isReserve
-                  ? "Saldo salvo. Os vínculos da Reserva já correspondiam às posições mais próximas."
-                  : objectiveName
-                    ? `Saldo salvo. Os vínculos de ${objectiveName} já correspondiam às posições mais próximas.`
-                    : "Saldo salvo. Os vínculos desse objetivo já correspondiam ao valor informado."
-            : "Saldo observado salvo.";
-    return Response.json({ message }, { status: 201 });
+    return Response.json(
+      {
+        message:
+          "Saldo atualizado. As posições da carteira não foram alteradas.",
+      },
+      { status: 201 },
+    );
   }
 
   async delete(objectiveId: string, requestId: string) {

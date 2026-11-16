@@ -1,11 +1,8 @@
-﻿import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const service = vi.hoisted(() => ({
-  preview: vi.fn(),
-  getEditorData: vi.fn(),
+  getSettingsData: vi.fn(),
   saveSettings: vi.fn(),
-  savePositions: vi.fn(),
-  suggestPositions: vi.fn(),
 }));
 vi.mock("@/backend/services/emergency-reserve.service", () => ({
   emergencyReserveService: service,
@@ -14,86 +11,38 @@ vi.mock("@/backend/services/emergency-reserve.service", () => ({
 import { EmergencyReserveController } from "@/backend/controllers/emergency-reserve.controller";
 
 describe("EmergencyReserveController", () => {
-  it("returns editor data and saves the supplied settings through the service", async () => {
-    const editorData = { holdings: [], selectedAssetKeys: [] };
-    service.getEditorData.mockResolvedValue(editorData);
-    service.suggestPositions.mockResolvedValue({
-      status: "suggestions",
-      kind: "exact",
-      candidates: [],
-      searchLimited: false,
-    });
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns only the reserve expense and target settings", async () => {
+    const settings = { monthlyExpenses: 4650, targetMonths: 12 };
+    service.getSettingsData.mockResolvedValue(settings);
+
+    const response = await new EmergencyReserveController().get("request-1");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(settings);
+    expect(service.getSettingsData).toHaveBeenCalledOnce();
+  });
+
+  it("saves settings without exposing position data", async () => {
     service.saveSettings.mockResolvedValue({
-      ...editorData,
-      configured: true,
-      calculation: { selectedGroups: 1 },
+      monthlyExpenses: 5000,
+      targetMonths: 10,
+      selectedAssetKeys: ["legacy:position"],
     });
-    const controller = new EmergencyReserveController();
+    const input = { monthlyExpenses: 5000, targetMonths: 10 };
 
-    service.preview.mockResolvedValue({ selectedValueCents: "10000" });
-    await expect(
-      (await controller.preview({ monthlyExpenses: 100 }, "preview-1")).json(),
-    ).resolves.toEqual({ selectedValueCents: "10000" });
-    expect(service.preview).toHaveBeenCalledWith(
-      { monthlyExpenses: 100 },
-      "preview-1",
+    const response = await new EmergencyReserveController().update(
+      input,
+      "request-2",
     );
 
-    await expect((await controller.get("request-1")).json()).resolves.toEqual(
-      editorData,
-    );
-    const body = { monthlyExpenses: 1200, targetMonths: 6 };
-    await expect(
-      (await controller.update(body, "request-2")).json(),
-    ).resolves.toEqual({
-      ...editorData,
-      configured: true,
-      calculation: { selectedGroups: 1 },
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      monthlyExpenses: 5000,
+      targetMonths: 10,
       message: "Reserva atualizada com sucesso.",
     });
-    expect(service.getEditorData).toHaveBeenCalledWith("request-1");
-    expect(service.saveSettings).toHaveBeenCalledWith(body, "request-2");
-    await expect(
-      (await controller.suggest({ targetAmount: 100 }, "request-3")).json(),
-    ).resolves.toMatchObject({ status: "suggestions" });
-    expect(service.suggestPositions).toHaveBeenCalledWith(
-      { targetAmount: 100 },
-      "request-3",
-    );
-  });
-
-  it("returns an unmodified non-suggestions status from the service", async () => {
-    const controller = new EmergencyReserveController();
-    const responseBody = { status: "too_many_positions", maximum: 40 };
-    service.suggestPositions.mockResolvedValue(responseBody);
-
-    const response = await controller.suggest(
-      { targetAmount: 100 },
-      "request-4",
-    );
-
-    await expect(response.json()).resolves.toEqual(responseBody);
-    expect(service.suggestPositions).toHaveBeenCalledWith(
-      { targetAmount: 100 },
-      "request-4",
-    );
-  });
-
-  it("forwards reserve position assignments and adds the success message", async () => {
-    const controller = new EmergencyReserveController();
-    const data = {
-      selectedAssetKeys: ["v1:key"],
-      calculation: { selectedGroups: 1 },
-    };
-    const body = { selectedAssetKeys: ["v1:key"] };
-    service.savePositions.mockResolvedValue(data);
-
-    const response = await controller.updatePositions(body, "positions-1");
-
-    await expect(response.json()).resolves.toEqual({
-      ...data,
-      message: "Posições da Reserva atualizadas com sucesso.",
-    });
-    expect(service.savePositions).toHaveBeenCalledWith(body, "positions-1");
+    expect(service.saveSettings).toHaveBeenCalledWith(input, "request-2");
   });
 });

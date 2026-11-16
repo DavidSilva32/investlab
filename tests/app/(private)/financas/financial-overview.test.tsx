@@ -47,36 +47,6 @@ const overview = {
     { id: categoryId, kind: "EXPENSE" as const, name: "Moradia", active: true },
   ],
 };
-const positiveForecast = {
-  ...overview,
-  summary: {
-    ...overview.summary,
-    expectedIncome: "8000.00",
-    expectedExpenses: "6000.00",
-    expectedBalance: "2000.00",
-    completeness: "recorded_only" as const,
-  },
-};
-const activeStrategy = {
-  allocationActive: true,
-  savedAllocationPercentages: {
-    fixed_income: 60,
-    brazilian_equities: 20,
-    international_etfs: 10,
-    fiis: 10,
-  },
-};
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
 function renderFinance() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -127,378 +97,50 @@ describe("FinancialOverview", () => {
     expect(
       api.request.mock.calls.some(([url]) => url === "/api/portfolio/strategy"),
     ).toBe(false);
+    expect(
+      api.request.mock.calls.some(
+        ([url]) => url === "/api/portfolio/strategy/contribution",
+      ),
+    ).toBe(false);
   });
 
-  it("automatically simulates a positive forecast with the active saved strategy without saving an aporte", async () => {
-    const forecast = {
+  it("keeps a positive monthly forecast focused on finance without loading strategy data", async () => {
+    const positiveForecast = {
       ...overview,
       summary: {
         ...overview.summary,
         expectedIncome: "8000.00",
+        realizedIncome: "8000.00",
         expectedExpenses: "6000.00",
+        realizedExpenses: "6000.00",
         expectedBalance: "2000.00",
-        completeness: "recorded_only" as const,
-      },
-    };
-    const strategy = {
-      allocationActive: true,
-      savedAllocationPercentages: {
-        fixed_income: 60,
-        brazilian_equities: 20,
-        international_etfs: 10,
-        fiis: 10,
-      },
-    };
-    const simulation = {
-      reserveContributionCents: "0",
-      strategyContributionCents: "200000",
-      reserveStatus: "not_needed",
-      simulation: {
-        allocations: [
-          {
-            label: "Renda fixa",
-            contributionValueCents: "200000",
-          },
-          {
-            label: "Ações e BDRs",
-            contributionValueCents: "0",
-          },
-        ],
-        unallocatedContributionCents: "0",
-        completeness: { complete: true },
-      },
-    };
-    api.request.mockImplementation((url: string, options?: RequestInit) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(forecast);
-      if (url === "/api/portfolio/strategy") return Promise.resolve(strategy);
-      if (
-        url === "/api/portfolio/strategy/contribution" &&
-        options?.method === "POST"
-      )
-        return Promise.resolve(simulation);
-      return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-    });
-
-    renderFinance();
-
-    expect(
-      await screen.findByText("Simulação pela sua estratégia"),
-    ).toBeTruthy();
-    expect(api.request).toHaveBeenCalledWith(
-      "/api/portfolio/strategy/contribution",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          contributionAmount: 2000,
-          allocationPercentages: strategy.savedAllocationPercentages,
-        }),
-      },
-      "Não foi possível calcular a simulação.",
-    );
-    expect(
-      api.request.mock.calls.some(
-        ([url]) =>
-          url === "/api/financial-entries" ||
-          url === "/api/portfolio/positions/manual",
-      ),
-    ).toBe(false);
-  });
-
-  it("does not request a current-portfolio simulation for a past month", async () => {
-    const user = userEvent.setup();
-    const pastSimulation = {
-      reserveContributionCents: "0",
-      strategyContributionCents: "200000",
-      reserveStatus: "not_needed",
-      simulation: {
-        allocations: [
-          { label: "Renda fixa", contributionValueCents: "200000" },
-        ],
-        unallocatedContributionCents: "0",
-        completeness: { complete: true },
-      },
-    };
-    api.request.mockImplementation((url: string, options?: RequestInit) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(positiveForecast);
-      if (url === "/api/portfolio/strategy")
-        return Promise.resolve(activeStrategy);
-      if (
-        url === "/api/portfolio/strategy/contribution" &&
-        options?.method === "POST"
-      )
-        return Promise.resolve(pastSimulation);
-      if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-      return Promise.resolve({});
-    });
-    renderFinance();
-    expect(
-      await screen.findByText("Simulação pela sua estratégia"),
-    ).toBeTruthy();
-
-    const simulationsBeforePastMonth = api.request.mock.calls.filter(
-      ([url]) => url === "/api/portfolio/strategy/contribution",
-    ).length;
-    await user.click(screen.getByRole("button", { name: "Mês anterior" }));
-    expect(
-      await screen.findByText(/Meses passados não recebem simulação/u),
-    ).toBeTruthy();
-    expect(
-      api.request.mock.calls.filter(
-        ([url]) => url === "/api/portfolio/strategy/contribution",
-      ),
-    ).toHaveLength(simulationsBeforePastMonth);
-  });
-
-  it("shows a loading state while the active strategy is being fetched", async () => {
-    const strategyRequest = deferred<{
-      allocationActive: boolean;
-      savedAllocationPercentages:
-        typeof activeStrategy.savedAllocationPercentages | null;
-    }>();
-    api.request.mockImplementation((url: string) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(positiveForecast);
-      if (url === "/api/portfolio/strategy") return strategyRequest.promise;
-      if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-      return Promise.resolve({});
-    });
-    renderFinance();
-
-    expect((await screen.findByRole("status")).textContent).toContain(
-      "Calculando uma simulação pela sua estratégia",
-    );
-
-    strategyRequest.resolve({
-      allocationActive: false,
-      savedAllocationPercentages: null,
-    });
-    expect(
-      await screen.findByText(/Ative sua estratégia de longo prazo/u),
-    ).toBeTruthy();
-  });
-
-  it("shows a safe message when loading the strategy fails", async () => {
-    api.request.mockImplementation((url: string) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(positiveForecast);
-      if (url === "/api/portfolio/strategy")
-        return Promise.reject(new Error("internal strategy detail"));
-      if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-      return Promise.resolve({});
-    });
-    renderFinance();
-
-    expect(
-      await screen.findByText("Não foi possível calcular a simulação agora."),
-    ).toBeTruthy();
-    expect(screen.queryByText("internal strategy detail")).toBeNull();
-  });
-
-  it("shows a loading state while the contribution simulation is running", async () => {
-    const simulationRequest = deferred<unknown>();
-    api.request.mockImplementation((url: string, options?: RequestInit) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(positiveForecast);
-      if (url === "/api/portfolio/strategy")
-        return Promise.resolve(activeStrategy);
-      if (
-        url === "/api/portfolio/strategy/contribution" &&
-        options?.method === "POST"
-      )
-        return simulationRequest.promise;
-      if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-      return Promise.resolve({});
-    });
-    renderFinance();
-
-    expect((await screen.findByRole("status")).textContent).toContain(
-      "Calculando uma simulação pela sua estratégia",
-    );
-
-    simulationRequest.resolve({
-      reserveContributionCents: "200000",
-      strategyContributionCents: "0",
-      reserveStatus: "applied",
-      simulation: null,
-    });
-    expect(
-      await screen.findByText(/Simulação pela prioridade da Reserva/u),
-    ).toBeTruthy();
-  });
-
-  it("shows a safe message when the contribution simulation fails", async () => {
-    api.request.mockImplementation((url: string, options?: RequestInit) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(positiveForecast);
-      if (url === "/api/portfolio/strategy")
-        return Promise.resolve(activeStrategy);
-      if (
-        url === "/api/portfolio/strategy/contribution" &&
-        options?.method === "POST"
-      )
-        return Promise.reject(new Error("internal simulation detail"));
-      if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-      return Promise.resolve({});
-    });
-    renderFinance();
-
-    expect(
-      await screen.findByText("Não foi possível calcular a simulação agora."),
-    ).toBeTruthy();
-    expect(screen.queryByText("internal simulation detail")).toBeNull();
-  });
-
-  it("keeps the strategy panel safe when the simulation response has no payload", async () => {
-    api.request.mockImplementation((url: string, options?: RequestInit) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(positiveForecast);
-      if (url === "/api/portfolio/strategy")
-        return Promise.resolve(activeStrategy);
-      if (
-        url === "/api/portfolio/strategy/contribution" &&
-        options?.method === "POST"
-      )
-        return Promise.resolve(null);
-      if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-      return Promise.resolve({});
-    });
-    renderFinance();
-
-    expect(
-      await screen.findByText("Não foi possível calcular a simulação agora."),
-    ).toBeTruthy();
-  });
-
-  it.each([
-    {
-      name: "incomplete reserve inputs",
-      response: {
-        reserveContributionCents: null,
-        strategyContributionCents: null,
-        reserveStatus: "incomplete",
-        simulation: null,
-      },
-      expected: /faltam dados para aplicar a prioridade atual da Reserva/u,
-    },
-    {
-      name: "incomplete long-term positions",
-      response: {
-        reserveContributionCents: "0",
-        strategyContributionCents: "200000",
-        reserveStatus: "not_needed",
-        simulation: {
-          allocations: [],
-          unallocatedContributionCents: "200000",
-          completeness: { complete: false },
-        },
-      },
-      expected: /posições de Longo Prazo com valor e classificação completos/u,
-    },
-    {
-      name: "a reserve-only allocation",
-      response: {
-        reserveContributionCents: "200000",
-        strategyContributionCents: "0",
-        reserveStatus: "applied",
-        simulation: null,
-      },
-      expected: /Simulação pela prioridade da Reserva/u,
-    },
-    {
-      name: "an amount left unallocated by the strategy",
-      response: {
-        reserveContributionCents: "0",
-        strategyContributionCents: "200000",
-        reserveStatus: "not_needed",
-        simulation: {
-          allocations: [{ label: "Renda fixa", contributionValueCents: "0" }],
-          unallocatedContributionCents: "200000",
-          completeness: { complete: true },
-        },
-      },
-      expected: /deixa R\$\s*2\.000,00 sem alocação/u,
-    },
-  ])(
-    "explains $name from the existing simulation response",
-    async ({ response, expected }) => {
-      api.request.mockImplementation((url: string, options?: RequestInit) => {
-        if (url.startsWith("/api/finance-overview"))
-          return Promise.resolve(positiveForecast);
-        if (url === "/api/portfolio/strategy")
-          return Promise.resolve(activeStrategy);
-        if (
-          url === "/api/portfolio/strategy/contribution" &&
-          options?.method === "POST"
-        )
-          return Promise.resolve(response);
-        if (url.startsWith("/api/financial-recurrences"))
-          return Promise.resolve({
-            recurrences: [],
-            recurrenceOccurrences: [],
-          });
-        return Promise.resolve({});
-      });
-      renderFinance();
-
-      expect(await screen.findByText(expected)).toBeTruthy();
-    },
-  );
-
-  it("does not simulate negative forecasts", async () => {
-    const forecast = {
-      ...overview,
-      summary: {
-        ...overview.summary,
-        expectedIncome: "1000.00",
-        expectedExpenses: "1200.00",
-        expectedBalance: "-200.00",
+        recordedBalance: "2000.00",
         completeness: "recorded_only" as const,
       },
     };
     api.request.mockImplementation((url: string) =>
       url.startsWith("/api/finance-overview")
-        ? Promise.resolve(forecast)
+        ? Promise.resolve(positiveForecast)
         : Promise.resolve({ recurrences: [], recurrenceOccurrences: [] }),
     );
     renderFinance();
 
     expect(
-      await screen.findByText(/não há saldo para simular uma distribuição/u),
-    ).toBeTruthy();
+      (await screen.findByText("Saldo previsto")).parentElement?.parentElement
+        ?.textContent,
+    ).toContain("2.000,00");
     expect(
-      api.request.mock.calls.some(([url]) => url === "/api/portfolio/strategy"),
-    ).toBe(false);
-  });
-
-  it("does not simulate a monthly balance when a side of the forecast is missing", async () => {
-    const partialForecast = {
-      ...overview,
-      summary: {
-        ...overview.summary,
-        expectedIncome: null,
-        expectedExpenses: "1200.00",
-        expectedBalance: null,
-        completeness: "recorded_only" as const,
-      },
-    };
-    api.request.mockImplementation((url: string) =>
-      url.startsWith("/api/finance-overview")
-        ? Promise.resolve(partialForecast)
-        : Promise.resolve({ recurrences: [], recurrenceOccurrences: [] }),
-    );
-    renderFinance();
-
-    expect(await screen.findByText(/não são tratados como zero/u)).toBeTruthy();
+      screen.queryByRole("heading", {
+        name: "Distribuição pela estratégia",
+      }),
+    ).toBeNull();
     expect(
-      api.request.mock.calls.some(([url]) => url === "/api/portfolio/strategy"),
+      api.request.mock.calls.some(([url]) =>
+        [
+          "/api/portfolio/strategy",
+          "/api/portfolio/strategy/contribution",
+        ].includes(String(url)),
+      ),
     ).toBe(false);
   });
 

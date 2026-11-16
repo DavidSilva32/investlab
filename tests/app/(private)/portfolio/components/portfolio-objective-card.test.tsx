@@ -15,14 +15,8 @@ const objective: PortfolioObjective = {
   targetAmount: 1000,
   monthlyPlannedAmount: 100,
   currentValue: null,
-  knownValue: 400,
   remainingAmount: null,
   progressPercent: null,
-  assignedPositionCount: 2,
-  missingPositionCount: 1,
-  unvaluedPositionCount: 1,
-  assignedAssetKeys: ["a"],
-  canEditAssignments: true,
 };
 
 describe("PortfolioObjectiveCard", () => {
@@ -49,9 +43,7 @@ describe("PortfolioObjectiveCard", () => {
       document.querySelector("[class*='grid-cols-[2.5rem_minmax(0,1fr)]']"),
     ).toBeTruthy();
 
-    expect(
-      screen.getByText("Subtotal conhecido das posições: R$ 400,00"),
-    ).toBeTruthy();
+    expect(screen.getByText("Saldo não informado")).toBeTruthy();
     await user.click(
       screen.getByRole("button", { name: "Abrir objetivo Viagem" }),
     );
@@ -111,16 +103,11 @@ describe("PortfolioObjectiveCard", () => {
           name: "Reserva",
           targetAmount: 55800,
           currentValue: 56042.48,
-          knownValue: 50459.11,
           remainingAmount: 0,
           progressPercent: 100,
-          missingPositionCount: 0,
-          unvaluedPositionCount: 0,
           balanceTracking: {
             observedAmountCents: "5604248",
             observedOn: "2026-11-14",
-            cdiPercentage: null,
-            projection: null,
           },
         }}
         deleteDialogOpen={false}
@@ -165,7 +152,7 @@ describe("PortfolioObjectiveCard", () => {
     ).toBeNull();
   });
 
-  it("labels long-term destinations and asks legacy goals to be classified", () => {
+  it("labels goal purpose without implying that purpose changes strategy inclusion", () => {
     const { rerender } = render(
       <PortfolioObjectiveCard
         objective={{ ...objective, purpose: "LONG_TERM_INVESTMENT" }}
@@ -192,7 +179,7 @@ describe("PortfolioObjectiveCard", () => {
       />,
     );
     expect(screen.getByText("Classificação pendente")).toBeTruthy();
-    expect(screen.getByText(/Classifique este destino ao editar/)).toBeTruthy();
+    expect(screen.queryByText(/Classifique este destino ao editar/)).toBeNull();
     rerender(
       <PortfolioObjectiveCard
         objective={{ ...objective, purpose: "PERSONAL_GOAL" }}
@@ -232,92 +219,17 @@ describe("PortfolioObjectiveCard", () => {
     expect(screen.queryByText("destino sem meta financeira")).toBeNull();
   });
 
-  it("compares the bank observation with linked positions without showing projection noise", () => {
-    render(
-      <PortfolioObjectiveCard
-        objective={{
-          ...objective,
-          currentValue: 100,
-          progressPercent: 10,
-          remainingAmount: 900,
-          missingPositionCount: 0,
-          unvaluedPositionCount: 0,
-          balanceTracking: {
-            observedAmountCents: "25050",
-            observedOn: "2026-10-01",
-            cdiPercentage: "100.0000",
-            projection: {
-              projectedAmountCents: "25075",
-              projectedOn: "2026-10-02",
-              estimatedThrough: "2026-10-02",
-              cdiPercentage: "100.0000",
-              status: "projected",
-            },
-          },
-        }}
-        deleteDialogOpen={false}
-        deleting={false}
-        onOpen={vi.fn()}
-        onEdit={vi.fn()}
-        onDeleteOpenChange={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Valor das posições vinculadas")).toBeTruthy();
-    expect(
-      screen.getByText(/Saldo informado no banco: R\$\s*250,50/u),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Diferença para as posições vinculadas: R\$\s*150,50/u),
-    ).toBeTruthy();
-    expect(screen.queryByText(/Projeção bruta/u)).toBeNull();
-    expect(screen.queryByText("Projeção indisponível")).toBeNull();
-    expect(screen.getByText("10% acompanhado")).toBeTruthy();
-  });
-
-  it("shows the bank observation against the known subtotal without requiring projection data", () => {
-    render(
-      <PortfolioObjectiveCard
-        objective={{
-          ...objective,
-          balanceTracking: {
-            observedAmountCents: "25050",
-            observedOn: "data desconhecida",
-            cdiPercentage: null,
-            projection: null,
-          },
-        }}
-        deleteDialogOpen={false}
-        deleting={false}
-        onOpen={vi.fn()}
-        onEdit={vi.fn()}
-        onDeleteOpenChange={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText(/Saldo informado no banco: R\$\s*250,50/u),
-    ).toBeTruthy();
-    expect(screen.getByText(/Em data desconhecida/)).toBeTruthy();
-    expect(
-      screen.getByText(/Diferença para o subtotal conhecido: R\$\s*149,50/u),
-    ).toBeTruthy();
-    expect(screen.queryByText(/Projeção indisponível/u)).toBeNull();
-  });
-
-  it("shows a zero difference when the bank balance matches linked positions", () => {
+  it("uses the observed goal balance as the single progress value", () => {
     render(
       <PortfolioObjectiveCard
         objective={{
           ...objective,
           currentValue: 250.5,
+          progressPercent: 25.05,
+          remainingAmount: 749.5,
           balanceTracking: {
             observedAmountCents: "25050",
             observedOn: "2026-10-01",
-            cdiPercentage: null,
-            projection: null,
           },
         }}
         deleteDialogOpen={false}
@@ -329,23 +241,26 @@ describe("PortfolioObjectiveCard", () => {
       />,
     );
 
+    expect(screen.getByText("Saldo informado")).toBeTruthy();
+    expect(screen.getByText("Informado em 01/10/2026")).toBeTruthy();
+    expect(screen.getAllByText(/R\$\s*250,50/u)).toHaveLength(1);
+    expect(screen.getByText("25% acompanhado")).toBeTruthy();
+    expect(screen.queryByText("Valor das posições vinculadas")).toBeNull();
     expect(
-      screen.getByText(/Diferença para as posições vinculadas: R\$\s*0,00/u),
-    ).toBeTruthy();
+      screen.queryByText(/Diferença para as posições vinculadas/u),
+    ).toBeNull();
+    expect(screen.queryByText(/Projeção bruta/u)).toBeNull();
+    expect(screen.queryByText("Projeção indisponível")).toBeNull();
   });
 
-  it("omits the difference when no linked-position value is known", () => {
+  it("preserves an incomplete legacy observation date as entered", () => {
     render(
       <PortfolioObjectiveCard
         objective={{
           ...objective,
-          currentValue: null,
-          knownValue: 0,
           balanceTracking: {
             observedAmountCents: "25050",
-            observedOn: "2026-10-01",
-            cdiPercentage: null,
-            projection: null,
+            observedOn: "2026-10",
           },
         }}
         deleteDialogOpen={false}
@@ -357,11 +272,6 @@ describe("PortfolioObjectiveCard", () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Saldo informado no banco: R\$\s*250,50/u),
-    ).toBeTruthy();
-    expect(
-      screen.queryByText(/Diferença para as posições vinculadas/u),
-    ).toBeNull();
+    expect(screen.getByText("Informado em 2026-10")).toBeTruthy();
   });
 });

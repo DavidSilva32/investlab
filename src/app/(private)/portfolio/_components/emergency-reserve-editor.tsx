@@ -1,1059 +1,215 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Info, ChevronDown } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { PositionCombinationSuggestions } from "@/app/(private)/portfolio/_components/position-combination-suggestions";
-import type { EmergencyReserveCalculation } from "@/lib/emergency-reserve";
-import { formatCurrency } from "@/lib/utils";
-import {
-  formatCurrencyCents,
-  portfolioMoneySourceLabels,
-} from "@/lib/portfolio-money";
-import { reserveObjectiveId } from "@/lib/portfolio-objectives";
-import { getApiMessage } from "@/lib/api-message";
 import { apiRequest } from "@/lib/api-client";
+import { getApiMessage } from "@/lib/api-message";
 import { queryKeys } from "@/lib/query-keys";
+import { formatAmountInput, parseBrazilianAmount } from "@/lib/currency-input";
+import { formatCurrency } from "@/lib/utils";
 
-type Holding = {
-  assetKey: string;
-  product: string;
-  assetCode: string | null;
-  institution: string | null;
-  issuer: string | null;
-  indexer: string | null;
-  maturityAt: string | null;
-  positionCount: number;
-  unvaluedPositions: number;
-  value: number | null;
-  valueCents?: string | null;
-  valueSource?: string;
-  estimationBaseDate?: string | null;
-  estimatedThrough?: string | null;
-  cdbEstimateComparisonApproximate?: boolean | null;
-  cdbEstimateStatus?: "complete" | "provisional" | "unavailable" | null;
-  cdbEstimateLimitation?: string | null;
-  selected: boolean;
-  assignedObjectiveId?: string | null;
-  assignedObjectiveName?: string | null;
-};
-
-const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
-
-type EditorData = {
-  monthlyExpenses: number | null;
-  essentialMonthlyExpenses: number | null;
-  essentialExpenseSources: Array<{
-    id: string;
-    description: string;
-    frequency: string;
-    amount: number;
-    monthlyEquivalent: number;
-  }>;
+type ReserveSettings = {
+  monthlyExpenses: number | string | null;
   targetMonths: number | null;
-  selectedAssetKeys: string[];
-  configured: boolean;
-  holdings: Holding[];
-  selectedPositionCount: number;
-  missingSelectionCount: number;
-  calculation: EmergencyReserveCalculation;
-};
-
-type TransferDetails = {
-  assetKey: string;
-  product: string;
-  value: number;
-  fromObjectiveId: string;
-  fromObjectiveName: string;
-  toObjectiveId: string;
-};
-type TransferImpact = {
-  objectiveId: string;
-  objectiveName: string;
-  currentValue: number | null;
-  knownValue: number;
-  targetAmount: number | null;
-  progressPercent: number | null;
-  transferredValue: number;
-  transferredPositionCount: number;
-};
-type PendingTransfer = {
-  assetKeys: string[];
-  transfers: TransferDetails[];
-  impacts: TransferImpact[];
 };
 
 const loadErrorMessage = "Não foi possível carregar a configuração da reserva.";
 
-export function EmergencyReserveEditor({
-  mode = "positions",
-}: {
-  mode?: "positions" | "settings";
-}) {
-  const reserveQuery = useQuery({
+export function EmergencyReserveEditor() {
+  const queryClient = useQueryClient();
+  const query = useQuery({
     queryKey: queryKeys.portfolio.emergencyReserve(),
     queryFn: () =>
-      apiRequest<EditorData>(
+      apiRequest<ReserveSettings>(
         "/api/emergency-reserve",
         undefined,
         loadErrorMessage,
       ),
   });
-  const queryClient = useQueryClient();
-  const data = reserveQuery.data ?? null;
+  const data = query.data;
   const [monthlyExpenses, setMonthlyExpenses] = useState("");
   const [targetMonths, setTargetMonths] = useState("");
-  const [customMonths, setCustomMonths] = useState("");
-  const [monthChoice, setMonthChoice] = useState<
-    "3" | "6" | "9" | "12" | "custom"
-  >("custom");
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const [formError, setFormError] = useState<string | null>(null);
-  const loading = reserveQuery.isPending;
+  const [hasEditedExpenses, setHasEditedExpenses] = useState(false);
+  const [hasEditedTarget, setHasEditedTarget] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [previewInput, setPreviewInput] = useState<{
-    expenses: number;
-    months: number;
-    selectedAssetKeys: string[];
-  } | null>(null);
-  const [pendingTransfer, setPendingTransfer] =
-    useState<PendingTransfer | null>(null);
-  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const configuredExpenses = Number(data?.monthlyExpenses);
+  const displayedMonthlyExpenses = hasEditedExpenses
+    ? monthlyExpenses
+    : Number.isFinite(configuredExpenses) && configuredExpenses > 0
+      ? formatAmountInput(configuredExpenses.toFixed(2))
+      : "";
+  const displayedTargetMonths = hasEditedTarget
+    ? targetMonths
+    : data?.targetMonths === null || data?.targetMonths === undefined
+      ? ""
+      : String(data.targetMonths);
 
-  useEffect(() => {
-    if (!data) return;
-    // Hydrate the editable form from the cached query response.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMonthlyExpenses(data.monthlyExpenses?.toString() ?? "");
-    setTargetMonths(data.targetMonths?.toString() ?? "");
-    const loadedMonths = data.targetMonths?.toString() ?? "";
-    setCustomMonths(loadedMonths);
-    setMonthChoice(
-      loadedMonths === "3" ||
-        loadedMonths === "6" ||
-        loadedMonths === "9" ||
-        loadedMonths === "12"
-        ? loadedMonths
-        : "custom",
-    );
-    setSelectedKeys(new Set(data.selectedAssetKeys));
-  }, [data]);
-
-  const selectedKeysSignature = [...selectedKeys].sort().join("|");
-  useEffect(() => {
-    const expenses = Number(monthlyExpenses);
-    const months = Number(targetMonths);
-    if (
-      mode !== "settings" ||
-      !data ||
-      !monthlyExpenses ||
-      !Number.isFinite(expenses) ||
-      expenses <= 0 ||
-      !Number.isInteger(months) ||
-      months < 1 ||
-      months > 1200
-    ) {
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const expenses = parseBrazilianAmount(displayedMonthlyExpenses);
+    const months = Number(displayedTargetMonths);
+    if (!Number.isFinite(expenses) || expenses <= 0) {
+      setError("Informe as despesas mensais em reais.");
       return;
     }
-    const timer = window.setTimeout(() => {
-      setPreviewInput({
-        expenses,
-        months,
-        selectedAssetKeys: selectedKeysSignature
-          ? selectedKeysSignature.split("|")
-          : [],
-      });
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [data, mode, monthlyExpenses, selectedKeysSignature, targetMonths]);
-
-  const previewQuery = useQuery({
-    queryKey: queryKeys.portfolio.emergencyReservePreview(previewInput),
-    enabled: Boolean(
-      mode === "settings" &&
-      previewInput &&
-      previewInput.expenses === Number(monthlyExpenses) &&
-      previewInput.months === Number(targetMonths) &&
-      previewInput.selectedAssetKeys.join("|") === selectedKeysSignature,
-    ),
-    queryFn: async ({ signal }) => {
-      const body = await apiRequest<EditorData | EmergencyReserveCalculation>(
-        "/api/emergency-reserve",
-        {
-          method: "PATCH",
-          signal,
-          body: JSON.stringify({
-            monthlyExpenses: previewInput!.expenses,
-            targetMonths: previewInput!.months,
-            selectedAssetKeys: previewInput!.selectedAssetKeys,
-          }),
-        },
-        "Não foi possível atualizar a prévia da reserva.",
-      );
-      return typeof body === "object" && body !== null && "calculation" in body
-        ? (body as EditorData).calculation
-        : (body as EmergencyReserveCalculation);
-    },
-  });
-
-  async function save(
-    event?: React.FormEvent<HTMLFormElement>,
-    requestedKeys = [...selectedKeys],
-    transfers: TransferDetails[] = [],
-    transferImpacts: TransferImpact[] = [],
-  ) {
-    event?.preventDefault();
-    const expenses = Number(monthlyExpenses);
-    const months = Number(targetMonths);
-    if (
-      mode === "settings" &&
-      (!monthlyExpenses ||
-        !Number.isFinite(expenses) ||
-        expenses <= 0 ||
-        expenses > 1_000_000_000_000)
-    ) {
-      setFormError(
-        "Informe um custo mensal maior que zero e de até R$ 1.000.000.000.000,00.",
-      );
+    if (!Number.isInteger(months) || months < 1 || months > 1200) {
+      setError("Informe uma meta entre 1 e 1.200 meses.");
       return;
     }
-    if (
-      mode === "settings" &&
-      targetMonths !== "" &&
-      (!Number.isInteger(months) || months < 1 || months > 1200)
-    ) {
-      setFormError(
-        "Informe sua meta pessoal como um número inteiro de 1 a 1200 meses.",
-      );
-      return;
-    }
-
+    setError(null);
     setSaving(true);
-    setFormError(null);
     try {
-      const response = await fetch(
-        mode === "settings"
-          ? "/api/emergency-reserve"
-          : "/api/emergency-reserve/positions",
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(
-            mode === "settings"
-              ? {
-                  monthlyExpenses: expenses,
-                  targetMonths: targetMonths === "" ? null : months,
-                }
-              : {
-                  selectedAssetKeys: requestedKeys,
-                  ...(transfers.length ? { transfers } : {}),
-                },
-          ),
-        },
-      );
+      const response = await fetch("/api/emergency-reserve", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          monthlyExpenses: expenses,
+          targetMonths: months,
+        }),
+      });
       const body: unknown = await response.json();
       if (!response.ok) {
         toast.error(
           getApiMessage(
             body,
-            mode === "settings"
-              ? "Não foi possível salvar a configuração da Reserva."
-              : "Não foi possível salvar as posições da Reserva.",
+            "Não foi possível salvar a configuração da reserva.",
           ),
         );
         return;
       }
-      const savedData = body as EditorData;
-      queryClient.setQueryData(
-        queryKeys.portfolio.emergencyReserve(),
-        savedData,
-      );
-      void queryClient.invalidateQueries({
+      toast.success(getApiMessage(body, "Configuração da reserva atualizada."));
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.portfolio.emergencyReserve(),
+      });
+      await queryClient.invalidateQueries({
         queryKey: queryKeys.portfolio.objectives(),
       });
-      setMonthlyExpenses(savedData.monthlyExpenses?.toString() ?? "");
-      setTargetMonths(savedData.targetMonths?.toString() ?? "");
-      const loadedMonths = savedData.targetMonths?.toString() ?? "";
-      setCustomMonths(loadedMonths);
-      setMonthChoice(
-        loadedMonths === "3" ||
-          loadedMonths === "6" ||
-          loadedMonths === "9" ||
-          loadedMonths === "12"
-          ? loadedMonths
-          : "custom",
-      );
-      setSelectedKeys(new Set(savedData.selectedAssetKeys));
-      setPreviewInput(null);
-      const transferMessage = transfers.length
-        ? createTransferSuccessMessage(transfers, transferImpacts)
-        : null;
-      setTransferSuccess(transferMessage);
-      setPendingTransfer(null);
-      toast.success(
-        getApiMessage(
-          body,
-          transferMessage ??
-            (mode === "settings"
-              ? "Configuração da Reserva atualizada com sucesso."
-              : "Posições da Reserva atualizadas com sucesso."),
-        ),
-      );
-      window.dispatchEvent(new Event("portfolio:updated"));
     } catch {
-      setPendingTransfer(null);
-      toast.error(
-        mode === "settings"
-          ? "Não foi possível salvar a configuração da Reserva. Tente novamente."
-          : "Não foi possível salvar as posições da Reserva. Tente novamente.",
-      );
+      toast.error("Não foi possível salvar a configuração da reserva.");
     } finally {
       setSaving(false);
     }
   }
 
-  function toggleHolding(assetKey: string) {
-    setSelectedKeys((current) => {
-      const next = new Set(current);
-      if (next.has(assetKey)) next.delete(assetKey);
-      else next.add(assetKey);
-      return next;
-    });
-  }
+  const expenses = parseBrazilianAmount(displayedMonthlyExpenses);
+  const months = Number(displayedTargetMonths);
+  const target =
+    Number.isFinite(expenses) && Number.isInteger(months) && months > 0
+      ? expenses * months
+      : null;
 
-  const selectedHoldings =
-    data?.holdings.filter((holding) => selectedKeys.has(holding.assetKey)) ??
-    [];
-  const selectedKnownValueCents = selectedHoldings
-    .reduce(
-      (total, holding) =>
-        holding.valueCents ? total + BigInt(holding.valueCents) : total,
-      0n,
-    )
-    .toString();
-  const holdingGroups = [
-    {
-      title: "Já vinculadas à reserva",
-      positions:
-        data?.holdings.filter(
-          (holding) =>
-            holding.assignedObjectiveId === reserveObjectiveId ||
-            (selectedKeys.has(holding.assetKey) &&
-              (holding.assignedObjectiveId === undefined ||
-                holding.assignedObjectiveId === null)),
-        ) ?? [],
-    },
-    {
-      title: "Posições livres para associar",
-      positions:
-        data?.holdings.filter(
-          (holding) =>
-            !selectedKeys.has(holding.assetKey) &&
-            (holding.assignedObjectiveId === undefined ||
-              holding.assignedObjectiveId === null),
-        ) ?? [],
-    },
-    {
-      title: "Vinculadas a outro objetivo",
-      positions:
-        data?.holdings.filter(
-          (holding) =>
-            holding.assignedObjectiveId !== undefined &&
-            holding.assignedObjectiveId !== null &&
-            holding.assignedObjectiveId !== reserveObjectiveId,
-        ) ?? [],
-    },
-  ].filter((group) => group.positions.length > 0);
-  const hasCurrentDraft = Boolean(
-    data &&
-    monthlyExpenses === (data.monthlyExpenses?.toString() ?? "") &&
-    targetMonths === (data.targetMonths?.toString() ?? "") &&
-    selectedKeysSignature === [...data.selectedAssetKeys].sort().join("|"),
-  );
-  const previewMatchesCurrentDraft = Boolean(
-    previewInput &&
-    previewInput.expenses === Number(monthlyExpenses) &&
-    previewInput.months === Number(targetMonths) &&
-    previewInput.selectedAssetKeys.join("|") === selectedKeysSignature,
-  );
-  const previewCalculation = previewMatchesCurrentDraft
-    ? (previewQuery.data ?? null)
-    : null;
-  const previewFailed = previewMatchesCurrentDraft && previewQuery.isError;
-  const visibleCalculation =
-    previewCalculation ?? (hasCurrentDraft ? data!.calculation : null);
-  const selectedHasIncompleteValues =
-    selectedKeys.size > selectedHoldings.length ||
-    selectedHoldings.some(
-      (holding) => holding.value === null || holding.unvaluedPositions > 0,
+  if (query.isPending)
+    return (
+      <div
+        role="status"
+        aria-label="Carregando configuração da reserva"
+        className="rounded-xl border p-5"
+      >
+        Carregando…
+      </div>
     );
-  const hasValidReserveTarget =
-    Number(monthlyExpenses) > 0 &&
-    Number.isInteger(Number(targetMonths)) &&
-    Number(targetMonths) >= 1 &&
-    Number(targetMonths) <= 1200 &&
-    Number.isFinite(Number(monthlyExpenses));
-  const previewLoading =
-    mode === "settings" &&
-    hasValidReserveTarget &&
-    !hasCurrentDraft &&
-    (previewCalculation === null || previewQuery.isFetching) &&
-    !previewFailed;
+  if (query.error)
+    return (
+      <div
+        role="alert"
+        className="space-y-3 rounded-xl border p-5 text-sm text-destructive"
+      >
+        <p>{query.error.message}</p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void query.refetch()}
+        >
+          Tentar novamente
+        </Button>
+      </div>
+    );
 
   return (
-    <section className="space-y-5" data-testid="reserve-editor">
-      <p
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
-        aria-live="polite"
-        role={reserveQuery.error && !data ? "alert" : "status"}
-      >
-        {loading
-          ? "Carregando configuração..."
-          : reserveQuery.error && !data
-            ? loadErrorMessage
-            : mode === "positions"
-              ? "Gerencie as posições vinculadas à Reserva"
-              : data?.configured
-                ? `Meta pessoal de ${data.targetMonths} meses`
-                : "Configuração pessoal ainda não definida"}
-        {data && (
-          <>
-            {" · "}
-            {selectedKeys.size}{" "}
-            {selectedKeys.size === 1
-              ? "grupo selecionado"
-              : "grupos selecionados"}
-          </>
-        )}
-      </p>
-      {loading && (
-        <div
-          className="space-y-5"
-          data-testid="reserve-editor-loading-layout"
-          aria-hidden="true"
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Meta da Reserva de emergência
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Defina suas despesas mensais e quantos meses quer cobrir. O saldo da
+          Reserva é atualizado separadamente pelo valor informado no banco.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => void save(event)}
+          noValidate
         >
-          <div className="grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
+          <div className="space-y-1.5">
+            <Label htmlFor="reserve-monthly-expenses">
+              Despesas mensais (R$)
+            </Label>
+            <Input
+              id="reserve-monthly-expenses"
+              value={displayedMonthlyExpenses}
+              inputMode="numeric"
+              onChange={(event) => {
+                setHasEditedExpenses(true);
+                setMonthlyExpenses(formatAmountInput(event.target.value));
+                setError(null);
+              }}
+              aria-invalid={Boolean(error)}
+              placeholder="0,00"
+              required
+            />
           </div>
-          <Skeleton className="h-40 w-full rounded-xl" />
-          <Skeleton className="h-72 w-full rounded-xl" />
-        </div>
-      )}
-      {reserveQuery.error && !data && (
-        <div role="alert" className="space-y-3 text-sm text-destructive">
-          <p>{reserveQuery.error.message}</p>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void reserveQuery.refetch();
-            }}
-          >
-            Tentar novamente
-          </Button>
-        </div>
-      )}
-      {data && (
-        <form className="space-y-5" onSubmit={save}>
-          <div className="space-y-5" data-testid="reserve-editor-layout">
-            <div className="space-y-5">
-              {mode === "settings" && (
-                <section
-                  aria-labelledby="reserve-target-title"
-                  className="space-y-4 rounded-xl border p-4 sm:p-5"
-                >
-                  <h3
-                    id="reserve-target-title"
-                    className="text-sm font-semibold"
-                  >
-                    Sua meta pessoal
-                  </h3>
-                  <div className="grid min-w-0 gap-4 lg:grid-cols-3">
-                    <div className="min-w-0 space-y-2">
-                      <Label htmlFor="monthly-expenses">Custo mensal</Label>
-                      <Input
-                        id="monthly-expenses"
-                        type="number"
-                        inputMode="decimal"
-                        min="0.01"
-                        step="0.01"
-                        value={monthlyExpenses}
-                        onChange={(event) => {
-                          setMonthlyExpenses(event.target.value);
-                        }}
-                        aria-describedby="reserve-cost-help"
-                        required
-                      />
-                      <p
-                        id="reserve-cost-help"
-                        className="text-xs text-muted-foreground"
-                      >
-                        {data.essentialMonthlyExpenses === null
-                          ? "Informe o valor mensal que deseja usar para calcular sua reserva."
-                          : `Mínimo estimado pelas recorrências essenciais: ${formatCurrency(data.essentialMonthlyExpenses)}/mês. Você pode escolher outro valor.`}
-                      </p>
-                      {data.essentialExpenseSources.length > 0 && (
-                        <Collapsible className="rounded-lg border bg-muted/20 p-3 text-xs">
-                          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            Ver despesas usadas na referência
-                            <ChevronDown
-                              aria-hidden="true"
-                              className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
-                            />
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            <ul className="mt-2 space-y-1.5">
-                              {data.essentialExpenseSources.map((source) => (
-                                <li
-                                  key={source.id}
-                                  className="flex flex-wrap justify-between gap-x-4 gap-y-1"
-                                >
-                                  <span>
-                                    {source.description} · {source.frequency}
-                                  </span>
-                                  <span className="tabular-nums">
-                                    {formatCurrency(source.amount)} →{" "}
-                                    {formatCurrency(source.monthlyEquivalent)}
-                                    /mês
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                            <p className="mt-2 text-muted-foreground">
-                              Contas com vencimentos diferentes são convertidas
-                              em custo anual e divididas por 12 para calcular a
-                              média mensal.
-                            </p>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      )}
-                    </div>
-                    <div className="min-w-0 space-y-2">
-                      <p className="text-sm font-medium">
-                        Meta pessoal em meses
-                      </p>
-                      <div
-                        className="flex flex-wrap gap-2"
-                        aria-label="Atalhos de meses"
-                      >
-                        {(["3", "6", "9", "12", "custom"] as const).map(
-                          (choice) => (
-                            <Button
-                              key={choice}
-                              type="button"
-                              size="sm"
-                              variant={
-                                monthChoice === choice ? "default" : "outline"
-                              }
-                              aria-pressed={monthChoice === choice}
-                              onClick={() => {
-                                if (monthChoice === "custom")
-                                  setCustomMonths(targetMonths);
-                                setMonthChoice(choice);
-                                setTargetMonths(
-                                  choice === "custom" ? customMonths : choice,
-                                );
-                                setFormError(null);
-                              }}
-                            >
-                              {choice === "custom"
-                                ? "Personalizado"
-                                : `${choice} meses`}
-                            </Button>
-                          ),
-                        )}
-                      </div>
-                      {monthChoice === "custom" && (
-                        <div className="min-w-0 space-y-2">
-                          <Label htmlFor="target-months">
-                            Quantidade de meses
-                          </Label>
-                          <Input
-                            id="target-months"
-                            type="number"
-                            inputMode="numeric"
-                            min="1"
-                            max="1200"
-                            step="1"
-                            value={targetMonths}
-                            onChange={(event) => {
-                              setTargetMonths(event.target.value);
-                              setCustomMonths(event.target.value);
-                            }}
-                            aria-describedby="reserve-months-help"
-                          />
-                        </div>
-                      )}
-                      <p
-                        id="reserve-months-help"
-                        className="text-xs text-muted-foreground"
-                      >
-                        Opcional. Sem um prazo escolhido, a tela mostra os
-                        cenários de 3, 6, 9 e 12 meses.
-                      </p>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2"
-                          >
-                            <Info
-                              aria-hidden="true"
-                              className="mr-1 size-3.5"
-                            />
-                            Sobre os atalhos
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          align="start"
-                          className="max-w-xs text-sm"
-                        >
-                          A quantidade de meses depende da estabilidade e
-                          previsibilidade da sua renda e das suas
-                          circunstâncias. Os atalhos não são recomendações.
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                    <div
-                      className="flex min-w-0 flex-col justify-center rounded-lg border bg-muted/30 p-3"
-                      aria-live="polite"
-                    >
-                      <span className="text-xs font-medium text-muted-foreground">
-                        Valor da meta calculado
-                      </span>
-                      <strong className="mt-1 text-lg tabular-nums">
-                        {hasValidReserveTarget
-                          ? previewLoading
-                            ? "Calculando..."
-                            : visibleCalculation?.targetValueCents
-                              ? formatCurrencyCents(
-                                  visibleCalculation.targetValueCents,
-                                )
-                              : "—"
-                          : "—"}
-                      </strong>
-                      <span className="mt-1 text-xs text-muted-foreground">
-                        Custo mensal multiplicado pelos meses definidos.
-                      </span>
-                    </div>
-                  </div>
-                </section>
-              )}
-              {mode === "positions" && (
-                <PositionCombinationSuggestions
-                  endpoint="/api/emergency-reserve/suggestions"
-                  title="Encontrar grupos pelo valor"
-                  draftSaveLabel="as posições"
-                  description="O valor serve apenas para localizar combinações de posições e não altera o saldo da Reserva."
-                  collapsedDescription="Só compara posições; não atualiza o saldo da Reserva."
-                  amountLabel="Valor para comparar posições"
-                  comparisonDetails="Compara o total com valores atuais: estimativa de CDB DI/CDI quando disponível ou valor importado. Não identifica finalidade, titularidade, liquidez ou condições de resgate."
-                  requestBody={{
-                    reserveTargetAmount: hasValidReserveTarget
-                      ? (data?.calculation.targetValue ?? null)
-                      : null,
-                  }}
-                  holdings={data.holdings}
-                  onApply={(assetKeys, candidate) => {
-                    if (candidate?.transfers?.length) {
-                      setPendingTransfer({
-                        assetKeys,
-                        transfers: candidate.transfers,
-                        impacts: candidate.impacts ?? [],
-                      });
-                      return false;
-                    }
-                    setSelectedKeys(new Set(assetKeys));
-                    setTransferSuccess(null);
-                  }}
-                />
-              )}
-
-              {mode === "positions" && (
-                <fieldset className="min-w-0 space-y-3 rounded-xl border p-4 sm:p-5">
-                  <legend className="px-1 text-sm font-semibold">
-                    Posições consideradas na reserva
-                  </legend>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedKeys.size} selecionado(s) · {data.holdings.length}{" "}
-                    disponíveis
-                  </p>
-                  <div
-                    className="rounded-lg bg-muted/40 p-3"
-                    aria-live="polite"
-                  >
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-sm font-medium">
-                        Valor conhecido selecionado
-                      </span>
-                      <span className="font-semibold tabular-nums">
-                        {formatCurrencyCents(selectedKnownValueCents)}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {selectedKeys.size} grupo(s) selecionado(s)
-                      {selectedHasIncompleteValues
-                        ? " · Parcial: há valores indisponíveis ou posições sem correspondência"
-                        : " · Valores disponíveis para todos os grupos selecionados"}
-                    </p>
-                  </div>
-                  <Collapsible defaultOpen>
-                    <CollapsibleTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="group w-full justify-between"
-                      >
-                        Ver {data.holdings.length} posições
-                        <ChevronDown
-                          aria-hidden="true"
-                          className="size-4 transition-transform group-data-[state=open]:rotate-180"
-                        />
-                      </Button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="space-y-3 pt-3">
-                      <fieldset className="space-y-3">
-                        <legend className="sr-only">
-                          Investimentos que você quer considerar na reserva
-                        </legend>
-                        <p className="text-sm text-muted-foreground">
-                          A Reserva considera apenas posições classificadas como
-                          renda fixa. Revise o que já está vinculado, o que está
-                          livre e o que pertence a outros objetivos. A
-                          classificação não confirma prazo nem condições de
-                          resgate.
-                        </p>
-                        {data.missingSelectionCount > 0 && (
-                          <div
-                            role="status"
-                            className="space-y-3 rounded-md border p-3 text-sm"
-                          >
-                            <p>
-                              {data.missingSelectionCount} grupo(s)
-                              selecionado(s) não tem correspondência inequívoca
-                              com a importação mais recente e fica(m) fora do
-                              cálculo até ser(em) selecionado(s) novamente.
-                            </p>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const visibleKeys = new Set(
-                                  data.holdings.map(
-                                    (holding) => holding.assetKey,
-                                  ),
-                                );
-                                setSelectedKeys(
-                                  (current) =>
-                                    new Set(
-                                      [...current].filter((key) =>
-                                        visibleKeys.has(key),
-                                      ),
-                                    ),
-                                );
-                              }}
-                            >
-                              Remover grupos sem correspondência
-                            </Button>
-                          </div>
-                        )}
-                        {data.holdings.length === 0 ? (
-                          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                            Importe uma posição da carteira para escolher os
-                            investimentos da reserva.
-                          </p>
-                        ) : (
-                          <div className="max-h-[min(28rem,45dvh)] space-y-4 overflow-y-auto rounded-lg border p-3">
-                            {holdingGroups.map((group) => (
-                              <section key={group.title} className="space-y-2">
-                                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                  {group.title}
-                                </h4>
-                                <ul className="grid gap-2 sm:grid-cols-2">
-                                  {group.positions.map((holding) => {
-                                    const assignedElsewhere =
-                                      holding.assignedObjectiveId !==
-                                        undefined &&
-                                      holding.assignedObjectiveId !== null &&
-                                      holding.assignedObjectiveId !==
-                                        reserveObjectiveId;
-                                    return (
-                                      <li key={holding.assetKey}>
-                                        <label
-                                          className={
-                                            "flex h-full min-w-0 items-start gap-3 rounded-md border p-3 " +
-                                            (assignedElsewhere
-                                              ? "cursor-not-allowed border-status-warning/20 bg-status-warning/5 opacity-70"
-                                              : "cursor-pointer bg-card hover:border-primary/40 hover:bg-muted/30")
-                                          }
-                                        >
-                                          <Checkbox
-                                            id={`reserve-holding-${holding.assetKey}`}
-                                            className="mt-1"
-                                            checked={selectedKeys.has(
-                                              holding.assetKey,
-                                            )}
-                                            disabled={
-                                              assignedElsewhere || saving
-                                            }
-                                            onCheckedChange={() =>
-                                              toggleHolding(holding.assetKey)
-                                            }
-                                          />
-                                          <span className="min-w-0 flex-1">
-                                            <span className="block font-medium">
-                                              {holding.product}
-                                            </span>
-                                            <span className="block text-xs text-muted-foreground">
-                                              {[
-                                                holding.assetCode,
-                                                holding.institution,
-                                                holding.issuer,
-                                              ]
-                                                .filter(Boolean)
-                                                .join(" · ") ||
-                                                "Sem código ou instituição informados"}
-                                              {holding.positionCount > 1 &&
-                                                ` · ${holding.positionCount} posições agrupadas`}
-                                            </span>
-                                            {assignedElsewhere && (
-                                              <span className="mt-1 inline-flex rounded-md border border-status-warning/30 bg-status-warning/10 px-2 py-0.5 text-xs text-status-warning">
-                                                Vinculada a{" "}
-                                                {holding.assignedObjectiveName}
-                                              </span>
-                                            )}
-                                            <span className="block text-xs text-muted-foreground">
-                                              {holding.value === null
-                                                ? "Sem valor informado"
-                                                : holding.valueCents
-                                                  ? formatCurrencyCents(
-                                                      holding.valueCents,
-                                                    )
-                                                  : formatCurrency(
-                                                      holding.value,
-                                                    )}
-                                              {holding.unvaluedPositions > 0 &&
-                                                ` · ${holding.unvaluedPositions} posição(ões) sem valor`}
-                                            </span>
-                                            {holding.valueSource && (
-                                              <span className="block text-xs text-muted-foreground">
-                                                Origem:{" "}
-                                                {portfolioMoneySourceLabels[
-                                                  holding.valueSource as keyof typeof portfolioMoneySourceLabels
-                                                ] ?? holding.valueSource}
-                                              </span>
-                                            )}
-                                            {holding.estimationBaseDate && (
-                                              <span className="block text-xs text-muted-foreground">
-                                                Data-base CURVA:{" "}
-                                                {date.format(
-                                                  new Date(
-                                                    `${holding.estimationBaseDate}T00:00:00Z`,
-                                                  ),
-                                                )}
-                                              </span>
-                                            )}
-                                            {holding.estimatedThrough && (
-                                              <span className="block text-xs text-muted-foreground">
-                                                {holding.cdbEstimateStatus ===
-                                                  "provisional" ||
-                                                holding.cdbEstimateComparisonApproximate
-                                                  ? "Estimativa aproximada até "
-                                                  : "Estimativa até "}
-                                                {date.format(
-                                                  new Date(
-                                                    `${holding.estimatedThrough}T00:00:00Z`,
-                                                  ),
-                                                )}
-                                              </span>
-                                            )}
-                                            {holding.cdbEstimateLimitation && (
-                                              <span className="block text-xs text-muted-foreground">
-                                                {holding.cdbEstimateLimitation}
-                                              </span>
-                                            )}
-                                          </span>
-                                        </label>
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              </section>
-                            ))}
-                          </div>
-                        )}
-                      </fieldset>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </fieldset>
-              )}
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="reserve-target-months">Meta (meses)</Label>
+            <Input
+              id="reserve-target-months"
+              value={displayedTargetMonths}
+              inputMode="numeric"
+              onChange={(event) => {
+                setHasEditedTarget(true);
+                setTargetMonths(event.target.value.replace(/\D/g, ""));
+                setError(null);
+              }}
+              placeholder="12"
+              required
+            />
           </div>
-
-          <div
-            data-testid="reserve-save-footer"
-            className="sticky bottom-0 z-10 w-full min-w-0 space-y-3 border-t bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 shadow-[0_-8px_20px_-16px_hsl(var(--foreground)/0.35)] backdrop-blur"
-          >
-            {mode === "settings" && (
-              <p className="text-xs text-muted-foreground">
-                O cálculo usa o valor estimado para CDB DI/CDI quando
-                disponível; nos demais casos, usa o valor informado na
-                importação. Confirme com a instituição o prazo e as condições de
-                resgate.
-              </p>
-            )}
-            {formError && (
-              <p role="alert" className="text-sm text-destructive">
-                {formError}
-              </p>
-            )}
-            {transferSuccess && (
-              <p role="status" className="text-sm text-status-success">
-                {transferSuccess}
-              </p>
-            )}
-            <div className="flex justify-end">
-              <Button
-                type="submit"
-                className="w-full sm:w-auto"
-                disabled={saving}
-              >
-                {saving
-                  ? "Salvando…"
-                  : mode === "settings"
-                    ? "Salvar configuração"
-                    : "Salvar posições"}
-              </Button>
-            </div>
+          <div className="rounded-lg border bg-muted/30 p-3 sm:col-span-2">
+            <p className="text-xs text-muted-foreground">
+              Valor da meta calculado
+            </p>
+            <p className="mt-1 text-lg font-semibold tabular-nums">
+              {target === null
+                ? "Informe despesas e meses"
+                : formatCurrency(target)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Despesas mensais × meses escolhidos.
+            </p>
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-destructive sm:col-span-2">
+              {error}
+            </p>
+          )}
+          <div className="sm:col-span-2 sm:flex sm:justify-end">
+            <Button
+              type="submit"
+              disabled={saving}
+              className="w-full sm:w-auto"
+            >
+              {saving ? "Salvando…" : "Salvar configuração"}
+            </Button>
           </div>
         </form>
-      )}
-      <AlertDialog
-        open={pendingTransfer !== null}
-        onOpenChange={() => setPendingTransfer(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Confirmar transferência para a Reserva
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              As posições listadas sairão dos objetivos atuais e passarão para a
-              Reserva na mesma transação que salva os vínculos.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="max-h-60 space-y-2 overflow-y-auto">
-            {pendingTransfer?.transfers.map((transfer) => (
-              <div
-                key={transfer.assetKey}
-                className="rounded-md border p-3 text-sm"
-              >
-                <p className="font-medium">{transfer.product}</p>
-                <p className="text-muted-foreground">
-                  De {transfer.fromObjectiveName} para Reserva ·{" "}
-                  {formatCurrency(transfer.value)}
-                </p>
-              </div>
-            ))}
-          </div>
-          {pendingTransfer?.impacts.length ? (
-            <div className="rounded-md bg-muted/40 p-3 text-sm">
-              <p className="mb-2 font-medium">
-                Saldo esperado após a transferência
-              </p>
-              <ul className="space-y-1">
-                {pendingTransfer.impacts.map((impact) => (
-                  <li key={impact.objectiveId}>
-                    {impact.objectiveName}:{" "}
-                    {impact.currentValue === null
-                      ? `total indisponível · ${formatCurrency(impact.knownValue)} conhecidos`
-                      : formatCurrency(impact.currentValue)}
-                    {impact.targetAmount === null
-                      ? ""
-                      : ` de ${formatCurrency(impact.targetAmount)}`}
-                    {impact.progressPercent === null
-                      ? ""
-                      : ` (${impact.progressPercent.toFixed(1)}%)`}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={saving || !pendingTransfer}
-              onClick={(event) => {
-                event.preventDefault();
-                const transfer = pendingTransfer!;
-                void save(
-                  undefined,
-                  transfer.assetKeys,
-                  transfer.transfers,
-                  transfer.impacts,
-                );
-              }}
-            >
-              {saving ? "Transferindo…" : "Usar e transferir"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </section>
+      </CardContent>
+    </Card>
   );
-}
-
-function createTransferSuccessMessage(
-  transfers: TransferDetails[],
-  impacts: TransferImpact[],
-) {
-  const byObjective = new Map<string, TransferDetails[]>();
-  for (const transfer of transfers) {
-    const items = byObjective.get(transfer.fromObjectiveId) ?? [];
-    items.push(transfer);
-    byObjective.set(transfer.fromObjectiveId, items);
-  }
-  const sourceMessages = [...byObjective].map(([objectiveId, items]) => {
-    const impact = impacts.find((entry) => entry.objectiveId === objectiveId)!;
-    const target =
-      impact.targetAmount === null
-        ? ""
-        : ` de ${formatCurrency(impact.targetAmount)}`;
-    const balance =
-      impact.currentValue === null
-        ? `total indisponível; ${formatCurrency(impact.knownValue)} conhecidos${target}`
-        : `${formatCurrency(impact.currentValue)}${target}`;
-    return `${items.length} ${items.length === 1 ? "posição foi transferida" : "posições foram transferidas"} de ${items[0].fromObjectiveName} para Reserva. ${items[0].fromObjectiveName} agora possui ${balance}`;
-  });
-  return sourceMessages.join(" ");
 }

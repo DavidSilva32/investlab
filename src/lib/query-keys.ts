@@ -14,18 +14,7 @@ export const queryKeys = {
     allocation: () => ["portfolio", "allocation"] as const,
     objectives: () => ["portfolio", "objectives"] as const,
     emergencyReserve: () => ["portfolio", "emergency-reserve"] as const,
-    emergencyReservePreview: (input: unknown) =>
-      ["portfolio", "emergency-reserve", "preview", input] as const,
     strategy: () => ["portfolio", "strategy"] as const,
-    positionSuggestions: (endpoint: string, input: unknown) =>
-      [
-        "portfolio",
-        "position-combination-suggestions",
-        endpoint,
-        input,
-      ] as const,
-    objectiveAllocationPreview: (input: unknown) =>
-      ["portfolio", "objectives", "allocation-preview", input] as const,
   },
   analyses: {
     all: ["analyses"] as const,

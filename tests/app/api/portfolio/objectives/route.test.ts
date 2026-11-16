@@ -11,7 +11,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const controller = vi.hoisted(() => ({
   get: vi.fn(),
   create: vi.fn(),
-  updateAssignments: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
 }));
@@ -20,13 +19,7 @@ vi.mock("@/backend/controllers/portfolio-objectives.controller", () => ({
 }));
 
 import { ApplicationError } from "@/backend/errors/application-error";
-import {
-  DELETE,
-  GET,
-  PATCH,
-  POST,
-  PUT,
-} from "@/app/api/portfolio/objectives/route";
+import { DELETE, GET, POST, PUT } from "@/app/api/portfolio/objectives/route";
 
 describe("portfolio objectives route", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -77,26 +70,6 @@ describe("portfolio objectives route", () => {
     expect(invalidResponse.status).toBe(400);
     await expect(invalidResponse.json()).resolves.toEqual({
       message: "Nome inválido.",
-    });
-  });
-
-  it("returns PATCH success and safe unexpected failures", async () => {
-    controller.updateAssignments.mockResolvedValue(
-      Response.json({ message: "saved" }),
-    );
-    const request = () =>
-      new Request("http://localhost/api/portfolio/objectives", {
-        method: "PATCH",
-        body: JSON.stringify({ objectiveId: "goal-1", assetKeys: [] }),
-        headers: { "content-type": "application/json" },
-      });
-    expect((await PATCH(request())).status).toBe(200);
-
-    controller.updateAssignments.mockRejectedValue(new Error("sensitive"));
-    const response = await PATCH(request());
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toEqual({
-      message: "Não foi possível salvar os objetivos.",
     });
   });
 

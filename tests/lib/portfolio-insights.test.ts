@@ -280,6 +280,50 @@ describe("getPortfolioInsights", () => {
     ).toEqual(["2026-09-30", "2026-09-30", "2026-10-01"]);
   });
 
+  it("sorts equally valued institutions alphabetically", () => {
+    const result = getPortfolioInsights([
+      {
+        product: "CDB B",
+        institution: "Banco B",
+        maturityAt: null,
+        totalValue: "10",
+      },
+      {
+        product: "CDB A",
+        institution: "Banco A",
+        maturityAt: null,
+        totalValue: "10",
+      },
+    ]);
+
+    expect(result.allocations.map(({ institution }) => institution)).toEqual([
+      "Banco A",
+      "Banco B",
+    ]);
+  });
+
+  it("orders institutions by descending value when the first is smaller", () => {
+    const result = getPortfolioInsights([
+      {
+        product: "CDB A",
+        institution: "Banco A",
+        maturityAt: null,
+        totalValue: "10",
+      },
+      {
+        product: "CDB B",
+        institution: "Banco B",
+        maturityAt: null,
+        totalValue: "20",
+      },
+    ]);
+
+    expect(result.allocations.map(({ institution }) => institution)).toEqual([
+      "Banco B",
+      "Banco A",
+    ]);
+  });
+
   it("keeps zero value chart remainders at zero percent", () => {
     const result = getPortfolioInsights(
       Array.from({ length: 7 }, (_, index) => ({

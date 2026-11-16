@@ -56,22 +56,6 @@ export const POST = withApiRequestLogging(
   },
 );
 
-export const PATCH = withApiRequestLogging(
-  "PATCH",
-  "/api/portfolio/objectives",
-  async function PATCH(request: Request) {
-    const requestId = getApiRequestId(request);
-    try {
-      return await portfolioObjectivesController.updateAssignments(
-        await request.json(),
-        requestId,
-      );
-    } catch (error) {
-      return failure(error, requestId, "update");
-    }
-  },
-);
-
 export const PUT = withApiRequestLogging(
   "PUT",
   "/api/portfolio/objectives",

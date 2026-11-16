@@ -62,19 +62,3 @@ export const PUT = withApiRequestLogging(
     }
   },
 );
-
-export const PATCH = withApiRequestLogging(
-  "PATCH",
-  "/api/emergency-reserve",
-  async function PATCH(request: Request) {
-    const requestId = getApiRequestId(request);
-    try {
-      return await emergencyReserveController.preview(
-        await request.json(),
-        requestId,
-      );
-    } catch (error) {
-      return failure(error, requestId, "read");
-    }
-  },
-);

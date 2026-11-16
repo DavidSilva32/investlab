@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { service, logger } = vi.hoisted(() => ({
   service: {
     preview: vi.fn(),
-    previewWithIdentityConflicts: vi.fn(),
+    previewWithReconciliation: vi.fn(),
     confirm: vi.fn(),
     delete: vi.fn(),
     reconciliationSummary: vi.fn(),
@@ -42,7 +42,7 @@ describe("ImportController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     service.preview.mockReturnValue(preview);
-    service.previewWithIdentityConflicts.mockResolvedValue(preview);
+    service.previewWithReconciliation.mockResolvedValue(preview);
     service.confirm.mockResolvedValue({
       preview,
       result: { importId: "import-1" },
@@ -149,67 +149,13 @@ describe("ImportController", () => {
     expect(service.confirm).toHaveBeenCalled();
   });
 
-  it("passes explicit disappeared-position confirmations to the service", async () => {
-    const form = new FormData();
-    form.append(
-      "file",
-      new File(["content"], "b3.xlsx", {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      }),
-    );
-    form.append(
-      "retiredObjectiveAssignments",
-      JSON.stringify([
-        {
-          assetKey: "v1:" + "a".repeat(64),
-          objectiveId: "00000000-0000-4000-8000-000000000001",
-        },
-      ]),
-    );
-
-    await importController.confirm(
-      new Request("http://test/import", { method: "POST", body: form }),
-      "request-retired-position",
-    );
-
-    expect(service.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "b3.xlsx" }),
-      "request-retired-position",
-      null,
-      undefined,
-      [
-        {
-          assetKey: "v1:" + "a".repeat(64),
-          objectiveId: "00000000-0000-4000-8000-000000000001",
-        },
-      ],
-    );
-  });
-
-  it("rejects malformed retired objective assignment form fields", async () => {
-    for (const value of [new File(["[]"], "assignments.json"), "{"]) {
-      const form = new FormData();
-      form.append("file", new File(["content"], "b3.xlsx"));
-      form.append("retiredObjectiveAssignments", value);
-
-      await expect(
-        importController.confirm(
-          new Request("http://test/import", { method: "POST", body: form }),
-          "request-invalid-retirement",
-        ),
-      ).rejects.toMatchObject({ statusCode: 400 });
-    }
-
-    expect(service.confirm).not.toHaveBeenCalled();
-  });
-
   it("counts and confirms negotiation rows with a document-specific message", async () => {
     const tradePreview = {
       hash: "d".repeat(64),
       documentType: "B3_TRADING_XLSX" as const,
       trades: [{ product: "ABCD3" }, { product: "WXYZ4" }],
     };
-    service.previewWithIdentityConflicts.mockResolvedValue(tradePreview);
+    service.previewWithReconciliation.mockResolvedValue(tradePreview);
     const previewResponse = await importController.preview(
       requestWithFile(),
       "request-trade",
@@ -229,81 +175,6 @@ describe("ImportController", () => {
       count: 2,
       documentType: "B3_TRADING_XLSX",
       message: "2 negociação(ões) importada(s) com sucesso.",
-    });
-  });
-
-  it("summarizes automatically closed and preserved position links", async () => {
-    service.confirm.mockResolvedValue({
-      preview,
-      result: { importId: "import-1" },
-      duplicate: false,
-      retirementReview: [
-        {
-          assetKey: "asset-1",
-          objectiveName: "Viagem",
-          reason: "total_redemption",
-        },
-        {
-          assetKey: "asset-2",
-          objectiveName: "Reserva",
-          reason: "partial_redemption",
-        },
-        {
-          assetKey: "asset-3",
-          objectiveName: "Viagem",
-          reason: "duplicate_evidence",
-        },
-        {
-          assetKey: "asset-11",
-          objectiveName: "Reserva",
-          reason: "duplicate_evidence",
-        },
-        {
-          assetKey: "asset-4",
-          objectiveName: "Reserva",
-          reason: "institution_mismatch",
-        },
-        {
-          assetKey: "asset-5",
-          objectiveName: "Viagem",
-          reason: "identity_conflict",
-        },
-        {
-          assetKey: "asset-6",
-          objectiveName: "Reserva",
-          reason: "snapshot_not_newer",
-        },
-        {
-          assetKey: "asset-7",
-          objectiveName: "Viagem",
-          reason: "snapshot_date_unavailable",
-        },
-        {
-          assetKey: "asset-8",
-          objectiveName: "Reserva",
-          reason: "movement_before_previous_snapshot",
-        },
-        {
-          assetKey: "asset-9",
-          objectiveName: "Viagem",
-          reason: "no_matching_redemption",
-        },
-        {
-          assetKey: "asset-10",
-          objectiveName: "Reserva",
-          reason: "incomplete_evidence",
-        },
-      ],
-    });
-
-    const response = await importController.confirm(
-      requestWithFile(),
-      "request-retirement-review",
-    );
-
-    await expect(response.json()).resolves.toMatchObject({
-      message:
-        "1 posição(ões) importada(s) com sucesso. 1 vínculo encerrado após resgate total. 1 resgate parcial, 2 movimentações duplicadas, 1 divergência de instituição, 1 conflito de identidade, 1 snapshot fora de ordem, 1 data de snapshot indisponível, 1 movimentação anterior ao snapshot, 1 resgate compatível não encontrado, 1 evidência incompleta — os vínculos foram mantidos.",
     });
   });
 
@@ -432,7 +303,7 @@ describe("ImportController", () => {
         "request-1",
       ),
     ).rejects.toMatchObject({ statusCode: 400 });
-    service.previewWithIdentityConflicts.mockResolvedValue({
+    service.previewWithReconciliation.mockResolvedValue({
       hash: "b".repeat(64),
       documentType: "B3_MOVEMENT_XLSX",
       movements: [{ product: "CDB" }, { product: "LCI" }],
@@ -489,58 +360,8 @@ describe("ImportController reference date handling", () => {
       "request-1",
       "2026-09-18",
       undefined,
-      undefined,
     );
   });
-
-  it.each([
-    {
-      review: [
-        { reason: "total_redemption" },
-        { reason: "partial_redemption" },
-      ],
-      suffix:
-        "1 vínculo encerrado após resgate total. 1 resgate parcial — os vínculos foram mantidos.",
-    },
-    {
-      review: [
-        { reason: "total_redemption" },
-        { reason: "total_redemption" },
-        { reason: "partial_redemption" },
-        { reason: "partial_redemption" },
-      ],
-      suffix:
-        "2 vínculos encerrados após resgate total. 2 resgates parciais — os vínculos foram mantidos.",
-    },
-    {
-      review: [{ reason: "future_reason" }],
-      suffix: "1 evidência incompleta — os vínculos foram mantidos.",
-    },
-  ])(
-    "summarizes automatic position retirement safely",
-    async ({ review, suffix }) => {
-      const movementPreview = {
-        hash: "b".repeat(64),
-        documentType: "B3_MOVEMENT_XLSX" as const,
-        movements: [{ product: "CDB", quantity: "1" }],
-      };
-      service.confirm.mockResolvedValue({
-        preview: movementPreview,
-        result: { importId: "movement-import" },
-        duplicate: false,
-        retirementReview: review,
-      });
-
-      const response = await importController.confirm(
-        requestWithFile(),
-        "request-1",
-      );
-
-      await expect(response.json()).resolves.toMatchObject({
-        message: expect.stringContaining(suffix),
-      });
-    },
-  );
 });
 
 describe("ImportController reconciliation transport", () => {
@@ -576,7 +397,6 @@ describe("ImportController reconciliation transport", () => {
       "r",
       null,
       decisions,
-      undefined,
     );
   });
 });

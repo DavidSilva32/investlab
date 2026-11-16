@@ -72,12 +72,9 @@ const supportReadOnlyRoutes = new Set([
   "GET /api/screener",
   "POST /api/analyses/companies/compare",
   "POST /api/analyses/stocks/[ticker]/valuation",
-  "POST /api/emergency-reserve/suggestions",
   "POST /api/portfolio/chat/query",
   "POST /api/portfolio/contribution",
-  "POST /api/portfolio/objectives/allocation/preview",
   "POST /api/portfolio/objectives/projection",
-  "POST /api/portfolio/objectives/suggestions",
   "POST /api/portfolio/strategy/contribution",
 ]);
 

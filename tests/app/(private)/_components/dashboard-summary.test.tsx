@@ -1,49 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DashboardSummary as DashboardSummaryComponent } from "@/app/(private)/_components/dashboard-summary";
-import { getPortfolioInsights } from "@/lib/portfolio-insights";
-import type { DashboardDestinationSummary } from "@/app/(private)/_components/dashboard-destinations-overview";
+import { DashboardSummary } from "@/app/(private)/_components/dashboard-summary";
+import type { DashboardObjective } from "@/app/(private)/_components/dashboard-destinations-overview";
+import {
+  getPortfolioInsights,
+  type PortfolioInsightPosition,
+} from "@/lib/portfolio-insights";
 
-Object.defineProperty(globalThis, "ResizeObserver", {
-  configurable: true,
-  value: class {
-    constructor(private readonly callback: ResizeObserverCallback) {}
-    observe(target: Element) {
-      this.callback(
-        [
-          {
-            target,
-            contentRect: { width: 500, height: 220 },
-          } as ResizeObserverEntry,
-        ],
-        this as unknown as ResizeObserver,
-      );
-    }
-    unobserve() {}
-    disconnect() {}
-  },
-});
-
-type SummaryProps = Omit<
-  Parameters<typeof DashboardSummaryComponent>[0],
-  "insights"
->;
-function DashboardSummary(props: SummaryProps) {
-  return (
-    <DashboardSummaryComponent
-      {...props}
-      insights={getPortfolioInsights(
-        props.positions,
-        new Date("2026-09-30T12:00:00-03:00"),
-      )}
-    />
-  );
-}
-
-const positions = [
+const positions: PortfolioInsightPosition[] = [
   {
     product: "CDB Banco A",
     institution: "Banco A",
@@ -51,414 +16,261 @@ const positions = [
     totalValue: "100",
     referenceDate: "2026-09-01",
   },
+];
+const objectives: DashboardObjective[] = [
   {
-    product: "Tesouro Selic",
-    institution: "Tesouro",
-    maturityAt: null,
-    totalValue: "300",
-    referenceDate: "2026-09-01",
+    id: "trip",
+    name: "Viagem",
+    kind: "CUSTOM",
+    currentValue: 14200.99,
+    targetAmount: 16000,
+    balanceTracking: {
+      observedAmountCents: "1420099",
+      observedOn: "2026-11-14",
+    },
   },
 ];
-const destinations: DashboardDestinationSummary = {
-  categories: [
-    { key: "reserve", value: 200, percentage: 50 },
-    { key: "unassigned", value: 200, percentage: 50 },
-  ],
-  knownTotal: 400,
-  missingPositionCount: 0,
-  unvaluedPositionCount: 0,
-};
 
-const reserve = {
-  monthlyExpenses: 100,
-  targetMonths: 3,
-  selectedValue: 200,
-  selectedGroups: 1,
-  unvaluedGroups: 0,
-  referenceDate: "2026-09-01",
-  targetValue: 300,
-  coveredMonths: 2,
-  difference: 100,
-  progressPercentage: 66.7,
-  status: "below_target" as const,
-};
+function renderDashboard(input: {
+  positions?: PortfolioInsightPosition[];
+  objectives?: typeof objectives;
+  reserve?: boolean;
+  onObjectivesOpenChange?: (open: boolean) => void;
+  onOpenReserve?: () => void;
+  onOpenImport?: () => void;
+  supportReadOnly?: boolean;
+  supportChecking?: boolean;
+  supportCheckError?: boolean;
+  destinationsLoading?: boolean;
+  destinationsUnavailable?: boolean;
+  onRetryDestinations?: () => void;
+}) {
+  const {
+    positions: currentPositions = positions,
+    objectives: currentObjectives = objectives,
+    reserve = true,
+    ...props
+  } = input;
+  return render(
+    <DashboardSummary
+      positions={currentPositions}
+      insights={getPortfolioInsights(
+        currentPositions,
+        new Date("2026-11-14T12:00:00-03:00"),
+      )}
+      objectives={currentObjectives}
+      emergencyReserve={
+        reserve
+          ? {
+              monthlyExpenses: 4650,
+              targetMonths: 12,
+              balance: 56042.48,
+              referenceDate: "2026-11-14",
+              targetValue: 55800,
+              coveredMonths: 12.05,
+              difference: -242.48,
+              progressPercentage: 100,
+              status: "above_target",
+            }
+          : undefined
+      }
+      reserveObservation={
+        reserve
+          ? { observedAmountCents: "5604248", observedOn: "2026-11-14" }
+          : null
+      }
+      {...props}
+    />,
+  );
+}
 
 describe("DashboardSummary", () => {
   afterEach(cleanup);
 
-  it("shows first-access guidance only when no positions are registered", () => {
-    const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
-
-    expect(html).toContain("Sua carteira começa aqui");
-    expect(html).toContain("Importar arquivo da B3");
-    expect(html).toContain("Cadastrar manualmente");
-    expect(html).not.toContain("Patrimônio conhecido");
-    expect(html).not.toContain("Ações rápidas");
+  it("shows first-access guidance when the holdings list is empty", () => {
+    renderDashboard({ positions: [], objectives: [], reserve: false });
+    expect(screen.getByText("Sua carteira começa aqui")).toBeTruthy();
+    expect(
+      screen.getAllByText("Importar arquivo da B3").length,
+    ).toBeGreaterThan(0);
   });
 
-  it("keeps configured objectives and reserve details visible without positions", () => {
+  it("shows goal balances separately from the holdings and reserve", () => {
+    renderDashboard({});
+    expect(screen.getByText("Viagem")).toBeTruthy();
+    expect(screen.getByText("R$ 14.200,99")).toBeTruthy();
+    expect(screen.getByText("Reserva de emergência")).toBeTruthy();
+    expect(
+      screen.getByText(/Saldos informados para objetivos não são somados/u),
+    ).toBeTruthy();
+  });
+
+  it("shows a missing balance without treating it as zero", () => {
+    renderDashboard({
+      objectives: [
+        { ...objectives[0]!, currentValue: null, balanceTracking: null },
+      ],
+    });
+    expect(screen.getByText("Saldo não informado")).toBeTruthy();
+    expect(screen.getByText(/Informe o saldo do banco/u)).toBeTruthy();
+  });
+
+  it.each([
+    { supportReadOnly: true },
+    { supportChecking: true },
+    { supportCheckError: true },
+  ])(
+    "hides dashboard editing actions while support access is read-only",
+    (state) => {
+      renderDashboard({ positions: [], objectives, reserve: false, ...state });
+      expect(
+        screen.queryByRole("button", { name: "Ver objetivos" }),
+      ).toBeNull();
+    },
+  );
+
+  it("opens objectives and reserve actions from the first-access dashboard", () => {
     const onObjectivesOpenChange = vi.fn();
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={[]}
-        destinationSummary={destinations}
-        longTermMissingPositionCount={2}
-        configuredObjectivesCount={1}
-        emergencyReserve={reserve}
-      />,
+    const onOpenReserve = vi.fn();
+    const onOpenImport = vi.fn();
+    renderDashboard({
+      positions: [],
+      objectives,
+      onObjectivesOpenChange,
+      onOpenReserve,
+      onOpenImport,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver objetivos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Atualizar dados da B3" }),
     );
 
-    expect(html).toContain("Sua carteira começa aqui");
-    expect(html).toContain("Posições por objetivo");
-    expect(html).toContain("Reserva de emergência");
-    expect(html).toContain("2 meses de despesas");
-    expect(html).not.toContain("Patrimônio conhecido");
+    expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
+    expect(onOpenReserve).toHaveBeenCalledOnce();
+    expect(onOpenImport).toHaveBeenCalledOnce();
+  });
 
+  it("opens objectives and prioritizes missing position values after first access", () => {
+    const onObjectivesOpenChange = vi.fn();
+    renderDashboard({
+      onObjectivesOpenChange,
+      positions: [{ ...positions[0]!, totalValue: null }],
+    });
+
+    screen
+      .getAllByRole("button", { name: "Ver objetivos" })
+      .forEach((button) => fireEvent.click(button));
+
+    expect(onObjectivesOpenChange).toHaveBeenCalledTimes(2);
+    expect(onObjectivesOpenChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByText("Revise as posições sem valor atual")).toBeTruthy();
+  });
+
+  it("shows reserve setup as a next action when the observed reserve needs settings", () => {
     render(
       <DashboardSummary
-        positions={[]}
-        destinationSummary={destinations}
-        configuredObjectivesCount={1}
-        onObjectivesOpenChange={onObjectivesOpenChange}
-        emergencyReserve={reserve}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Objetivos" }));
-    expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
-  });
-
-  it("shows an observed reserve balance before any positions are registered", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={[]}
+        positions={positions}
+        insights={getPortfolioInsights(positions)}
+        emergencyReserve={{
+          monthlyExpenses: null,
+          targetMonths: 6,
+          balance: null,
+          referenceDate: null,
+          targetValue: null,
+          coveredMonths: null,
+          difference: null,
+          progressPercentage: null,
+          status: "expenses_required",
+        }}
         reserveObservation={{
-          observedAmountCents: "5604248",
+          observedAmountCents: "250000",
           observedOn: "2026-11-14",
         }}
       />,
     );
 
-    expect(html).toContain("Reserva de emergência");
-    expect(html).toContain("Saldo atual da reserva");
-    expect(html).toContain("R$ 56.042,48");
-    expect(html).toContain("Informado em 14/11/2026");
+    expect(screen.getByText("Complete a configuração da reserva")).toBeTruthy();
   });
 
-  it("shows the destination loading state during first access", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary positions={[]} destinationsLoading />,
-    );
-
-    expect(html).toContain('aria-label="Carregando destinos da carteira"');
-    expect(html).toContain("Sua carteira começa aqui");
-  });
-
-  it("preserves configured read-only summaries without opening editable panels", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={[]}
-        destinationSummary={destinations}
-        configuredObjectivesCount={1}
-        emergencyReserve={reserve}
-        supportReadOnly
-      />,
-    );
-
-    expect(html).toContain("Posições por objetivo");
-    expect(html).toContain("Reserva de emergência");
-    expect(html).not.toContain(">Objetivos <");
-    expect(html).not.toContain("Ver reserva");
-  });
-
-  it("prioritizes current wealth and exposes the approved quick actions", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={positions}
-        destinationSummary={destinations}
-      />,
-    );
-
-    expect(html).toContain("Patrimônio conhecido");
-    expect(html).toMatch(/R\$\s400,00/);
-    expect(html).toContain("2 de 2");
-    expect(html).not.toContain("Data-base");
-    expect(html).not.toContain("Dados de 01/09/2026");
-    expect(html).toContain("Importar e conciliar");
-    expect(html).toContain("Adicionar posição");
-    expect(html).not.toContain('href="/carteira#manual-positions"');
-    expect(html).toContain("Importar e conciliar");
-    expect(html).toContain("Ver objetivos");
-    expect(html).not.toContain('href="/carteira?panel=objectives"');
-  });
-
-  it("keeps the destinations donut and reserve summary together", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={positions}
-        destinationSummary={destinations}
-        emergencyReserve={reserve}
-      />,
-    );
-
-    expect(html).toContain("Posições por objetivo");
-    expect(html).toContain("Reserva");
-    expect(html).toContain("Sem destino");
-    expect(html).toContain(
-      "Distribuição do valor das posições da carteira por objetivo",
-    );
-    expect(html).toContain("Reserva de emergência");
-    expect(html).toContain("2 meses de despesas");
-    expect(html).toMatch(/Faltam R\$\s100,00 para a meta que você escolheu\./);
-    expect(html).toContain("xl:grid-cols-2");
-  });
-
-  it("opens the dashboard objectives panel from both objective controls", () => {
-    const onObjectivesOpenChange = vi.fn();
-    render(
-      <DashboardSummary
-        positions={positions}
-        destinationSummary={destinations}
-        onObjectivesOpenChange={onObjectivesOpenChange}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Objetivos" }));
-    expect(onObjectivesOpenChange).toHaveBeenCalledWith(true);
-  });
-
-  it("opens the dashboard reserve panel from the reserve summary", () => {
-    const onOpenReserve = vi.fn();
-    render(
-      <DashboardSummary
-        positions={positions}
-        emergencyReserve={reserve}
-        onOpenReserve={onOpenReserve}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
-
-    expect(onOpenReserve).toHaveBeenCalledOnce();
-  });
-
-  it("opens the existing import and reconciliation sheet from the reserve", () => {
-    const onOpenImport = vi.fn();
-    render(
-      <DashboardSummary
-        positions={positions}
-        emergencyReserve={reserve}
-        onOpenImport={onOpenImport}
-      />,
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Atualizar dados da B3" }),
-    );
-
-    expect(onOpenImport).toHaveBeenCalledOnce();
-  });
-
-  it("keeps the reserve action safe when the dashboard does not provide a handler", () => {
-    render(
-      <DashboardSummary positions={positions} emergencyReserve={reserve} />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
-
-    expect(screen.getByRole("button", { name: "Ver reserva" })).toBeTruthy();
-  });
-
-  it("keeps the quick objective action safe when no panel controller is provided", () => {
-    render(<DashboardSummary positions={positions} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Ver objetivos" }));
-    expect(screen.queryByText("Gerenciar objetivos")).toBeNull();
-  });
-
-  it("keeps the import action safe when no panel controller is provided", () => {
-    render(<DashboardSummary positions={positions} />);
-
-    const importButton = screen.getByRole("button", {
-      name: "Importar e conciliar",
+  it("shows an observed reserve alone on first access and omits it when no data exists", () => {
+    const { rerender } = renderDashboard({
+      positions: [],
+      objectives: [],
+      reserve: true,
     });
-    fireEvent.click(importButton);
+    expect(screen.getByText("Reserva de emergência")).toBeTruthy();
 
-    expect(importButton.getAttribute("aria-expanded")).toBeNull();
-  });
-
-  it("consolidates missing position values into the dashboard next action", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={[
-          {
-            product: "Ativo sem valor",
-            institution: null,
-            maturityAt: null,
-            totalValue: null,
-          },
-        ]}
-      />,
-    );
-
-    expect(html).toContain("0 de 1");
-    expect(html).toContain("Próxima ação");
-    expect(html).toContain("Revise as posições sem valor atual");
-    expect(html).not.toContain("Dados para revisar");
-    expect(html).toContain('href="/carteira?view=positions"');
-  });
-
-  it("summarizes missing objective positions in one direct action", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={positions}
-        destinationSummary={{ ...destinations, missingPositionCount: 1 }}
-      />,
-    );
-
-    expect(html).toContain("Próxima ação");
-    expect(html).toContain("Revise os objetivos com posições ausentes");
-    expect(html).toContain('href="/carteira?panel=objectives"');
-  });
-
-  it("shows reserve identity gaps once and keeps the reserve card useful", () => {
-    const incompleteReserve = {
-      ...reserve,
-      unvaluedGroups: 1,
-    };
-    const html = renderToStaticMarkup(
-      <DashboardSummary
-        positions={positions}
-        emergencyReserve={incompleteReserve}
-      />,
-    );
-
-    expect(html).toContain("Próxima ação");
-    expect(html).toContain("Revise as posições selecionadas como reserva");
-    expect(html).toContain(
-      'href="/carteira?panel=objectives&amp;objective=reserve"',
-    );
-    expect(html).not.toContain(
-      "A comparação com sua meta está incompleta porque há posições ou valores ausentes.",
-    );
-    expect(html).toContain("Ver reserva");
-  });
-
-  it("shows recorded position and maturity facts with their values", () => {
-    const html = renderToStaticMarkup(
-      <DashboardSummary positions={positions} />,
-    );
-
-    expect(html).toContain("Fatos da carteira");
-    expect(html).toContain("Tesouro Selic");
-    expect(html).toMatch(/R\$\s300,00/);
-    expect(html).toContain("75% do patrimônio conhecido");
-    expect(html).toContain("Próximo vencimento");
-    expect(html).toMatch(/R\$\s100,00/);
-    expect(html).not.toContain("Como ler estes dados");
-  });
-
-  it("keeps destination failures visible and retries the objectives request", async () => {
-    const user = userEvent.setup();
-    const onRetryDestinations = vi.fn();
-    render(
-      <DashboardSummary
-        positions={positions}
-        destinationsUnavailable
-        onRetryDestinations={onRetryDestinations}
-      />,
-    );
-
-    expect(screen.getByText("Destinos indisponíveis")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
-    expect(onRetryDestinations).toHaveBeenCalledOnce();
-  });
-
-  it("reports partial destination values without making missing data look like zero", () => {
-    const summary = {
-      ...destinations,
-      unvaluedPositionCount: 1,
-    };
-    const html = renderToStaticMarkup(
-      <DashboardSummary positions={positions} destinationSummary={summary} />,
-    );
-
-    expect(html).toContain("Distribuição parcial · valores conhecidos.");
-  });
-
-  it("shows first-access guidance instead of portfolio facts when no positions exist", () => {
-    const html = renderToStaticMarkup(<DashboardSummary positions={[]} />);
-
-    expect(html).toContain("Sua carteira começa aqui");
-    expect(html).toContain("Importar arquivo da B3");
-    expect(html).toContain("Cadastrar manualmente");
-    expect(html).not.toContain("Dados para revisar");
-    expect(html).not.toContain("Fatos da carteira");
-  });
-
-  it("preserves each configured reserve signal when the portfolio has no positions", () => {
-    const configuredReserves = [
-      { ...reserve, monthlyExpenses: null, targetMonths: 3 },
-      {
-        ...reserve,
-        monthlyExpenses: null,
-        targetMonths: null,
-        selectedGroups: 1,
-      },
-      {
-        ...reserve,
-        monthlyExpenses: null,
-        targetMonths: null,
-        selectedGroups: 0,
-        unvaluedGroups: 1,
-      },
-      {
-        ...reserve,
-        monthlyExpenses: null,
-        targetMonths: null,
-        selectedGroups: 0,
-        unvaluedGroups: 0,
-        missingSelectionCount: 1,
-      },
-    ];
-
-    for (const configuredReserve of configuredReserves) {
-      const html = renderToStaticMarkup(
-        <DashboardSummary
-          positions={[]}
-          emergencyReserve={configuredReserve}
-        />,
-      );
-      expect(html).toContain("Reserva de emergência");
-    }
-
-    const unconfiguredReserve = {
-      ...reserve,
-      monthlyExpenses: null,
-      targetMonths: null,
-      selectedGroups: 0,
-      unvaluedGroups: 0,
-      missingSelectionCount: undefined,
-    };
-    const html = renderToStaticMarkup(
+    rerender(
       <DashboardSummary
         positions={[]}
-        emergencyReserve={unconfiguredReserve}
+        insights={getPortfolioInsights([])}
+        objectives={[]}
       />,
     );
-    expect(html).not.toContain("Reserva de emergência");
+    expect(screen.queryByText("Reserva de emergência")).toBeNull();
+    expect(screen.queryByText("Objetivos")).toBeNull();
   });
 
-  it("keeps first-access actions blocked after support status fails", () => {
-    render(<DashboardSummary positions={[]} supportCheckError />);
+  it("safely invokes default action callbacks when optional handlers are omitted", () => {
+    renderDashboard({});
 
-    expect(
-      screen.queryByRole("button", { name: "Tentar novamente" }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /Importar arquivo da B3/ }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Cadastrar manualmente" }),
-    ).toBeNull();
+    screen
+      .getAllByRole("button", { name: "Ver objetivos" })
+      .forEach((button) => fireEvent.click(button));
+    fireEvent.click(screen.getByRole("button", { name: "Ver reserva" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar e conciliar" }),
+    );
+
+    expect(screen.getByText("Viagem")).toBeTruthy();
+  });
+
+  it("shows a reserve with settings on first access even before its balance is observed", () => {
+    render(
+      <DashboardSummary
+        positions={[]}
+        insights={getPortfolioInsights([])}
+        objectives={[]}
+        emergencyReserve={{
+          monthlyExpenses: null,
+          targetMonths: 6,
+          balance: null,
+          referenceDate: null,
+          targetValue: null,
+          coveredMonths: null,
+          difference: null,
+          progressPercentage: null,
+          status: "balance_required",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Reserva de emergência")).toBeTruthy();
+    expect(screen.getByText(/Informe o saldo atual da Reserva/)).toBeTruthy();
+  });
+
+  it("does not show an unconfigured reserve on first access", () => {
+    render(
+      <DashboardSummary
+        positions={[]}
+        insights={getPortfolioInsights([])}
+        objectives={[]}
+        emergencyReserve={{
+          monthlyExpenses: null,
+          targetMonths: null,
+          balance: null,
+          referenceDate: null,
+          targetValue: null,
+          coveredMonths: null,
+          difference: null,
+          progressPercentage: null,
+          status: "not_configured",
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Reserva de emergência")).toBeNull();
   });
 });
