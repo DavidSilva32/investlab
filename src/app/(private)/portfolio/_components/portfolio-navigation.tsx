@@ -59,7 +59,7 @@ export function PortfolioNavigation({
           Movimentações
         </PortfolioLink>
         <PortfolioLink
-          href="/carteira/proventos"
+          href="/portfolio/proventos"
           active={activeView === "proventos"}
         >
           <CircleDollarSign aria-hidden="true" className="size-4" />

@@ -44,6 +44,8 @@ describe("PortfolioNavigation", () => {
     expect(html).toContain('href="/carteira"');
     expect(html).toContain('href="/carteira?view=positions"');
     expect(html).toContain('href="/carteira?view=movements"');
+    expect(html).toContain('href="/portfolio/proventos"');
+    expect(html).toContain("Proventos");
     expect(html).toContain("Movimentações");
     expect(html).toContain("border-primary text-primary");
     expect(html).toContain('aria-current="page"');

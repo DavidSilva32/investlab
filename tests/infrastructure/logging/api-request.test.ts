@@ -207,6 +207,28 @@ describe("withApiRequestLogging", () => {
     await expect(response.json()).resolves.toEqual({ ownerId: "owner-1" });
   });
 
+  it("scopes B3 proventos reads to the authenticated owner", async () => {
+    authorization.user = {
+      id: "customer-owner",
+      role: "USER",
+      betaExpiresAt: null,
+    };
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/proventos",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+
+    const response = await handler(
+      new Request("https://investlab.test/api/proventos"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ownerId: "customer-owner",
+    });
+  });
+
   it("permits support-mode reads of owner inputs and denies writes", async () => {
     support.token = "a".repeat(43);
     support.active = { targetUserId: "customer-1" };
@@ -505,6 +527,7 @@ describe("withApiRequestLogging", () => {
     support.token = "a".repeat(43);
     support.active = { targetUserId: "customer-1" };
     const routes = [
+      "/api/proventos",
       "/api/portfolio",
       "/api/portfolio/monthly-review",
       "/api/portfolio/operations",
@@ -538,6 +561,7 @@ describe("withApiRequestLogging", () => {
   });
 
   it.each([
+    ["POST", "/api/proventos"],
     ["POST", "/api/finance-overview"],
     ["POST", "/api/financial-entries"],
     ["PATCH", "/api/financial-entries"],

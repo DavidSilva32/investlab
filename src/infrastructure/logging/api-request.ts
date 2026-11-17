@@ -24,6 +24,7 @@ export function getApiRequestId(request?: Request) {
 
 function isOwnerScopedPrivateApi(route: string) {
   return (
+    route === "/api/proventos" ||
     /^\/api\/(portfolio|imports|positions|emergency-reserve|financial-recurrences|financial-entries|financial-categories|finance-overview|cdb-rates|learning|billing)(\/|$)/.test(
       route,
     ) ||
@@ -50,6 +51,7 @@ function isSupportLogout(method: string, route: string) {
 }
 
 const supportReadOnlyRoutes = new Set([
+  "GET /api/proventos",
   "GET /api/portfolio",
   "GET /api/portfolio/monthly-review",
   "GET /api/portfolio/operations",
