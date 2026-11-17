@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   ArrowLeftRight,
   ChartNoAxesCombined,
+  CircleDollarSign,
   Upload,
   WalletCards,
 } from "lucide-react";
@@ -21,7 +22,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-export type PortfolioView = "overview" | "positions" | "movements";
+export type PortfolioView =
+  "overview" | "positions" | "movements" | "proventos";
 
 export function PortfolioNavigation({
   activeView,
@@ -55,6 +57,13 @@ export function PortfolioNavigation({
         >
           <ArrowLeftRight aria-hidden="true" className="size-4" />
           Movimentações
+        </PortfolioLink>
+        <PortfolioLink
+          href="/carteira/proventos"
+          active={activeView === "proventos"}
+        >
+          <CircleDollarSign aria-hidden="true" className="size-4" />
+          Proventos
         </PortfolioLink>
       </nav>
       <Sheet

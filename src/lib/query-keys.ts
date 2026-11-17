@@ -14,6 +14,7 @@ export const queryKeys = {
     allocation: () => ["portfolio", "allocation"] as const,
     objectives: () => ["portfolio", "objectives"] as const,
     emergencyReserve: () => ["portfolio", "emergency-reserve"] as const,
+    proventos: () => ["portfolio", "proventos"] as const,
     strategy: () => ["portfolio", "strategy"] as const,
   },
   analyses: {

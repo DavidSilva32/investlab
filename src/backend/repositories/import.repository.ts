@@ -8,6 +8,7 @@ import {
   imports,
   movementItems,
   tradingItems,
+  b3ProventoItems,
   b3ReconciliationEvents,
   portfolioOperationReconciliationEvents,
   positionItems,
@@ -56,6 +57,15 @@ type ImportCreateInput =
       fileHash: string;
       documentType: "B3_TRADING_XLSX";
       trades: Array<ParsedB3Trade & { identityFingerprint: string }>;
+    }
+  | {
+      fileName: string;
+      fileHash: string;
+      documentType: "B3_PROVENTO_XLSX";
+      proventos: Extract<
+        ParsedB3Import,
+        { documentType: "B3_PROVENTO_XLSX" }
+      >["proventos"];
     };
 type B3PositionImportInput = Extract<
   ImportCreateInput,
@@ -739,6 +749,16 @@ export class ImportRepository {
           );
           return { importId: importRecord.id };
         }
+        if (input.documentType === "B3_PROVENTO_XLSX") {
+          await transaction.insert(b3ProventoItems).values(
+            input.proventos.map((provento) => ({
+              userId,
+              importId: importRecord.id,
+              ...provento,
+            })),
+          );
+          return { importId: importRecord.id };
+        }
         const [snapshot] = await transaction
           .insert(positionSnapshots)
           .values({
@@ -918,6 +938,15 @@ export class ImportRepository {
               and(
                 eq(tradingItems.userId, userId),
                 inArray(tradingItems.importId, importIds),
+              ),
+            );
+        } else if (documentType === "B3_PROVENTO_XLSX") {
+          await transaction
+            .delete(b3ProventoItems)
+            .where(
+              and(
+                eq(b3ProventoItems.userId, userId),
+                inArray(b3ProventoItems.importId, importIds),
               ),
             );
         } else {
@@ -1301,6 +1330,39 @@ export class ImportRepository {
         .orderBy(asc(tradingItems.tradingDate), asc(tradingItems.createdAt));
     } catch (error) {
       logger.error("database_trading_items_query_failed", { requestId, error });
+      throw error;
+    }
+  }
+
+  async listB3Proventos(requestId?: string) {
+    const userId = requireDataOwnerId();
+    try {
+      return await getDatabaseClient()
+        .select({
+          id: b3ProventoItems.id,
+          importId: b3ProventoItems.importId,
+          fileName: imports.fileName,
+          status: b3ProventoItems.status,
+          sourceSheet: b3ProventoItems.sourceSheet,
+          sourceRow: b3ProventoItems.sourceRow,
+          product: b3ProventoItems.product,
+          eventType: b3ProventoItems.eventType,
+          paymentDate: b3ProventoItems.paymentDate,
+          institution: b3ProventoItems.institution,
+          quantity: b3ProventoItems.quantity,
+          unitPrice: b3ProventoItems.unitPrice,
+          netValue: b3ProventoItems.netValue,
+          importedAt: imports.createdAt,
+        })
+        .from(b3ProventoItems)
+        .innerJoin(imports, eq(imports.id, b3ProventoItems.importId))
+        .where(eq(b3ProventoItems.userId, userId))
+        .orderBy(
+          desc(b3ProventoItems.paymentDate),
+          desc(b3ProventoItems.createdAt),
+        );
+    } catch (error) {
+      logger.error("database_b3_proventos_query_failed", { requestId, error });
       throw error;
     }
   }

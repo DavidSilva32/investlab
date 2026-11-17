@@ -85,6 +85,18 @@ type TradingRecord = {
   fees: string | null;
   sourceRow: number;
 };
+type Provento = {
+  status: "RECEIVED" | "UPCOMING";
+  sourceSheet: string;
+  sourceRow: number;
+  product: string;
+  eventType: string;
+  paymentDate: string;
+  institution: string | null;
+  quantity: string;
+  unitPrice: string;
+  netValue: string;
+};
 type DuplicateCandidate = {
   identityFingerprint: string;
   sourceRows: number[];
@@ -151,6 +163,12 @@ type Preview =
         unmatched: unknown[];
       };
       batchReconciliationPending: boolean;
+    }
+  | {
+      documentType: "B3_PROVENTO_XLSX";
+      proventos: Provento[];
+      count: number;
+      duplicateImport: boolean;
     };
 type Item = {
   file: File;
@@ -189,7 +207,9 @@ export function compareImportConfirmationOrder(
       ? 0
       : item.preview.documentType === "B3_TRADING_XLSX"
         ? 1
-        : 2;
+        : item.preview.documentType === "B3_PROVENTO_XLSX"
+          ? 2
+          : 3;
   return (
     importPriority(left) - importPriority(right) ||
     (left.preview.documentType === "B3_POSITION_XLSX" &&
@@ -312,8 +332,13 @@ export function PortfolioImport({
   }
 
   async function confirm() {
-    const ready = items.filter((item): item is Item & { preview: Preview } =>
-      Boolean(item.preview),
+    const ready = items.filter(
+      (item): item is Item & { preview: Preview } =>
+        Boolean(item.preview) &&
+        !(
+          item.preview?.documentType === "B3_PROVENTO_XLSX" &&
+          item.preview.duplicateImport
+        ),
     );
     setConfirmationSummary(null);
     setLoading(true);
@@ -368,6 +393,9 @@ export function PortfolioImport({
       trades: successes.filter(
         ({ item }) => item.preview.documentType === "B3_TRADING_XLSX",
       ),
+      proventos: successes.filter(
+        ({ item }) => item.preview.documentType === "B3_PROVENTO_XLSX",
+      ),
     };
     const countRows = (imports: typeof successes) =>
       imports.reduce((total, result) => {
@@ -378,7 +406,9 @@ export function PortfolioImport({
             ? preview.count
             : preview.documentType === "B3_MOVEMENT_XLSX"
               ? preview.movements.length
-              : preview.trades.length)
+              : preview.documentType === "B3_TRADING_XLSX"
+                ? preview.trades.length
+                : preview.proventos.length)
         );
       }, 0);
     const importedParts = [
@@ -395,6 +425,11 @@ export function PortfolioImport({
       ...(importedByType.trades.length
         ? [
             `${importedByType.trades.length} ${importedByType.trades.length === 1 ? "arquivo de negociação processado" : "arquivos de negociação processados"} (${countRows(importedByType.trades)} linhas analisadas)`,
+          ]
+        : []),
+      ...(importedByType.proventos.length
+        ? [
+            `${importedByType.proventos.length} ${importedByType.proventos.length === 1 ? "arquivo de proventos processado" : "arquivos de proventos processados"} (${countRows(importedByType.proventos)} linhas analisadas)`,
           ]
         : []),
     ];
@@ -427,6 +462,8 @@ export function PortfolioImport({
         toast.warning("Atualização parcial. Veja os detalhes abaixo.");
       else toast.success("Atualização concluída.");
       window.dispatchEvent(new Event("portfolio:updated"));
+      if (importedByType.proventos.length)
+        window.dispatchEvent(new Event("proventos:updated"));
       if (
         successes.some(
           (result) => result.item.preview.documentType === "B3_TRADING_XLSX",
@@ -457,6 +494,14 @@ export function PortfolioImport({
     (item) =>
       item.preview?.documentType === "B3_POSITION_XLSX" &&
       Boolean(item.preview.referenceDateConflict),
+  );
+  const confirmableCount = items.filter(
+    (item) =>
+      item.preview &&
+      !(
+        item.preview.documentType === "B3_PROVENTO_XLSX" &&
+        item.preview.duplicateImport
+      ),
   );
   function updateReconciliation(
     file: File,
@@ -648,13 +693,14 @@ export function PortfolioImport({
               disabled={
                 loading ||
                 hasMissingPositionReferenceDate ||
-                hasReferenceDateConflict
+                hasReferenceDateConflict ||
+                confirmableCount.length === 0
               }
               onClick={confirm}
             >
               {loading
                 ? "Salvando..."
-                : `Confirmar ${items.filter((item) => item.preview).length} arquivo(s)`}
+                : `Confirmar ${confirmableCount.length} arquivo(s)`}
             </Button>
           </div>
         )}
@@ -709,6 +755,9 @@ function PreviewItem({
 
   if (item.preview.documentType === "B3_TRADING_XLSX")
     return <TradingPreview fileName={item.file.name} preview={item.preview} />;
+
+  if (item.preview.documentType === "B3_PROVENTO_XLSX")
+    return <ProventoPreview fileName={item.file.name} preview={item.preview} />;
 
   return (
     <Card className="motion-content-reveal overflow-hidden shadow-sm">
@@ -1391,5 +1440,106 @@ function SummaryItem({
         </dd>
       </div>
     </div>
+  );
+}
+
+function ProventoPreview({
+  fileName,
+  preview,
+}: {
+  fileName: string;
+  preview: Extract<Preview, { documentType: "B3_PROVENTO_XLSX" }>;
+}) {
+  const received = preview.proventos[0]?.status === "RECEIVED";
+  const total = preview.proventos.reduce(
+    (sum, item) => sum + Number(item.netValue),
+    0,
+  );
+  return (
+    <Card className="motion-content-reveal overflow-hidden shadow-sm">
+      <CardHeader className="gap-4 border-b bg-muted/20 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="truncate text-base">{fileName}</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Confira os proventos antes de salvar.
+            </p>
+          </div>
+          <Badge variant="secondary" className="w-fit">
+            {preview.count} {preview.count === 1 ? "registro" : "registros"} ·{" "}
+            {received ? "Recebidos" : "A receber"}
+          </Badge>
+        </div>
+        <Alert>
+          <AlertTitle>Proventos separados da carteira</AlertTitle>
+          <AlertDescription>
+            {received
+              ? "São valores líquidos registrados como recebidos pela B3. Eles não alteram posições nem registram aportes."
+              : "São previsões da B3 e podem mudar. Elas não representam dinheiro já recebido."}
+          </AlertDescription>
+        </Alert>
+        {preview.duplicateImport ? (
+          <Alert aria-live="polite">
+            <AlertTitle>Este arquivo já foi importado</AlertTitle>
+            <AlertDescription>
+              Este arquivo será ignorado para evitar duplicação. Você ainda pode
+              confirmar os outros arquivos selecionados.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table aria-label="Prévia de proventos" className="min-w-[50rem]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead>Evento</TableHead>
+                <TableHead>{received ? "Pagamento" : "Previsão"}</TableHead>
+                <TableHead>Instituição</TableHead>
+                <TableHead className="text-right">Quantidade</TableHead>
+                <TableHead className="text-right">Preço unitário</TableHead>
+                <TableHead className="text-right">Valor líquido</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {preview.proventos.map((provento) => (
+                <TableRow key={`${provento.sourceSheet}-${provento.sourceRow}`}>
+                  <TableCell className="min-w-52 font-medium">
+                    {provento.product}
+                  </TableCell>
+                  <TableCell>{provento.eventType}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {date.format(new Date(`${provento.paymentDate}T00:00:00Z`))}
+                  </TableCell>
+                  <TableCell className="min-w-56">
+                    {provento.institution ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number.format(Number(provento.quantity))}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money.format(Number(provento.unitPrice))}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {money.format(Number(provento.netValue))}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={6}>
+                  Total {received ? "recebido" : "previsto"} no arquivo
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {money.format(total)}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

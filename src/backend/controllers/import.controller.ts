@@ -53,7 +53,9 @@ export class ImportController {
         ? preview.positions.length
         : preview.documentType === "B3_MOVEMENT_XLSX"
           ? preview.movements.length
-          : preview.trades.length;
+          : preview.documentType === "B3_TRADING_XLSX"
+            ? preview.trades.length
+            : preview.proventos.length;
     logger.info("b3_import_format_recognized", {
       requestId,
       documentType: preview.documentType,
@@ -99,7 +101,9 @@ export class ImportController {
         ? preview.positions.length
         : preview.documentType === "B3_MOVEMENT_XLSX"
           ? preview.movements.length
-          : preview.trades.length;
+          : preview.documentType === "B3_TRADING_XLSX"
+            ? preview.trades.length
+            : preview.proventos.length;
     const enrichedPositionCount =
       "enrichedPositionCount" in result ? result.enrichedPositionCount : 0;
     const importMessage = referenceDateUpdated
@@ -116,7 +120,9 @@ export class ImportController {
           ? `${count} posição(ões) importada(s) com sucesso.`
           : preview.documentType === "B3_MOVEMENT_XLSX"
             ? `${count} movimentação(ões) importada(s) com sucesso.`
-            : `${count} negociação(ões) importada(s) com sucesso.`;
+            : preview.documentType === "B3_TRADING_XLSX"
+              ? `${count} negociação(ões) importada(s) com sucesso.`
+              : `${count} provento(s) importado(s) com sucesso.`;
     return Response.json(
       {
         importId: result.importId,
@@ -145,6 +151,10 @@ export class ImportController {
     }
     logger.info("b3_import_item_deleted", { requestId, documentType, itemId });
     return Response.json(result);
+  }
+
+  async listProventos(requestId: string) {
+    return Response.json(await importService.listProventos(requestId));
   }
 }
 export const importController = new ImportController();

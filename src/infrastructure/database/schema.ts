@@ -1148,6 +1148,38 @@ export const tradingItems = pgTable(
     ),
   ],
 );
+export const b3ProventoItems = pgTable(
+  "b3_provento_items",
+  {
+    userId: text().references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    importId: uuid()
+      .notNull()
+      .references(() => imports.id, { onDelete: "cascade" }),
+    sourceSheet: text().notNull(),
+    sourceRow: integer().notNull(),
+    status: varchar({ length: 12 }).$type<"RECEIVED" | "UPCOMING">().notNull(),
+    product: text().notNull(),
+    eventType: text().notNull(),
+    paymentDate: date().notNull(),
+    institution: text(),
+    quantity: numeric({ precision: 24, scale: 8 }).notNull(),
+    unitPrice: numeric({ precision: 24, scale: 8 }).notNull(),
+    netValue: numeric({ precision: 24, scale: 8 }).notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("b3_provento_import_source_row_uidx").on(
+      table.importId,
+      table.sourceRow,
+    ),
+    index("b3_provento_user_status_date_idx").on(
+      table.userId,
+      table.status,
+      table.paymentDate,
+    ),
+  ],
+);
 export const b3ReconciliationEvents = pgTable(
   "b3_reconciliation_events",
   {

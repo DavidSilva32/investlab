@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -161,6 +162,15 @@ export function StrategyAllocationWorkspace({
   onSaved,
   onActivated,
 }: Props) {
+  const searchParams = useSearchParams();
+  const contributionPrefill = searchParams.get("aporteCents");
+  const initialContributionAmount =
+    contributionPrefill &&
+    /^\d+$/.test(contributionPrefill) &&
+    Number(contributionPrefill) > 0 &&
+    Number(contributionPrefill) <= 100_000_000_000_000
+      ? formatAmountInput(contributionPrefill)
+      : "";
   const baselineComplete =
     BigInt(knownValueCents) > 0n &&
     BigInt(unclassifiedKnownValueCents) === 0n &&
@@ -177,7 +187,9 @@ export function StrategyAllocationWorkspace({
   const [active, setActive] = useState(allocationActive);
   const [draftChanged, setDraftChanged] = useState(false);
   const [editingOpen, setEditingOpen] = useState(false);
-  const [contributionAmount, setContributionAmount] = useState("");
+  const [contributionAmount, setContributionAmount] = useState(
+    initialContributionAmount,
+  );
   const amountInputRef = useRef<HTMLInputElement>(null);
   const selectionRef = useRef<CurrencyInputSelection | null>(null);
   const [saving, setSaving] = useState(false);
@@ -660,6 +672,12 @@ export function StrategyAllocationWorkspace({
                   amountError ? "strategy-amount-error" : undefined
                 }
               />
+              {contributionPrefill ? (
+                <p className="text-xs text-muted-foreground">
+                  Valor recebido informado para simulação. Nada será salvo ou
+                  movimentado.
+                </p>
+              ) : null}
               {amountError && (
                 <p
                   id="strategy-amount-error"

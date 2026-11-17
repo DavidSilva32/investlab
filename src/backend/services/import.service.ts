@@ -25,8 +25,62 @@ const documentTypes = new Set<B3DocumentType>([
   "B3_POSITION_XLSX",
   "B3_MOVEMENT_XLSX",
   "B3_TRADING_XLSX",
+  "B3_PROVENTO_XLSX",
 ]);
 export class ImportService {
+  async listProventos(requestId: string) {
+    const items = await importRepository.listB3Proventos(requestId);
+    const latestImportFor = (status: "RECEIVED" | "UPCOMING") => {
+      const matchingItems = items.filter((item) => item.status === status);
+      const latestItem = matchingItems.reduce<
+        (typeof matchingItems)[number] | null
+      >(
+        (latest, item) =>
+          !latest || item.importedAt > latest.importedAt ? item : latest,
+        null,
+      );
+      if (!latestItem) return null;
+      const latestItems = matchingItems.filter(
+        (item) => item.importId === latestItem.importId,
+      );
+      return {
+        importId: latestItem.importId,
+        fileName: latestItem.fileName,
+        importedAt: latestItem.importedAt,
+        count: latestItems.length,
+        total: latestItems.reduce(
+          (sum, item) => sum + Number(item.netValue),
+          0,
+        ),
+      };
+    };
+    const latestImports = {
+      received: latestImportFor("RECEIVED"),
+      upcoming: latestImportFor("UPCOMING"),
+    };
+    return {
+      items,
+      latestImports: {
+        received: latestImports.received
+          ? {
+              fileName: latestImports.received.fileName,
+              importedAt: latestImports.received.importedAt,
+              count: latestImports.received.count,
+              total: latestImports.received.total,
+            }
+          : null,
+        upcoming: latestImports.upcoming
+          ? {
+              fileName: latestImports.upcoming.fileName,
+              importedAt: latestImports.upcoming.importedAt,
+              count: latestImports.upcoming.count,
+              total: latestImports.upcoming.total,
+            }
+          : null,
+      },
+    };
+  }
+
   async reconciliationSummary(requestId: string) {
     const [trades, movements, events] = await Promise.all([
       importRepository.listTradingItems(requestId),
@@ -159,6 +213,14 @@ export class ImportService {
         ),
       };
     }
+    if (preview.documentType === "B3_PROVENTO_XLSX")
+      return {
+        ...preview,
+        duplicateImport: await importRepository.existsByHash(
+          preview.hash,
+          requestId,
+        ),
+      };
     if (preview.documentType !== "B3_POSITION_XLSX") return preview;
     const duplicateImport = await importRepository.existsByHash(
       preview.hash,
@@ -330,16 +392,34 @@ export class ImportService {
                 identityFingerprint: createB3TradeIdentityFingerprint(trade),
               })),
             }
-          : {
-              ...this.buildPositionImportData(preview, effectiveReferenceDate),
-              reconciliationDecisions: parsedDecisions.data,
-              reconcileExistingImport,
-              reprocessExistingImport,
-            };
-    const result = await importRepository.create(
-      { fileName: file.name, fileHash: preview.hash, ...importData },
-      requestId,
-    );
+          : preview.documentType === "B3_PROVENTO_XLSX"
+            ? preview
+            : {
+                ...this.buildPositionImportData(
+                  preview,
+                  effectiveReferenceDate,
+                ),
+                reconciliationDecisions: parsedDecisions.data,
+                reconcileExistingImport,
+                reprocessExistingImport,
+              };
+    let result;
+    try {
+      result = await importRepository.create(
+        { fileName: file.name, fileHash: preview.hash, ...importData },
+        requestId,
+      );
+    } catch (error) {
+      if (
+        preview.documentType === "B3_PROVENTO_XLSX" &&
+        (await importRepository.existsByHash(preview.hash, requestId))
+      )
+        throw new ApplicationError(
+          "Este arquivo de proventos já foi importado. Atualize a lista antes de tentar novamente.",
+          409,
+        );
+      throw error;
+    }
     return {
       preview,
       result,
@@ -388,6 +468,11 @@ export class ImportService {
       if (documentType === "B3_TRADING_XLSX")
         throw new ApplicationError(
           "Exclusão individual não está disponível para arquivos de negociações.",
+          400,
+        );
+      if (documentType === "B3_PROVENTO_XLSX")
+        throw new ApplicationError(
+          "Exclusão individual de proventos ainda não está disponível.",
           400,
         );
       if (documentType === "B3_POSITION_XLSX") {

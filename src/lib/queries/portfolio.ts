@@ -12,6 +12,18 @@ export function usePortfolioOverview<T>(
   });
 }
 
+export function usePortfolioProventos<T>() {
+  return useQuery({
+    queryKey: queryKeys.portfolio.proventos(),
+    queryFn: () =>
+      apiRequest<T>(
+        "/api/proventos",
+        undefined,
+        "Não foi possível consultar os proventos.",
+      ),
+  });
+}
+
 export function usePortfolioObjectives<T>() {
   return useQuery({
     queryKey: queryKeys.portfolio.objectives(),

@@ -277,6 +277,22 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
         },
       },
     },
+    "/api/proventos": {
+      get: {
+        tags: ["Carteira"],
+        summary: "Consultar proventos importados da B3",
+        description:
+          "Retorna os proventos recebidos e previstos. Os totais consideram somente a importação mais recente de cada tipo; os itens preservam o arquivo de origem.",
+        security: ownerSecurity,
+        responses: {
+          "200": response(
+            "Proventos e importações mais recentes carregados.",
+            "B3ProventosResponse",
+          ),
+          ...commonErrors,
+        },
+      },
+    },
     "/api/imports/confirm": {
       post: {
         tags: ["Importação B3"],
@@ -1061,6 +1077,7 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
           { $ref: "#/components/schemas/B3PositionImportPreview" },
           { $ref: "#/components/schemas/B3MovementImportPreview" },
           { $ref: "#/components/schemas/B3TradingImportPreview" },
+          { $ref: "#/components/schemas/B3ProventoImportPreview" },
         ],
         discriminator: {
           propertyName: "documentType",
@@ -1068,10 +1085,131 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
             B3_POSITION_XLSX: "#/components/schemas/B3PositionImportPreview",
             B3_MOVEMENT_XLSX: "#/components/schemas/B3MovementImportPreview",
             B3_TRADING_XLSX: "#/components/schemas/B3TradingImportPreview",
+            B3_PROVENTO_XLSX: "#/components/schemas/B3ProventoImportPreview",
           },
         },
         description:
-          "A prévia discrimina posição, movimentação e negociação. A prévia de posição pode incluir candidatos de conciliação de identidade entre posições manuais e da B3.",
+          "A prévia discrimina posição, movimentação, negociação e proventos. Proventos recebidos e previstos ficam separados da carteira e não registram operações.",
+      },
+      B3ProventoImportPreview: {
+        type: "object",
+        required: [
+          "documentType",
+          "hash",
+          "count",
+          "proventos",
+          "duplicateImport",
+        ],
+        properties: {
+          documentType: { type: "string", enum: ["B3_PROVENTO_XLSX"] },
+          hash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          count: { type: "integer", minimum: 0 },
+          duplicateImport: { type: "boolean" },
+          proventos: {
+            type: "array",
+            items: { $ref: "#/components/schemas/B3ProventoPreviewItem" },
+          },
+        },
+      },
+      B3ProventosResponse: {
+        type: "object",
+        required: ["items", "latestImports"],
+        properties: {
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/B3ProventoItem" },
+          },
+          latestImports: {
+            type: "object",
+            required: ["received", "upcoming"],
+            properties: {
+              received: {
+                nullable: true,
+                allOf: [
+                  { $ref: "#/components/schemas/B3ProventoLatestImport" },
+                ],
+              },
+              upcoming: {
+                nullable: true,
+                allOf: [
+                  { $ref: "#/components/schemas/B3ProventoLatestImport" },
+                ],
+              },
+            },
+          },
+        },
+      },
+      B3ProventoLatestImport: {
+        type: "object",
+        required: ["fileName", "importedAt", "count", "total"],
+        properties: {
+          fileName: { type: "string" },
+          importedAt: { type: "string", format: "date-time" },
+          count: { type: "integer", minimum: 0 },
+          total: { type: "number", minimum: 0 },
+        },
+      },
+      B3ProventoPreviewItem: {
+        type: "object",
+        required: [
+          "status",
+          "sourceSheet",
+          "sourceRow",
+          "product",
+          "eventType",
+          "paymentDate",
+          "institution",
+          "quantity",
+          "unitPrice",
+          "netValue",
+        ],
+        properties: {
+          status: { type: "string", enum: ["RECEIVED", "UPCOMING"] },
+          sourceSheet: { type: "string" },
+          sourceRow: { type: "integer", minimum: 1 },
+          product: { type: "string" },
+          eventType: { type: "string" },
+          paymentDate: { type: "string", format: "date" },
+          institution: { type: "string", nullable: true },
+          quantity: { type: "string" },
+          unitPrice: { type: "string" },
+          netValue: { type: "string" },
+        },
+      },
+      B3ProventoItem: {
+        type: "object",
+        required: [
+          "id",
+          "importId",
+          "fileName",
+          "status",
+          "sourceSheet",
+          "sourceRow",
+          "product",
+          "eventType",
+          "paymentDate",
+          "institution",
+          "quantity",
+          "unitPrice",
+          "netValue",
+          "importedAt",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          importId: { type: "string", format: "uuid" },
+          fileName: { type: "string" },
+          status: { type: "string", enum: ["RECEIVED", "UPCOMING"] },
+          sourceSheet: { type: "string" },
+          sourceRow: { type: "integer", minimum: 1 },
+          product: { type: "string" },
+          eventType: { type: "string" },
+          paymentDate: { type: "string", format: "date" },
+          institution: { type: "string", nullable: true },
+          quantity: { type: "string" },
+          unitPrice: { type: "string" },
+          netValue: { type: "string" },
+          importedAt: { type: "string", format: "date-time" },
+        },
       },
       B3PositionImportPreview: {
         type: "object",
@@ -1340,7 +1478,12 @@ Os nomes e descrições acima são comparados em testes com as ferramentas que o
       },
       B3DocumentType: {
         type: "string",
-        enum: ["B3_POSITION_XLSX", "B3_MOVEMENT_XLSX", "B3_TRADING_XLSX"],
+        enum: [
+          "B3_POSITION_XLSX",
+          "B3_MOVEMENT_XLSX",
+          "B3_TRADING_XLSX",
+          "B3_PROVENTO_XLSX",
+        ],
       },
       PortfolioOverview: {
         type: "object",
